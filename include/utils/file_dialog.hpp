@@ -16,6 +16,7 @@ public:
 
     // File operations only
     static std::shared_ptr<DatabaseInterface> openSQLiteFile();
+
 private:
     static bool isInitialized;
 };

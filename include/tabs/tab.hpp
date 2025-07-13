@@ -103,7 +103,7 @@ private:
     int currentPage = 0;
     int rowsPerPage = 100;
     int totalRows = 0;
-    
+
     // Edit state
     int editingRow = -1;
     int editingCol = -1;
@@ -111,7 +111,7 @@ private:
     int selectedCol = -1;
     char editBuffer[1024] = "";
     bool hasChanges = false;
-    
+
     // Helper methods
     void enterEditMode(int row, int col);
     void exitEditMode(bool saveEdit);

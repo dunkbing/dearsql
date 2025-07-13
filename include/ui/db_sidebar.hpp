@@ -14,7 +14,7 @@ private:
     void renderTableNode(size_t databaseIndex, size_t tableIndex);
     void handleDatabaseContextMenu(size_t databaseIndex);
     void handleTableContextMenu(size_t databaseIndex, size_t tableIndex);
-    
+
     // Database connection dialog
     DatabaseConnectionDialog connectionDialog;
 };

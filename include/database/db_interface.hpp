@@ -6,10 +6,7 @@
 
 #include "db.hpp"
 
-enum class DatabaseType {
-    SQLITE,
-    POSTGRESQL
-};
+enum class DatabaseType { SQLITE, POSTGRESQL };
 
 struct DatabaseConnectionInfo {
     DatabaseType type;
@@ -32,37 +29,44 @@ public:
     virtual bool isConnected() const = 0;
 
     // Database info
-    virtual const std::string& getName() const = 0;
-    virtual const std::string& getConnectionString() const = 0;
-    virtual const std::string& getPath() const = 0;
-    virtual void* getConnection() const = 0;
+    virtual const std::string &getName() const = 0;
+    virtual const std::string &getConnectionString() const = 0;
+    virtual const std::string &getPath() const = 0;
+    virtual void *getConnection() const = 0;
     virtual DatabaseType getType() const = 0;
 
     // Table management
     virtual void refreshTables() = 0;
-    virtual const std::vector<Table>& getTables() const = 0;
-    virtual std::vector<Table>& getTables() = 0;
+    virtual const std::vector<Table> &getTables() const = 0;
+    virtual std::vector<Table> &getTables() = 0;
     virtual bool areTablesLoaded() const = 0;
     virtual void setTablesLoaded(bool loaded) = 0;
 
     // Query execution
-    virtual std::string executeQuery(const std::string& query) = 0;
-    virtual std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit, int offset) = 0;
-    virtual std::vector<std::string> getColumnNames(const std::string& tableName) = 0;
-    virtual int getRowCount(const std::string& tableName) = 0;
+    virtual std::string executeQuery(const std::string &query) = 0;
+    virtual std::vector<std::vector<std::string>> getTableData(const std::string &tableName,
+                                                               int limit, int offset) = 0;
+    virtual std::vector<std::string> getColumnNames(const std::string &tableName) = 0;
+    virtual int getRowCount(const std::string &tableName) = 0;
 
     // UI state
     virtual bool isExpanded() const = 0;
     virtual void setExpanded(bool expanded) = 0;
 
+    // Connection attempt tracking
+    virtual bool hasAttemptedConnection() const = 0;
+    virtual void setAttemptedConnection(bool attempted) = 0;
+    virtual const std::string &getLastConnectionError() const = 0;
+    virtual void setLastConnectionError(const std::string &error) = 0;
+
 protected:
     // Helper methods to be implemented by subclasses
     virtual std::vector<std::string> getTableNames() = 0;
-    virtual std::vector<Column> getTableColumns(const std::string& tableName) = 0;
+    virtual std::vector<Column> getTableColumns(const std::string &tableName) = 0;
 };
 
 // Factory for creating database instances
 class DatabaseFactory {
 public:
-    static std::shared_ptr<DatabaseInterface> createDatabase(const DatabaseConnectionInfo& info);
+    static std::shared_ptr<DatabaseInterface> createDatabase(const DatabaseConnectionInfo &info);
 };

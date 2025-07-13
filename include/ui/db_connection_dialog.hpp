@@ -1,8 +1,10 @@
 #pragma once
 
+#include "app_state.hpp"
 #include "database/db_interface.hpp"
 #include <memory>
 #include <string>
+#include <vector>
 
 class DatabaseInterface;
 
@@ -15,7 +17,9 @@ public:
     void showDialog();
 
     // Check if dialog is currently open
-    bool isDialogOpen() const { return isOpen; }
+    bool isDialogOpen() const {
+        return isOpen;
+    }
 
     // Get the result (will be nullptr if dialog cancelled or not completed)
     std::shared_ptr<DatabaseInterface> getResult();
@@ -28,8 +32,13 @@ private:
     bool isOpen = false;
     bool showingTypeSelection = false;
     bool showingPostgreSQLConnection = false;
+    bool showingSavedConnections = false;
     bool isConnecting = false;
     std::string errorMessage;
+
+    // Saved connections
+    std::vector<SavedConnection> savedConnections;
+    int selectedSavedConnection = -1;
 
     // Selected database type
     int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL
@@ -48,6 +57,8 @@ private:
     // Dialog rendering functions
     void renderTypeSelection();
     void renderPostgreSQLConnection();
+    void renderSavedConnections();
+    void loadSavedConnections();
 
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();

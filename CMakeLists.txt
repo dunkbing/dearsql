@@ -66,6 +66,7 @@ endif()
 # Application source files
 set(APP_SOURCES
     src/main.cpp
+    src/app_state.cpp
 
     # Database
     src/database/db.cpp

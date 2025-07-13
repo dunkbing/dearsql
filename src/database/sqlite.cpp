@@ -15,15 +15,19 @@ std::pair<bool, std::string> SQLiteDatabase::connect() {
         return {true, ""};
     }
 
+    attemptedConnection = true;
+
     int rc = sqlite3_open(path.c_str(), &connection);
     if (rc != SQLITE_OK) {
         std::string error = sqlite3_errmsg(connection);
         std::cerr << "Can't open database: " << error << std::endl;
+        lastConnectionError = error;
         return {false, error};
     }
 
     std::cout << "Successfully connected to database: " << path << std::endl;
     connected = true;
+    lastConnectionError.clear();
     return {true, ""};
 }
 
@@ -213,6 +217,22 @@ bool SQLiteDatabase::isExpanded() const {
 
 void SQLiteDatabase::setExpanded(bool exp) {
     expanded = exp;
+}
+
+bool SQLiteDatabase::hasAttemptedConnection() const {
+    return attemptedConnection;
+}
+
+void SQLiteDatabase::setAttemptedConnection(bool attempted) {
+    attemptedConnection = attempted;
+}
+
+const std::string &SQLiteDatabase::getLastConnectionError() const {
+    return lastConnectionError;
+}
+
+void SQLiteDatabase::setLastConnectionError(const std::string &error) {
+    lastConnectionError = error;
 }
 
 void *SQLiteDatabase::getConnection() const {

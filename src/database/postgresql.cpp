@@ -21,19 +21,24 @@ PostgreSQLDatabase::~PostgreSQLDatabase() {
 }
 
 std::pair<bool, std::string> PostgreSQLDatabase::connect() {
+    std::cout << "Connection string: " << connectionString << std::endl;
     if (connected && connection) {
         return {true, ""};
     }
+
+    attemptedConnection = true;
 
     try {
         connection = std::make_unique<pqxx::connection>(connectionString);
         std::cout << "Successfully connected to PostgreSQL database: " << database << std::endl;
         connected = true;
+        lastConnectionError.clear();
         return {true, ""};
     } catch (const std::exception &e) {
         std::cerr << "Connection to database failed: " << e.what() << std::endl;
         connection.reset();
         connected = false;
+        lastConnectionError = e.what();
         return {false, e.what()};
     }
 }
@@ -251,6 +256,22 @@ bool PostgreSQLDatabase::isExpanded() const {
 
 void PostgreSQLDatabase::setExpanded(bool exp) {
     expanded = exp;
+}
+
+bool PostgreSQLDatabase::hasAttemptedConnection() const {
+    return attemptedConnection;
+}
+
+void PostgreSQLDatabase::setAttemptedConnection(bool attempted) {
+    attemptedConnection = attempted;
+}
+
+const std::string &PostgreSQLDatabase::getLastConnectionError() const {
+    return lastConnectionError;
+}
+
+void PostgreSQLDatabase::setLastConnectionError(const std::string &error) {
+    lastConnectionError = error;
 }
 
 void *PostgreSQLDatabase::getConnection() const {

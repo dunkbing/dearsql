@@ -1,5 +1,7 @@
 #include "application.hpp"
 #include "database/db.hpp"
+#include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui_impl_metal.h"
 #include "tabs/tab_manager.hpp"
 #include "themes.hpp"
@@ -52,6 +54,16 @@ bool Application::initialize() {
     tabManager = std::make_unique<TabManager>();
     databaseSidebar = std::make_unique<DatabaseSidebar>();
     fileDialog = std::make_unique<FileDialog>();
+
+    // Initialize app state
+    appState = std::make_unique<AppState>();
+    if (!appState->initialize()) {
+        std::cerr << "Failed to initialize app state" << std::endl;
+        return false;
+    }
+
+    // Restore previous connections
+    restorePreviousConnections();
 
 #ifdef USE_METAL_BACKEND
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
@@ -168,6 +180,42 @@ void Application::setDarkTheme(bool dark) {
 
 void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
     databases.push_back(db);
+}
+
+void Application::restorePreviousConnections() {
+    if (!appState) {
+        return;
+    }
+
+    auto savedConnections = appState->getSavedConnections();
+    std::cout << "Restoring " << savedConnections.size() << " previous connections..." << std::endl;
+
+    for (const auto &conn : savedConnections) {
+        std::shared_ptr<DatabaseInterface> db = nullptr;
+
+        if (conn.type == "postgresql") {
+            db = std::make_shared<PostgreSQLDatabase>(conn.name, conn.host, conn.port,
+                                                      conn.database, conn.username,
+                                                      "password"
+            );
+        } else if (conn.type == "sqlite") {
+            db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
+        }
+
+        if (db) {
+            // Try to connect (will fail for PostgreSQL without password, but that's expected)
+            auto [success, error] = db->connect();
+            if (success) {
+                db->refreshTables();
+                std::cout << "Successfully restored connection: " << conn.name << std::endl;
+            } else {
+                std::cout << "Added connection (requires authentication): " << conn.name
+                          << std::endl;
+            }
+
+            databases.push_back(db);
+        }
+    }
 }
 
 bool Application::initializeGLFW() {

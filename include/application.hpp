@@ -17,11 +17,12 @@ typedef void *MetalLayer;
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
 #endif
+#include "app_state.hpp"
+#include "tabs/tab_manager.hpp"
+#include "ui/db_sidebar.hpp"
+#include "utils/file_dialog.hpp"
 #include <memory>
 #include <vector>
-#include "ui/db_sidebar.hpp"
-#include "tabs/tab_manager.hpp"
-#include "utils/file_dialog.hpp"
 
 class Application {
 public:
@@ -45,6 +46,9 @@ public:
     }
     FileDialog *getFileDialog() const {
         return fileDialog.get();
+    }
+    AppState *getAppState() const {
+        return appState.get();
     }
 
     // Theme management
@@ -82,7 +86,8 @@ public:
     const std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() const {
         return databases;
     }
-    void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
+    void addDatabase(const std::shared_ptr<DatabaseInterface> &db);
+    void restorePreviousConnections();
 
     // Window reference
     GLFWwindow *getWindow() const {
@@ -98,6 +103,7 @@ private:
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
+    std::unique_ptr<AppState> appState;
 
 #ifdef USE_METAL_BACKEND
 // Metal-specific components (using void* for C++ compatibility)

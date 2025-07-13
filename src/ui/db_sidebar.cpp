@@ -66,7 +66,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     if (dbOpen && !db->areTablesLoaded()) {
         std::cout << "Database expanded and tables not loaded yet, attempting to load..."
                   << std::endl;
-        if (!db->isConnected()) {
+        if (!db->isConnected() && !db->hasAttemptedConnection()) {
             std::cout << "Database not connected, attempting to connect..." << std::endl;
             auto [success, error] = db->connect();
             if (!success) {
@@ -75,6 +75,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         }
         if (db->isConnected()) {
             db->refreshTables();
+        } else if (db->hasAttemptedConnection() && !db->getLastConnectionError().empty()) {
+            // Set tables as loaded to prevent further attempts and show error
+            db->setTablesLoaded(true);
         }
     }
 
@@ -84,7 +87,18 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     if (dbOpen) {
         // Tables
         if (db->getTables().empty()) {
-            ImGui::Text("  No tables found");
+            if (db->hasAttemptedConnection() && !db->getLastConnectionError().empty()) {
+                // Show connection error
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
+                ImGui::PopStyleColor();
+            } else if (!db->isConnected()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+                ImGui::Text("  Click to connect");
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::Text("  No tables found");
+            }
         } else {
             for (size_t j = 0; j < db->getTables().size(); j++) {
                 renderTableNode(databaseIndex, j);
@@ -131,6 +145,13 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
         if (ImGui::MenuItem("Refresh")) {
             db->setTablesLoaded(false); // Reset flag to allow refresh
             db->refreshTables();
+        }
+        if (ImGui::MenuItem("Retry Connection") && db->hasAttemptedConnection() &&
+            !db->isConnected()) {
+            // Reset connection attempt state to allow retry
+            db->setAttemptedConnection(false);
+            db->setTablesLoaded(false);
+            db->setLastConnectionError("");
         }
         if (ImGui::MenuItem("New SQL Editor")) {
             app.getTabManager()->createSQLEditorTab();

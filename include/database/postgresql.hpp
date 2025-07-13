@@ -32,6 +32,20 @@ public:
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
 
+    // View management
+    void refreshViews() override;
+    const std::vector<Table> &getViews() const override;
+    std::vector<Table> &getViews() override;
+    bool areViewsLoaded() const override;
+    void setViewsLoaded(bool loaded) override;
+
+    // Sequence management
+    void refreshSequences() override;
+    const std::vector<std::string> &getSequences() const override;
+    std::vector<std::string> &getSequences() override;
+    bool areSequencesLoaded() const override;
+    void setSequencesLoaded(bool loaded) override;
+
     // Query execution
     std::string executeQuery(const std::string &query) override;
     std::vector<std::vector<std::string>> getTableData(const std::string &tableName, int limit,
@@ -52,6 +66,9 @@ public:
 protected:
     std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string &tableName) override;
+    std::vector<std::string> getViewNames() override;
+    std::vector<Column> getViewColumns(const std::string &viewName) override;
+    std::vector<std::string> getSequenceNames() override;
 
 private:
     std::string name;
@@ -63,9 +80,13 @@ private:
     std::string connectionString;
     std::unique_ptr<pqxx::connection> connection;
     std::vector<Table> tables;
+    std::vector<Table> views;
+    std::vector<std::string> sequences;
     bool connected = false;
     bool expanded = false;
     bool tablesLoaded = false;
+    bool viewsLoaded = false;
+    bool sequencesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
 };

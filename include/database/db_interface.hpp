@@ -42,6 +42,20 @@ public:
     virtual bool areTablesLoaded() const = 0;
     virtual void setTablesLoaded(bool loaded) = 0;
 
+    // View management
+    virtual void refreshViews() = 0;
+    virtual const std::vector<Table> &getViews() const = 0;
+    virtual std::vector<Table> &getViews() = 0;
+    virtual bool areViewsLoaded() const = 0;
+    virtual void setViewsLoaded(bool loaded) = 0;
+
+    // Sequence management (PostgreSQL only)
+    virtual void refreshSequences() = 0;
+    virtual const std::vector<std::string> &getSequences() const = 0;
+    virtual std::vector<std::string> &getSequences() = 0;
+    virtual bool areSequencesLoaded() const = 0;
+    virtual void setSequencesLoaded(bool loaded) = 0;
+
     // Query execution
     virtual std::string executeQuery(const std::string &query) = 0;
     virtual std::vector<std::vector<std::string>> getTableData(const std::string &tableName,
@@ -63,6 +77,9 @@ protected:
     // Helper methods to be implemented by subclasses
     virtual std::vector<std::string> getTableNames() = 0;
     virtual std::vector<Column> getTableColumns(const std::string &tableName) = 0;
+    virtual std::vector<std::string> getViewNames() = 0;
+    virtual std::vector<Column> getViewColumns(const std::string &viewName) = 0;
+    virtual std::vector<std::string> getSequenceNames() = 0;
 };
 
 // Factory for creating database instances

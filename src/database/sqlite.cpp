@@ -241,8 +241,7 @@ void *SQLiteDatabase::getConnection() const {
 
 std::vector<std::string> SQLiteDatabase::getTableNames() {
     std::vector<std::string> tableNames;
-    const char *sql =
-        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;";
+    const char *sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
     sqlite3_stmt *stmt;
 
     std::cout << "Executing query to get table names..." << std::endl;
@@ -280,4 +279,112 @@ std::vector<Column> SQLiteDatabase::getTableColumns(const std::string &tableName
     }
     sqlite3_finalize(stmt);
     return columns;
+}
+
+// View management methods
+void SQLiteDatabase::refreshViews() {
+    std::cout << "Refreshing views for database: " << name << std::endl;
+    if (!isConnected()) {
+        std::cout << "Failed to connect to database" << std::endl;
+        viewsLoaded = true;
+        return;
+    }
+
+    views.clear();
+    std::vector<std::string> viewNames = getViewNames();
+    std::cout << "Found " << viewNames.size() << " views" << std::endl;
+
+    for (const auto &viewName : viewNames) {
+        std::cout << "Adding view: " << viewName << std::endl;
+        Table view;
+        view.name = viewName;
+        view.columns = getViewColumns(viewName);
+        views.push_back(view);
+    }
+    std::cout << "Finished refreshing views. Total views: " << views.size() << std::endl;
+    viewsLoaded = true;
+}
+
+const std::vector<Table> &SQLiteDatabase::getViews() const {
+    return views;
+}
+
+std::vector<Table> &SQLiteDatabase::getViews() {
+    return views;
+}
+
+bool SQLiteDatabase::areViewsLoaded() const {
+    return viewsLoaded;
+}
+
+void SQLiteDatabase::setViewsLoaded(bool loaded) {
+    viewsLoaded = loaded;
+}
+
+// Sequence management methods (not applicable for SQLite)
+void SQLiteDatabase::refreshSequences() {
+    sequences.clear();
+    sequencesLoaded = true; // No sequences in SQLite
+}
+
+const std::vector<std::string> &SQLiteDatabase::getSequences() const {
+    return sequences;
+}
+
+std::vector<std::string> &SQLiteDatabase::getSequences() {
+    return sequences;
+}
+
+bool SQLiteDatabase::areSequencesLoaded() const {
+    return sequencesLoaded;
+}
+
+void SQLiteDatabase::setSequencesLoaded(bool loaded) {
+    sequencesLoaded = loaded;
+}
+
+std::vector<std::string> SQLiteDatabase::getViewNames() {
+    std::vector<std::string> viewNames;
+    const char *sql = "SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name;";
+    sqlite3_stmt *stmt;
+
+    std::cout << "Executing query to get view names..." << std::endl;
+    int rc = sqlite3_prepare_v2(connection, sql, -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            auto viewName = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+            if (viewName) {
+                std::cout << "Found view: " << viewName << std::endl;
+                viewNames.emplace_back(viewName);
+            }
+        }
+    } else {
+        std::cerr << "Failed to prepare SQL statement: " << sqlite3_errmsg(connection) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+    std::cout << "Query completed. Found " << viewNames.size() << " views." << std::endl;
+    return viewNames;
+}
+
+std::vector<Column> SQLiteDatabase::getViewColumns(const std::string &viewName) {
+    std::vector<Column> columns;
+    std::string sql = "PRAGMA table_info(" + viewName + ");";
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_prepare_v2(connection, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            Column col;
+            col.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+            col.type = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+            col.isNotNull = sqlite3_column_int(stmt, 3) == 1;
+            col.isPrimaryKey = false; // Views don't have primary keys
+            columns.push_back(col);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return columns;
+}
+
+std::vector<std::string> SQLiteDatabase::getSequenceNames() {
+    return {}; // SQLite doesn't have sequences
 }

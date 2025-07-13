@@ -121,6 +121,15 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         ImGui::PopStyleVar();
 
         ImGui::Spacing();
+        ImGui::Checkbox("Show all databases from server", &showAllDatabases);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
+                        "unchecked, only shows the specified database.");
+            ImGui::EndTooltip();
+        }
+
+        ImGui::Spacing();
 
         // Show error message if there is one
         if (!errorMessage.empty()) {

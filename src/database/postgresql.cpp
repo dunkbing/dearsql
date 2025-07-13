@@ -340,3 +340,157 @@ std::vector<Column> PostgreSQLDatabase::getTableColumns(const std::string &table
 
     return columns;
 }
+
+// View management methods
+void PostgreSQLDatabase::refreshViews() {
+    std::cout << "Refreshing views for database: " << name << std::endl;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cout << "Failed to connect to database: " << error << std::endl;
+            viewsLoaded = true;
+            return;
+        }
+    }
+
+    views.clear();
+    std::vector<std::string> viewNames = getViewNames();
+    std::cout << "Found " << viewNames.size() << " views" << std::endl;
+
+    for (const auto &viewName : viewNames) {
+        std::cout << "Adding view: " << viewName << std::endl;
+        Table view;
+        view.name = viewName;
+        view.columns = getViewColumns(viewName);
+        views.push_back(view);
+    }
+    std::cout << "Finished refreshing views. Total views: " << views.size() << std::endl;
+    viewsLoaded = true;
+}
+
+const std::vector<Table> &PostgreSQLDatabase::getViews() const {
+    return views;
+}
+
+std::vector<Table> &PostgreSQLDatabase::getViews() {
+    return views;
+}
+
+bool PostgreSQLDatabase::areViewsLoaded() const {
+    return viewsLoaded;
+}
+
+void PostgreSQLDatabase::setViewsLoaded(bool loaded) {
+    viewsLoaded = loaded;
+}
+
+// Sequence management methods
+void PostgreSQLDatabase::refreshSequences() {
+    std::cout << "Refreshing sequences for database: " << name << std::endl;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cout << "Failed to connect to database: " << error << std::endl;
+            sequencesLoaded = true;
+            return;
+        }
+    }
+
+    sequences.clear();
+    sequences = getSequenceNames();
+    std::cout << "Found " << sequences.size() << " sequences" << std::endl;
+    sequencesLoaded = true;
+}
+
+const std::vector<std::string> &PostgreSQLDatabase::getSequences() const {
+    return sequences;
+}
+
+std::vector<std::string> &PostgreSQLDatabase::getSequences() {
+    return sequences;
+}
+
+bool PostgreSQLDatabase::areSequencesLoaded() const {
+    return sequencesLoaded;
+}
+
+void PostgreSQLDatabase::setSequencesLoaded(bool loaded) {
+    sequencesLoaded = loaded;
+}
+
+std::vector<std::string> PostgreSQLDatabase::getViewNames() {
+    std::vector<std::string> viewNames;
+
+    try {
+        pqxx::work txn(*connection);
+        std::string sql =
+            "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
+
+        std::cout << "Executing query to get view names..." << std::endl;
+        pqxx::result result = txn.exec(sql);
+
+        for (const auto &row : result) {
+            std::string viewName = row[0].c_str();
+            std::cout << "Found view: " << viewName << std::endl;
+            viewNames.push_back(viewName);
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Failed to execute query: " << e.what() << std::endl;
+    }
+
+    std::cout << "Query completed. Found " << viewNames.size() << " views." << std::endl;
+    return viewNames;
+}
+
+std::vector<Column> PostgreSQLDatabase::getViewColumns(const std::string &viewName) {
+    std::vector<Column> columns;
+
+    try {
+        pqxx::work txn(*connection);
+        std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
+                          "FROM information_schema.columns c "
+                          "WHERE c.table_name = " +
+                          txn.quote(viewName) +
+                          " "
+                          "ORDER BY c.ordinal_position";
+
+        pqxx::result result = txn.exec(sql);
+
+        for (const auto &row : result) {
+            Column col;
+            col.name = row[0].c_str();
+            col.type = row[1].c_str();
+            col.isNotNull = std::string(row[2].c_str()) == "NO";
+            col.isPrimaryKey = false; // Views don't have primary keys
+            columns.push_back(col);
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Error getting view columns: " << e.what() << std::endl;
+    }
+
+    return columns;
+}
+
+std::vector<std::string> PostgreSQLDatabase::getSequenceNames() {
+    std::vector<std::string> sequenceNames;
+
+    try {
+        pqxx::work txn(*connection);
+        std::string sql = "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
+                          "BY sequencename";
+
+        std::cout << "Executing query to get sequence names..." << std::endl;
+        pqxx::result result = txn.exec(sql);
+
+        for (const auto &row : result) {
+            std::string sequenceName = row[0].c_str();
+            std::cout << "Found sequence: " << sequenceName << std::endl;
+            sequenceNames.push_back(sequenceName);
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Failed to execute query: " << e.what() << std::endl;
+    }
+
+    std::cout << "Query completed. Found " << sequenceNames.size() << " sequences." << std::endl;
+    return sequenceNames;
+}

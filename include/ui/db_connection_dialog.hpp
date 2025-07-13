@@ -50,6 +50,7 @@ private:
     char database[256] = "";
     char username[256] = "";
     char password[256] = "";
+    bool showAllDatabases = false;
 
     // Result
     std::shared_ptr<DatabaseInterface> result = nullptr;

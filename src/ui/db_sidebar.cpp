@@ -35,11 +35,13 @@ void DatabaseSidebar::render() {
 
     ImGui::Separator();
 
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
     auto &databases = app.getDatabases();
     for (size_t i = 0; i < databases.size(); i++) {
         renderDatabaseNode(i);
     }
 
+    ImGui::PopStyleVar();
     ImGui::End();
 }
 
@@ -49,8 +51,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     auto &db = databases[databaseIndex];
 
     // Database node
-    ImGuiTreeNodeFlags dbFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                 ImGuiTreeNodeFlags_FramePadding;
     if (app.getSelectedDatabase() == static_cast<int>(databaseIndex)) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }
@@ -114,7 +117,8 @@ void DatabaseSidebar::renderTableNode(size_t databaseIndex, size_t tableIndex) {
     auto &db = databases[databaseIndex];
     auto &table = db->getTables()[tableIndex];
 
-    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                    ImGuiTreeNodeFlags_FramePadding;
     if (app.getSelectedDatabase() == (int)databaseIndex &&
         app.getSelectedTable() == (int)tableIndex) {
         tableFlags |= ImGuiTreeNodeFlags_Selected;
@@ -132,7 +136,6 @@ void DatabaseSidebar::renderTableNode(size_t databaseIndex, size_t tableIndex) {
         app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
     }
 
-    // Context menu for table
     handleTableContextMenu(databaseIndex, tableIndex);
 }
 
@@ -143,7 +146,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
 
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Refresh")) {
-            db->setTablesLoaded(false); // Reset flag to allow refresh
+            db->setTablesLoaded(false);
             db->refreshTables();
         }
         if (ImGui::MenuItem("Retry Connection") && db->hasAttemptedConnection() &&

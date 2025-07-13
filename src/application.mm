@@ -83,54 +83,57 @@ void Application::run() {
         glfwPollEvents();
 
 #ifdef USE_METAL_BACKEND
-        // Get the Metal drawable
-        id<CAMetalDrawable> drawable = [(CAMetalLayer *)metalLayer nextDrawable];
-        if (!drawable) {
-            continue;
-        }
+        @autoreleasepool {
+            // Get the Metal drawable
+            id<CAMetalDrawable> drawable = [(CAMetalLayer *)metalLayer nextDrawable];
+            if (!drawable) {
+                continue;
+            }
 
-        // Create render pass descriptor
-        MTLRenderPassDescriptor *renderPassDescriptor =
-            [MTLRenderPassDescriptor renderPassDescriptor];
-        renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
-        renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-        renderPassDescriptor.colorAttachments[0].clearColor =
-            MTLClearColorMake(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
-                              darkTheme ? 0.137f : 0.957f, 1.0f);
-        renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
+            // Create render pass descriptor
+            MTLRenderPassDescriptor *renderPassDescriptor =
+                [MTLRenderPassDescriptor renderPassDescriptor];
+            renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
+            renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+            renderPassDescriptor.colorAttachments[0].clearColor =
+                MTLClearColorMake(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
+                                  darkTheme ? 0.137f : 0.957f, 1.0f);
+            renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 
-        // Create command buffer
-        id<MTLCommandBuffer> commandBuffer = [(id<MTLCommandQueue>)metalCommandQueue commandBuffer];
+            // Create command buffer
+            id<MTLCommandBuffer> commandBuffer =
+                [(id<MTLCommandQueue>)metalCommandQueue commandBuffer];
 
-        // Create render command encoder
-        id<MTLRenderCommandEncoder> renderEncoder =
-            [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+            // Create render command encoder
+            id<MTLRenderCommandEncoder> renderEncoder =
+                [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
 
-        ImGui_ImplMetal_NewFrame(renderPassDescriptor);
+            ImGui_ImplMetal_NewFrame(renderPassDescriptor);
 #elif defined(USE_OPENGL_BACKEND)
         ImGui_ImplOpenGL3_NewFrame();
 #endif
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
 
-        renderMainUI();
+            renderMainUI();
 
-        ImGui::Render();
+            ImGui::Render();
 
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
+            int display_w, display_h;
+            glfwGetFramebufferSize(window, &display_w, &display_h);
 
 #ifdef USE_METAL_BACKEND
-        // Update Metal layer drawable size
-        ((CAMetalLayer *)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
+            // Update Metal layer drawable size
+            ((CAMetalLayer *)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
 
-        // Render ImGui draw data
-        ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);
+            // Render ImGui draw data
+            ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);
 
-        // End encoding and present
-        [renderEncoder endEncoding];
-        [commandBuffer presentDrawable:drawable];
-        [commandBuffer commit];
+            // End encoding and present
+            [renderEncoder endEncoding];
+            [commandBuffer presentDrawable:drawable];
+            [commandBuffer commit];
+        }
 #elif defined(USE_OPENGL_BACKEND)
         glViewport(0, 0, display_w, display_h);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -195,9 +198,7 @@ void Application::restorePreviousConnections() {
 
         if (conn.type == "postgresql") {
             db = std::make_shared<PostgreSQLDatabase>(conn.name, conn.host, conn.port,
-                                                      conn.database, conn.username,
-                                                      "password"
-            );
+                                                      conn.database, conn.username, "password");
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
         }

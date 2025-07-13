@@ -144,28 +144,44 @@ void Application::run() {
 }
 
 void Application::cleanup() {
+    std::cout << "Cleaning up Dear SQL..." << std::endl;
+
     // Cleanup databases
     for (auto &db : databases) {
-        db->disconnect();
+        if (db) {
+            db->disconnect();
+        }
     }
     databases.clear();
+    std::cout << "Databases disconnected" << std::endl;
 
     // Cleanup components
     tabManager.reset();
     databaseSidebar.reset();
     fileDialog.reset();
+    std::cout << "Components cleaned up" << std::endl;
 
     // Cleanup NFD
     FileDialog::cleanup();
+    std::cout << "File dialog cleaned up" << std::endl;
 
-    // Cleanup ImGui
+    // Cleanup ImGui - follow the order from ImGui GLFW+Metal example
 #ifdef USE_METAL_BACKEND
     ImGui_ImplMetal_Shutdown();
+    std::cout << "ImGui Metal backend shutdown" << std::endl;
+    ImGui_ImplGlfw_Shutdown();
+    std::cout << "ImGui GLFW backend shutdown" << std::endl;
 #elif defined(USE_OPENGL_BACKEND)
     ImGui_ImplOpenGL3_Shutdown();
-#endif
+    std::cout << "ImGui OpenGL backend shutdown" << std::endl;
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    std::cout << "ImGui GLFW backend shutdown" << std::endl;
+#endif
+    auto ctx = ImGui::GetCurrentContext();
+    if (ctx) {
+        ImGui::DestroyContext(ctx);
+        std::cout << "ImGui context destroyed" << std::endl;
+    }
 
     // Cleanup GLFW
     if (window) {

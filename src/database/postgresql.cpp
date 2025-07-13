@@ -44,8 +44,12 @@ std::pair<bool, std::string> PostgreSQLDatabase::connect() {
 }
 
 void PostgreSQLDatabase::disconnect() {
-    if (connection) {
-        connection.reset();
+    if (!connection) {
+        return;
+    }
+    auto conn = connection.get();
+    if (conn->is_open()) {
+        conn->close();
     }
     connected = false;
 }

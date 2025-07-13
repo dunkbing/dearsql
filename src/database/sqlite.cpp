@@ -33,7 +33,7 @@ std::pair<bool, std::string> SQLiteDatabase::connect() {
 
 void SQLiteDatabase::disconnect() {
     if (connection) {
-        sqlite3_close(connection);
+        sqlite3_close_v2(connection);
         connection = nullptr;
     }
     connected = false;

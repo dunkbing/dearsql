@@ -22,7 +22,6 @@ find_package(glfw3 3.3 REQUIRED)
 # Common ImGui sources
 set(IMGUI_SOURCES
     external/imgui/imgui.cpp
-    external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
@@ -106,14 +105,14 @@ if(FONT_FILES)
     foreach(FONT_FILE ${FONT_FILES})
         get_filename_component(FONT_NAME ${FONT_FILE} NAME_WE)
         string(MAKE_C_IDENTIFIER ${FONT_NAME} FONT_VAR)
-        
+
         file(READ ${FONT_FILE} FONT_DATA HEX)
         string(REGEX REPLACE "([0-9a-fA-F][0-9a-fA-F])" "0x\\1," FONT_DATA ${FONT_DATA})
         string(REGEX REPLACE ",$" "" FONT_DATA ${FONT_DATA})
-        
+
         file(APPEND ${RESOURCE_FILE} "static const uint8_t ${FONT_VAR}_data[] = {${FONT_DATA}};\n")
     endforeach()
-    
+
     file(APPEND ${RESOURCE_FILE} "\nstatic const EmbeddedFont embedded_fonts[] = {\n")
     foreach(FONT_FILE ${FONT_FILES})
         get_filename_component(FONT_NAME ${FONT_FILE} NAME_WE)
@@ -121,7 +120,7 @@ if(FONT_FILES)
         file(APPEND ${RESOURCE_FILE} "    {\"${FONT_NAME}\", ${FONT_VAR}_data, sizeof(${FONT_VAR}_data)},\n")
     endforeach()
     file(APPEND ${RESOURCE_FILE} "};\n\n")
-    
+
     file(APPEND ${RESOURCE_FILE} "extern \"C\" const EmbeddedFont* getEmbeddedFonts() { return embedded_fonts; }\n")
     file(APPEND ${RESOURCE_FILE} "extern \"C\" size_t getEmbeddedFontCount() { return sizeof(embedded_fonts) / sizeof(embedded_fonts[0]); }\n")
 else()

@@ -30,7 +30,7 @@ void DatabaseConnectionDialog::showDialog() {
 void DatabaseConnectionDialog::renderTypeSelection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300, 360), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Choose how to connect to a database:");
@@ -94,7 +94,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
 void DatabaseConnectionDialog::renderPostgreSQLConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 360), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter PostgreSQL connection details:");
@@ -230,7 +230,7 @@ void DatabaseConnectionDialog::loadSavedConnections() {
 void DatabaseConnectionDialog::renderSavedConnections() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(500, 450), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Saved Database Connections:");

@@ -262,6 +262,7 @@ bool Application::initializeGLFW() {
     CAMetalLayer *layer = [CAMetalLayer layer];
     layer.device = (id<MTLDevice>)metalDevice;
     layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.displaySyncEnabled = YES; // vsync
     nsWindow.contentView.layer = layer;
     nsWindow.contentView.wantsLayer = YES;
     metalLayer = layer;

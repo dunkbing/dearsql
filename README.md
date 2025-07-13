@@ -29,5 +29,6 @@ A simple, cross-platform database client built with Dear ImGui.
 ## 🛠️ Built With
 
 - [Dear ImGui](https://github.com/ocornut/imgui) - Immediate mode GUI
-- [SQLite](https://sqlite.org/) - Database engine
 - [Native File Dialog](https://github.com/btzy/nativefiledialog-extended) - File pickers
+- [pqxx](https://github.com/jtv/libpqxx) - PostgreSQL client
+- [SQLite](https://sqlite.org/) - SQLite client

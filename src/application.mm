@@ -10,6 +10,7 @@
 #include <fstream>
 #include <imgui_internal.h>
 #include <iostream>
+#include <signal.h>
 
 // Forward declarations for embedded fonts
 extern "C" {
@@ -27,6 +28,13 @@ size_t getEmbeddedFontCount();
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
 #endif
+
+static void signal_handler(int signal) {
+    if (signal == SIGTERM || signal == SIGINT) {
+        Application::getInstance().cleanup();
+        exit(0);
+    }
+}
 
 Application &Application::getInstance() {
     static Application instance;
@@ -64,6 +72,10 @@ bool Application::initialize() {
 
     // Restore previous connections
     restorePreviousConnections();
+
+    // Register signal handler
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
 
 #ifdef USE_METAL_BACKEND
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;

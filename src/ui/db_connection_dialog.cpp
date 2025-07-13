@@ -5,6 +5,7 @@
 #include "utils/file_dialog.hpp"
 #include <imgui.h>
 #include <iostream>
+#include <themes.hpp>
 
 void DatabaseConnectionDialog::showDialog() {
     if (!isOpen) {
@@ -100,12 +101,14 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Add visual styling for input fields
+        // Add visual styling for input fields using Theme colors
+        const auto &colors =
+            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.2f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.4f, 0.4f, 0.4f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
 
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));

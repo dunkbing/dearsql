@@ -485,10 +485,11 @@ void Application::renderMainUI() {
 
     ImGui::PopStyleVar(3);
 
-    // Add border around dock windows
-    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0, 0, 0, 0));
+    // Add border around dock windows using Theme colors
+    const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
 
     ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
@@ -496,19 +497,19 @@ void Application::renderMainUI() {
     // Setup default docking layout
     setupDockingLayout(dockspace_id);
 
-    // Database sidebar with full-width tab highlighting
-    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.2f, 0.3f, 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(0.3f, 0.4f, 0.9f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4(0.25f, 0.35f, 0.85f, 1.0f));
+    // Database sidebar with theme-based tab highlighting
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
     databaseSidebar->render();
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);
 
-    // Main content area with full-width tab highlighting
-    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.2f, 0.3f, 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(0.3f, 0.4f, 0.9f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4(0.25f, 0.35f, 0.85f, 1.0f));
+    // Main content area with theme-based tab highlighting
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
     ImGui::Begin("Content");
     if (tabManager->isEmpty()) {

@@ -4,6 +4,7 @@
 #include "database/db_interface.hpp"
 #include "imgui.h"
 
+#include "themes.hpp"
 #include <iostream>
 
 // Base Tab class
@@ -64,6 +65,9 @@ TableViewerTab::TableViewerTab(const std::string &name, const std::string &datab
 }
 
 void TableViewerTab::render() {
+    const auto &colors =
+        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+
     ImGui::Text("Table: %s", tableName.c_str());
     ImGui::Separator();
 
@@ -125,7 +129,7 @@ void TableViewerTab::render() {
 
     if (hasChanges) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Unsaved changes");
+        ImGui::TextColored(colors.peach, "Unsaved changes");
     }
 
     ImGui::Separator();
@@ -171,7 +175,7 @@ void TableViewerTab::render() {
                             (selectedRow == (int)rowIdx && selectedCol == (int)colIdx);
                         if (isSelected) {
                             ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
-                                                   ImGui::GetColorU32(ImGuiCol_ButtonActive));
+                                                   ImGui::GetColorU32(colors.surface2));
                         }
 
                         // Use a simple selectable text

@@ -8,8 +8,7 @@
 void DatabaseSidebar::render() {
     auto &app = Application::getInstance();
 
-    ImGui::Begin("Databases");
-
+    ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
     if (ImGui::Button("Open Database", ImVec2(-1, 0))) {
         connectionDialog.showDialog();
     }

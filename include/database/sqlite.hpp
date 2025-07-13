@@ -9,7 +9,7 @@ public:
     ~SQLiteDatabase() override;
 
     // Connection management
-    bool connect() override;
+    std::pair<bool, std::string> connect() override;
     void disconnect() override;
     bool isConnected() const override;
 

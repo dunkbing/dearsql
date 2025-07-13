@@ -10,20 +10,21 @@ SQLiteDatabase::~SQLiteDatabase() {
     SQLiteDatabase::disconnect();
 }
 
-bool SQLiteDatabase::connect() {
+std::pair<bool, std::string> SQLiteDatabase::connect() {
     if (connected && connection) {
-        return true;
+        return {true, ""};
     }
 
     int rc = sqlite3_open(path.c_str(), &connection);
     if (rc != SQLITE_OK) {
-        std::cerr << "Can't open database: " << sqlite3_errmsg(connection) << std::endl;
-        return false;
+        std::string error = sqlite3_errmsg(connection);
+        std::cerr << "Can't open database: " << error << std::endl;
+        return {false, error};
     }
 
     std::cout << "Successfully connected to database: " << path << std::endl;
     connected = true;
-    return true;
+    return {true, ""};
 }
 
 void SQLiteDatabase::disconnect() {
@@ -56,7 +57,7 @@ DatabaseType SQLiteDatabase::getType() const {
 
 void SQLiteDatabase::refreshTables() {
     std::cout << "Refreshing tables for database: " << name << std::endl;
-    if (!connect()) {
+    if (!isConnected()) {
         std::cout << "Failed to connect to database" << std::endl;
         tablesLoaded = true;
         return;
@@ -94,7 +95,7 @@ void SQLiteDatabase::setTablesLoaded(bool loaded) {
 }
 
 std::string SQLiteDatabase::executeQuery(const std::string &query) {
-    if (!connect()) {
+    if (!isConnected()) {
         return "Error: Failed to connect to database";
     }
 
@@ -147,7 +148,7 @@ std::string SQLiteDatabase::executeQuery(const std::string &query) {
 std::vector<std::vector<std::string>>
 SQLiteDatabase::getTableData(const std::string &tableName, const int limit, const int offset) {
     std::vector<std::vector<std::string>> data;
-    if (!connect()) {
+    if (!isConnected()) {
         return data;
     }
 
@@ -172,7 +173,7 @@ SQLiteDatabase::getTableData(const std::string &tableName, const int limit, cons
 
 std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string &tableName) {
     std::vector<std::string> columnNames;
-    if (!connect()) {
+    if (!isConnected()) {
         return columnNames;
     }
 
@@ -189,7 +190,7 @@ std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string &table
 }
 
 int SQLiteDatabase::getRowCount(const std::string &tableName) {
-    if (!connect()) {
+    if (!isConnected()) {
         return 0;
     }
 

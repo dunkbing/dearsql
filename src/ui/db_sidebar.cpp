@@ -22,13 +22,14 @@ void DatabaseSidebar::render() {
     // Check if dialog completed and get result
     auto db = connectionDialog.getResult();
     if (db) {
-        if (db->connect()) {
+        auto [success, error] = db->connect();
+        if (success) {
             db->refreshTables();
             std::cout << "Adding database to list. Tables loaded: " << db->getTables().size()
                       << std::endl;
             app.addDatabase(db);
         } else {
-            std::cerr << "Failed to open database: " << db->getConnectionString() << std::endl;
+            std::cerr << "Failed to open database: " << error << std::endl;
         }
     }
 
@@ -67,7 +68,10 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
                   << std::endl;
         if (!db->isConnected()) {
             std::cout << "Database not connected, attempting to connect..." << std::endl;
-            db->connect();
+            auto [success, error] = db->connect();
+            if (!success) {
+                std::cerr << "Failed to connect: " << error << std::endl;
+            }
         }
         if (db->isConnected()) {
             db->refreshTables();

@@ -56,7 +56,7 @@ std::vector<std::vector<std::string>>
 QueryExecutor::getTableData(sqlite3 *db, const std::string &tableName, int limit, int offset) {
     std::vector<std::vector<std::string>> data;
     const std::string sql = "SELECT * FROM " + tableName + " LIMIT " + std::to_string(limit) +
-                      " OFFSET " + std::to_string(offset);
+                            " OFFSET " + std::to_string(offset);
 
     sqlite3_stmt *stmt;
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {

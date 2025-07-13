@@ -27,7 +27,7 @@ public:
     virtual ~DatabaseInterface() = default;
 
     // Connection management
-    virtual bool connect() = 0;
+    virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
     virtual bool isConnected() const = 0;
 

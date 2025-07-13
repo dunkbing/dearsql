@@ -29,8 +29,13 @@ void SQLEditorTab::render() {
 
         if (selectedDb >= 0 && selectedDb < (int)databases.size()) {
             auto &db = databases[selectedDb];
-            if (db->connect()) {
+            auto [success, error] = db->connect();
+            if (success) {
                 queryResult = db->executeQuery(sqlQuery);
+                strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+                resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+            } else {
+                queryResult = "Connection failed: " + error;
                 strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
                 resultBuffer[sizeof(resultBuffer) - 1] = '\0';
             }

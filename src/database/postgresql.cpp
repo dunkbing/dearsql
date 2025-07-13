@@ -20,21 +20,21 @@ PostgreSQLDatabase::~PostgreSQLDatabase() {
     disconnect();
 }
 
-bool PostgreSQLDatabase::connect() {
+std::pair<bool, std::string> PostgreSQLDatabase::connect() {
     if (connected && connection) {
-        return true;
+        return {true, ""};
     }
 
     try {
         connection = std::make_unique<pqxx::connection>(connectionString);
         std::cout << "Successfully connected to PostgreSQL database: " << database << std::endl;
         connected = true;
-        return true;
+        return {true, ""};
     } catch (const std::exception &e) {
         std::cerr << "Connection to database failed: " << e.what() << std::endl;
         connection.reset();
         connected = false;
-        return false;
+        return {false, e.what()};
     }
 }
 
@@ -67,10 +67,13 @@ DatabaseType PostgreSQLDatabase::getType() const {
 
 void PostgreSQLDatabase::refreshTables() {
     std::cout << "Refreshing tables for database: " << name << std::endl;
-    if (!connect()) {
-        std::cout << "Failed to connect to database" << std::endl;
-        tablesLoaded = true;
-        return;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cout << "Failed to connect to database: " << error << std::endl;
+            tablesLoaded = true;
+            return;
+        }
     }
 
     tables.clear();
@@ -105,8 +108,11 @@ void PostgreSQLDatabase::setTablesLoaded(bool loaded) {
 }
 
 std::string PostgreSQLDatabase::executeQuery(const std::string &query) {
-    if (!connect()) {
-        return "Error: Failed to connect to database";
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            return "Error: Failed to connect to database: " + error;
+        }
     }
 
     try {
@@ -159,8 +165,12 @@ std::string PostgreSQLDatabase::executeQuery(const std::string &query) {
 std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std::string &tableName,
                                                                        int limit, int offset) {
     std::vector<std::vector<std::string>> data;
-    if (!connect()) {
-        return data;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cerr << "Failed to connect: " << error << std::endl;
+            return data;
+        }
     }
 
     try {
@@ -186,8 +196,12 @@ std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std
 
 std::vector<std::string> PostgreSQLDatabase::getColumnNames(const std::string &tableName) {
     std::vector<std::string> columnNames;
-    if (!connect()) {
-        return columnNames;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cerr << "Failed to connect: " << error << std::endl;
+            return columnNames;
+        }
     }
 
     try {
@@ -208,8 +222,12 @@ std::vector<std::string> PostgreSQLDatabase::getColumnNames(const std::string &t
 }
 
 int PostgreSQLDatabase::getRowCount(const std::string &tableName) {
-    if (!connect()) {
-        return 0;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cerr << "Failed to connect: " << error << std::endl;
+            return 0;
+        }
     }
 
     try {

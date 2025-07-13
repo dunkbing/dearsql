@@ -7,3 +7,5 @@ AlignAfterOpenBracket: Align
 AllowShortFunctionsOnASingleLine: Empty
 ColumnLimit: 100
 MaxEmptyLinesToKeep: 1
+InsertNewlineAtEOF: true
+KeepEmptyLinesAtEOF: true

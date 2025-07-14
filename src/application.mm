@@ -500,6 +500,9 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
     ImGuiID dock_left, dock_right;
     ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, 0.25f, &dock_left, &dock_right);
 
+    // Make the left dock node non-dockable, but resizable
+    ImGui::DockBuilderGetNode(dock_left)->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+    
     // Dock windows to specific nodes
     ImGui::DockBuilderDockWindow("Databases", dock_left);
     ImGui::DockBuilderDockWindow("Content", dock_right);
@@ -541,12 +544,18 @@ void Application::renderMainUI() {
     // Setup default docking layout
     setupDockingLayout(dockspace_id);
 
-    // Database sidebar with theme-based tab highlighting
+    // Database sidebar with theme-based tab highlighting (fixed, non-moveable)
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
+    
+    // Make sidebar window non-moveable and non-dockable but resizable with constraints
+    ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+    ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
     databaseSidebar->render();
+    ImGui::End();
+    
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);
 

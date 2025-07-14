@@ -181,19 +181,14 @@ void Application::cleanup() {
 #ifdef USE_METAL_BACKEND
     ImGui_ImplMetal_Shutdown();
     std::cout << "ImGui Metal backend shutdown" << std::endl;
-    ImGui_ImplGlfw_Shutdown();
-    std::cout << "ImGui GLFW backend shutdown" << std::endl;
 #elif defined(USE_OPENGL_BACKEND)
     ImGui_ImplOpenGL3_Shutdown();
     std::cout << "ImGui OpenGL backend shutdown" << std::endl;
+#endif
     ImGui_ImplGlfw_Shutdown();
     std::cout << "ImGui GLFW backend shutdown" << std::endl;
-#endif
-    auto ctx = ImGui::GetCurrentContext();
-    if (ctx) {
-        ImGui::DestroyContext(ctx);
-        std::cout << "ImGui context destroyed" << std::endl;
-    }
+    ImGui::DestroyContext();
+    std::cout << "ImGui context destroyed" << std::endl;
 
     // Cleanup GLFW
     if (window) {
@@ -351,15 +346,20 @@ void Application::setupFonts() {
 
             if (fontName.find("CJK") != std::string::npos ||
                 fontName.find("Han") != std::string::npos) {
-                ranges = io.Fonts->GetGlyphRangesChineseFull();
+                continue; // Skip CJK fonts to avoid memory issues
             } else if (fontName.find("Cyrillic") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesCyrillic();
             } else {
-                ranges = io.Fonts->GetGlyphRangesJapanese(); // Default for broad coverage
+                ranges =
+                    io.Fonts->GetGlyphRangesDefault(); // Use default ranges instead of Japanese
             }
 
-            ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF((void *)font.data, font.size, 16.0f,
-                                                                &fontConfig, ranges);
+            // Create a copy of fontConfig for each font to avoid reuse issues
+            ImFontConfig embeddedFontConfig = fontConfig;
+            embeddedFontConfig.FontDataOwnedByAtlas =
+                false; // Don't let ImGui free the embedded data
+            ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF((void *)font.data, (int)font.size,
+                                                                16.0f, &embeddedFontConfig, ranges);
 
             if (loadedFont) {
                 std::cout << "✓ Successfully loaded embedded font: " << font.name << std::endl;
@@ -402,18 +402,13 @@ void Application::setupFonts() {
             const ImWchar *ranges = nullptr;
 
             // Choose appropriate glyph ranges based on font name
-            if (fontPath.find("CJK") != std::string::npos ||
-                fontPath.find("Han") != std::string::npos) {
-                ranges = io.Fonts->GetGlyphRangesJapanese();
-            } else if (fontPath.find("Cyrillic") != std::string::npos ||
-                       fontPath.find("NotoSans-Regular") != std::string::npos) {
+            if (fontPath.find("Cyrillic") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesCyrillic(); // Cyrillic + Latin
-            } else if (fontPath.find("unifont") != std::string::npos ||
-                       fontPath.find("Arabic") != std::string::npos) {
+            } else if (fontPath.find("unifont") != std::string::npos) {
                 ranges = nullptr; // Load all available glyphs for maximum coverage
             } else {
-                // For general fonts, use Japanese ranges for broad coverage (includes Latin + CJK)
-                ranges = io.Fonts->GetGlyphRangesJapanese();
+                // For general fonts, use default ranges
+                ranges = io.Fonts->GetGlyphRangesDefault();
             }
 
             ImFont *font =
@@ -437,32 +432,6 @@ void Application::setupFonts() {
                   << std::endl;
         fontConfig.MergeMode = false;
         io.Fonts->AddFontDefault(&fontConfig);
-
-        // Add Japanese characters to the default font
-        ImFontConfig japaneseConfig;
-        japaneseConfig.MergeMode = true;
-        japaneseConfig.GlyphOffset = ImVec2(0.0f, 0.0f);
-
-        // Try to find any available font and merge Japanese characters
-        for (const auto &fontPath : fontPaths) {
-            std::ifstream fontFile(fontPath);
-            if (fontFile.good()) {
-                fontFile.close();
-                // Use appropriate ranges for the fallback font too
-                const ImWchar *fallbackRanges =
-                    io.Fonts->GetGlyphRangesJapanese(); // Good default for broad coverage
-                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &japaneseConfig,
-                                             fallbackRanges);
-                if (fontPath.find("assets/fonts/") == 0) {
-                    std::cout << "✓ Merged Japanese characters from custom font: " << fontPath
-                              << std::endl;
-                } else {
-                    std::cout << "✓ Merged Japanese characters from system font: " << fontPath
-                              << std::endl;
-                }
-                break;
-            }
-        }
     }
 
     // Build the font atlas only for OpenGL backend

@@ -100,9 +100,15 @@ void Application::setupTitlebar() {
 
     // Make titlebar transparent and extend content under it
     nsWindow.titlebarAppearsTransparent = YES;
-    //    [nsWindow setStyleMask:[nsWindow styleMask] | NSWindowStyleMaskUnifiedTitleAndToolbar |
-    //    NSWindowStyleMaskFullSizeContentView]; [nsWindow setStyleMask:[nsWindow styleMask] |
-    //    NSWindowStyleMaskFullSizeContentView];
+    
+    // Add unified titlebar and full size content view to increase height
+//    [nsWindow setStyleMask:[nsWindow styleMask] | NSWindowStyleMaskUnifiedTitleAndToolbar | NSWindowStyleMaskFullSizeContentView];
+    
+    // Create and add a toolbar to increase titlebar height
+    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
+    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+    toolbar.showsBaselineSeparator = NO;
+    [nsWindow setToolbar:toolbar];
 
     // Set background color to match app theme
     const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;

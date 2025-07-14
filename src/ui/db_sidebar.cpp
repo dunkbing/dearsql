@@ -9,6 +9,9 @@ void DatabaseSidebar::render() {
     auto &app = Application::getInstance();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
+    
+    // ImGui::Dummy(ImVec2(0, 20)); // spacing
+    
     if (ImGui::Button("Open Database", ImVec2(-1, 0))) {
         connectionDialog.showDialog();
     }

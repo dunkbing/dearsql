@@ -24,6 +24,8 @@ size_t getEmbeddedFontCount();
 }
 
 #ifdef USE_METAL_BACKEND
+#import <AppKit/AppKit.h>
+#import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
@@ -78,12 +80,57 @@ bool Application::initialize() {
     signal(SIGINT, signal_handler);
 
 #ifdef USE_METAL_BACKEND
+    // Setup titlebar after window creation
+    setupTitlebar();
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
 #endif
     return true;
 }
+
+#ifdef USE_METAL_BACKEND
+void Application::setupTitlebar() {
+    // Get the native NSWindow from GLFW
+    NSWindow *nsWindow = glfwGetCocoaWindow(window);
+    if (!nsWindow) {
+        std::cerr << "Failed to get NSWindow from GLFW" << std::endl;
+        return;
+    }
+
+    // Make titlebar transparent and extend content under it
+    nsWindow.titlebarAppearsTransparent = YES;
+    //    [nsWindow setStyleMask:[nsWindow styleMask] | NSWindowStyleMaskUnifiedTitleAndToolbar |
+    //    NSWindowStyleMaskFullSizeContentView]; [nsWindow setStyleMask:[nsWindow styleMask] |
+    //    NSWindowStyleMaskFullSizeContentView];
+
+    // Set background color to match app theme
+    const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    NSColor *bgColor = [NSColor colorWithRed:colors.base.x
+                                       green:colors.base.y
+                                        blue:colors.base.z
+                                       alpha:colors.base.w];
+    [nsWindow setBackgroundColor:bgColor];
+    //    [nsWindow setBackgroundColor:[NSColor clearColor]];
+
+    // Keep title visible and draggable
+    //     nsWindow.titleVisibility = NSWindowTitleHidden;
+
+    std::cout << "Titlebar configured successfully" << std::endl;
+}
+
+float Application::getTitlebarHeight() const {
+    NSWindow *nsWindow = glfwGetCocoaWindow(window);
+    if (!nsWindow) {
+        return 0.0f;
+    }
+
+    // Get the titlebar height
+    NSRect frame = [nsWindow frame];
+    NSRect contentRect = [nsWindow contentRectForFrameRect:frame];
+    return frame.size.height - contentRect.size.height;
+}
+#endif
 
 void Application::run() {
 #ifdef USE_OPENGL_BACKEND
@@ -472,8 +519,8 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
     ImGuiWindowFlags window_flags =
-        ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
     ImGui::Begin("DockSpace Demo", nullptr, window_flags);

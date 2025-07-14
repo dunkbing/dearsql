@@ -134,4 +134,9 @@ private:
     void setupDockingLayout(ImGuiID dockSpaceId);
     void renderMainUI();
     void renderMenuBar();
+
+#ifdef USE_METAL_BACKEND
+    void setupTitlebar();
+    float getTitlebarHeight() const;
+#endif
 };

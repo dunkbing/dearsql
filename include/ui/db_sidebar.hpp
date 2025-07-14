@@ -8,6 +8,7 @@ public:
     ~DatabaseSidebar() = default;
 
     void render();
+    void showConnectionDialog();
 
 private:
     void renderDatabaseNode(size_t databaseIndex);
@@ -26,4 +27,5 @@ private:
 
     // Database connection dialog
     DatabaseConnectionDialog connectionDialog;
+    bool shouldShowConnectionDialog = false;
 };

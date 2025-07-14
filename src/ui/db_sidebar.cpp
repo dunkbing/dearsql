@@ -5,15 +5,20 @@
 #include "tabs/tab_manager.hpp"
 #include <iostream>
 
+void DatabaseSidebar::showConnectionDialog() {
+    // Set flag to show dialog on next render
+    shouldShowConnectionDialog = true;
+}
+
 void DatabaseSidebar::render() {
     auto &app = Application::getInstance();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
-    
-    // ImGui::Dummy(ImVec2(0, 20)); // spacing
-    
-    if (ImGui::Button("Open Database", ImVec2(-1, 0))) {
+
+    // Check if we should show the connection dialog
+    if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
+        shouldShowConnectionDialog = false;
     }
 
     // Always render the dialog to handle multi-frame interactions

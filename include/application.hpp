@@ -94,6 +94,11 @@ public:
         return window;
     }
 
+#ifdef USE_METAL_BACKEND
+    // Toolbar actions
+    void onConnectButtonClicked();
+#endif
+
 private:
     Application() = default;
     ~Application() = default;

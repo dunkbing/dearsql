@@ -10,7 +10,7 @@
 #include <fstream>
 #include <imgui_internal.h>
 #include <iostream>
-#include <signal.h>
+#include <csignal>
 
 // Forward declarations for embedded fonts
 extern "C" {
@@ -29,6 +29,55 @@ size_t getEmbeddedFontCount();
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
+
+// Toolbar delegate interface
+@interface ToolbarDelegate : NSObject <NSToolbarDelegate>
+@property(nonatomic, assign) Application *app;
+@end
+
+@implementation ToolbarDelegate
+- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
+    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
+    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
+}
+
+- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
+        itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
+    willBeInsertedIntoToolbar:(BOOL)flag {
+    if ([itemIdentifier isEqualToString:@"ConnectButton"]) {
+        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        item.label = @"";
+        item.paletteLabel = @"Connect";
+        item.toolTip = @"Connect to Database";
+
+        NSButton *button = [[NSButton alloc] init];
+        [button setTitle:@"Connect"];
+        [button setButtonType:NSButtonTypeMomentaryPushIn];
+        [button setBezelStyle:NSBezelStyleRounded];
+        [button setTarget:self];
+        [button setAction:@selector(connectButtonClicked:)];
+        [button sizeToFit];
+
+        item.view = button;
+        return item;
+    }
+    return nil;
+}
+
+- (void)connectButtonClicked:(id)sender {
+    @try {
+        if (self.app) {
+            self.app->onConnectButtonClicked();
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in connectButtonClicked: %@", exception);
+    }
+}
+@end
+
 #endif
 
 static void signal_handler(int signal) {
@@ -100,14 +149,20 @@ void Application::setupTitlebar() {
 
     // Make titlebar transparent and extend content under it
     nsWindow.titlebarAppearsTransparent = YES;
-    
+
     // Add unified titlebar and full size content view to increase height
-//    [nsWindow setStyleMask:[nsWindow styleMask] | NSWindowStyleMaskUnifiedTitleAndToolbar | NSWindowStyleMaskFullSizeContentView];
-    
+    [nsWindow setStyleMask:[nsWindow styleMask]];
+
     // Create and add a toolbar to increase titlebar height
     NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
     toolbar.showsBaselineSeparator = NO;
+
+    // Set up toolbar delegate - keep strong reference to prevent deallocation
+    static ToolbarDelegate *toolbarDelegate = [[ToolbarDelegate alloc] init];
+    toolbarDelegate.app = this;
+    toolbar.delegate = toolbarDelegate;
+
     [nsWindow setToolbar:toolbar];
 
     // Set background color to match app theme
@@ -135,6 +190,21 @@ float Application::getTitlebarHeight() const {
     NSRect frame = [nsWindow frame];
     NSRect contentRect = [nsWindow contentRectForFrameRect:frame];
     return frame.size.height - contentRect.size.height;
+}
+
+void Application::onConnectButtonClicked() {
+    std::cout << "Connect button clicked" << std::endl;
+    try {
+        // Show the connection dialog
+        if (databaseSidebar) {
+            std::cout << "Showing connection dialog" << std::endl;
+            databaseSidebar->showConnectionDialog();
+        } else {
+            std::cerr << "DatabaseSidebar is null" << std::endl;
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "Exception in onConnectButtonClicked: " << e.what() << std::endl;
+    }
 }
 #endif
 
@@ -507,9 +577,16 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
     ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, 0.25f, &dock_left, &dock_right);
 
     // Make the left dock node non-dockable, but resizable
-    ImGui::DockBuilderGetNode(dock_left)->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
-    
+    // ImGui::DockBuilderGetNode(dock_left)->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+
     // Dock windows to specific nodes
+    // Make both dock nodes non-dockable and non-tabbed
+    ImGui::DockBuilderGetNode(dock_left)->LocalFlags |=
+        ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+    ImGui::DockBuilderGetNode(dock_right)->LocalFlags |=
+        ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+
+    // Dock windows to fixed positions
     ImGui::DockBuilderDockWindow("Databases", dock_left);
     ImGui::DockBuilderDockWindow("Content", dock_right);
 
@@ -555,22 +632,22 @@ void Application::renderMainUI() {
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
-    
+
     // Make sidebar window non-moveable and non-dockable but resizable with constraints
     ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
     databaseSidebar->render();
     ImGui::End();
-    
+
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);
 
-    // Main content area with theme-based tab highlighting
+    // Main content area - docked to the right, fixed in place
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
-    ImGui::Begin("Content");
+    ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
     if (tabManager->isEmpty()) {
         tabManager->renderEmptyState();
     } else {

@@ -87,6 +87,7 @@ public:
         return databases;
     }
     void addDatabase(const std::shared_ptr<DatabaseInterface> &db);
+    void removeDatabase(size_t index);
     void restorePreviousConnections();
 
     // Window reference

@@ -331,6 +331,24 @@ void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
     databases.push_back(db);
 }
 
+void Application::removeDatabase(size_t index) {
+    if (index < databases.size()) {
+        auto &db = databases[index];
+        if (db) {
+            db->disconnect();
+        }
+        databases.erase(databases.begin() + index);
+
+        // Update selection if needed
+        if (selectedDatabase == static_cast<int>(index)) {
+            selectedDatabase = -1;
+            selectedTable = -1;
+        } else if (selectedDatabase > static_cast<int>(index)) {
+            selectedDatabase--;
+        }
+    }
+}
+
 void Application::restorePreviousConnections() {
     if (!appState) {
         return;

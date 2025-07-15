@@ -50,6 +50,58 @@ void DatabaseSidebar::render() {
     }
 
     ImGui::PopStyleVar();
+
+    // Handle delete confirmation dialog
+    if (shouldShowDeleteConfirmation) {
+        ImGui::OpenPopup("Confirm Delete Database");
+        shouldShowDeleteConfirmation = false;
+    }
+
+    if (ImGui::BeginPopupModal("Confirm Delete Database", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        auto &databases = app.getDatabases();
+        if (databaseToDelete < databases.size()) {
+            auto &db = databases[databaseToDelete];
+            ImGui::Text("Are you sure you want to remove this database connection?");
+            ImGui::Text("Database: %s", db->getName().c_str());
+            ImGui::Spacing();
+            ImGui::Text("This will:");
+            ImGui::BulletText("Remove the database from the current session");
+            ImGui::BulletText("Delete the saved connection (if any)");
+            ImGui::BulletText("Close any open tabs for this database");
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            if (ImGui::Button("Remove", ImVec2(100, 0))) {
+                // Remove from saved connections by finding matching connection
+                auto savedConnections = app.getAppState()->getSavedConnections();
+                for (const auto &conn : savedConnections) {
+                    bool matches = false;
+                    if (db->getType() == DatabaseType::POSTGRESQL && conn.type == "postgresql") {
+                        matches = (conn.name == db->getName());
+                    } else if (db->getType() == DatabaseType::SQLITE && conn.type == "sqlite") {
+                        matches = (conn.path == db->getPath());
+                    }
+
+                    if (matches) {
+                        app.getAppState()->deleteConnection(conn.id);
+                        break;
+                    }
+                }
+
+                // Remove from application
+                app.removeDatabase(databaseToDelete);
+
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
     ImGui::End();
 }
 
@@ -187,6 +239,11 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
         }
         if (ImGui::MenuItem("Disconnect")) {
             db->disconnect();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Remove Database")) {
+            shouldShowDeleteConfirmation = true;
+            databaseToDelete = databaseIndex;
         }
         ImGui::EndPopup();
     }

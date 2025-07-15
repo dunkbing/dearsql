@@ -41,6 +41,10 @@ public:
     virtual std::vector<Table> &getTables() = 0;
     virtual bool areTablesLoaded() const = 0;
     virtual void setTablesLoaded(bool loaded) = 0;
+    virtual bool isLoadingTables() const {
+        return false;
+    }
+    virtual void checkAsyncTablesStatus() {}
 
     // View management
     virtual void refreshViews() = 0;
@@ -48,6 +52,10 @@ public:
     virtual std::vector<Table> &getViews() = 0;
     virtual bool areViewsLoaded() const = 0;
     virtual void setViewsLoaded(bool loaded) = 0;
+    virtual bool isLoadingViews() const {
+        return false;
+    }
+    virtual void checkAsyncViewsStatus() {}
 
     // Sequence management (Postgres)
     virtual void refreshSequences() = 0;
@@ -55,6 +63,10 @@ public:
     virtual std::vector<std::string> &getSequences() = 0;
     virtual bool areSequencesLoaded() const = 0;
     virtual void setSequencesLoaded(bool loaded) = 0;
+    virtual bool isLoadingSequences() const {
+        return false;
+    }
+    virtual void checkAsyncSequencesStatus() {}
 
     // Query execution
     virtual std::string executeQuery(const std::string &query) = 0;

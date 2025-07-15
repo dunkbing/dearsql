@@ -30,9 +30,11 @@ void DatabaseSidebar::render() {
     if (const auto db = connectionDialog.getResult()) {
         auto [success, error] = db->connect();
         if (success) {
-            db->refreshTables();
-            std::cout << "Adding database to list. Tables loaded: " << db->getTables().size()
-                      << std::endl;
+            // Only refresh tables immediately for SQLite, PostgreSQL will do it async when needed
+            if (db->getType() == DatabaseType::SQLITE) {
+                db->refreshTables();
+            }
+            std::cout << "Adding database to list." << std::endl;
             app.addDatabase(db);
         } else {
             std::cerr << "Failed to open database: " << error << std::endl;
@@ -87,6 +89,19 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
         } else if (db->isConnected()) {
+            // Check for async loading completion for PostgreSQL
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                if (db->isLoadingTables()) {
+                    db->checkAsyncTablesStatus();
+                }
+                if (db->isLoadingViews()) {
+                    db->checkAsyncViewsStatus();
+                }
+                if (db->isLoadingSequences()) {
+                    db->checkAsyncSequencesStatus();
+                }
+            }
+
             // Show hierarchical structure based on database type
             if (db->getType() == DatabaseType::SQLITE) {
                 renderSQLiteHierarchy(databaseIndex);
@@ -258,10 +273,17 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
                                      ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                      ImGuiTreeNodeFlags_FramePadding;
 
-    bool tablesOpen = ImGui::TreeNodeEx("Tables", tablesFlags);
+    // Show loading indicator next to Tables node if loading
+    std::string tablesLabel = "Tables";
+    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables()) {
+        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+        tablesLabel += " " + std::string(1, spinner);
+    }
+
+    bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
     // Load tables when the tree node is opened and tables haven't been loaded yet
-    if (tablesOpen && !db->areTablesLoaded()) {
+    if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
         std::cout << "Tables node expanded and tables not loaded yet, attempting to load..."
                   << std::endl;
         db->refreshTables();
@@ -269,7 +291,11 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
 
     if (tablesOpen) {
         if (db->getTables().empty()) {
-            if (!db->areTablesLoaded()) {
+            if (db->isLoadingTables()) {
+                // Show loading indicator with spinner
+                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+                ImGui::Text("  Loading tables... %c", spinner);
+            } else if (!db->areTablesLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
                 ImGui::Text("  No tables found");
@@ -292,10 +318,17 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                     ImGuiTreeNodeFlags_FramePadding;
 
-    bool viewsOpen = ImGui::TreeNodeEx("Views", viewsFlags);
+    // Show loading indicator next to Views node if loading
+    std::string viewsLabel = "Views";
+    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews()) {
+        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+        viewsLabel += " " + std::string(1, spinner);
+    }
+
+    bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
     // Load views when the tree node is opened and views haven't been loaded yet
-    if (viewsOpen && !db->areViewsLoaded()) {
+    if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
         std::cout << "Views node expanded and views not loaded yet, attempting to load..."
                   << std::endl;
         db->refreshViews();
@@ -303,7 +336,11 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
 
     if (viewsOpen) {
         if (db->getViews().empty()) {
-            if (!db->areViewsLoaded()) {
+            if (db->isLoadingViews()) {
+                // Show loading indicator with spinner
+                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+                ImGui::Text("  Loading views... %c", spinner);
+            } else if (!db->areViewsLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
                 ImGui::Text("  No views found");
@@ -331,10 +368,17 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                         ImGuiTreeNodeFlags_FramePadding;
 
-    bool sequencesOpen = ImGui::TreeNodeEx("Sequences", sequencesFlags);
+    // Show loading indicator next to Sequences node if loading
+    std::string sequencesLabel = "Sequences";
+    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences()) {
+        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+        sequencesLabel += " " + std::string(1, spinner);
+    }
+
+    bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
     // Load sequences when the tree node is opened and sequences haven't been loaded yet
-    if (sequencesOpen && !db->areSequencesLoaded()) {
+    if (sequencesOpen && !db->areSequencesLoaded() && !db->isLoadingSequences()) {
         std::cout << "Sequences node expanded and sequences not loaded yet, attempting to load..."
                   << std::endl;
         db->refreshSequences();
@@ -342,7 +386,11 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
 
     if (sequencesOpen) {
         if (db->getSequences().empty()) {
-            if (!db->areSequencesLoaded()) {
+            if (db->isLoadingSequences()) {
+                // Show loading indicator with spinner
+                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+                ImGui::Text("  Loading sequences... %c", spinner);
+            } else if (!db->areSequencesLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
                 ImGui::Text("  No sequences found");

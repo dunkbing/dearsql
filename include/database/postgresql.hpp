@@ -1,8 +1,11 @@
 #pragma once
 
 #include "db_interface.hpp"
+#include <atomic>
+#include <future>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
+#include <thread>
 
 class PostgreSQLDatabase : public DatabaseInterface {
 public:
@@ -29,6 +32,8 @@ public:
     std::vector<Table> &getTables() override;
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
+    bool isLoadingTables() const override;
+    void checkAsyncTablesStatus() override;
 
     // View management
     void refreshViews() override;
@@ -36,6 +41,8 @@ public:
     std::vector<Table> &getViews() override;
     bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
+    bool isLoadingViews() const override;
+    void checkAsyncViewsStatus() override;
 
     // Sequence management
     void refreshSequences() override;
@@ -43,6 +50,8 @@ public:
     std::vector<std::string> &getSequences() override;
     bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
+    bool isLoadingSequences() const override;
+    void checkAsyncSequencesStatus() override;
 
     // Query execution
     std::string executeQuery(const std::string &query) override;
@@ -68,6 +77,14 @@ protected:
     std::vector<Column> getViewColumns(const std::string &viewName) override;
     std::vector<std::string> getSequenceNames() override;
 
+    // Async loading helpers
+    void startAsyncTableRefresh();
+    std::vector<Table> getTablesWithColumnsAsync();
+    void startAsyncViewRefresh();
+    std::vector<Table> getViewsWithColumnsAsync();
+    void startAsyncSequenceRefresh();
+    std::vector<std::string> getSequencesAsync();
+
 private:
     std::string name;
     std::string host;
@@ -87,4 +104,17 @@ private:
     bool sequencesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
+
+    // Async loading
+    std::atomic<bool> loadingTables = false;
+    std::thread tablesThread;
+    std::future<std::vector<Table>> tablesFuture;
+
+    std::atomic<bool> loadingViews = false;
+    std::thread viewsThread;
+    std::future<std::vector<Table>> viewsFuture;
+
+    std::atomic<bool> loadingSequences = false;
+    std::thread sequencesThread;
+    std::future<std::vector<std::string>> sequencesFuture;
 };

@@ -8,6 +8,6 @@
 [submodule "external/nativefiledialog-extended"]
 	path = external/nativefiledialog-extended
 	url = https://github.com/btzy/nativefiledialog-extended.git
-[submodule "external/libpqxx"]
-	path = external/libpqxx
-	url = https://github.com/jtv/libpqxx.git
+[submodule "external/soci"]
+	path = external/soci
+	url = https://github.com/SOCI/soci

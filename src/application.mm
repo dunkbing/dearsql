@@ -7,10 +7,10 @@
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
+#include <csignal>
 #include <fstream>
 #include <imgui_internal.h>
 #include <iostream>
-#include <csignal>
 
 // Forward declarations for embedded fonts
 extern "C" {
@@ -156,7 +156,7 @@ void Application::setupTitlebar() {
     // Create and add a toolbar to increase titlebar height
     NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-    toolbar.showsBaselineSeparator = NO;
+    //    toolbar.showsBaselineSeparator = NO;
 
     // Set up toolbar delegate - keep strong reference to prevent deallocation
     static ToolbarDelegate *toolbarDelegate = [[ToolbarDelegate alloc] init];

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "db_interface.hpp"
-#include <sqlite3.h>
+#include <soci/soci.h>
+#include <soci/sqlite3/soci-sqlite3.h>
 
 class SQLiteDatabase : public DatabaseInterface {
 public:
@@ -68,7 +69,7 @@ protected:
 private:
     std::string name;
     std::string path;
-    sqlite3 *connection = nullptr;
+    std::unique_ptr<soci::session> session;
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences; // Empty for SQLite

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <typeinfo>
 
 PostgreSQLDatabase::PostgreSQLDatabase(const std::string &name, const std::string &host, int port,
                                        const std::string &database, const std::string &username,
@@ -22,21 +23,21 @@ PostgreSQLDatabase::~PostgreSQLDatabase() {
 
 std::pair<bool, std::string> PostgreSQLDatabase::connect() {
     std::cout << "Connection string: " << connectionString << std::endl;
-    if (connected && connection) {
+    if (connected && session) {
         return {true, ""};
     }
 
     attemptedConnection = true;
 
     try {
-        connection = std::make_unique<pqxx::connection>(connectionString);
+        session = std::make_unique<soci::session>(soci::postgresql, connectionString);
         std::cout << "Successfully connected to PostgreSQL database: " << database << std::endl;
         connected = true;
         lastConnectionError.clear();
         return {true, ""};
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Connection to database failed: " << e.what() << std::endl;
-        connection.reset();
+        session.reset();
         connected = false;
         lastConnectionError = e.what();
         return {false, e.what()};
@@ -44,18 +45,14 @@ std::pair<bool, std::string> PostgreSQLDatabase::connect() {
 }
 
 void PostgreSQLDatabase::disconnect() {
-    if (!connection) {
-        return;
-    }
-    auto conn = connection.get();
-    if (conn->is_open()) {
-        conn->close();
+    if (session) {
+        session.reset();
     }
     connected = false;
 }
 
 bool PostgreSQLDatabase::isConnected() const {
-    return connected && connection && connection->is_open();
+    return connected && session;
 }
 
 const std::string &PostgreSQLDatabase::getName() const {
@@ -86,7 +83,7 @@ void PostgreSQLDatabase::refreshTables() {
     }
 
     tables.clear();
-    std::vector<std::string> tableNames = getTableNames();
+    const std::vector<std::string> tableNames = getTableNames();
     std::cout << "Found " << tableNames.size() << " tables" << std::endl;
 
     for (const auto &tableName : tableNames) {
@@ -125,48 +122,57 @@ std::string PostgreSQLDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        pqxx::work txn(*connection);
-        pqxx::result result = txn.exec(query);
-
         std::stringstream output;
+        const soci::rowset rs = session->prepare << query;
 
-        if (!result.empty()) {
-            // Headers
-            for (size_t i = 0; i < result.columns(); ++i) {
-                output << result.column_name(i);
-                if (i < result.columns() - 1)
+        // Get column names if available
+        auto it = rs.begin();
+        if (it != rs.end()) {
+            const soci::row &firstRow = *it;
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                output << firstRow.get_properties(i).get_name();
+                if (i < firstRow.size() - 1)
                     output << " | ";
             }
             output << "\n";
 
-            // Separator
-            for (size_t i = 0; i < result.columns(); ++i) {
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
                 output << "----------";
-                if (i < result.columns() - 1)
+                if (i < firstRow.size() - 1)
                     output << "-+-";
             }
             output << "\n";
+        }
 
-            // Data rows (limit to 1000)
-            size_t rowLimit = std::min(result.size(), 1000);
-            for (size_t i = 0; i < rowLimit; ++i) {
-                for (size_t j = 0; j < result.columns(); ++j) {
-                    output << (result[i][j].is_null() ? "NULL" : result[i][j].c_str());
-                    if (j < result.columns() - 1)
-                        output << " | ";
+        int rowCount = 0;
+        for (const auto &row : rs) {
+            if (rowCount >= 1000)
+                break;
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                if (row.get_indicator(i) == soci::i_null) {
+                    output << "NULL";
+                } else {
+                    try {
+                        output << row.get<std::string>(i);
+                    } catch (const std::bad_cast &) {
+                        output << "[BINARY DATA]";
+                    }
                 }
-                output << "\n";
+                if (i < row.size() - 1)
+                    output << " | ";
             }
+            output << "\n";
+            rowCount++;
+        }
 
-            if (result.size() > 1000) {
-                output << "\n... (showing first 1000 rows)";
-            }
-        } else {
-            output << "Query executed successfully. Rows affected: " << result.affected_rows();
+        if (rowCount == 0) {
+            output << "Query executed successfully.";
+        } else if (rowCount == 1000) {
+            output << "\n... (showing first 1000 rows)";
         }
 
         return output.str();
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         return "Error: " + std::string(e.what());
     }
 }
@@ -183,20 +189,27 @@ std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std
     }
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT * FROM " + txn.quote_name(tableName) + " LIMIT " +
-                          std::to_string(limit) + " OFFSET " + std::to_string(offset);
+        const std::string sql = "SELECT * FROM \"" + tableName + "\" LIMIT " +
+                                std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
-        pqxx::result result = txn.exec(sql);
+        soci::rowset<soci::row> rs = session->prepare << sql;
 
-        for (const auto &row : result) {
+        for (const auto &row : rs) {
             std::vector<std::string> rowData;
-            for (size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(row[i].is_null() ? "NULL" : row[i].c_str());
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                if (row.get_indicator(i) == soci::i_null) {
+                    rowData.emplace_back("NULL");
+                } else {
+                    try {
+                        rowData.push_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.emplace_back("[BINARY DATA]");
+                    }
+                }
             }
             data.push_back(rowData);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Error getting table data: " << e.what() << std::endl;
     }
 
@@ -214,16 +227,16 @@ std::vector<std::string> PostgreSQLDatabase::getColumnNames(const std::string &t
     }
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT column_name FROM information_schema.columns WHERE table_name = " +
-                          txn.quote(tableName) + " ORDER BY ordinal_position";
+        std::string sql =
+            "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName +
+            "' ORDER BY ordinal_position";
 
-        pqxx::result result = txn.exec(sql);
+        soci::rowset<soci::row> rs = session->prepare << sql;
 
-        for (const auto &row : result) {
-            columnNames.push_back(row[0].c_str());
+        for (const auto &row : rs) {
+            columnNames.push_back(row.get<std::string>(0));
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Error getting column names: " << e.what() << std::endl;
     }
 
@@ -240,18 +253,14 @@ int PostgreSQLDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT COUNT(*) FROM " + txn.quote_name(tableName);
-        pqxx::result result = txn.exec(sql);
-
-        if (!result.empty()) {
-            return result[0][0].as<int>();
-        }
-    } catch (const std::exception &e) {
+        std::string sql = "SELECT COUNT(*) FROM \"" + tableName + "\"";
+        int count = 0;
+        *session << sql, soci::into(count);
+        return count;
+    } catch (const soci::soci_error &e) {
         std::cerr << "Error getting row count: " << e.what() << std::endl;
+        return 0;
     }
-
-    return 0;
 }
 
 bool PostgreSQLDatabase::isExpanded() const {
@@ -279,26 +288,25 @@ void PostgreSQLDatabase::setLastConnectionError(const std::string &error) {
 }
 
 void *PostgreSQLDatabase::getConnection() const {
-    return connection.get();
+    return session.get();
 }
 
 std::vector<std::string> PostgreSQLDatabase::getTableNames() {
     std::vector<std::string> tableNames;
 
     try {
-        pqxx::work txn(*connection);
         std::string sql =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
 
         std::cout << "Executing query to get table names..." << std::endl;
-        pqxx::result result = txn.exec(sql);
+        soci::rowset<soci::row> rs = session->prepare << sql;
 
-        for (const auto &row : result) {
-            std::string tableName = row[0].c_str();
+        for (const auto &row : rs) {
+            auto tableName = row.get<std::string>(0);
             std::cout << "Found table: " << tableName << std::endl;
             tableNames.push_back(tableName);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Failed to execute query: " << e.what() << std::endl;
     }
 
@@ -310,31 +318,32 @@ std::vector<Column> PostgreSQLDatabase::getTableColumns(const std::string &table
     std::vector<Column> columns;
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable, "
-                          "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN true ELSE false END "
-                          "as is_primary_key "
-                          "FROM information_schema.columns c "
-                          "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
-                          "kcu.column_name AND c.table_name = kcu.table_name "
-                          "LEFT JOIN information_schema.table_constraints tc ON "
-                          "kcu.constraint_name = tc.constraint_name "
-                          "WHERE c.table_name = " +
-                          txn.quote(tableName) +
-                          " "
-                          "ORDER BY c.ordinal_position";
+        const std::string sql =
+            "SELECT c.column_name, c.data_type, c.is_nullable, "
+            "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
+            "as is_primary_key "
+            "FROM information_schema.columns c "
+            "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
+            "kcu.column_name AND c.table_name = kcu.table_name "
+            "LEFT JOIN information_schema.table_constraints tc ON "
+            "kcu.constraint_name = tc.constraint_name "
+            "WHERE c.table_name = '" +
+            tableName +
+            "' "
+            "ORDER BY c.ordinal_position";
 
-        pqxx::result result = txn.exec(sql);
+        soci::rowset<soci::row> rs = session->prepare << sql;
 
-        for (const auto &row : result) {
+        for (const auto &row : rs) {
             Column col;
-            col.name = row[0].c_str();
-            col.type = row[1].c_str();
-            col.isNotNull = std::string(row[2].c_str()) == "NO";
-            col.isPrimaryKey = row[3].as<bool>();
+            col.name = row.get<std::string>(0);
+            col.type = row.get<std::string>(1);
+            col.isNotNull = row.get<std::string>(2) == "NO";
+            auto isPkStr = row.get<std::string>(3);
+            col.isPrimaryKey = (isPkStr == "true");
             columns.push_back(col);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Error getting table columns: " << e.what() << std::endl;
     }
 
@@ -422,19 +431,18 @@ std::vector<std::string> PostgreSQLDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
-        pqxx::work txn(*connection);
         std::string sql =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
 
         std::cout << "Executing query to get view names..." << std::endl;
-        pqxx::result result = txn.exec(sql);
+        soci::rowset<soci::row> rs = session->prepare << sql;
 
-        for (const auto &row : result) {
-            std::string viewName = row[0].c_str();
+        for (const auto &row : rs) {
+            auto viewName = row.get<std::string>(0);
             std::cout << "Found view: " << viewName << std::endl;
             viewNames.push_back(viewName);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Failed to execute query: " << e.what() << std::endl;
     }
 
@@ -446,25 +454,24 @@ std::vector<Column> PostgreSQLDatabase::getViewColumns(const std::string &viewNa
     std::vector<Column> columns;
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
-                          "FROM information_schema.columns c "
-                          "WHERE c.table_name = " +
-                          txn.quote(viewName) +
-                          " "
-                          "ORDER BY c.ordinal_position";
+        const std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
+                                "FROM information_schema.columns c "
+                                "WHERE c.table_name = '" +
+                                viewName +
+                                "' "
+                                "ORDER BY c.ordinal_position";
 
-        pqxx::result result = txn.exec(sql);
+        const soci::rowset rs = session->prepare << sql;
 
-        for (const auto &row : result) {
+        for (const auto &row : rs) {
             Column col;
-            col.name = row[0].c_str();
-            col.type = row[1].c_str();
-            col.isNotNull = std::string(row[2].c_str()) == "NO";
+            col.name = row.get<std::string>(0);
+            col.type = row.get<std::string>(1);
+            col.isNotNull = row.get<std::string>(2) == "NO";
             col.isPrimaryKey = false; // Views don't have primary keys
             columns.push_back(col);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Error getting view columns: " << e.what() << std::endl;
     }
 
@@ -475,19 +482,19 @@ std::vector<std::string> PostgreSQLDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
-        pqxx::work txn(*connection);
-        std::string sql = "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
-                          "BY sequencename";
+        const std::string sql =
+            "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
+            "BY sequencename";
 
         std::cout << "Executing query to get sequence names..." << std::endl;
-        pqxx::result result = txn.exec(sql);
+        const soci::rowset rs = session->prepare << sql;
 
-        for (const auto &row : result) {
-            std::string sequenceName = row[0].c_str();
+        for (const auto &row : rs) {
+            auto sequenceName = row.get<std::string>(0);
             std::cout << "Found sequence: " << sequenceName << std::endl;
             sequenceNames.push_back(sequenceName);
         }
-    } catch (const std::exception &e) {
+    } catch (const soci::soci_error &e) {
         std::cerr << "Failed to execute query: " << e.what() << std::endl;
     }
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.23)
 project(dear-sql)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Dependencies
 add_subdirectory(external/json)
+add_subdirectory(external/soci)
 
-# Find SQLite3
+# Find system packages
+find_package(glfw3 3.3 REQUIRED)
 find_package(SQLite3 REQUIRED)
-
-# Add libpqxx as subdirectory with specific compiler flags
-add_subdirectory(external/libpqxx build-pqxx)
+find_package(PostgreSQL REQUIRED)
 
 # Native File Dialog Extended (as git submodule)
 add_subdirectory(external/nativefiledialog-extended)
@@ -68,7 +68,6 @@ set(APP_SOURCES
     src/app_state.cpp
 
     # Database
-    src/database/db.cpp
     src/database/query_executor.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
@@ -141,16 +140,18 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui
     external/imgui/backends
     external/json/include
+    external/soci/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
-    SQLite::SQLite3
+    soci_core
+    soci_sqlite3
+    soci_postgresql
     nlohmann_json::nlohmann_json
     nfd
-    pqxx
 )
 
 # Platform-specific linking

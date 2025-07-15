@@ -1,6 +1,5 @@
 #include "tabs/tab.hpp"
 #include "application.hpp"
-#include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
 

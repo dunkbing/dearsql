@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <sqlite3.h>
 #include <string>
 #include <vector>
 
@@ -37,7 +36,7 @@ public:
     const std::string &getPath() const {
         return path;
     }
-    sqlite3 *getConnection() const {
+    void *getConnection() const {
         return connection;
     }
     const std::vector<Table> &getTables() const {
@@ -67,7 +66,7 @@ public:
 private:
     std::string name;
     std::string path;
-    sqlite3 *connection = nullptr;
+    void *connection = nullptr;
     std::vector<Table> tables;
     bool connected = false;
     bool expanded = false;

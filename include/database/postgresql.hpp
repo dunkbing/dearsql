@@ -1,10 +1,8 @@
 #pragma once
 
 #include "db_interface.hpp"
-#include <pqxx/pqxx>
-#ifdef PQXX_HAVE_CXA_DEMANGLE
-#undef PQXX_HAVE_CXA_DEMANGLE
-#endif
+#include <soci/postgresql/soci-postgresql.h>
+#include <soci/soci.h>
 
 class PostgreSQLDatabase : public DatabaseInterface {
 public:
@@ -78,7 +76,7 @@ private:
     std::string username;
     std::string password;
     std::string connectionString;
-    std::unique_ptr<pqxx::connection> connection;
+    std::unique_ptr<soci::session> session;
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences;

@@ -4,7 +4,7 @@
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-class SQLiteDatabase : public DatabaseInterface {
+class SQLiteDatabase final : public DatabaseInterface {
 public:
     SQLiteDatabase(std::string name, std::string path);
     ~SQLiteDatabase() override;

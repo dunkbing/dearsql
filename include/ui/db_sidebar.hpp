@@ -16,7 +16,7 @@ private:
     void renderViewNode(size_t databaseIndex, size_t viewIndex);
     void renderSequenceNode(size_t databaseIndex, size_t sequenceIndex);
     void renderSQLiteHierarchy(size_t databaseIndex);
-    void renderPostgreSQLHierarchy(size_t databaseIndex);
+    void renderPostgresHierarchy(size_t databaseIndex);
     void renderTablesSection(size_t databaseIndex);
     void renderViewsSection(size_t databaseIndex);
     void renderSequencesSection(size_t databaseIndex);

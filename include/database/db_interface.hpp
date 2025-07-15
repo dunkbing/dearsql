@@ -49,7 +49,7 @@ public:
     virtual bool areViewsLoaded() const = 0;
     virtual void setViewsLoaded(bool loaded) = 0;
 
-    // Sequence management (PostgreSQL only)
+    // Sequence management (Postgres)
     virtual void refreshSequences() = 0;
     virtual const std::vector<std::string> &getSequences() const = 0;
     virtual std::vector<std::string> &getSequences() = 0;

@@ -27,8 +27,7 @@ void DatabaseSidebar::render() {
     }
 
     // Check if dialog completed and get result
-    auto db = connectionDialog.getResult();
-    if (db) {
+    if (const auto db = connectionDialog.getResult()) {
         auto [success, error] = db->connect();
         if (success) {
             db->refreshTables();
@@ -92,14 +91,14 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             if (db->getType() == DatabaseType::SQLITE) {
                 renderSQLiteHierarchy(databaseIndex);
             } else if (db->getType() == DatabaseType::POSTGRESQL) {
-                renderPostgreSQLHierarchy(databaseIndex);
+                renderPostgresHierarchy(databaseIndex);
             }
         }
         ImGui::TreePop();
     }
 }
 
-void DatabaseSidebar::renderTableNode(size_t databaseIndex, size_t tableIndex) {
+void DatabaseSidebar::renderTableNode(const size_t databaseIndex, const size_t tableIndex) {
     auto &app = Application::getInstance();
     auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
@@ -244,7 +243,7 @@ void DatabaseSidebar::renderSQLiteHierarchy(size_t databaseIndex) {
     renderViewsSection(databaseIndex);
 }
 
-void DatabaseSidebar::renderPostgreSQLHierarchy(size_t databaseIndex) {
+void DatabaseSidebar::renderPostgresHierarchy(size_t databaseIndex) {
     renderTablesSection(databaseIndex);
     renderViewsSection(databaseIndex);
     renderSequencesSection(databaseIndex);

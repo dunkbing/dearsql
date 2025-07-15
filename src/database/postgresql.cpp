@@ -332,7 +332,7 @@ std::vector<Column> PostgreSQLDatabase::getTableColumns(const std::string &table
             "' "
             "ORDER BY c.ordinal_position";
 
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             Column col;

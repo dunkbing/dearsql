@@ -2,8 +2,11 @@
 
 #include "app_state.hpp"
 #include "database/db_interface.hpp"
+#include <atomic>
+#include <future>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 class DatabaseInterface;
@@ -33,8 +36,12 @@ private:
     bool showingTypeSelection = false;
     bool showingPostgreSQLConnection = false;
     bool showingSavedConnections = false;
-    bool isConnecting = false;
+    std::atomic<bool> isConnecting = false;
     std::string errorMessage;
+
+    // Async connection
+    std::thread connectionThread;
+    std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;
 
     // Saved connections
     std::vector<SavedConnection> savedConnections;
@@ -64,4 +71,8 @@ private:
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
     std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
+
+    // Async connection helpers
+    void startAsyncConnection();
+    void checkAsyncConnectionStatus();
 };

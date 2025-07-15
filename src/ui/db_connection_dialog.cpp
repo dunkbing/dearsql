@@ -3,6 +3,7 @@
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
+#include <chrono>
 #include <imgui.h>
 #include <iostream>
 #include <themes.hpp>
@@ -94,7 +95,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
 void DatabaseConnectionDialog::renderPostgreSQLConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 360), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter PostgreSQL connection details:");
@@ -109,6 +110,11 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
+
+        // Disable input fields during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
 
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
@@ -129,6 +135,10 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
             ImGui::EndTooltip();
         }
 
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
         ImGui::Spacing();
 
         // Show error message if there is one
@@ -141,52 +151,33 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
 
         ImGui::Separator();
 
+        // Check for async connection completion
+        if (isConnecting) {
+            checkAsyncConnectionStatus();
+        }
+
         // Show loading spinner or connect button
         if (isConnecting) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+            // Show disabled connect button with spinner
+            ImGui::BeginDisabled();
             ImGui::Button("Connecting...", ImVec2(100, 0));
-            ImGui::PopStyleColor();
+            ImGui::EndDisabled();
 
-            // Simple spinner animation
+            // Improved spinner animation
             ImGui::SameLine();
             ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3]);
         } else {
             if (ImGui::Button("Connect", ImVec2(100, 0))) {
-                // Clear previous error
-                errorMessage.clear();
-                isConnecting = true;
-
-                // Try to create and connect to database
-                auto db = createPostgreSQLDatabase();
-                if (db) {
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        // Save successful connection
-                        SavedConnection conn;
-                        conn.name = std::string(connectionName);
-                        conn.type = "postgresql";
-                        conn.host = std::string(host);
-                        conn.port = port;
-                        conn.database = std::string(database);
-                        conn.username = std::string(username);
-
-                        auto &app = Application::getInstance();
-                        app.getAppState()->saveConnection(conn);
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        isConnecting = false;
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                } else {
-                    isConnecting = false;
-                    errorMessage = "Please fill in all required fields";
-                }
+                startAsyncConnection();
             }
         }
         ImGui::SameLine();
+
+        // Disable Back and Cancel buttons during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
         if (ImGui::Button("Back", ImVec2(100, 0))) {
             showingPostgreSQLConnection = false;
             showingTypeSelection = true;
@@ -195,6 +186,10 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
             ImGui::CloseCurrentPopup();
             reset();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
         }
 
         ImGui::EndPopup();
@@ -215,6 +210,11 @@ void DatabaseConnectionDialog::reset() {
     isConnecting = false;
     errorMessage.clear();
     selectedSavedConnection = -1;
+
+    // clean up async connection
+    if (connectionThread.joinable()) {
+        connectionThread.join();
+    }
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
@@ -352,5 +352,74 @@ void DatabaseConnectionDialog::renderSavedConnections() {
         }
 
         ImGui::EndPopup();
+    }
+}
+
+void DatabaseConnectionDialog::startAsyncConnection() {
+    // Clear previous error
+    errorMessage.clear();
+    isConnecting = true;
+
+    // Create a promise-future pair for the async connection
+    auto promise = std::make_shared<
+        std::promise<std::pair<std::shared_ptr<DatabaseInterface>, std::string>>>();
+    connectionFuture = promise->get_future();
+
+    // Start connection in a separate thread
+    if (connectionThread.joinable()) {
+        connectionThread.join();
+    }
+
+    connectionThread = std::thread([this, promise]() {
+        try {
+            // Try to create and connect to database
+            auto db = createPostgreSQLDatabase();
+            if (db) {
+                auto [success, error] = db->connect();
+                if (success) {
+                    promise->set_value(std::make_pair(db, ""));
+                } else {
+                    promise->set_value(std::make_pair(nullptr, "Failed to connect: " + error));
+                }
+            } else {
+                promise->set_value(std::make_pair(nullptr, "Please fill in all required fields"));
+            }
+        } catch (const std::exception &e) {
+            promise->set_value(
+                std::make_pair(nullptr, "Connection error: " + std::string(e.what())));
+        }
+    });
+}
+
+void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
+    if (connectionFuture.valid() &&
+        connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        auto [db, error] = connectionFuture.get();
+
+        if (db) {
+            // Save successful connection
+            SavedConnection conn;
+            conn.name = std::string(connectionName);
+            conn.type = "postgresql";
+            conn.host = std::string(host);
+            conn.port = port;
+            conn.database = std::string(database);
+            conn.username = std::string(username);
+
+            auto &app = Application::getInstance();
+            app.getAppState()->saveConnection(conn);
+
+            result = db;
+            ImGui::CloseCurrentPopup();
+            reset();
+        } else {
+            isConnecting = false;
+            errorMessage = error;
+        }
+
+        // Clean up thread
+        if (connectionThread.joinable()) {
+            connectionThread.join();
+        }
     }
 }

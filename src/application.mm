@@ -368,16 +368,8 @@ void Application::restorePreviousConnections() {
         }
 
         if (db) {
-            // Try to connect (will fail for PostgreSQL without password, but that's expected)
-            auto [success, error] = db->connect();
-            if (success) {
-                db->refreshTables();
-                std::cout << "Successfully restored connection: " << conn.name << std::endl;
-            } else {
-                std::cout << "Added connection (requires authentication): " << conn.name
-                          << std::endl;
-            }
-
+            std::cout << "Added connection (will connect when expanded): " << conn.name
+                      << std::endl;
             databases.push_back(db);
         }
     }

@@ -18,6 +18,9 @@ public:
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
     bool isConnected() const override;
+    bool isConnecting() const override;
+    void startAsyncConnection() override;
+    void checkAsyncConnectionStatus() override;
 
     // Database info
     const std::string &getName() const override;
@@ -117,4 +120,9 @@ private:
     std::atomic<bool> loadingSequences = false;
     std::thread sequencesThread;
     std::future<std::vector<std::string>> sequencesFuture;
+
+    // Async connection
+    std::atomic<bool> connecting = false;
+    std::thread connectionThread;
+    std::future<std::pair<bool, std::string>> connectionFuture;
 };

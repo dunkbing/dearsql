@@ -30,6 +30,9 @@ PostgreSQLDatabase::~PostgreSQLDatabase() {
     if (sequencesThread.joinable()) {
         sequencesThread.join();
     }
+    if (connectionThread.joinable()) {
+        connectionThread.join();
+    }
     disconnect();
 }
 
@@ -816,4 +819,72 @@ std::vector<std::string> PostgreSQLDatabase::getSequencesAsync() {
 
     std::cout << "Query completed. Found " << result.size() << " sequences." << std::endl;
     return result;
+}
+
+bool PostgreSQLDatabase::isConnecting() const {
+    return connecting;
+}
+
+void PostgreSQLDatabase::startAsyncConnection() {
+    if (connecting || connected) {
+        return;
+    }
+
+    connecting = true;
+
+    // Clean up previous thread
+    if (connectionThread.joinable()) {
+        connectionThread.join();
+    }
+
+    // Create promise-future pair
+    auto promise = std::make_shared<std::promise<std::pair<bool, std::string>>>();
+    connectionFuture = promise->get_future();
+
+    // Start async connection
+    connectionThread = std::thread([this, promise]() {
+        try {
+            auto result = connect();
+            promise->set_value(result);
+        } catch (const std::exception &e) {
+            promise->set_value(std::make_pair(false, std::string(e.what())));
+        }
+    });
+}
+
+void PostgreSQLDatabase::checkAsyncConnectionStatus() {
+    if (connectionFuture.valid() &&
+        connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto [success, error] = connectionFuture.get();
+            connecting = false;
+
+            if (success) {
+                std::cout << "Async connection completed successfully for: " << name << std::endl;
+                // Connection state is already set by the synchronous connect() method
+                // Refresh tables for SQLite only (PostgreSQL will do it lazily)
+                if (getType() == DatabaseType::SQLITE) {
+                    refreshTables();
+                }
+            } else {
+                std::cout << "Async connection failed for: " << name << " - " << error << std::endl;
+                // Connection state and error are already set by the synchronous connect() method
+            }
+
+            // Clean up thread
+            if (connectionThread.joinable()) {
+                connectionThread.join();
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Error in async connection: " << e.what() << std::endl;
+            connecting = false;
+            attemptedConnection = true;
+            lastConnectionError = e.what();
+
+            // Clean up thread
+            if (connectionThread.joinable()) {
+                connectionThread.join();
+            }
+        }
+    }
 }

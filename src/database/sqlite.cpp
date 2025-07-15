@@ -407,3 +407,17 @@ std::vector<Column> SQLiteDatabase::getViewColumns(const std::string &viewName) 
 std::vector<std::string> SQLiteDatabase::getSequenceNames() {
     return {}; // SQLite doesn't have sequences
 }
+
+bool SQLiteDatabase::isConnecting() const {
+    return false; // SQLite connections are synchronous and fast
+}
+
+void SQLiteDatabase::startAsyncConnection() {
+    // For SQLite, just call the synchronous connect method
+    // since file-based connections are typically fast
+    connect();
+}
+
+void SQLiteDatabase::checkAsyncConnectionStatus() {
+    // No-op for SQLite since connection is synchronous
+}

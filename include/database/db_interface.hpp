@@ -27,6 +27,11 @@ public:
     virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
     virtual bool isConnected() const = 0;
+    virtual bool isConnecting() const {
+        return false;
+    }
+    virtual void startAsyncConnection() {}
+    virtual void checkAsyncConnectionStatus() {}
 
     // Database info
     virtual const std::string &getName() const = 0;

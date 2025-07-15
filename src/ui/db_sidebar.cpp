@@ -6,7 +6,6 @@
 #include <iostream>
 
 void DatabaseSidebar::showConnectionDialog() {
-    // Set flag to show dialog on next render
     shouldShowConnectionDialog = true;
 }
 
@@ -118,7 +117,14 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    bool dbOpen = ImGui::TreeNodeEx(db->getName().c_str(), dbFlags);
+    // Show loading indicator in database name if connecting
+    std::string dbLabel = db->getName();
+    if (db->isConnecting()) {
+        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+        dbLabel += " " + std::string(1, spinner);
+    }
+
+    bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(static_cast<int>(databaseIndex));
@@ -128,9 +134,23 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     // Context menu for database
     handleDatabaseContextMenu(databaseIndex);
 
+    // Check for async connection completion (always check, even when collapsed)
+    db->checkAsyncConnectionStatus();
+
     if (dbOpen) {
+        // Auto-connect when database node is expanded
+        if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
+            std::cout << "Starting async connection to database: " << db->getName() << std::endl;
+            db->startAsyncConnection();
+        }
+
         // Check if database is connected
-        if (!db->isConnected() && !db->hasAttemptedConnection()) {
+        if (db->isConnecting()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
+            ImGui::Text("  Connecting... %c", spinner);
+            ImGui::PopStyleColor();
+        } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
             ImGui::Text("  Click to connect");
             ImGui::PopStyleColor();

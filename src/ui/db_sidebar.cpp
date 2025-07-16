@@ -3,6 +3,7 @@
 #include "database/db_interface.hpp"
 #include "imgui.h"
 #include "tabs/tab_manager.hpp"
+#include "utils/spinner.hpp"
 #include <iostream>
 
 void DatabaseSidebar::showConnectionDialog() {
@@ -119,12 +120,15 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
     // Show loading indicator in database name if connecting
     std::string dbLabel = db->getName();
-    if (db->isConnecting()) {
-        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-        dbLabel += " " + std::string(1, spinner);
-    }
+    bool showSpinner = db->isConnecting();
 
     bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
+
+    // Show spinner next to database name if connecting
+    if (showSpinner) {
+        ImGui::SameLine();
+        UIUtils::Spinner("##db_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(static_cast<int>(databaseIndex));
@@ -147,8 +151,10 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         // Check if database is connected
         if (db->isConnecting()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
-            char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-            ImGui::Text("  Connecting... %c", spinner);
+            ImGui::Text("  Connecting...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(ImVec4(1.0f, 0.7f, 0.3f, 1.0f)));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
@@ -352,12 +358,15 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
 
     // Show loading indicator next to Tables node if loading
     std::string tablesLabel = "Tables";
-    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables()) {
-        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-        tablesLabel += " " + std::string(1, spinner);
-    }
+    bool showTablesSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables());
 
     bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+    // Show spinner next to Tables node if loading
+    if (showTablesSpinner) {
+        ImGui::SameLine();
+        UIUtils::Spinner("##tables_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
 
     // Load tables when the tree node is opened and tables haven't been loaded yet
     if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
@@ -370,8 +379,10 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
         if (db->getTables().empty()) {
             if (db->isLoadingTables()) {
                 // Show loading indicator with spinner
-                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-                ImGui::Text("  Loading tables... %c", spinner);
+                ImGui::Text("  Loading tables...");
+                ImGui::SameLine();
+                UIUtils::Spinner("##loading_tables_spinner", 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
             } else if (!db->areTablesLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
@@ -397,12 +408,15 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
 
     // Show loading indicator next to Views node if loading
     std::string viewsLabel = "Views";
-    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews()) {
-        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-        viewsLabel += " " + std::string(1, spinner);
-    }
+    bool showViewsSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
 
     bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+    // Show spinner next to Views node if loading
+    if (showViewsSpinner) {
+        ImGui::SameLine();
+        UIUtils::Spinner("##views_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
 
     // Load views when the tree node is opened and views haven't been loaded yet
     if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
@@ -415,8 +429,10 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
         if (db->getViews().empty()) {
             if (db->isLoadingViews()) {
                 // Show loading indicator with spinner
-                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-                ImGui::Text("  Loading views... %c", spinner);
+                ImGui::Text("  Loading views...");
+                ImGui::SameLine();
+                UIUtils::Spinner("##loading_views_spinner", 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
             } else if (!db->areViewsLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
@@ -447,12 +463,16 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
 
     // Show loading indicator next to Sequences node if loading
     std::string sequencesLabel = "Sequences";
-    if (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences()) {
-        char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-        sequencesLabel += " " + std::string(1, spinner);
-    }
+    bool showSequencesSpinner =
+        (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences());
 
     bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+
+    // Show spinner next to Sequences node if loading
+    if (showSequencesSpinner) {
+        ImGui::SameLine();
+        UIUtils::Spinner("##sequences_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
 
     // Load sequences when the tree node is opened and sequences haven't been loaded yet
     if (sequencesOpen && !db->areSequencesLoaded() && !db->isLoadingSequences()) {
@@ -465,8 +485,10 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
         if (db->getSequences().empty()) {
             if (db->isLoadingSequences()) {
                 // Show loading indicator with spinner
-                char spinner = "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3];
-                ImGui::Text("  Loading sequences... %c", spinner);
+                ImGui::Text("  Loading sequences...");
+                ImGui::SameLine();
+                UIUtils::Spinner("##loading_sequences_spinner", 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
             } else if (!db->areSequencesLoaded()) {
                 ImGui::Text("  Loading...");
             } else {

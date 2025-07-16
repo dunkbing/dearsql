@@ -84,6 +84,7 @@ set(APP_SOURCES
     # Utils
     src/utils/file_dialog.cpp
     src/utils/toggle_button.cpp
+    src/utils/spinner.cpp
 )
 
 # Add application.cpp and platform-specific files

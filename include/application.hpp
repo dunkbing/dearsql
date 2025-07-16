@@ -1,26 +1,13 @@
 #pragma once
 
+#include "app_state.hpp"
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
-
-#ifdef USE_METAL_BACKEND
-#include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_COCOA
-#include <GLFW/glfw3native.h>
-// Forward declarations for Metal types (avoid Objective-C headers in C++)
-#ifndef __OBJC__
-typedef void *MetalDevice;
-typedef void *MetalCommandQueue;
-typedef void *MetalLayer;
-#endif
-#elif defined(USE_OPENGL_BACKEND)
-#include "imgui_impl_opengl3.h"
-#include <GLFW/glfw3.h>
-#endif
-#include "app_state.hpp"
+#include "platform/platform_interface.hpp"
 #include "tabs/tab_manager.hpp"
 #include "ui/db_sidebar.hpp"
 #include "utils/file_dialog.hpp"
+#include <GLFW/glfw3.h>
 #include <memory>
 #include <vector>
 
@@ -95,9 +82,10 @@ public:
         return window;
     }
 
+    // Platform-specific methods
 #ifdef USE_METAL_BACKEND
-    // Toolbar actions
     void onConnectButtonClicked();
+    float getTitlebarHeight() const;
 #endif
 
 private:
@@ -110,19 +98,7 @@ private:
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
-
-#ifdef USE_METAL_BACKEND
-// Metal-specific components (using void* for C++ compatibility)
-#ifdef __OBJC__
-    id metalDevice = nil;
-    id metalCommandQueue = nil;
-    id metalLayer = nil;
-#else
-    MetalDevice metalDevice = nullptr;
-    MetalCommandQueue metalCommandQueue = nullptr;
-    MetalLayer metalLayer = nullptr;
-#endif
-#endif
+    std::unique_ptr<PlatformInterface> platform_;
 
     // Application state
     bool darkTheme = true;
@@ -138,11 +114,8 @@ private:
     bool initializeImGui();
     static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
-    void renderMainUI();
     void renderMenuBar();
 
-#ifdef USE_METAL_BACKEND
-    void setupTitlebar();
-    float getTitlebarHeight() const;
-#endif
+public:
+    void renderMainUI();
 };

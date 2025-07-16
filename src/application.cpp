@@ -1,8 +1,8 @@
 #include "application.hpp"
-#include "database/db.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
-#include "imgui_impl_metal.h"
+#include "platform/default_platform.hpp"
+#include "platform/macos_platform.hpp"
 #include "tabs/tab_manager.hpp"
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
@@ -11,6 +11,10 @@
 #include <fstream>
 #include <imgui_internal.h>
 #include <iostream>
+
+#ifdef USE_OPENGL_BACKEND
+#include "imgui_impl_opengl3.h"
+#endif
 
 // Forward declarations for embedded fonts
 extern "C" {
@@ -22,63 +26,6 @@ struct EmbeddedFont {
 const EmbeddedFont *getEmbeddedFonts();
 size_t getEmbeddedFontCount();
 }
-
-#ifdef USE_METAL_BACKEND
-#import <AppKit/AppKit.h>
-#import <Cocoa/Cocoa.h>
-#import <Foundation/Foundation.h>
-#import <Metal/Metal.h>
-#import <QuartzCore/QuartzCore.h>
-
-// Toolbar delegate interface
-@interface ToolbarDelegate : NSObject <NSToolbarDelegate>
-@property(nonatomic, assign) Application *app;
-@end
-
-@implementation ToolbarDelegate
-- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
-}
-
-- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
-}
-
-- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
-        itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
-    willBeInsertedIntoToolbar:(BOOL)flag {
-    if ([itemIdentifier isEqualToString:@"ConnectButton"]) {
-        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
-        item.label = @"";
-        item.paletteLabel = @"Connect";
-        item.toolTip = @"Connect to Database";
-
-        NSButton *button = [[NSButton alloc] init];
-        [button setTitle:@"Connect"];
-        [button setButtonType:NSButtonTypeMomentaryPushIn];
-        [button setBezelStyle:NSBezelStyleRounded];
-        [button setTarget:self];
-        [button setAction:@selector(connectButtonClicked:)];
-        [button sizeToFit];
-
-        item.view = button;
-        return item;
-    }
-    return nil;
-}
-
-- (void)connectButtonClicked:(id)sender {
-    @try {
-        if (self.app) {
-            self.app->onConnectButtonClicked();
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"Exception in connectButtonClicked: %@", exception);
-    }
-}
-@end
-
-#endif
 
 static void signal_handler(int signal) {
     if (signal == SIGTERM || signal == SIGINT) {
@@ -96,6 +43,18 @@ bool Application::initialize() {
     std::cout << "Starting Dear SQL..." << std::endl;
 
     if (!initializeGLFW()) {
+        return false;
+    }
+
+    // Initialize platform-specific components
+#ifdef __APPLE__
+    platform_ = std::make_unique<MacOSPlatform>(this);
+#else
+    platform_ = std::make_unique<DefaultPlatform>(this);
+#endif
+
+    if (!platform_->initializePlatform(window)) {
+        std::cerr << "Failed to initialize platform" << std::endl;
         return false;
     }
 
@@ -128,85 +87,16 @@ bool Application::initialize() {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
-#ifdef USE_METAL_BACKEND
     // Setup titlebar after window creation
-    setupTitlebar();
+    platform_->setupTitlebar();
+
+#ifdef USE_METAL_BACKEND
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
 #endif
     return true;
 }
-
-#ifdef USE_METAL_BACKEND
-void Application::setupTitlebar() {
-    // Get the native NSWindow from GLFW
-    NSWindow *nsWindow = glfwGetCocoaWindow(window);
-    if (!nsWindow) {
-        std::cerr << "Failed to get NSWindow from GLFW" << std::endl;
-        return;
-    }
-
-    // Make titlebar transparent and extend content under it
-    nsWindow.titlebarAppearsTransparent = YES;
-
-    // Add unified titlebar and full size content view to increase height
-    [nsWindow setStyleMask:[nsWindow styleMask]];
-
-    // Create and add a toolbar to increase titlebar height
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
-    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-    //    toolbar.showsBaselineSeparator = NO;
-
-    // Set up toolbar delegate - keep strong reference to prevent deallocation
-    static ToolbarDelegate *toolbarDelegate = [[ToolbarDelegate alloc] init];
-    toolbarDelegate.app = this;
-    toolbar.delegate = toolbarDelegate;
-
-    [nsWindow setToolbar:toolbar];
-
-    // Set background color to match app theme
-    const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    NSColor *bgColor = [NSColor colorWithRed:colors.base.x
-                                       green:colors.base.y
-                                        blue:colors.base.z
-                                       alpha:colors.base.w];
-    [nsWindow setBackgroundColor:bgColor];
-    //    [nsWindow setBackgroundColor:[NSColor clearColor]];
-
-    // Keep title visible and draggable
-    //     nsWindow.titleVisibility = NSWindowTitleHidden;
-
-    std::cout << "Titlebar configured successfully" << std::endl;
-}
-
-float Application::getTitlebarHeight() const {
-    NSWindow *nsWindow = glfwGetCocoaWindow(window);
-    if (!nsWindow) {
-        return 0.0f;
-    }
-
-    // Get the titlebar height
-    NSRect frame = [nsWindow frame];
-    NSRect contentRect = [nsWindow contentRectForFrameRect:frame];
-    return frame.size.height - contentRect.size.height;
-}
-
-void Application::onConnectButtonClicked() {
-    std::cout << "Connect button clicked" << std::endl;
-    try {
-        // Show the connection dialog
-        if (databaseSidebar) {
-            std::cout << "Showing connection dialog" << std::endl;
-            databaseSidebar->showConnectionDialog();
-        } else {
-            std::cerr << "DatabaseSidebar is null" << std::endl;
-        }
-    } catch (const std::exception &e) {
-        std::cerr << "Exception in onConnectButtonClicked: " << e.what() << std::endl;
-    }
-}
-#endif
 
 void Application::run() {
 #ifdef USE_OPENGL_BACKEND
@@ -218,58 +108,18 @@ void Application::run() {
         glfwPollEvents();
 
 #ifdef USE_METAL_BACKEND
-        @autoreleasepool {
-            // Get the Metal drawable
-            id<CAMetalDrawable> drawable = [(CAMetalLayer *)metalLayer nextDrawable];
-            if (!drawable) {
-                continue;
-            }
-
-            // Create render pass descriptor
-            MTLRenderPassDescriptor *renderPassDescriptor =
-                [MTLRenderPassDescriptor renderPassDescriptor];
-            renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
-            renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-            renderPassDescriptor.colorAttachments[0].clearColor =
-                MTLClearColorMake(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
-                                  darkTheme ? 0.137f : 0.957f, 1.0f);
-            renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
-
-            // Create command buffer
-            id<MTLCommandBuffer> commandBuffer =
-                [(id<MTLCommandQueue>)metalCommandQueue commandBuffer];
-
-            // Create render command encoder
-            id<MTLRenderCommandEncoder> renderEncoder =
-                [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
-
-            ImGui_ImplMetal_NewFrame(renderPassDescriptor);
+        platform_->renderFrame();
 #elif defined(USE_OPENGL_BACKEND)
         ImGui_ImplOpenGL3_NewFrame();
-#endif
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
-            renderMainUI();
+        renderMainUI();
 
-            ImGui::Render();
+        ImGui::Render();
 
-            int display_w, display_h;
-            glfwGetFramebufferSize(window, &display_w, &display_h);
-
-#ifdef USE_METAL_BACKEND
-            // Update Metal layer drawable size
-            ((CAMetalLayer *)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
-
-            // Render ImGui draw data
-            ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);
-
-            // End encoding and present
-            [renderEncoder endEncoding];
-            [commandBuffer presentDrawable:drawable];
-            [commandBuffer commit];
-        }
-#elif defined(USE_OPENGL_BACKEND)
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -300,20 +150,16 @@ void Application::cleanup() {
     FileDialog::cleanup();
     std::cout << "File dialog cleaned up" << std::endl;
 
-    // Cleanup ImGui - follow the order from ImGui GLFW+Metal example
-#ifdef USE_METAL_BACKEND
-    ImGui_ImplMetal_Shutdown();
-    std::cout << "ImGui Metal backend shutdown" << std::endl;
-#elif defined(USE_OPENGL_BACKEND)
-    ImGui_ImplOpenGL3_Shutdown();
-    std::cout << "ImGui OpenGL backend shutdown" << std::endl;
-#endif
+    if (platform_) {
+        platform_->shutdownImGui();
+        platform_->cleanup();
+        platform_.reset();
+    }
     ImGui_ImplGlfw_Shutdown();
     std::cout << "ImGui GLFW backend shutdown" << std::endl;
     ImGui::DestroyContext();
     std::cout << "ImGui context destroyed" << std::endl;
 
-    // Cleanup GLFW
     if (window) {
         glfwDestroyWindow(window);
     }
@@ -399,32 +245,7 @@ bool Application::initializeGLFW() {
         return false;
     }
 
-#ifdef USE_METAL_BACKEND
-    // Initialize Metal device and layer
-    metalDevice = MTLCreateSystemDefaultDevice();
-    if (!metalDevice) {
-        std::cerr << "Failed to create Metal device" << std::endl;
-        return false;
-    }
-
-    metalCommandQueue = [(id<MTLDevice>)metalDevice newCommandQueue];
-    if (!metalCommandQueue) {
-        std::cerr << "Failed to create Metal command queue" << std::endl;
-        return false;
-    }
-
-    // Set up Metal layer
-    NSWindow *nsWindow = glfwGetCocoaWindow(window);
-    CAMetalLayer *layer = [CAMetalLayer layer];
-    layer.device = (id<MTLDevice>)metalDevice;
-    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    layer.displaySyncEnabled = YES; // vsync
-    nsWindow.contentView.layer = layer;
-    nsWindow.contentView.wantsLayer = YES;
-    metalLayer = layer;
-
-    std::cout << "Metal device and layer initialized successfully" << std::endl;
-#elif defined(USE_OPENGL_BACKEND)
+#ifdef USE_OPENGL_BACKEND
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 #endif
@@ -444,13 +265,22 @@ bool Application::initializeImGui() {
     ImGui::StyleColorsDark();
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 
+    // Initialize GLFW backend
 #ifdef USE_METAL_BACKEND
     ImGui_ImplGlfw_InitForOther(window, true);
-    ImGui_ImplMetal_Init((id<MTLDevice>)metalDevice);
-    std::cout << "ImGui initialized with Metal backend" << std::endl;
 #elif defined(USE_OPENGL_BACKEND)
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
+#endif
+
+    // Initialize platform-specific ImGui backend
+    if (!platform_->initializeImGuiBackend()) {
+        std::cerr << "Failed to initialize ImGui backend" << std::endl;
+        return false;
+    }
+
+#ifdef USE_METAL_BACKEND
+    std::cout << "ImGui initialized with Metal backend" << std::endl;
+#elif defined(USE_OPENGL_BACKEND)
     std::cout << "ImGui initialized with OpenGL backend" << std::endl;
 #endif
 
@@ -614,7 +444,7 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-    ImGuiWindowFlags window_flags =
+    constexpr ImGuiWindowFlags window_flags =
         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
@@ -631,11 +461,11 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
 
-    ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
-    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
+    const ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
 
     // Setup default docking layout
-    setupDockingLayout(dockspace_id);
+    setupDockingLayout(dockSpaceId);
 
     // Database sidebar with theme-based tab highlighting (fixed, non-moveable)
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
@@ -699,3 +529,19 @@ void Application::renderMenuBar() {
         ImGui::EndMenuBar();
     }
 }
+
+// Platform-specific methods that delegate to the platform implementation
+#ifdef USE_METAL_BACKEND
+void Application::onConnectButtonClicked() {
+    if (platform_) {
+        platform_->onConnectButtonClicked();
+    }
+}
+
+float Application::getTitlebarHeight() const {
+    if (platform_) {
+        return platform_->getTitlebarHeight();
+    }
+    return 0.0f;
+}
+#endif

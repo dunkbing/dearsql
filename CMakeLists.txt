@@ -86,8 +86,15 @@ set(APP_SOURCES
     src/utils/toggle_button.cpp
 )
 
-# Use .mm extension for all platforms (Objective-C++ can compile C++ code)
-list(APPEND APP_SOURCES src/application.mm)
+# Add application.cpp and platform-specific files
+list(APPEND APP_SOURCES src/application.cpp)
+
+# Add platform-specific files
+if(APPLE)
+    list(APPEND APP_SOURCES src/platform/macos_platform.mm)
+else()
+    list(APPEND APP_SOURCES src/platform/default_platform.cpp)
+endif()
 
 # Embed font files as resources
 file(GLOB FONT_FILES "assets/fonts/*.ttf" "assets/fonts/*.otf")

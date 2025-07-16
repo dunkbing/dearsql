@@ -1,0 +1,17 @@
+#pragma once
+
+#include <GLFW/glfw3.h>
+
+class PlatformInterface {
+public:
+    virtual ~PlatformInterface() = default;
+
+    virtual bool initializePlatform(GLFWwindow *window) = 0;
+    virtual bool initializeImGuiBackend() = 0;
+    virtual void setupTitlebar() = 0;
+    virtual float getTitlebarHeight() const = 0;
+    virtual void onConnectButtonClicked() = 0;
+    virtual void cleanup() = 0;
+    virtual void renderFrame() = 0;
+    virtual void shutdownImGui() = 0;
+};

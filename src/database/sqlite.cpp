@@ -69,7 +69,7 @@ void SQLiteDatabase::refreshTables() {
     }
 
     tables.clear();
-    std::vector<std::string> tableNames = getTableNames();
+    const std::vector<std::string> tableNames = getTableNames();
     std::cout << "Found " << tableNames.size() << " tables" << std::endl;
 
     for (const auto &tableName : tableNames) {
@@ -106,7 +106,7 @@ std::string SQLiteDatabase::executeQuery(const std::string &query) {
 
     try {
         std::stringstream result;
-        soci::rowset<soci::row> rs = session->prepare << query;
+        const soci::rowset rs = session->prepare << query;
 
         // Get column names if available
         auto it = rs.begin();
@@ -168,21 +168,57 @@ SQLiteDatabase::getTableData(const std::string &tableName, const int limit, cons
     }
 
     try {
-        const std::string sql = "SELECT * FROM " + tableName + " LIMIT " + std::to_string(limit) +
-                                " OFFSET " + std::to_string(offset);
+        const std::string sql =
+            std::format("SELECT * FROM {} LIMIT {} OFFSET {}", tableName, limit, offset);
 
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             std::vector<std::string> rowData;
+
             for (std::size_t i = 0; i < row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
                     rowData.emplace_back("NULL");
                 } else {
-                    try {
+                    soci::column_properties cp = row.get_properties(i);
+                    const auto dt = cp.get_db_type();
+                    switch (dt) {
+                    case soci::db_string:
                         rowData.emplace_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast &) {
+                        break;
+                    case soci::db_wstring:
+                        // Convert wide string to UTF-8 string
+                        {
+                            auto ws = row.get<std::wstring>(i);
+                            std::string utf8_str(ws.begin(), ws.end());
+                            rowData.emplace_back(utf8_str);
+                        }
+                        break;
+                    case soci::db_int8:
+                        rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                        break;
+                    case soci::db_int16:
+                        rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                        break;
+                    case soci::db_int32:
+                        rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                        break;
+                    case soci::db_int64:
+                        rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
+                        break;
+                    case soci::db_double:
+                        rowData.emplace_back(std::to_string(row.get<double>(i)));
+                        break;
+                    case soci::db_blob:
                         rowData.emplace_back("[BINARY DATA]");
+                        break;
+                    default:
+                        try {
+                            rowData.emplace_back(row.get<std::string>(i));
+                        } catch (const std::bad_cast &) {
+                            rowData.emplace_back("[UNKNOWN DATA TYPE]");
+                        }
+                        break;
                     }
                 }
             }
@@ -259,14 +295,14 @@ void *SQLiteDatabase::getConnection() const {
 
 std::vector<std::string> SQLiteDatabase::getTableNames() {
     std::vector<std::string> tableNames;
-    const char *sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
 
     std::cout << "Executing query to get table names..." << std::endl;
     try {
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const auto sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
+        soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
-            std::string tableName = row.get<std::string>(0);
+            auto tableName = row.get<std::string>(0);
             std::cout << "Found table: " << tableName << std::endl;
             tableNames.emplace_back(tableName);
         }
@@ -279,10 +315,10 @@ std::vector<std::string> SQLiteDatabase::getTableNames() {
 
 std::vector<Column> SQLiteDatabase::getTableColumns(const std::string &tableName) {
     std::vector<Column> columns;
-    std::string sql = "PRAGMA table_info(" + tableName + ");";
+    const std::string sql = std::format("PRAGMA table_info('{}');", tableName);
 
     try {
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             Column col;

@@ -4,7 +4,6 @@
 #include "imgui.h"
 
 #include "themes.hpp"
-#include <iostream>
 
 // Base Tab class
 Tab::Tab(const std::string &name, const TabType type) : name(name), type(type) {}
@@ -135,26 +134,27 @@ void TableViewerTab::render() {
 
     // Table display
     if (!columnNames.empty() && !tableData.empty()) {
-        if (ImGui::BeginTable("TableData", columnNames.size(),
-                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                  ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY)) {
-            // Headers
+        const int colSize = static_cast<int>(columnNames.size());
+        constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                                  ImGuiTableFlags_Resizable;
+        if (ImGui::BeginTable("TableData", colSize, tableFlags)) {
             for (const auto &colName : columnNames) {
-                ImGui::TableSetupColumn(colName.c_str());
+                ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
             }
             ImGui::TableHeadersRow();
 
             // Data rows
-            for (size_t rowIdx = 0; rowIdx < tableData.size(); rowIdx++) {
+            for (int rowIdx = 0; rowIdx < tableData.size(); rowIdx++) {
                 const auto &row = tableData[rowIdx];
                 ImGui::TableNextRow();
 
-                for (size_t colIdx = 0; colIdx < row.size() && colIdx < columnNames.size();
+                for (int colIdx = 0; colIdx < row.size() && colIdx < columnNames.size();
                      colIdx++) {
                     ImGui::TableNextColumn();
 
                     // Check if this cell is being edited
-                    if (editingRow == (int)rowIdx && editingCol == (int)colIdx) {
+                    if (editingRow == rowIdx && editingCol == colIdx) {
                         // Edit mode - show input field
                         ImGui::SetKeyboardFocusHere();
                         if (ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
@@ -167,11 +167,11 @@ void TableViewerTab::render() {
                         }
                     } else {
                         // Display mode - show cell content
-                        ImGui::PushID((int)(rowIdx * columnNames.size() + colIdx));
+                        ImGui::PushID(rowIdx * static_cast<int>(columnNames.size()) + colIdx);
 
                         // Check for cell selection highlighting
-                        bool isSelected =
-                            (selectedRow == (int)rowIdx && selectedCol == (int)colIdx);
+                        const bool isSelected =
+                            (selectedRow == rowIdx && selectedCol == colIdx);
                         if (isSelected) {
                             ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
                                                    ImGui::GetColorU32(colors.surface2));
@@ -181,11 +181,11 @@ void TableViewerTab::render() {
                         if (ImGui::Selectable(row[colIdx].c_str(), isSelected,
                                               ImGuiSelectableFlags_AllowDoubleClick)) {
                             // Single click - select cell
-                            selectCell((int)rowIdx, (int)colIdx);
+                            selectCell(rowIdx, colIdx);
 
                             // Double click - enter edit mode
                             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                                enterEditMode((int)rowIdx, (int)colIdx);
+                                enterEditMode(rowIdx, colIdx);
                             }
                         }
 

@@ -6,7 +6,7 @@ class Application;
 
 class DefaultPlatform final : public PlatformInterface {
 public:
-    DefaultPlatform(Application *app);
+    explicit DefaultPlatform(Application *app);
     ~DefaultPlatform() override = default;
 
     bool initializePlatform(GLFWwindow *window) override;

@@ -26,19 +26,19 @@ public:
     bool initialize();
 
     // Connection history management
-    bool saveConnection(const SavedConnection &connection);
-    std::vector<SavedConnection> getSavedConnections();
-    bool deleteConnection(int connectionId);
-    bool updateLastUsed(int connectionId);
+    bool saveConnection(const SavedConnection &connection) const;
+    std::vector<SavedConnection> getSavedConnections() const;
+    bool deleteConnection(int connectionId) const;
+    bool updateLastUsed(int connectionId) const;
 
     // Settings management
-    bool setSetting(const std::string &key, const std::string &value);
-    std::string getSetting(const std::string &key, const std::string &defaultValue = "");
+    bool setSetting(const std::string &key, const std::string &value) const;
+    std::string getSetting(const std::string &key, const std::string &defaultValue = "") const;
 
 private:
     sqlite3 *db;
     std::string dbPath;
 
     bool createTables();
-    bool executeSQL(const std::string &sql);
+    bool executeSQL(const std::string &sql) const;
 };

@@ -13,6 +13,7 @@ struct SavedConnection {
     int port;
     std::string database;
     std::string username;
+    std::string password;
     std::string path; // sqlite files
     std::string lastUsed;
 };

@@ -1,4 +1,5 @@
 #include "app_state.hpp"
+#include "utils/crypto.hpp"
 #include <filesystem>
 #include <iostream>
 
@@ -46,7 +47,9 @@ bool AppState::createTables() {
             port INTEGER,
             database_name TEXT,
             username TEXT,
+            password TEXT,
             path TEXT,
+            salt TEXT,
             last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -79,8 +82,8 @@ bool AppState::executeSQL(const std::string &sql) const {
 bool AppState::saveConnection(const SavedConnection &connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections 
-        (name, type, host, port, database_name, username, path, last_used)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+        (name, type, host, port, database_name, username, password, path, salt, last_used)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
     )";
 
     sqlite3_stmt *stmt;
@@ -91,13 +94,25 @@ bool AppState::saveConnection(const SavedConnection &connection) const {
         return false;
     }
 
+    // Encrypt sensitive data
+    std::string salt = CryptoUtils::generateSalt();
+    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+    std::string encryptedUsername =
+        connection.username.empty() ? "" : CryptoUtils::encrypt(connection.username, encryptionKey);
+    std::string encryptedPassword =
+        connection.password.empty() ? "" : CryptoUtils::encrypt(connection.password, encryptionKey);
+
     sqlite3_bind_text(stmt, 1, connection.name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, connection.type.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, connection.host.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_int(stmt, 4, connection.port);
     sqlite3_bind_text(stmt, 5, connection.database.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 6, connection.username.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 7, connection.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 8, connection.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(
+        stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
+        -1, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -114,7 +129,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
-        SELECT id, name, type, host, port, database_name, username, path, last_used 
+        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used 
         FROM saved_connections 
         ORDER BY last_used DESC;
     )";
@@ -141,13 +156,41 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         const auto database = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
         conn.database = database ? database : "";
 
-        const auto *username = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-        conn.username = username ? username : "";
+        // Decrypt sensitive data
+        const auto *encryptedUsername =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
+        const auto *encryptedPassword =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
+        const auto *saltStr = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
 
-        const auto *path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
+        try {
+            if (saltStr && strlen(saltStr) > 0) {
+                auto saltData = CryptoUtils::base64Decode(saltStr);
+                std::string salt(saltData.begin(), saltData.end());
+                std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+
+                conn.username = (encryptedUsername && strlen(encryptedUsername) > 0)
+                                    ? CryptoUtils::decrypt(encryptedUsername, encryptionKey)
+                                    : "";
+                conn.password = (encryptedPassword && strlen(encryptedPassword) > 0)
+                                    ? CryptoUtils::decrypt(encryptedPassword, encryptionKey)
+                                    : "";
+            } else {
+                // Legacy data without encryption
+                conn.username = encryptedUsername ? encryptedUsername : "";
+                conn.password = "";
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Failed to decrypt credentials for connection " << conn.name << ": "
+                      << e.what() << std::endl;
+            conn.username = "";
+            conn.password = "";
+        }
+
+        const auto *path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
         conn.path = path ? path : "";
 
-        const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
+        const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         connections.push_back(conn);

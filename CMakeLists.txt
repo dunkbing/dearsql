@@ -12,6 +12,7 @@ add_subdirectory(external/soci)
 find_package(glfw3 3.3 REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PostgreSQL REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Native File Dialog Extended (as git submodule)
 add_subdirectory(external/nativefiledialog-extended)
@@ -85,6 +86,7 @@ set(APP_SOURCES
     src/utils/file_dialog.cpp
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
+    src/utils/crypto.cpp
 )
 
 # Add application.cpp and platform-specific files
@@ -159,6 +161,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     soci_postgresql
     nlohmann_json::nlohmann_json
     nfd
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 
 # Platform-specific linking

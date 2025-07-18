@@ -136,8 +136,8 @@ void TableViewerTab::render() {
     if (!columnNames.empty() && !tableData.empty()) {
         const int colSize = static_cast<int>(columnNames.size());
         constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                  ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
-                                  ImGuiTableFlags_Resizable;
+                                   ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                                   ImGuiTableFlags_Resizable;
         if (ImGui::BeginTable("TableData", colSize, tableFlags)) {
             for (const auto &colName : columnNames) {
                 ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
@@ -149,8 +149,7 @@ void TableViewerTab::render() {
                 const auto &row = tableData[rowIdx];
                 ImGui::TableNextRow();
 
-                for (int colIdx = 0; colIdx < row.size() && colIdx < columnNames.size();
-                     colIdx++) {
+                for (int colIdx = 0; colIdx < row.size() && colIdx < columnNames.size(); colIdx++) {
                     ImGui::TableNextColumn();
 
                     // Check if this cell is being edited
@@ -170,8 +169,7 @@ void TableViewerTab::render() {
                         ImGui::PushID(rowIdx * static_cast<int>(columnNames.size()) + colIdx);
 
                         // Check for cell selection highlighting
-                        const bool isSelected =
-                            (selectedRow == rowIdx && selectedCol == colIdx);
+                        const bool isSelected = (selectedRow == rowIdx && selectedCol == colIdx);
                         if (isSelected) {
                             ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
                                                    ImGui::GetColorU32(colors.surface2));

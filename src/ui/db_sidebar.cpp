@@ -45,8 +45,30 @@ void DatabaseSidebar::render() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
     auto &databases = app.getDatabases();
-    for (size_t i = 0; i < databases.size(); i++) {
-        renderDatabaseNode(i);
+
+    if (databases.empty()) {
+        // Show helpful message when no databases are connected
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        ImGui::TextWrapped("No databases connected");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Right-click here to add a new database connection");
+        ImGui::PopStyleColor();
+
+        // Show context menu for adding database when area is right-clicked
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            ImGui::OpenPopup("AddDatabasePopup");
+        }
+
+        if (ImGui::BeginPopup("AddDatabasePopup")) {
+            if (ImGui::MenuItem("Add Database Connection")) {
+                showConnectionDialog();
+            }
+            ImGui::EndPopup();
+        }
+    } else {
+        for (size_t i = 0; i < databases.size(); i++) {
+            renderDatabaseNode(i);
+        }
     }
 
     ImGui::PopStyleVar();

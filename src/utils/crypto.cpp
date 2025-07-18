@@ -5,11 +5,9 @@
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <openssl/rand.h>
-#include <random>
 #include <stdexcept>
 
 namespace CryptoUtils {
-
     std::string encrypt(const std::string &plaintext, const std::string &key) {
         if (key.length() != 32) {
             throw std::invalid_argument("Key must be 32 bytes for AES-256");

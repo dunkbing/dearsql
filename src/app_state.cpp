@@ -81,7 +81,7 @@ bool AppState::executeSQL(const std::string &sql) const {
 
 bool AppState::saveConnection(const SavedConnection &connection) const {
     const std::string sql = R"(
-        INSERT OR REPLACE INTO saved_connections 
+        INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
     )";
@@ -129,8 +129,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
-        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used 
-        FROM saved_connections 
+        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used
+        FROM saved_connections
         ORDER BY last_used DESC;
     )";
 
@@ -169,19 +169,37 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 std::string salt(saltData.begin(), saltData.end());
                 std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
 
-                conn.username = (encryptedUsername && strlen(encryptedUsername) > 0)
-                                    ? CryptoUtils::decrypt(encryptedUsername, encryptionKey)
-                                    : "";
-                conn.password = (encryptedPassword && strlen(encryptedPassword) > 0)
-                                    ? CryptoUtils::decrypt(encryptedPassword, encryptionKey)
-                                    : "";
+                // Decrypt username
+                if (encryptedUsername && strlen(encryptedUsername) > 0) {
+                    try {
+                        conn.username = CryptoUtils::decrypt(encryptedUsername, encryptionKey);
+                    } catch (const std::exception &e) {
+                        std::cerr << "Failed to decrypt username for connection " << conn.name
+                                  << ": " << e.what() << std::endl;
+                        conn.username = "";
+                    }
+                } else {
+                    conn.username = "";
+                }
+
+                // Decrypt password
+                if (encryptedPassword && strlen(encryptedPassword) > 0) {
+                    try {
+                        conn.password = CryptoUtils::decrypt(encryptedPassword, encryptionKey);
+                    } catch (const std::exception &e) {
+                        std::cerr << "Failed to decrypt password for connection " << conn.name
+                                  << ": " << e.what() << std::endl;
+                        conn.password = "";
+                    }
+                } else {
+                    conn.password = "";
+                }
             } else {
-                // Legacy data without encryption
                 conn.username = encryptedUsername ? encryptedUsername : "";
-                conn.password = "";
+                conn.password = encryptedPassword ? encryptedPassword : "";
             }
         } catch (const std::exception &e) {
-            std::cerr << "Failed to decrypt credentials for connection " << conn.name << ": "
+            std::cerr << "Failed to process credentials for connection " << conn.name << ": "
                       << e.what() << std::endl;
             conn.username = "";
             conn.password = "";

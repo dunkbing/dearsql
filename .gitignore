@@ -32,3 +32,5 @@ cmake-build-*/
 
 # Generated files
 compile_commands.json
+# zed
+.cache

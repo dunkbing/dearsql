@@ -286,7 +286,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 port = conn.port;
                 strncpy(database, conn.database.c_str(), sizeof(database) - 1);
                 strncpy(username, conn.username.c_str(), sizeof(username) - 1);
-                password[0] = '\0'; // Clear password for security
+                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
 
                 auto db = createPostgreSQLDatabase();
                 if (db) {
@@ -405,6 +405,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.port = port;
             conn.database = std::string(database);
             conn.username = std::string(username);
+            conn.password = std::string(password);
 
             auto &app = Application::getInstance();
             app.getAppState()->saveConnection(conn);

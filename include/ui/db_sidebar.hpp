@@ -12,7 +12,7 @@ public:
 
 private:
     void renderDatabaseNode(size_t databaseIndex);
-    void renderTableNode(size_t databaseIndex, size_t tableIndex);
+    void renderTableNode(int databaseIndex, int tableIndex);
     void renderViewNode(size_t databaseIndex, size_t viewIndex);
     void renderSequenceNode(size_t databaseIndex, size_t sequenceIndex);
     void renderSQLiteHierarchy(size_t databaseIndex);
@@ -22,8 +22,8 @@ private:
     void renderSequencesSection(size_t databaseIndex);
     void handleDatabaseContextMenu(size_t databaseIndex);
     void handleTableContextMenu(size_t databaseIndex, size_t tableIndex);
-    void handleViewContextMenu(size_t databaseIndex, size_t viewIndex);
-    void handleSequenceContextMenu(size_t databaseIndex, size_t sequenceIndex);
+    static void handleViewContextMenu(size_t databaseIndex, size_t viewIndex);
+    static void handleSequenceContextMenu(size_t databaseIndex, size_t sequenceIndex);
 
     // Database connection dialog
     DatabaseConnectionDialog connectionDialog;

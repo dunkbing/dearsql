@@ -215,20 +215,20 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     }
 }
 
-void DatabaseSidebar::renderTableNode(const size_t databaseIndex, const size_t tableIndex) {
+void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIndex) {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
     const auto &table = db->getTables()[tableIndex];
 
-    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                     ImGuiTreeNodeFlags_FramePadding;
-    if (app.getSelectedDatabase() == (int)databaseIndex &&
-        app.getSelectedTable() == (int)tableIndex) {
+    if (app.getSelectedDatabase() == databaseIndex && app.getSelectedTable() == tableIndex) {
         tableFlags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
+    const bool tableOpened = ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -241,11 +241,86 @@ void DatabaseSidebar::renderTableNode(const size_t databaseIndex, const size_t t
     }
 
     handleTableContextMenu(databaseIndex, tableIndex);
+
+    if (tableOpened) {
+        // Columns section
+        constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                    ImGuiTreeNodeFlags_FramePadding;
+        const bool columnsOpened = ImGui::TreeNodeEx("Columns", columnsFlags);
+
+        if (columnsOpened) {
+            for (const auto &[name, type, isPrimaryKey, isNotNull] : table.columns) {
+                ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                                 ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+                // Build column display string with type and constraints
+                std::string columnDisplay = std::format("{} ({}", name, type);
+                if (isPrimaryKey) {
+                    columnDisplay += ", PK";
+                }
+                if (isNotNull) {
+                    columnDisplay += ", NOT NULL";
+                }
+                columnDisplay += ")";
+
+                ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+            }
+            ImGui::TreePop();
+        }
+
+        // Keys section
+        constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+        bool keysOpen = ImGui::TreeNodeEx("Keys", keysFlags);
+
+        if (keysOpen) {
+            // Show primary key if any column is marked as primary key
+            bool hasPrimaryKey = false;
+            std::string primaryKeyColumns;
+            for (const auto &column : table.columns) {
+                if (column.isPrimaryKey) {
+                    if (hasPrimaryKey) {
+                        primaryKeyColumns += ", ";
+                    }
+                    primaryKeyColumns += column.name;
+                    hasPrimaryKey = true;
+                }
+            }
+
+            if (hasPrimaryKey) {
+                constexpr ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                       ImGuiTreeNodeFlags_FramePadding;
+                std::string pkDisplay = "Primary Key (" + primaryKeyColumns + ")";
+                ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
+            } else {
+                ImGui::Text("  No primary key");
+            }
+            ImGui::TreePop();
+        }
+
+        // Indexes section
+        constexpr ImGuiTreeNodeFlags indexesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                    ImGuiTreeNodeFlags_FramePadding;
+        bool indexesOpen = ImGui::TreeNodeEx("Indexes", indexesFlags);
+
+        if (indexesOpen) {
+            // TODO: Implement index retrieval from database
+            ImGui::Text("  Index information not available");
+            ImGui::TreePop();
+        }
+
+        ImGui::TreePop();
+    }
 }
 
 void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
 
     if (ImGui::BeginPopupContextItem()) {
@@ -527,11 +602,11 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
     }
 }
 
-void DatabaseSidebar::handleViewContextMenu(size_t databaseIndex, size_t viewIndex) {
+void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const size_t viewIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
-    auto &view = db->getViews()[viewIndex];
+    const auto &view = db->getViews()[viewIndex];
 
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("View Data")) {
@@ -544,9 +619,10 @@ void DatabaseSidebar::handleViewContextMenu(size_t databaseIndex, size_t viewInd
     }
 }
 
-void DatabaseSidebar::handleSequenceContextMenu(size_t databaseIndex, size_t sequenceIndex) {
+void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
+                                                const size_t sequenceIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
     auto &sequence = db->getSequences()[sequenceIndex];
 

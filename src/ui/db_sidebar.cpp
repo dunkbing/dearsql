@@ -106,7 +106,9 @@ void DatabaseSidebar::render() {
                     }
 
                     if (matches) {
-                        app.getAppState()->deleteConnection(conn.id);
+                        if (app.getAppState()->deleteConnection(conn.id)) {
+                            std::cout << "deleted " << conn.id << std::endl;
+                        }
                         break;
                     }
                 }
@@ -141,10 +143,10 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     }
 
     // Show loading indicator in database name if connecting
-    std::string dbLabel = db->getName();
-    bool showSpinner = db->isConnecting();
+    const std::string dbLabel = db->getName();
+    const bool showSpinner = db->isConnecting();
 
-    bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
+    const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
 
     // Show spinner next to database name if connecting
     if (showSpinner) {
@@ -161,13 +163,13 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     handleDatabaseContextMenu(databaseIndex);
 
     // Check for async connection completion (always check, even when collapsed)
-    db->checkAsyncConnectionStatus();
+    db->checkConnectionStatusAsync();
 
     if (dbOpen) {
         // Auto-connect when database node is expanded
         if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
             std::cout << "Starting async connection to database: " << db->getName() << std::endl;
-            db->startAsyncConnection();
+            db->startConnectionAsync();
         }
 
         // Check if database is connected
@@ -192,13 +194,13 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             // Check for async loading completion for PostgreSQL
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 if (db->isLoadingTables()) {
-                    db->checkAsyncTablesStatus();
+                    db->checkTablesStatusAsync();
                 }
                 if (db->isLoadingViews()) {
-                    db->checkAsyncViewsStatus();
+                    db->checkViewsStatusAsync();
                 }
                 if (db->isLoadingSequences()) {
-                    db->checkAsyncSequencesStatus();
+                    db->checkSequencesStatusAsync();
                 }
             }
 
@@ -215,9 +217,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
 void DatabaseSidebar::renderTableNode(const size_t databaseIndex, const size_t tableIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
-    auto &table = db->getTables()[tableIndex];
+    const auto &table = db->getTables()[tableIndex];
 
     ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                     ImGuiTreeNodeFlags_FramePadding;
@@ -297,7 +299,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
     }
 }
 
-void DatabaseSidebar::handleTableContextMenu(size_t databaseIndex, size_t tableIndex) {
+void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const size_t tableIndex) {
     auto &app = Application::getInstance();
     auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];

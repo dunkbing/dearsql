@@ -30,8 +30,8 @@ public:
     virtual bool isConnecting() const {
         return false;
     }
-    virtual void startAsyncConnection() {}
-    virtual void checkAsyncConnectionStatus() {}
+    virtual void startConnectionAsync() {}
+    virtual void checkConnectionStatusAsync() {}
 
     // Database info
     virtual const std::string &getName() const = 0;
@@ -49,7 +49,7 @@ public:
     virtual bool isLoadingTables() const {
         return false;
     }
-    virtual void checkAsyncTablesStatus() {}
+    virtual void checkTablesStatusAsync() {}
 
     // View management
     virtual void refreshViews() = 0;
@@ -60,7 +60,7 @@ public:
     virtual bool isLoadingViews() const {
         return false;
     }
-    virtual void checkAsyncViewsStatus() {}
+    virtual void checkViewsStatusAsync() {}
 
     // Sequence management (Postgres)
     virtual void refreshSequences() = 0;
@@ -71,7 +71,7 @@ public:
     virtual bool isLoadingSequences() const {
         return false;
     }
-    virtual void checkAsyncSequencesStatus() {}
+    virtual void checkSequencesStatusAsync() {}
 
     // Query execution
     virtual std::string executeQuery(const std::string &query) = 0;

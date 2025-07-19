@@ -448,12 +448,12 @@ bool SQLiteDatabase::isConnecting() const {
     return false; // SQLite connections are synchronous and fast
 }
 
-void SQLiteDatabase::startAsyncConnection() {
+void SQLiteDatabase::startConnectionAsync() {
     // For SQLite, just call the synchronous connect method
     // since file-based connections are typically fast
     connect();
 }
 
-void SQLiteDatabase::checkAsyncConnectionStatus() {
+void SQLiteDatabase::checkConnectionStatusAsync() {
     // No-op for SQLite since connection is synchronous
 }

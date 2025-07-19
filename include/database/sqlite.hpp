@@ -14,8 +14,8 @@ public:
     void disconnect() override;
     bool isConnected() const override;
     bool isConnecting() const override;
-    void startAsyncConnection() override;
-    void checkAsyncConnectionStatus() override;
+    void startConnectionAsync() override;
+    void checkConnectionStatusAsync() override;
 
     // Database info
     const std::string &getName() const override;

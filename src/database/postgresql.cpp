@@ -494,7 +494,7 @@ bool PostgreSQLDatabase::isLoadingTables() const {
     return loadingTables;
 }
 
-void PostgreSQLDatabase::checkAsyncTablesStatus() {
+void PostgreSQLDatabase::checkTablesStatusAsync() {
     if (tablesFuture.valid() &&
         tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -622,7 +622,7 @@ bool PostgreSQLDatabase::isLoadingViews() const {
     return loadingViews;
 }
 
-void PostgreSQLDatabase::checkAsyncViewsStatus() {
+void PostgreSQLDatabase::checkViewsStatusAsync() {
     if (viewsFuture.valid() &&
         viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -744,7 +744,7 @@ bool PostgreSQLDatabase::isLoadingSequences() const {
     return loadingSequences;
 }
 
-void PostgreSQLDatabase::checkAsyncSequencesStatus() {
+void PostgreSQLDatabase::checkSequencesStatusAsync() {
     if (sequencesFuture.valid() &&
         sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -825,7 +825,7 @@ bool PostgreSQLDatabase::isConnecting() const {
     return connecting;
 }
 
-void PostgreSQLDatabase::startAsyncConnection() {
+void PostgreSQLDatabase::startConnectionAsync() {
     if (connecting || connected) {
         return;
     }
@@ -852,7 +852,7 @@ void PostgreSQLDatabase::startAsyncConnection() {
     });
 }
 
-void PostgreSQLDatabase::checkAsyncConnectionStatus() {
+void PostgreSQLDatabase::checkConnectionStatusAsync() {
     if (connectionFuture.valid() &&
         connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {

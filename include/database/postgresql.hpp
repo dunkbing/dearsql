@@ -19,8 +19,8 @@ public:
     void disconnect() override;
     bool isConnected() const override;
     bool isConnecting() const override;
-    void startAsyncConnection() override;
-    void checkAsyncConnectionStatus() override;
+    void startConnectionAsync() override;
+    void checkConnectionStatusAsync() override;
 
     // Database info
     const std::string &getName() const override;
@@ -36,7 +36,7 @@ public:
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
     bool isLoadingTables() const override;
-    void checkAsyncTablesStatus() override;
+    void checkTablesStatusAsync() override;
 
     // View management
     void refreshViews() override;
@@ -45,7 +45,7 @@ public:
     bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
     bool isLoadingViews() const override;
-    void checkAsyncViewsStatus() override;
+    void checkViewsStatusAsync() override;
 
     // Sequence management
     void refreshSequences() override;
@@ -54,7 +54,7 @@ public:
     bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
     bool isLoadingSequences() const override;
-    void checkAsyncSequencesStatus() override;
+    void checkSequencesStatusAsync() override;
 
     // Query execution
     std::string executeQuery(const std::string &query) override;

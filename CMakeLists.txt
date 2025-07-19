@@ -67,6 +67,7 @@ endif()
 set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
+    src/embedded_images.cpp
 
     # Database
     src/database/query_executor.cpp
@@ -137,7 +138,45 @@ else()
     file(APPEND ${RESOURCE_FILE} "extern \"C\" size_t getEmbeddedFontCount() { return 0; }\n")
 endif()
 
-list(APPEND APP_SOURCES ${RESOURCE_FILE})
+# Embed image files as resources
+file(GLOB IMAGE_FILES "assets/images/*.png" "assets/images/*.jpg" "assets/images/*.jpeg")
+set(IMAGE_RESOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/embedded_images.cpp")
+
+file(WRITE ${IMAGE_RESOURCE_FILE} "#include <cstdint>\n#include <cstddef>\n\n")
+file(APPEND ${IMAGE_RESOURCE_FILE} "struct EmbeddedImage {\n")
+file(APPEND ${IMAGE_RESOURCE_FILE} "    const char* name;\n")
+file(APPEND ${IMAGE_RESOURCE_FILE} "    const uint8_t* data;\n")
+file(APPEND ${IMAGE_RESOURCE_FILE} "    size_t size;\n")
+file(APPEND ${IMAGE_RESOURCE_FILE} "};\n\n")
+
+if(IMAGE_FILES)
+    foreach(IMAGE_FILE ${IMAGE_FILES})
+        get_filename_component(IMAGE_NAME ${IMAGE_FILE} NAME_WE)
+        string(MAKE_C_IDENTIFIER ${IMAGE_NAME} IMAGE_VAR)
+
+        file(READ ${IMAGE_FILE} IMAGE_DATA HEX)
+        string(REGEX REPLACE "([0-9a-fA-F][0-9a-fA-F])" "0x\\1," IMAGE_DATA ${IMAGE_DATA})
+        string(REGEX REPLACE ",$" "" IMAGE_DATA ${IMAGE_DATA})
+
+        file(APPEND ${IMAGE_RESOURCE_FILE} "static const uint8_t ${IMAGE_VAR}_data[] = {${IMAGE_DATA}};\n")
+    endforeach()
+
+    file(APPEND ${IMAGE_RESOURCE_FILE} "\nstatic const EmbeddedImage embedded_images[] = {\n")
+    foreach(IMAGE_FILE ${IMAGE_FILES})
+        get_filename_component(IMAGE_NAME ${IMAGE_FILE} NAME_WE)
+        string(MAKE_C_IDENTIFIER ${IMAGE_NAME} IMAGE_VAR)
+        file(APPEND ${IMAGE_RESOURCE_FILE} "    {\"${IMAGE_NAME}\", ${IMAGE_VAR}_data, sizeof(${IMAGE_VAR}_data)},\n")
+    endforeach()
+    file(APPEND ${IMAGE_RESOURCE_FILE} "};\n\n")
+
+    file(APPEND ${IMAGE_RESOURCE_FILE} "extern \"C\" const EmbeddedImage* getEmbeddedImages() { return embedded_images; }\n")
+    file(APPEND ${IMAGE_RESOURCE_FILE} "extern \"C\" size_t getEmbeddedImageCount() { return sizeof(embedded_images) / sizeof(embedded_images[0]); }\n")
+else()
+    file(APPEND ${IMAGE_RESOURCE_FILE} "extern \"C\" const EmbeddedImage* getEmbeddedImages() { return nullptr; }\n")
+    file(APPEND ${IMAGE_RESOURCE_FILE} "extern \"C\" size_t getEmbeddedImageCount() { return 0; }\n")
+endif()
+
+list(APPEND APP_SOURCES ${RESOURCE_FILE} ${IMAGE_RESOURCE_FILE})
 
 # Main application
 add_executable(${PROJECT_NAME}
@@ -152,6 +191,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/json/include
     external/soci/include
     external/IconFontCppHeaders
+    external/stb
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 

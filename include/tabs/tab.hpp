@@ -86,6 +86,8 @@ public:
         return tableName;
     }
     void loadData();
+    void loadDataAsync();
+    void checkAsyncLoadStatus();
     void nextPage();
     void previousPage();
     void firstPage();
@@ -103,6 +105,11 @@ private:
     int currentPage = 0;
     int rowsPerPage = 100;
     int totalRows = 0;
+
+    // Async loading state
+    bool isLoadingData = false;
+    bool hasLoadingError = false;
+    std::string loadingError;
 
     // Edit state
     int editingRow = -1;

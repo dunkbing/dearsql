@@ -26,49 +26,49 @@ public:
     // Connection management
     virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
-    virtual bool isConnected() const = 0;
-    virtual bool isConnecting() const {
+    [[nodiscard]] virtual bool isConnected() const = 0;
+    [[nodiscard]] virtual bool isConnecting() const {
         return false;
     }
     virtual void startConnectionAsync() {}
     virtual void checkConnectionStatusAsync() {}
 
     // Database info
-    virtual const std::string &getName() const = 0;
-    virtual const std::string &getConnectionString() const = 0;
-    virtual const std::string &getPath() const = 0;
-    virtual void *getConnection() const = 0;
-    virtual DatabaseType getType() const = 0;
+    [[nodiscard]] virtual const std::string &getName() const = 0;
+    [[nodiscard]] virtual const std::string &getConnectionString() const = 0;
+    [[nodiscard]] virtual const std::string &getPath() const = 0;
+    [[nodiscard]] virtual void *getConnection() const = 0;
+    [[nodiscard]] virtual DatabaseType getType() const = 0;
 
     // Table management
     virtual void refreshTables() = 0;
-    virtual const std::vector<Table> &getTables() const = 0;
+    [[nodiscard]] virtual const std::vector<Table> &getTables() const = 0;
     virtual std::vector<Table> &getTables() = 0;
-    virtual bool areTablesLoaded() const = 0;
+    [[nodiscard]] virtual bool areTablesLoaded() const = 0;
     virtual void setTablesLoaded(bool loaded) = 0;
-    virtual bool isLoadingTables() const {
+    [[nodiscard]] virtual bool isLoadingTables() const {
         return false;
     }
     virtual void checkTablesStatusAsync() {}
 
     // View management
     virtual void refreshViews() = 0;
-    virtual const std::vector<Table> &getViews() const = 0;
+    [[nodiscard]] virtual const std::vector<Table> &getViews() const = 0;
     virtual std::vector<Table> &getViews() = 0;
-    virtual bool areViewsLoaded() const = 0;
+    [[nodiscard]] virtual bool areViewsLoaded() const = 0;
     virtual void setViewsLoaded(bool loaded) = 0;
-    virtual bool isLoadingViews() const {
+    [[nodiscard]] virtual bool isLoadingViews() const {
         return false;
     }
     virtual void checkViewsStatusAsync() {}
 
     // Sequence management (Postgres)
     virtual void refreshSequences() = 0;
-    virtual const std::vector<std::string> &getSequences() const = 0;
+    [[nodiscard]] virtual const std::vector<std::string> &getSequences() const = 0;
     virtual std::vector<std::string> &getSequences() = 0;
-    virtual bool areSequencesLoaded() const = 0;
+    [[nodiscard]] virtual bool areSequencesLoaded() const = 0;
     virtual void setSequencesLoaded(bool loaded) = 0;
-    virtual bool isLoadingSequences() const {
+    [[nodiscard]] virtual bool isLoadingSequences() const {
         return false;
     }
     virtual void checkSequencesStatusAsync() {}
@@ -80,14 +80,34 @@ public:
     virtual std::vector<std::string> getColumnNames(const std::string &tableName) = 0;
     virtual int getRowCount(const std::string &tableName) = 0;
 
+    // Async table data loading (includes metadata + data)
+    virtual void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) {}
+    [[nodiscard]] virtual bool isLoadingTableData() const {
+        return false;
+    }
+    virtual void checkTableDataStatusAsync() {}
+    [[nodiscard]] virtual bool hasTableDataResult() const {
+        return false;
+    }
+    virtual std::vector<std::vector<std::string>> getTableDataResult() {
+        return {};
+    }
+    virtual std::vector<std::string> getColumnNamesResult() {
+        return {};
+    }
+    virtual int getRowCountResult() {
+        return 0;
+    }
+    virtual void clearTableDataResult() {}
+
     // UI state
-    virtual bool isExpanded() const = 0;
+    [[nodiscard]] virtual bool isExpanded() const = 0;
     virtual void setExpanded(bool expanded) = 0;
 
     // Connection attempt tracking
-    virtual bool hasAttemptedConnection() const = 0;
+    [[nodiscard]] virtual bool hasAttemptedConnection() const = 0;
     virtual void setAttemptedConnection(bool attempted) = 0;
-    virtual const std::string &getLastConnectionError() const = 0;
+    [[nodiscard]] virtual const std::string &getLastConnectionError() const = 0;
     virtual void setLastConnectionError(const std::string &error) = 0;
 
 protected:

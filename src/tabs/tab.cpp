@@ -23,10 +23,11 @@ void SQLEditorTab::render() {
     sqlQuery = sqlBuffer;
 
     if (ImGui::Button("Execute Query")) {
-        int selectedDb = app.getSelectedDatabase();
-        auto &databases = app.getDatabases();
+        const int selectedDb = app.getSelectedDatabase();
+        const auto &databases = app.getDatabases();
+        const int totalDb = static_cast<int>(databases.size());
 
-        if (selectedDb >= 0 && selectedDb < (int)databases.size()) {
+        if (selectedDb >= 0 && selectedDb < totalDb) {
             auto &db = databases[selectedDb];
             auto [success, error] = db->connect();
             if (success) {
@@ -59,12 +60,14 @@ void SQLEditorTab::render() {
 TableViewerTab::TableViewerTab(const std::string &name, const std::string &databasePath,
                                const std::string &tableName)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(databasePath), tableName(tableName) {
-    loadData();
+    loadDataAsync();
 }
 
 void TableViewerTab::render() {
     const auto &colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+
+    checkAsyncLoadStatus();
 
     ImGui::Text("Table: %s", tableName.c_str());
     ImGui::Separator();
@@ -102,6 +105,12 @@ void TableViewerTab::render() {
     if (ImGui::Button("Refresh")) {
         refreshData();
     }
+
+    // Show loading indicator
+    if (isLoadingData) {
+        ImGui::SameLine();
+        ImGui::Text("Loading...");
+    }
     ImGui::SameLine();
 
     if (hasChanges) {
@@ -132,8 +141,18 @@ void TableViewerTab::render() {
 
     ImGui::Separator();
 
+    // Show loading error if any
+    if (hasLoadingError) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::TextWrapped("Error loading data: %s", loadingError.c_str());
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
+
     // Table display
-    if (!columnNames.empty() && !tableData.empty()) {
+    if (isLoadingData) {
+        ImGui::Text("Loading table data...");
+    } else if (!columnNames.empty() && !tableData.empty()) {
         const int colSize = static_cast<int>(columnNames.size());
         constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                    ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
@@ -212,17 +231,15 @@ void TableViewerTab::loadData() {
         }
     }
 
-    if (!db)
+    if (!db) {
         return;
+    }
 
-    // Get total row count
     totalRows = db->getRowCount(tableName);
-
-    // Get column names
     columnNames = db->getColumnNames(tableName);
 
     // Get data with pagination
-    int offset = currentPage * rowsPerPage;
+    const int offset = currentPage * rowsPerPage;
     tableData = db->getTableData(tableName, rowsPerPage, offset);
 
     // Store original data for change tracking
@@ -231,41 +248,49 @@ void TableViewerTab::loadData() {
 }
 
 void TableViewerTab::nextPage() {
-    int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
-    if (currentPage < totalPages - 1) {
+    const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
+    if (currentPage < totalPages - 1 && !isLoadingData) {
         currentPage++;
-        loadData();
+        loadDataAsync();
     }
 }
 
 void TableViewerTab::previousPage() {
-    if (currentPage > 0) {
+    if (currentPage > 0 && !isLoadingData) {
         currentPage--;
-        loadData();
+        loadDataAsync();
     }
 }
 
 void TableViewerTab::firstPage() {
-    currentPage = 0;
-    loadData();
+    if (!isLoadingData) {
+        currentPage = 0;
+        loadDataAsync();
+    }
 }
 
 void TableViewerTab::lastPage() {
-    int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
+    if (isLoadingData)
+        return;
+
+    const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
     currentPage = totalPages - 1;
-    loadData();
+    loadDataAsync();
 }
 
 void TableViewerTab::refreshData() {
-    // Reset edit state
-    editingRow = -1;
-    editingCol = -1;
-    selectedRow = -1;
-    selectedCol = -1;
-    hasChanges = false;
+    if (!isLoadingData) {
+        // Reset edit state
+        editingRow = -1;
+        editingCol = -1;
+        selectedRow = -1;
+        selectedCol = -1;
+        hasChanges = false;
+        hasLoadingError = false;
+        loadingError.clear();
 
-    // Reload data from database
-    loadData();
+        loadDataAsync();
+    }
 }
 
 void TableViewerTab::saveChanges() {
@@ -319,10 +344,88 @@ void TableViewerTab::exitEditMode(bool saveEdit) {
     }
 }
 
-void TableViewerTab::selectCell(int row, int col) {
-    if (row >= 0 && row < (int)tableData.size() && col >= 0 && col < (int)columnNames.size()) {
-
+void TableViewerTab::selectCell(const int row, const int col) {
+    const int tableSize = static_cast<int>(tableData.size());
+    const int totalCols = static_cast<int>(columnNames.size());
+    if (row >= 0 && row < tableSize && col >= 0 && col < totalCols) {
         selectedRow = row;
         selectedCol = col;
+    }
+}
+
+void TableViewerTab::loadDataAsync() {
+    auto &app = Application::getInstance();
+    const auto &databases = app.getDatabases();
+
+    // Find database
+    std::shared_ptr<DatabaseInterface> db = nullptr;
+    for (auto &database : databases) {
+        if (database->getPath() == databasePath && database->isConnected()) {
+            db = database;
+            break;
+        }
+    }
+
+    if (!db) {
+        hasLoadingError = true;
+        loadingError = "Database not found or not connected";
+        return;
+    }
+
+    // Clear any previous async result
+    db->clearTableDataResult();
+
+    // Start async data loading (includes metadata)
+    const int offset = currentPage * rowsPerPage;
+    isLoadingData = true;
+    hasLoadingError = false;
+    loadingError.clear();
+
+    db->startTableDataLoadAsync(tableName, rowsPerPage, offset);
+}
+
+void TableViewerTab::checkAsyncLoadStatus() {
+    if (!isLoadingData) {
+        return;
+    }
+
+    auto &app = Application::getInstance();
+    const auto &databases = app.getDatabases();
+
+    // Find database
+    std::shared_ptr<DatabaseInterface> db = nullptr;
+    for (auto &database : databases) {
+        if (database->getPath() == databasePath && database->isConnected()) {
+            db = database;
+            break;
+        }
+    }
+
+    if (!db) {
+        isLoadingData = false;
+        hasLoadingError = true;
+        loadingError = "Database not found or not connected";
+        return;
+    }
+
+    // Check async load status
+    db->checkTableDataStatusAsync();
+
+    if (db->hasTableDataResult()) {
+        // Load completed - get all data including metadata
+        tableData = db->getTableDataResult();
+        columnNames = db->getColumnNamesResult();
+        totalRows = db->getRowCountResult();
+        originalData = tableData;
+        hasChanges = false;
+        isLoadingData = false;
+
+        // Clear the result to free memory
+        db->clearTableDataResult();
+    } else if (!db->isLoadingTableData()) {
+        // Loading stopped but no result - probably an error
+        isLoadingData = false;
+        hasLoadingError = true;
+        loadingError = "Failed to load table data";
     }
 }

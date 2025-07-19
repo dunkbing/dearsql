@@ -235,7 +235,7 @@ void DatabaseSidebar::renderTableNode(const size_t databaseIndex, const size_t t
         app.setSelectedTable(tableIndex);
     }
 
-    // Double-click to open table viewer
+    // Double-click to open table viewer (async loading will be handled by the tab)
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
         app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
     }
@@ -332,7 +332,7 @@ void DatabaseSidebar::renderViewNode(size_t databaseIndex, size_t viewIndex) {
         app.setSelectedTable(-1); // Reset table selection for views
     }
 
-    // Double-click to open view viewer
+    // Double-click to open view viewer (async loading will be handled by the tab)
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
         app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
     }

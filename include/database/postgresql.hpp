@@ -63,6 +63,16 @@ public:
     std::vector<std::string> getColumnNames(const std::string &tableName) override;
     int getRowCount(const std::string &tableName) override;
 
+    // Async table data loading
+    void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) override;
+    bool isLoadingTableData() const override;
+    void checkTableDataStatusAsync() override;
+    bool hasTableDataResult() const override;
+    std::vector<std::vector<std::string>> getTableDataResult() override;
+    std::vector<std::string> getColumnNamesResult() override;
+    int getRowCountResult() override;
+    void clearTableDataResult() override;
+
     // UI state
     bool isExpanded() const override;
     void setExpanded(bool expanded) override;
@@ -125,4 +135,12 @@ private:
     std::atomic<bool> connecting = false;
     std::thread connectionThread;
     std::future<std::pair<bool, std::string>> connectionFuture;
+
+    // Async table data loading
+    std::atomic<bool> loadingTableData = false;
+    std::atomic<bool> hasTableDataReady = false;
+    std::vector<std::vector<std::string>> tableDataResult;
+    std::vector<std::string> columnNamesResult;
+    int rowCountResult = 0;
+    std::future<void> tableDataFuture;
 };

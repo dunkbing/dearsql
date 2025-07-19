@@ -1,8 +1,10 @@
 #pragma once
 
 #include "db_interface.hpp"
+#include <future>
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
+#include <thread>
 
 class SQLiteDatabase final : public DatabaseInterface {
 public:
@@ -52,6 +54,16 @@ public:
     std::vector<std::string> getColumnNames(const std::string &tableName) override;
     int getRowCount(const std::string &tableName) override;
 
+    // Async table data loading
+    void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) override;
+    bool isLoadingTableData() const override;
+    void checkTableDataStatusAsync() override;
+    bool hasTableDataResult() const override;
+    std::vector<std::vector<std::string>> getTableDataResult() override;
+    std::vector<std::string> getColumnNamesResult() override;
+    int getRowCountResult() override;
+    void clearTableDataResult() override;
+
     // UI state
     bool isExpanded() const override;
     void setExpanded(bool expanded) override;
@@ -83,4 +95,12 @@ private:
     bool sequencesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
+
+    // Async table data loading state
+    bool loadingTableData = false;
+    bool hasTableDataReady = false;
+    std::vector<std::vector<std::string>> tableDataResult;
+    std::vector<std::string> columnNamesResult;
+    int rowCountResult = 0;
+    std::future<void> tableDataFuture;
 };

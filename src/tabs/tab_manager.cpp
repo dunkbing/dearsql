@@ -64,7 +64,6 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
 
 std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databasePath,
                                                       const std::string &tableName) {
-    // Check if tab already exists
     auto existingTab = findTableTab(databasePath, tableName);
     if (existingTab) {
         // Tab already exists, mark it to be focused

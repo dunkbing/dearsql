@@ -888,3 +888,91 @@ void PostgreSQLDatabase::checkConnectionStatusAsync() {
         }
     }
 }
+
+// Async table data loading methods
+void PostgreSQLDatabase::startTableDataLoadAsync(const std::string &tableName, int limit,
+                                                 int offset) {
+    if (loadingTableData.load()) {
+        return; // Already loading
+    }
+
+    loadingTableData = true;
+    hasTableDataReady = false;
+    tableDataResult.clear();
+    columnNamesResult.clear();
+    rowCountResult = 0;
+
+    // Start async operation that loads everything
+    tableDataFuture = std::async(std::launch::async, [this, tableName, limit, offset]() {
+        try {
+            tableDataResult = getTableData(tableName, limit, offset);
+            columnNamesResult = getColumnNames(tableName);
+            rowCountResult = getRowCount(tableName);
+        } catch (const std::exception &e) {
+            std::cerr << "Error in async table data load: " << e.what() << std::endl;
+            // Clear results on error
+            tableDataResult.clear();
+            columnNamesResult.clear();
+            rowCountResult = 0;
+        }
+    });
+}
+
+bool PostgreSQLDatabase::isLoadingTableData() const {
+    return loadingTableData.load();
+}
+
+void PostgreSQLDatabase::checkTableDataStatusAsync() {
+    if (!loadingTableData.load()) {
+        return;
+    }
+
+    if (tableDataFuture.valid() &&
+        tableDataFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            tableDataFuture.get(); // This will throw if there was an exception
+            hasTableDataReady = true;
+            loadingTableData = false;
+        } catch (const std::exception &e) {
+            std::cerr << "Error loading table data: " << e.what() << std::endl;
+            loadingTableData = false;
+            hasTableDataReady = false;
+            // Clear results on error
+            tableDataResult.clear();
+            columnNamesResult.clear();
+            rowCountResult = 0;
+        }
+    }
+}
+
+bool PostgreSQLDatabase::hasTableDataResult() const {
+    return hasTableDataReady.load();
+}
+
+std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableDataResult() {
+    if (hasTableDataReady.load()) {
+        return tableDataResult;
+    }
+    return {};
+}
+
+std::vector<std::string> PostgreSQLDatabase::getColumnNamesResult() {
+    if (hasTableDataReady.load()) {
+        return columnNamesResult;
+    }
+    return {};
+}
+
+int PostgreSQLDatabase::getRowCountResult() {
+    if (hasTableDataReady.load()) {
+        return rowCountResult;
+    }
+    return 0;
+}
+
+void PostgreSQLDatabase::clearTableDataResult() {
+    hasTableDataReady = false;
+    tableDataResult.clear();
+    columnNamesResult.clear();
+    rowCountResult = 0;
+}

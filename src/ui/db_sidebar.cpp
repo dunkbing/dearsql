@@ -1,5 +1,6 @@
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
+#include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
@@ -145,7 +146,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
     // Show loading indicator in database name if connecting
     const std::string dbIcon =
-        (db->getType() == DatabaseType::SQLITE) ? ICON_FA_DATABASE : ICON_FA_TOWER_BROADCAST;
+        (db->getType() == DatabaseType::SQLITE) ? ICON_FK_DATABASE : ICON_FK_POSTGRESQL;
     const bool showSpinner = db->isConnecting();
 
     // Create label with colored icon and normal text

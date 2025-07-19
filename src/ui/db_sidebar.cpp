@@ -221,9 +221,8 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
     auto &db = databases[databaseIndex];
     const auto &table = db->getTables()[tableIndex];
 
-    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                    ImGuiTreeNodeFlags_FramePadding;
+    ImGuiTreeNodeFlags tableFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
     if (app.getSelectedDatabase() == databaseIndex && app.getSelectedTable() == tableIndex) {
         tableFlags |= ImGuiTreeNodeFlags_Selected;
     }

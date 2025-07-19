@@ -4,7 +4,6 @@
 #include <future>
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
-#include <thread>
 
 class SQLiteDatabase final : public DatabaseInterface {
 public:

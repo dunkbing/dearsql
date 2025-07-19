@@ -8,7 +8,6 @@
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
 #include <csignal>
-#include <fstream>
 #include <imgui_internal.h>
 #include <iostream>
 
@@ -289,14 +288,9 @@ bool Application::initializeImGui() {
 
 void Application::setupFonts() {
     ImGuiIO &io = ImGui::GetIO();
-
-    // Configure fonts with Japanese support
     ImFontConfig fontConfig;
-    fontConfig.MergeMode = false;
 
-    bool fontLoaded = false;
-
-    // Try to load embedded fonts first
+    // load embedded fonts first
     size_t embeddedFontCount = getEmbeddedFontCount();
     if (embeddedFontCount > 0) {
         const EmbeddedFont *embeddedFonts = getEmbeddedFonts();
@@ -307,94 +301,27 @@ void Application::setupFonts() {
             const ImWchar *ranges = nullptr;
             std::string fontName = font.name;
 
-            if (fontName.find("CJK") != std::string::npos ||
-                fontName.find("Han") != std::string::npos) {
-                continue; // Skip CJK fonts to avoid memory issues
-            } else if (fontName.find("Cyrillic") != std::string::npos) {
+            if (fontName.find("Cyrillic") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesCyrillic();
             } else {
-                ranges =
-                    io.Fonts->GetGlyphRangesDefault(); // Use default ranges instead of Japanese
+                ranges = io.Fonts->GetGlyphRangesDefault();
             }
 
             // Create a copy of fontConfig for each font to avoid reuse issues
             ImFontConfig embeddedFontConfig = fontConfig;
-            embeddedFontConfig.FontDataOwnedByAtlas =
-                false; // Don't let ImGui free the embedded data
+            // Don't let ImGui free the embedded data
+            embeddedFontConfig.FontDataOwnedByAtlas = false;
+
             ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF((void *)font.data, (int)font.size,
                                                                 16.0f, &embeddedFontConfig, ranges);
+            if (!fontConfig.MergeMode) {
+                fontConfig.MergeMode = true;
+            }
 
             if (loadedFont) {
                 std::cout << "✓ Successfully loaded embedded font: " << font.name << std::endl;
-                fontLoaded = true;
-                break; // Use the first successfully loaded font
             }
         }
-    }
-
-    // Try to load fonts from assets folder first, then fallback to system fonts
-    std::vector<std::string> fontPaths = {// Asset fonts first
-                                          "assets/fonts/NotoSans-Regular.ttf",
-                                          "assets/fonts/NotoSansCJK-Regular.otf",
-// System fonts as fallback
-#ifdef __APPLE__
-                                          "/System/Library/Fonts/Hiragino Sans GB.ttc",
-                                          "/System/Library/Fonts/PingFang.ttc",
-                                          "/System/Library/Fonts/Helvetica.ttc",
-                                          "/Library/Fonts/Arial Unicode MS.ttf"
-#elif defined(_WIN32)
-                                          "C:/Windows/Fonts/msgothic.ttc",
-                                          "C:/Windows/Fonts/meiryo.ttc",
-                                          "C:/Windows/Fonts/YuGothM.ttc",
-                                          "C:/Windows/Fonts/arial.ttf"
-#else
-                                          "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-                                          "/usr/share/fonts/truetype/liberation/"
-                                          "LiberationSans-Regular.ttf",
-                                          "/usr/share/fonts/TTF/DejaVuSans.ttf"
-#endif
-    };
-
-    // Try to load the first available font
-    for (const auto &fontPath : fontPaths) {
-        std::ifstream fontFile(fontPath);
-        if (fontFile.good()) {
-            fontFile.close();
-
-            // Load the font with comprehensive Unicode ranges
-            const ImWchar *ranges = nullptr;
-
-            // Choose appropriate glyph ranges based on font name
-            if (fontPath.find("Cyrillic") != std::string::npos) {
-                ranges = io.Fonts->GetGlyphRangesCyrillic(); // Cyrillic + Latin
-            } else if (fontPath.find("unifont") != std::string::npos) {
-                ranges = nullptr; // Load all available glyphs for maximum coverage
-            } else {
-                // For general fonts, use default ranges
-                ranges = io.Fonts->GetGlyphRangesDefault();
-            }
-
-            ImFont *font =
-                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &fontConfig, ranges);
-
-            if (font != nullptr) {
-                if (fontPath.find("assets/fonts/") == 0) {
-                    std::cout << "✓ Successfully loaded custom font: " << fontPath << std::endl;
-                } else {
-                    std::cout << "✓ Successfully loaded system font: " << fontPath << std::endl;
-                }
-                fontLoaded = true;
-                break;
-            }
-        }
-    }
-
-    // Fallback: Use default font with Japanese ranges
-    if (!fontLoaded) {
-        std::cout << "⚠ No custom or system fonts found, using default font with Japanese ranges"
-                  << std::endl;
-        fontConfig.MergeMode = false;
-        io.Fonts->AddFontDefault(&fontConfig);
     }
 
     // Build the font atlas only for OpenGL backend

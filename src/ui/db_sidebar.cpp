@@ -1,4 +1,5 @@
 #include "ui/db_sidebar.hpp"
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
@@ -143,7 +144,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     }
 
     // Show loading indicator in database name if connecting
-    const std::string dbLabel = db->getName();
+    const std::string dbIcon =
+        (db->getType() == DatabaseType::SQLITE) ? ICON_FA_DATABASE : ICON_FA_TOWER_BROADCAST;
+    const std::string dbLabel = std::format("{} {}", dbIcon, db->getName());
     const bool showSpinner = db->isConnecting();
 
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
@@ -227,7 +230,8 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         tableFlags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    const bool tableOpened = ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
+    const std::string tableLabel = std::format("{} {}", ICON_FA_TABLE, table.name);
+    const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -246,7 +250,8 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                     ImGuiTreeNodeFlags_FramePadding;
-        const bool columnsOpened = ImGui::TreeNodeEx("Columns", columnsFlags);
+        const std::string columnsLabel = std::format("{} Columns", ICON_FA_TABLE_COLUMNS);
+        const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
 
         if (columnsOpened) {
             for (const auto &[name, type, isPrimaryKey, isNotNull] : table.columns) {
@@ -273,7 +278,8 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                  ImGuiTreeNodeFlags_FramePadding;
-        bool keysOpen = ImGui::TreeNodeEx("Keys", keysFlags);
+        const std::string keysLabel = std::format("{} Keys", ICON_FA_KEY);
+        bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
 
         if (keysOpen) {
             // Show primary key if any column is marked as primary key
@@ -305,7 +311,8 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         constexpr ImGuiTreeNodeFlags indexesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                     ImGuiTreeNodeFlags_FramePadding;
-        bool indexesOpen = ImGui::TreeNodeEx("Indexes", indexesFlags);
+        const std::string indexesLabel = std::format("{} Indexes", ICON_FA_MAGNIFYING_GLASS);
+        bool indexesOpen = ImGui::TreeNodeEx(indexesLabel.c_str(), indexesFlags);
 
         if (indexesOpen) {
             // TODO: Implement index retrieval from database
@@ -399,7 +406,8 @@ void DatabaseSidebar::renderViewNode(size_t databaseIndex, size_t viewIndex) {
     ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                    ImGuiTreeNodeFlags_FramePadding;
 
-    ImGui::TreeNodeEx(view.name.c_str(), viewFlags);
+    const std::string viewLabel = std::format("{} {}", ICON_FA_EYE, view.name);
+    ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -424,7 +432,8 @@ void DatabaseSidebar::renderSequenceNode(size_t databaseIndex, size_t sequenceIn
                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                        ImGuiTreeNodeFlags_FramePadding;
 
-    ImGui::TreeNodeEx(sequence.c_str(), sequenceFlags);
+    const std::string sequenceLabel = std::format("{} {}", ICON_FA_LIST_OL, sequence);
+    ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -455,7 +464,7 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
                                      ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Tables node if loading
-    std::string tablesLabel = "Tables";
+    std::string tablesLabel = std::format("{} Tables", ICON_FA_TABLE);
     bool showTablesSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables());
 
     bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
@@ -505,7 +514,7 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
                                     ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Views node if loading
-    std::string viewsLabel = "Views";
+    std::string viewsLabel = std::format("{} Views", ICON_FA_EYE);
     bool showViewsSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
 
     bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
@@ -560,7 +569,7 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
                                         ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Sequences node if loading
-    std::string sequencesLabel = "Sequences";
+    std::string sequencesLabel = std::format("{} Sequences", ICON_FA_LIST_OL);
     bool showSequencesSpinner =
         (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences());
 

@@ -151,6 +151,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui/backends
     external/json/include
     external/soci/include
+    external/IconFontCppHeaders
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 

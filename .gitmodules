@@ -11,3 +11,6 @@
 [submodule "external/soci"]
 	path = external/soci
 	url = https://github.com/SOCI/soci
+[submodule "external/IconFontCppHeaders"]
+	path = external/IconFontCppHeaders
+	url = https://github.com/juliettef/IconFontCppHeaders.git

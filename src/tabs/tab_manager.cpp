@@ -3,21 +3,20 @@
 #include <algorithm>
 #include <iostream>
 
-void TabManager::addTab(std::shared_ptr<Tab> tab) {
+void TabManager::addTab(const std::shared_ptr<Tab> &tab) {
     tabs.push_back(tab);
 }
 
-void TabManager::removeTab(std::shared_ptr<Tab> tab) {
-    auto it = std::find(tabs.begin(), tabs.end(), tab);
+void TabManager::removeTab(const std::shared_ptr<Tab> &tab) {
+    const auto it = std::ranges::find(tabs, tab);
     if (it != tabs.end()) {
         tabs.erase(it);
     }
 }
 
 void TabManager::closeTab(const std::string &name) {
-    auto it = std::find_if(tabs.begin(), tabs.end(), [&name](const std::shared_ptr<Tab> &tab) {
-        return tab->getName() == name;
-    });
+    const auto it = std::ranges::find_if(
+        tabs, [&name](const std::shared_ptr<Tab> &tab) { return tab->getName() == name; });
 
     if (it != tabs.end()) {
         tabs.erase(it);
@@ -29,9 +28,8 @@ void TabManager::closeAllTabs() {
 }
 
 std::shared_ptr<Tab> TabManager::findTab(const std::string &name) const {
-    auto it = std::find_if(tabs.begin(), tabs.end(), [&name](const std::shared_ptr<Tab> &tab) {
-        return tab->getName() == name;
-    });
+    const auto it = std::ranges::find_if(
+        tabs, [&name](const std::shared_ptr<Tab> &tab) { return tab->getName() == name; });
 
     return (it != tabs.end()) ? *it : nullptr;
 }

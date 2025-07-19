@@ -6,9 +6,9 @@
 #include <typeinfo>
 #include <unordered_map>
 
-PostgreSQLDatabase::PostgreSQLDatabase(const std::string &name, const std::string &host, int port,
-                                       const std::string &database, const std::string &username,
-                                       const std::string &password)
+PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &host, const int port,
+                                   const std::string &database, const std::string &username,
+                                   const std::string &password)
     : name(name), host(host), port(port), database(database), username(username),
       password(password) {
 
@@ -19,7 +19,7 @@ PostgreSQLDatabase::PostgreSQLDatabase(const std::string &name, const std::strin
     connectionString = ss.str();
 }
 
-PostgreSQLDatabase::~PostgreSQLDatabase() {
+PostgresDatabase::~PostgresDatabase() {
     // Clean up async operations
     if (tablesThread.joinable()) {
         tablesThread.join();
@@ -36,7 +36,7 @@ PostgreSQLDatabase::~PostgreSQLDatabase() {
     disconnect();
 }
 
-std::pair<bool, std::string> PostgreSQLDatabase::connect() {
+std::pair<bool, std::string> PostgresDatabase::connect() {
     std::cout << "Connection string: " << connectionString << std::endl;
     if (connected && session) {
         return {true, ""};
@@ -59,34 +59,34 @@ std::pair<bool, std::string> PostgreSQLDatabase::connect() {
     }
 }
 
-void PostgreSQLDatabase::disconnect() {
+void PostgresDatabase::disconnect() {
     if (session) {
         session.reset();
     }
     connected = false;
 }
 
-bool PostgreSQLDatabase::isConnected() const {
+bool PostgresDatabase::isConnected() const {
     return connected && session;
 }
 
-const std::string &PostgreSQLDatabase::getName() const {
+const std::string &PostgresDatabase::getName() const {
     return name;
 }
 
-const std::string &PostgreSQLDatabase::getConnectionString() const {
+const std::string &PostgresDatabase::getConnectionString() const {
     return connectionString;
 }
 
-const std::string &PostgreSQLDatabase::getPath() const {
+const std::string &PostgresDatabase::getPath() const {
     return connectionString; // For PostgreSQL, path is the connection string
 }
 
-DatabaseType PostgreSQLDatabase::getType() const {
+DatabaseType PostgresDatabase::getType() const {
     return DatabaseType::POSTGRESQL;
 }
 
-void PostgreSQLDatabase::refreshTables() {
+void PostgresDatabase::refreshTables() {
     std::cout << "Refreshing tables for database: " << name << std::endl;
     if (!isConnected()) {
         auto [success, error] = connect();
@@ -100,23 +100,23 @@ void PostgreSQLDatabase::refreshTables() {
     startAsyncTableRefresh();
 }
 
-const std::vector<Table> &PostgreSQLDatabase::getTables() const {
+const std::vector<Table> &PostgresDatabase::getTables() const {
     return tables;
 }
 
-std::vector<Table> &PostgreSQLDatabase::getTables() {
+std::vector<Table> &PostgresDatabase::getTables() {
     return tables;
 }
 
-bool PostgreSQLDatabase::areTablesLoaded() const {
+bool PostgresDatabase::areTablesLoaded() const {
     return tablesLoaded;
 }
 
-void PostgreSQLDatabase::setTablesLoaded(bool loaded) {
+void PostgresDatabase::setTablesLoaded(bool loaded) {
     tablesLoaded = loaded;
 }
 
-std::string PostgreSQLDatabase::executeQuery(const std::string &query) {
+std::string PostgresDatabase::executeQuery(const std::string &query) {
     if (!isConnected()) {
         auto [success, error] = connect();
         if (!success) {
@@ -180,8 +180,8 @@ std::string PostgreSQLDatabase::executeQuery(const std::string &query) {
     }
 }
 
-std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std::string &tableName,
-                                                                       int limit, int offset) {
+std::vector<std::vector<std::string>>
+PostgresDatabase::getTableData(const std::string &tableName, const int limit, const int offset) {
     std::vector<std::vector<std::string>> data;
     if (!isConnected()) {
         auto [success, error] = connect();
@@ -195,19 +195,59 @@ std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std
         const std::string sql = "SELECT * FROM \"" + tableName + "\" LIMIT " +
                                 std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             std::vector<std::string> rowData;
+
             for (std::size_t i = 0; i < row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
                     rowData.emplace_back("NULL");
-                } else {
-                    try {
-                        rowData.push_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast &) {
-                        rowData.emplace_back("[BINARY DATA]");
+                    continue;
+                }
+                switch (soci::column_properties cp = row.get_properties(i); cp.get_db_type()) {
+                case soci::db_string:
+                    rowData.emplace_back(row.get<std::string>(i));
+                    break;
+                case soci::db_wstring:
+                    // Convert wide string to UTF-8 string
+                    {
+                        auto ws = row.get<std::wstring>(i);
+                        std::string utf8_str(ws.begin(), ws.end());
+                        rowData.emplace_back(utf8_str);
                     }
+                    break;
+                case soci::db_int8:
+                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                    break;
+                case soci::db_int16:
+                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                    break;
+                case soci::db_int32:
+                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                    break;
+                case soci::db_int64:
+                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
+                    break;
+                case soci::db_double:
+                    rowData.emplace_back(std::to_string(row.get<double>(i)));
+                    break;
+                case soci::db_date: {
+                    auto date = row.get<std::tm>(i);
+                    char buffer[32];
+                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
+                    rowData.emplace_back(buffer);
+                } break;
+                case soci::db_blob:
+                    rowData.emplace_back("[BINARY DATA]");
+                    break;
+                default:
+                    try {
+                        rowData.emplace_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.emplace_back("[UNKNOWN DATA TYPE]");
+                    }
+                    break;
                 }
             }
             data.push_back(rowData);
@@ -219,7 +259,7 @@ std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableData(const std
     return data;
 }
 
-std::vector<std::string> PostgreSQLDatabase::getColumnNames(const std::string &tableName) {
+std::vector<std::string> PostgresDatabase::getColumnNames(const std::string &tableName) {
     std::vector<std::string> columnNames;
     if (!isConnected()) {
         auto [success, error] = connect();
@@ -246,7 +286,7 @@ std::vector<std::string> PostgreSQLDatabase::getColumnNames(const std::string &t
     return columnNames;
 }
 
-int PostgreSQLDatabase::getRowCount(const std::string &tableName) {
+int PostgresDatabase::getRowCount(const std::string &tableName) {
     if (!isConnected()) {
         auto [success, error] = connect();
         if (!success) {
@@ -266,35 +306,35 @@ int PostgreSQLDatabase::getRowCount(const std::string &tableName) {
     }
 }
 
-bool PostgreSQLDatabase::isExpanded() const {
+bool PostgresDatabase::isExpanded() const {
     return expanded;
 }
 
-void PostgreSQLDatabase::setExpanded(bool exp) {
+void PostgresDatabase::setExpanded(bool exp) {
     expanded = exp;
 }
 
-bool PostgreSQLDatabase::hasAttemptedConnection() const {
+bool PostgresDatabase::hasAttemptedConnection() const {
     return attemptedConnection;
 }
 
-void PostgreSQLDatabase::setAttemptedConnection(bool attempted) {
+void PostgresDatabase::setAttemptedConnection(bool attempted) {
     attemptedConnection = attempted;
 }
 
-const std::string &PostgreSQLDatabase::getLastConnectionError() const {
+const std::string &PostgresDatabase::getLastConnectionError() const {
     return lastConnectionError;
 }
 
-void PostgreSQLDatabase::setLastConnectionError(const std::string &error) {
+void PostgresDatabase::setLastConnectionError(const std::string &error) {
     lastConnectionError = error;
 }
 
-void *PostgreSQLDatabase::getConnection() const {
+void *PostgresDatabase::getConnection() const {
     return session.get();
 }
 
-std::vector<std::string> PostgreSQLDatabase::getTableNames() {
+std::vector<std::string> PostgresDatabase::getTableNames() {
     std::vector<std::string> tableNames;
 
     try {
@@ -317,7 +357,7 @@ std::vector<std::string> PostgreSQLDatabase::getTableNames() {
     return tableNames;
 }
 
-std::vector<Column> PostgreSQLDatabase::getTableColumns(const std::string &tableName) {
+std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableName) {
     std::vector<Column> columns;
 
     try {
@@ -354,7 +394,7 @@ std::vector<Column> PostgreSQLDatabase::getTableColumns(const std::string &table
 }
 
 // View management methods
-void PostgreSQLDatabase::refreshViews() {
+void PostgresDatabase::refreshViews() {
     std::cout << "Refreshing views for database: " << name << std::endl;
     if (!isConnected()) {
         auto [success, error] = connect();
@@ -368,24 +408,24 @@ void PostgreSQLDatabase::refreshViews() {
     startAsyncViewRefresh();
 }
 
-const std::vector<Table> &PostgreSQLDatabase::getViews() const {
+const std::vector<Table> &PostgresDatabase::getViews() const {
     return views;
 }
 
-std::vector<Table> &PostgreSQLDatabase::getViews() {
+std::vector<Table> &PostgresDatabase::getViews() {
     return views;
 }
 
-bool PostgreSQLDatabase::areViewsLoaded() const {
+bool PostgresDatabase::areViewsLoaded() const {
     return viewsLoaded;
 }
 
-void PostgreSQLDatabase::setViewsLoaded(bool loaded) {
+void PostgresDatabase::setViewsLoaded(bool loaded) {
     viewsLoaded = loaded;
 }
 
 // Sequence management methods
-void PostgreSQLDatabase::refreshSequences() {
+void PostgresDatabase::refreshSequences() {
     std::cout << "Refreshing sequences for database: " << name << std::endl;
     if (!isConnected()) {
         auto [success, error] = connect();
@@ -399,23 +439,23 @@ void PostgreSQLDatabase::refreshSequences() {
     startAsyncSequenceRefresh();
 }
 
-const std::vector<std::string> &PostgreSQLDatabase::getSequences() const {
+const std::vector<std::string> &PostgresDatabase::getSequences() const {
     return sequences;
 }
 
-std::vector<std::string> &PostgreSQLDatabase::getSequences() {
+std::vector<std::string> &PostgresDatabase::getSequences() {
     return sequences;
 }
 
-bool PostgreSQLDatabase::areSequencesLoaded() const {
+bool PostgresDatabase::areSequencesLoaded() const {
     return sequencesLoaded;
 }
 
-void PostgreSQLDatabase::setSequencesLoaded(bool loaded) {
+void PostgresDatabase::setSequencesLoaded(bool loaded) {
     sequencesLoaded = loaded;
 }
 
-std::vector<std::string> PostgreSQLDatabase::getViewNames() {
+std::vector<std::string> PostgresDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
@@ -438,7 +478,7 @@ std::vector<std::string> PostgreSQLDatabase::getViewNames() {
     return viewNames;
 }
 
-std::vector<Column> PostgreSQLDatabase::getViewColumns(const std::string &viewName) {
+std::vector<Column> PostgresDatabase::getViewColumns(const std::string &viewName) {
     std::vector<Column> columns;
 
     try {
@@ -466,7 +506,7 @@ std::vector<Column> PostgreSQLDatabase::getViewColumns(const std::string &viewNa
     return columns;
 }
 
-std::vector<std::string> PostgreSQLDatabase::getSequenceNames() {
+std::vector<std::string> PostgresDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
@@ -490,11 +530,11 @@ std::vector<std::string> PostgreSQLDatabase::getSequenceNames() {
     return sequenceNames;
 }
 
-bool PostgreSQLDatabase::isLoadingTables() const {
+bool PostgresDatabase::isLoadingTables() const {
     return loadingTables;
 }
 
-void PostgreSQLDatabase::checkTablesStatusAsync() {
+void PostgresDatabase::checkTablesStatusAsync() {
     if (tablesFuture.valid() &&
         tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -521,7 +561,7 @@ void PostgreSQLDatabase::checkTablesStatusAsync() {
     }
 }
 
-void PostgreSQLDatabase::startAsyncTableRefresh() {
+void PostgresDatabase::startAsyncTableRefresh() {
     // Clear previous results
     tables.clear();
     tablesLoaded = false;
@@ -548,7 +588,7 @@ void PostgreSQLDatabase::startAsyncTableRefresh() {
     });
 }
 
-std::vector<Table> PostgreSQLDatabase::getTablesWithColumnsAsync() {
+std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     std::vector<Table> result;
 
     // Get all table names first
@@ -618,11 +658,11 @@ std::vector<Table> PostgreSQLDatabase::getTablesWithColumnsAsync() {
     return result;
 }
 
-bool PostgreSQLDatabase::isLoadingViews() const {
+bool PostgresDatabase::isLoadingViews() const {
     return loadingViews;
 }
 
-void PostgreSQLDatabase::checkViewsStatusAsync() {
+void PostgresDatabase::checkViewsStatusAsync() {
     if (viewsFuture.valid() &&
         viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -649,7 +689,7 @@ void PostgreSQLDatabase::checkViewsStatusAsync() {
     }
 }
 
-void PostgreSQLDatabase::startAsyncViewRefresh() {
+void PostgresDatabase::startAsyncViewRefresh() {
     // Clear previous results
     views.clear();
     viewsLoaded = false;
@@ -676,7 +716,7 @@ void PostgreSQLDatabase::startAsyncViewRefresh() {
     });
 }
 
-std::vector<Table> PostgreSQLDatabase::getViewsWithColumnsAsync() {
+std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     std::vector<Table> result;
 
     // Get all view names first
@@ -740,11 +780,11 @@ std::vector<Table> PostgreSQLDatabase::getViewsWithColumnsAsync() {
     return result;
 }
 
-bool PostgreSQLDatabase::isLoadingSequences() const {
+bool PostgresDatabase::isLoadingSequences() const {
     return loadingSequences;
 }
 
-void PostgreSQLDatabase::checkSequencesStatusAsync() {
+void PostgresDatabase::checkSequencesStatusAsync() {
     if (sequencesFuture.valid() &&
         sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -771,7 +811,7 @@ void PostgreSQLDatabase::checkSequencesStatusAsync() {
     }
 }
 
-void PostgreSQLDatabase::startAsyncSequenceRefresh() {
+void PostgresDatabase::startAsyncSequenceRefresh() {
     // Clear previous results
     sequences.clear();
     sequencesLoaded = false;
@@ -798,7 +838,7 @@ void PostgreSQLDatabase::startAsyncSequenceRefresh() {
     });
 }
 
-std::vector<std::string> PostgreSQLDatabase::getSequencesAsync() {
+std::vector<std::string> PostgresDatabase::getSequencesAsync() {
     std::vector<std::string> result;
 
     try {
@@ -821,11 +861,11 @@ std::vector<std::string> PostgreSQLDatabase::getSequencesAsync() {
     return result;
 }
 
-bool PostgreSQLDatabase::isConnecting() const {
+bool PostgresDatabase::isConnecting() const {
     return connecting;
 }
 
-void PostgreSQLDatabase::startConnectionAsync() {
+void PostgresDatabase::startConnectionAsync() {
     if (connecting || connected) {
         return;
     }
@@ -852,7 +892,7 @@ void PostgreSQLDatabase::startConnectionAsync() {
     });
 }
 
-void PostgreSQLDatabase::checkConnectionStatusAsync() {
+void PostgresDatabase::checkConnectionStatusAsync() {
     if (connectionFuture.valid() &&
         connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -890,8 +930,8 @@ void PostgreSQLDatabase::checkConnectionStatusAsync() {
 }
 
 // Async table data loading methods
-void PostgreSQLDatabase::startTableDataLoadAsync(const std::string &tableName, int limit,
-                                                 int offset) {
+void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int limit,
+                                               int offset) {
     if (loadingTableData.load()) {
         return; // Already loading
     }
@@ -918,11 +958,11 @@ void PostgreSQLDatabase::startTableDataLoadAsync(const std::string &tableName, i
     });
 }
 
-bool PostgreSQLDatabase::isLoadingTableData() const {
+bool PostgresDatabase::isLoadingTableData() const {
     return loadingTableData.load();
 }
 
-void PostgreSQLDatabase::checkTableDataStatusAsync() {
+void PostgresDatabase::checkTableDataStatusAsync() {
     if (!loadingTableData.load()) {
         return;
     }
@@ -945,32 +985,32 @@ void PostgreSQLDatabase::checkTableDataStatusAsync() {
     }
 }
 
-bool PostgreSQLDatabase::hasTableDataResult() const {
+bool PostgresDatabase::hasTableDataResult() const {
     return hasTableDataReady.load();
 }
 
-std::vector<std::vector<std::string>> PostgreSQLDatabase::getTableDataResult() {
+std::vector<std::vector<std::string>> PostgresDatabase::getTableDataResult() {
     if (hasTableDataReady.load()) {
         return tableDataResult;
     }
     return {};
 }
 
-std::vector<std::string> PostgreSQLDatabase::getColumnNamesResult() {
+std::vector<std::string> PostgresDatabase::getColumnNamesResult() {
     if (hasTableDataReady.load()) {
         return columnNamesResult;
     }
     return {};
 }
 
-int PostgreSQLDatabase::getRowCountResult() {
+int PostgresDatabase::getRowCountResult() {
     if (hasTableDataReady.load()) {
         return rowCountResult;
     }
     return 0;
 }
 
-void PostgreSQLDatabase::clearTableDataResult() {
+void PostgresDatabase::clearTableDataResult() {
     hasTableDataReady = false;
     tableDataResult.clear();
     columnNamesResult.clear();

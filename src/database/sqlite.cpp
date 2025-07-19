@@ -181,47 +181,47 @@ SQLiteDatabase::getTableData(const std::string &tableName, const int limit, cons
             for (std::size_t i = 0; i < row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
                     rowData.emplace_back("NULL");
-                } else {
-                    soci::column_properties cp = row.get_properties(i);
-                    const auto dt = cp.get_db_type();
-                    switch (dt) {
-                    case soci::db_string:
-                        rowData.emplace_back(row.get<std::string>(i));
-                        break;
-                    case soci::db_wstring:
-                        // Convert wide string to UTF-8 string
-                        {
-                            auto ws = row.get<std::wstring>(i);
-                            std::string utf8_str(ws.begin(), ws.end());
-                            rowData.emplace_back(utf8_str);
-                        }
-                        break;
-                    case soci::db_int8:
-                        rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
-                        break;
-                    case soci::db_int16:
-                        rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
-                        break;
-                    case soci::db_int32:
-                        rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
-                        break;
-                    case soci::db_int64:
-                        rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                        break;
-                    case soci::db_double:
-                        rowData.emplace_back(std::to_string(row.get<double>(i)));
-                        break;
-                    case soci::db_blob:
-                        rowData.emplace_back("[BINARY DATA]");
-                        break;
-                    default:
-                        try {
-                            rowData.emplace_back(row.get<std::string>(i));
-                        } catch (const std::bad_cast &) {
-                            rowData.emplace_back("[UNKNOWN DATA TYPE]");
-                        }
-                        break;
+                    continue;
+                }
+                soci::column_properties cp = row.get_properties(i);
+                const auto dt = cp.get_db_type();
+                switch (dt) {
+                case soci::db_string:
+                    rowData.emplace_back(row.get<std::string>(i));
+                    break;
+                case soci::db_wstring:
+                    // Convert wide string to UTF-8 string
+                    {
+                        auto ws = row.get<std::wstring>(i);
+                        std::string utf8_str(ws.begin(), ws.end());
+                        rowData.emplace_back(utf8_str);
                     }
+                    break;
+                case soci::db_int8:
+                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                    break;
+                case soci::db_int16:
+                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                    break;
+                case soci::db_int32:
+                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                    break;
+                case soci::db_int64:
+                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
+                    break;
+                case soci::db_double:
+                    rowData.emplace_back(std::to_string(row.get<double>(i)));
+                    break;
+                case soci::db_blob:
+                    rowData.emplace_back("[BINARY DATA]");
+                    break;
+                default:
+                    try {
+                        rowData.emplace_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.emplace_back("[UNKNOWN DATA TYPE]");
+                    }
+                    break;
                 }
             }
             data.push_back(rowData);

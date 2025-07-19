@@ -10,8 +10,8 @@ public:
     ~TabManager() = default;
 
     // Tab management
-    void addTab(std::shared_ptr<Tab> tab);
-    void removeTab(std::shared_ptr<Tab> tab);
+    void addTab(const std::shared_ptr<Tab> &tab);
+    void removeTab(const std::shared_ptr<Tab> &tab);
     void closeTab(const std::string &name);
     void closeAllTabs();
 

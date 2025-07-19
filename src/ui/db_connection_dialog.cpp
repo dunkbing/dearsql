@@ -226,9 +226,9 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDat
         return nullptr;
     }
 
-    return std::make_shared<PostgreSQLDatabase>(std::string(connectionName), std::string(host),
-                                                port, std::string(database), std::string(username),
-                                                std::string(password));
+    return std::make_shared<PostgresDatabase>(std::string(connectionName), std::string(host), port,
+                                              std::string(database), std::string(username),
+                                              std::string(password));
 }
 
 void DatabaseConnectionDialog::loadSavedConnections() {

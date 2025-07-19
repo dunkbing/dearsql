@@ -7,12 +7,12 @@
 #include <soci/soci.h>
 #include <thread>
 
-class PostgreSQLDatabase : public DatabaseInterface {
+class PostgresDatabase : public DatabaseInterface {
 public:
-    PostgreSQLDatabase(const std::string &name, const std::string &host, int port,
-                       const std::string &database, const std::string &username,
-                       const std::string &password);
-    ~PostgreSQLDatabase() override;
+    PostgresDatabase(const std::string &name, const std::string &host, int port,
+                     const std::string &database, const std::string &username,
+                     const std::string &password);
+    ~PostgresDatabase() override;
 
     // Connection management
     std::pair<bool, std::string> connect() override;

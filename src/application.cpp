@@ -207,8 +207,8 @@ void Application::restorePreviousConnections() {
         std::shared_ptr<DatabaseInterface> db = nullptr;
 
         if (conn.type == "postgresql") {
-            db = std::make_shared<PostgreSQLDatabase>(conn.name, conn.host, conn.port,
-                                                      conn.database, conn.username, conn.password);
+            db = std::make_shared<PostgresDatabase>(conn.name, conn.host, conn.port, conn.database,
+                                                    conn.username, conn.password);
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
         }

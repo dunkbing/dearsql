@@ -9,8 +9,8 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo &info) {
         return std::make_shared<SQLiteDatabase>(info.name, info.path);
 
     case DatabaseType::POSTGRESQL:
-        return std::make_shared<PostgreSQLDatabase>(info.name, info.host, info.port, info.database,
-                                                    info.username, info.password);
+        return std::make_shared<PostgresDatabase>(info.name, info.host, info.port, info.database,
+                                                  info.username, info.password);
 
     default:
         return nullptr;

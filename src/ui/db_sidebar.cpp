@@ -146,10 +146,33 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     // Show loading indicator in database name if connecting
     const std::string dbIcon =
         (db->getType() == DatabaseType::SQLITE) ? ICON_FA_DATABASE : ICON_FA_TOWER_BROADCAST;
-    const std::string dbLabel = std::format("{} {}", dbIcon, db->getName());
     const bool showSpinner = db->isConnecting();
 
+    // Create label with colored icon and normal text
+    std::string coloredLabel;
+    if (db->getType() == DatabaseType::SQLITE) {
+        // Use ANSI-like color codes that ImGui can interpret, or build manually
+        coloredLabel = std::format("{} {}", dbIcon, db->getName());
+    } else {
+        coloredLabel = std::format("{} {}", dbIcon, db->getName());
+    }
+
+    // Draw tree node with placeholder space for icon
+    const std::string dbLabel = std::format("   {}", db->getName()); // 3 spaces for icon
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 dbIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        dbIconPos,
+        db->getType() == DatabaseType::SQLITE ? ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 1.0f, 1.0f))
+                                              :                 // Light blue for SQLite
+            ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Darker blue for PostgreSQL
+        dbIcon.c_str());
 
     // Show spinner next to database name if connecting
     if (showSpinner) {
@@ -163,7 +186,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     }
 
     // Context menu for database
+    ImGui::PushID(static_cast<int>(databaseIndex));
     handleDatabaseContextMenu(databaseIndex);
+    ImGui::PopID();
 
     // Check for async connection completion (always check, even when collapsed)
     db->checkConnectionStatusAsync();
@@ -230,8 +255,19 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         tableFlags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    const std::string tableLabel = std::format("{} {}", ICON_FA_TABLE, table.name);
+    // Draw tree node with placeholder space for icon
+    const std::string tableLabel = std::format("   {}", table.name); // 3 spaces for icon
     const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 tableIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        tableIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for tables
+        ICON_FA_TABLE);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -243,15 +279,29 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
     }
 
+    ImGui::PushID(static_cast<int>(tableIndex));
     handleTableContextMenu(databaseIndex, tableIndex);
+    ImGui::PopID();
 
     if (tableOpened) {
         // Columns section
         constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                     ImGuiTreeNodeFlags_FramePadding;
-        const std::string columnsLabel = std::format("{} Columns", ICON_FA_TABLE_COLUMNS);
+        // Draw tree node with placeholder space for icon
+        const std::string columnsLabel = "   Columns"; // 3 spaces for icon
         const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 columnsIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            columnsIconPos,
+            ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
+            ICON_FA_TABLE_COLUMNS);
 
         if (columnsOpened) {
             for (const auto &[name, type, isPrimaryKey, isNotNull] : table.columns) {
@@ -278,8 +328,19 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                  ImGuiTreeNodeFlags_FramePadding;
-        const std::string keysLabel = std::format("{} Keys", ICON_FA_KEY);
+        // Draw tree node with placeholder space for icon
+        const std::string keysLabel = "   Keys"; // 3 spaces for icon
         bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 keysIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            keysIconPos, ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Keys
+            ICON_FA_KEY);
 
         if (keysOpen) {
             // Show primary key if any column is marked as primary key
@@ -311,8 +372,20 @@ void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIn
         constexpr ImGuiTreeNodeFlags indexesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                     ImGuiTreeNodeFlags_FramePadding;
-        const std::string indexesLabel = std::format("{} Indexes", ICON_FA_MAGNIFYING_GLASS);
+        // Draw tree node with placeholder space for icon
+        const std::string indexesLabel = "   Indexes"; // 3 spaces for icon
         bool indexesOpen = ImGui::TreeNodeEx(indexesLabel.c_str(), indexesFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 indexesIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            indexesIconPos,
+            ImGui::GetColorU32(ImVec4(0.7f, 0.7f, 0.9f, 1.0f)), // Light purple for Indexes
+            ICON_FA_MAGNIFYING_GLASS);
 
         if (indexesOpen) {
             // TODO: Implement index retrieval from database
@@ -329,7 +402,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
     const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
 
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(0)) {
         if (ImGui::MenuItem("Refresh All")) {
             db->setTablesLoaded(false);
             db->setViewsLoaded(false);
@@ -386,7 +459,7 @@ void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const s
     auto &db = databases[databaseIndex];
     auto &table = db->getTables()[tableIndex];
 
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(0)) {
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
         }
@@ -406,8 +479,19 @@ void DatabaseSidebar::renderViewNode(size_t databaseIndex, size_t viewIndex) {
     ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                    ImGuiTreeNodeFlags_FramePadding;
 
-    const std::string viewLabel = std::format("{} {}", ICON_FA_EYE, view.name);
+    // Draw tree node with placeholder space for icon
+    const std::string viewLabel = std::format("   {}", view.name); // 3 spaces for icon
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 viewIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
+        ICON_FA_EYE);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
@@ -419,7 +503,9 @@ void DatabaseSidebar::renderViewNode(size_t databaseIndex, size_t viewIndex) {
         app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
     }
 
+    ImGui::PushID(static_cast<int>(viewIndex));
     handleViewContextMenu(databaseIndex, viewIndex);
+    ImGui::PopID();
 }
 
 void DatabaseSidebar::renderSequenceNode(size_t databaseIndex, size_t sequenceIndex) {
@@ -432,15 +518,28 @@ void DatabaseSidebar::renderSequenceNode(size_t databaseIndex, size_t sequenceIn
                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                        ImGuiTreeNodeFlags_FramePadding;
 
-    const std::string sequenceLabel = std::format("{} {}", ICON_FA_LIST_OL, sequence);
+    // Draw tree node with placeholder space for icon
+    const std::string sequenceLabel = std::format("   {}", sequence); // 3 spaces for icon
     ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 sequenceIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        sequenceIconPos, ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for sequences
+        ICON_FA_LIST_OL);
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(databaseIndex);
         app.setSelectedTable(-1); // Reset table selection for sequences
     }
 
+    ImGui::PushID(static_cast<int>(sequenceIndex));
     handleSequenceContextMenu(databaseIndex, sequenceIndex);
+    ImGui::PopID();
 }
 
 void DatabaseSidebar::renderSQLiteHierarchy(size_t databaseIndex) {
@@ -464,10 +563,22 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
                                      ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Tables node if loading
-    std::string tablesLabel = std::format("{} Tables", ICON_FA_TABLE);
     bool showTablesSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables());
 
+    // Draw tree node with placeholder space for icon
+    const std::string tablesLabel = "   Tables"; // 3 spaces for icon
     bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 tablesSectionIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        tablesSectionIconPos,
+        ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for Tables section
+        ICON_FA_TABLE);
 
     // Show spinner next to Tables node if loading
     if (showTablesSpinner) {
@@ -514,10 +625,22 @@ void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
                                     ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Views node if loading
-    std::string viewsLabel = std::format("{} Views", ICON_FA_EYE);
     bool showViewsSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
 
+    // Draw tree node with placeholder space for icon
+    const std::string viewsLabel = "   Views"; // 3 spaces for icon
     bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 viewsSectionIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        viewsSectionIconPos,
+        ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for Views section
+        ICON_FA_EYE);
 
     // Show spinner next to Views node if loading
     if (showViewsSpinner) {
@@ -569,11 +692,23 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
                                         ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Sequences node if loading
-    std::string sequencesLabel = std::format("{} Sequences", ICON_FA_LIST_OL);
     bool showSequencesSpinner =
         (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences());
 
+    // Draw tree node with placeholder space for icon
+    const std::string sequencesLabel = "   Sequences"; // 3 spaces for icon
     bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 sequencesSectionIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        sequencesSectionIconPos,
+        ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for Sequences section
+        ICON_FA_LIST_OL);
 
     // Show spinner next to Sequences node if loading
     if (showSequencesSpinner) {
@@ -616,7 +751,7 @@ void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const si
     auto &db = databases[databaseIndex];
     const auto &view = db->getViews()[viewIndex];
 
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(0)) {
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
         }
@@ -634,7 +769,7 @@ void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
     auto &db = databases[databaseIndex];
     auto &sequence = db->getSequences()[sequenceIndex];
 
-    if (ImGui::BeginPopupContextItem()) {
+    if (ImGui::BeginPopupContextItem(0)) {
         if (ImGui::MenuItem("Show Details")) {
             // TODO: Show sequence details in a tab
         }

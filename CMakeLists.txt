@@ -75,13 +75,11 @@ set(APP_SOURCES
     src/database/postgresql.cpp
     src/database/db_factory.cpp
 
-    # Tabs
-    src/tabs/tab.cpp
-    src/tabs/tab_manager.cpp
-
     # UI
     src/ui/db_sidebar.cpp
     src/ui/db_connection_dialog.cpp
+    src/ui/tab.cpp
+    src/ui/tab_manager.cpp
 
     # Utils
     src/utils/file_dialog.cpp

@@ -1,4 +1,4 @@
-#include "tabs/tab_manager.hpp"
+#include "../../include/ui/tab_manager.hpp"
 #include "imgui.h"
 #include <algorithm>
 #include <iostream>

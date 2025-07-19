@@ -1,9 +1,9 @@
 #include "application.hpp"
+#include "../include/ui/tab_manager.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "platform/default_platform.hpp"
 #include "platform/macos_platform.hpp"
-#include "tabs/tab_manager.hpp"
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
@@ -86,7 +86,7 @@ bool Application::initialize() {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
-    // Setup titlebar after window creation
+    // Setup title bar after window creation
     platform_->setupTitlebar();
 
 #ifdef USE_METAL_BACKEND
@@ -178,7 +178,7 @@ void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
 
 void Application::removeDatabase(size_t index) {
     if (index < databases.size()) {
-        auto &db = databases[index];
+        const auto &db = databases[index];
         if (db) {
             db->disconnect();
         }

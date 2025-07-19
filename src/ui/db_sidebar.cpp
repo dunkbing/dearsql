@@ -1,10 +1,10 @@
 #include "ui/db_sidebar.hpp"
+#include "../../include/ui/tab_manager.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
-#include "tabs/tab_manager.hpp"
 #include "utils/spinner.hpp"
 #include <iostream>
 
@@ -85,7 +85,7 @@ void DatabaseSidebar::render() {
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         auto &databases = app.getDatabases();
         if (databaseToDelete < databases.size()) {
-            auto &db = databases[databaseToDelete];
+            const auto &db = databases[databaseToDelete];
             ImGui::Text("Are you sure you want to remove this database connection?");
             ImGui::Text("Database: %s", db->getName().c_str());
             ImGui::Spacing();

@@ -3,7 +3,6 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
-#include <openssl/kdf.h>
 #include <openssl/rand.h>
 #include <stdexcept>
 

@@ -4,8 +4,8 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "platform/platform_interface.hpp"
-#include "tabs/tab_manager.hpp"
 #include "ui/db_sidebar.hpp"
+#include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <GLFW/glfw3.h>
 #include <memory>

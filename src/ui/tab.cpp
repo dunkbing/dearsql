@@ -1,4 +1,4 @@
-#include "../../include/ui/tab.hpp"
+#include "ui/tab.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
@@ -81,7 +81,7 @@ void TableViewerTab::render() {
     ImGui::Separator();
 
     // Pagination controls
-    int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
+    const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
     if (ImGui::Button("<<") && currentPage > 0) {
         firstPage();

@@ -21,8 +21,6 @@ void UIUtils::ToggleButton(const char *str_id, bool *v) {
     ImGuiContext &gg = *GImGui;
     float ANIM_SPEED = 0.085f;
     if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id))
-        float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
-
     if (ImGui::IsItemHovered())
         draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height),
                                  ImGui::GetColorU32(*v ? colors.blue : colors.overlay1),

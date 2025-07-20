@@ -35,6 +35,7 @@ private:
     bool isOpen = false;
     bool showingTypeSelection = false;
     bool showingPostgreSQLConnection = false;
+    bool showingMySQLConnection = false;
     bool showingSavedConnections = false;
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
@@ -48,9 +49,9 @@ private:
     int selectedSavedConnection = -1;
 
     // Selected database type
-    int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL
+    int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL, 2 = MySQL
 
-    // PostgreSQL connection fields
+    // PostgreSQL/MySQL connection fields
     char connectionName[256] = "";
     char host[256] = "localhost";
     int port = 5432;
@@ -58,6 +59,7 @@ private:
     char username[256] = "";
     char password[256] = "";
     bool showAllDatabases = false;
+    int authType = 0; // 0 = Username & Password, 1 = No Auth
 
     // Result
     std::shared_ptr<DatabaseInterface> result = nullptr;
@@ -65,12 +67,14 @@ private:
     // Dialog rendering functions
     void renderTypeSelection();
     void renderPostgreSQLConnection();
+    void renderMySQLConnection();
     void renderSavedConnections();
     void loadSavedConnections();
 
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
     std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
+    std::shared_ptr<DatabaseInterface> createMySQLDatabase();
 
     // Async connection helpers
     void startAsyncConnection();

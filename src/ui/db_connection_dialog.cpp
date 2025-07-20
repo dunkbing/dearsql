@@ -1,5 +1,6 @@
 #include "ui/db_connection_dialog.hpp"
 #include "application.hpp"
+#include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
@@ -13,6 +14,7 @@ void DatabaseConnectionDialog::showDialog() {
         isOpen = true;
         showingTypeSelection = true;
         showingPostgreSQLConnection = false;
+        showingMySQLConnection = false;
         showingSavedConnections = false;
         result = nullptr;
         loadSavedConnections();
@@ -23,6 +25,8 @@ void DatabaseConnectionDialog::showDialog() {
         renderTypeSelection();
     } else if (showingPostgreSQLConnection) {
         renderPostgreSQLConnection();
+    } else if (showingMySQLConnection) {
+        renderMySQLConnection();
     } else if (showingSavedConnections) {
         renderSavedConnections();
     }
@@ -56,6 +60,10 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         ImGui::Text("   Connect to a PostgreSQL server");
         ImGui::Spacing();
 
+        ImGui::RadioButton("MySQL Server", &selectedDatabaseType, 2);
+        ImGui::Text("   Connect to a MySQL server");
+        ImGui::Spacing();
+
         ImGui::Separator();
 
         if (ImGui::Button("Next", ImVec2(100, 0))) {
@@ -76,10 +84,16 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 }
                 ImGui::CloseCurrentPopup();
                 reset();
-            } else {
+            } else if (selectedDatabaseType == 1) {
                 // PostgreSQL - show connection dialog
                 showingTypeSelection = false;
                 showingPostgreSQLConnection = true;
+                port = 5432; // Set default PostgreSQL port
+            } else if (selectedDatabaseType == 2) {
+                // MySQL - show connection dialog
+                showingTypeSelection = false;
+                showingMySQLConnection = true;
+                port = 3306; // Set default MySQL port
             }
         }
         ImGui::SameLine();
@@ -120,8 +134,29 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
         ImGui::InputText("Database", database, sizeof(database));
-        ImGui::InputText("Username", username, sizeof(username));
-        ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+
+        ImGui::Spacing();
+        ImGui::Text("Authentication:");
+        ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::Spacing();
+
+        if (authType == 0) {
+            ImGui::InputText("Username", username, sizeof(username));
+            ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Password can be left empty if not required");
+                ImGui::EndTooltip();
+            }
+        } else {
+            // Clear username and password for no-auth connections
+            username[0] = '\0';
+            password[0] = '\0';
+        }
 
         ImGui::PopStyleColor(4);
         ImGui::PopStyleVar();
@@ -196,6 +231,131 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
     }
 }
 
+void DatabaseConnectionDialog::renderMySQLConnection() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_Always);
+
+    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter MySQL connection details:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Add visual styling for input fields using Theme colors
+        const auto &colors =
+            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
+
+        // Disable input fields during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
+        ImGui::InputText("Host", host, sizeof(host));
+        ImGui::InputInt("Port", &port);
+        ImGui::InputText("Database", database, sizeof(database));
+
+        ImGui::Spacing();
+        ImGui::Text("Authentication:");
+        ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::Spacing();
+
+        if (authType == 0) {
+            ImGui::InputText("Username", username, sizeof(username));
+            ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Password can be left empty if not required");
+                ImGui::EndTooltip();
+            }
+        } else {
+            // Clear username and password for no-auth connections
+            username[0] = '\0';
+            password[0] = '\0';
+        }
+
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+
+        ImGui::Spacing();
+        ImGui::Checkbox("Show all databases from server", &showAllDatabases);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
+                        "unchecked, only shows the specified database.");
+            ImGui::EndTooltip();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::Spacing();
+
+        // Show error message if there is one
+        if (!errorMessage.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+
+        ImGui::Separator();
+
+        // Check for async connection completion
+        if (isConnecting) {
+            checkAsyncConnectionStatus();
+        }
+
+        // Show loading spinner or connect button
+        if (isConnecting) {
+            // Show disabled connect button with spinner
+            ImGui::BeginDisabled();
+            ImGui::Button("Connecting...", ImVec2(100, 0));
+            ImGui::EndDisabled();
+
+            // Improved spinner animation
+            ImGui::SameLine();
+            ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3]);
+        } else {
+            if (ImGui::Button("Connect", ImVec2(100, 0))) {
+                startAsyncConnection();
+            }
+        }
+        ImGui::SameLine();
+
+        // Disable Back and Cancel buttons during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        if (ImGui::Button("Back", ImVec2(100, 0))) {
+            showingMySQLConnection = false;
+            showingTypeSelection = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+            ImGui::CloseCurrentPopup();
+            reset();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
     auto temp = result;
     result = nullptr; // Clear result after retrieval
@@ -206,10 +366,12 @@ void DatabaseConnectionDialog::reset() {
     isOpen = false;
     showingTypeSelection = false;
     showingPostgreSQLConnection = false;
+    showingMySQLConnection = false;
     showingSavedConnections = false;
     isConnecting = false;
     errorMessage.clear();
     selectedSavedConnection = -1;
+    authType = 0;
 
     // clean up async connection
     if (connectionThread.joinable()) {
@@ -222,13 +384,39 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabas
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase() {
-    if (strlen(connectionName) == 0 || strlen(database) == 0 || strlen(username) == 0) {
+    if (strlen(connectionName) == 0 || strlen(database) == 0) {
         return nullptr;
     }
 
+    // For username & password auth, username is required
+    if (authType == 0 && strlen(username) == 0) {
+        return nullptr;
+    }
+
+    // For no-auth, use empty username and password
+    std::string usernameStr = (authType == 0) ? std::string(username) : "";
+    std::string passwordStr = (authType == 0) ? std::string(password) : "";
+
     return std::make_shared<PostgresDatabase>(std::string(connectionName), std::string(host), port,
-                                              std::string(database), std::string(username),
-                                              std::string(password));
+                                              std::string(database), usernameStr, passwordStr);
+}
+
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase() {
+    if (strlen(connectionName) == 0 || strlen(database) == 0) {
+        return nullptr;
+    }
+
+    // For username & password auth, username is required
+    if (authType == 0 && strlen(username) == 0) {
+        return nullptr;
+    }
+
+    // For no-auth, use empty username and password
+    std::string usernameStr = (authType == 0) ? std::string(username) : "";
+    std::string passwordStr = (authType == 0) ? std::string(password) : "";
+
+    return std::make_shared<MySQLDatabase>(std::string(connectionName), std::string(host), port,
+                                           std::string(database), usernameStr, passwordStr);
 }
 
 void DatabaseConnectionDialog::loadSavedConnections() {
@@ -289,6 +477,30 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 strncpy(password, conn.password.c_str(), sizeof(password) - 1);
 
                 auto db = createPostgreSQLDatabase();
+                if (db) {
+                    auto [success, error] = db->connect();
+                    if (success) {
+                        // Update last used timestamp
+                        auto &app = Application::getInstance();
+                        app.getAppState()->updateLastUsed(conn.id);
+
+                        result = db;
+                        ImGui::CloseCurrentPopup();
+                        reset();
+                    } else {
+                        errorMessage = "Failed to connect: " + error;
+                    }
+                }
+            } else if (conn.type == "mysql") {
+                // Fill in the MySQL fields and connect
+                strncpy(connectionName, conn.name.c_str(), sizeof(connectionName) - 1);
+                strncpy(host, conn.host.c_str(), sizeof(host) - 1);
+                port = conn.port;
+                strncpy(database, conn.database.c_str(), sizeof(database) - 1);
+                strncpy(username, conn.username.c_str(), sizeof(username) - 1);
+                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
+
+                auto db = createMySQLDatabase();
                 if (db) {
                     auto [success, error] = db->connect();
                     if (success) {
@@ -372,8 +584,14 @@ void DatabaseConnectionDialog::startAsyncConnection() {
 
     connectionThread = std::thread([this, promise]() {
         try {
-            // Try to create and connect to database
-            auto db = createPostgreSQLDatabase();
+            // Try to create and connect to database based on current view
+            std::shared_ptr<DatabaseInterface> db;
+            if (showingPostgreSQLConnection) {
+                db = createPostgreSQLDatabase();
+            } else if (showingMySQLConnection) {
+                db = createMySQLDatabase();
+            }
+
             if (db) {
                 auto [success, error] = db->connect();
                 if (success) {
@@ -400,7 +618,11 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             // Save successful connection
             SavedConnection conn;
             conn.name = std::string(connectionName);
-            conn.type = "postgresql";
+            if (showingPostgreSQLConnection) {
+                conn.type = "postgresql";
+            } else if (showingMySQLConnection) {
+                conn.type = "mysql";
+            }
             conn.host = std::string(host);
             conn.port = port;
             conn.database = std::string(database);

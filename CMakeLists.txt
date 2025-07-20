@@ -73,6 +73,7 @@ set(APP_SOURCES
     src/database/query_executor.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
+    src/database/mysql.cpp
     src/database/db_factory.cpp
 
     # UI
@@ -198,6 +199,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     soci_sqlite3
     soci_postgresql
+    soci_mysql
     nlohmann_json::nlohmann_json
     nfd
     OpenSSL::SSL

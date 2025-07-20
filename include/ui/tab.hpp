@@ -1,5 +1,6 @@
 #pragma once
 
+#include <future>
 #include <string>
 #include <vector>
 
@@ -7,7 +8,7 @@ enum class TabType { SQL_EDITOR, TABLE_VIEWER };
 
 class Tab {
 public:
-    Tab(const std::string &name, TabType type);
+    Tab(std::string name, TabType type);
     virtual ~Tab() = default;
 
     // Common properties
@@ -72,8 +73,7 @@ private:
 
 class TableViewerTab final : public Tab {
 public:
-    TableViewerTab(const std::string &name, const std::string &databasePath,
-                   const std::string &tableName);
+    TableViewerTab(const std::string &name, std::string databasePath, std::string tableName);
 
     void render() override;
 
@@ -94,6 +94,12 @@ public:
     void refreshData();
     void saveChanges();
     void cancelChanges();
+
+    // SQL generation and confirmation dialog
+    std::vector<std::string> generateUpdateSQL();
+    std::vector<std::string> getPrimaryKeyColumns() const;
+    void showSaveConfirmationDialog();
+    void checkSQLExecutionStatus();
 
 private:
     std::string databasePath;
@@ -118,6 +124,15 @@ private:
     int selectedCol = -1;
     char editBuffer[1024] = "";
     bool hasChanges = false;
+
+    // Save confirmation dialog state
+    bool showSaveDialog = false;
+    bool dialogOpened = false;
+    std::vector<std::string> pendingUpdateSQL;
+
+    // Async SQL execution state
+    bool executingSQL = false;
+    std::future<std::pair<bool, std::string>> sqlExecutionFuture;
 
     // Helper methods
     void enterEditMode(int row, int col);

@@ -4,9 +4,16 @@
 #include "imgui.h"
 
 #include "themes.hpp"
+#include "utils/spinner.hpp"
+#include <algorithm>
+#include <chrono>
+#include <format>
+#include <future>
+#include <iostream>
+#include <utility>
 
 // Base Tab class
-Tab::Tab(const std::string &name, const TabType type) : name(name), type(type) {}
+Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(type) {}
 
 // SQLEditorTab implementation
 SQLEditorTab::SQLEditorTab(const std::string &name) : Tab(name, TabType::SQL_EDITOR) {}
@@ -57,9 +64,10 @@ void SQLEditorTab::render() {
 }
 
 // TableViewerTab implementation
-TableViewerTab::TableViewerTab(const std::string &name, const std::string &databasePath,
-                               const std::string &tableName)
-    : Tab(name, TabType::TABLE_VIEWER), databasePath(databasePath), tableName(tableName) {
+TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath,
+                               std::string tableName)
+    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
+      tableName(std::move(tableName)) {
     loadDataAsync();
 }
 
@@ -225,6 +233,12 @@ void TableViewerTab::render() {
     } else {
         ImGui::Text("No data to display");
     }
+
+    // Check async SQL execution status
+    checkSQLExecutionStatus();
+
+    // Show save confirmation dialog if needed
+    showSaveConfirmationDialog();
 }
 
 void TableViewerTab::loadData() {
@@ -312,17 +326,24 @@ void TableViewerTab::refreshData() {
 }
 
 void TableViewerTab::saveChanges() {
-    // For now, just mark as no changes (would need database update logic)
-    hasChanges = false;
-    originalData = tableData;
-
-    // Clear edited cells tracking since changes are now saved
-    for (auto &row : editedCells) {
-        std::fill(row.begin(), row.end(), false);
+    if (!hasChanges) {
+        return;
     }
 
-    // TODO: Implement actual database update logic
-    // This would require UPDATE SQL statements for each modified cell
+    // Generate SQL statements for the changes
+    pendingUpdateSQL = generateUpdateSQL();
+
+    if (pendingUpdateSQL.empty()) {
+        // No valid SQL generated, just clear changes
+        hasChanges = false;
+        for (auto &row : editedCells) {
+            std::fill(row.begin(), row.end(), false);
+        }
+        return;
+    }
+
+    // Show confirmation dialog
+    showSaveDialog = true;
 }
 
 void TableViewerTab::cancelChanges() {
@@ -342,9 +363,9 @@ void TableViewerTab::cancelChanges() {
     selectedCol = -1;
 }
 
-void TableViewerTab::enterEditMode(int row, int col) {
-    if (row >= 0 && row < (int)tableData.size() && col >= 0 && col < (int)columnNames.size()) {
-
+void TableViewerTab::enterEditMode(const int row, const int col) {
+    if (row >= 0 && row < static_cast<int>(tableData.size()) && col >= 0 &&
+        col < static_cast<int>(columnNames.size())) {
         editingRow = row;
         editingCol = col;
 
@@ -465,5 +486,313 @@ void TableViewerTab::checkAsyncLoadStatus() {
         isLoadingData = false;
         hasLoadingError = true;
         loadingError = "Failed to load table data";
+    }
+}
+
+std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
+    auto &app = Application::getInstance();
+    const auto &databases = app.getDatabases();
+
+    // Find database
+    std::shared_ptr<DatabaseInterface> db = nullptr;
+    for (auto &database : databases) {
+        if (database->getPath() == databasePath && database->isConnected()) {
+            db = database;
+            break;
+        }
+    }
+
+    std::vector<std::string> pkColumns;
+    if (!db) {
+        return pkColumns;
+    }
+
+    // Find table columns
+    const auto &tables = db->getTables();
+    for (const auto &table : tables) {
+        if (table.name == tableName) {
+            for (const auto &column : table.columns) {
+                if (column.isPrimaryKey) {
+                    pkColumns.push_back(column.name);
+                }
+            }
+            break;
+        }
+    }
+
+    return pkColumns;
+}
+
+std::vector<std::string> TableViewerTab::generateUpdateSQL() {
+    std::vector<std::string> sqlStatements;
+    auto &app = Application::getInstance();
+    const auto &databases = app.getDatabases();
+
+    // Find database
+    std::shared_ptr<DatabaseInterface> db = nullptr;
+    for (auto &database : databases) {
+        if (database->getPath() == databasePath && database->isConnected()) {
+            db = database;
+            break;
+        }
+    }
+
+    if (!db) {
+        return sqlStatements;
+    }
+
+    const bool isSQLite = (db->getType() == DatabaseType::SQLITE);
+    const std::vector<std::string> pkColumns = getPrimaryKeyColumns();
+
+    std::cout << "Generating UPDATE SQL for table: " << tableName << std::endl;
+    std::cout << "Database type: " << (isSQLite ? "SQLite" : "Postgres") << std::endl;
+    std::cout << "Primary key columns: ";
+    for (const auto &pk : pkColumns) {
+        std::cout << pk << " ";
+    }
+    std::cout << std::endl;
+
+    // Process each edited cell
+    for (int rowIdx = 0; rowIdx < editedCells.size(); rowIdx++) {
+        for (int colIdx = 0; colIdx < editedCells[rowIdx].size(); colIdx++) {
+            if (!editedCells[rowIdx][colIdx]) {
+                continue; // Cell not edited
+            }
+
+            const std::string &columnName = columnNames[colIdx];
+            const std::string &newValue = tableData[rowIdx][colIdx];
+
+            // Build UPDATE statement
+            std::string sql;
+            if (isSQLite) {
+                sql = std::format("UPDATE {} SET {} = ", tableName, columnName);
+            } else {
+                sql = std::format(R"(UPDATE "{}" SET "{}" = )", tableName, columnName);
+            }
+
+            // Add quoted value
+            if (newValue == "NULL") {
+                sql += "NULL";
+            } else {
+                sql += "'" + newValue + "'"; // Simple escaping - could be improved
+            }
+
+            sql += " WHERE ";
+
+            // Build WHERE clause
+            std::vector<std::string> whereConditions;
+
+            if (!pkColumns.empty()) {
+                // Use primary key columns
+                for (const auto &pkCol : pkColumns) {
+                    auto pkColIt = std::ranges::find(columnNames, pkCol);
+                    if (pkColIt != columnNames.end()) {
+                        const int pkColIdx =
+                            static_cast<int>(std::distance(columnNames.begin(), pkColIt));
+                        const std::string &pkValue = originalData[rowIdx][pkColIdx];
+
+                        if (isSQLite) {
+                            whereConditions.push_back(std::format("{} = '{}'", pkCol, pkValue));
+                        } else {
+                            whereConditions.push_back(std::format("\"{}\" = '{}'", pkCol, pkValue));
+                        }
+                    }
+                }
+            } else if (isSQLite) {
+                // For SQLite without primary key, use all columns as condition to identify the row
+                for (int condColIdx = 0; condColIdx < columnNames.size(); condColIdx++) {
+                    const std::string &condValue = originalData[rowIdx][condColIdx];
+                    if (condValue == "NULL") {
+                        whereConditions.push_back(
+                            std::format("{} IS NULL", columnNames[condColIdx]));
+                    } else {
+                        whereConditions.push_back(
+                            std::format("{} = '{}'", columnNames[condColIdx], condValue));
+                    }
+                }
+            } else {
+                // For Postgres without primary key, use all columns as condition
+                for (int condColIdx = 0; condColIdx < columnNames.size(); condColIdx++) {
+                    const std::string &condValue = originalData[rowIdx][condColIdx];
+                    if (condValue == "NULL") {
+                        whereConditions.push_back(
+                            std::format("\"{}\" IS NULL", columnNames[condColIdx]));
+                    } else {
+                        whereConditions.push_back(
+                            std::format("\"{}\" = '{}'", columnNames[condColIdx], condValue));
+                    }
+                }
+            }
+
+            // Join conditions with AND
+            for (int i = 0; i < whereConditions.size(); i++) {
+                sql += whereConditions[i];
+                if (i < whereConditions.size() - 1) {
+                    sql += " AND ";
+                }
+            }
+
+            sql += ";";
+            sqlStatements.push_back(sql);
+        }
+    }
+
+    return sqlStatements;
+}
+
+void TableViewerTab::showSaveConfirmationDialog() {
+    if (!showSaveDialog) {
+        return;
+    }
+
+    // Only open popup once when dialog first shows
+    if (!dialogOpened) {
+        ImGui::SetNextWindowSize(ImVec2(800, 600));
+        ImGui::OpenPopup("Confirm Save Changes");
+        dialogOpened = true;
+    }
+
+    if (ImGui::BeginPopupModal("Confirm Save Changes", nullptr)) {
+        ImGui::Text("The following SQL statements will be executed:");
+        ImGui::Separator();
+
+        // Show SQL statements in a scrollable area
+        if (ImGui::BeginChild("SQLPreview", ImVec2(0, -50), true)) {
+            for (int i = 0; i < pendingUpdateSQL.size(); i++) {
+                ImGui::Text("%d.", i + 1);
+                ImGui::SameLine();
+                ImGui::TextWrapped("%s", pendingUpdateSQL[i].c_str());
+                if (i < pendingUpdateSQL.size() - 1) {
+                    ImGui::Separator();
+                }
+            }
+        }
+        ImGui::EndChild();
+
+        ImGui::Separator();
+
+        // Buttons
+        if (executingSQL) {
+            // Show spinner and disable buttons during execution
+            ImGui::BeginDisabled();
+            ImGui::Button("Execute", ImVec2(120, 0));
+            ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            const auto &colors =
+                Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+            UIUtils::Spinner("##spinner", 8.0f, 2, ImGui::GetColorU32(colors.blue));
+
+            ImGui::SameLine();
+            ImGui::Text("Executing...");
+        } else {
+            if (ImGui::Button("Execute", ImVec2(120, 0))) {
+                // Start async SQL execution
+                auto &app = Application::getInstance();
+                const auto &databases = app.getDatabases();
+
+                std::shared_ptr<DatabaseInterface> db = nullptr;
+                for (auto &database : databases) {
+                    if (database->getPath() == databasePath && database->isConnected()) {
+                        db = database;
+                        break;
+                    }
+                }
+
+                if (db) {
+                    executingSQL = true;
+
+                    // Copy SQL statements and database pointer for async execution
+                    auto sqlStatements = pendingUpdateSQL;
+
+                    sqlExecutionFuture = std::async(
+                        std::launch::async, [db, sqlStatements]() -> std::pair<bool, std::string> {
+                            bool allSuccess = true;
+                            std::string errorMessage;
+
+                            for (const auto &sql : sqlStatements) {
+                                std::cout << "Executing SQL: " << sql << std::endl;
+                                const std::string result = db->executeQuery(sql);
+                                std::cout << "SQL Result: " << result << std::endl;
+
+                                if (result.find("Error:") == 0) {
+                                    allSuccess = false;
+                                    errorMessage = result;
+                                    std::cerr << "SQL execution failed: " << result << std::endl;
+                                    break;
+                                }
+                            }
+
+                            if (allSuccess) {
+                                std::cout << "All SQL statements executed successfully"
+                                          << std::endl;
+                            }
+
+                            return {allSuccess, errorMessage};
+                        });
+                } else {
+                    std::cerr << "Database not found or not connected" << std::endl;
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        if (executingSQL) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Cancel", ImVec2(120, 0));
+            ImGui::EndDisabled();
+        } else {
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                showSaveDialog = false;
+                pendingUpdateSQL.clear();
+                dialogOpened = false;
+            }
+        }
+
+        ImGui::EndPopup();
+    } else if (!ImGui::IsPopupOpen("Confirm Save Changes")) {
+        // Dialog was closed by clicking outside or ESC
+        showSaveDialog = false;
+        pendingUpdateSQL.clear();
+        dialogOpened = false;
+    }
+}
+
+void TableViewerTab::checkSQLExecutionStatus() {
+    if (!executingSQL || !sqlExecutionFuture.valid()) {
+        return;
+    }
+
+    // Check if async execution is complete
+    if (sqlExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto [success, errorMessage] = sqlExecutionFuture.get();
+
+            if (success) {
+                // Mark changes as saved
+                hasChanges = false;
+                originalData = tableData;
+                for (auto &row : editedCells) {
+                    std::fill(row.begin(), row.end(), false);
+                }
+            } else {
+                std::cerr << "Failed to execute SQL statements: " << errorMessage << std::endl;
+                // Keep the dialog open but reset execution state
+            }
+
+            // Reset execution state
+            executingSQL = false;
+
+            // Close dialog on successful execution, keep open on error for user to see
+            if (success) {
+                showSaveDialog = false;
+                pendingUpdateSQL.clear();
+                dialogOpened = false;
+            }
+
+        } catch (const std::exception &e) {
+            std::cerr << "Exception during SQL execution: " << e.what() << std::endl;
+            executingSQL = false;
+        }
     }
 }

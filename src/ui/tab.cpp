@@ -187,9 +187,18 @@ void TableViewerTab::render() {
                         // Display mode - show cell content
                         ImGui::PushID(rowIdx * static_cast<int>(columnNames.size()) + colIdx);
 
-                        // Check for cell selection highlighting
+                        // Check for cell selection highlighting and edited status
                         const bool isSelected = (selectedRow == rowIdx && selectedCol == colIdx);
-                        if (isSelected) {
+                        const bool isEdited =
+                            (rowIdx < editedCells.size() && colIdx < editedCells[rowIdx].size() &&
+                             editedCells[rowIdx][colIdx]);
+
+                        if (isEdited) {
+                            ImGui::TableSetBgColor(
+                                ImGuiTableBgTarget_CellBg,
+                                ImGui::GetColorU32(
+                                    ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.3f)));
+                        } else if (isSelected) {
                             ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
                                                    ImGui::GetColorU32(colors.surface2));
                         }
@@ -245,6 +254,10 @@ void TableViewerTab::loadData() {
     // Store original data for change tracking
     originalData = tableData;
     hasChanges = false;
+
+    // Initialize edited cells tracking
+    editedCells = std::vector<std::vector<bool>>(tableData.size(),
+                                                 std::vector<bool>(columnNames.size(), false));
 }
 
 void TableViewerTab::nextPage() {
@@ -289,6 +302,11 @@ void TableViewerTab::refreshData() {
         hasLoadingError = false;
         loadingError.clear();
 
+        // Clear edited cells tracking
+        for (auto &row : editedCells) {
+            std::fill(row.begin(), row.end(), false);
+        }
+
         loadDataAsync();
     }
 }
@@ -298,6 +316,11 @@ void TableViewerTab::saveChanges() {
     hasChanges = false;
     originalData = tableData;
 
+    // Clear edited cells tracking since changes are now saved
+    for (auto &row : editedCells) {
+        std::fill(row.begin(), row.end(), false);
+    }
+
     // TODO: Implement actual database update logic
     // This would require UPDATE SQL statements for each modified cell
 }
@@ -306,6 +329,11 @@ void TableViewerTab::cancelChanges() {
     // Restore original data
     tableData = originalData;
     hasChanges = false;
+
+    // Clear edited cells tracking
+    for (auto &row : editedCells) {
+        std::fill(row.begin(), row.end(), false);
+    }
 
     // Reset edit state
     editingRow = -1;
@@ -334,6 +362,12 @@ void TableViewerTab::exitEditMode(bool saveEdit) {
             if (newValue != tableData[editingRow][editingCol]) {
                 tableData[editingRow][editingCol] = newValue;
                 hasChanges = true;
+
+                // Mark cell as edited
+                if (editingRow < editedCells.size() &&
+                    editingCol < editedCells[editingRow].size()) {
+                    editedCells[editingRow][editingCol] = true;
+                }
             }
         }
 
@@ -419,6 +453,10 @@ void TableViewerTab::checkAsyncLoadStatus() {
         originalData = tableData;
         hasChanges = false;
         isLoadingData = false;
+
+        // Initialize edited cells tracking
+        editedCells = std::vector<std::vector<bool>>(tableData.size(),
+                                                     std::vector<bool>(columnNames.size(), false));
 
         // Clear the result to free memory
         db->clearTableDataResult();

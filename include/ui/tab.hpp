@@ -101,6 +101,7 @@ private:
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;
+    std::vector<std::vector<bool>> editedCells;
     int currentPage = 0;
     int rowsPerPage = 100;
     int totalRows = 0;

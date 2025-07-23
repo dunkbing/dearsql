@@ -7,7 +7,7 @@
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
-class MySQLDatabase : public DatabaseInterface {
+class MySQLDatabase final : public DatabaseInterface {
 public:
     MySQLDatabase(const std::string &name, const std::string &host, int port,
                   const std::string &database, const std::string &username,
@@ -91,9 +91,9 @@ protected:
     std::vector<std::string> getSequenceNames() override;
 
     // Async loading helpers
-    void startAsyncTableRefresh();
+    void startRefreshTableAsync();
     std::vector<Table> getTablesWithColumnsAsync();
-    void startAsyncViewRefresh();
+    void startRefreshViewAsync();
     std::vector<Table> getViewsWithColumnsAsync();
 
 private:

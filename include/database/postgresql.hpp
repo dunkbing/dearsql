@@ -7,7 +7,7 @@
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
 
-class PostgresDatabase : public DatabaseInterface {
+class PostgresDatabase final : public DatabaseInterface {
 public:
     PostgresDatabase(const std::string &name, const std::string &host, int port,
                      const std::string &database, const std::string &username,
@@ -91,12 +91,12 @@ protected:
     std::vector<std::string> getSequenceNames() override;
 
     // Async loading helpers
-    void startAsyncTableRefresh();
+    void startRefreshTableAsync();
     std::vector<Table> getTablesWithColumnsAsync();
-    void startAsyncViewRefresh();
+    void startRefreshViewAsync();
     std::vector<Table> getViewsWithColumnsAsync();
-    void startAsyncSequenceRefresh();
-    std::vector<std::string> getSequencesAsync();
+    void startRefreshSequenceAsync();
+    std::vector<std::string> getSequencesAsync() const;
 
 private:
     std::string name;

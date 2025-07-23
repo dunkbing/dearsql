@@ -44,7 +44,7 @@ PostgresDatabase::~PostgresDatabase() {
         tableDataFuture.wait();
     }
 
-    disconnect();
+    PostgresDatabase::disconnect();
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
@@ -90,7 +90,7 @@ const std::string &PostgresDatabase::getConnectionString() const {
 }
 
 const std::string &PostgresDatabase::getPath() const {
-    return connectionString; // For PostgreSQL, path is the connection string
+    return connectionString;
 }
 
 DatabaseType PostgresDatabase::getType() const {
@@ -108,7 +108,7 @@ void PostgresDatabase::refreshTables() {
         }
     }
 
-    startAsyncTableRefresh();
+    startRefreshTableAsync();
 }
 
 const std::vector<Table> &PostgresDatabase::getTables() const {
@@ -136,7 +136,7 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return "Error: Database session is not available";
         }
@@ -208,7 +208,7 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return data;
         }
@@ -231,7 +231,7 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
                     rowData.emplace_back(row.get<std::string>(i));
                     break;
                 case soci::db_wstring:
-                    // Convert wide string to UTF-8 string
+                    // convert to UTF-8 string
                     {
                         auto ws = row.get<std::wstring>(i);
                         std::string utf8_str(ws.begin(), ws.end());
@@ -291,16 +291,16 @@ std::vector<std::string> PostgresDatabase::getColumnNames(const std::string &tab
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return columnNames;
         }
 
-        std::string sql =
-            "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName +
-            "' ORDER BY ordinal_position";
+        const std::string sql = std::format("SELECT column_name FROM information_schema.columns "
+                                            "WHERE table_name = '{}' ORDER BY ordinal_position",
+                                            tableName);
 
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             columnNames.push_back(row.get<std::string>(0));
@@ -322,12 +322,12 @@ int PostgresDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return 0;
         }
 
-        std::string sql = "SELECT COUNT(*) FROM \"" + tableName + "\"";
+        const std::string sql = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
         int count = 0;
         *session << sql, soci::into(count);
         return count;
@@ -349,7 +349,7 @@ bool PostgresDatabase::hasAttemptedConnection() const {
     return attemptedConnection;
 }
 
-void PostgresDatabase::setAttemptedConnection(bool attempted) {
+void PostgresDatabase::setAttemptedConnection(const bool attempted) {
     attemptedConnection = attempted;
 }
 
@@ -374,11 +374,11 @@ std::vector<std::string> PostgresDatabase::getTableNames() {
             return tableNames;
         }
 
-        std::string sql =
+        const std::string sql =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
 
         std::cout << "Executing query to get table names..." << std::endl;
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             auto tableName = row.get<std::string>(0);
@@ -397,7 +397,7 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableNa
     std::vector<Column> columns;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return columns;
         }
@@ -446,7 +446,7 @@ void PostgresDatabase::refreshViews() {
         }
     }
 
-    startAsyncViewRefresh();
+    startRefreshViewAsync();
 }
 
 const std::vector<Table> &PostgresDatabase::getViews() const {
@@ -461,7 +461,7 @@ bool PostgresDatabase::areViewsLoaded() const {
     return viewsLoaded;
 }
 
-void PostgresDatabase::setViewsLoaded(bool loaded) {
+void PostgresDatabase::setViewsLoaded(const bool loaded) {
     viewsLoaded = loaded;
 }
 
@@ -477,7 +477,7 @@ void PostgresDatabase::refreshSequences() {
         }
     }
 
-    startAsyncSequenceRefresh();
+    startRefreshSequenceAsync();
 }
 
 const std::vector<std::string> &PostgresDatabase::getSequences() const {
@@ -492,7 +492,7 @@ bool PostgresDatabase::areSequencesLoaded() const {
     return sequencesLoaded;
 }
 
-void PostgresDatabase::setSequencesLoaded(bool loaded) {
+void PostgresDatabase::setSequencesLoaded(const bool loaded) {
     sequencesLoaded = loaded;
 }
 
@@ -500,16 +500,16 @@ std::vector<std::string> PostgresDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return viewNames;
         }
 
-        std::string sql =
+        const std::string sql =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
 
         std::cout << "Executing query to get view names..." << std::endl;
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
             auto viewName = row.get<std::string>(0);
@@ -528,7 +528,7 @@ std::vector<Column> PostgresDatabase::getViewColumns(const std::string &viewName
     std::vector<Column> columns;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return columns;
         }
@@ -561,7 +561,7 @@ std::vector<std::string> PostgresDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return sequenceNames;
         }
@@ -607,7 +607,7 @@ void PostgresDatabase::checkTablesStatusAsync() {
     }
 }
 
-void PostgresDatabase::startAsyncTableRefresh() {
+void PostgresDatabase::startRefreshTableAsync() {
     // Clear previous results
     tables.clear();
     tablesLoaded = false;
@@ -658,7 +658,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     sql += ") ORDER BY c.table_name, c.ordinal_position";
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session || !loadingTables.load()) {
             return result;
         }
@@ -674,7 +674,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
                 break; // Stop processing if we should no longer be loading
             }
 
-            std::string tableName = row.get<std::string>(0);
+            auto tableName = row.get<std::string>(0);
             Column col;
             col.name = row.get<std::string>(1);
             col.type = row.get<std::string>(2);
@@ -726,7 +726,7 @@ void PostgresDatabase::checkViewsStatusAsync() {
     }
 }
 
-void PostgresDatabase::startAsyncViewRefresh() {
+void PostgresDatabase::startRefreshViewAsync() {
     // Clear previous results
     views.clear();
     viewsLoaded = false;
@@ -787,7 +787,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
                 break; // Stop processing if we should no longer be loading
             }
 
-            std::string viewName = row.get<std::string>(0);
+            auto viewName = row.get<std::string>(0);
             Column col;
             col.name = row.get<std::string>(1);
             col.type = row.get<std::string>(2);
@@ -839,7 +839,7 @@ void PostgresDatabase::checkSequencesStatusAsync() {
     }
 }
 
-void PostgresDatabase::startAsyncSequenceRefresh() {
+void PostgresDatabase::startRefreshSequenceAsync() {
     // Clear previous results
     sequences.clear();
     sequencesLoaded = false;
@@ -849,7 +849,7 @@ void PostgresDatabase::startAsyncSequenceRefresh() {
     sequencesFuture = std::async(std::launch::async, [this]() { return getSequencesAsync(); });
 }
 
-std::vector<std::string> PostgresDatabase::getSequencesAsync() {
+std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
     std::vector<std::string> result;
 
     // Check if we're still supposed to be loading
@@ -871,7 +871,7 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() {
 
         for (const auto &row : rs) {
             if (!loadingSequences.load()) {
-                break; // Stop processing if we should no longer be loading
+                break;
             }
 
             auto sequenceName = row.get<std::string>(0);

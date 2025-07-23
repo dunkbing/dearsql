@@ -131,10 +131,10 @@ void MySQLDatabase::refreshTables() {
     if (loadingTables.load()) {
         return;
     }
-    startAsyncTableRefresh();
+    startRefreshTableAsync();
 }
 
-void MySQLDatabase::startAsyncTableRefresh() {
+void MySQLDatabase::startRefreshTableAsync() {
     if (loadingTables.load()) {
         return;
     }
@@ -202,10 +202,10 @@ void MySQLDatabase::refreshViews() {
     if (loadingViews.load()) {
         return;
     }
-    startAsyncViewRefresh();
+    startRefreshViewAsync();
 }
 
-void MySQLDatabase::startAsyncViewRefresh() {
+void MySQLDatabase::startRefreshViewAsync() {
     if (loadingViews.load()) {
         return;
     }

@@ -3,9 +3,9 @@
 #include "db_interface.hpp"
 #include <atomic>
 #include <future>
+#include <mutex>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
-#include <thread>
 
 class PostgresDatabase : public DatabaseInterface {
 public:
@@ -120,20 +120,16 @@ private:
 
     // Async loading
     std::atomic<bool> loadingTables = false;
-    std::thread tablesThread;
     std::future<std::vector<Table>> tablesFuture;
 
     std::atomic<bool> loadingViews = false;
-    std::thread viewsThread;
     std::future<std::vector<Table>> viewsFuture;
 
     std::atomic<bool> loadingSequences = false;
-    std::thread sequencesThread;
     std::future<std::vector<std::string>> sequencesFuture;
 
     // Async connection
     std::atomic<bool> connecting = false;
-    std::thread connectionThread;
     std::future<std::pair<bool, std::string>> connectionFuture;
 
     // Async table data loading
@@ -143,4 +139,7 @@ private:
     std::vector<std::string> columnNamesResult;
     int rowCountResult = 0;
     std::future<void> tableDataFuture;
+
+    // Thread synchronization
+    mutable std::mutex sessionMutex;
 };

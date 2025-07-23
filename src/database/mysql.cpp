@@ -21,16 +21,27 @@ MySQLDatabase::MySQLDatabase(const std::string &name, const std::string &host, i
 }
 
 MySQLDatabase::~MySQLDatabase() {
+    // Stop all async operations before cleaning up
+    loadingTables = false;
+    loadingViews = false;
+    connecting = false;
+    loadingTableData = false;
+
+    // Wait for all futures to complete
+    if (tablesFuture.valid()) {
+        tablesFuture.wait();
+    }
+    if (viewsFuture.valid()) {
+        viewsFuture.wait();
+    }
+    if (connectionFuture.valid()) {
+        connectionFuture.wait();
+    }
+    if (tableDataFuture.valid()) {
+        tableDataFuture.wait();
+    }
+
     disconnect();
-    if (tablesThread.joinable()) {
-        tablesThread.join();
-    }
-    if (viewsThread.joinable()) {
-        viewsThread.join();
-    }
-    if (connectionThread.joinable()) {
-        connectionThread.join();
-    }
 }
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
@@ -133,14 +144,22 @@ void MySQLDatabase::startAsyncTableRefresh() {
 }
 
 std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
-    if (!connect().first) {
+    if (!connect().first || !loadingTables.load()) {
         return {};
     }
 
     std::vector<Table> result;
     std::vector<std::string> tableNames = getTableNames();
 
+    if (!loadingTables.load()) {
+        return result;
+    }
+
     for (const auto &tableName : tableNames) {
+        if (!loadingTables.load()) {
+            break; // Stop processing if we should no longer be loading
+        }
+
         Table table;
         table.name = tableName;
         table.columns = getTableColumns(tableName);
@@ -196,14 +215,22 @@ void MySQLDatabase::startAsyncViewRefresh() {
 }
 
 std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
-    if (!connect().first) {
+    if (!connect().first || !loadingViews.load()) {
         return {};
     }
 
     std::vector<Table> result;
     std::vector<std::string> viewNames = getViewNames();
 
+    if (!loadingViews.load()) {
+        return result;
+    }
+
     for (const auto &viewName : viewNames) {
+        if (!loadingViews.load()) {
+            break; // Stop processing if we should no longer be loading
+        }
+
         Table view;
         view.name = viewName;
         view.columns = getViewColumns(viewName);
@@ -277,6 +304,11 @@ std::string MySQLDatabase::executeQuery(const std::string &query) {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return "Error: Database session is not available";
+        }
+
         soci::rowset<soci::row> rs = (session->prepare << query);
 
         std::ostringstream result;
@@ -324,6 +356,11 @@ std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::str
 
     std::vector<std::vector<std::string>> data;
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return data;
+        }
+
         std::string query = "SELECT * FROM `" + tableName + "` LIMIT " + std::to_string(limit) +
                             " OFFSET " + std::to_string(offset);
         soci::rowset<soci::row> rs = (session->prepare << query);
@@ -355,6 +392,11 @@ std::vector<std::string> MySQLDatabase::getColumnNames(const std::string &tableN
 
     std::vector<std::string> columns;
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return columns;
+        }
+
         std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
         soci::rowset<soci::row> rs = (session->prepare << query);
 
@@ -375,6 +417,11 @@ int MySQLDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return 0;
+        }
+
         int count = 0;
         std::string query = "SELECT COUNT(*) FROM `" + tableName + "`";
         *session << query, soci::into(count);
@@ -394,10 +441,28 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string &tableName, int li
     hasTableDataReady.store(false);
 
     tableDataFuture = std::async(std::launch::async, [this, tableName, limit, offset]() {
+        if (!loadingTableData.load()) {
+            return;
+        }
+
         tableDataResult = getTableData(tableName, limit, offset);
+
+        if (!loadingTableData.load()) {
+            return;
+        }
+
         columnNamesResult = getColumnNames(tableName);
+
+        if (!loadingTableData.load()) {
+            return;
+        }
+
         rowCountResult = getRowCount(tableName);
-        hasTableDataReady.store(true);
+
+        if (loadingTableData.load()) {
+            hasTableDataReady.store(true);
+        }
+
         loadingTableData.store(false);
     });
 }
@@ -464,6 +529,11 @@ std::vector<std::string> MySQLDatabase::getTableNames() {
 
     std::vector<std::string> tableNames;
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return tableNames;
+        }
+
         std::string query = "SHOW TABLES";
         soci::rowset<soci::row> rs = (session->prepare << query);
 
@@ -485,6 +555,11 @@ std::vector<Column> MySQLDatabase::getTableColumns(const std::string &tableName)
 
     std::vector<Column> columns;
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return columns;
+        }
+
         std::string query = "DESCRIBE `" + tableName + "`";
         soci::rowset<soci::row> rs = (session->prepare << query);
 
@@ -511,6 +586,11 @@ std::vector<std::string> MySQLDatabase::getViewNames() {
 
     std::vector<std::string> viewNames;
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return viewNames;
+        }
+
         std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
         soci::rowset<soci::row> rs = (session->prepare << query);
 

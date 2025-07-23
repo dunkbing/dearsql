@@ -3,9 +3,9 @@
 #include "db_interface.hpp"
 #include <atomic>
 #include <future>
+#include <mutex>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
-#include <thread>
 
 class MySQLDatabase : public DatabaseInterface {
 public:
@@ -118,16 +118,13 @@ private:
 
     // Async loading
     std::atomic<bool> loadingTables = false;
-    std::thread tablesThread;
     std::future<std::vector<Table>> tablesFuture;
 
     std::atomic<bool> loadingViews = false;
-    std::thread viewsThread;
     std::future<std::vector<Table>> viewsFuture;
 
     // Async connection
     std::atomic<bool> connecting = false;
-    std::thread connectionThread;
     std::future<std::pair<bool, std::string>> connectionFuture;
 
     // Async table data loading
@@ -137,4 +134,7 @@ private:
     std::vector<std::string> columnNamesResult;
     int rowCountResult = 0;
     std::future<void> tableDataFuture;
+
+    // Thread synchronization
+    mutable std::mutex sessionMutex;
 };

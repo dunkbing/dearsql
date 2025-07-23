@@ -20,19 +20,30 @@ PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &h
 }
 
 PostgresDatabase::~PostgresDatabase() {
-    // Clean up async operations
-    if (tablesThread.joinable()) {
-        tablesThread.join();
+    // Stop all async operations before cleaning up
+    loadingTables = false;
+    loadingViews = false;
+    loadingSequences = false;
+    connecting = false;
+    loadingTableData = false;
+
+    // Wait for all futures to complete
+    if (tablesFuture.valid()) {
+        tablesFuture.wait();
     }
-    if (viewsThread.joinable()) {
-        viewsThread.join();
+    if (viewsFuture.valid()) {
+        viewsFuture.wait();
     }
-    if (sequencesThread.joinable()) {
-        sequencesThread.join();
+    if (sequencesFuture.valid()) {
+        sequencesFuture.wait();
     }
-    if (connectionThread.joinable()) {
-        connectionThread.join();
+    if (connectionFuture.valid()) {
+        connectionFuture.wait();
     }
+    if (tableDataFuture.valid()) {
+        tableDataFuture.wait();
+    }
+
     disconnect();
 }
 
@@ -125,6 +136,11 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return "Error: Database session is not available";
+        }
+
         std::stringstream output;
         const soci::rowset rs = session->prepare << query;
 
@@ -192,6 +208,11 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return data;
+        }
+
         const std::string sql = "SELECT * FROM \"" + tableName + "\" LIMIT " +
                                 std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
@@ -270,6 +291,11 @@ std::vector<std::string> PostgresDatabase::getColumnNames(const std::string &tab
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return columnNames;
+        }
+
         std::string sql =
             "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName +
             "' ORDER BY ordinal_position";
@@ -296,6 +322,11 @@ int PostgresDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return 0;
+        }
+
         std::string sql = "SELECT COUNT(*) FROM \"" + tableName + "\"";
         int count = 0;
         *session << sql, soci::into(count);
@@ -338,6 +369,11 @@ std::vector<std::string> PostgresDatabase::getTableNames() {
     std::vector<std::string> tableNames;
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return tableNames;
+        }
+
         std::string sql =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
 
@@ -361,6 +397,11 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableNa
     std::vector<Column> columns;
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return columns;
+        }
+
         const std::string sql =
             "SELECT c.column_name, c.data_type, c.is_nullable, "
             "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
@@ -459,6 +500,11 @@ std::vector<std::string> PostgresDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return viewNames;
+        }
+
         std::string sql =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
 
@@ -482,6 +528,11 @@ std::vector<Column> PostgresDatabase::getViewColumns(const std::string &viewName
     std::vector<Column> columns;
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return columns;
+        }
+
         const std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
                                 "FROM information_schema.columns c "
                                 "WHERE c.table_name = '" +
@@ -510,6 +561,11 @@ std::vector<std::string> PostgresDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return sequenceNames;
+        }
+
         const std::string sql =
             "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
             "BY sequencename";
@@ -543,20 +599,10 @@ void PostgresDatabase::checkTablesStatusAsync() {
                       << std::endl;
             tablesLoaded = true;
             loadingTables = false;
-
-            // Clean up thread
-            if (tablesThread.joinable()) {
-                tablesThread.join();
-            }
         } catch (const std::exception &e) {
             std::cerr << "Error in async table loading: " << e.what() << std::endl;
             tablesLoaded = true;
             loadingTables = false;
-
-            // Clean up thread
-            if (tablesThread.joinable()) {
-                tablesThread.join();
-            }
         }
     }
 }
@@ -567,35 +613,23 @@ void PostgresDatabase::startAsyncTableRefresh() {
     tablesLoaded = false;
     loadingTables = true;
 
-    // Clean up previous thread
-    if (tablesThread.joinable()) {
-        tablesThread.join();
-    }
-
-    // Create promise-future pair
-    auto promise = std::make_shared<std::promise<std::vector<Table>>>();
-    tablesFuture = promise->get_future();
-
-    // Start async loading
-    tablesThread = std::thread([this, promise]() {
-        try {
-            auto result = getTablesWithColumnsAsync();
-            promise->set_value(result);
-        } catch (const std::exception &e) {
-            std::cerr << "Exception in async table loading: " << e.what() << std::endl;
-            promise->set_exception(std::current_exception());
-        }
-    });
+    // Start async loading with std::async
+    tablesFuture = std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     std::vector<Table> result;
 
+    // Check if we're still supposed to be loading
+    if (!loadingTables.load()) {
+        return result;
+    }
+
     // Get all table names first
     const std::vector<std::string> tableNames = getTableNames();
     std::cout << "Found " << tableNames.size() << " tables, loading columns..." << std::endl;
 
-    if (tableNames.empty()) {
+    if (tableNames.empty() || !loadingTables.load()) {
         return result;
     }
 
@@ -624,6 +658,11 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     sql += ") ORDER BY c.table_name, c.ordinal_position";
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session || !loadingTables.load()) {
+            return result;
+        }
+
         // Execute the query
         const soci::rowset rs = session->prepare << sql;
 
@@ -631,6 +670,10 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
         std::unordered_map<std::string, std::vector<Column>> tableColumns;
 
         for (const auto &row : rs) {
+            if (!loadingTables.load()) {
+                break; // Stop processing if we should no longer be loading
+            }
+
             std::string tableName = row.get<std::string>(0);
             Column col;
             col.name = row.get<std::string>(1);
@@ -643,6 +686,10 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
         // Build the result tables
         for (const auto &tableName : tableNames) {
+            if (!loadingTables.load()) {
+                break; // Stop processing if we should no longer be loading
+            }
+
             Table table;
             table.name = tableName;
             table.columns = tableColumns[tableName]; // Will be empty if table has no columns
@@ -671,20 +718,10 @@ void PostgresDatabase::checkViewsStatusAsync() {
                       << std::endl;
             viewsLoaded = true;
             loadingViews = false;
-
-            // Clean up thread
-            if (viewsThread.joinable()) {
-                viewsThread.join();
-            }
         } catch (const std::exception &e) {
             std::cerr << "Error in async view loading: " << e.what() << std::endl;
             viewsLoaded = true;
             loadingViews = false;
-
-            // Clean up thread
-            if (viewsThread.joinable()) {
-                viewsThread.join();
-            }
         }
     }
 }
@@ -695,35 +732,23 @@ void PostgresDatabase::startAsyncViewRefresh() {
     viewsLoaded = false;
     loadingViews = true;
 
-    // Clean up previous thread
-    if (viewsThread.joinable()) {
-        viewsThread.join();
-    }
-
-    // Create promise-future pair
-    auto promise = std::make_shared<std::promise<std::vector<Table>>>();
-    viewsFuture = promise->get_future();
-
-    // Start async loading
-    viewsThread = std::thread([this, promise]() {
-        try {
-            auto result = getViewsWithColumnsAsync();
-            promise->set_value(result);
-        } catch (const std::exception &e) {
-            std::cerr << "Exception in async view loading: " << e.what() << std::endl;
-            promise->set_exception(std::current_exception());
-        }
-    });
+    // Start async loading with std::async
+    viewsFuture = std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     std::vector<Table> result;
 
+    // Check if we're still supposed to be loading
+    if (!loadingViews.load()) {
+        return result;
+    }
+
     // Get all view names first
     const std::vector<std::string> viewNames = getViewNames();
     std::cout << "Found " << viewNames.size() << " views, loading columns..." << std::endl;
 
-    if (viewNames.empty()) {
+    if (viewNames.empty() || !loadingViews.load()) {
         return result;
     }
 
@@ -746,6 +771,11 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     sql += ") ORDER BY c.table_name, c.ordinal_position";
 
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session || !loadingViews.load()) {
+            return result;
+        }
+
         // Execute the query
         const soci::rowset rs = session->prepare << sql;
 
@@ -753,6 +783,10 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
         std::unordered_map<std::string, std::vector<Column>> viewColumns;
 
         for (const auto &row : rs) {
+            if (!loadingViews.load()) {
+                break; // Stop processing if we should no longer be loading
+            }
+
             std::string viewName = row.get<std::string>(0);
             Column col;
             col.name = row.get<std::string>(1);
@@ -765,6 +799,10 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
         // Build the result views
         for (const auto &viewName : viewNames) {
+            if (!loadingViews.load()) {
+                break; // Stop processing if we should no longer be loading
+            }
+
             Table view;
             view.name = viewName;
             view.columns = viewColumns[viewName]; // Will be empty if view has no columns
@@ -793,20 +831,10 @@ void PostgresDatabase::checkSequencesStatusAsync() {
                       << " sequences." << std::endl;
             sequencesLoaded = true;
             loadingSequences = false;
-
-            // Clean up thread
-            if (sequencesThread.joinable()) {
-                sequencesThread.join();
-            }
         } catch (const std::exception &e) {
             std::cerr << "Error in async sequence loading: " << e.what() << std::endl;
             sequencesLoaded = true;
             loadingSequences = false;
-
-            // Clean up thread
-            if (sequencesThread.joinable()) {
-                sequencesThread.join();
-            }
         }
     }
 }
@@ -817,31 +845,24 @@ void PostgresDatabase::startAsyncSequenceRefresh() {
     sequencesLoaded = false;
     loadingSequences = true;
 
-    // Clean up previous thread
-    if (sequencesThread.joinable()) {
-        sequencesThread.join();
-    }
-
-    // Create promise-future pair
-    auto promise = std::make_shared<std::promise<std::vector<std::string>>>();
-    sequencesFuture = promise->get_future();
-
-    // Start async loading
-    sequencesThread = std::thread([this, promise]() {
-        try {
-            auto result = getSequencesAsync();
-            promise->set_value(result);
-        } catch (const std::exception &e) {
-            std::cerr << "Exception in async sequence loading: " << e.what() << std::endl;
-            promise->set_exception(std::current_exception());
-        }
-    });
+    // Start async loading with std::async
+    sequencesFuture = std::async(std::launch::async, [this]() { return getSequencesAsync(); });
 }
 
 std::vector<std::string> PostgresDatabase::getSequencesAsync() {
     std::vector<std::string> result;
 
+    // Check if we're still supposed to be loading
+    if (!loadingSequences.load()) {
+        return result;
+    }
+
     try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session || !loadingSequences.load()) {
+            return result;
+        }
+
         const std::string sql = "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' "
                                 "ORDER BY sequencename";
 
@@ -849,6 +870,10 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() {
         const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
+            if (!loadingSequences.load()) {
+                break; // Stop processing if we should no longer be loading
+            }
+
             auto sequenceName = row.get<std::string>(0);
             std::cout << "Found sequence: " << sequenceName << std::endl;
             result.push_back(sequenceName);
@@ -872,24 +897,8 @@ void PostgresDatabase::startConnectionAsync() {
 
     connecting = true;
 
-    // Clean up previous thread
-    if (connectionThread.joinable()) {
-        connectionThread.join();
-    }
-
-    // Create promise-future pair
-    auto promise = std::make_shared<std::promise<std::pair<bool, std::string>>>();
-    connectionFuture = promise->get_future();
-
-    // Start async connection
-    connectionThread = std::thread([this, promise]() {
-        try {
-            auto result = connect();
-            promise->set_value(result);
-        } catch (const std::exception &e) {
-            promise->set_value(std::make_pair(false, std::string(e.what())));
-        }
-    });
+    // Start async connection with std::async
+    connectionFuture = std::async(std::launch::async, [this]() { return connect(); });
 }
 
 void PostgresDatabase::checkConnectionStatusAsync() {
@@ -910,21 +919,11 @@ void PostgresDatabase::checkConnectionStatusAsync() {
                 std::cout << "Async connection failed for: " << name << " - " << error << std::endl;
                 // Connection state and error are already set by the synchronous connect() method
             }
-
-            // Clean up thread
-            if (connectionThread.joinable()) {
-                connectionThread.join();
-            }
         } catch (const std::exception &e) {
             std::cerr << "Error in async connection: " << e.what() << std::endl;
             connecting = false;
             attemptedConnection = true;
             lastConnectionError = e.what();
-
-            // Clean up thread
-            if (connectionThread.joinable()) {
-                connectionThread.join();
-            }
         }
     }
 }

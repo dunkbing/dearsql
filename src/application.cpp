@@ -7,6 +7,7 @@
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
+#include <cmath>
 #include <csignal>
 #include <imgui_internal.h>
 #include <iostream>
@@ -344,23 +345,32 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
 
-    // Split the dockspace into left and right
-    ImGuiID dock_left, dock_right;
-    ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, 0.25f, &dock_left, &dock_right);
+    // Calculate if we should use docking (same logic as in renderMainUI)
+    bool isCurrentlyAnimating = std::abs(targetSidebarWidth - sidebarWidth) > 0.001f;
+    bool shouldUseDocking = !isCurrentlyAnimating && targetSidebarWidth > 0.01f;
 
-    // Make the left dock node non-dockable, but resizable
-    // ImGui::DockBuilderGetNode(dock_left)->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+    if (shouldUseDocking) {
+        // Create split layout only when not animating, use target width for consistent size
+        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, targetSidebarWidth, &leftDockId,
+                                    &rightDockId);
 
-    // Dock windows to specific nodes
-    // Make both dock nodes non-dockable and non-tabbed
-    ImGui::DockBuilderGetNode(dock_left)->LocalFlags |=
-        ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-    ImGui::DockBuilderGetNode(dock_right)->LocalFlags |=
-        ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+        // Make both dock nodes non-dockable and non-tabbed, but allow resizing
+        ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
-    // Dock windows to fixed positions
-    ImGui::DockBuilderDockWindow("Databases", dock_left);
-    ImGui::DockBuilderDockWindow("Content", dock_right);
+        // Dock windows to fixed positions
+        ImGui::DockBuilderDockWindow("Databases", leftDockId);
+        ImGui::DockBuilderDockWindow("Content", rightDockId);
+    } else {
+        // When sidebar is hidden, use full space for content
+        ImGui::DockBuilderGetNode(dockspaceId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+        ImGui::DockBuilderDockWindow("Content", dockspaceId);
+        leftDockId = 0;
+        rightDockId = 0;
+    }
 
     ImGui::DockBuilderFinish(dockspaceId);
     dockingLayoutInitialized = true;
@@ -369,6 +379,29 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
 void Application::renderMainUI() {
     // DockSpace setup
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
+
+    // Update sidebar animation
+    const float deltaTime = ImGui::GetIO().DeltaTime;
+    const float diff = targetSidebarWidth - sidebarWidth;
+    bool isCurrentlyAnimating = std::abs(diff) > 0.001f;
+
+    if (isCurrentlyAnimating) {
+        sidebarWidth += diff * animationSpeed * deltaTime;
+    } else {
+        sidebarWidth = targetSidebarWidth;
+    }
+
+    // Simple approach: always use manual positioning during animation, docking when stable
+    bool shouldUseDocking = !isCurrentlyAnimating && targetSidebarWidth > 0.01f;
+
+    // Rebuild layout when switching between docking modes
+    static bool wasUsingDocking = false;
+    if (wasUsingDocking != shouldUseDocking) {
+        dockingLayoutInitialized = false;
+        wasUsingDocking = shouldUseDocking;
+    }
+
+    // No direct dock node manipulation - let the layout system handle it when not animating
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     ImGui::SetNextWindowViewport(viewport->ID);
@@ -387,11 +420,16 @@ void Application::renderMainUI() {
 
     ImGui::PopStyleVar(3);
 
-    // Add border around dock windows using Theme colors
+    // Add border around dock windows using Theme colors (only when using docking)
     const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+    if (shouldUseDocking) {
+        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+    } else {
+        // During animation, hide borders to prevent flashing
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    }
 
     const ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
@@ -399,27 +437,57 @@ void Application::renderMainUI() {
     // Setup default docking layout
     setupDockingLayout(dockSpaceId);
 
-    // Database sidebar with theme-based tab highlighting (fixed, non-moveable)
+    // Database sidebar rendering
+    bool shouldShowSidebar = sidebarWidth > 0.01f;
+
+    if (shouldShowSidebar) {
+        ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
+        ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
+
+        if (shouldUseDocking) {
+            // When not animating, use docking system for resizing
+            ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+            ImGui::Begin("Databases", nullptr,
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+        } else {
+            // During animation, use manual positioning
+            const float currentSidebarWidth = sidebarWidth * viewport->Size.x;
+            ImGui::SetNextWindowPos(viewport->Pos);
+            ImGui::SetNextWindowSize(ImVec2(currentSidebarWidth, viewport->Size.y));
+            ImGui::Begin("Databases", nullptr,
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoTitleBar);
+        }
+
+        databaseSidebar->render();
+        ImGui::End();
+
+        ImGui::PopStyleVar(1);
+        ImGui::PopStyleColor(3);
+    }
+
+    // Main content area - positioning depends on sidebar visibility
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-    // Make sidebar window non-moveable and non-dockable but resizable with constraints
-    ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
-    ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-    databaseSidebar->render();
-    ImGui::End();
+    if (shouldUseDocking) {
+        // When not animating and sidebar should be visible, use docking system
+        ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+    } else {
+        // During animation or when hidden, manually position content
+        const float currentSidebarWidth =
+            shouldShowSidebar ? sidebarWidth * viewport->Size.x : 0.0f;
+        ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + currentSidebarWidth, viewport->Pos.y));
+        ImGui::SetNextWindowSize(ImVec2(viewport->Size.x - currentSidebarWidth, viewport->Size.y));
+        ImGui::Begin("Content", nullptr,
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoTitleBar);
+    }
 
-    ImGui::PopStyleVar(1);
-    ImGui::PopStyleColor(3);
-
-    // Main content area - docked to the right, fixed in place
-    ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
-    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
-    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
-    ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
     if (tabManager->isEmpty()) {
         tabManager->renderEmptyState();
     } else {
@@ -430,8 +498,12 @@ void Application::renderMainUI() {
     ImGui::PopStyleColor(3);
 
     // Pop styles and end DockSpace
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(1);
+    if (shouldUseDocking) {
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(1);
+    } else {
+        ImGui::PopStyleVar(1);
+    }
     ImGui::End();
 }
 
@@ -467,6 +539,12 @@ void Application::renderMenuBar() {
 void Application::onConnectButtonClicked() {
     if (platform_) {
         platform_->onConnectButtonClicked();
+    }
+}
+
+void Application::onSidebarToggleClicked() {
+    if (platform_) {
+        platform_->onSidebarToggleClicked();
     }
 }
 

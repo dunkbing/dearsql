@@ -20,17 +20,38 @@
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"SidebarToggle", @"ConnectButton" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"SidebarToggle", @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
         itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
     willBeInsertedIntoToolbar:(BOOL)flag {
-    if ([itemIdentifier isEqualToString:@"ConnectButton"]) {
+    if ([itemIdentifier isEqualToString:@"SidebarToggle"]) {
+        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        item.label = @"";
+        item.paletteLabel = @"Toggle Sidebar";
+        item.toolTip = @"Show/Hide Sidebar";
+
+        NSButton *button = [[NSButton alloc] init];
+        [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
+                                   accessibilityDescription:@"Toggle Sidebar"]];
+        [button setButtonType:NSButtonTypeMomentaryPushIn];
+        [button setBezelStyle:NSBezelStyleRounded];
+        [button setTarget:self];
+        [button setAction:@selector(sidebarToggleClicked:)];
+        [button sizeToFit];
+
+        // Ensure it's positioned on the left
+        item.minSize = NSMakeSize(32, 32);
+        item.maxSize = NSMakeSize(32, 32);
+
+        item.view = button;
+        return item;
+    } else if ([itemIdentifier isEqualToString:@"ConnectButton"]) {
         NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"";
         item.paletteLabel = @"Connect";
@@ -57,6 +78,16 @@
         }
     } @catch (NSException *exception) {
         NSLog(@"Exception in connectButtonClicked: %@", exception);
+    }
+}
+
+- (void)sidebarToggleClicked:(id)sender {
+    @try {
+        if (self.app) {
+            self.app->onSidebarToggleClicked();
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in sidebarToggleClicked: %@", exception);
     }
 }
 @end
@@ -135,6 +166,7 @@ void MacOSPlatform::setupTitlebar() {
     // Create and add a toolbar to increase titlebar height
     NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+    toolbar.sizeMode = NSToolbarSizeModeRegular;
 
     // Set up toolbar delegate - keep strong reference to prevent deallocation
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
@@ -183,6 +215,15 @@ void MacOSPlatform::onConnectButtonClicked() {
         }
     } catch (const std::exception &e) {
         std::cerr << "Exception in onConnectButtonClicked: " << e.what() << std::endl;
+    }
+}
+
+void MacOSPlatform::onSidebarToggleClicked() {
+    std::cout << "Sidebar toggle clicked" << std::endl;
+    try {
+        app_->setSidebarVisible(!app_->isSidebarVisible());
+    } catch (const std::exception &e) {
+        std::cerr << "Exception in onSidebarToggleClicked: " << e.what() << std::endl;
     }
 }
 

@@ -82,9 +82,21 @@ public:
         return window;
     }
 
+    // Sidebar visibility
+    bool isSidebarVisible() const {
+        return sidebarVisible;
+    }
+    void setSidebarVisible(bool visible) {
+        if (sidebarVisible != visible) {
+            sidebarVisible = visible;
+            targetSidebarWidth = visible ? 0.25f : 0.0f;
+        }
+    }
+
     // Platform-specific methods
 #ifdef USE_METAL_BACKEND
     void onConnectButtonClicked();
+    void onSidebarToggleClicked();
     float getTitlebarHeight() const;
 #endif
 
@@ -102,6 +114,12 @@ private:
 
     // Application state
     bool darkTheme = true;
+    bool sidebarVisible = true;
+    float sidebarWidth = 0.25f;
+    float targetSidebarWidth = 0.25f;
+    float animationSpeed = 12.0f;
+    ImGuiID leftDockId = 0;
+    ImGuiID rightDockId = 0;
     int selectedDatabase = -1;
     int selectedTable = -1;
     bool dockingLayoutInitialized = false;

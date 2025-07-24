@@ -11,6 +11,7 @@ public:
     virtual void setupTitlebar() = 0;
     virtual float getTitlebarHeight() const = 0;
     virtual void onConnectButtonClicked() = 0;
+    virtual void onSidebarToggleClicked() = 0;
     virtual void cleanup() = 0;
     virtual void renderFrame() = 0;
     virtual void shutdownImGui() = 0;

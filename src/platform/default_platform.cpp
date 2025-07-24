@@ -37,6 +37,11 @@ void DefaultPlatform::onConnectButtonClicked() {
     }
 }
 
+void DefaultPlatform::onSidebarToggleClicked() {
+    // This would typically be handled through UI menus on non-macOS platforms
+    app_->setSidebarVisible(!app_->isSidebarVisible());
+}
+
 void DefaultPlatform::cleanup() {
     // No-op for default platform
 }

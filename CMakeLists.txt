@@ -83,6 +83,9 @@ set(APP_SOURCES
     src/ui/db_connection_dialog.cpp
     src/ui/tab.cpp
     src/ui/tab_manager.cpp
+    src/ui/sqlite_hierarchy.cpp
+    src/ui/postgres_hierarchy.cpp
+    src/ui/mysql_hierarchy.cpp
 
     # Utils
     src/utils/file_dialog.cpp

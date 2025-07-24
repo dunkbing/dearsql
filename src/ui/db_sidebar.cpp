@@ -4,8 +4,13 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/mysql_hierarchy.hpp"
+#include "ui/postgres_hierarchy.hpp"
+#include "ui/sqlite_hierarchy.hpp"
 #include "utils/spinner.hpp"
 #include <iostream>
 
@@ -223,7 +228,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         } else if (db->isConnected()) {
             // Check for async loading completion for PostgreSQL
             if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+                auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
                 if (pgDb->isLoadingSchemas()) {
                     pgDb->checkSchemasStatusAsync();
                 }
@@ -240,165 +245,16 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
             // Show hierarchical structure based on database type
             if (db->getType() == DatabaseType::SQLITE) {
-                renderSQLiteHierarchy(databaseIndex);
+                auto *sqliteDb = dynamic_cast<SQLiteDatabase *>(db.get());
+                SQLiteHierarchy::renderSQLiteHierarchy(sqliteDb);
             } else if (db->getType() == DatabaseType::POSTGRESQL) {
-                renderPostgresHierarchy(databaseIndex);
+                auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                PostgresHierarchy::renderPostgresHierarchy(pgDb);
+            } else if (db->getType() == DatabaseType::MYSQL) {
+                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
+                MySQLHierarchy::renderMySQLHierarchy(mysqlDb);
             }
         }
-        ImGui::TreePop();
-    }
-}
-
-void DatabaseSidebar::renderTableNode(const int databaseIndex, const int tableIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    const auto &table = db->getTables()[tableIndex];
-
-    ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
-    if (app.getSelectedDatabase() == databaseIndex && app.getSelectedTable() == tableIndex) {
-        tableFlags |= ImGuiTreeNodeFlags_Selected;
-    }
-
-    // Draw tree node with placeholder space for icon
-    const std::string tableLabel = std::format("   {}", table.name); // 3 spaces for icon
-    const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
-
-    // Draw colored icon over the placeholder space
-    const ImVec2 tableIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        tableIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for tables
-        ICON_FA_TABLE);
-
-    if (ImGui::IsItemClicked()) {
-        app.setSelectedDatabase(databaseIndex);
-        app.setSelectedTable(tableIndex);
-    }
-
-    // Double-click to open table viewer (async loading will be handled by the tab)
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-        app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
-    }
-
-    ImGui::PushID(static_cast<int>(tableIndex));
-    handleTableContextMenu(databaseIndex, tableIndex);
-    ImGui::PopID();
-
-    if (tableOpened) {
-        // Columns section
-        constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                    ImGuiTreeNodeFlags_FramePadding;
-        // Draw tree node with placeholder space for icon
-        const std::string columnsLabel = "   Columns"; // 3 spaces for icon
-        const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
-
-        // Draw colored icon over the placeholder space
-        const ImVec2 columnsIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            columnsIconPos,
-            ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
-            ICON_FA_TABLE_COLUMNS);
-
-        if (columnsOpened) {
-            for (const auto &[name, type, isPrimaryKey, isNotNull] : table.columns) {
-                ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
-                                                 ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                 ImGuiTreeNodeFlags_FramePadding;
-
-                // Build column display string with type and constraints
-                std::string columnDisplay = std::format("{} ({}", name, type);
-                if (isPrimaryKey) {
-                    columnDisplay += ", PK";
-                }
-                if (isNotNull) {
-                    columnDisplay += ", NOT NULL";
-                }
-                columnDisplay += ")";
-
-                ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
-            }
-            ImGui::TreePop();
-        }
-
-        // Keys section
-        constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                 ImGuiTreeNodeFlags_FramePadding;
-        // Draw tree node with placeholder space for icon
-        const std::string keysLabel = "   Keys"; // 3 spaces for icon
-        bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
-
-        // Draw colored icon over the placeholder space
-        const ImVec2 keysIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            keysIconPos, ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Keys
-            ICON_FA_KEY);
-
-        if (keysOpen) {
-            // Show primary key if any column is marked as primary key
-            bool hasPrimaryKey = false;
-            std::string primaryKeyColumns;
-            for (const auto &column : table.columns) {
-                if (column.isPrimaryKey) {
-                    if (hasPrimaryKey) {
-                        primaryKeyColumns += ", ";
-                    }
-                    primaryKeyColumns += column.name;
-                    hasPrimaryKey = true;
-                }
-            }
-
-            if (hasPrimaryKey) {
-                constexpr ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
-                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                       ImGuiTreeNodeFlags_FramePadding;
-                std::string pkDisplay = "Primary Key (" + primaryKeyColumns + ")";
-                ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
-            } else {
-                ImGui::Text("  No primary key");
-            }
-            ImGui::TreePop();
-        }
-
-        // Indexes section
-        constexpr ImGuiTreeNodeFlags indexesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                    ImGuiTreeNodeFlags_FramePadding;
-        // Draw tree node with placeholder space for icon
-        const std::string indexesLabel = "   Indexes"; // 3 spaces for icon
-        bool indexesOpen = ImGui::TreeNodeEx(indexesLabel.c_str(), indexesFlags);
-
-        // Draw colored icon over the placeholder space
-        const ImVec2 indexesIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            indexesIconPos,
-            ImGui::GetColorU32(ImVec4(0.7f, 0.7f, 0.9f, 1.0f)), // Light purple for Indexes
-            ICON_FA_MAGNIFYING_GLASS);
-
-        if (indexesOpen) {
-            // TODO: Implement index retrieval from database
-            ImGui::Text("  Index information not available");
-            ImGui::TreePop();
-        }
-
         ImGui::TreePop();
     }
 }
@@ -476,135 +332,6 @@ void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const s
     }
 }
 
-void DatabaseSidebar::renderViewNode(size_t databaseIndex, size_t viewIndex) {
-    auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    auto &view = db->getViews()[viewIndex];
-
-    ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                   ImGuiTreeNodeFlags_FramePadding;
-
-    // Draw tree node with placeholder space for icon
-    const std::string viewLabel = std::format("   {}", view.name); // 3 spaces for icon
-    ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
-
-    // Draw colored icon over the placeholder space
-    const ImVec2 viewIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
-        ICON_FA_EYE);
-
-    if (ImGui::IsItemClicked()) {
-        app.setSelectedDatabase(databaseIndex);
-        app.setSelectedTable(-1); // Reset table selection for views
-    }
-
-    // Double-click to open view viewer (async loading will be handled by the tab)
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-        app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
-    }
-
-    ImGui::PushID(static_cast<int>(viewIndex));
-    handleViewContextMenu(databaseIndex, viewIndex);
-    ImGui::PopID();
-}
-
-void DatabaseSidebar::renderSequenceNode(size_t databaseIndex, size_t sequenceIndex) {
-    auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    auto &sequence = db->getSequences()[sequenceIndex];
-
-    ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
-                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                       ImGuiTreeNodeFlags_FramePadding;
-
-    // Draw tree node with placeholder space for icon
-    const std::string sequenceLabel = std::format("   {}", sequence); // 3 spaces for icon
-    ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
-
-    // Draw colored icon over the placeholder space
-    const ImVec2 sequenceIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        sequenceIconPos, ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for sequences
-        ICON_FA_LIST_OL);
-
-    if (ImGui::IsItemClicked()) {
-        app.setSelectedDatabase(databaseIndex);
-        app.setSelectedTable(-1); // Reset table selection for sequences
-    }
-
-    ImGui::PushID(static_cast<int>(sequenceIndex));
-    handleSequenceContextMenu(databaseIndex, sequenceIndex);
-    ImGui::PopID();
-}
-
-void DatabaseSidebar::renderSQLiteHierarchy(size_t databaseIndex) {
-    renderTablesSection(databaseIndex);
-    renderViewsSection(databaseIndex);
-}
-
-void DatabaseSidebar::renderPostgresHierarchy(size_t databaseIndex) {
-    auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-
-    // First show the connected database as a child node
-    ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                     ImGuiTreeNodeFlags_FramePadding;
-
-    // Draw database node with placeholder space for icon
-    std::string dbName = db->getName();
-    if (db->getType() == DatabaseType::POSTGRESQL) {
-        auto *pgDb = static_cast<PostgresDatabase *>(db.get());
-        dbName = pgDb->getDatabaseName();
-        // Add schema count if schemas are loaded
-        if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
-            dbName = std::format("{} ({} schemas)", dbName, pgDb->getSchemas().size());
-        }
-    }
-    const std::string dbNodeLabel =
-        std::format("   {}###db_node", dbName); // 3 spaces for icon, ###db_node for stable ID
-    bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
-
-    // Draw colored icon over the placeholder space
-    const ImVec2 dbNodeIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        dbNodeIconPos, ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
-        ICON_FK_DATABASE);
-
-    if (dbNodeOpen) {
-        // Cast to PostgresDatabase to access schema functionality
-        auto *pgDb = static_cast<PostgresDatabase *>(db.get());
-
-        // Load schemas when database node is opened
-        if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-            std::cout << "Database node expanded and schemas not loaded yet, attempting to load..."
-                      << std::endl;
-            pgDb->refreshSchemas();
-        }
-
-        // Show schemas
-        renderSchemasSection(databaseIndex);
-
-        ImGui::TreePop();
-    }
-}
-
 void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
     auto &app = Application::getInstance();
     auto &databases = app.getDatabases();
@@ -662,72 +389,7 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
             }
         } else {
             for (size_t j = 0; j < db->getTables().size(); j++) {
-                renderTableNode(databaseIndex, j);
-            }
-        }
-        ImGui::TreePop();
-    }
-}
-
-void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-
-    constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                              ImGuiTreeNodeFlags_FramePadding;
-
-    // Show loading indicator next to Views node if loading
-    const bool showViewsSpinner =
-        (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
-
-    // Draw tree node with placeholder space for icon
-    const std::string viewsLabel =
-        std::format("   Views ({})###views",
-                    db->getViews().size()); // 3 spaces for icon, ###views for stable ID
-    const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
-
-    // Draw colored icon over the placeholder space
-    const auto viewsSectionIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        viewsSectionIconPos,
-        ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for Views section
-        ICON_FA_EYE);
-
-    // Show spinner next to Views node if loading
-    if (showViewsSpinner) {
-        ImGui::SameLine();
-        UIUtils::Spinner("##views_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-    }
-
-    // Load views when the tree node is opened and views haven't been loaded yet
-    if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
-        std::cout << "Views node expanded and views not loaded yet, attempting to load..."
-                  << std::endl;
-        db->refreshViews();
-    }
-
-    if (viewsOpen) {
-        if (db->getViews().empty()) {
-            if (db->isLoadingViews()) {
-                // Show loading indicator with spinner
-                ImGui::Text("  Loading views...");
-                ImGui::SameLine();
-                UIUtils::Spinner("##loading_views_spinner", 6.0f, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
-            } else if (!db->areViewsLoaded()) {
-                ImGui::Text("  Loading...");
-            } else {
-                ImGui::Text("  No views found");
-            }
-        } else {
-            for (size_t j = 0; j < db->getViews().size(); j++) {
-                renderViewNode(databaseIndex, j);
+                // renderTableNode(databaseIndex, j); // Moved to hierarchy modules
             }
         }
         ImGui::TreePop();
@@ -797,7 +459,7 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
             }
         } else {
             for (size_t j = 0; j < db->getSequences().size(); j++) {
-                renderSequenceNode(databaseIndex, j);
+                // renderSequenceNode(databaseIndex, j); // Moved to hierarchy modules
             }
         }
         ImGui::TreePop();
@@ -833,70 +495,5 @@ void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
             // TODO: Show sequence details in a tab
         }
         ImGui::EndPopup();
-    }
-}
-
-void DatabaseSidebar::renderSchemasSection(size_t databaseIndex) {
-    auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-
-    // Cast to PostgresDatabase to access schema functionality
-    auto *pgDb = static_cast<PostgresDatabase *>(db.get());
-
-    if (pgDb->getSchemas().empty()) {
-        if (pgDb->isLoadingSchemas()) {
-            // Show loading indicator with spinner
-            ImGui::Text("  Loading schemas...");
-            ImGui::SameLine();
-            UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(ImGuiCol_Text));
-        } else if (!pgDb->areSchemasLoaded()) {
-            ImGui::Text("  Loading...");
-        } else {
-            ImGui::Text("  No schemas found");
-        }
-    } else {
-        for (size_t i = 0; i < pgDb->getSchemas().size(); i++) {
-            renderSchemaNode(databaseIndex, i);
-        }
-    }
-}
-
-void DatabaseSidebar::renderSchemaNode(size_t databaseIndex, size_t schemaIndex) {
-    auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-
-    // Cast to PostgresDatabase to access schema functionality
-    auto *pgDb = static_cast<PostgresDatabase *>(db.get());
-    auto &schema = pgDb->getSchemas()[schemaIndex];
-
-    ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                     ImGuiTreeNodeFlags_FramePadding;
-
-    // Draw schema node with placeholder space for icon
-    const std::string schemaLabel = std::format("   {}", schema.name); // 3 spaces for icon
-    bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
-
-    // Draw colored icon over the placeholder space
-    const ImVec2 schemaIconPos =
-        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImGui::GetWindowDrawList()->AddText(
-        schemaIconPos, ImGui::GetColorU32(ImVec4(0.7f, 0.5f, 0.9f, 1.0f)), // Purple for schema
-        ICON_FA_FOLDER);
-
-    if (schemaOpen) {
-        // For now, render the old structure under each schema
-        // In the future, we'd filter tables/views/sequences by schema
-        renderTablesSection(databaseIndex);
-        renderViewsSection(databaseIndex);
-        renderSequencesSection(databaseIndex);
-
-        ImGui::TreePop();
     }
 }

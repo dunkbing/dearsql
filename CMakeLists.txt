@@ -27,6 +27,8 @@ set(IMGUI_SOURCES
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
     external/imgui/backends/imgui_impl_glfw.cpp
+    external/ImGuiColorTextEdit/TextEditor.cpp
+    external/ImGuiColorTextEdit/LanguageDefinitions.cpp
 )
 
 # Platform-specific backend configuration
@@ -187,6 +189,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     include
     external/imgui
     external/imgui/backends
+    external/ImGuiColorTextEdit
     external/json/include
     external/soci/include
     external/IconFontCppHeaders

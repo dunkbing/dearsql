@@ -16,7 +16,11 @@
 Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(type) {}
 
 // SQLEditorTab implementation
-SQLEditorTab::SQLEditorTab(const std::string &name) : Tab(name, TabType::SQL_EDITOR) {}
+SQLEditorTab::SQLEditorTab(const std::string &name) : Tab(name, TabType::SQL_EDITOR) {
+    sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
+    sqlEditor.SetShowWhitespacesEnabled(false);
+    sqlEditor.SetShowLineNumbersEnabled(true);
+}
 
 void SQLEditorTab::render() {
     auto &app = Application::getInstance();
@@ -25,9 +29,8 @@ void SQLEditorTab::render() {
     ImGui::Separator();
 
     // SQL input
-    ImGui::InputTextMultiline("##SQL", sqlBuffer, sizeof(sqlBuffer),
-                              ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.3f));
-    sqlQuery = sqlBuffer;
+    sqlEditor.Render("##SQL", true, ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.3f), true);
+    sqlQuery = sqlEditor.GetText();
 
     if (ImGui::Button("Execute Query")) {
         const int selectedDb = app.getSelectedDatabase();
@@ -51,7 +54,7 @@ void SQLEditorTab::render() {
 
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
-        memset(sqlBuffer, 0, sizeof(sqlBuffer));
+        sqlEditor.SetText("");
         sqlQuery.clear();
     }
 

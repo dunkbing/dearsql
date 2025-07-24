@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TextEditor.h"
 #include <future>
 #include <string>
 #include <vector>
@@ -67,7 +68,7 @@ public:
 private:
     std::string sqlQuery;
     std::string queryResult;
-    char sqlBuffer[4096] = "";
+    TextEditor sqlEditor;
     char resultBuffer[16384] = "";
 };
 

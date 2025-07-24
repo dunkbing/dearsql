@@ -28,6 +28,7 @@ public:
     const std::string &getPath() const override;
     void *getConnection() const override;
     DatabaseType getType() const override;
+    const std::string &getDatabaseName() const;
 
     // Table management
     void refreshTables() override;
@@ -55,6 +56,15 @@ public:
     void setSequencesLoaded(bool loaded) override;
     bool isLoadingSequences() const override;
     void checkSequencesStatusAsync() override;
+
+    // Schema management
+    void refreshSchemas();
+    const std::vector<Schema> &getSchemas() const;
+    std::vector<Schema> &getSchemas();
+    bool areSchemasLoaded() const;
+    void setSchemasLoaded(bool loaded);
+    bool isLoadingSchemas() const;
+    void checkSchemasStatusAsync();
 
     // Query execution
     std::string executeQuery(const std::string &query) override;
@@ -97,6 +107,11 @@ protected:
     std::vector<Table> getViewsWithColumnsAsync();
     void startRefreshSequenceAsync();
     std::vector<std::string> getSequencesAsync() const;
+    void startRefreshSchemaAsync();
+    std::vector<Schema> getSchemasAsync() const;
+
+    // Schema helper methods
+    std::vector<std::string> getSchemaNames() const;
 
 private:
     std::string name;
@@ -110,11 +125,13 @@ private:
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences;
+    std::vector<Schema> schemas;
     bool connected = false;
     bool expanded = false;
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false;
+    bool schemasLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
 
@@ -127,6 +144,9 @@ private:
 
     std::atomic<bool> loadingSequences = false;
     std::future<std::vector<std::string>> sequencesFuture;
+
+    std::atomic<bool> loadingSchemas = false;
+    std::future<std::vector<Schema>> schemasFuture;
 
     // Async connection
     std::atomic<bool> connecting = false;

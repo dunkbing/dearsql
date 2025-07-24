@@ -4,6 +4,7 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/postgresql.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
 #include <iostream>
@@ -222,6 +223,10 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         } else if (db->isConnected()) {
             // Check for async loading completion for PostgreSQL
             if (db->getType() == DatabaseType::POSTGRESQL) {
+                auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+                if (pgDb->isLoadingSchemas()) {
+                    pgDb->checkSchemasStatusAsync();
+                }
                 if (db->isLoadingTables()) {
                     db->checkTablesStatusAsync();
                 }
@@ -549,9 +554,50 @@ void DatabaseSidebar::renderSQLiteHierarchy(size_t databaseIndex) {
 }
 
 void DatabaseSidebar::renderPostgresHierarchy(size_t databaseIndex) {
-    renderTablesSection(databaseIndex);
-    renderViewsSection(databaseIndex);
-    renderSequencesSection(databaseIndex);
+    auto &app = Application::getInstance();
+    auto &databases = app.getDatabases();
+    auto &db = databases[databaseIndex];
+
+    // First show the connected database as a child node
+    ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                     ImGuiTreeNodeFlags_FramePadding;
+
+    // Draw database node with placeholder space for icon
+    std::string dbName = db->getName();
+    if (db->getType() == DatabaseType::POSTGRESQL) {
+        auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+        dbName = pgDb->getDatabaseName();
+    }
+    const std::string dbNodeLabel = std::format("   {}", dbName); // 3 spaces for icon
+    bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 dbNodeIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        dbNodeIconPos, ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
+        ICON_FK_DATABASE);
+
+    if (dbNodeOpen) {
+        // Cast to PostgresDatabase to access schema functionality
+        auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+
+        // Load schemas when database node is opened
+        if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
+            std::cout << "Database node expanded and schemas not loaded yet, attempting to load..."
+                      << std::endl;
+            pgDb->refreshSchemas();
+        }
+
+        // Show schemas
+        renderSchemasSection(databaseIndex);
+
+        ImGui::TreePop();
+    }
 }
 
 void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
@@ -775,5 +821,70 @@ void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
             // TODO: Show sequence details in a tab
         }
         ImGui::EndPopup();
+    }
+}
+
+void DatabaseSidebar::renderSchemasSection(size_t databaseIndex) {
+    auto &app = Application::getInstance();
+    auto &databases = app.getDatabases();
+    auto &db = databases[databaseIndex];
+
+    // Cast to PostgresDatabase to access schema functionality
+    auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+
+    if (pgDb->getSchemas().empty()) {
+        if (pgDb->isLoadingSchemas()) {
+            // Show loading indicator with spinner
+            ImGui::Text("  Loading schemas...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(ImGuiCol_Text));
+        } else if (!pgDb->areSchemasLoaded()) {
+            ImGui::Text("  Loading...");
+        } else {
+            ImGui::Text("  No schemas found");
+        }
+    } else {
+        for (size_t i = 0; i < pgDb->getSchemas().size(); i++) {
+            renderSchemaNode(databaseIndex, i);
+        }
+    }
+}
+
+void DatabaseSidebar::renderSchemaNode(size_t databaseIndex, size_t schemaIndex) {
+    auto &app = Application::getInstance();
+    auto &databases = app.getDatabases();
+    auto &db = databases[databaseIndex];
+
+    // Cast to PostgresDatabase to access schema functionality
+    auto *pgDb = static_cast<PostgresDatabase *>(db.get());
+    auto &schema = pgDb->getSchemas()[schemaIndex];
+
+    ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                     ImGuiTreeNodeFlags_FramePadding;
+
+    // Draw schema node with placeholder space for icon
+    const std::string schemaLabel = std::format("   {}", schema.name); // 3 spaces for icon
+    bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
+
+    // Draw colored icon over the placeholder space
+    const ImVec2 schemaIconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+    ImGui::GetWindowDrawList()->AddText(
+        schemaIconPos, ImGui::GetColorU32(ImVec4(0.7f, 0.5f, 0.9f, 1.0f)), // Purple for schema
+        ICON_FA_FOLDER);
+
+    if (schemaOpen) {
+        // For now, render the old structure under each schema
+        // In the future, we'd filter tables/views/sequences by schema
+        renderTablesSection(databaseIndex);
+        renderViewsSection(databaseIndex);
+        renderSequencesSection(databaseIndex);
+
+        ImGui::TreePop();
     }
 }

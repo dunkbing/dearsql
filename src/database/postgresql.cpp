@@ -24,6 +24,7 @@ PostgresDatabase::~PostgresDatabase() {
     loadingTables = false;
     loadingViews = false;
     loadingSequences = false;
+    loadingSchemas = false;
     connecting = false;
     loadingTableData = false;
 
@@ -36,6 +37,9 @@ PostgresDatabase::~PostgresDatabase() {
     }
     if (sequencesFuture.valid()) {
         sequencesFuture.wait();
+    }
+    if (schemasFuture.valid()) {
+        schemasFuture.wait();
     }
     if (connectionFuture.valid()) {
         connectionFuture.wait();
@@ -95,6 +99,10 @@ const std::string &PostgresDatabase::getPath() const {
 
 DatabaseType PostgresDatabase::getType() const {
     return DatabaseType::POSTGRESQL;
+}
+
+const std::string &PostgresDatabase::getDatabaseName() const {
+    return database;
 }
 
 void PostgresDatabase::refreshTables() {
@@ -1014,4 +1022,136 @@ void PostgresDatabase::clearTableDataResult() {
     tableDataResult.clear();
     columnNamesResult.clear();
     rowCountResult = 0;
+}
+
+// Schema management methods
+void PostgresDatabase::refreshSchemas() {
+    std::cout << "Refreshing schemas for database: " << name << std::endl;
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            std::cout << "Failed to connect to database: " << error << std::endl;
+            schemasLoaded = true;
+            return;
+        }
+    }
+
+    startRefreshSchemaAsync();
+}
+
+const std::vector<Schema> &PostgresDatabase::getSchemas() const {
+    return schemas;
+}
+
+std::vector<Schema> &PostgresDatabase::getSchemas() {
+    return schemas;
+}
+
+bool PostgresDatabase::areSchemasLoaded() const {
+    return schemasLoaded;
+}
+
+void PostgresDatabase::setSchemasLoaded(bool loaded) {
+    schemasLoaded = loaded;
+}
+
+bool PostgresDatabase::isLoadingSchemas() const {
+    return loadingSchemas;
+}
+
+void PostgresDatabase::checkSchemasStatusAsync() {
+    if (schemasFuture.valid() &&
+        schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            schemas = schemasFuture.get();
+            std::cout << "Async schema loading completed. Found " << schemas.size() << " schemas."
+                      << std::endl;
+            schemasLoaded = true;
+            loadingSchemas = false;
+        } catch (const std::exception &e) {
+            std::cerr << "Error in async schema loading: " << e.what() << std::endl;
+            schemasLoaded = true;
+            loadingSchemas = false;
+        }
+    }
+}
+
+void PostgresDatabase::startRefreshSchemaAsync() {
+    // Clear previous results
+    schemas.clear();
+    schemasLoaded = false;
+    loadingSchemas = true;
+
+    // Start async loading with std::async
+    schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
+}
+
+std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
+    std::vector<Schema> result;
+
+    // Check if we're still supposed to be loading
+    if (!loadingSchemas.load()) {
+        return result;
+    }
+
+    // Get all schema names first
+    const std::vector<std::string> schemaNames = getSchemaNames();
+    std::cout << "Found " << schemaNames.size() << " schemas, loading objects..." << std::endl;
+
+    if (schemaNames.empty() || !loadingSchemas.load()) {
+        return result;
+    }
+
+    for (const auto &schemaName : schemaNames) {
+        if (!loadingSchemas.load()) {
+            break;
+        }
+
+        Schema schema;
+        schema.name = schemaName;
+
+        // For now, we'll only load the schema structure, not the actual objects
+        // Objects will be loaded on demand when the schema is expanded
+
+        result.push_back(schema);
+        std::cout << "Loaded schema: " << schemaName << std::endl;
+    }
+
+    return result;
+}
+
+std::vector<std::string> PostgresDatabase::getSchemaNames() const {
+    std::vector<std::string> schemaNames;
+
+    try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session || !loadingSchemas.load()) {
+            return schemaNames;
+        }
+
+        const std::string sql =
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
+            "AND schema_name NOT LIKE 'pg_temp_%' "
+            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
+            "ORDER BY schema_name";
+
+        std::cout << "Executing query to get schema names..." << std::endl;
+        const soci::rowset rs = session->prepare << sql;
+
+        for (const auto &row : rs) {
+            if (!loadingSchemas.load()) {
+                break;
+            }
+
+            auto schemaName = row.get<std::string>(0);
+            std::cout << "Found schema: " << schemaName << std::endl;
+            schemaNames.push_back(schemaName);
+        }
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Failed to execute schema query: " << e.what() << std::endl;
+    }
+
+    std::cout << "Query completed. Found " << schemaNames.size() << " schemas." << std::endl;
+    return schemaNames;
 }

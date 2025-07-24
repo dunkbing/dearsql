@@ -16,6 +16,17 @@ struct Table {
     bool expanded = false;
 };
 
+struct Schema {
+    std::string name;
+    std::vector<Table> tables;
+    std::vector<Table> views;
+    std::vector<std::string> sequences;
+    bool expanded = false;
+    bool tablesLoaded = false;
+    bool viewsLoaded = false;
+    bool sequencesLoaded = false;
+};
+
 class Database {
 public:
     Database(const std::string &name, const std::string &path);

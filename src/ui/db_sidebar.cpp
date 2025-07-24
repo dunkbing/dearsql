@@ -568,8 +568,13 @@ void DatabaseSidebar::renderPostgresHierarchy(size_t databaseIndex) {
     if (db->getType() == DatabaseType::POSTGRESQL) {
         auto *pgDb = static_cast<PostgresDatabase *>(db.get());
         dbName = pgDb->getDatabaseName();
+        // Add schema count if schemas are loaded
+        if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
+            dbName = std::format("{} ({} schemas)", dbName, pgDb->getSchemas().size());
+        }
     }
-    const std::string dbNodeLabel = std::format("   {}", dbName); // 3 spaces for icon
+    const std::string dbNodeLabel =
+        std::format("   {}###db_node", dbName); // 3 spaces for icon, ###db_node for stable ID
     bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
     // Draw colored icon over the placeholder space
@@ -613,7 +618,9 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
     bool showTablesSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingTables());
 
     // Draw tree node with placeholder space for icon
-    const std::string tablesLabel = "   Tables"; // 3 spaces for icon
+    const std::string tablesLabel =
+        std::format("   Tables ({})###tables",
+                    db->getTables().size()); // 3 spaces for icon, ###tables for stable ID
     bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
     // Draw colored icon over the placeholder space
@@ -664,22 +671,25 @@ void DatabaseSidebar::renderTablesSection(size_t databaseIndex) {
 
 void DatabaseSidebar::renderViewsSection(size_t databaseIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
 
-    ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                    ImGuiTreeNodeFlags_FramePadding;
+    constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                              ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Views node if loading
-    bool showViewsSpinner = (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
+    const bool showViewsSpinner =
+        (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingViews());
 
     // Draw tree node with placeholder space for icon
-    const std::string viewsLabel = "   Views"; // 3 spaces for icon
-    bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+    const std::string viewsLabel =
+        std::format("   Views ({})###views",
+                    db->getViews().size()); // 3 spaces for icon, ###views for stable ID
+    const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
     // Draw colored icon over the placeholder space
-    const ImVec2 viewsSectionIconPos =
+    const auto viewsSectionIconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
@@ -739,15 +749,17 @@ void DatabaseSidebar::renderSequencesSection(size_t databaseIndex) {
                                         ImGuiTreeNodeFlags_FramePadding;
 
     // Show loading indicator next to Sequences node if loading
-    bool showSequencesSpinner =
+    const bool showSequencesSpinner =
         (db->getType() == DatabaseType::POSTGRESQL && db->isLoadingSequences());
 
     // Draw tree node with placeholder space for icon
-    const std::string sequencesLabel = "   Sequences"; // 3 spaces for icon
-    bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+    const std::string sequencesLabel =
+        std::format("   Sequences ({})###sequences",
+                    db->getSequences().size()); // 3 spaces for icon, ###sequences for stable ID
+    const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
     // Draw colored icon over the placeholder space
-    const ImVec2 sequencesSectionIconPos =
+    const auto sequencesSectionIconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);

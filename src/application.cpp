@@ -237,7 +237,12 @@ bool Application::initializeGLFW() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    window = glfwCreateWindow(1280, 720, "Dear SQL", nullptr, nullptr);
+#ifdef NDEBUG
+    const auto title = "Dear SQL";
+#else
+    const auto title = "";
+#endif
+    window = glfwCreateWindow(1280, 720, title, nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();

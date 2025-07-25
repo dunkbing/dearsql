@@ -40,6 +40,17 @@ namespace PostgresHierarchy {
             dbNodeIconPos, ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
             ICON_FK_DATABASE);
 
+        // Context menu for database node
+        if (ImGui::BeginPopupContextItem("db_context_menu")) {
+            if (ImGui::MenuItem("New SQL Editor")) {
+                auto &app = Application::getInstance();
+                app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
+                std::cout << "Creating new SQL editor for database: " << pgDb->getDatabaseName()
+                          << std::endl;
+            }
+            ImGui::EndPopup();
+        }
+
         if (dbNodeOpen) {
             // Load schemas when database node is opened
             if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {

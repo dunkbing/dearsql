@@ -48,6 +48,8 @@ public:
 
     // Query execution
     std::string executeQuery(const std::string &query) override;
+    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+    executeQueryStructured(const std::string &query) override;
     std::vector<std::vector<std::string>> getTableData(const std::string &tableName, int limit,
                                                        int offset) override;
     std::vector<std::string> getColumnNames(const std::string &tableName) override;

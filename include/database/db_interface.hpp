@@ -75,6 +75,8 @@ public:
 
     // Query execution
     virtual std::string executeQuery(const std::string &query) = 0;
+    virtual std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+    executeQueryStructured(const std::string &query) = 0;
     virtual std::vector<std::vector<std::string>> getTableData(const std::string &tableName,
                                                                int limit, int offset) = 0;
     virtual std::vector<std::string> getColumnNames(const std::string &tableName) = 0;

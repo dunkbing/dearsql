@@ -1,5 +1,4 @@
 #include "ui/db_sidebar.hpp"
-#include "../../include/ui/tab_manager.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -11,6 +10,7 @@
 #include "ui/mysql_hierarchy.hpp"
 #include "ui/postgres_hierarchy.hpp"
 #include "ui/sqlite_hierarchy.hpp"
+#include "ui/tab_manager.hpp"
 #include "utils/spinner.hpp"
 #include <iostream>
 
@@ -301,7 +301,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
             db->setLastConnectionError("");
         }
         if (ImGui::MenuItem("New SQL Editor")) {
-            app.getTabManager()->createSQLEditorTab();
+            app.getTabManager()->createSQLEditorTab("", db->getConnectionString());
         }
         if (ImGui::MenuItem("Disconnect")) {
             db->disconnect();

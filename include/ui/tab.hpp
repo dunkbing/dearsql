@@ -1,9 +1,14 @@
 #pragma once
 
 #include "TextEditor.h"
+#include <atomic>
 #include <future>
+#include <memory>
 #include <string>
 #include <vector>
+
+// Forward declarations
+class DatabaseInterface;
 
 enum class TabType { SQL_EDITOR, TABLE_VIEWER };
 
@@ -47,7 +52,9 @@ protected:
 
 class SQLEditorTab final : public Tab {
 public:
-    explicit SQLEditorTab(const std::string &name);
+    explicit SQLEditorTab(const std::string &name,
+                          const std::string &databaseConnectionString = "");
+    ~SQLEditorTab();
 
     void render() override;
 
@@ -64,12 +71,41 @@ public:
     void setResult(const std::string &result) {
         queryResult = result;
     }
+    [[nodiscard]] const std::string &getDatabaseConnectionString() const {
+        return databaseConnectionString;
+    }
 
 private:
     std::string sqlQuery;
     std::string queryResult;
+    std::string databaseConnectionString;
     TextEditor sqlEditor;
     char resultBuffer[16384] = "";
+
+    // Structured query results for table display
+    std::vector<std::string> queryColumnNames;
+    std::vector<std::vector<std::string>> queryTableData;
+    bool hasStructuredResults = false;
+    std::string queryError;
+    std::chrono::milliseconds lastQueryDuration{0};
+
+    // Async query execution state
+    bool isExecutingQuery = false;
+    std::future<void> queryExecutionFuture;
+    std::atomic<bool> shouldCancelQuery{false};
+
+    // Splitter state for resizing between editor and results
+    float splitterPosition = 0.4f; // 40% for editor, 60% for results
+    bool splitterActive = false;
+
+    // Helper methods for async execution
+    void startQueryExecutionAsync(std::shared_ptr<DatabaseInterface> targetDb,
+                                  const std::string &query);
+    void checkQueryExecutionStatus();
+    void cancelQueryExecution();
+
+    // Helper method for splitter
+    bool renderVerticalSplitter(const char *id, float *position, float minSize1, float minSize2);
 };
 
 class TableViewerTab final : public Tab {

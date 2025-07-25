@@ -29,6 +29,8 @@ public:
 
     // Tab creation helpers
     std::shared_ptr<Tab> createSQLEditorTab(const std::string &name = "");
+    std::shared_ptr<Tab> createSQLEditorTab(const std::string &name,
+                                            const std::string &databaseConnectionString);
     std::shared_ptr<Tab> createTableViewerTab(const std::string &databasePath,
                                               const std::string &tableName);
 

@@ -348,6 +348,61 @@ std::string MySQLDatabase::executeQuery(const std::string &query) {
     }
 }
 
+std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+MySQLDatabase::executeQueryStructured(const std::string &query) {
+    std::vector<std::string> columnNames;
+    std::vector<std::vector<std::string>> data;
+
+    if (!connect().first) {
+        return {columnNames, data};
+    }
+
+    try {
+        std::lock_guard<std::mutex> lock(sessionMutex);
+        if (!session) {
+            return {columnNames, data};
+        }
+
+        soci::rowset<soci::row> rs = (session->prepare << query);
+
+        // Get column names if available
+        auto it = rs.begin();
+        if (it != rs.end()) {
+            const soci::row &firstRow = *it;
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                columnNames.push_back(firstRow.get_properties(i).get_name());
+            }
+        }
+
+        int rowCount = 0;
+        for (auto rowIt = rs.begin(); rowIt != rs.end(); ++rowIt) {
+            if (rowCount >= 1000)
+                break;
+
+            const soci::row &row = *rowIt;
+            std::vector<std::string> rowData;
+
+            for (std::size_t i = 0; i != row.size(); ++i) {
+                if (row.get_indicator(i) == soci::i_null) {
+                    rowData.push_back("NULL");
+                } else {
+                    rowData.push_back(row.get<std::string>(i, ""));
+                }
+            }
+            data.push_back(rowData);
+            rowCount++;
+        }
+
+        return {columnNames, data};
+    } catch (const soci::soci_error &e) {
+        // Return empty result on error
+        return {columnNames, data};
+    } catch (const std::exception &e) {
+        // Return empty result on error
+        return {columnNames, data};
+    }
+}
+
 std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::string &tableName,
                                                                   int limit, int offset) {
     if (!connect().first) {

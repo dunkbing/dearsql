@@ -162,6 +162,55 @@ std::string SQLiteDatabase::executeQuery(const std::string &query) {
     }
 }
 
+std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+SQLiteDatabase::executeQueryStructured(const std::string &query) {
+    std::vector<std::string> columnNames;
+    std::vector<std::vector<std::string>> data;
+
+    if (!isConnected()) {
+        return {columnNames, data};
+    }
+
+    try {
+        const soci::rowset rs = session->prepare << query;
+
+        // Get column names if available
+        auto it = rs.begin();
+        if (it != rs.end()) {
+            const soci::row &firstRow = *it;
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                columnNames.push_back(firstRow.get_properties(i).get_name());
+            }
+        }
+
+        int rowCount = 0;
+        for (const auto &row : rs) {
+            if (rowCount >= 1000)
+                break;
+
+            std::vector<std::string> rowData;
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                if (row.get_indicator(i) == soci::i_null) {
+                    rowData.push_back("NULL");
+                } else {
+                    try {
+                        rowData.push_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.push_back("[BINARY DATA]");
+                    }
+                }
+            }
+            data.push_back(rowData);
+            rowCount++;
+        }
+
+        return {columnNames, data};
+    } catch (const soci::soci_error &e) {
+        // Return empty result on error
+        return {columnNames, data};
+    }
+}
+
 std::vector<std::vector<std::string>>
 SQLiteDatabase::getTableData(const std::string &tableName, const int limit, const int offset) {
     std::vector<std::vector<std::string>> data;

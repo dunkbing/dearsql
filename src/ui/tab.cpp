@@ -2,6 +2,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #include "themes.hpp"
 #include "utils/spinner.hpp"
@@ -16,54 +17,378 @@
 Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(type) {}
 
 // SQLEditorTab implementation
-SQLEditorTab::SQLEditorTab(const std::string &name) : Tab(name, TabType::SQL_EDITOR) {
+SQLEditorTab::SQLEditorTab(const std::string &name, const std::string &databaseConnectionString)
+    : Tab(name, TabType::SQL_EDITOR), databaseConnectionString(databaseConnectionString) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
 }
 
+SQLEditorTab::~SQLEditorTab() {
+    // Wait for any ongoing query execution to complete
+    if (isExecutingQuery && queryExecutionFuture.valid()) {
+        queryExecutionFuture.wait();
+    }
+}
+
 void SQLEditorTab::render() {
     auto &app = Application::getInstance();
 
-    ImGui::Text("SQL Editor");
+    // Check async query execution status
+    checkQueryExecutionStatus();
+
+    // Show database connection info if available
+    if (!databaseConnectionString.empty()) {
+        // Find the database by connection string
+        std::shared_ptr<DatabaseInterface> connectedDb = nullptr;
+        for (const auto &db : app.getDatabases()) {
+            if (db->getConnectionString() == databaseConnectionString ||
+                db->getPath() == databaseConnectionString) {
+                connectedDb = db;
+                break;
+            }
+        }
+
+        if (connectedDb) {
+            ImGui::Text("Connected to: %s", connectedDb->getName().c_str());
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Database connection not found");
+        }
+    } else {
+        ImGui::Text("SQL Editor (No specific database)");
+    }
     ImGui::Separator();
 
-    // SQL input
-    sqlEditor.Render("##SQL", true, ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.3f), true);
-    sqlQuery = sqlEditor.GetText();
+    // Calculate heights for splitter layout
+    float availableHeight = ImGui::GetContentRegionAvail().y;
+    float editorHeight = availableHeight * splitterPosition;
+    float resultsHeight = availableHeight * (1.0f - splitterPosition) - 4.0f; // 4px for splitter
 
-    if (ImGui::Button("Execute Query")) {
-        const int selectedDb = app.getSelectedDatabase();
-        const auto &databases = app.getDatabases();
-        const int totalDb = static_cast<int>(databases.size());
+    // SQL Editor section
+    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true)) {
+        sqlEditor.Render("##SQL", true, ImVec2(-1, -1), true);
+        sqlQuery = sqlEditor.GetText();
+    }
+    ImGui::EndChild();
 
-        if (selectedDb >= 0 && selectedDb < totalDb) {
-            auto &db = databases[selectedDb];
-            auto [success, error] = db->connect();
-            if (success) {
-                queryResult = db->executeQuery(sqlQuery);
-                strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-                resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+    // Render splitter
+    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 100.0f);
+
+    // Results section
+    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true)) {
+        // Buttons row
+        if (isExecutingQuery) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Executing...");
+            ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+
+            ImGui::SameLine();
+            ImGui::Text("Running query...");
+
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                cancelQueryExecution();
+            }
+        } else {
+            if (ImGui::Button("Execute Query")) {
+                std::shared_ptr<DatabaseInterface> targetDb = nullptr;
+
+                if (!databaseConnectionString.empty()) {
+                    // Use the specific database connection
+                    for (const auto &db : app.getDatabases()) {
+                        if (db->getConnectionString() == databaseConnectionString ||
+                            db->getPath() == databaseConnectionString) {
+                            targetDb = db;
+                            break;
+                        }
+                    }
+                } else {
+                    // Fall back to selected database if no specific connection
+                    const int selectedDb = app.getSelectedDatabase();
+                    const auto &databases = app.getDatabases();
+                    if (selectedDb >= 0 && selectedDb < static_cast<int>(databases.size())) {
+                        targetDb = databases[selectedDb];
+                    }
+                }
+
+                if (targetDb) {
+                    startQueryExecutionAsync(targetDb, sqlQuery);
+                } else {
+                    queryResult = "Error: No database connection available";
+                    queryError = queryResult;
+                    hasStructuredResults = false;
+                    queryColumnNames.clear();
+                    queryTableData.clear();
+                    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+                    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) {
+            sqlEditor.SetText("");
+            sqlQuery.clear();
+            hasStructuredResults = false;
+            queryColumnNames.clear();
+            queryTableData.clear();
+            queryError.clear();
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Results:");
+
+        // Results display
+        if (!queryError.empty()) {
+            // Show error message
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
+        } else if (hasStructuredResults && !queryColumnNames.empty()) {
+            // Show results in table format
+            const int colSize = static_cast<int>(queryColumnNames.size());
+            constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                                       ImGuiTableFlags_Resizable;
+
+            if (queryTableData.empty()) {
+                // Show column headers even if no data
+                ImGui::Text("No rows returned.");
+                if (lastQueryDuration.count() > 0) {
+                    ImGui::SameLine();
+                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+                }
             } else {
-                queryResult = "Connection failed: " + error;
+                // Calculate available height for the table within the results child window
+                float availableHeight = ImGui::GetContentRegionAvail().y -
+                                        40.0f; // Reserve 40px for row count info and padding
+                availableHeight = std::max(availableHeight, 50.0f); // Ensure minimum height of 50px
+
+                if (ImGui::BeginTable("QueryResults", colSize, tableFlags,
+                                      ImVec2(0.0f, availableHeight))) {
+                    // Setup columns
+                    for (const auto &colName : queryColumnNames) {
+                        ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed,
+                                                120.0f);
+                    }
+                    ImGui::TableHeadersRow();
+
+                    // Data rows
+                    for (int rowIdx = 0; rowIdx < queryTableData.size(); rowIdx++) {
+                        const auto &row = queryTableData[rowIdx];
+                        ImGui::TableNextRow();
+
+                        for (int colIdx = 0;
+                             colIdx < row.size() && colIdx < queryColumnNames.size(); colIdx++) {
+                            ImGui::TableNextColumn();
+
+                            // Use selectable text for better interaction
+                            ImGui::PushID(rowIdx * static_cast<int>(queryColumnNames.size()) +
+                                          colIdx);
+                            ImGui::Selectable(row[colIdx].c_str(), false,
+                                              ImGuiSelectableFlags_AllowDoubleClick);
+
+                            // Add tooltip for long text
+                            if (ImGui::IsItemHovered() && row[colIdx].length() > 50) {
+                                ImGui::SetTooltip("%s", row[colIdx].c_str());
+                            }
+
+                            ImGui::PopID();
+                        }
+                    }
+                    ImGui::EndTable();
+
+                    // Show row count and execution time
+                    ImGui::Text("Rows: %zu", queryTableData.size());
+                    if (queryTableData.size() >= 1000) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                                           "(limited to 1000 rows)");
+                    }
+                    if (lastQueryDuration.count() > 0) {
+                        ImGui::SameLine();
+                        ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+                    }
+                }
+            }
+        } else if (hasStructuredResults && queryColumnNames.empty()) {
+            // Query executed successfully but no results (e.g., INSERT, UPDATE, DELETE)
+            ImGui::Text("Query executed successfully.");
+            if (lastQueryDuration.count() > 0) {
+                ImGui::SameLine();
+                ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+            }
+        } else {
+            // Fallback to text display or show empty state
+            ImGui::Text("No results to display. Execute a query to see results here.");
+        }
+    }
+    ImGui::EndChild(); // End SQLResults child window
+}
+
+void SQLEditorTab::startQueryExecutionAsync(std::shared_ptr<DatabaseInterface> targetDb,
+                                            const std::string &query) {
+    if (isExecutingQuery) {
+        return; // Already executing
+    }
+
+    isExecutingQuery = true;
+    shouldCancelQuery = false;
+    hasStructuredResults = false;
+    queryError.clear();
+    queryColumnNames.clear();
+    queryTableData.clear();
+    lastQueryDuration = std::chrono::milliseconds{0};
+
+    // Start async query execution
+    queryExecutionFuture = std::async(std::launch::async, [this, targetDb, query]() {
+        try {
+            // Check for cancellation
+            if (shouldCancelQuery) {
+                return;
+            }
+
+            // Connect to database
+            auto [success, error] = targetDb->connect();
+            if (!success) {
+                if (!shouldCancelQuery) {
+                    queryResult = "Connection failed: " + error;
+                    queryError = queryResult;
+                    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+                    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+                }
+                return;
+            }
+
+            // Check for cancellation before executing query
+            if (shouldCancelQuery) {
+                return;
+            }
+
+            // Time the query execution
+            auto startTime = std::chrono::high_resolution_clock::now();
+
+            // Get structured results for table display
+            auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
+
+            auto endTime = std::chrono::high_resolution_clock::now();
+            lastQueryDuration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+            // Check for cancellation before setting results
+            if (shouldCancelQuery) {
+                return;
+            }
+
+            queryColumnNames = columnNames;
+            queryTableData = tableData;
+            hasStructuredResults = true;
+
+            // Clear any previous error
+            queryError.clear();
+            queryResult.clear();
+            memset(resultBuffer, 0, sizeof(resultBuffer));
+
+        } catch (const std::exception &e) {
+            queryResult = "Error executing query: " + std::string(e.what());
+            queryError = queryResult;
+            hasStructuredResults = false;
+            queryColumnNames.clear();
+            queryTableData.clear();
+            strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+            resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+        }
+    });
+}
+
+void SQLEditorTab::checkQueryExecutionStatus() {
+    if (!isExecutingQuery) {
+        return;
+    }
+
+    if (queryExecutionFuture.valid() &&
+        queryExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            queryExecutionFuture.get(); // This will throw if there was an exception
+        } catch (const std::exception &e) {
+            if (!shouldCancelQuery) {
+                queryResult = "Error in async query execution: " + std::string(e.what());
+                queryError = queryResult;
+                hasStructuredResults = false;
+                queryColumnNames.clear();
+                queryTableData.clear();
                 strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
                 resultBuffer[sizeof(resultBuffer) - 1] = '\0';
             }
         }
+
+        isExecutingQuery = false;
+    }
+}
+
+void SQLEditorTab::cancelQueryExecution() {
+    if (isExecutingQuery) {
+        shouldCancelQuery = true;
+        // Note: We can't actually cancel the database query once it's started,
+        // but we can prevent the results from being processed
+        queryResult = "Query execution cancelled by user";
+        queryError = queryResult;
+        hasStructuredResults = false;
+        queryColumnNames.clear();
+        queryTableData.clear();
+        strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+        resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+    }
+}
+
+bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float minSize1,
+                                          float minSize2) {
+    ImGuiContext &g = *GImGui;
+    ImGuiWindow *window = g.CurrentWindow;
+
+    const ImGuiID splitterId = window->GetID(id);
+    ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    const ImRect bb(window->DC.CursorPos, ImVec2(window->DC.CursorPos.x + availableRegion.x,
+                                                 window->DC.CursorPos.y + 4.0f));
+
+    ImGui::ItemSize(bb, 0.0f);
+    if (!ImGui::ItemAdd(bb, splitterId)) {
+        return false;
     }
 
-    ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
-        sqlEditor.SetText("");
-        sqlQuery.clear();
+    bool hovered, held;
+    bool pressed =
+        ImGui::ButtonBehavior(bb, splitterId, &hovered, &held, ImGuiButtonFlags_FlattenChildren);
+
+    if (hovered || held) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
     }
 
-    ImGui::Separator();
-    ImGui::Text("Results:");
+    if (held) {
+        float delta = ImGui::GetIO().MouseDelta.y;
+        if (delta != 0.0f) {
+            float availableHeight = ImGui::GetContentRegionAvail().y;
+            float newPosition = *position + (delta / availableHeight);
 
-    // Results display
-    ImGui::InputTextMultiline("##Results", resultBuffer, sizeof(resultBuffer), ImVec2(-1, -1),
-                              ImGuiInputTextFlags_ReadOnly);
+            // Clamp to minimum sizes
+            float minPos1 = minSize1 / availableHeight;
+            float minPos2 = 1.0f - (minSize2 / availableHeight);
+
+            newPosition = std::max(minPos1, std::min(minPos2, newPosition));
+            *position = newPosition;
+
+            return true;
+        }
+    }
+
+    // Draw splitter line
+    ImU32 col = ImGui::GetColorU32(held      ? ImGuiCol_SeparatorActive
+                                   : hovered ? ImGuiCol_SeparatorHovered
+                                             : ImGuiCol_Separator);
+    window->DrawList->AddRectFilled(bb.Min, bb.Max, col);
+
+    return false;
 }
 
 // TableViewerTab implementation

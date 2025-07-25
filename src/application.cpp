@@ -1,5 +1,4 @@
 #include "application.hpp"
-#include "../include/ui/tab_manager.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "platform/default_platform.hpp"

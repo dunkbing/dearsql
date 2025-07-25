@@ -1,4 +1,5 @@
 #include "ui/tab_manager.hpp"
+#include "application.hpp"
 #include "imgui.h"
 #include <algorithm>
 #include <iostream>
@@ -60,6 +61,47 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
     return tab;
 }
 
+std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
+                                                    const std::string &databaseConnectionString) {
+    std::string tabName;
+    if (name.empty()) {
+        // Generate a name based on the database connection if available
+        if (!databaseConnectionString.empty()) {
+            // Try to find the database to get a friendly name
+            auto &app = Application::getInstance();
+            std::string baseName;
+            for (const auto &db : app.getDatabases()) {
+                if (db->getConnectionString() == databaseConnectionString ||
+                    db->getPath() == databaseConnectionString) {
+                    baseName = "SQL - " + db->getName();
+                    break;
+                }
+            }
+
+            if (!baseName.empty()) {
+                // Make sure the name is unique
+                int count = 1;
+                tabName = baseName;
+                while (hasTab(tabName)) {
+                    count++;
+                    tabName = baseName + " (" + std::to_string(count) + ")";
+                }
+            } else {
+                tabName = generateSQLEditorName();
+            }
+        } else {
+            tabName = generateSQLEditorName();
+        }
+    } else {
+        tabName = name;
+    }
+
+    auto tab = std::make_shared<SQLEditorTab>(tabName, databaseConnectionString);
+    tab->setShouldFocus(true);
+    addTab(tab);
+    return tab;
+}
+
 std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databasePath,
                                                       const std::string &tableName) {
     auto existingTab = findTableTab(databasePath, tableName);
@@ -111,12 +153,13 @@ void TabManager::renderTabs() {
 }
 
 void TabManager::renderEmptyState() {
-    ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2);
-    float buttonWidth = 200;
-    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) / 2);
-    if (ImGui::Button("Create First SQL Editor", ImVec2(buttonWidth, 0))) {
-        createSQLEditorTab("SQL Editor 1");
-    }
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2 - 40);
+
+    // Center the text
+    const char *text = "Connect to a database to get started";
+    float textWidth = ImGui::CalcTextSize(text).x;
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) / 2);
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);
 }
 
 std::string TabManager::generateSQLEditorName() const {

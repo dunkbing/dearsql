@@ -20,7 +20,7 @@
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"SidebarToggle", @"ConnectButton" ];
+    return @[ @"ConnectButton" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
@@ -44,10 +44,6 @@
         [button setTarget:self];
         [button setAction:@selector(sidebarToggleClicked:)];
         [button sizeToFit];
-
-        // Ensure it's positioned on the left
-        item.minSize = NSMakeSize(32, 32);
-        item.maxSize = NSMakeSize(32, 32);
 
         item.view = button;
         return item;
@@ -163,17 +159,37 @@ void MacOSPlatform::setupTitlebar() {
     // Add unified titlebar and full size content view to increase height
     [nsWindow setStyleMask:[nsWindow styleMask]];
 
-    // Create and add a toolbar to increase titlebar height
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
-    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-    toolbar.sizeMode = NSToolbarSizeModeRegular;
-
-    // Set up toolbar delegate - keep strong reference to prevent deallocation
+    // Set up toolbar delegate first - keep strong reference to prevent deallocation
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
+
+    // Create custom title bar accessory view for sidebar button aligned with toolbar
+    NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 12, 40, 30)];
+    [sidebarButton setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
+                                      accessibilityDescription:@"Toggle Sidebar"]];
+    [sidebarButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [sidebarButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [sidebarButton setTarget:toolbarDelegate_];
+    [sidebarButton setAction:@selector(sidebarToggleClicked:)];
+    [sidebarButton setBordered:NO];
+
+    NSTitlebarAccessoryViewController *accessoryController =
+        [[NSTitlebarAccessoryViewController alloc] init];
+    accessoryController.view = sidebarButton;
+    accessoryController.layoutAttribute = NSLayoutAttributeLeading;
+
+    [nsWindow addTitlebarAccessoryViewController:accessoryController];
+
+    // Connect button
+    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
+    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+    toolbar.allowsUserCustomization = NO;
     toolbar.delegate = toolbarDelegate_;
 
     [nsWindow setToolbar:toolbar];
+
+    std::cout << "Custom titlebar accessory view created for sidebar toggle next to title"
+              << std::endl;
 
     // Set background color to match app theme
     const auto &colors = app_->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
@@ -197,7 +213,7 @@ float MacOSPlatform::getTitlebarHeight() const {
     // Get the titlebar height
     NSRect frame = [nsWindow frame];
     NSRect contentRect = [nsWindow contentRectForFrameRect:frame];
-    return frame.size.height - contentRect.size.height;
+    return static_cast<float>(frame.size.height - contentRect.size.height);
 #else
     return 0.0f;
 #endif

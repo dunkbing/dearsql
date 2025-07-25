@@ -7,7 +7,6 @@
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
-#include <cmath>
 #include <csignal>
 #include <imgui_internal.h>
 #include <iostream>
@@ -345,13 +344,12 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
 
-    // Calculate if we should use docking (same logic as in renderMainUI)
-    bool isCurrentlyAnimating = std::abs(targetSidebarWidth - sidebarWidth) > 0.001f;
-    bool shouldUseDocking = !isCurrentlyAnimating && targetSidebarWidth > 0.01f;
+    // Check if we should use docking (no animation, just visibility)
+    bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
     if (shouldUseDocking) {
-        // Create split layout only when not animating, use target width for consistent size
-        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, targetSidebarWidth, &leftDockId,
+        // Create split layout when stable, use current width for consistent size
+        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &rightDockId);
 
         // Make both dock nodes non-dockable and non-tabbed, but allow resizing
@@ -364,7 +362,7 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
         ImGui::DockBuilderDockWindow("Content", rightDockId);
     } else {
-        // When sidebar is hidden, use full space for content
+        // When sidebar is hidden or animating, use full space for content
         ImGui::DockBuilderGetNode(dockspaceId)->LocalFlags |=
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
         ImGui::DockBuilderDockWindow("Content", dockspaceId);
@@ -380,28 +378,19 @@ void Application::renderMainUI() {
     // DockSpace setup
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
 
-    // Update sidebar animation
-    const float deltaTime = ImGui::GetIO().DeltaTime;
-    const float diff = targetSidebarWidth - sidebarWidth;
-    bool isCurrentlyAnimating = std::abs(diff) > 0.001f;
+    // Direct show/hide sidebar without animation
+    sidebarWidth = targetSidebarWidth;
 
-    if (isCurrentlyAnimating) {
-        sidebarWidth += diff * animationSpeed * deltaTime;
-    } else {
-        sidebarWidth = targetSidebarWidth;
-    }
+    // Always use docking when sidebar is visible for proper resizing
+    bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
-    // Simple approach: always use manual positioning during animation, docking when stable
-    bool shouldUseDocking = !isCurrentlyAnimating && targetSidebarWidth > 0.01f;
-
-    // Rebuild layout when switching between docking modes
-    static bool wasUsingDocking = false;
-    if (wasUsingDocking != shouldUseDocking) {
+    // Rebuild layout when sidebar visibility changes
+    static bool lastSidebarVisible = false;
+    bool currentSidebarVisible = targetSidebarWidth > 0.01f;
+    if (lastSidebarVisible != currentSidebarVisible) {
         dockingLayoutInitialized = false;
-        wasUsingDocking = shouldUseDocking;
+        lastSidebarVisible = currentSidebarVisible;
     }
-
-    // No direct dock node manipulation - let the layout system handle it when not animating
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
     ImGui::SetNextWindowViewport(viewport->ID);
@@ -428,6 +417,7 @@ void Application::renderMainUI() {
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
     } else {
         // During animation, hide borders to prevent flashing
+        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     }
 
@@ -447,18 +437,14 @@ void Application::renderMainUI() {
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
         if (shouldUseDocking) {
-            // When not animating, use docking system for resizing
+            // Use docking system for resizing when sidebar is visible
             ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
             ImGui::Begin("Databases", nullptr,
                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
         } else {
-            // During animation, use manual positioning
-            const float currentSidebarWidth = sidebarWidth * viewport->Size.x;
-            ImGui::SetNextWindowPos(viewport->Pos);
-            ImGui::SetNextWindowSize(ImVec2(currentSidebarWidth, viewport->Size.y));
+            // This shouldn't happen since we only render sidebar when visible
             ImGui::Begin("Databases", nullptr,
-                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                             ImGuiWindowFlags_NoTitleBar);
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
         }
 
         databaseSidebar->render();
@@ -474,19 +460,8 @@ void Application::renderMainUI() {
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-    if (shouldUseDocking) {
-        // When not animating and sidebar should be visible, use docking system
-        ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-    } else {
-        // During animation or when hidden, manually position content
-        const float currentSidebarWidth =
-            shouldShowSidebar ? sidebarWidth * viewport->Size.x : 0.0f;
-        ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + currentSidebarWidth, viewport->Pos.y));
-        ImGui::SetNextWindowSize(ImVec2(viewport->Size.x - currentSidebarWidth, viewport->Size.y));
-        ImGui::Begin("Content", nullptr,
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoTitleBar);
-    }
+    // Always use docking system for content area
+    ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
 
     if (tabManager->isEmpty()) {
         tabManager->renderEmptyState();
@@ -502,6 +477,7 @@ void Application::renderMainUI() {
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(1);
     } else {
+        ImGui::PopStyleColor(1);
         ImGui::PopStyleVar(1);
     }
     ImGui::End();

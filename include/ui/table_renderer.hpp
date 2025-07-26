@@ -1,0 +1,92 @@
+#pragma once
+
+#include <functional>
+#include <string>
+#include <vector>
+
+struct TableColumn {
+    std::string name;
+    float width = 120.0f;
+    bool resizable = true;
+};
+
+struct TableCell {
+    std::string value;
+    bool isEdited = false;
+    bool isSelected = false;
+};
+
+class TableRenderer {
+public:
+    struct Config {
+        bool allowEditing = false;
+        bool showRowNumbers = false;
+        bool allowSelection = true;
+        float minHeight = 50.0f;
+        int tableFlags = 0; // ImGuiTableFlags
+    };
+
+    // Callbacks for editing functionality
+    using OnCellEditCallback = std::function<void(int row, int col, const std::string &newValue)>;
+    using OnCellSelectCallback = std::function<void(int row, int col)>;
+    using OnCellDoubleClickCallback = std::function<void(int row, int col)>;
+
+    TableRenderer();
+    explicit TableRenderer(const Config &config);
+
+    // Set table data
+    void setColumns(const std::vector<std::string> &columnNames);
+    void setData(const std::vector<std::vector<std::string>> &tableData);
+    void setCellEditedStatus(const std::vector<std::vector<bool>> &editedCells);
+    void setSelectedCell(int row, int col);
+
+    // Set callbacks
+    void setOnCellEdit(OnCellEditCallback callback) {
+        onCellEdit = callback;
+    }
+    void setOnCellSelect(OnCellSelectCallback callback) {
+        onCellSelect = callback;
+    }
+    void setOnCellDoubleClick(OnCellDoubleClickCallback callback) {
+        onCellDoubleClick = callback;
+    }
+
+    // Render the table
+    void render(const char *tableId = "##table");
+
+    // Get current editing state
+    bool isEditing() const {
+        return editingRow >= 0 && editingCol >= 0;
+    }
+    int getEditingRow() const {
+        return editingRow;
+    }
+    int getEditingCol() const {
+        return editingCol;
+    }
+
+    // Control editing
+    void enterEditMode(int row, int col);
+    void exitEditMode(bool saveEdit = true);
+
+private:
+    Config config;
+    std::vector<std::string> columns;
+    std::vector<std::vector<std::string>> data;
+    std::vector<std::vector<bool>> editedCells;
+
+    int selectedRow = -1;
+    int selectedCol = -1;
+    int editingRow = -1;
+    int editingCol = -1;
+
+    char editBuffer[1024] = {0};
+
+    // Callbacks
+    OnCellEditCallback onCellEdit;
+    OnCellSelectCallback onCellSelect;
+    OnCellDoubleClickCallback onCellDoubleClick;
+
+    void renderCell(int row, int col);
+    void handleCellInteraction(int row, int col, bool isSelected);
+};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TextEditor.h"
+#include "ui/table_renderer.hpp"
 #include <atomic>
 #include <future>
 #include <memory>
@@ -157,11 +158,8 @@ private:
     std::string loadingError;
 
     // Edit state
-    int editingRow = -1;
-    int editingCol = -1;
     int selectedRow = -1;
     int selectedCol = -1;
-    char editBuffer[1024] = "";
     bool hasChanges = false;
 
     // Save confirmation dialog state
@@ -173,8 +171,9 @@ private:
     bool executingSQL = false;
     std::future<std::pair<bool, std::string>> sqlExecutionFuture;
 
+    // Table renderer
+    std::unique_ptr<TableRenderer> tableRenderer;
+
     // Helper methods
-    void enterEditMode(int row, int col);
-    void exitEditMode(bool saveEdit);
     void selectCell(int row, int col);
 };

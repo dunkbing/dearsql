@@ -83,6 +83,7 @@ set(APP_SOURCES
     src/ui/db_connection_dialog.cpp
     src/ui/tab.cpp
     src/ui/tab_manager.cpp
+    src/ui/table_renderer.cpp
     src/ui/hierarchy_helpers.cpp
     src/ui/sqlite_hierarchy.cpp
     src/ui/postgres_hierarchy.cpp

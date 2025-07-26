@@ -4,6 +4,7 @@
 #include "imgui.h"
 
 #include "themes.hpp"
+#include "ui/table_renderer.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
@@ -146,12 +147,7 @@ void SQLEditorTab::render() {
             // Show error message
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
         } else if (hasStructuredResults && !queryColumnNames.empty()) {
-            // Show results in table format
-            const int colSize = static_cast<int>(queryColumnNames.size());
-            constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                       ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
-                                       ImGuiTableFlags_Resizable;
-
+            // Show results in table format using TableRenderer
             if (queryTableData.empty()) {
                 // Show column headers even if no data
                 ImGui::Text("No rows returned.");
@@ -166,51 +162,28 @@ void SQLEditorTab::render() {
                 tableAvailableHeight =
                     std::max(tableAvailableHeight, 50.0f); // Ensure minimum height of 50px
 
-                if (ImGui::BeginTable("QueryResults", colSize, tableFlags,
-                                      ImVec2(0.0f, tableAvailableHeight))) {
-                    // Setup columns
-                    for (const auto &colName : queryColumnNames) {
-                        ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed,
-                                                120.0f);
-                    }
-                    ImGui::TableHeadersRow();
+                // Configure table renderer for query results
+                TableRenderer::Config config;
+                config.allowEditing = false;
+                config.allowSelection = true;
+                config.showRowNumbers = false;
+                config.minHeight = tableAvailableHeight;
 
-                    // Data rows
-                    for (int rowIdx = 0; rowIdx < queryTableData.size(); rowIdx++) {
-                        const auto &row = queryTableData[rowIdx];
-                        ImGui::TableNextRow();
+                TableRenderer tableRenderer(config);
+                tableRenderer.setColumns(queryColumnNames);
+                tableRenderer.setData(queryTableData);
 
-                        for (int colIdx = 0;
-                             colIdx < row.size() && colIdx < queryColumnNames.size(); colIdx++) {
-                            ImGui::TableNextColumn();
+                tableRenderer.render("QueryResults");
 
-                            // Use selectable text for better interaction
-                            ImGui::PushID(rowIdx * static_cast<int>(queryColumnNames.size()) +
-                                          colIdx);
-                            ImGui::Selectable(row[colIdx].c_str(), false,
-                                              ImGuiSelectableFlags_AllowDoubleClick);
-
-                            // Add tooltip for long text
-                            if (ImGui::IsItemHovered() && row[colIdx].length() > 50) {
-                                ImGui::SetTooltip("%s", row[colIdx].c_str());
-                            }
-
-                            ImGui::PopID();
-                        }
-                    }
-                    ImGui::EndTable();
-
-                    // Show row count and execution time
-                    ImGui::Text("Rows: %zu", queryTableData.size());
-                    if (queryTableData.size() >= 1000) {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
-                                           "(limited to 1000 rows)");
-                    }
-                    if (lastQueryDuration.count() > 0) {
-                        ImGui::SameLine();
-                        ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
-                    }
+                // Show row count and execution time
+                ImGui::Text("Rows: %zu", queryTableData.size());
+                if (queryTableData.size() >= 1000) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
+                }
+                if (lastQueryDuration.count() > 0) {
+                    ImGui::SameLine();
+                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
                 }
             }
         } else if (hasStructuredResults && queryColumnNames.empty()) {
@@ -404,6 +377,31 @@ TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath
                                std::string tableName)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
       tableName(std::move(tableName)) {
+
+    // Initialize table renderer with editable configuration
+    TableRenderer::Config config;
+    config.allowEditing = true;
+    config.allowSelection = true;
+    config.showRowNumbers = false;
+    config.minHeight = 200.0f;
+
+    tableRenderer = std::make_unique<TableRenderer>(config);
+
+    // Set up callbacks
+    tableRenderer->setOnCellEdit([this](int row, int col, const std::string &newValue) {
+        if (newValue != tableData[row][col]) {
+            tableData[row][col] = newValue;
+            hasChanges = true;
+
+            // Mark cell as edited
+            if (row < editedCells.size() && col < editedCells[row].size()) {
+                editedCells[row][col] = true;
+            }
+        }
+    });
+
+    tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
+
     loadDataAsync();
 }
 
@@ -497,75 +495,13 @@ void TableViewerTab::render() {
     if (isLoadingData) {
         ImGui::Text("Loading table data...");
     } else if (!columnNames.empty() && !tableData.empty()) {
-        const int colSize = static_cast<int>(columnNames.size());
-        constexpr int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                   ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
-                                   ImGuiTableFlags_Resizable;
-        if (ImGui::BeginTable("TableData", colSize, tableFlags)) {
-            for (const auto &colName : columnNames) {
-                ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            }
-            ImGui::TableHeadersRow();
+        // Update table renderer with current data
+        tableRenderer->setColumns(columnNames);
+        tableRenderer->setData(tableData);
+        tableRenderer->setCellEditedStatus(editedCells);
+        tableRenderer->setSelectedCell(selectedRow, selectedCol);
 
-            // Data rows
-            for (int rowIdx = 0; rowIdx < tableData.size(); rowIdx++) {
-                const auto &row = tableData[rowIdx];
-                ImGui::TableNextRow();
-
-                for (int colIdx = 0; colIdx < row.size() && colIdx < columnNames.size(); colIdx++) {
-                    ImGui::TableNextColumn();
-
-                    // Check if this cell is being edited
-                    if (editingRow == rowIdx && editingCol == colIdx) {
-                        // Edit mode - show input field
-                        ImGui::SetKeyboardFocusHere();
-                        if (ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
-                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            exitEditMode(true);
-                        }
-                        // Exit edit mode on Escape
-                        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                            exitEditMode(false);
-                        }
-                    } else {
-                        // Display mode - show cell content
-                        ImGui::PushID(rowIdx * static_cast<int>(columnNames.size()) + colIdx);
-
-                        // Check for cell selection highlighting and edited status
-                        const bool isSelected = (selectedRow == rowIdx && selectedCol == colIdx);
-                        const bool isEdited =
-                            (rowIdx < editedCells.size() && colIdx < editedCells[rowIdx].size() &&
-                             editedCells[rowIdx][colIdx]);
-
-                        if (isEdited) {
-                            ImGui::TableSetBgColor(
-                                ImGuiTableBgTarget_CellBg,
-                                ImGui::GetColorU32(
-                                    ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.3f)));
-                        } else if (isSelected) {
-                            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
-                                                   ImGui::GetColorU32(colors.surface2));
-                        }
-
-                        // Use a simple selectable text
-                        if (ImGui::Selectable(row[colIdx].c_str(), isSelected,
-                                              ImGuiSelectableFlags_AllowDoubleClick)) {
-                            // Single click - select cell
-                            selectCell(rowIdx, colIdx);
-
-                            // Double click - enter edit mode
-                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                                enterEditMode(rowIdx, colIdx);
-                            }
-                        }
-
-                        ImGui::PopID();
-                    }
-                }
-            }
-
-            ImGui::EndTable();
-        }
+        tableRenderer->render("TableData");
     } else {
         ImGui::Text("No data to display");
     }
@@ -643,9 +579,7 @@ void TableViewerTab::lastPage() {
 
 void TableViewerTab::refreshData() {
     if (!isLoadingData) {
-        // Reset edit state
-        editingRow = -1;
-        editingCol = -1;
+        // Reset selection state
         selectedRow = -1;
         selectedCol = -1;
         hasChanges = false;
@@ -692,47 +626,9 @@ void TableViewerTab::cancelChanges() {
         std::fill(row.begin(), row.end(), false);
     }
 
-    // Reset edit state
-    editingRow = -1;
-    editingCol = -1;
+    // Reset selection state
     selectedRow = -1;
     selectedCol = -1;
-}
-
-void TableViewerTab::enterEditMode(const int row, const int col) {
-    if (row >= 0 && row < static_cast<int>(tableData.size()) && col >= 0 &&
-        col < static_cast<int>(columnNames.size())) {
-        editingRow = row;
-        editingCol = col;
-
-        // Copy current cell value to edit buffer
-        strncpy(editBuffer, tableData[row][col].c_str(), sizeof(editBuffer) - 1);
-        editBuffer[sizeof(editBuffer) - 1] = '\0';
-    }
-}
-
-void TableViewerTab::exitEditMode(bool saveEdit) {
-    if (editingRow >= 0 && editingCol >= 0) {
-        if (saveEdit) {
-            // Save the edited value
-            std::string newValue = editBuffer;
-            if (newValue != tableData[editingRow][editingCol]) {
-                tableData[editingRow][editingCol] = newValue;
-                hasChanges = true;
-
-                // Mark cell as edited
-                if (editingRow < editedCells.size() &&
-                    editingCol < editedCells[editingRow].size()) {
-                    editedCells[editingRow][editingCol] = true;
-                }
-            }
-        }
-
-        // Clear edit state
-        editingRow = -1;
-        editingCol = -1;
-        memset(editBuffer, 0, sizeof(editBuffer));
-    }
 }
 
 void TableViewerTab::selectCell(const int row, const int col) {

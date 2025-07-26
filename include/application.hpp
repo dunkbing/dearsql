@@ -65,6 +65,9 @@ public:
     void setDockingLayoutInitialized(bool initialized) {
         dockingLayoutInitialized = initialized;
     }
+    void resetDockingLayout() {
+        dockingLayoutInitialized = false;
+    }
 
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() {

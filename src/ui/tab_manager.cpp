@@ -58,6 +58,11 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
     auto tab = std::make_shared<SQLEditorTab>(tabName);
     tab->setShouldFocus(true);
     addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto &app = Application::getInstance();
+    app.resetDockingLayout();
+
     return tab;
 }
 
@@ -99,6 +104,11 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
     auto tab = std::make_shared<SQLEditorTab>(tabName, databaseConnectionString);
     tab->setShouldFocus(true);
     addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto &app = Application::getInstance();
+    app.resetDockingLayout();
+
     return tab;
 }
 
@@ -117,38 +127,47 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databas
     auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName);
     tab->setShouldFocus(true);
     addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto &app = Application::getInstance();
+    app.resetDockingLayout();
+
     std::cout << "Created new tab for table: " << tableName << std::endl;
     return tab;
 }
 
 void TabManager::renderTabs() {
-    if (ImGui::BeginTabBar("ContentTabs")) {
-        for (auto it = tabs.begin(); it != tabs.end();) {
-            auto &tab = *it;
+    // Render each tab as a separate dockable window
+    for (auto it = tabs.begin(); it != tabs.end();) {
+        auto &tab = *it;
 
-            // Handle tab focusing
-            ImGuiTabItemFlags tabFlags = ImGuiTabItemFlags_None;
-            if (tab->shouldFocus()) {
-                tabFlags |= ImGuiTabItemFlags_SetSelected;
-                tab->setShouldFocus(false); // Reset flag after use
-            }
-
-            bool isOpen = tab->isOpen();
-            if (isOpen && ImGui::BeginTabItem(tab->getName().c_str(), &isOpen, tabFlags)) {
-                tab->render();
-                ImGui::EndTabItem();
-            }
-
-            // Update tab open state
-            tab->setOpen(isOpen);
-
-            if (!isOpen) {
-                it = tabs.erase(it);
-            } else {
-                ++it;
-            }
+        // Handle tab focusing by setting next window focus
+        if (tab->shouldFocus()) {
+            ImGui::SetNextWindowFocus();
+            tab->setShouldFocus(false); // Reset flag after use
         }
-        ImGui::EndTabBar();
+
+        bool isOpen = tab->isOpen();
+
+        // Create a dockable window for each tab
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar;
+
+        if (ImGui::Begin(tab->getName().c_str(), &isOpen, windowFlags)) {
+            tab->render();
+        }
+        ImGui::End();
+
+        // Update tab open state
+        tab->setOpen(isOpen);
+
+        if (!isOpen) {
+            it = tabs.erase(it);
+            // Force docking layout to be rebuilt when a tab is closed
+            auto &app = Application::getInstance();
+            app.resetDockingLayout();
+        } else {
+            ++it;
+        }
     }
 }
 

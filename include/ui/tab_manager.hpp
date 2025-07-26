@@ -27,6 +27,10 @@ public:
         return tabs.size();
     }
 
+    const std::vector<std::shared_ptr<Tab>> &getTabs() const {
+        return tabs;
+    }
+
     // Tab creation helpers
     std::shared_ptr<Tab> createSQLEditorTab(const std::string &name = "");
     std::shared_ptr<Tab> createSQLEditorTab(const std::string &name,

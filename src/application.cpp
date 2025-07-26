@@ -351,20 +351,30 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
         ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &rightDockId);
 
-        // Make both dock nodes non-dockable and non-tabbed, but allow resizing
+        // Make left dock node (sidebar) non-dockable and non-tabbed
         ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
+        // Allow docking in the right dock node (Workspace panel) - remove restrictive flags
+        // This allows tabs to be docked and rearranged within the Workspace area
         // Dock windows to fixed positions
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
-        ImGui::DockBuilderDockWindow("Content", rightDockId);
+        ImGui::DockBuilderDockWindow("Workspace", rightDockId);
+
+        // Dock any existing tab windows to the right dock node
+        for (const auto &tab : tabManager->getTabs()) {
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), rightDockId);
+        }
     } else {
-        // When sidebar is hidden or animating, use full space for content
-        ImGui::DockBuilderGetNode(dockspaceId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-        ImGui::DockBuilderDockWindow("Content", dockspaceId);
+        // When sidebar is hidden, use full space for workspace and allow docking
+        // Remove restrictive flags to allow tab docking in the main area
+        ImGui::DockBuilderDockWindow("Workspace", dockspaceId);
+
+        // Dock any existing tab windows to the main dockspace
+        for (const auto &tab : tabManager->getTabs()) {
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockspaceId);
+        }
+
         leftDockId = 0;
         rightDockId = 0;
     }
@@ -408,8 +418,13 @@ void Application::renderMainUI() {
 
     ImGui::PopStyleVar(3);
 
-    // Add border around dock windows using Theme colors (only when using docking)
+    // Customize titlebar colors to match app background
     const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.base);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.base);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.base);
+
+    // Add border around dock windows using Theme colors (only when using docking)
     if (shouldUseDocking) {
         ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -453,25 +468,29 @@ void Application::renderMainUI() {
         ImGui::PopStyleColor(3);
     }
 
-    // Main content area - positioning depends on sidebar visibility
+    // Main workspace area - positioning depends on sidebar visibility
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-    // Always use docking system for content area
-    ImGui::Begin("Content", nullptr,
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
-                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
     if (tabManager->isEmpty()) {
+        // Show empty state in a dockable Workspace window when no tabs are open
+        ImGui::Begin("Workspace", nullptr,
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         tabManager->renderEmptyState();
+        ImGui::End();
     } else {
+        // Render individual dockable tab windows
         tabManager->renderTabs();
     }
-    ImGui::End();
+
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);
+
+    // Pop titlebar colors
+    ImGui::PopStyleColor(3); // TitleBg, TitleBgActive, TitleBgCollapsed
 
     // Pop styles and end DockSpace
     if (shouldUseDocking) {

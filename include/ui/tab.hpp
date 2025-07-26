@@ -97,15 +97,17 @@ private:
     // Splitter state for resizing between editor and results
     float splitterPosition = 0.4f; // 40% for editor, 60% for results
     bool splitterActive = false;
+    float totalContentHeight = 0.0f; // Store total height for consistent splitter calculation
 
     // Helper methods for async execution
-    void startQueryExecutionAsync(std::shared_ptr<DatabaseInterface> targetDb,
+    void startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface> &targetDb,
                                   const std::string &query);
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
 
     // Helper method for splitter
-    bool renderVerticalSplitter(const char *id, float *position, float minSize1, float minSize2);
+    bool renderVerticalSplitter(const char *id, float *position, float minSize1,
+                                float minSize2) const;
 };
 
 class TableViewerTab final : public Tab {

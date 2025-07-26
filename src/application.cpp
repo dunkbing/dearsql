@@ -460,7 +460,9 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     // Always use docking system for content area
-    ImGui::Begin("Content", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+    ImGui::Begin("Content", nullptr,
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     if (tabManager->isEmpty()) {
         tabManager->renderEmptyState();

@@ -2,7 +2,6 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
-#include "imgui_internal.h"
 
 #include "themes.hpp"
 #include "utils/spinner.hpp"
@@ -59,10 +58,11 @@ void SQLEditorTab::render() {
     }
     ImGui::Separator();
 
-    // Calculate heights for splitter layout
-    float availableHeight = ImGui::GetContentRegionAvail().y;
-    float editorHeight = availableHeight * splitterPosition;
-    float resultsHeight = availableHeight * (1.0f - splitterPosition) - 4.0f; // 4px for splitter
+    // Calculate heights for splitter layout - store total height for splitter reference
+    totalContentHeight = ImGui::GetContentRegionAvail().y;
+    const float editorHeight = totalContentHeight * splitterPosition;
+    const float resultsHeight =
+        totalContentHeight * (1.0f - splitterPosition) - 6.0f; // 6px hover area for splitter
 
     // SQL Editor section
     if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true)) {
@@ -72,7 +72,7 @@ void SQLEditorTab::render() {
     ImGui::EndChild();
 
     // Render splitter
-    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 100.0f);
+    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
 
     // Results section
     if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true)) {
@@ -161,12 +161,13 @@ void SQLEditorTab::render() {
                 }
             } else {
                 // Calculate available height for the table within the results child window
-                float availableHeight = ImGui::GetContentRegionAvail().y -
-                                        40.0f; // Reserve 40px for row count info and padding
-                availableHeight = std::max(availableHeight, 50.0f); // Ensure minimum height of 50px
+                float tableAvailableHeight = ImGui::GetContentRegionAvail().y -
+                                             40.0f; // Reserve 40px for row count info and padding
+                tableAvailableHeight =
+                    std::max(tableAvailableHeight, 50.0f); // Ensure minimum height of 50px
 
                 if (ImGui::BeginTable("QueryResults", colSize, tableFlags,
-                                      ImVec2(0.0f, availableHeight))) {
+                                      ImVec2(0.0f, tableAvailableHeight))) {
                     // Setup columns
                     for (const auto &colName : queryColumnNames) {
                         ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed,
@@ -227,7 +228,7 @@ void SQLEditorTab::render() {
     ImGui::EndChild(); // End SQLResults child window
 }
 
-void SQLEditorTab::startQueryExecutionAsync(std::shared_ptr<DatabaseInterface> targetDb,
+void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface> &targetDb,
                                             const std::string &query) {
     if (isExecutingQuery) {
         return; // Already executing
@@ -328,67 +329,74 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 }
 
 void SQLEditorTab::cancelQueryExecution() {
-    if (isExecutingQuery) {
-        shouldCancelQuery = true;
-        // Note: We can't actually cancel the database query once it's started,
-        // but we can prevent the results from being processed
-        queryResult = "Query execution cancelled by user";
-        queryError = queryResult;
-        hasStructuredResults = false;
-        queryColumnNames.clear();
-        queryTableData.clear();
-        strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-        resultBuffer[sizeof(resultBuffer) - 1] = '\0';
-    }
+    shouldCancelQuery = true;
+    // Note: We can't actually cancel the database query once it's started,
+    // but we can prevent the results from being processed
+    queryResult = "Query execution cancelled by user";
+    queryError = queryResult;
+    hasStructuredResults = false;
+    queryColumnNames.clear();
+    queryTableData.clear();
+    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float minSize1,
-                                          float minSize2) {
-    ImGuiContext &g = *GImGui;
-    ImGuiWindow *window = g.CurrentWindow;
+                                          float minSize2) const {
+    constexpr float hoverThickness = 6.0f;
+    constexpr float visualThickness = 2.0f;
 
-    const ImGuiID splitterId = window->GetID(id);
-    ImVec2 availableRegion = ImGui::GetContentRegionAvail();
-    const ImRect bb(window->DC.CursorPos, ImVec2(window->DC.CursorPos.x + availableRegion.x,
-                                                 window->DC.CursorPos.y + 4.0f));
+    // invisible button with larger hover area
+    ImGui::InvisibleButton(id, ImVec2(-1, hoverThickness));
 
-    ImGui::ItemSize(bb, 0.0f);
-    if (!ImGui::ItemAdd(bb, splitterId)) {
-        return false;
-    }
-
-    bool hovered, held;
-    bool pressed =
-        ImGui::ButtonBehavior(bb, splitterId, &hovered, &held, ImGuiButtonFlags_FlattenChildren);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool held = ImGui::IsItemActive();
 
     if (hovered || held) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
     }
 
+    bool changed = false;
     if (held) {
-        float delta = ImGui::GetIO().MouseDelta.y;
+        const float delta = ImGui::GetIO().MouseDelta.y;
         if (delta != 0.0f) {
-            float availableHeight = ImGui::GetContentRegionAvail().y;
-            float newPosition = *position + (delta / availableHeight);
+            // Use the stored total height for consistent calculation
+            const float availableHeight = totalContentHeight;
 
-            // Clamp to minimum sizes
-            float minPos1 = minSize1 / availableHeight;
-            float minPos2 = 1.0f - (minSize2 / availableHeight);
+            // Calculate current pixel position
+            const float currentPixelPos = *position * availableHeight;
+            const float newPixelPos = currentPixelPos + delta;
 
-            newPosition = std::max(minPos1, std::min(minPos2, newPosition));
-            *position = newPosition;
+            // Convert back to normalized position
+            float newPosition = newPixelPos / availableHeight;
 
-            return true;
+            // Apply constraints
+            const float minPos1 = minSize1 / availableHeight;
+            const float maxPos1 = 1.0f - (minSize2 / availableHeight);
+
+            newPosition = std::max(minPos1, std::min(maxPos1, newPosition));
+
+            if (newPosition != *position) {
+                *position = newPosition;
+                changed = true;
+            }
         }
     }
 
-    // Draw splitter line
-    ImU32 col = ImGui::GetColorU32(held      ? ImGuiCol_SeparatorActive
-                                   : hovered ? ImGuiCol_SeparatorHovered
-                                             : ImGuiCol_Separator);
-    window->DrawList->AddRectFilled(bb.Min, bb.Max, col);
+    // Draw thin visual splitter line centered in the hover area
+    const ImVec2 minPos = ImGui::GetItemRectMin();
+    const ImVec2 maxPos = ImGui::GetItemRectMax();
 
-    return false;
+    constexpr float centerOffset = (hoverThickness - visualThickness) * 0.5f;
+    const auto visualMin = ImVec2(minPos.x, minPos.y + centerOffset);
+    const auto visualMax = ImVec2(maxPos.x, minPos.y + centerOffset + visualThickness);
+
+    const ImU32 col = ImGui::GetColorU32(held      ? ImGuiCol_SeparatorActive
+                                         : hovered ? ImGuiCol_SeparatorHovered
+                                                   : ImGuiCol_Separator);
+    ImGui::GetWindowDrawList()->AddRectFilled(visualMin, visualMax, col);
+
+    return changed;
 }
 
 // TableViewerTab implementation

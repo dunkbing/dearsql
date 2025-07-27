@@ -75,7 +75,6 @@ set(APP_SOURCES
     src/embedded_images.cpp
 
     # Database
-    src/database/query_executor.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
     src/database/mysql.cpp

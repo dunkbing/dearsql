@@ -24,11 +24,10 @@ A simple, cross-platform database client built with Dear ImGui.
    ./dear-sql
    ```
 
-4. **Open Database**: Use `File > Open Database` to connect to an SQLite database
-
-## 🛠️ Built With
+## Built With
 
 - [Dear ImGui](https://github.com/ocornut/imgui) - Immediate mode GUI
 - [Native File Dialog](https://github.com/btzy/nativefiledialog-extended) - File pickers
-- [pqxx](https://github.com/jtv/libpqxx) - PostgreSQL client
-- [SQLite](https://sqlite.org/) - SQLite client
+- [soci](https://github.com/SOCI/soci) - DB client
+- [hiredis](https://github.com/redis/hiredis) - DB client
+- [IconFontCppHeaders](https://github.com/juliettef/IconFontCppHeaders) - icon fonts

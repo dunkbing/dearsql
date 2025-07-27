@@ -6,7 +6,7 @@
 
 #include "db.hpp"
 
-enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL };
+enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS };
 
 struct DatabaseConnectionInfo {
     DatabaseType type;

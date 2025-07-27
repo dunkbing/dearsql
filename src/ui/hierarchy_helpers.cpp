@@ -1,6 +1,7 @@
 #include "ui/hierarchy_helpers.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/redis.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
 #include <iostream>
@@ -317,6 +318,164 @@ namespace HierarchyHelpers {
                     renderViewNode(db, j);
                 }
             }
+            ImGui::TreePop();
+        }
+    }
+    void renderRedisHierarchy(std::shared_ptr<DatabaseInterface> db) {
+        auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
+        if (!redisDb) {
+            return;
+        }
+
+        // Show connection status
+        if (!redisDb->isConnected()) {
+            if (redisDb->isConnecting()) {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f),
+                                   ICON_FA_SPINNER " Connecting...");
+            } else if (redisDb->hasAttemptedConnection()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                                   ICON_FA_CIRCLE_EXCLAMATION " Connection failed");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", redisDb->getLastConnectionError().c_str());
+                }
+            } else {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                                   ICON_FA_DATABASE " Not connected");
+            }
+            return;
+        }
+
+        // Show Redis connection info
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), ICON_FA_DATABASE " Connected");
+
+        // Keys section - use the existing table rendering but adapted for Redis
+        constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+        // Show loading indicator next to Keys node if loading
+        const bool showKeysSpinner = redisDb->isLoadingTables();
+
+        // Draw tree node with placeholder space for icon
+        const std::string keysLabel = "   Keys###redis_keys"; // 3 spaces for icon
+        const bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
+
+        // Draw colored icon over the placeholder space
+        const auto keysSectionIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            keysSectionIconPos,
+            ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Redis Keys
+            ICON_FA_KEY);
+
+        // Show spinner next to Keys node if loading
+        if (showKeysSpinner) {
+            ImGui::SameLine();
+            UIUtils::Spinner("##redis_keys_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        }
+
+        // Load keys when the tree node is opened and keys haven't been loaded yet
+        if (keysOpen && !redisDb->areTablesLoaded() && !redisDb->isLoadingTables()) {
+            std::cout << "Redis keys node expanded and keys not loaded yet, attempting to load..."
+                      << std::endl;
+            redisDb->refreshTables();
+        }
+
+        if (keysOpen) {
+            if (redisDb->getTables().empty()) {
+                if (redisDb->isLoadingTables()) {
+                    ImGui::Text("  Loading keys...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##loading_redis_keys_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                } else if (!redisDb->areTablesLoaded()) {
+                    ImGui::Text("  Loading...");
+                } else {
+                    ImGui::Text("  No keys found");
+                }
+            } else {
+                // Show "All Keys" as a clickable item
+                const auto &tables = redisDb->getTables();
+                for (int i = 0; i < tables.size(); i++) {
+                    const auto &table = tables[i];
+
+                    constexpr ImGuiTreeNodeFlags keyGroupFlags =
+                        ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                        ImGuiTreeNodeFlags_FramePadding;
+
+                    // Draw tree node with placeholder space for icon
+                    const std::string keyGroupLabel =
+                        std::format("   {}", table.name); // 3 spaces for icon
+                    ImGui::TreeNodeEx(keyGroupLabel.c_str(), keyGroupFlags);
+
+                    // Draw colored icon over the placeholder space
+                    const ImVec2 keyGroupIconPos = ImVec2(
+                        ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                        ImGui::GetItemRectMin().y +
+                            (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                    ImGui::GetWindowDrawList()->AddText(
+                        keyGroupIconPos,
+                        ImGui::GetColorU32(
+                            ImVec4(0.9f, 0.4f, 0.4f, 1.0f)), // Red for Redis key groups
+                        ICON_FA_FOLDER);
+
+                    // Double-click to open Redis key viewer
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                        auto &app = Application::getInstance();
+                        app.getTabManager()->createTableViewerTab(redisDb->getConnectionString(),
+                                                                  table.name);
+                    }
+
+                    // Context menu
+                    ImGui::PushID(i);
+                    if (ImGui::BeginPopupContextItem(nullptr)) {
+                        if (ImGui::MenuItem("View Keys")) {
+                            auto &app = Application::getInstance();
+                            app.getTabManager()->createTableViewerTab(
+                                redisDb->getConnectionString(), table.name);
+                        }
+                        if (ImGui::MenuItem("Refresh Keys")) {
+                            redisDb->setTablesLoaded(false);
+                        }
+                        ImGui::EndPopup();
+                    }
+                    ImGui::PopID();
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        // Redis-specific info section
+        constexpr ImGuiTreeNodeFlags infoFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+        const std::string infoLabel = "   Server Info###redis_info"; // 3 spaces for icon
+        const bool infoOpen = ImGui::TreeNodeEx(infoLabel.c_str(), infoFlags);
+
+        // Draw colored icon over the placeholder space
+        const auto infoIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            infoIconPos, ImGui::GetColorU32(ImVec4(0.4f, 0.8f, 1.0f, 1.0f)), // Light blue for info
+            ICON_FA_CIRCLE_INFO);
+
+        if (infoOpen) {
+            ImGui::Text("  Host: %s", redisDb->getConnectionString().c_str());
+            ImGui::Text("  Type: Redis Key-Value Store");
+
+            // Add a button to refresh keys
+            if (ImGui::Button("  " ICON_FA_ARROWS_ROTATE " Refresh Keys")) {
+                redisDb->setTablesLoaded(false);
+            }
+
             ImGui::TreePop();
         }
     }

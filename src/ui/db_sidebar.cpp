@@ -7,6 +7,7 @@
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/hierarchy_helpers.hpp"
 #include "ui/mysql_hierarchy.hpp"
 #include "ui/postgres_hierarchy.hpp"
 #include "ui/sqlite_hierarchy.hpp"
@@ -158,6 +159,8 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         dbIcon = ICON_FK_POSTGRESQL;
     } else if (db->getType() == DatabaseType::MYSQL) {
         dbIcon = ICON_FK_MYSQL;
+    } else if (db->getType() == DatabaseType::REDIS) {
+        dbIcon = ICON_FA_DATABASE;
     } else {
         dbIcon = ICON_FK_DATABASE;
     }
@@ -180,6 +183,8 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         iconColor = ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Darker blue
     } else if (db->getType() == DatabaseType::MYSQL) {
         iconColor = ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)); // Orange
+    } else if (db->getType() == DatabaseType::REDIS) {
+        iconColor = ImGui::GetColorU32(ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); // Red
     } else {
         iconColor = ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)); // Gray for unknown
     }
@@ -265,6 +270,15 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
                     db->checkViewsStatusAsync();
                 }
                 MySQLHierarchy::renderMySQLHierarchy(mysqlDb);
+            } else if (db->getType() == DatabaseType::REDIS) {
+                // Check for async loading completion for Redis
+                if (db->isLoadingTables()) {
+                    db->checkTablesStatusAsync();
+                }
+                if (db->isLoadingTableData()) {
+                    db->checkTableDataStatusAsync();
+                }
+                HierarchyHelpers::renderRedisHierarchy(db);
             }
         }
         ImGui::TreePop();

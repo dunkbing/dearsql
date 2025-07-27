@@ -14,6 +14,9 @@ find_package(SQLite3 REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+# Add hiredis as a submodule
+add_subdirectory(external/hiredis)
+
 # Native File Dialog Extended (as git submodule)
 add_subdirectory(external/nativefiledialog-extended)
 
@@ -76,6 +79,7 @@ set(APP_SOURCES
     src/database/sqlite.cpp
     src/database/postgresql.cpp
     src/database/mysql.cpp
+    src/database/redis.cpp
     src/database/db_factory.cpp
 
     # UI
@@ -199,6 +203,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/soci/include
     external/IconFontCppHeaders
     external/stb
+    external/hiredis
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -212,6 +217,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     nfd
     OpenSSL::SSL
     OpenSSL::Crypto
+    hiredis
 )
 
 # Platform-specific linking

@@ -2,8 +2,10 @@
 #include "application.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/spinner.hpp"
 #include <chrono>
 #include <imgui.h>
 #include <themes.hpp>
@@ -14,6 +16,7 @@ void DatabaseConnectionDialog::showDialog() {
         showingTypeSelection = true;
         showingPostgreSQLConnection = false;
         showingMySQLConnection = false;
+        showingRedisConnection = false;
         showingSavedConnections = false;
         result = nullptr;
         loadSavedConnections();
@@ -26,6 +29,8 @@ void DatabaseConnectionDialog::showDialog() {
         renderPostgresConnection();
     } else if (showingMySQLConnection) {
         renderMySQLConnection();
+    } else if (showingRedisConnection) {
+        renderRedisConnection();
     } else if (showingSavedConnections) {
         renderSavedConnections();
     }
@@ -63,6 +68,10 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         ImGui::Text("   Connect to a MySQL server");
         ImGui::Spacing();
 
+        ImGui::RadioButton("Redis Server", &selectedDatabaseType, 3);
+        ImGui::Text("   Connect to a Redis key-value store");
+        ImGui::Spacing();
+
         ImGui::Separator();
 
         if (ImGui::Button("Next", ImVec2(100, 0))) {
@@ -93,6 +102,11 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 showingTypeSelection = false;
                 showingMySQLConnection = true;
                 port = 3306; // Set default MySQL port
+            } else if (selectedDatabaseType == 3) {
+                // Redis - show connection dialog
+                showingTypeSelection = false;
+                showingRedisConnection = true;
+                port = 6379; // Set default Redis port
             }
         }
         ImGui::SameLine();
@@ -373,6 +387,102 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
     }
 }
 
+void DatabaseConnectionDialog::renderRedisConnection() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter Redis connection details:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Disable input fields during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        ImGui::Text("Connection Name:");
+        ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
+        ImGui::Spacing();
+
+        ImGui::Text("Host:");
+        ImGui::InputText("##host", host, sizeof(host));
+        ImGui::Spacing();
+
+        ImGui::Text("Port:");
+        ImGui::InputInt("##port", &port);
+        ImGui::Spacing();
+
+        ImGui::Text("Authentication:");
+        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::RadioButton("Password", &authType, 0);
+        ImGui::Spacing();
+
+        if (authType == 0) {
+            ImGui::Text("Password:");
+            ImGui::InputText("##password", password, sizeof(password),
+                             ImGuiInputTextFlags_Password);
+            ImGui::Spacing();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        // Check for async connection completion
+        if (isConnecting) {
+            checkAsyncConnectionStatus();
+        }
+
+        if (!errorMessage.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::TextWrapped("Error: %s", errorMessage.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+
+        ImGui::Separator();
+
+        if (isConnecting) {
+            // Show disabled connect button with spinner
+            ImGui::BeginDisabled();
+            ImGui::Button("Connecting...", ImVec2(100, 0));
+            ImGui::EndDisabled();
+
+            // Improved spinner animation
+            ImGui::SameLine();
+            UIUtils::Spinner("##connecting_spinner", 8.0f, 3,
+                             ImGui::GetColorU32(ImVec4(0.0f, 0.8f, 1.0f, 1.0f)));
+        } else {
+            if (ImGui::Button("Connect", ImVec2(100, 0))) {
+                startAsyncConnection();
+            }
+        }
+
+        // Disable Back and Cancel buttons during connection
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Back", ImVec2(100, 0))) {
+            showingRedisConnection = false;
+            showingTypeSelection = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+            ImGui::CloseCurrentPopup();
+            reset();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
     auto temp = result;
     result = nullptr; // Clear result after retrieval
@@ -384,6 +494,7 @@ void DatabaseConnectionDialog::reset() {
     showingTypeSelection = false;
     showingPostgreSQLConnection = false;
     showingMySQLConnection = false;
+    showingRedisConnection = false;
     showingSavedConnections = false;
     isConnecting = false;
     errorMessage.clear();
@@ -436,6 +547,20 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase
                                            std::string(database), usernameStr, passwordStr);
 }
 
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase() {
+    if (strlen(connectionName) == 0) {
+        std::cout << "Redis connection failed: Connection name is empty" << std::endl;
+        return nullptr;
+    }
+
+    std::string passwordStr = (authType == 0) ? std::string(password) : "";
+    std::cout << "Creating RedisDatabase: " << connectionName << " -> " << host << ":" << port
+              << " (auth: " << (authType == 0 ? "password" : "none") << ")" << std::endl;
+
+    return std::make_shared<RedisDatabase>(std::string(connectionName), std::string(host), port,
+                                           passwordStr);
+}
+
 void DatabaseConnectionDialog::loadSavedConnections() {
     auto &app = Application::getInstance();
     savedConnections = app.getAppState()->getSavedConnections();
@@ -469,6 +594,13 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
                         ImGui::Text("Database: %s", conn.database.c_str());
                         ImGui::Text("Username: %s", conn.username.c_str());
+                    } else if (conn.type == "mysql") {
+                        ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
+                        ImGui::Text("Database: %s", conn.database.c_str());
+                        ImGui::Text("Username: %s", conn.username.c_str());
+                    } else if (conn.type == "redis") {
+                        ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
+                        ImGui::Text("Auth: %s", conn.password.empty() ? "None" : "Password");
                     } else {
                         ImGui::Text("Path: %s", conn.path.c_str());
                     }
@@ -530,6 +662,25 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         reset();
                     } else {
                         errorMessage = "Failed to connect: " + error;
+                    }
+                }
+            } else if (conn.type == "redis") {
+                // Fill in the Redis fields and connect
+                strncpy(connectionName, conn.name.c_str(), sizeof(connectionName) - 1);
+                strncpy(host, conn.host.c_str(), sizeof(host) - 1);
+                port = conn.port;
+                authType = conn.password.empty() ? 1 : 0;
+                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
+
+                const auto db = createRedisDatabase();
+                if (db) {
+                    auto [success, error] = db->connect();
+                    if (success) {
+                        result = db;
+                        ImGui::CloseCurrentPopup();
+                        reset();
+                    } else {
+                        errorMessage = error;
                     }
                 }
             } else if (conn.type == "sqlite") {
@@ -616,6 +767,9 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 db = createPostgreSQLDatabase();
             } else if (showingMySQLConnection) {
                 db = createMySQLDatabase();
+            } else if (showingRedisConnection) {
+                std::cout << "Creating Redis database connection..." << std::endl;
+                db = createRedisDatabase();
             }
 
             if (db) {
@@ -648,6 +802,8 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                 conn.type = "postgresql";
             } else if (showingMySQLConnection) {
                 conn.type = "mysql";
+            } else if (showingRedisConnection) {
+                conn.type = "redis";
             }
             conn.host = std::string(host);
             conn.port = port;

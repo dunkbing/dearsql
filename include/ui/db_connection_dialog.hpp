@@ -36,6 +36,7 @@ private:
     bool showingTypeSelection = false;
     bool showingPostgreSQLConnection = false;
     bool showingMySQLConnection = false;
+    bool showingRedisConnection = false;
     bool showingSavedConnections = false;
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
@@ -49,7 +50,7 @@ private:
     int selectedSavedConnection = -1;
 
     // Selected database type
-    int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL, 2 = MySQL
+    int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL, 2 = MySQL, 3 = Redis
 
     // PostgreSQL/MySQL connection fields
     char connectionName[256] = "";
@@ -68,6 +69,7 @@ private:
     void renderTypeSelection();
     void renderPostgresConnection();
     void renderMySQLConnection();
+    void renderRedisConnection();
     void renderSavedConnections();
     void loadSavedConnections();
 
@@ -75,6 +77,7 @@ private:
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
     std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
     std::shared_ptr<DatabaseInterface> createMySQLDatabase();
+    std::shared_ptr<DatabaseInterface> createRedisDatabase();
 
     // Async connection helpers
     void startAsyncConnection();

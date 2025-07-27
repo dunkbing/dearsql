@@ -415,10 +415,14 @@ void DatabaseConnectionDialog::renderRedisConnection() {
 
         ImGui::Text("Authentication:");
         ImGui::RadioButton("No Authentication", &authType, 1);
-        ImGui::RadioButton("Password", &authType, 0);
+        ImGui::RadioButton("Username & Password", &authType, 0);
         ImGui::Spacing();
 
         if (authType == 0) {
+            ImGui::Text("Username:");
+            ImGui::InputText("##username", username, sizeof(username));
+            ImGui::Spacing();
+
             ImGui::Text("Password:");
             ImGui::InputText("##password", password, sizeof(password),
                              ImGuiInputTextFlags_Password);
@@ -553,9 +557,15 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
         return nullptr;
     }
 
+    // For Redis with auth, username is optional (Redis 6+ ACL) but password is required
     std::string passwordStr = (authType == 0) ? std::string(password) : "";
+    std::string usernameStr = (authType == 0) ? std::string(username) : "";
+
     std::cout << "Creating RedisDatabase: " << connectionName << " -> " << host << ":" << port
-              << " (auth: " << (authType == 0 ? "password" : "none") << ")" << std::endl;
+              << " (auth: " << (authType == 0 ? "username & password" : "none") << ")" << std::endl;
+    if (authType == 0 && strlen(username) > 0) {
+        std::cout << "Using username: " << username << std::endl;
+    }
 
     return std::make_shared<RedisDatabase>(std::string(connectionName), std::string(host), port,
                                            passwordStr);
@@ -600,7 +610,15 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         ImGui::Text("Username: %s", conn.username.c_str());
                     } else if (conn.type == "redis") {
                         ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
-                        ImGui::Text("Auth: %s", conn.password.empty() ? "None" : "Password");
+                        if (conn.password.empty()) {
+                            ImGui::Text("Auth: None");
+                        } else {
+                            ImGui::Text("Auth: %s", conn.username.empty() ? "Password only"
+                                                                          : "Username & Password");
+                            if (!conn.username.empty()) {
+                                ImGui::Text("Username: %s", conn.username.c_str());
+                            }
+                        }
                     } else {
                         ImGui::Text("Path: %s", conn.path.c_str());
                     }
@@ -670,6 +688,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 strncpy(host, conn.host.c_str(), sizeof(host) - 1);
                 port = conn.port;
                 authType = conn.password.empty() ? 1 : 0;
+                strncpy(username, conn.username.c_str(), sizeof(username) - 1);
                 strncpy(password, conn.password.c_str(), sizeof(password) - 1);
 
                 const auto db = createRedisDatabase();

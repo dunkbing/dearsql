@@ -348,105 +348,76 @@ namespace HierarchyHelpers {
         // Show Redis connection info
         ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), ICON_FA_DATABASE " Connected");
 
-        // Keys section - use the existing table rendering but adapted for Redis
-        constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                 ImGuiTreeNodeFlags_FramePadding;
-
-        // Show loading indicator next to Keys node if loading
-        const bool showKeysSpinner = redisDb->isLoadingTables();
-
-        // Draw tree node with placeholder space for icon
-        const std::string keysLabel = "   Keys###redis_keys"; // 3 spaces for icon
-        const bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
-
-        // Draw colored icon over the placeholder space
-        const auto keysSectionIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            keysSectionIconPos,
-            ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Redis Keys
-            ICON_FA_KEY);
-
-        // Show spinner next to Keys node if loading
-        if (showKeysSpinner) {
-            ImGui::SameLine();
-            UIUtils::Spinner("##redis_keys_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-        }
-
-        // Load keys when the tree node is opened and keys haven't been loaded yet
-        if (keysOpen && !redisDb->areTablesLoaded() && !redisDb->isLoadingTables()) {
-            std::cout << "Redis keys node expanded and keys not loaded yet, attempting to load..."
-                      << std::endl;
+        // Load keys if not loaded yet
+        if (!redisDb->areTablesLoaded() && !redisDb->isLoadingTables()) {
             redisDb->refreshTables();
         }
 
-        if (keysOpen) {
-            if (redisDb->getTables().empty()) {
-                if (redisDb->isLoadingTables()) {
-                    ImGui::Text("  Loading keys...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_redis_keys_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                } else if (!redisDb->areTablesLoaded()) {
-                    ImGui::Text("  Loading...");
-                } else {
-                    ImGui::Text("  No keys found");
-                }
+        // Show loading indicator if loading
+        if (redisDb->isLoadingTables()) {
+            ImGui::Text("  Loading keys...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##loading_redis_keys_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(ImGuiCol_Text));
+            return;
+        }
+
+        // Show key groups directly (no nested Keys section)
+        if (redisDb->getTables().empty()) {
+            if (!redisDb->areTablesLoaded()) {
+                ImGui::Text("  Loading...");
             } else {
-                // Show "All Keys" as a clickable item
-                const auto &tables = redisDb->getTables();
-                for (int i = 0; i < tables.size(); i++) {
-                    const auto &table = tables[i];
+                ImGui::Text("  No keys found");
+            }
+        } else {
+            const auto &tables = redisDb->getTables();
+            for (int i = 0; i < tables.size(); i++) {
+                const auto &table = tables[i];
 
-                    constexpr ImGuiTreeNodeFlags keyGroupFlags =
-                        ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                        ImGuiTreeNodeFlags_FramePadding;
+                constexpr ImGuiTreeNodeFlags keyGroupFlags = ImGuiTreeNodeFlags_Leaf |
+                                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                             ImGuiTreeNodeFlags_FramePadding;
 
-                    // Draw tree node with placeholder space for icon
-                    const std::string keyGroupLabel =
-                        std::format("   {}", table.name); // 3 spaces for icon
-                    ImGui::TreeNodeEx(keyGroupLabel.c_str(), keyGroupFlags);
+                // Draw tree node with placeholder space for icon
+                // Display user-friendly name but use the actual pattern for functionality
+                const std::string displayName = (table.name == "*") ? "All Keys" : table.name;
+                const std::string keyGroupLabel =
+                    std::format("   {}", displayName); // 3 spaces for icon
+                ImGui::TreeNodeEx(keyGroupLabel.c_str(), keyGroupFlags);
 
-                    // Draw colored icon over the placeholder space
-                    const ImVec2 keyGroupIconPos = ImVec2(
-                        ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                        ImGui::GetItemRectMin().y +
-                            (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+                // Draw colored icon over the placeholder space
+                const ImVec2 keyGroupIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-                    ImGui::GetWindowDrawList()->AddText(
-                        keyGroupIconPos,
-                        ImGui::GetColorU32(
-                            ImVec4(0.9f, 0.4f, 0.4f, 1.0f)), // Red for Redis key groups
-                        ICON_FA_FOLDER);
+                ImGui::GetWindowDrawList()->AddText(
+                    keyGroupIconPos,
+                    ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Redis keys
+                    ICON_FA_KEY);
 
-                    // Double-click to open Redis key viewer
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                // Double-click to open Redis key viewer
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    auto &app = Application::getInstance();
+                    app.getTabManager()->createTableViewerTab(redisDb->getConnectionString(),
+                                                              table.name);
+                }
+
+                // Context menu
+                ImGui::PushID(i);
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("View Keys")) {
                         auto &app = Application::getInstance();
                         app.getTabManager()->createTableViewerTab(redisDb->getConnectionString(),
                                                                   table.name);
                     }
-
-                    // Context menu
-                    ImGui::PushID(i);
-                    if (ImGui::BeginPopupContextItem(nullptr)) {
-                        if (ImGui::MenuItem("View Keys")) {
-                            auto &app = Application::getInstance();
-                            app.getTabManager()->createTableViewerTab(
-                                redisDb->getConnectionString(), table.name);
-                        }
-                        if (ImGui::MenuItem("Refresh Keys")) {
-                            redisDb->setTablesLoaded(false);
-                        }
-                        ImGui::EndPopup();
+                    if (ImGui::MenuItem("Refresh Keys")) {
+                        redisDb->setTablesLoaded(false);
                     }
-                    ImGui::PopID();
+                    ImGui::EndPopup();
                 }
+                ImGui::PopID();
             }
-            ImGui::TreePop();
         }
 
         // Redis-specific info section

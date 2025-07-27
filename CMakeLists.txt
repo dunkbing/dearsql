@@ -205,6 +205,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/stb
     external/hiredis
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/include
+    external/nativefiledialog-extended/src/include
 )
 
 # Link libraries

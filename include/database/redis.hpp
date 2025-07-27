@@ -2,7 +2,7 @@
 
 #include "db_interface.hpp"
 #include <future>
-#include <hiredis/hiredis.h>
+#include <hiredis.h>
 
 struct RedisKey {
     std::string name;
@@ -88,8 +88,8 @@ public:
     // Redis-specific methods
     std::vector<RedisKey> getKeys(const std::string &pattern = "*", int limit = 1000);
     std::string getKeyValue(const std::string &key);
-    std::string getKeyType(const std::string &key);
-    int64_t getKeyTTL(const std::string &key);
+    std::string getKeyType(const std::string &key) const;
+    int64_t getKeyTTL(const std::string &key) const;
 
 protected:
     std::vector<std::string> getTableNames() override; // Will return key patterns
@@ -133,7 +133,7 @@ private:
     std::future<void> tableDataFuture;
 
     // Helper methods
-    redisReply *executeRedisCommand(const std::string &command);
+    redisReply *executeRedisCommand(const std::string &command) const;
     std::string formatRedisReply(redisReply *reply);
     std::vector<std::string> parseRedisCommand(const std::string &command);
     void groupKeysByPattern();

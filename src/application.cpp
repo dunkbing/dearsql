@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "platform/default_platform.hpp"
 #include "platform/macos_platform.hpp"
@@ -167,7 +168,7 @@ void Application::cleanup() {
     std::cout << "Application cleanup completed" << std::endl;
 }
 
-void Application::setDarkTheme(bool dark) {
+void Application::setDarkTheme(const bool dark) {
     darkTheme = dark;
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
@@ -213,6 +214,8 @@ void Application::restorePreviousConnections() {
                                                  conn.username, conn.password);
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
+        } else if (conn.type == "redis") {
+            db = std::make_shared<RedisDatabase>(conn.name, conn.host, conn.port);
         }
 
         if (db) {

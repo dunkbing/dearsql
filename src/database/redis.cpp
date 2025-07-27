@@ -24,7 +24,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 
     try {
         // Use redisConnectWithTimeout for better timeout handling
-        struct timeval timeout = {5, 0}; // 5 seconds timeout
+        constexpr timeval timeout = {5, 0}; // 5 seconds timeout
         context = redisConnectWithTimeout(host.c_str(), port, timeout);
         if (!context || context->err) {
             std::string error = context ? context->errstr : "Failed to allocate redis context";
@@ -39,7 +39,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 
         // Authenticate if password is provided
         if (!password.empty()) {
-            redisReply *reply = (redisReply *)redisCommand(context, "AUTH %s", password.c_str());
+            auto *reply = (redisReply *)redisCommand(context, "AUTH %s", password.c_str());
             if (!reply || reply->type == REDIS_REPLY_ERROR) {
                 std::string error = reply ? reply->str : "Authentication failed";
                 lastConnectionError = error;
@@ -53,7 +53,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         }
 
         // Test connection with PING
-        redisReply *reply = (redisReply *)redisCommand(context, "PING");
+        auto *reply = (redisReply *)redisCommand(context, "PING");
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
             std::string error = reply ? reply->str : "Connection test failed";
             lastConnectionError = error;
@@ -159,10 +159,6 @@ bool RedisDatabase::isLoadingTables() const {
 }
 
 void RedisDatabase::checkTablesStatusAsync() {
-    if (!loadingTables) {
-        return;
-    }
-
     if (tablesFuture.valid() &&
         tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -233,7 +229,7 @@ bool RedisDatabase::areSequencesLoaded() const {
     return sequencesLoaded;
 }
 
-void RedisDatabase::setSequencesLoaded(bool loaded) {
+void RedisDatabase::setSequencesLoaded(const bool loaded) {
     sequencesLoaded = loaded;
 }
 
@@ -463,14 +459,14 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, int lim
     }
 
     try {
-        redisReply *reply = (redisReply *)redisCommand(context, "KEYS %s", pattern.c_str());
+        auto *reply = (redisReply *)redisCommand(context, "KEYS %s", pattern.c_str());
         if (!reply || reply->type != REDIS_REPLY_ARRAY) {
             if (reply)
                 freeReplyObject(reply);
             return keys;
         }
 
-        int count = std::min(limit, static_cast<int>(reply->elements));
+        const int count = std::min(limit, static_cast<int>(reply->elements));
         for (int i = 0; i < count; ++i) {
             if (reply->element[i]->type == REDIS_REPLY_STRING) {
                 RedisKey key;
@@ -499,7 +495,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
         std::string type = getKeyType(key);
 
         if (type == "string") {
-            redisReply *reply = (redisReply *)redisCommand(context, "GET %s", key.c_str());
+            auto *reply = (redisReply *)redisCommand(context, "GET %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_STRING) {
                 std::string value = reply->str;
                 freeReplyObject(reply);
@@ -508,7 +504,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "list") {
-            redisReply *reply = (redisReply *)redisCommand(context, "LRANGE %s 0 4", key.c_str());
+            auto *reply = (redisReply *)redisCommand(context, "LRANGE %s 0 4", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "[";
@@ -527,7 +523,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "set") {
-            redisReply *reply = (redisReply *)redisCommand(context, "SMEMBERS %s", key.c_str());
+            auto *reply = (redisReply *)redisCommand(context, "SMEMBERS %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "{";
@@ -546,7 +542,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "hash") {
-            redisReply *reply = (redisReply *)redisCommand(context, "HGETALL %s", key.c_str());
+            auto *reply = (redisReply *)redisCommand(context, "HGETALL %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "{";
@@ -566,7 +562,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "zset") {
-            redisReply *reply =
+            auto *reply =
                 (redisReply *)redisCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
@@ -593,13 +589,13 @@ std::string RedisDatabase::getKeyValue(const std::string &key) {
     return "[Unable to retrieve value]";
 }
 
-std::string RedisDatabase::getKeyType(const std::string &key) {
+std::string RedisDatabase::getKeyType(const std::string &key) const {
     if (!isConnected()) {
         return "unknown";
     }
 
     try {
-        redisReply *reply = (redisReply *)redisCommand(context, "TYPE %s", key.c_str());
+        auto *reply = (redisReply *)redisCommand(context, "TYPE %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_STATUS) {
             std::string type = reply->str;
             freeReplyObject(reply);
@@ -614,15 +610,15 @@ std::string RedisDatabase::getKeyType(const std::string &key) {
     return "unknown";
 }
 
-int64_t RedisDatabase::getKeyTTL(const std::string &key) {
+int64_t RedisDatabase::getKeyTTL(const std::string &key) const {
     if (!isConnected()) {
         return -1;
     }
 
     try {
-        redisReply *reply = (redisReply *)redisCommand(context, "TTL %s", key.c_str());
+        auto *reply = (redisReply *)redisCommand(context, "TTL %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_INTEGER) {
-            int64_t ttl = reply->integer;
+            const int64_t ttl = reply->integer;
             freeReplyObject(reply);
             return ttl;
         }
@@ -644,7 +640,7 @@ std::vector<std::string> RedisDatabase::getTableNames() {
     }
 
     // For Redis, we'll return common key patterns
-    patterns.push_back("*"); // All keys
+    patterns.emplace_back("*"); // All keys
 
     return patterns;
 }
@@ -696,7 +692,7 @@ std::vector<std::string> RedisDatabase::getSequenceNames() {
 }
 
 // Private helper methods
-redisReply *RedisDatabase::executeRedisCommand(const std::string &command) {
+redisReply *RedisDatabase::executeRedisCommand(const std::string &command) const {
     if (!isConnected()) {
         return nullptr;
     }
@@ -716,7 +712,7 @@ std::string RedisDatabase::formatRedisReply(redisReply *reply) {
 
     switch (reply->type) {
     case REDIS_REPLY_STRING:
-        return std::string(reply->str, reply->len);
+        return {reply->str, reply->len};
     case REDIS_REPLY_ARRAY: {
         std::stringstream ss;
         ss << "[";
@@ -733,7 +729,7 @@ std::string RedisDatabase::formatRedisReply(redisReply *reply) {
     case REDIS_REPLY_NIL:
         return "NULL";
     case REDIS_REPLY_STATUS:
-        return std::string(reply->str, reply->len);
+        return {reply->str, reply->len};
     case REDIS_REPLY_ERROR:
         return "ERROR: " + std::string(reply->str, reply->len);
     default:
@@ -759,8 +755,9 @@ void RedisDatabase::groupKeysByPattern() {
     }
 
     // Create a single "table" representing all keys
+    // Use "*" as the name so it can be used as a Redis key pattern
     Table allKeys;
-    allKeys.name = "All Keys";
+    allKeys.name = "*";
     allKeys.columns = getTableColumns("*");
     tables.push_back(allKeys);
 }

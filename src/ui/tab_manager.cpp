@@ -139,7 +139,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databas
 void TabManager::renderTabs() {
     // Render each tab as a separate dockable window
     for (auto it = tabs.begin(); it != tabs.end();) {
-        auto &tab = *it;
+        const auto &tab = *it;
 
         // Handle tab focusing by setting next window focus
         if (tab->shouldFocus()) {
@@ -150,7 +150,7 @@ void TabManager::renderTabs() {
         bool isOpen = tab->isOpen();
 
         // Create a dockable window for each tab
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar;
+        constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar;
 
         if (ImGui::Begin(tab->getName().c_str(), &isOpen, windowFlags)) {
             tab->render();
@@ -162,9 +162,6 @@ void TabManager::renderTabs() {
 
         if (!isOpen) {
             it = tabs.erase(it);
-            // Force docking layout to be rebuilt when a tab is closed
-            auto &app = Application::getInstance();
-            app.resetDockingLayout();
         } else {
             ++it;
         }

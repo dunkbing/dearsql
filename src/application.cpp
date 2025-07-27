@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "platform/default_platform.hpp"
@@ -198,7 +199,7 @@ void Application::restorePreviousConnections() {
         return;
     }
 
-    auto savedConnections = appState->getSavedConnections();
+    const auto savedConnections = appState->getSavedConnections();
     std::cout << "Restoring " << savedConnections.size() << " previous connections..." << std::endl;
 
     for (const auto &conn : savedConnections) {
@@ -207,6 +208,9 @@ void Application::restorePreviousConnections() {
         if (conn.type == "postgresql") {
             db = std::make_shared<PostgresDatabase>(conn.name, conn.host, conn.port, conn.database,
                                                     conn.username, conn.password);
+        } else if (conn.type == "mysql") {
+            db = std::make_shared<MySQLDatabase>(conn.name, conn.host, conn.port, conn.database,
+                                                 conn.username, conn.password);
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
         }

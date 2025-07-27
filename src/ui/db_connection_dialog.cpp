@@ -6,7 +6,6 @@
 #include "utils/file_dialog.hpp"
 #include <chrono>
 #include <imgui.h>
-#include <iostream>
 #include <themes.hpp>
 
 void DatabaseConnectionDialog::showDialog() {
@@ -24,7 +23,7 @@ void DatabaseConnectionDialog::showDialog() {
     if (showingTypeSelection) {
         renderTypeSelection();
     } else if (showingPostgreSQLConnection) {
-        renderPostgreSQLConnection();
+        renderPostgresConnection();
     } else if (showingMySQLConnection) {
         renderMySQLConnection();
     } else if (showingSavedConnections) {
@@ -35,7 +34,7 @@ void DatabaseConnectionDialog::showDialog() {
 void DatabaseConnectionDialog::renderTypeSelection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(300, 360), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Choose how to connect to a database:");
@@ -69,7 +68,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         if (ImGui::Button("Next", ImVec2(100, 0))) {
             if (selectedDatabaseType == 0) {
                 // SQLite - directly open file dialog
-                auto db = createSQLiteDatabase();
+                const auto db = createSQLiteDatabase();
                 if (db) {
                     // Save SQLite connection to app state
                     SavedConnection conn;
@@ -77,7 +76,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                     conn.type = "sqlite";
                     conn.path = db->getPath();
 
-                    auto &app = Application::getInstance();
+                    const auto &app = Application::getInstance();
                     app.getAppState()->saveConnection(conn);
 
                     result = db;
@@ -85,10 +84,10 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 ImGui::CloseCurrentPopup();
                 reset();
             } else if (selectedDatabaseType == 1) {
-                // PostgreSQL - show connection dialog
+                // Postgres - show connection dialog
                 showingTypeSelection = false;
                 showingPostgreSQLConnection = true;
-                port = 5432; // Set default PostgreSQL port
+                port = 5432; // Set default Postgres port
             } else if (selectedDatabaseType == 2) {
                 // MySQL - show connection dialog
                 showingTypeSelection = false;
@@ -106,13 +105,13 @@ void DatabaseConnectionDialog::renderTypeSelection() {
     }
 }
 
-void DatabaseConnectionDialog::renderPostgreSQLConnection() {
+void DatabaseConnectionDialog::renderPostgresConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter PostgreSQL connection details:");
+        ImGui::Text("Enter Postgres connection details:");
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -180,6 +179,15 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         if (!errorMessage.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
             ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy")) {
+                ImGui::SetClipboardText(errorMessage.c_str());
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Copy error message to clipboard");
+                ImGui::EndTooltip();
+            }
             ImGui::PopStyleColor();
             ImGui::Spacing();
         }
@@ -234,7 +242,7 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
 void DatabaseConnectionDialog::renderMySQLConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter MySQL connection details:");
@@ -305,6 +313,15 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
         if (!errorMessage.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
             ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy")) {
+                ImGui::SetClipboardText(errorMessage.c_str());
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Copy error message to clipboard");
+                ImGui::EndTooltip();
+            }
             ImGui::PopStyleColor();
             ImGui::Spacing();
         }
@@ -476,7 +493,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 strncpy(username, conn.username.c_str(), sizeof(username) - 1);
                 strncpy(password, conn.password.c_str(), sizeof(password) - 1);
 
-                auto db = createPostgreSQLDatabase();
+                const auto db = createPostgreSQLDatabase();
                 if (db) {
                     auto [success, error] = db->connect();
                     if (success) {
@@ -517,12 +534,12 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 }
             } else if (conn.type == "sqlite") {
                 // Create SQLite database from saved path
-                auto db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
+                const auto db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
                 if (db) {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        auto &app = Application::getInstance();
+                        const auto &app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;
@@ -560,6 +577,15 @@ void DatabaseConnectionDialog::renderSavedConnections() {
             ImGui::Spacing();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
             ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy")) {
+                ImGui::SetClipboardText(errorMessage.c_str());
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Copy error message to clipboard");
+                ImGui::EndTooltip();
+            }
             ImGui::PopStyleColor();
         }
 
@@ -629,7 +655,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.username = std::string(username);
             conn.password = std::string(password);
 
-            auto &app = Application::getInstance();
+            const auto &app = Application::getInstance();
             app.getAppState()->saveConnection(conn);
 
             result = db;

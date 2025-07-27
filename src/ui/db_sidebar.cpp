@@ -252,6 +252,13 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
                 PostgresHierarchy::renderPostgresHierarchy(pgDb);
             } else if (db->getType() == DatabaseType::MYSQL) {
                 auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
+                // Check for async loading completion for MySQL
+                if (db->isLoadingTables()) {
+                    db->checkTablesStatusAsync();
+                }
+                if (db->isLoadingViews()) {
+                    db->checkViewsStatusAsync();
+                }
                 MySQLHierarchy::renderMySQLHierarchy(mysqlDb);
             }
         }

@@ -66,7 +66,7 @@ private:
 
     // Dialog rendering functions
     void renderTypeSelection();
-    void renderPostgreSQLConnection();
+    void renderPostgresConnection();
     void renderMySQLConnection();
     void renderSavedConnections();
     void loadSavedConnections();

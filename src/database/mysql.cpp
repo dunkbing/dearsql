@@ -7,9 +7,9 @@ MySQLDatabase::MySQLDatabase(const std::string &name, const std::string &host, i
                              const std::string &password)
     : name(name), host(host), port(port), database(database), username(username),
       password(password) {
-    // SOCI MySQL connection string format: "db=database host=hostname user=username
-    // password=password"
-    connectionString = "db=" + database + " host=" + host + " port=" + std::to_string(port);
+    // SOCI MySQL connection string format: "host=hostname port=port dbname=database user=username
+    // password=password" Use TCP/IP connection to avoid Unix socket issues
+    connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
 
     if (!username.empty()) {
         connectionString += " user=" + username;
@@ -304,12 +304,12 @@ std::string MySQLDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return "Error: Database session is not available";
         }
 
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const soci::rowset rs = (session->prepare << query);
 
         std::ostringstream result;
         bool first_row = true;
@@ -358,15 +358,15 @@ MySQLDatabase::executeQueryStructured(const std::string &query) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return {columnNames, data};
         }
 
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const soci::rowset rs = (session->prepare << query);
 
         // Get column names if available
-        auto it = rs.begin();
+        const auto it = rs.begin();
         if (it != rs.end()) {
             const soci::row &firstRow = *it;
             for (std::size_t i = 0; i < firstRow.size(); ++i) {
@@ -395,10 +395,10 @@ MySQLDatabase::executeQueryStructured(const std::string &query) {
 
         return {columnNames, data};
     } catch (const soci::soci_error &e) {
-        // Return empty result on error
+        std::cout << "[soci] MySQL Error: " + std::string(e.what());
         return {columnNames, data};
     } catch (const std::exception &e) {
-        // Return empty result on error
+        std::cout << "MySQL Error: " + std::string(e.what());
         return {columnNames, data};
     }
 }
@@ -411,14 +411,14 @@ std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::str
 
     std::vector<std::vector<std::string>> data;
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return data;
         }
 
         std::string query = "SELECT * FROM `" + tableName + "` LIMIT " + std::to_string(limit) +
                             " OFFSET " + std::to_string(offset);
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        soci::rowset rs = (session->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row &row = *it;
@@ -426,9 +426,77 @@ std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::str
 
             for (std::size_t i = 0; i != row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
-                    rowData.push_back("");
-                } else {
-                    rowData.push_back(row.get<std::string>(i, ""));
+                    rowData.emplace_back("NULL");
+                    continue;
+                }
+                switch (soci::column_properties cp = row.get_properties(i); cp.get_db_type()) {
+                case soci::db_string:
+                    rowData.emplace_back(row.get<std::string>(i));
+                    break;
+                case soci::db_wstring:
+                    // convert to UTF-8 string
+                    {
+                        auto ws = row.get<std::wstring>(i);
+                        std::string utf8_str(ws.begin(), ws.end());
+                        rowData.emplace_back(utf8_str);
+                    }
+                    break;
+                case soci::db_int8:
+                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                    break;
+                case soci::db_uint8:
+                    rowData.emplace_back(std::to_string(row.get<uint8_t>(i)));
+                    break;
+                case soci::db_int16:
+                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                    break;
+                case soci::db_uint16:
+                    rowData.emplace_back(std::to_string(row.get<uint16_t>(i)));
+                    break;
+                case soci::db_int32:
+                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                    break;
+                case soci::db_uint32:
+                    rowData.emplace_back(std::to_string(row.get<uint32_t>(i)));
+                    break;
+                case soci::db_int64:
+                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
+                    break;
+                case soci::db_uint64:
+                    rowData.emplace_back(std::to_string(row.get<uint64_t>(i)));
+                    break;
+                case soci::db_double:
+                    rowData.emplace_back(std::to_string(row.get<double>(i)));
+                    break;
+                case soci::db_date: {
+                    auto date = row.get<std::tm>(i);
+                    char buffer[32];
+                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
+                    rowData.emplace_back(buffer);
+                } break;
+                case soci::db_blob:
+                    rowData.emplace_back("[BINARY DATA]");
+                    break;
+                case soci::db_xml:
+                    try {
+                        rowData.emplace_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.emplace_back("[XML DATA]");
+                    }
+                    break;
+                default: {
+                    // Log the unknown type for debugging
+                    std::cout << "Unknown MySQL data type: " << static_cast<int>(cp.get_db_type())
+                              << " for column: " << cp.get_name() << std::endl;
+
+                    try {
+                        rowData.emplace_back(row.get<std::string>(i));
+                    } catch (const std::bad_cast &) {
+                        rowData.emplace_back("[UNKNOWN DATA TYPE: " +
+                                             std::to_string(static_cast<int>(cp.get_db_type())) +
+                                             "]");
+                    }
+                } break;
                 }
             }
             data.push_back(rowData);
@@ -447,20 +515,20 @@ std::vector<std::string> MySQLDatabase::getColumnNames(const std::string &tableN
 
     std::vector<std::string> columns;
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return columns;
         }
 
-        std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
+        const soci::rowset rs = (session->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row &row = *it;
             columns.push_back(row.get<std::string>(0));
         }
     } catch (const soci::soci_error &e) {
-        std::cerr << "MySQL Error getting column names: " << e.what() << std::endl;
+        std::cerr << "[soci] MySQL Error getting column names: " << e.what() << std::endl;
     }
 
     return columns;
@@ -472,13 +540,13 @@ int MySQLDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return 0;
         }
 
         int count = 0;
-        std::string query = "SELECT COUNT(*) FROM `" + tableName + "`";
+        const std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
         *session << query, soci::into(count);
         return count;
     } catch (const soci::soci_error &e) {
@@ -527,7 +595,25 @@ bool MySQLDatabase::isLoadingTableData() const {
 }
 
 void MySQLDatabase::checkTableDataStatusAsync() {
-    // Status is managed by atomic flags
+    if (!loadingTableData.load()) {
+        return;
+    }
+
+    if (tableDataFuture.valid() &&
+        tableDataFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            tableDataFuture.get(); // This will throw if there was an exception
+            // The async operation handles setting hasTableDataReady and loadingTableData flags
+        } catch (const std::exception &e) {
+            std::cerr << "Error loading table data: " << e.what() << std::endl;
+            loadingTableData.store(false);
+            hasTableDataReady.store(false);
+            // Clear results on error
+            tableDataResult.clear();
+            columnNamesResult.clear();
+            rowCountResult = 0;
+        }
+    }
 }
 
 bool MySQLDatabase::hasTableDataResult() const {
@@ -584,13 +670,13 @@ std::vector<std::string> MySQLDatabase::getTableNames() {
 
     std::vector<std::string> tableNames;
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return tableNames;
         }
 
-        std::string query = "SHOW TABLES";
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const std::string query = "SHOW TABLES";
+        const soci::rowset rs = (session->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row &row = *it;
@@ -610,13 +696,13 @@ std::vector<Column> MySQLDatabase::getTableColumns(const std::string &tableName)
 
     std::vector<Column> columns;
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return columns;
         }
 
-        std::string query = "DESCRIBE `" + tableName + "`";
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const std::string query = std::format("DESCRIBE `{}`", tableName);
+        const soci::rowset rs = (session->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row &row = *it;
@@ -641,13 +727,13 @@ std::vector<std::string> MySQLDatabase::getViewNames() {
 
     std::vector<std::string> viewNames;
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session) {
             return viewNames;
         }
 
-        std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
-        soci::rowset<soci::row> rs = (session->prepare << query);
+        const std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
+        const soci::rowset rs = (session->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row &row = *it;

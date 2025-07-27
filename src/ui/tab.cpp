@@ -488,6 +488,13 @@ void TableViewerTab::render() {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
         ImGui::TextWrapped("Error loading data: %s", loadingError.c_str());
         ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Copy")) {
+            const std::string errorText = "Error loading data: " + loadingError;
+            ImGui::SetClipboardText(errorText.c_str());
+        }
+
         ImGui::Separator();
     }
 
@@ -517,10 +524,12 @@ void TableViewerTab::loadData() {
     auto &app = Application::getInstance();
     auto &databases = app.getDatabases();
 
-    // Find database
+    // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
-        if (database->getPath() == databasePath && database->isConnected()) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
             db = database;
             break;
         }
@@ -644,10 +653,12 @@ void TableViewerTab::loadDataAsync() {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database
+    // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
-        if (database->getPath() == databasePath && database->isConnected()) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
             db = database;
             break;
         }
@@ -679,10 +690,12 @@ void TableViewerTab::checkAsyncLoadStatus() {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database
+    // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
-        if (database->getPath() == databasePath && database->isConnected()) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
             db = database;
             break;
         }
@@ -695,7 +708,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
         return;
     }
 
-    // Check async load status
+    // Always check the async status first
     db->checkTableDataStatusAsync();
 
     if (db->hasTableDataResult()) {
@@ -725,10 +738,12 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database
+    // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
-        if (database->getPath() == databasePath && database->isConnected()) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
             db = database;
             break;
         }
@@ -760,10 +775,12 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database
+    // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
-        if (database->getPath() == databasePath && database->isConnected()) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
             db = database;
             break;
         }

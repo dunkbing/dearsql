@@ -317,14 +317,17 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
             db->refreshSequences();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Retry Connection") && db->hasAttemptedConnection() &&
-            !db->isConnected()) {
+        if (ImGui::MenuItem("Refresh")) {
+            // Disconnect first to reset connection state
+            db->disconnect();
             // Reset connection attempt state to allow retry
             db->setAttemptedConnection(false);
             db->setTablesLoaded(false);
             db->setViewsLoaded(false);
             db->setSequencesLoaded(false);
             db->setLastConnectionError("");
+            // Start a new connection attempt
+            db->startConnectionAsync();
         }
         if (ImGui::MenuItem("New SQL Editor")) {
             app.getTabManager()->createSQLEditorTab("", db->getConnectionString());

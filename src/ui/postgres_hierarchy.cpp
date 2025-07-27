@@ -155,6 +155,15 @@ namespace {
             UIUtils::Spinner("##sequences_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         }
 
+        // Context menu for Sequences section
+        if (ImGui::BeginPopupContextItem("sequences_context_menu")) {
+            if (ImGui::MenuItem("Refresh")) {
+                pgDb->setSequencesLoaded(false);
+                pgDb->refreshSequences();
+            }
+            ImGui::EndPopup();
+        }
+
         // Load sequences when the tree node is opened and sequences haven't been loaded yet
         if (sequencesOpen && !pgDb->areSequencesLoaded() && !pgDb->isLoadingSequences()) {
             std::cout

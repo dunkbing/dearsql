@@ -233,6 +233,15 @@ namespace HierarchyHelpers {
             UIUtils::Spinner("##tables_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         }
 
+        // Context menu for Tables section
+        if (ImGui::BeginPopupContextItem("tables_context_menu")) {
+            if (ImGui::MenuItem("Refresh")) {
+                db->setTablesLoaded(false);
+                db->refreshTables();
+            }
+            ImGui::EndPopup();
+        }
+
         // Load tables when the tree node is opened and tables haven't been loaded yet
         if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
             std::cout << "Tables node expanded and tables not loaded yet, attempting to load..."

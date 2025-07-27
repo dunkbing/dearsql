@@ -21,37 +21,37 @@ public:
 
     // Main application lifecycle
     bool initialize();
-    void run();
+    void run() const;
     void cleanup();
 
     // Getters for managers and state
-    TabManager *getTabManager() const {
+    [[nodiscard]] TabManager *getTabManager() const {
         return tabManager.get();
     }
-    DatabaseSidebar *getDatabaseSidebar() const {
+    [[nodiscard]] DatabaseSidebar *getDatabaseSidebar() const {
         return databaseSidebar.get();
     }
-    FileDialog *getFileDialog() const {
+    [[nodiscard]] FileDialog *getFileDialog() const {
         return fileDialog.get();
     }
-    AppState *getAppState() const {
+    [[nodiscard]] AppState *getAppState() const {
         return appState.get();
     }
 
     // Theme management
-    bool isDarkTheme() const {
+    [[nodiscard]] bool isDarkTheme() const {
         return darkTheme;
     }
     void setDarkTheme(bool dark);
 
     // Selection state
-    int getSelectedDatabase() const {
+    [[nodiscard]] int getSelectedDatabase() const {
         return selectedDatabase;
     }
     void setSelectedDatabase(const int index) {
         selectedDatabase = index;
     }
-    int getSelectedTable() const {
+    [[nodiscard]] int getSelectedTable() const {
         return selectedTable;
     }
     void setSelectedTable(const int index) {
@@ -59,10 +59,10 @@ public:
     }
 
     // UI state
-    bool isDockingLayoutInitialized() const {
+    [[nodiscard]] bool isDockingLayoutInitialized() const {
         return dockingLayoutInitialized;
     }
-    void setDockingLayoutInitialized(bool initialized) {
+    void setDockingLayoutInitialized(const bool initialized) {
         dockingLayoutInitialized = initialized;
     }
     void resetDockingLayout() {
@@ -73,23 +73,23 @@ public:
     std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() {
         return databases;
     }
-    const std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() const {
+    [[nodiscard]] const std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() const {
         return databases;
     }
     void addDatabase(const std::shared_ptr<DatabaseInterface> &db);
-    void removeDatabase(size_t index);
+    void removeDatabase(int index);
     void restorePreviousConnections();
 
     // Window reference
-    GLFWwindow *getWindow() const {
+    [[nodiscard]] GLFWwindow *getWindow() const {
         return window;
     }
 
     // Sidebar visibility
-    bool isSidebarVisible() const {
+    [[nodiscard]] bool isSidebarVisible() const {
         return sidebarVisible;
     }
-    void setSidebarVisible(bool visible) {
+    void setSidebarVisible(const bool visible) {
         if (sidebarVisible != visible) {
             sidebarVisible = visible;
             targetSidebarWidth = visible ? 0.25f : 0.0f;
@@ -98,9 +98,9 @@ public:
 
     // Platform-specific methods
 #ifdef USE_METAL_BACKEND
-    void onConnectButtonClicked();
-    void onSidebarToggleClicked();
-    float getTitlebarHeight() const;
+    void onConnectButtonClicked() const;
+    void onSidebarToggleClicked() const;
+    [[nodiscard]] float getTitlebarHeight() const;
 #endif
 
 private:
@@ -132,7 +132,7 @@ private:
 
     // Private helper methods
     bool initializeGLFW();
-    bool initializeImGui();
+    bool initializeImGui() const;
     static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
     void renderMenuBar();

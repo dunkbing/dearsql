@@ -96,7 +96,7 @@ bool Application::initialize() {
     return true;
 }
 
-void Application::run() {
+void Application::run() const {
 #ifdef USE_OPENGL_BACKEND
     glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
                  darkTheme ? 0.137f : 0.957f, 0.98f);
@@ -175,7 +175,7 @@ void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
     databases.push_back(db);
 }
 
-void Application::removeDatabase(size_t index) {
+void Application::removeDatabase(const int index) {
     if (index < databases.size()) {
         const auto &db = databases[index];
         if (db) {
@@ -257,7 +257,7 @@ bool Application::initializeGLFW() {
     return true;
 }
 
-bool Application::initializeImGui() {
+bool Application::initializeImGui() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -295,7 +295,7 @@ void Application::setupFonts() {
     ImFontConfig fontConfig;
 
     // load embedded fonts first
-    size_t embeddedFontCount = getEmbeddedFontCount();
+    const size_t embeddedFontCount = getEmbeddedFontCount();
     if (embeddedFontCount > 0) {
         const EmbeddedFont *embeddedFonts = getEmbeddedFonts();
         for (size_t i = 0; i < embeddedFontCount; ++i) {
@@ -316,8 +316,8 @@ void Application::setupFonts() {
             // Don't let ImGui free the embedded data
             embeddedFontConfig.FontDataOwnedByAtlas = false;
 
-            ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF((void *)font.data, (int)font.size,
-                                                                16.0f, &embeddedFontConfig, ranges);
+            const ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF(
+                (void *)font.data, static_cast<int>(font.size), 16.0f, &embeddedFontConfig, ranges);
             if (!fontConfig.MergeMode) {
                 fontConfig.MergeMode = true;
             }
@@ -335,20 +335,20 @@ void Application::setupFonts() {
 #endif
 }
 
-void Application::setupDockingLayout(ImGuiID dockspaceId) {
+void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     if (dockingLayoutInitialized)
         return;
 
-    ImGui::DockBuilderRemoveNode(dockspaceId);
-    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
+    ImGui::DockBuilderRemoveNode(dockSpaceId);
+    ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
 
     // Check if we should use docking (no animation, just visibility)
     bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
     if (shouldUseDocking) {
         // Create split layout when stable, use current width for consistent size
-        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
+        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &rightDockId);
 
         // Make left dock node (sidebar) non-dockable and non-tabbed
@@ -368,18 +368,18 @@ void Application::setupDockingLayout(ImGuiID dockspaceId) {
     } else {
         // When sidebar is hidden, use full space for workspace and allow docking
         // Remove restrictive flags to allow tab docking in the main area
-        ImGui::DockBuilderDockWindow("Workspace", dockspaceId);
+        ImGui::DockBuilderDockWindow("Workspace", dockSpaceId);
 
-        // Dock any existing tab windows to the main dockspace
+        // Dock any existing tab windows to the main dock-space
         for (const auto &tab : tabManager->getTabs()) {
-            ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockspaceId);
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockSpaceId);
         }
 
         leftDockId = 0;
         rightDockId = 0;
     }
 
-    ImGui::DockBuilderFinish(dockspaceId);
+    ImGui::DockBuilderFinish(dockSpaceId);
     dockingLayoutInitialized = true;
 }
 
@@ -442,7 +442,7 @@ void Application::renderMainUI() {
     setupDockingLayout(dockSpaceId);
 
     // Database sidebar rendering
-    bool shouldShowSidebar = sidebarWidth > 0.01f;
+    const bool shouldShowSidebar = sidebarWidth > 0.01f;
 
     if (shouldShowSidebar) {
         ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
@@ -507,7 +507,7 @@ void Application::renderMenuBar() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("View")) {
             if (ImGui::MenuItem("Refresh All")) {
-                for (auto &db : databases) {
+                for (const auto &db : databases) {
                     if (db->isConnected()) {
                         db->refreshTables();
                     }
@@ -532,13 +532,13 @@ void Application::renderMenuBar() {
 
 // Platform-specific methods that delegate to the platform implementation
 #ifdef USE_METAL_BACKEND
-void Application::onConnectButtonClicked() {
+void Application::onConnectButtonClicked() const {
     if (platform_) {
         platform_->onConnectButtonClicked();
     }
 }
 
-void Application::onSidebarToggleClicked() {
+void Application::onSidebarToggleClicked() const {
     if (platform_) {
         platform_->onSidebarToggleClicked();
     }

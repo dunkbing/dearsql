@@ -1181,7 +1181,7 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
     std::vector<std::string> schemaNames;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        std::lock_guard lock(sessionMutex);
         if (!session || !loadingSchemas.load()) {
             return schemaNames;
         }

@@ -264,7 +264,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
     const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
 
-    if (ImGui::BeginPopupContextItem(0)) {
+    if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Refresh All")) {
             db->setTablesLoaded(false);
             db->setViewsLoaded(false);

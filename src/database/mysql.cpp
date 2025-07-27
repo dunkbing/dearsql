@@ -127,6 +127,10 @@ DatabaseType MySQLDatabase::getType() const {
     return DatabaseType::MYSQL;
 }
 
+const std::string &MySQLDatabase::getDatabaseName() const {
+    return database;
+}
+
 void MySQLDatabase::refreshTables() {
     if (loadingTables.load()) {
         return;

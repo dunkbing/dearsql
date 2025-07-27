@@ -28,6 +28,7 @@ public:
     const std::string &getPath() const override;
     void *getConnection() const override;
     DatabaseType getType() const override;
+    const std::string &getDatabaseName() const;
 
     // Table management
     void refreshTables() override;

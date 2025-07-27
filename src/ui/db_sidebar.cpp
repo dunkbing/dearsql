@@ -151,35 +151,40 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     }
 
     // Show loading indicator in database name if connecting
-    const std::string dbIcon =
-        (db->getType() == DatabaseType::SQLITE) ? ICON_FK_DATABASE : ICON_FK_POSTGRESQL;
-    const bool showSpinner = db->isConnecting();
-
-    // Create label with colored icon and normal text
-    std::string coloredLabel;
+    std::string dbIcon;
     if (db->getType() == DatabaseType::SQLITE) {
-        // Use ANSI-like color codes that ImGui can interpret, or build manually
-        coloredLabel = std::format("{} {}", dbIcon, db->getName());
+        dbIcon = ICON_FK_DATABASE;
+    } else if (db->getType() == DatabaseType::POSTGRESQL) {
+        dbIcon = ICON_FK_POSTGRESQL;
+    } else if (db->getType() == DatabaseType::MYSQL) {
+        dbIcon = ICON_FK_MYSQL;
     } else {
-        coloredLabel = std::format("{} {}", dbIcon, db->getName());
+        dbIcon = ICON_FK_DATABASE;
     }
+    const bool showSpinner = db->isConnecting();
 
     // Draw tree node with placeholder space for icon
     const std::string dbLabel = std::format("   {}", db->getName()); // 3 spaces for icon
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
 
     // Draw colored icon over the placeholder space
-    const ImVec2 dbIconPos =
+    const auto dbIconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-    ImGui::GetWindowDrawList()->AddText(
-        dbIconPos,
-        db->getType() == DatabaseType::SQLITE ? ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 1.0f, 1.0f))
-                                              :                 // Light blue for SQLite
-            ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Darker blue for PostgreSQL
-        dbIcon.c_str());
+    ImU32 iconColor;
+    if (db->getType() == DatabaseType::SQLITE) {
+        iconColor = ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Light blue
+    } else if (db->getType() == DatabaseType::POSTGRESQL) {
+        iconColor = ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Darker blue
+    } else if (db->getType() == DatabaseType::MYSQL) {
+        iconColor = ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)); // Orange
+    } else {
+        iconColor = ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)); // Gray for unknown
+    }
+
+    ImGui::GetWindowDrawList()->AddText(dbIconPos, iconColor, dbIcon.c_str());
 
     // Show spinner next to database name if connecting
     if (showSpinner) {
@@ -226,7 +231,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
         } else if (db->isConnected()) {
-            // Check for async loading completion for PostgreSQL
+            // Check for async loading completion for Postgres
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
                 if (pgDb->isLoadingSchemas()) {

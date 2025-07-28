@@ -568,7 +568,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
     }
 
     return std::make_shared<RedisDatabase>(std::string(connectionName), std::string(host), port,
-                                           passwordStr);
+                                           passwordStr, usernameStr);
 }
 
 void DatabaseConnectionDialog::loadSavedConnections() {

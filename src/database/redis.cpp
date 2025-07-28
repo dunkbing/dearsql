@@ -1,12 +1,15 @@
 #include "database/redis.hpp"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <format>
 #include <iostream>
 #include <sstream>
 
-RedisDatabase::RedisDatabase(std::string name, std::string host, int port, std::string password)
-    : name(std::move(name)), host(std::move(host)), port(port), password(std::move(password)) {
+RedisDatabase::RedisDatabase(std::string name, std::string host, int port, std::string password,
+                             std::string username)
+    : name(std::move(name)), host(std::move(host)), port(port), password(std::move(password)),
+      username(std::move(username)) {
     connectionString = std::format("redis://{}:{}", this->host, this->port);
 }
 
@@ -18,6 +21,13 @@ std::pair<bool, std::string> RedisDatabase::connect() {
     if (connected && context) {
         return {true, ""};
     }
+
+    // Reset connection state
+    if (context) {
+        redisFree(context);
+        context = nullptr;
+    }
+    connected = false;
 
     attemptedConnection = true;
     std::cout << "Attempting Redis connection to " << host << ":" << port << std::endl;
@@ -39,10 +49,25 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 
         // Authenticate if password is provided
         if (!password.empty()) {
-            auto *reply = (redisReply *)redisCommand(context, "AUTH %s", password.c_str());
+            std::cout << "Authenticating with Redis server..." << std::endl;
+
+            redisReply *reply = nullptr;
+
+            // Use Redis 6+ ACL authentication if username is provided
+            if (!username.empty()) {
+                std::cout << "Using Redis ACL authentication with username: " << username
+                          << std::endl;
+                reply = (redisReply *)redisCommand(context, "AUTH %s %s", username.c_str(),
+                                                   password.c_str());
+            } else {
+                std::cout << "Using legacy Redis authentication (password only)" << std::endl;
+                reply = (redisReply *)redisCommand(context, "AUTH %s", password.c_str());
+            }
+
             if (!reply || reply->type == REDIS_REPLY_ERROR) {
                 std::string error = reply ? reply->str : "Authentication failed";
                 lastConnectionError = error;
+                std::cout << "Redis authentication failed: " << error << std::endl;
                 if (reply)
                     freeReplyObject(reply);
                 redisFree(context);
@@ -50,6 +75,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
                 return {false, error};
             }
             freeReplyObject(reply);
+            std::cout << "Redis authentication successful" << std::endl;
         }
 
         // Test connection with PING
@@ -86,6 +112,14 @@ void RedisDatabase::disconnect() {
         context = nullptr;
     }
     connected = false;
+    connecting = false;
+
+    // Reset loading states
+    loadingTables = false;
+    loadingTableData = false;
+    hasTableDataReady = false;
+
+    std::cout << "Disconnected from Redis: " << connectionString << std::endl;
 }
 
 bool RedisDatabase::isConnected() const {
@@ -239,9 +273,22 @@ std::string RedisDatabase::executeQuery(const std::string &command) {
     }
 
     try {
-        redisReply *reply = executeRedisCommand(command);
+        // Parse command into parts
+        auto commandParts = parseRedisCommand(command);
+        if (commandParts.empty()) {
+            return "Error: Empty command";
+        }
+
+        redisReply *reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
             return "Error: Failed to execute command";
+        }
+
+        // Check for Redis errors and return them directly
+        if (reply->type == REDIS_REPLY_ERROR) {
+            std::string error = "Error: " + std::string(reply->str);
+            freeReplyObject(reply);
+            return error;
         }
 
         std::string result = formatRedisReply(reply);
@@ -258,14 +305,27 @@ RedisDatabase::executeQueryStructured(const std::string &command) {
     std::vector<std::vector<std::string>> data;
 
     if (!isConnected()) {
-        data.push_back({"Error: Not connected to Redis server"});
+        // Return empty data and let the error be handled by the calling code
         return {columnNames, data};
     }
 
     try {
-        redisReply *reply = executeRedisCommand(command);
+        // Parse command into parts
+        auto commandParts = parseRedisCommand(command);
+        if (commandParts.empty()) {
+            // Return empty data for empty command
+            return {columnNames, data};
+        }
+
+        redisReply *reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
-            data.push_back({"Error: Failed to execute command"});
+            // Return empty data and let the error be handled by the calling code
+            return {columnNames, data};
+        }
+
+        // Check for Redis errors - return empty data so error can be shown in UI
+        if (reply->type == REDIS_REPLY_ERROR) {
+            freeReplyObject(reply);
             return {columnNames, data};
         }
 
@@ -285,7 +345,7 @@ RedisDatabase::executeQueryStructured(const std::string &command) {
         freeReplyObject(reply);
         return {columnNames, data};
     } catch (const std::exception &e) {
-        data.push_back({"Error: " + std::string(e.what())});
+        // Return empty data and let the error be handled by the calling code
         return {columnNames, data};
     }
 }
@@ -694,13 +754,47 @@ std::vector<std::string> RedisDatabase::getSequenceNames() {
 // Private helper methods
 redisReply *RedisDatabase::executeRedisCommand(const std::string &command) const {
     if (!isConnected()) {
+        std::cerr << "Redis command failed: Not connected" << std::endl;
         return nullptr;
     }
 
     try {
-        return (redisReply *)redisCommand(context, "%s", command.c_str());
+        auto *reply = (redisReply *)redisCommand(context, "%s", command.c_str());
+        if (reply && reply->type == REDIS_REPLY_ERROR) {
+            std::cerr << "Redis command error: " << reply->str << std::endl;
+        }
+        return reply;
     } catch (const std::exception &e) {
         std::cerr << "Error executing Redis command: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+redisReply *
+RedisDatabase::executeRedisCommandParsed(const std::vector<std::string> &commandParts) const {
+    if (!isConnected() || commandParts.empty()) {
+        std::cerr << "Redis parsed command failed: Not connected or empty command" << std::endl;
+        return nullptr;
+    }
+
+    try {
+        // Convert string vector to char* array for redisCommandArgv
+        std::vector<const char *> argv;
+        std::vector<size_t> argvlen;
+
+        for (const auto &part : commandParts) {
+            argv.push_back(part.c_str());
+            argvlen.push_back(part.length());
+        }
+
+        auto *reply = (redisReply *)redisCommandArgv(context, static_cast<int>(argv.size()),
+                                                     argv.data(), argvlen.data());
+        if (reply && reply->type == REDIS_REPLY_ERROR) {
+            std::cerr << "Redis parsed command error: " << reply->str << std::endl;
+        }
+        return reply;
+    } catch (const std::exception &e) {
+        std::cerr << "Error executing parsed Redis command: " << e.what() << std::endl;
         return nullptr;
     }
 }
@@ -739,11 +833,37 @@ std::string RedisDatabase::formatRedisReply(redisReply *reply) {
 
 std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string &command) {
     std::vector<std::string> parts;
-    std::stringstream ss(command);
-    std::string part;
+    std::string current;
+    bool inQuotes = false;
+    char quoteChar = '\0';
 
-    while (ss >> part) {
-        parts.push_back(part);
+    for (size_t i = 0; i < command.length(); ++i) {
+        char c = command[i];
+
+        if (!inQuotes) {
+            if (c == '"' || c == '\'') {
+                inQuotes = true;
+                quoteChar = c;
+            } else if (std::isspace(c)) {
+                if (!current.empty()) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current += c;
+            }
+        } else {
+            if (c == quoteChar) {
+                inQuotes = false;
+                quoteChar = '\0';
+            } else {
+                current += c;
+            }
+        }
+    }
+
+    if (!current.empty()) {
+        parts.push_back(current);
     }
 
     return parts;

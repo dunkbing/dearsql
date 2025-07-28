@@ -140,7 +140,6 @@ void SQLEditorTab::render() {
         }
 
         ImGui::Separator();
-        ImGui::Text("Results:");
 
         // Results display
         if (!queryError.empty()) {
@@ -156,9 +155,21 @@ void SQLEditorTab::render() {
                     ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
                 }
             } else {
+                // Show row count and execution time on the same line at the top
+                ImGui::Text("Rows: %zu", queryTableData.size());
+                if (queryTableData.size() >= 1000) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
+                }
+                if (lastQueryDuration.count() > 0) {
+                    ImGui::SameLine();
+                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+                }
+
                 // Calculate available height for the table within the results child window
-                float tableAvailableHeight = ImGui::GetContentRegionAvail().y -
-                                             40.0f; // Reserve 40px for row count info and padding
+                float tableAvailableHeight =
+                    ImGui::GetContentRegionAvail().y -
+                    20.0f; // Reserve 20px for padding since row count is now above
                 tableAvailableHeight =
                     std::max(tableAvailableHeight, 50.0f); // Ensure minimum height of 50px
 
@@ -174,17 +185,6 @@ void SQLEditorTab::render() {
                 tableRenderer.setData(queryTableData);
 
                 tableRenderer.render("QueryResults");
-
-                // Show row count and execution time
-                ImGui::Text("Rows: %zu", queryTableData.size());
-                if (queryTableData.size() >= 1000) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
-                }
-                if (lastQueryDuration.count() > 0) {
-                    ImGui::SameLine();
-                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
-                }
             }
         } else if (hasStructuredResults && queryColumnNames.empty()) {
             // Query executed successfully but no results (e.g., INSERT, UPDATE, DELETE)
@@ -243,6 +243,12 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
             // Time the query execution
             auto startTime = std::chrono::high_resolution_clock::now();
 
+            // For Redis, also get the text result to check for errors
+            std::string textResult;
+            if (targetDb->getType() == DatabaseType::REDIS) {
+                textResult = targetDb->executeQuery(query);
+            }
+
             // Get structured results for table display
             auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
 
@@ -252,6 +258,18 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
 
             // Check for cancellation before setting results
             if (shouldCancelQuery) {
+                return;
+            }
+
+            // For Redis, check if the text result contains an error
+            if (targetDb->getType() == DatabaseType::REDIS && textResult.find("Error:") == 0) {
+                queryResult = textResult;
+                queryError = textResult;
+                hasStructuredResults = false;
+                queryColumnNames.clear();
+                queryTableData.clear();
+                strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
+                resultBuffer[sizeof(resultBuffer) - 1] = '\0';
                 return;
             }
 

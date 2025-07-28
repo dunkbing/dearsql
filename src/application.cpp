@@ -215,7 +215,8 @@ void Application::restorePreviousConnections() {
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
         } else if (conn.type == "redis") {
-            db = std::make_shared<RedisDatabase>(conn.name, conn.host, conn.port);
+            db = std::make_shared<RedisDatabase>(conn.name, conn.host, conn.port, conn.password,
+                                                 conn.username);
         }
 
         if (db) {

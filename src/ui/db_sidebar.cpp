@@ -329,7 +329,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
             // Start a new connection attempt
             db->startConnectionAsync();
         }
-        if (ImGui::MenuItem("New SQL Editor")) {
+        if (ImGui::MenuItem("New Query Editor")) {
             app.getTabManager()->createSQLEditorTab("", db->getConnectionString());
         }
         if (ImGui::MenuItem("Disconnect")) {

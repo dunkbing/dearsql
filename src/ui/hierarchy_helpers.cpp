@@ -429,6 +429,40 @@ namespace HierarchyHelpers {
             }
         }
 
+        // Add Query node below All Keys
+        constexpr ImGuiTreeNodeFlags queryFlags = ImGuiTreeNodeFlags_Leaf |
+                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                  ImGuiTreeNodeFlags_FramePadding;
+
+        const std::string queryLabel = "   Query"; // 3 spaces for icon
+        ImGui::TreeNodeEx(queryLabel.c_str(), queryFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 queryIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            queryIconPos,
+            ImGui::GetColorU32(ImVec4(0.4f, 0.8f, 1.0f, 1.0f)), // Light blue for query
+            ICON_FA_TERMINAL);
+
+        // Double-click to open Redis query editor
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            auto &app = Application::getInstance();
+            app.getTabManager()->createSQLEditorTab("", redisDb->getConnectionString());
+        }
+
+        // Context menu for Query
+        if (ImGui::BeginPopupContextItem("query_context_menu")) {
+            if (ImGui::MenuItem("New Query Editor")) {
+                auto &app = Application::getInstance();
+                app.getTabManager()->createSQLEditorTab("", redisDb->getConnectionString());
+            }
+            ImGui::EndPopup();
+        }
+
         // Redis-specific info section
         constexpr ImGuiTreeNodeFlags infoFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |

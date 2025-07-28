@@ -13,7 +13,8 @@ struct RedisKey {
 
 class RedisDatabase final : public DatabaseInterface {
 public:
-    RedisDatabase(std::string name, std::string host, int port, std::string password = "");
+    RedisDatabase(std::string name, std::string host, int port, std::string password = "",
+                  std::string username = "");
     ~RedisDatabase() override;
 
     // Connection management
@@ -103,6 +104,7 @@ private:
     std::string host;
     int port;
     std::string password;
+    std::string username;
     std::string connectionString;
     redisContext *context = nullptr;
     std::vector<Table> tables;          // Will represent key groups
@@ -134,6 +136,7 @@ private:
 
     // Helper methods
     redisReply *executeRedisCommand(const std::string &command) const;
+    redisReply *executeRedisCommandParsed(const std::vector<std::string> &commandParts) const;
     std::string formatRedisReply(redisReply *reply);
     std::vector<std::string> parseRedisCommand(const std::string &command);
     void groupKeysByPattern();

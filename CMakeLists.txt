@@ -241,5 +241,12 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "Dear SQL"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
     )
+    
+    # Copy the icon file to the Resources directory
+    set_source_files_properties(assets/AppIcon.icns PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    target_sources(${PROJECT_NAME} PRIVATE assets/AppIcon.icns)
 endif()

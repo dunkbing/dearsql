@@ -2,6 +2,15 @@
 
 A simple, cross-platform database client built with Dear ImGui.
 
+## Features
+
+- Support SQLite, PostgreSQL, MySQL, and Redis connections
+- Cross-platform: macOS (Metal), Windows/Linux (OpenGL)
+- Database browser: Sidebar for exploring schemas, tables, and structure
+- Native file dialogs for sqlite files
+- Saves and restores previous database connections
+- Run SQL queries with formatted results display
+
 ## 🚀 Quick Start
 
 1. **Clone with submodules**:

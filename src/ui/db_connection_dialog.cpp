@@ -146,7 +146,7 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
-        ImGui::InputText("Database", database, sizeof(database));
+        ImGui::InputText("Database (?)", database, sizeof(database));
 
         ImGui::Spacing();
         ImGui::Text("Authentication:");
@@ -280,7 +280,7 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
-        ImGui::InputText("Database", database, sizeof(database));
+        ImGui::InputText("Database (optional)", database, sizeof(database));
 
         ImGui::Spacing();
         ImGui::Text("Authentication:");
@@ -516,7 +516,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabas
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase() {
-    if (strlen(connectionName) == 0 || strlen(database) == 0) {
+    if (strlen(connectionName) == 0) {
         return nullptr;
     }
 
@@ -529,12 +529,16 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDat
     std::string usernameStr = (authType == 0) ? std::string(username) : "";
     std::string passwordStr = (authType == 0) ? std::string(password) : "";
 
+    // Database name is optional - use "postgres" as default if empty
+    std::string databaseStr = strlen(database) > 0 ? std::string(database) : "postgres";
+
     return std::make_shared<PostgresDatabase>(std::string(connectionName), std::string(host), port,
-                                              std::string(database), usernameStr, passwordStr);
+                                              databaseStr, usernameStr, passwordStr,
+                                              showAllDatabases);
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase() {
-    if (strlen(connectionName) == 0 || strlen(database) == 0) {
+    if (strlen(connectionName) == 0) {
         return nullptr;
     }
 
@@ -547,8 +551,11 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase
     std::string usernameStr = (authType == 0) ? std::string(username) : "";
     std::string passwordStr = (authType == 0) ? std::string(password) : "";
 
+    // Database name is optional - use "mysql" as default if empty
+    std::string databaseStr = strlen(database) > 0 ? std::string(database) : "mysql";
+
     return std::make_shared<MySQLDatabase>(std::string(connectionName), std::string(host), port,
-                                           std::string(database), usernameStr, passwordStr);
+                                           databaseStr, usernameStr, passwordStr, showAllDatabases);
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase() {

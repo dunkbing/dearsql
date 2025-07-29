@@ -8,14 +8,31 @@
 
 PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &host, const int port,
                                    const std::string &database, const std::string &username,
-                                   const std::string &password)
+                                   const std::string &password, bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
-      password(password) {
+      password(password), showAllDatabases(showAllDatabases) {
 
     // Build connection string
     std::stringstream ss;
-    ss << "host=" << host << " port=" << port << " dbname=" << database << " user=" << username
-       << " password=" << password;
+
+    ss << "host=" << host << " port=" << port;
+
+    if (database.empty()) {
+        ss << " dbname=" << "postgres";
+    } else {
+        ss << " dbname=" << database;
+    }
+
+    // Only add user parameter if username is not empty
+    if (!username.empty()) {
+        ss << " user=" << username;
+    }
+
+    // Only add password parameter if password is not empty
+    if (!password.empty()) {
+        ss << " password=" << password;
+    }
+
     connectionString = ss.str();
 }
 
@@ -1211,4 +1228,94 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
 
     std::cout << "Query completed. Found " << schemaNames.size() << " schemas." << std::endl;
     return schemaNames;
+}
+
+std::vector<std::string> PostgresDatabase::getDatabaseNames() {
+    if (databasesLoaded) {
+        return availableDatabases;
+    }
+
+    availableDatabases.clear();
+
+    try {
+        std::lock_guard lock(sessionMutex);
+        if (!session) {
+            return availableDatabases;
+        }
+
+        const std::string sql =
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname";
+
+        std::cout << "Executing query to get database names..." << std::endl;
+        const soci::rowset rs = session->prepare << sql;
+
+        for (const auto &row : rs) {
+            auto dbName = row.get<std::string>(0);
+            std::cout << "Found database: " << dbName << std::endl;
+            availableDatabases.push_back(dbName);
+        }
+
+        databasesLoaded = true;
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Failed to execute database query: " << e.what() << std::endl;
+    }
+
+    std::cout << "Query completed. Found " << availableDatabases.size() << " databases."
+              << std::endl;
+    return availableDatabases;
+}
+
+std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::string &targetDatabase) {
+    if (database == targetDatabase && connected) {
+        return {true, ""}; // Already connected to the target database
+    }
+
+    // Disconnect from current database
+    disconnect();
+
+    // Clear all cached data since we're switching databases
+    tables.clear();
+    views.clear();
+    sequences.clear();
+    schemas.clear();
+    tablesLoaded = false;
+    viewsLoaded = false;
+    sequencesLoaded = false;
+    schemasLoaded = false;
+
+    // Update database name and connection string
+    database = targetDatabase;
+    std::stringstream ss;
+    ss << "host=" << host << " port=" << port << " dbname=" << database;
+
+    // Only add user parameter if username is not empty
+    if (!username.empty()) {
+        ss << " user=" << username;
+    }
+
+    // Only add password parameter if password is not empty
+    if (!password.empty()) {
+        ss << " password=" << password;
+    }
+
+    connectionString = ss.str();
+
+    // Connect to the new database
+    auto result = connect();
+
+    std::cout << "Switched to database: " << targetDatabase << " (success: " << result.first << ")"
+              << std::endl;
+    return result;
+}
+
+bool PostgresDatabase::isDatabaseExpanded(const std::string &dbName) const {
+    return expandedDatabases.find(dbName) != expandedDatabases.end();
+}
+
+void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, bool expanded) {
+    if (expanded) {
+        expandedDatabases.insert(dbName);
+    } else {
+        expandedDatabases.erase(dbName);
+    }
 }

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <future>
 #include <mutex>
+#include <set>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
 
@@ -11,7 +12,7 @@ class PostgresDatabase final : public DatabaseInterface {
 public:
     PostgresDatabase(const std::string &name, const std::string &host, int port,
                      const std::string &database, const std::string &username,
-                     const std::string &password);
+                     const std::string &password, bool showAllDatabases = false);
     ~PostgresDatabase() override;
 
     // Connection management
@@ -65,6 +66,18 @@ public:
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
     void checkSchemasStatusAsync();
+
+    // Database list methods
+    std::vector<std::string> getDatabaseNames();
+    bool shouldShowAllDatabases() const {
+        return showAllDatabases;
+    }
+    bool areDatabasesLoaded() const {
+        return databasesLoaded;
+    }
+    std::pair<bool, std::string> switchToDatabase(const std::string &targetDatabase);
+    bool isDatabaseExpanded(const std::string &dbName) const;
+    void setDatabaseExpanded(const std::string &dbName, bool expanded);
 
     // Query execution
     std::string executeQuery(const std::string &query) override;
@@ -123,17 +136,21 @@ private:
     std::string username;
     std::string password;
     std::string connectionString;
+    bool showAllDatabases;
     std::unique_ptr<soci::session> session;
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences;
     std::vector<Schema> schemas;
+    std::vector<std::string> availableDatabases;
+    std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool connected = false;
     bool expanded = false;
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false;
     bool schemasLoaded = false;
+    bool databasesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
 

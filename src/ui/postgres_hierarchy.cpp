@@ -15,6 +15,16 @@ namespace {
 
 namespace PostgresHierarchy {
     void renderPostgresHierarchy(PostgresDatabase *pgDb) {
+        if (pgDb->shouldShowAllDatabases()) {
+            // Show all databases from the server
+            renderAllDatabasesHierarchy(pgDb);
+        } else {
+            // Show only the connected database
+            renderSingleDatabaseHierarchy(pgDb);
+        }
+    }
+
+    void renderSingleDatabaseHierarchy(PostgresDatabase *pgDb) {
         // First show the connected database as a child node
         constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -64,6 +74,93 @@ namespace PostgresHierarchy {
             renderSchemasSection(pgDb);
 
             ImGui::TreePop();
+        }
+    }
+
+    void renderAllDatabasesHierarchy(PostgresDatabase *pgDb) {
+        // Load databases only once
+        if (!pgDb->areDatabasesLoaded()) {
+            pgDb->getDatabaseNames(); // This will load and cache the databases
+        }
+
+        // Get all databases from the server (cached)
+        std::vector<std::string> databases = pgDb->getDatabaseNames();
+
+        for (const auto &dbName : databases) {
+            constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                       ImGuiTreeNodeFlags_FramePadding;
+
+            // Draw database node with placeholder space for icon
+            const std::string dbNodeLabel = std::format("   {}###db_{}", dbName, dbName);
+            const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
+
+            // Draw colored icon over the placeholder space
+            const auto dbNodeIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+            ImGui::GetWindowDrawList()->AddText(
+                dbNodeIconPos,
+                ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
+                ICON_FK_DATABASE);
+
+            // Context menu for database node
+            if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
+                if (ImGui::MenuItem("New SQL Editor")) {
+                    auto &app = Application::getInstance();
+                    app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
+                    std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
+                }
+                ImGui::EndPopup();
+            }
+
+            if (dbNodeOpen) {
+                // Track that this database is expanded
+                if (!pgDb->isDatabaseExpanded(dbName)) {
+                    pgDb->setDatabaseExpanded(dbName, true);
+
+                    // Only switch database if we're not already connected to it
+                    if (dbName != pgDb->getDatabaseName()) {
+                        std::cout << "Switching to database: " << dbName << std::endl;
+                        auto [success, error] = pgDb->switchToDatabase(dbName);
+                        if (!success) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                               "  Failed to connect to database:");
+                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  %s",
+                                               error.c_str());
+                            pgDb->setDatabaseExpanded(dbName,
+                                                      false); // Mark as not expanded due to failure
+                            ImGui::TreePop();
+                            continue;
+                        }
+                    }
+                }
+
+                // Only show schemas if we're currently connected to this database
+                if (dbName == pgDb->getDatabaseName()) {
+                    // Load schemas only when first expanded and not already loaded
+                    if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
+                        std::cout << "Database " << dbName
+                                  << " expanded for first time, loading schemas..." << std::endl;
+                        pgDb->refreshSchemas();
+                    }
+
+                    // Show schemas
+                    renderSchemasSection(pgDb);
+                } else {
+                    // We're showing a different database, so show placeholder
+                    ImGui::Text("  Switch to this database to view contents");
+                }
+
+                ImGui::TreePop();
+            } else {
+                // Node is collapsed, mark as not expanded
+                if (pgDb->isDatabaseExpanded(dbName)) {
+                    pgDb->setDatabaseExpanded(dbName, false);
+                }
+            }
         }
     }
 

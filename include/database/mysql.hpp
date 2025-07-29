@@ -4,6 +4,7 @@
 #include <atomic>
 #include <future>
 #include <mutex>
+#include <set>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
@@ -11,7 +12,7 @@ class MySQLDatabase final : public DatabaseInterface {
 public:
     MySQLDatabase(const std::string &name, const std::string &host, int port,
                   const std::string &database, const std::string &username,
-                  const std::string &password);
+                  const std::string &password, bool showAllDatabases = false);
     ~MySQLDatabase() override;
 
     // Connection management
@@ -86,6 +87,18 @@ public:
     const std::string &getLastConnectionError() const override;
     void setLastConnectionError(const std::string &error) override;
 
+    // Database list methods
+    std::vector<std::string> getDatabaseNames();
+    bool shouldShowAllDatabases() const {
+        return showAllDatabases;
+    }
+    bool areDatabasesLoaded() const {
+        return databasesLoaded;
+    }
+    std::pair<bool, std::string> switchToDatabase(const std::string &targetDatabase);
+    bool isDatabaseExpanded(const std::string &dbName) const;
+    void setDatabaseExpanded(const std::string &dbName, bool expanded);
+
 protected:
     std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string &tableName) override;
@@ -107,15 +120,19 @@ private:
     std::string username;
     std::string password;
     std::string connectionString;
+    bool showAllDatabases;
     std::unique_ptr<soci::session> session;
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences; // Empty for MySQL
+    std::vector<std::string> availableDatabases;
+    std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool connected = false;
     bool expanded = false;
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false;
+    bool databasesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
 

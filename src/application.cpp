@@ -208,7 +208,7 @@ void Application::restorePreviousConnections() {
 
         if (conn.type == "postgresql") {
             db = std::make_shared<PostgresDatabase>(conn.name, conn.host, conn.port, conn.database,
-                                                    conn.username, conn.password);
+                                                    conn.username, conn.password, true);
         } else if (conn.type == "mysql") {
             db = std::make_shared<MySQLDatabase>(conn.name, conn.host, conn.port, conn.database,
                                                  conn.username, conn.password);

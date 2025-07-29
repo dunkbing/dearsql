@@ -4,9 +4,9 @@
 
 MySQLDatabase::MySQLDatabase(const std::string &name, const std::string &host, int port,
                              const std::string &database, const std::string &username,
-                             const std::string &password)
+                             const std::string &password, bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
-      password(password) {
+      password(password), showAllDatabases(showAllDatabases) {
     // SOCI MySQL connection string format: "host=hostname port=port dbname=database user=username
     // password=password" Use TCP/IP connection to avoid Unix socket issues
     connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
@@ -756,4 +756,90 @@ std::vector<Column> MySQLDatabase::getViewColumns(const std::string &viewName) {
 
 std::vector<std::string> MySQLDatabase::getSequenceNames() {
     return {};
+}
+
+std::vector<std::string> MySQLDatabase::getDatabaseNames() {
+    if (databasesLoaded) {
+        return availableDatabases;
+    }
+
+    availableDatabases.clear();
+
+    try {
+        std::lock_guard lock(sessionMutex);
+        if (!session) {
+            return availableDatabases;
+        }
+
+        const std::string sql = "SHOW DATABASES";
+
+        std::cout << "Executing query to get database names..." << std::endl;
+        const soci::rowset rs = session->prepare << sql;
+
+        for (const auto &row : rs) {
+            auto dbName = row.get<std::string>(0);
+            // Filter out system databases
+            if (dbName != "information_schema" && dbName != "performance_schema" &&
+                dbName != "mysql" && dbName != "sys") {
+                std::cout << "Found database: " << dbName << std::endl;
+                availableDatabases.push_back(dbName);
+            }
+        }
+
+        databasesLoaded = true;
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Failed to execute database query: " << e.what() << std::endl;
+    }
+
+    std::cout << "Query completed. Found " << availableDatabases.size() << " databases."
+              << std::endl;
+    return availableDatabases;
+}
+
+std::pair<bool, std::string> MySQLDatabase::switchToDatabase(const std::string &targetDatabase) {
+    if (database == targetDatabase && connected) {
+        return {true, ""}; // Already connected to the target database
+    }
+
+    // Disconnect from current database
+    disconnect();
+
+    // Clear all cached data since we're switching databases
+    tables.clear();
+    views.clear();
+    sequences.clear();
+    tablesLoaded = false;
+    viewsLoaded = false;
+    sequencesLoaded = false;
+
+    // Update database name and connection string
+    database = targetDatabase;
+    connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
+
+    if (!username.empty()) {
+        connectionString += " user=" + username;
+    }
+
+    if (!password.empty()) {
+        connectionString += " password=" + password;
+    }
+
+    // Connect to the new database
+    auto result = connect();
+
+    std::cout << "Switched to database: " << targetDatabase << " (success: " << result.first << ")"
+              << std::endl;
+    return result;
+}
+
+bool MySQLDatabase::isDatabaseExpanded(const std::string &dbName) const {
+    return expandedDatabases.find(dbName) != expandedDatabases.end();
+}
+
+void MySQLDatabase::setDatabaseExpanded(const std::string &dbName, bool expanded) {
+    if (expanded) {
+        expandedDatabases.insert(dbName);
+    } else {
+        expandedDatabases.erase(dbName);
+    }
 }

@@ -12,8 +12,6 @@ public:
 
 private:
     void renderDatabaseNode(size_t databaseIndex);
-    void renderTablesSection(size_t databaseIndex);
-    void renderSequencesSection(size_t databaseIndex);
     void handleDatabaseContextMenu(size_t databaseIndex);
     void handleTableContextMenu(size_t databaseIndex, size_t tableIndex);
     static void handleViewContextMenu(size_t databaseIndex, size_t viewIndex);

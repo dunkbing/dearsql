@@ -12,23 +12,18 @@ PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &h
     : name(name), host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
 
-    // Build connection string
     std::stringstream ss;
 
     ss << "host=" << host << " port=" << port;
 
-    if (database.empty()) {
-        ss << " dbname=" << "postgres";
-    } else {
+    if (!database.empty()) {
         ss << " dbname=" << database;
     }
 
-    // Only add user parameter if username is not empty
     if (!username.empty()) {
         ss << " user=" << username;
     }
 
-    // Only add password parameter if password is not empty
     if (!password.empty()) {
         ss << " password=" << password;
     }

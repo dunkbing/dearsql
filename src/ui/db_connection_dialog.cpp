@@ -7,6 +7,7 @@
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
 #include <chrono>
+#include <future>
 #include <imgui.h>
 #include <themes.hpp>
 
@@ -504,11 +505,6 @@ void DatabaseConnectionDialog::reset() {
     errorMessage.clear();
     selectedSavedConnection = -1;
     authType = 0;
-
-    // clean up async connection
-    if (connectionThread.joinable()) {
-        connectionThread.join();
-    }
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
@@ -775,17 +771,8 @@ void DatabaseConnectionDialog::startAsyncConnection() {
     errorMessage.clear();
     isConnecting = true;
 
-    // Create a promise-future pair for the async connection
-    auto promise = std::make_shared<
-        std::promise<std::pair<std::shared_ptr<DatabaseInterface>, std::string>>>();
-    connectionFuture = promise->get_future();
-
-    // Start connection in a separate thread
-    if (connectionThread.joinable()) {
-        connectionThread.join();
-    }
-
-    connectionThread = std::thread([this, promise]() {
+    // Start connection using std::async
+    connectionFuture = std::async(std::launch::async, [this]() {
         try {
             // Try to create and connect to database based on current view
             std::shared_ptr<DatabaseInterface> db;
@@ -801,16 +788,18 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             if (db) {
                 auto [success, error] = db->connect();
                 if (success) {
-                    promise->set_value(std::make_pair(db, ""));
+                    return std::make_pair(db, std::string(""));
                 } else {
-                    promise->set_value(std::make_pair(nullptr, "Failed to connect: " + error));
+                    return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                          std::string("Failed to connect: " + error));
                 }
             } else {
-                promise->set_value(std::make_pair(nullptr, "Please fill in all required fields"));
+                return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                      std::string("Please fill in all required fields"));
             }
         } catch (const std::exception &e) {
-            promise->set_value(
-                std::make_pair(nullptr, "Connection error: " + std::string(e.what())));
+            return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                  std::string("Connection error: " + std::string(e.what())));
         }
     });
 }
@@ -846,11 +835,6 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
         } else {
             isConnecting = false;
             errorMessage = error;
-        }
-
-        // Clean up thread
-        if (connectionThread.joinable()) {
-            connectionThread.join();
         }
     }
 }

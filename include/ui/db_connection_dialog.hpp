@@ -6,7 +6,6 @@
 #include <future>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 class DatabaseInterface;
@@ -42,7 +41,6 @@ private:
     std::string errorMessage;
 
     // Async connection
-    std::thread connectionThread;
     std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;
 
     // Saved connections

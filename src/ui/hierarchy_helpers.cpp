@@ -1,6 +1,8 @@
 #include "ui/hierarchy_helpers.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
@@ -15,7 +17,8 @@ namespace HierarchyHelpers {
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
         // Draw tree node with placeholder space for icon
-        const std::string tableLabel = std::format("   {}", table.name); // 3 spaces for icon
+        const std::string tableLabel = std::format("   {}###table_{}_{}", table.name, db->getName(),
+                                                   table.name); // 3 spaces for icon with unique ID
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
 
         // Draw colored icon over the placeholder space
@@ -169,7 +172,8 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_FramePadding;
 
         // Draw tree node with placeholder space for icon
-        const std::string viewLabel = std::format("   {}", view.name); // 3 spaces for icon
+        const std::string viewLabel = std::format("   {}###view_{}_{}", view.name, db->getName(),
+                                                  view.name); // 3 spaces for icon with unique ID
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
         // Draw colored icon over the placeholder space
@@ -212,8 +216,8 @@ namespace HierarchyHelpers {
 
         // Draw tree node with placeholder space for icon
         const std::string tablesLabel =
-            std::format("   Tables ({})###tables",
-                        db->getTables().size()); // 3 spaces for icon, ###tables for stable ID
+            std::format("   Tables ({})###tables_current_{}", db->getTables().size(),
+                        db->getName()); // 3 spaces for icon, unique ID per database
         const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
         // Draw colored icon over the placeholder space
@@ -281,8 +285,8 @@ namespace HierarchyHelpers {
 
         // Draw tree node with placeholder space for icon
         const std::string viewsLabel =
-            std::format("   Views ({})###views",
-                        db->getViews().size()); // 3 spaces for icon, ###views for stable ID
+            std::format("   Views ({})###views_current_{}", db->getViews().size(),
+                        db->getName()); // 3 spaces for icon, unique ID per database
         const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
         // Draw colored icon over the placeholder space
@@ -492,5 +496,528 @@ namespace HierarchyHelpers {
 
             ImGui::TreePop();
         }
+    }
+
+    void renderCachedTablesSection(DatabaseInterface *db, const std::string &dbName) {
+        // For PostgreSQL and MySQL, we need to cast to access cached data
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                const auto &dbData = pgDb->getDatabaseData(dbName);
+
+                constexpr ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                           ImGuiTreeNodeFlags_FramePadding;
+
+                const std::string tablesLabel = std::format("   Tables ({})###tables_cached_pg_{}",
+                                                            dbData.tables.size(), dbName);
+                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+                const auto tablesSectionIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                ImGui::GetWindowDrawList()->AddText(
+                    tablesSectionIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
+                    ICON_FA_TABLE);
+
+                if (dbData.loadingTables) {
+                    ImGui::SameLine();
+                    UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                }
+
+                if (tablesOpen) {
+                    if (dbData.tables.empty()) {
+                        if (dbData.loadingTables) {
+                            ImGui::Text("  Loading tables...");
+                        } else if (!dbData.tablesLoaded) {
+                            // Auto-switch database and load tables when node is expanded
+                            if (dbName != pgDb->getDatabaseName()) {
+                                std::cout << "Auto-switching to database: " << dbName
+                                          << " to load tables" << std::endl;
+                                auto [success, error] = pgDb->switchToDatabase(dbName);
+                                if (success) {
+                                    pgDb->refreshTables();
+                                } else {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                                       "  Failed to switch database: %s",
+                                                       error.c_str());
+                                }
+                            } else {
+                                pgDb->refreshTables();
+                            }
+                            ImGui::Text("  Loading tables...");
+                        } else {
+                            ImGui::Text("  No tables found");
+                        }
+                    } else {
+                        for (int j = 0; j < dbData.tables.size(); j++) {
+                            renderCachedTableNode(db, dbName, j);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+
+                constexpr ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                           ImGuiTreeNodeFlags_FramePadding;
+
+                const std::string tablesLabel = std::format(
+                    "   Tables ({})###tables_cached_mysql_{}", dbData.tables.size(), dbName);
+                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+                const auto tablesSectionIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                ImGui::GetWindowDrawList()->AddText(
+                    tablesSectionIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
+                    ICON_FA_TABLE);
+
+                if (dbData.loadingTables) {
+                    ImGui::SameLine();
+                    UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                }
+
+                if (tablesOpen) {
+                    if (dbData.tables.empty()) {
+                        if (dbData.loadingTables) {
+                            ImGui::Text("  Loading tables...");
+                        } else if (!dbData.tablesLoaded) {
+                            // Auto-switch database and load tables when node is expanded
+                            if (dbName != mysqlDb->getDatabaseName()) {
+                                std::cout << "Auto-switching to database: " << dbName
+                                          << " to load tables" << std::endl;
+                                auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                                if (success) {
+                                    mysqlDb->refreshTables();
+                                } else {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                                       "  Failed to switch database: %s",
+                                                       error.c_str());
+                                }
+                            } else {
+                                mysqlDb->refreshTables();
+                            }
+                            ImGui::Text("  Loading tables...");
+                        } else {
+                            ImGui::Text("  No tables found");
+                        }
+                    } else {
+                        for (int j = 0; j < dbData.tables.size(); j++) {
+                            renderCachedTableNode(db, dbName, j);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        }
+    }
+
+    void renderCachedViewsSection(DatabaseInterface *db, const std::string &dbName) {
+        // For PostgreSQL and MySQL, we need to cast to access cached data
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                const auto &dbData = pgDb->getDatabaseData(dbName);
+
+                constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                          ImGuiTreeNodeFlags_FramePadding;
+
+                const std::string viewsLabel =
+                    std::format("   Views ({})###views_cached_pg_{}", dbData.views.size(), dbName);
+                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+                const auto viewsSectionIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                ImGui::GetWindowDrawList()->AddText(
+                    viewsSectionIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
+                    ICON_FA_EYE);
+
+                if (dbData.loadingViews) {
+                    ImGui::SameLine();
+                    UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                }
+
+                if (viewsOpen) {
+                    if (dbData.views.empty()) {
+                        if (dbData.loadingViews) {
+                            ImGui::Text("  Loading views...");
+                        } else if (!dbData.viewsLoaded) {
+                            // Auto-switch database and load views when node is expanded
+                            if (dbName != pgDb->getDatabaseName()) {
+                                std::cout << "Auto-switching to database: " << dbName
+                                          << " to load views" << std::endl;
+                                auto [success, error] = pgDb->switchToDatabase(dbName);
+                                if (success) {
+                                    pgDb->refreshViews();
+                                } else {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                                       "  Failed to switch database: %s",
+                                                       error.c_str());
+                                }
+                            } else {
+                                pgDb->refreshViews();
+                            }
+                            ImGui::Text("  Loading views...");
+                        } else {
+                            ImGui::Text("  No views found");
+                        }
+                    } else {
+                        for (int j = 0; j < dbData.views.size(); j++) {
+                            renderCachedViewNode(db, dbName, j);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+
+                constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                          ImGuiTreeNodeFlags_FramePadding;
+
+                const std::string viewsLabel = std::format("   Views ({})###views_cached_mysql_{}",
+                                                           dbData.views.size(), dbName);
+                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+                const auto viewsSectionIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                ImGui::GetWindowDrawList()->AddText(
+                    viewsSectionIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
+                    ICON_FA_EYE);
+
+                if (dbData.loadingViews) {
+                    ImGui::SameLine();
+                    UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                }
+
+                if (viewsOpen) {
+                    if (dbData.views.empty()) {
+                        if (dbData.loadingViews) {
+                            ImGui::Text("  Loading views...");
+                        } else if (!dbData.viewsLoaded) {
+                            // Auto-switch database and load views when node is expanded
+                            if (dbName != mysqlDb->getDatabaseName()) {
+                                std::cout << "Auto-switching to database: " << dbName
+                                          << " to load views" << std::endl;
+                                auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                                if (success) {
+                                    mysqlDb->refreshViews();
+                                } else {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+                                                       "  Failed to switch database: %s",
+                                                       error.c_str());
+                                }
+                            } else {
+                                mysqlDb->refreshViews();
+                            }
+                            ImGui::Text("  Loading views...");
+                        } else {
+                            ImGui::Text("  No views found");
+                        }
+                    } else {
+                        for (int j = 0; j < dbData.views.size(); j++) {
+                            renderCachedViewNode(db, dbName, j);
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        }
+    }
+
+    void renderCachedTableNode(DatabaseInterface *db, const std::string &dbName, int tableIndex) {
+        auto &app = Application::getInstance();
+
+        // Get the cached table data
+        const Table *table = nullptr;
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                const auto &dbData = pgDb->getDatabaseData(dbName);
+                if (tableIndex < dbData.tables.size()) {
+                    table = &dbData.tables[tableIndex];
+                }
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+                if (tableIndex < dbData.tables.size()) {
+                    table = &dbData.tables[tableIndex];
+                }
+            }
+        }
+
+        if (!table)
+            return;
+
+        ImGuiTreeNodeFlags tableFlags =
+            ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+        // Draw tree node with placeholder space for icon
+        const std::string tableLabel =
+            std::format("   {}###cached_table_{}_{}", table->name, dbName,
+                        table->name); // 3 spaces for icon with unique ID
+        const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 tableIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            tableIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for tables
+            ICON_FA_TABLE);
+
+        // Double-click to open table viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            // Auto-switch to the correct database before opening table viewer
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                if (pgDb && dbName != pgDb->getDatabaseName()) {
+                    std::cout << "Auto-switching to database: " << dbName
+                              << " to view table: " << table->name << std::endl;
+                    auto [success, error] = pgDb->switchToDatabase(dbName);
+                    if (!success) {
+                        std::cout << "Failed to switch database: " << error << std::endl;
+                        return;
+                    }
+                }
+            } else if (db->getType() == DatabaseType::MYSQL) {
+                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
+                    std::cout << "Auto-switching to database: " << dbName
+                              << " to view table: " << table->name << std::endl;
+                    auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                    if (!success) {
+                        std::cout << "Failed to switch database: " << error << std::endl;
+                        return;
+                    }
+                }
+            }
+            app.getTabManager()->createTableViewerTab(db->getConnectionString(), table->name);
+        }
+
+        // Context menu
+        ImGui::PushID(static_cast<int>(tableIndex));
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                // Auto-switch to the correct database before opening table viewer
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                    if (pgDb && dbName != pgDb->getDatabaseName()) {
+                        std::cout << "Auto-switching to database: " << dbName
+                                  << " to view table: " << table->name << std::endl;
+                        auto [success, error] = pgDb->switchToDatabase(dbName);
+                        if (!success) {
+                            std::cout << "Failed to switch database: " << error << std::endl;
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            return;
+                        }
+                    }
+                } else if (db->getType() == DatabaseType::MYSQL) {
+                    auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                    if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
+                        std::cout << "Auto-switching to database: " << dbName
+                                  << " to view table: " << table->name << std::endl;
+                        auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                        if (!success) {
+                            std::cout << "Failed to switch database: " << error << std::endl;
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            return;
+                        }
+                    }
+                }
+                app.getTabManager()->createTableViewerTab(db->getConnectionString(), table->name);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show table structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+
+        if (tableOpened) {
+            // Show cached columns
+            constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                        ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                        ImGuiTreeNodeFlags_FramePadding;
+            const std::string columnsLabel = "   Columns"; // 3 spaces for icon
+            const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
+
+            const auto columnsIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+            ImGui::GetWindowDrawList()->AddText(
+                columnsIconPos,
+                ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
+                ICON_FA_TABLE_COLUMNS);
+
+            if (columnsOpened) {
+                for (const auto &[name, type, isPrimaryKey, isNotNull] : table->columns) {
+                    ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                     ImGuiTreeNodeFlags_FramePadding;
+
+                    std::string columnDisplay = std::format("{} ({})", name, type);
+                    if (isPrimaryKey) {
+                        columnDisplay += ", PK";
+                    }
+                    if (isNotNull) {
+                        columnDisplay += ", NOT NULL";
+                    }
+                    columnDisplay += ")";
+
+                    ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+                }
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+    }
+
+    void renderCachedViewNode(DatabaseInterface *db, const std::string &dbName, int viewIndex) {
+        auto &app = Application::getInstance();
+
+        // Get the cached view data
+        const Table *view = nullptr;
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                const auto &dbData = pgDb->getDatabaseData(dbName);
+                if (viewIndex < dbData.views.size()) {
+                    view = &dbData.views[viewIndex];
+                }
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+                if (viewIndex < dbData.views.size()) {
+                    view = &dbData.views[viewIndex];
+                }
+            }
+        }
+
+        if (!view)
+            return;
+
+        constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                                 ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+        // Draw tree node with placeholder space for icon
+        const std::string viewLabel = std::format("   {}###cached_view_{}_{}", view->name, dbName,
+                                                  view->name); // 3 spaces for icon with unique ID
+        ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+
+        // Draw colored icon over the placeholder space
+        const ImVec2 viewIconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+        ImGui::GetWindowDrawList()->AddText(
+            viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
+            ICON_FA_EYE);
+
+        const auto &tabManager = app.getTabManager();
+        // Double-click to open view viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            // Auto-switch to the correct database before opening view viewer
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                if (pgDb && dbName != pgDb->getDatabaseName()) {
+                    std::cout << "Auto-switching to database: " << dbName
+                              << " to view: " << view->name << std::endl;
+                    auto [success, error] = pgDb->switchToDatabase(dbName);
+                    if (!success) {
+                        std::cout << "Failed to switch database: " << error << std::endl;
+                        return;
+                    }
+                }
+            } else if (db->getType() == DatabaseType::MYSQL) {
+                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
+                    std::cout << "Auto-switching to database: " << dbName
+                              << " to view: " << view->name << std::endl;
+                    auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                    if (!success) {
+                        std::cout << "Failed to switch database: " << error << std::endl;
+                        return;
+                    }
+                }
+            }
+            tabManager->createTableViewerTab(db->getConnectionString(), view->name);
+        }
+
+        // Context menu
+        ImGui::PushID(viewIndex);
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                // Auto-switch to the correct database before opening view viewer
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                    if (pgDb && dbName != pgDb->getDatabaseName()) {
+                        std::cout << "Auto-switching to database: " << dbName
+                                  << " to view: " << view->name << std::endl;
+                        auto [success, error] = pgDb->switchToDatabase(dbName);
+                        if (!success) {
+                            std::cout << "Failed to switch database: " << error << std::endl;
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            return;
+                        }
+                    }
+                } else if (db->getType() == DatabaseType::MYSQL) {
+                    auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                    if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
+                        std::cout << "Auto-switching to database: " << dbName
+                                  << " to view: " << view->name << std::endl;
+                        auto [success, error] = mysqlDb->switchToDatabase(dbName);
+                        if (!success) {
+                            std::cout << "Failed to switch database: " << error << std::endl;
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            return;
+                        }
+                    }
+                }
+                tabManager->createTableViewerTab(db->getConnectionString(), view->name);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show view structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
     }
 } // namespace HierarchyHelpers

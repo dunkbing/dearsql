@@ -7,6 +7,7 @@
 #include <set>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
+#include <unordered_map>
 
 class MySQLDatabase final : public DatabaseInterface {
 public:
@@ -122,27 +123,37 @@ private:
     std::string connectionString;
     bool showAllDatabases;
     std::unique_ptr<soci::session> session;
-    std::vector<Table> tables;
-    std::vector<Table> views;
-    std::vector<std::string> sequences; // Empty for MySQL
+    // Per-database data structures
+    struct DatabaseData {
+        std::vector<Table> tables;
+        std::vector<Table> views;
+        std::vector<std::string> sequences; // Empty for MySQL
+        bool tablesLoaded = false;
+        bool viewsLoaded = false;
+        bool sequencesLoaded = false;
+        std::atomic<bool> loadingTables = false;
+        std::atomic<bool> loadingViews = false;
+        std::future<std::vector<Table>> tablesFuture;
+        std::future<std::vector<Table>> viewsFuture;
+    };
+
+    std::unordered_map<std::string, DatabaseData> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool connected = false;
     bool expanded = false;
-    bool tablesLoaded = false;
-    bool viewsLoaded = false;
-    bool sequencesLoaded = false;
     bool databasesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
 
-    // Async loading
-    std::atomic<bool> loadingTables = false;
-    std::future<std::vector<Table>> tablesFuture;
+public:
+    // Helper methods for per-database data access
+    DatabaseData &getCurrentDatabaseData();
+    const DatabaseData &getCurrentDatabaseData() const;
+    DatabaseData &getDatabaseData(const std::string &dbName);
+    const DatabaseData &getDatabaseData(const std::string &dbName) const;
 
-    std::atomic<bool> loadingViews = false;
-    std::future<std::vector<Table>> viewsFuture;
-
+private:
     // Async connection
     std::atomic<bool> connecting = false;
     std::future<std::pair<bool, std::string>> connectionFuture;

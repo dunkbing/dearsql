@@ -33,26 +33,31 @@ PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &h
 
 PostgresDatabase::~PostgresDatabase() {
     // Stop all async operations before cleaning up
-    loadingTables = false;
-    loadingViews = false;
-    loadingSequences = false;
-    loadingSchemas = false;
     connecting = false;
     loadingTableData = false;
 
-    // Wait for all futures to complete
-    if (tablesFuture.valid()) {
-        tablesFuture.wait();
+    // Stop all per-database async operations
+    for (auto &[dbName, dbData] : databaseDataCache) {
+        dbData.loadingTables = false;
+        dbData.loadingViews = false;
+        dbData.loadingSequences = false;
+        dbData.loadingSchemas = false;
+
+        // Wait for all futures to complete
+        if (dbData.tablesFuture.valid()) {
+            dbData.tablesFuture.wait();
+        }
+        if (dbData.viewsFuture.valid()) {
+            dbData.viewsFuture.wait();
+        }
+        if (dbData.sequencesFuture.valid()) {
+            dbData.sequencesFuture.wait();
+        }
+        if (dbData.schemasFuture.valid()) {
+            dbData.schemasFuture.wait();
+        }
     }
-    if (viewsFuture.valid()) {
-        viewsFuture.wait();
-    }
-    if (sequencesFuture.valid()) {
-        sequencesFuture.wait();
-    }
-    if (schemasFuture.valid()) {
-        schemasFuture.wait();
-    }
+
     if (connectionFuture.valid()) {
         connectionFuture.wait();
     }
@@ -61,6 +66,28 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     PostgresDatabase::disconnect();
+}
+
+// Helper methods for per-database data access
+PostgresDatabase::DatabaseData &PostgresDatabase::getCurrentDatabaseData() {
+    return databaseDataCache[database];
+}
+
+const PostgresDatabase::DatabaseData &PostgresDatabase::getCurrentDatabaseData() const {
+    static const DatabaseData emptyData;
+    auto it = databaseDataCache.find(database);
+    return (it != databaseDataCache.end()) ? it->second : emptyData;
+}
+
+PostgresDatabase::DatabaseData &PostgresDatabase::getDatabaseData(const std::string &dbName) {
+    return databaseDataCache[dbName];
+}
+
+const PostgresDatabase::DatabaseData &
+PostgresDatabase::getDatabaseData(const std::string &dbName) const {
+    static const DatabaseData emptyData;
+    auto it = databaseDataCache.find(dbName);
+    return (it != databaseDataCache.end()) ? it->second : emptyData;
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
@@ -123,7 +150,7 @@ void PostgresDatabase::refreshTables() {
         auto [success, error] = connect();
         if (!success) {
             std::cout << "Failed to connect to database: " << error << std::endl;
-            tablesLoaded = true;
+            getCurrentDatabaseData().tablesLoaded = true;
             return;
         }
     }
@@ -132,19 +159,19 @@ void PostgresDatabase::refreshTables() {
 }
 
 const std::vector<Table> &PostgresDatabase::getTables() const {
-    return tables;
+    return getCurrentDatabaseData().tables;
 }
 
 std::vector<Table> &PostgresDatabase::getTables() {
-    return tables;
+    return getCurrentDatabaseData().tables;
 }
 
 bool PostgresDatabase::areTablesLoaded() const {
-    return tablesLoaded;
+    return getCurrentDatabaseData().tablesLoaded;
 }
 
 void PostgresDatabase::setTablesLoaded(bool loaded) {
-    tablesLoaded = loaded;
+    getCurrentDatabaseData().tablesLoaded = loaded;
 }
 
 std::string PostgresDatabase::executeQuery(const std::string &query) {
@@ -518,7 +545,7 @@ void PostgresDatabase::refreshViews() {
         auto [success, error] = connect();
         if (!success) {
             std::cout << "Failed to connect to database: " << error << std::endl;
-            viewsLoaded = true;
+            getCurrentDatabaseData().viewsLoaded = true;
             return;
         }
     }
@@ -527,19 +554,19 @@ void PostgresDatabase::refreshViews() {
 }
 
 const std::vector<Table> &PostgresDatabase::getViews() const {
-    return views;
+    return getCurrentDatabaseData().views;
 }
 
 std::vector<Table> &PostgresDatabase::getViews() {
-    return views;
+    return getCurrentDatabaseData().views;
 }
 
 bool PostgresDatabase::areViewsLoaded() const {
-    return viewsLoaded;
+    return getCurrentDatabaseData().viewsLoaded;
 }
 
 void PostgresDatabase::setViewsLoaded(const bool loaded) {
-    viewsLoaded = loaded;
+    getCurrentDatabaseData().viewsLoaded = loaded;
 }
 
 // Sequence management methods
@@ -549,7 +576,7 @@ void PostgresDatabase::refreshSequences() {
         auto [success, error] = connect();
         if (!success) {
             std::cout << "Failed to connect to database: " << error << std::endl;
-            sequencesLoaded = true;
+            getCurrentDatabaseData().sequencesLoaded = true;
             return;
         }
     }
@@ -558,19 +585,19 @@ void PostgresDatabase::refreshSequences() {
 }
 
 const std::vector<std::string> &PostgresDatabase::getSequences() const {
-    return sequences;
+    return getCurrentDatabaseData().sequences;
 }
 
 std::vector<std::string> &PostgresDatabase::getSequences() {
-    return sequences;
+    return getCurrentDatabaseData().sequences;
 }
 
 bool PostgresDatabase::areSequencesLoaded() const {
-    return sequencesLoaded;
+    return getCurrentDatabaseData().sequencesLoaded;
 }
 
 void PostgresDatabase::setSequencesLoaded(const bool loaded) {
-    sequencesLoaded = loaded;
+    getCurrentDatabaseData().sequencesLoaded = loaded;
 }
 
 std::vector<std::string> PostgresDatabase::getViewNames() {
@@ -664,41 +691,45 @@ std::vector<std::string> PostgresDatabase::getSequenceNames() {
 }
 
 bool PostgresDatabase::isLoadingTables() const {
-    return loadingTables;
+    return getCurrentDatabaseData().loadingTables;
 }
 
 void PostgresDatabase::checkTablesStatusAsync() {
-    if (tablesFuture.valid() &&
-        tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    auto &dbData = getCurrentDatabaseData();
+    if (dbData.tablesFuture.valid() &&
+        dbData.tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            tables = tablesFuture.get();
-            std::cout << "Async table loading completed. Found " << tables.size() << " tables."
-                      << std::endl;
-            tablesLoaded = true;
-            loadingTables = false;
+            dbData.tables = dbData.tablesFuture.get();
+            std::cout << "Async table loading completed. Found " << dbData.tables.size()
+                      << " tables." << std::endl;
+            dbData.tablesLoaded = true;
+            dbData.loadingTables = false;
         } catch (const std::exception &e) {
             std::cerr << "Error in async table loading: " << e.what() << std::endl;
-            tablesLoaded = true;
-            loadingTables = false;
+            dbData.tablesLoaded = true;
+            dbData.loadingTables = false;
         }
     }
 }
 
 void PostgresDatabase::startRefreshTableAsync() {
+    auto &dbData = getCurrentDatabaseData();
     // Clear previous results
-    tables.clear();
-    tablesLoaded = false;
-    loadingTables = true;
+    dbData.tables.clear();
+    dbData.tablesLoaded = false;
+    dbData.loadingTables = true;
 
     // Start async loading with std::async
-    tablesFuture = std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
+    dbData.tablesFuture =
+        std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     std::vector<Table> result;
+    auto &dbData = getCurrentDatabaseData();
 
     // Check if we're still supposed to be loading
-    if (!loadingTables.load()) {
+    if (!dbData.loadingTables.load()) {
         return result;
     }
 
@@ -706,7 +737,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     const std::vector<std::string> tableNames = getTableNames();
     std::cout << "Found " << tableNames.size() << " tables, loading columns..." << std::endl;
 
-    if (tableNames.empty() || !loadingTables.load()) {
+    if (tableNames.empty() || !dbData.loadingTables.load()) {
         return result;
     }
 
@@ -736,7 +767,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
     try {
         std::lock_guard lock(sessionMutex);
-        if (!session || !loadingTables.load()) {
+        if (!session || !dbData.loadingTables.load()) {
             return result;
         }
 
@@ -747,7 +778,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
         std::unordered_map<std::string, std::vector<Column>> tableColumns;
 
         for (const auto &row : rs) {
-            if (!loadingTables.load()) {
+            if (!dbData.loadingTables.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -763,7 +794,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
         // Build the result tables
         for (const auto &tableName : tableNames) {
-            if (!loadingTables.load()) {
+            if (!dbData.loadingTables.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -783,41 +814,45 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 }
 
 bool PostgresDatabase::isLoadingViews() const {
-    return loadingViews;
+    return getCurrentDatabaseData().loadingViews;
 }
 
 void PostgresDatabase::checkViewsStatusAsync() {
-    if (viewsFuture.valid() &&
-        viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    auto &dbData = getCurrentDatabaseData();
+    if (dbData.viewsFuture.valid() &&
+        dbData.viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            views = viewsFuture.get();
-            std::cout << "Async view loading completed. Found " << views.size() << " views."
+            dbData.views = dbData.viewsFuture.get();
+            std::cout << "Async view loading completed. Found " << dbData.views.size() << " views."
                       << std::endl;
-            viewsLoaded = true;
-            loadingViews = false;
+            dbData.viewsLoaded = true;
+            dbData.loadingViews = false;
         } catch (const std::exception &e) {
             std::cerr << "Error in async view loading: " << e.what() << std::endl;
-            viewsLoaded = true;
-            loadingViews = false;
+            dbData.viewsLoaded = true;
+            dbData.loadingViews = false;
         }
     }
 }
 
 void PostgresDatabase::startRefreshViewAsync() {
+    auto &dbData = getCurrentDatabaseData();
     // Clear previous results
-    views.clear();
-    viewsLoaded = false;
-    loadingViews = true;
+    dbData.views.clear();
+    dbData.viewsLoaded = false;
+    dbData.loadingViews = true;
 
     // Start async loading with std::async
-    viewsFuture = std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
+    dbData.viewsFuture =
+        std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     std::vector<Table> result;
+    auto &dbData = getCurrentDatabaseData();
 
     // Check if we're still supposed to be loading
-    if (!loadingViews.load()) {
+    if (!dbData.loadingViews.load()) {
         return result;
     }
 
@@ -825,7 +860,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     const std::vector<std::string> viewNames = getViewNames();
     std::cout << "Found " << viewNames.size() << " views, loading columns..." << std::endl;
 
-    if (viewNames.empty() || !loadingViews.load()) {
+    if (viewNames.empty() || !dbData.loadingViews.load()) {
         return result;
     }
 
@@ -849,7 +884,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
     try {
         std::lock_guard<std::mutex> lock(sessionMutex);
-        if (!session || !loadingViews.load()) {
+        if (!session || !dbData.loadingViews.load()) {
             return result;
         }
 
@@ -860,7 +895,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
         std::unordered_map<std::string, std::vector<Column>> viewColumns;
 
         for (const auto &row : rs) {
-            if (!loadingViews.load()) {
+            if (!dbData.loadingViews.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -876,7 +911,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
         // Build the result views
         for (const auto &viewName : viewNames) {
-            if (!loadingViews.load()) {
+            if (!dbData.loadingViews.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -896,47 +931,51 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 }
 
 bool PostgresDatabase::isLoadingSequences() const {
-    return loadingSequences;
+    return getCurrentDatabaseData().loadingSequences;
 }
 
 void PostgresDatabase::checkSequencesStatusAsync() {
-    if (sequencesFuture.valid() &&
-        sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    auto &dbData = getCurrentDatabaseData();
+    if (dbData.sequencesFuture.valid() &&
+        dbData.sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            sequences = sequencesFuture.get();
-            std::cout << "Async sequence loading completed. Found " << sequences.size()
+            dbData.sequences = dbData.sequencesFuture.get();
+            std::cout << "Async sequence loading completed. Found " << dbData.sequences.size()
                       << " sequences." << std::endl;
-            sequencesLoaded = true;
-            loadingSequences = false;
+            dbData.sequencesLoaded = true;
+            dbData.loadingSequences = false;
         } catch (const std::exception &e) {
             std::cerr << "Error in async sequence loading: " << e.what() << std::endl;
-            sequencesLoaded = true;
-            loadingSequences = false;
+            dbData.sequencesLoaded = true;
+            dbData.loadingSequences = false;
         }
     }
 }
 
 void PostgresDatabase::startRefreshSequenceAsync() {
+    auto &dbData = getCurrentDatabaseData();
     // Clear previous results
-    sequences.clear();
-    sequencesLoaded = false;
-    loadingSequences = true;
+    dbData.sequences.clear();
+    dbData.sequencesLoaded = false;
+    dbData.loadingSequences = true;
 
     // Start async loading with std::async
-    sequencesFuture = std::async(std::launch::async, [this]() { return getSequencesAsync(); });
+    dbData.sequencesFuture =
+        std::async(std::launch::async, [this]() { return getSequencesAsync(); });
 }
 
 std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
     std::vector<std::string> result;
+    const auto &dbData = getCurrentDatabaseData();
 
     // Check if we're still supposed to be loading
-    if (!loadingSequences.load()) {
+    if (!dbData.loadingSequences.load()) {
         return result;
     }
 
     try {
         std::lock_guard<std::mutex> lock(sessionMutex);
-        if (!session || !loadingSequences.load()) {
+        if (!session || !dbData.loadingSequences.load()) {
             return result;
         }
 
@@ -947,7 +986,7 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
         const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
-            if (!loadingSequences.load()) {
+            if (!dbData.loadingSequences.load()) {
                 break;
             }
 
@@ -1100,7 +1139,7 @@ void PostgresDatabase::refreshSchemas() {
         auto [success, error] = connect();
         if (!success) {
             std::cout << "Failed to connect to database: " << error << std::endl;
-            schemasLoaded = true;
+            getCurrentDatabaseData().schemasLoaded = true;
             return;
         }
     }
@@ -1109,57 +1148,60 @@ void PostgresDatabase::refreshSchemas() {
 }
 
 const std::vector<Schema> &PostgresDatabase::getSchemas() const {
-    return schemas;
+    return getCurrentDatabaseData().schemas;
 }
 
 std::vector<Schema> &PostgresDatabase::getSchemas() {
-    return schemas;
+    return getCurrentDatabaseData().schemas;
 }
 
 bool PostgresDatabase::areSchemasLoaded() const {
-    return schemasLoaded;
+    return getCurrentDatabaseData().schemasLoaded;
 }
 
 void PostgresDatabase::setSchemasLoaded(bool loaded) {
-    schemasLoaded = loaded;
+    getCurrentDatabaseData().schemasLoaded = loaded;
 }
 
 bool PostgresDatabase::isLoadingSchemas() const {
-    return loadingSchemas;
+    return getCurrentDatabaseData().loadingSchemas;
 }
 
 void PostgresDatabase::checkSchemasStatusAsync() {
-    if (schemasFuture.valid() &&
-        schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    auto &dbData = getCurrentDatabaseData();
+    if (dbData.schemasFuture.valid() &&
+        dbData.schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            schemas = schemasFuture.get();
-            std::cout << "Async schema loading completed. Found " << schemas.size() << " schemas."
-                      << std::endl;
-            schemasLoaded = true;
-            loadingSchemas = false;
+            dbData.schemas = dbData.schemasFuture.get();
+            std::cout << "Async schema loading completed. Found " << dbData.schemas.size()
+                      << " schemas." << std::endl;
+            dbData.schemasLoaded = true;
+            dbData.loadingSchemas = false;
         } catch (const std::exception &e) {
             std::cerr << "Error in async schema loading: " << e.what() << std::endl;
-            schemasLoaded = true;
-            loadingSchemas = false;
+            dbData.schemasLoaded = true;
+            dbData.loadingSchemas = false;
         }
     }
 }
 
 void PostgresDatabase::startRefreshSchemaAsync() {
+    auto &dbData = getCurrentDatabaseData();
     // Clear previous results
-    schemas.clear();
-    schemasLoaded = false;
-    loadingSchemas = true;
+    dbData.schemas.clear();
+    dbData.schemasLoaded = false;
+    dbData.loadingSchemas = true;
 
     // Start async loading with std::async
-    schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
+    dbData.schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
 }
 
 std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
     std::vector<Schema> result;
+    const auto &dbData = getCurrentDatabaseData();
 
     // Check if we're still supposed to be loading
-    if (!loadingSchemas.load()) {
+    if (!dbData.loadingSchemas.load()) {
         return result;
     }
 
@@ -1167,12 +1209,12 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
     const std::vector<std::string> schemaNames = getSchemaNames();
     std::cout << "Found " << schemaNames.size() << " schemas, loading objects..." << std::endl;
 
-    if (schemaNames.empty() || !loadingSchemas.load()) {
+    if (schemaNames.empty() || !dbData.loadingSchemas.load()) {
         return result;
     }
 
     for (const auto &schemaName : schemaNames) {
-        if (!loadingSchemas.load()) {
+        if (!dbData.loadingSchemas.load()) {
             break;
         }
 
@@ -1191,10 +1233,11 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
 
 std::vector<std::string> PostgresDatabase::getSchemaNames() const {
     std::vector<std::string> schemaNames;
+    const auto &dbData = getCurrentDatabaseData();
 
     try {
         std::lock_guard lock(sessionMutex);
-        if (!session || !loadingSchemas.load()) {
+        if (!session || !dbData.loadingSchemas.load()) {
             return schemaNames;
         }
 
@@ -1209,7 +1252,7 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
         const soci::rowset rs = session->prepare << sql;
 
         for (const auto &row : rs) {
-            if (!loadingSchemas.load()) {
+            if (!dbData.loadingSchemas.load()) {
                 break;
             }
 
@@ -1268,15 +1311,7 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
     // Disconnect from current database
     disconnect();
 
-    // Clear all cached data since we're switching databases
-    tables.clear();
-    views.clear();
-    sequences.clear();
-    schemas.clear();
-    tablesLoaded = false;
-    viewsLoaded = false;
-    sequencesLoaded = false;
-    schemasLoaded = false;
+    // Don't clear cached data when switching databases - keep it per database
 
     // Update database name and connection string
     database = targetDatabase;

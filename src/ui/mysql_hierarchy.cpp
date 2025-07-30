@@ -1,9 +1,11 @@
 #include "ui/mysql_hierarchy.hpp"
+#include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/mysql.hpp"
 #include "imgui.h"
 #include "ui/hierarchy_helpers.hpp"
+#include "utils/spinner.hpp"
 #include <iostream>
 
 namespace MySQLHierarchy {
@@ -18,14 +20,19 @@ namespace MySQLHierarchy {
     }
 
     void renderSingleDatabaseHierarchy(MySQLDatabase *mysqlDb) {
-        // Show the database/schema as a child node under the connection
+        // First show the connected database as a child node
         constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                    ImGuiTreeNodeFlags_FramePadding;
 
         // Draw database node with placeholder space for icon
-        const std::string dbName = mysqlDb->getDatabaseName();
-        const std::string dbNodeLabel = std::format("   {}###db_node", dbName);
+        std::string dbName = mysqlDb->getDatabaseName();
+        // Add table count if tables are loaded
+        if (mysqlDb->areTablesLoaded() && !mysqlDb->getTables().empty()) {
+            dbName = std::format("{} ({} tables)", dbName, mysqlDb->getTables().size());
+        }
+        const std::string dbNodeLabel = std::format(
+            "   {}###db_single_{}", dbName, dbName); // 3 spaces for icon, unique ID per database
         const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
         // Draw colored icon over the placeholder space
@@ -35,13 +42,14 @@ namespace MySQLHierarchy {
                        (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
         ImGui::GetWindowDrawList()->AddText(
-            dbNodeIconPos, ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // orange
+            dbNodeIconPos,
+            ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // Orange for MySQL database
             ICON_FK_DATABASE);
 
         // Context menu for database node
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                const auto &app = Application::getInstance();
+                auto &app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", mysqlDb->getConnectionString());
                 std::cout << "Creating new SQL editor for database: " << mysqlDb->getDatabaseName()
                           << std::endl;
@@ -50,7 +58,15 @@ namespace MySQLHierarchy {
         }
 
         if (dbNodeOpen) {
-            // Show tables and views under the database node
+            // Load tables when database node is opened
+            if (!mysqlDb->areTablesLoaded() && !mysqlDb->isLoadingTables()) {
+                std::cout
+                    << "Database node expanded and tables not loaded yet, attempting to load..."
+                    << std::endl;
+                mysqlDb->refreshTables();
+            }
+
+            // Show tables and views
             HierarchyHelpers::renderTablesSection(mysqlDb);
             HierarchyHelpers::renderViewsSection(mysqlDb);
 
@@ -83,13 +99,14 @@ namespace MySQLHierarchy {
                            (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
             ImGui::GetWindowDrawList()->AddText(
-                dbNodeIconPos, ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // orange
+                dbNodeIconPos,
+                ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // Orange for MySQL database
                 ICON_FK_DATABASE);
 
             // Context menu for database node
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
-                    const auto &app = Application::getInstance();
+                    auto &app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", mysqlDb->getConnectionString());
                     std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
                 }
@@ -111,21 +128,29 @@ namespace MySQLHierarchy {
                             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  %s",
                                                error.c_str());
                             mysqlDb->setDatabaseExpanded(
-                                dbName, false); // Mark as not expanded due to failure
+                                dbName,
+                                false); // Mark as not expanded due to failure
                             ImGui::TreePop();
                             continue;
                         }
                     }
                 }
 
-                // Only show tables/views if we're currently connected to this database
+                // Show tables and views for this database (cached or load if needed)
                 if (dbName == mysqlDb->getDatabaseName()) {
-                    // Show tables and views for this database (same as single database mode)
+                    // Load tables only when first expanded and not already loaded
+                    if (!mysqlDb->areTablesLoaded() && !mysqlDb->isLoadingTables()) {
+                        std::cout << "Database " << dbName
+                                  << " expanded for first time, loading tables..." << std::endl;
+                        mysqlDb->refreshTables();
+                    }
+                    // Show tables for currently connected database
                     HierarchyHelpers::renderTablesSection(mysqlDb);
                     HierarchyHelpers::renderViewsSection(mysqlDb);
                 } else {
-                    // We're showing a different database, so show placeholder
-                    ImGui::Text("  Switch to this database to view contents");
+                    // Show cached tables for other databases
+                    HierarchyHelpers::renderCachedTablesSection(mysqlDb, dbName);
+                    HierarchyHelpers::renderCachedViewsSection(mysqlDb, dbName);
                 }
 
                 ImGui::TreePop();
@@ -137,4 +162,21 @@ namespace MySQLHierarchy {
             }
         }
     }
+
+    void renderTableNode(MySQLDatabase *mysqlDb, int tableIndex) {
+        HierarchyHelpers::renderTableNode(mysqlDb, tableIndex);
+    }
+
+    void renderViewNode(MySQLDatabase *mysqlDb, int viewIndex) {
+        HierarchyHelpers::renderViewNode(mysqlDb, viewIndex);
+    }
+
+    void renderCachedTableNode(MySQLDatabase *mysqlDb, const std::string &dbName, int tableIndex) {
+        HierarchyHelpers::renderCachedTableNode(mysqlDb, dbName, tableIndex);
+    }
+
+    void renderCachedViewNode(MySQLDatabase *mysqlDb, const std::string &dbName, int viewIndex) {
+        HierarchyHelpers::renderCachedViewNode(mysqlDb, dbName, viewIndex);
+    }
+
 } // namespace MySQLHierarchy

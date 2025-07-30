@@ -11,24 +11,10 @@ PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &h
                                    const std::string &password, bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
-
-    std::stringstream ss;
-
-    ss << "host=" << host << " port=" << port;
-
-    if (!database.empty()) {
-        ss << " dbname=" << database;
+    connectionString = buildConnectionString(database);
+    if (database.empty()) {
+        this->database = "postgres";
     }
-
-    if (!username.empty()) {
-        ss << " user=" << username;
-    }
-
-    if (!password.empty()) {
-        ss << " password=" << password;
-    }
-
-    connectionString = ss.str();
 }
 
 PostgresDatabase::~PostgresDatabase() {
@@ -1376,7 +1362,13 @@ soci::session *PostgresDatabase::getSessionForDatabase(const std::string &dbName
 
 std::string PostgresDatabase::buildConnectionString(const std::string &dbName) const {
     std::stringstream ss;
-    ss << "host=" << host << " port=" << port << " dbname=" << dbName;
+    ss << "host=" << host << " port=" << port;
+
+    if (!dbName.empty()) {
+        ss << " dbname=" << dbName;
+    } else {
+        ss << " dbname=" << "postgres";
+    }
 
     if (!username.empty()) {
         ss << " user=" << username;

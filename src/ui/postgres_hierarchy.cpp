@@ -78,12 +78,6 @@ namespace PostgresHierarchy {
     }
 
     void renderAllDatabasesHierarchy(PostgresDatabase *pgDb) {
-        // Load databases only once
-        if (!pgDb->areDatabasesLoaded()) {
-            pgDb->getDatabaseNames(); // This will load and cache the databases
-        }
-
-        // Get all databases from the server (cached)
         std::vector<std::string> databases = pgDb->getDatabaseNames();
 
         for (const auto &dbName : databases) {

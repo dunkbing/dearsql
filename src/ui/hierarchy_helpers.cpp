@@ -11,15 +11,23 @@
 namespace HierarchyHelpers {
     void renderTableNode(DatabaseInterface *db, int tableIndex) {
         auto &app = Application::getInstance();
-        const auto &table = db->getTables()[tableIndex];
+        auto &table = db->getTables()[tableIndex];
 
         ImGuiTreeNodeFlags tableFlags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the table's expanded state
+        if (table.expanded) {
+            tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Draw tree node with placeholder space for icon
         const std::string tableLabel = std::format("   {}###table_{}_{}", table.name, db->getName(),
                                                    table.name); // 3 spaces for icon with unique ID
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+
+        // Update the table's expanded state based on the current UI state
+        table.expanded = tableOpened;
 
         // Draw colored icon over the placeholder space
         const ImVec2 tableIconPos =
@@ -207,9 +215,28 @@ namespace HierarchyHelpers {
     }
 
     void renderTablesSection(DatabaseInterface *db) {
-        constexpr ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                   ImGuiTreeNodeFlags_FramePadding;
+        // Get expansion state from the current database data
+        bool tablesExpanded = false;
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                tablesExpanded = pgDb->getCurrentDatabaseData().tablesExpanded;
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                tablesExpanded = mysqlDb->getCurrentDatabaseData().tablesExpanded;
+            }
+        }
+
+        ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                         ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the expansion state
+        if (tablesExpanded) {
+            tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Show loading indicator next to Tables node if loading
         const bool showTablesSpinner = db->isLoadingTables();
@@ -219,6 +246,19 @@ namespace HierarchyHelpers {
             std::format("   Tables ({})###tables_current_{}", db->getTables().size(),
                         db->getName()); // 3 spaces for icon, unique ID per database
         const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+        // Update the expansion state based on the current UI state
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                pgDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                mysqlDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
+            }
+        }
 
         // Draw colored icon over the placeholder space
         const auto tablesSectionIconPos =
@@ -276,9 +316,28 @@ namespace HierarchyHelpers {
     }
 
     void renderViewsSection(DatabaseInterface *db) {
-        constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                  ImGuiTreeNodeFlags_FramePadding;
+        // Get expansion state from the current database data
+        bool viewsExpanded = false;
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                viewsExpanded = pgDb->getCurrentDatabaseData().viewsExpanded;
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                viewsExpanded = mysqlDb->getCurrentDatabaseData().viewsExpanded;
+            }
+        }
+
+        ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                        ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                        ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the expansion state
+        if (viewsExpanded) {
+            viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Show loading indicator next to Views node if loading
         const bool showViewsSpinner = db->isLoadingViews();
@@ -288,6 +347,19 @@ namespace HierarchyHelpers {
             std::format("   Views ({})###views_current_{}", db->getViews().size(),
                         db->getName()); // 3 spaces for icon, unique ID per database
         const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+        // Update the expansion state based on the current UI state
+        if (db->getType() == DatabaseType::POSTGRESQL) {
+            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+            if (pgDb) {
+                pgDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
+            }
+        } else if (db->getType() == DatabaseType::MYSQL) {
+            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+            if (mysqlDb) {
+                mysqlDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
+            }
+        }
 
         // Draw colored icon over the placeholder space
         const auto viewsSectionIconPos =
@@ -505,13 +577,21 @@ namespace HierarchyHelpers {
             if (pgDb) {
                 const auto &dbData = pgDb->getDatabaseData(dbName);
 
-                constexpr ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                           ImGuiTreeNodeFlags_FramePadding;
+                ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+                // Set the default open state based on the expansion state
+                if (dbData.tablesExpanded) {
+                    tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                }
 
                 const std::string tablesLabel = std::format("   Tables ({})###tables_cached_pg_{}",
                                                             dbData.tables.size(), dbName);
                 const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+                // Update the expansion state based on the current UI state
+                pgDb->getDatabaseData(dbName).tablesExpanded = tablesOpen;
 
                 const auto tablesSectionIconPos =
                     ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
@@ -563,15 +643,23 @@ namespace HierarchyHelpers {
         } else if (db->getType() == DatabaseType::MYSQL) {
             auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
             if (mysqlDb) {
-                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+                auto &dbData = mysqlDb->getDatabaseData(dbName);
 
-                constexpr ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                           ImGuiTreeNodeFlags_FramePadding;
+                ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+
+                // Set the default open state based on the expansion state
+                if (dbData.tablesExpanded) {
+                    tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                }
 
                 const std::string tablesLabel = std::format(
                     "   Tables ({})###tables_cached_mysql_{}", dbData.tables.size(), dbName);
                 const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+                // Update the expansion state based on the current UI state
+                dbData.tablesExpanded = tablesOpen;
 
                 const auto tablesSectionIconPos =
                     ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
@@ -628,15 +716,23 @@ namespace HierarchyHelpers {
         if (db->getType() == DatabaseType::POSTGRESQL) {
             auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
             if (pgDb) {
-                const auto &dbData = pgDb->getDatabaseData(dbName);
+                auto &dbData = pgDb->getDatabaseData(dbName);
 
-                constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                          ImGuiTreeNodeFlags_FramePadding;
+                ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                ImGuiTreeNodeFlags_FramePadding;
+
+                // Set the default open state based on the expansion state
+                if (dbData.viewsExpanded) {
+                    viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                }
 
                 const std::string viewsLabel =
                     std::format("   Views ({})###views_cached_pg_{}", dbData.views.size(), dbName);
                 const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+                // Update the expansion state based on the current UI state
+                dbData.viewsExpanded = viewsOpen;
 
                 const auto viewsSectionIconPos =
                     ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
@@ -688,15 +784,23 @@ namespace HierarchyHelpers {
         } else if (db->getType() == DatabaseType::MYSQL) {
             auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
             if (mysqlDb) {
-                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+                auto &dbData = mysqlDb->getDatabaseData(dbName);
 
-                constexpr ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                          ImGuiTreeNodeFlags_FramePadding;
+                ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                ImGuiTreeNodeFlags_FramePadding;
+
+                // Set the default open state based on the expansion state
+                if (dbData.viewsExpanded) {
+                    viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                }
 
                 const std::string viewsLabel = std::format("   Views ({})###views_cached_mysql_{}",
                                                            dbData.views.size(), dbName);
                 const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+                // Update the expansion state based on the current UI state
+                dbData.viewsExpanded = viewsOpen;
 
                 const auto viewsSectionIconPos =
                     ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
@@ -752,11 +856,11 @@ namespace HierarchyHelpers {
         auto &app = Application::getInstance();
 
         // Get the cached table data
-        const Table *table = nullptr;
+        Table *table = nullptr;
         if (db->getType() == DatabaseType::POSTGRESQL) {
             auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
             if (pgDb) {
-                const auto &dbData = pgDb->getDatabaseData(dbName);
+                auto &dbData = pgDb->getDatabaseData(dbName);
                 if (tableIndex < dbData.tables.size()) {
                     table = &dbData.tables[tableIndex];
                 }
@@ -764,7 +868,7 @@ namespace HierarchyHelpers {
         } else if (db->getType() == DatabaseType::MYSQL) {
             auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
             if (mysqlDb) {
-                const auto &dbData = mysqlDb->getDatabaseData(dbName);
+                auto &dbData = mysqlDb->getDatabaseData(dbName);
                 if (tableIndex < dbData.tables.size()) {
                     table = &dbData.tables[tableIndex];
                 }
@@ -777,11 +881,19 @@ namespace HierarchyHelpers {
         ImGuiTreeNodeFlags tableFlags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
+        // Set the default open state based on the table's expanded state
+        if (table->expanded) {
+            tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
         // Draw tree node with placeholder space for icon
         const std::string tableLabel =
             std::format("   {}###cached_table_{}_{}", table->name, dbName,
                         table->name); // 3 spaces for icon with unique ID
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+
+        // Update the table's expanded state based on the current UI state
+        table->expanded = tableOpened;
 
         // Draw colored icon over the placeholder space
         const ImVec2 tableIconPos =

@@ -92,6 +92,9 @@ PostgresDatabase::getDatabaseData(const std::string &dbName) const {
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
     std::cout << "Connection string: " << connectionString << std::endl;
+
+    // Check if we already have a connection to the current database
+    auto *session = getSessionForDatabase(database);
     if (connected && session) {
         return {true, ""};
     }
@@ -99,14 +102,16 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
     attemptedConnection = true;
 
     try {
-        session = std::make_unique<soci::session>(soci::postgresql, connectionString);
+        std::lock_guard lock(sessionMutex);
+        sessionPool[database] = std::make_unique<soci::session>(soci::postgresql, connectionString);
         std::cout << "Successfully connected to PostgreSQL database: " << database << std::endl;
         connected = true;
         lastConnectionError.clear();
         return {true, ""};
     } catch (const soci::soci_error &e) {
         std::cerr << "Connection to database failed: " << e.what() << std::endl;
-        session.reset();
+        std::lock_guard lock(sessionMutex);
+        sessionPool.erase(database);
         connected = false;
         lastConnectionError = e.what();
         return {false, e.what()};
@@ -114,14 +119,13 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 }
 
 void PostgresDatabase::disconnect() {
-    if (session) {
-        session.reset();
-    }
+    std::lock_guard lock(sessionMutex);
+    sessionPool.clear();
     connected = false;
 }
 
 bool PostgresDatabase::isConnected() const {
-    return connected && session;
+    return connected && getSessionForDatabase(database) != nullptr;
 }
 
 const std::string &PostgresDatabase::getName() const {
@@ -183,10 +187,11 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return "Error: Database session is not available";
         }
+        std::lock_guard lock(sessionMutex);
 
         std::stringstream output;
         const soci::rowset rs = session->prepare << query;
@@ -256,10 +261,11 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return {columnNames, data};
         }
+        std::lock_guard lock(sessionMutex);
 
         const soci::rowset rs = session->prepare << query;
 
@@ -312,10 +318,11 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return data;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql = "SELECT * FROM \"" + tableName + "\" LIMIT " +
                                 std::to_string(limit) + " OFFSET " + std::to_string(offset);
@@ -395,10 +402,11 @@ std::vector<std::string> PostgresDatabase::getColumnNames(const std::string &tab
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return columnNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql = std::format("SELECT column_name FROM information_schema.columns "
                                             "WHERE table_name = '{}' ORDER BY ordinal_position",
@@ -426,10 +434,11 @@ int PostgresDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return 0;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
         int count = 0;
@@ -466,17 +475,18 @@ void PostgresDatabase::setLastConnectionError(const std::string &error) {
 }
 
 void *PostgresDatabase::getConnection() const {
-    return session.get();
+    return getSessionForDatabase(database);
 }
 
 std::vector<std::string> PostgresDatabase::getTableNames() {
     std::vector<std::string> tableNames;
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return tableNames;
         }
+        std::lock_guard<std::mutex> lock(sessionMutex);
 
         const std::string sql =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
@@ -501,10 +511,11 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableNa
     std::vector<Column> columns;
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return columns;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql =
             "SELECT c.column_name, c.data_type, c.is_nullable, "
@@ -604,10 +615,11 @@ std::vector<std::string> PostgresDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return viewNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
@@ -632,10 +644,11 @@ std::vector<Column> PostgresDatabase::getViewColumns(const std::string &viewName
     std::vector<Column> columns;
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return columns;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
                                 "FROM information_schema.columns c "
@@ -665,10 +678,11 @@ std::vector<std::string> PostgresDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return sequenceNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql =
             "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
@@ -766,10 +780,11 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     sql += ") ORDER BY c.table_name, c.ordinal_position";
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session || !dbData.loadingTables.load()) {
             return result;
         }
+        std::lock_guard lock(sessionMutex);
 
         // Execute the query
         const soci::rowset rs = session->prepare << sql;
@@ -883,10 +898,11 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     sql += ") ORDER BY c.table_name, c.ordinal_position";
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session || !dbData.loadingViews.load()) {
             return result;
         }
+        std::lock_guard<std::mutex> lock(sessionMutex);
 
         // Execute the query
         const soci::rowset rs = session->prepare << sql;
@@ -974,10 +990,11 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
     }
 
     try {
-        std::lock_guard<std::mutex> lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session || !dbData.loadingSequences.load()) {
             return result;
         }
+        std::lock_guard<std::mutex> lock(sessionMutex);
 
         const std::string sql = "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' "
                                 "ORDER BY sequencename";
@@ -1236,10 +1253,11 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
     const auto &dbData = getCurrentDatabaseData();
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session || !dbData.loadingSchemas.load()) {
             return schemaNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql =
             "SELECT schema_name FROM information_schema.schemata "
@@ -1276,10 +1294,11 @@ std::vector<std::string> PostgresDatabase::getDatabaseNames() {
     availableDatabases.clear();
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return availableDatabases;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql =
             "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname";
@@ -1308,34 +1327,33 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
         return {true, ""}; // Already connected to the target database
     }
 
-    // Disconnect from current database
-    disconnect();
-
-    // Don't clear cached data when switching databases - keep it per database
-
     // Update database name and connection string
     database = targetDatabase;
-    std::stringstream ss;
-    ss << "host=" << host << " port=" << port << " dbname=" << database;
+    connectionString = buildConnectionString(targetDatabase);
 
-    // Only add user parameter if username is not empty
-    if (!username.empty()) {
-        ss << " user=" << username;
+    // Check if we already have a connection to the target database
+    auto *session = getSessionForDatabase(targetDatabase);
+    if (session) {
+        connected = true;
+        std::cout << "Reusing existing connection to database: " << targetDatabase << std::endl;
+        return {true, ""};
     }
 
-    // Only add password parameter if password is not empty
-    if (!password.empty()) {
-        ss << " password=" << password;
+    // Create new connection to the target database
+    try {
+        std::lock_guard lock(sessionMutex);
+        sessionPool[targetDatabase] =
+            std::make_unique<soci::session>(soci::postgresql, connectionString);
+        connected = true;
+        std::cout << "Created new connection to database: " << targetDatabase << std::endl;
+        return {true, ""};
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
+                  << std::endl;
+        connected = false;
+        lastConnectionError = e.what();
+        return {false, e.what()};
     }
-
-    connectionString = ss.str();
-
-    // Connect to the new database
-    auto result = connect();
-
-    std::cout << "Switched to database: " << targetDatabase << " (success: " << result.first << ")"
-              << std::endl;
-    return result;
 }
 
 bool PostgresDatabase::isDatabaseExpanded(const std::string &dbName) const {
@@ -1348,4 +1366,25 @@ void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, bool expan
     } else {
         expandedDatabases.erase(dbName);
     }
+}
+
+soci::session *PostgresDatabase::getSessionForDatabase(const std::string &dbName) const {
+    std::lock_guard lock(sessionMutex);
+    auto it = sessionPool.find(dbName);
+    return (it != sessionPool.end()) ? it->second.get() : nullptr;
+}
+
+std::string PostgresDatabase::buildConnectionString(const std::string &dbName) const {
+    std::stringstream ss;
+    ss << "host=" << host << " port=" << port << " dbname=" << dbName;
+
+    if (!username.empty()) {
+        ss << " user=" << username;
+    }
+
+    if (!password.empty()) {
+        ss << " password=" << password;
+    }
+
+    return ss.str();
 }

@@ -71,21 +71,28 @@ const MySQLDatabase::DatabaseData &MySQLDatabase::getDatabaseData(const std::str
 }
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
+    // Check if we already have a connection to the current database
+    auto *session = getSessionForDatabase(database);
     if (connected && session) {
         return {true, ""};
     }
 
     try {
-        session = std::make_unique<soci::session>(soci::mysql, connectionString);
+        std::lock_guard lock(sessionMutex);
+        sessionPool[database] = std::make_unique<soci::session>(soci::mysql, connectionString);
         connected = true;
         return {true, ""};
     } catch (const soci::soci_error &e) {
         connected = false;
+        std::lock_guard lock(sessionMutex);
+        sessionPool.erase(database);
         std::string error = "MySQL connection failed: " + std::string(e.what());
         setLastConnectionError(error);
         return {false, error};
     } catch (const std::exception &e) {
         connected = false;
+        std::lock_guard lock(sessionMutex);
+        sessionPool.erase(database);
         std::string error = "MySQL connection failed: " + std::string(e.what());
         setLastConnectionError(error);
         return {false, error};
@@ -93,13 +100,14 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
 }
 
 void MySQLDatabase::disconnect() {
-    session.reset();
+    std::lock_guard lock(sessionMutex);
+    sessionPool.clear();
     connected = false;
     // Don't clear per-database cache on disconnect
 }
 
 bool MySQLDatabase::isConnected() const {
-    return connected && session;
+    return connected && getSessionForDatabase(database) != nullptr;
 }
 
 bool MySQLDatabase::isConnecting() const {
@@ -144,7 +152,7 @@ const std::string &MySQLDatabase::getPath() const {
 }
 
 void *MySQLDatabase::getConnection() const {
-    return session.get();
+    return getSessionForDatabase(database);
 }
 
 DatabaseType MySQLDatabase::getType() const {
@@ -340,10 +348,11 @@ std::string MySQLDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return "Error: Database session is not available";
         }
+        std::lock_guard lock(sessionMutex);
 
         const soci::rowset rs = (session->prepare << query);
 
@@ -394,10 +403,11 @@ MySQLDatabase::executeQueryStructured(const std::string &query) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return {columnNames, data};
         }
+        std::lock_guard lock(sessionMutex);
 
         const soci::rowset rs = (session->prepare << query);
 
@@ -447,10 +457,11 @@ std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::str
 
     std::vector<std::vector<std::string>> data;
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return data;
         }
+        std::lock_guard lock(sessionMutex);
 
         std::string query = "SELECT * FROM `" + tableName + "` LIMIT " + std::to_string(limit) +
                             " OFFSET " + std::to_string(offset);
@@ -551,10 +562,11 @@ std::vector<std::string> MySQLDatabase::getColumnNames(const std::string &tableN
 
     std::vector<std::string> columns;
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return columns;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
         const soci::rowset rs = (session->prepare << query);
@@ -576,10 +588,11 @@ int MySQLDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return 0;
         }
+        std::lock_guard lock(sessionMutex);
 
         int count = 0;
         const std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
@@ -706,10 +719,11 @@ std::vector<std::string> MySQLDatabase::getTableNames() {
 
     std::vector<std::string> tableNames;
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return tableNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string query = "SHOW TABLES";
         const soci::rowset rs = (session->prepare << query);
@@ -732,10 +746,11 @@ std::vector<Column> MySQLDatabase::getTableColumns(const std::string &tableName)
 
     std::vector<Column> columns;
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return columns;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string query = std::format("DESCRIBE `{}`", tableName);
         const soci::rowset rs = (session->prepare << query);
@@ -763,10 +778,11 @@ std::vector<std::string> MySQLDatabase::getViewNames() {
 
     std::vector<std::string> viewNames;
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return viewNames;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
         const soci::rowset rs = (session->prepare << query);
@@ -798,10 +814,11 @@ std::vector<std::string> MySQLDatabase::getDatabaseNames() {
     availableDatabases.clear();
 
     try {
-        std::lock_guard lock(sessionMutex);
+        auto *session = getSessionForDatabase(database);
         if (!session) {
             return availableDatabases;
         }
+        std::lock_guard lock(sessionMutex);
 
         const std::string sql = "SHOW DATABASES";
 
@@ -833,29 +850,39 @@ std::pair<bool, std::string> MySQLDatabase::switchToDatabase(const std::string &
         return {true, ""}; // Already connected to the target database
     }
 
-    // Disconnect from current database
-    disconnect();
-
-    // Don't clear cached data when switching databases - keep it per database
-
     // Update database name and connection string
     database = targetDatabase;
-    connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
+    connectionString = buildConnectionString(targetDatabase);
 
-    if (!username.empty()) {
-        connectionString += " user=" + username;
+    // Check if we already have a connection to the target database
+    auto *session = getSessionForDatabase(targetDatabase);
+    if (session) {
+        connected = true;
+        std::cout << "Reusing existing connection to database: " << targetDatabase << std::endl;
+        return {true, ""};
     }
 
-    if (!password.empty()) {
-        connectionString += " password=" + password;
+    // Create new connection to the target database
+    try {
+        std::lock_guard lock(sessionMutex);
+        sessionPool[targetDatabase] =
+            std::make_unique<soci::session>(soci::mysql, connectionString);
+        connected = true;
+        std::cout << "Created new connection to database: " << targetDatabase << std::endl;
+        return {true, ""};
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
+                  << std::endl;
+        connected = false;
+        lastConnectionError = e.what();
+        return {false, e.what()};
+    } catch (const std::exception &e) {
+        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
+                  << std::endl;
+        connected = false;
+        lastConnectionError = e.what();
+        return {false, e.what()};
     }
-
-    // Connect to the new database
-    auto result = connect();
-
-    std::cout << "Switched to database: " << targetDatabase << " (success: " << result.first << ")"
-              << std::endl;
-    return result;
 }
 
 bool MySQLDatabase::isDatabaseExpanded(const std::string &dbName) const {
@@ -868,4 +895,24 @@ void MySQLDatabase::setDatabaseExpanded(const std::string &dbName, bool expanded
     } else {
         expandedDatabases.erase(dbName);
     }
+}
+
+soci::session *MySQLDatabase::getSessionForDatabase(const std::string &dbName) const {
+    std::lock_guard lock(sessionMutex);
+    auto it = sessionPool.find(dbName);
+    return (it != sessionPool.end()) ? it->second.get() : nullptr;
+}
+
+std::string MySQLDatabase::buildConnectionString(const std::string &dbName) const {
+    std::string connStr = "host=" + host + " port=" + std::to_string(port) + " dbname=" + dbName;
+
+    if (!username.empty()) {
+        connStr += " user=" + username;
+    }
+
+    if (!password.empty()) {
+        connStr += " password=" + password;
+    }
+
+    return connStr;
 }

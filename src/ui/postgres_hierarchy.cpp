@@ -228,11 +228,19 @@ namespace PostgresHierarchy {
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                          ImGuiTreeNodeFlags_FramePadding;
 
+        // Set the default open state based on the schema's expanded state
+        if (schema.expanded) {
+            schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
         // Draw schema node with placeholder space for icon
         const std::string schemaLabel =
             std::format("   {}###schema_{}_{}", schema.name, pgDb->getName(),
                         schema.name); // 3 spaces for icon with unique ID
         bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
+
+        // Update the schema's expanded state based on the current UI state
+        schema.expanded = schemaOpen;
 
         // Draw colored icon over the placeholder space
         const ImVec2 schemaIconPos =
@@ -257,18 +265,26 @@ namespace PostgresHierarchy {
 
     void renderCachedSchemaNode(PostgresDatabase *pgDb, const std::string &dbName,
                                 int schemaIndex) {
-        const auto &dbData = pgDb->getDatabaseData(dbName);
-        const auto &schema = dbData.schemas[schemaIndex];
+        auto &dbData = pgDb->getDatabaseData(dbName);
+        auto &schema = dbData.schemas[schemaIndex];
 
         ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                          ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the schema's expanded state
+        if (schema.expanded) {
+            schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Draw schema node with placeholder space for icon
         const std::string schemaLabel =
             std::format("   {}###cached_schema_{}_{}", schema.name, dbName,
                         schema.name); // 3 spaces for icon with unique ID
         bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
+
+        // Update the schema's expanded state based on the current UI state
+        schema.expanded = schemaOpen;
 
         // Draw colored icon over the placeholder space
         const ImVec2 schemaIconPos =
@@ -296,9 +312,17 @@ namespace PostgresHierarchy {
 namespace {
 
     void renderSequencesSection(PostgresDatabase *pgDb) {
-        constexpr ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                      ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                      ImGuiTreeNodeFlags_FramePadding;
+        // Get expansion state from the current database data
+        bool sequencesExpanded = pgDb->getCurrentDatabaseData().sequencesExpanded;
+
+        ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                            ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                            ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the expansion state
+        if (sequencesExpanded) {
+            sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Show loading indicator next to Sequences node if loading
         const bool showSequencesSpinner = pgDb->isLoadingSequences();
@@ -308,6 +332,9 @@ namespace {
             std::format("   Sequences ({})###sequences_current_{}", pgDb->getSequences().size(),
                         pgDb->getName()); // 3 spaces for icon, unique ID per database
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+
+        // Update the expansion state based on the current UI state
+        pgDb->getCurrentDatabaseData().sequencesExpanded = sequencesOpen;
 
         // Draw colored icon over the placeholder space
         const auto sequencesSectionIconPos =
@@ -443,11 +470,16 @@ namespace PostgresHierarchy {
     }
 
     void renderCachedSequencesSection(PostgresDatabase *pgDb, const std::string &dbName) {
-        const auto &dbData = pgDb->getDatabaseData(dbName);
+        auto &dbData = pgDb->getDatabaseData(dbName);
 
-        constexpr ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                      ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                      ImGuiTreeNodeFlags_FramePadding;
+        ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                            ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                            ImGuiTreeNodeFlags_FramePadding;
+
+        // Set the default open state based on the expansion state
+        if (dbData.sequencesExpanded) {
+            sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         // Show loading indicator next to Sequences node if loading
         const bool showSequencesSpinner = dbData.loadingSequences;
@@ -457,6 +489,9 @@ namespace PostgresHierarchy {
             std::format("   Sequences ({})###sequences_cached_pg_{}", dbData.sequences.size(),
                         dbName); // 3 spaces for icon, unique ID per database
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+
+        // Update the expansion state based on the current UI state
+        dbData.sequencesExpanded = sequencesOpen;
 
         // Draw colored icon over the placeholder space
         const auto sequencesSectionIconPos =

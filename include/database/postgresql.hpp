@@ -138,7 +138,7 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
-    std::unique_ptr<soci::session> session;
+    std::unordered_map<std::string, std::unique_ptr<soci::session>> sessionPool;
     // Per-database data structures
     struct DatabaseData {
         std::vector<Table> tables;
@@ -149,6 +149,9 @@ private:
         bool viewsLoaded = false;
         bool sequencesLoaded = false;
         bool schemasLoaded = false;
+        bool tablesExpanded = false;
+        bool viewsExpanded = false;
+        bool sequencesExpanded = false;
         std::atomic<bool> loadingTables = false;
         std::atomic<bool> loadingViews = false;
         std::atomic<bool> loadingSequences = false;
@@ -190,4 +193,8 @@ private:
 
     // Thread synchronization
     mutable std::mutex sessionMutex;
+
+    // Helper methods for connection pool
+    soci::session *getSessionForDatabase(const std::string &dbName) const;
+    std::string buildConnectionString(const std::string &dbName) const;
 };

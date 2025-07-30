@@ -25,6 +25,9 @@ struct Schema {
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false;
+    bool tablesExpanded = false;
+    bool viewsExpanded = false;
+    bool sequencesExpanded = false;
 };
 
 class Database {

@@ -70,13 +70,19 @@ public:
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();
+    void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
         return showAllDatabases;
     }
     bool areDatabasesLoaded() const {
         return databasesLoaded;
     }
+    bool isLoadingDatabases() const;
+    void checkDatabasesStatusAsync();
     std::pair<bool, std::string> switchToDatabase(const std::string &targetDatabase);
+    void switchToDatabaseAsync(const std::string &targetDatabase);
+    bool isSwitchingDatabase() const;
+    void checkDatabaseSwitchStatusAsync();
     bool isDatabaseExpanded(const std::string &dbName) const;
     void setDatabaseExpanded(const std::string &dbName, bool expanded);
 
@@ -125,6 +131,8 @@ protected:
     std::vector<std::string> getSequencesAsync() const;
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
+    void startRefreshDatabasesAsync();
+    std::vector<std::string> getDatabaseNamesAsync() const;
 
     // Schema helper methods
     std::vector<std::string> getSchemaNames() const;
@@ -170,6 +178,15 @@ private:
     bool databasesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
+
+    // Async database loading
+    std::atomic<bool> loadingDatabases = false;
+    std::future<std::vector<std::string>> databasesFuture;
+
+    // Async database switching
+    std::atomic<bool> switchingDatabase = false;
+    std::string targetDatabaseName;
+    std::future<std::pair<bool, std::string>> databaseSwitchFuture;
 
 public:
     // Helper methods for per-database data access

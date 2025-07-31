@@ -75,18 +75,39 @@ namespace MySQLHierarchy {
     }
 
     void renderAllDatabasesHierarchy(MySQLDatabase *mysqlDb) {
-        // Load databases only once
-        if (!mysqlDb->areDatabasesLoaded()) {
-            mysqlDb->getDatabaseNames(); // This will load and cache the databases
+        // Check for async database loading completion
+        if (mysqlDb->isLoadingDatabases()) {
+            mysqlDb->checkDatabasesStatusAsync();
         }
 
-        // Get all databases from the server (cached)
+        // Get all databases from the server (may trigger async loading)
         std::vector<std::string> databases = mysqlDb->getDatabaseNames();
 
+        // Show loading indicator if databases are being loaded
+        if (mysqlDb->isLoadingDatabases() && databases.empty()) {
+            ImGui::Text("  Loading databases...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##loading_databases_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(ImGuiCol_Text));
+            return;
+        }
+
+        if (databases.empty() && !mysqlDb->isLoadingDatabases()) {
+            ImGui::Text("  No databases found");
+            return;
+        }
+
         for (const auto &dbName : databases) {
-            constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                       ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                             ImGuiTreeNodeFlags_FramePadding;
+
+            // Keep the node expanded if it was previously expanded
+            if (mysqlDb->isDatabaseExpanded(dbName)) {
+                dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                // Also explicitly set the next item to be open to prevent collapse
+                ImGui::SetNextItemOpen(true);
+            }
 
             // Draw database node with placeholder space for icon
             const std::string dbNodeLabel = std::format("   {}###db_{}", dbName, dbName);
@@ -120,24 +141,22 @@ namespace MySQLHierarchy {
 
                     // Only switch database if we're not already connected to it
                     if (dbName != mysqlDb->getDatabaseName()) {
-                        std::cout << "Switching to database: " << dbName << std::endl;
-                        auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                        if (!success) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                               "  Failed to connect to database:");
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  %s",
-                                               error.c_str());
-                            mysqlDb->setDatabaseExpanded(
-                                dbName,
-                                false); // Mark as not expanded due to failure
-                            ImGui::TreePop();
-                            continue;
+                        if (!mysqlDb->isSwitchingDatabase()) {
+                            std::cout << "Starting async switch to database: " << dbName
+                                      << std::endl;
+                            mysqlDb->switchToDatabaseAsync(dbName);
                         }
                     }
                 }
 
                 // Show tables and views for this database (cached or load if needed)
-                if (dbName == mysqlDb->getDatabaseName()) {
+                if (mysqlDb->isSwitchingDatabase()) {
+                    // Show switching indicator
+                    ImGui::Text("  Switching to database...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##switching_db_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                } else if (dbName == mysqlDb->getDatabaseName()) {
                     // Load tables only when first expanded and not already loaded
                     if (!mysqlDb->areTablesLoaded() && !mysqlDb->isLoadingTables()) {
                         std::cout << "Database " << dbName

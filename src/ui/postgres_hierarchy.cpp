@@ -78,12 +78,38 @@ namespace PostgresHierarchy {
     }
 
     void renderAllDatabasesHierarchy(PostgresDatabase *pgDb) {
+        // Check for async database loading completion
+        if (pgDb->isLoadingDatabases()) {
+            pgDb->checkDatabasesStatusAsync();
+        }
+
         std::vector<std::string> databases = pgDb->getDatabaseNames();
 
+        // Show loading indicator if databases are being loaded
+        if (pgDb->isLoadingDatabases() && databases.empty()) {
+            ImGui::Text("  Loading databases...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##loading_databases_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(ImGuiCol_Text));
+            return;
+        }
+
+        if (databases.empty() && !pgDb->isLoadingDatabases()) {
+            ImGui::Text("  No databases found");
+            return;
+        }
+
         for (const auto &dbName : databases) {
-            constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                       ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                             ImGuiTreeNodeFlags_FramePadding;
+
+            // Keep the node expanded if it was previously expanded
+            if (pgDb->isDatabaseExpanded(dbName)) {
+                dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+                // Also explicitly set the next item to be open to prevent collapse
+                ImGui::SetNextItemOpen(true);
+            }
 
             // Draw database node with placeholder space for icon
             const std::string dbNodeLabel = std::format("   {}###db_{}", dbName, dbName);
@@ -117,23 +143,22 @@ namespace PostgresHierarchy {
 
                     // Only switch database if we're not already connected to it
                     if (dbName != pgDb->getDatabaseName()) {
-                        std::cout << "Switching to database: " << dbName << std::endl;
-                        auto [success, error] = pgDb->switchToDatabase(dbName);
-                        if (!success) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                               "  Failed to connect to database:");
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "  %s",
-                                               error.c_str());
-                            pgDb->setDatabaseExpanded(dbName,
-                                                      false); // Mark as not expanded due to failure
-                            ImGui::TreePop();
-                            continue;
+                        if (!pgDb->isSwitchingDatabase()) {
+                            std::cout << "Starting async switch to database: " << dbName
+                                      << std::endl;
+                            pgDb->switchToDatabaseAsync(dbName);
                         }
                     }
                 }
 
                 // Show schemas for this database (cached or load if needed)
-                if (dbName == pgDb->getDatabaseName()) {
+                if (pgDb->isSwitchingDatabase()) {
+                    // Show switching indicator
+                    ImGui::Text("  Switching to database...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##switching_db_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+                } else if (dbName == pgDb->getDatabaseName()) {
                     // Load schemas only when first expanded and not already loaded
                     if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
                         std::cout << "Database " << dbName
@@ -191,15 +216,12 @@ namespace PostgresHierarchy {
             } else if (!dbData.schemasLoaded) {
                 // Auto-switch database and load schemas when node is expanded
                 if (dbName != pgDb->getDatabaseName()) {
-                    std::cout << "Auto-switching to database: " << dbName << " to load schemas"
-                              << std::endl;
-                    auto [success, error] = pgDb->switchToDatabase(dbName);
-                    if (success) {
-                        pgDb->refreshSchemas();
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                           "  Failed to switch database: %s", error.c_str());
+                    if (!pgDb->isSwitchingDatabase()) {
+                        std::cout << "Auto-switching to database: " << dbName << " to load schemas"
+                                  << std::endl;
+                        pgDb->switchToDatabaseAsync(dbName);
                     }
+                    ImGui::Text("  Switching database...");
                 } else {
                     pgDb->refreshSchemas();
                 }
@@ -516,15 +538,12 @@ namespace PostgresHierarchy {
                 } else if (!dbData.sequencesLoaded) {
                     // Auto-switch database and load sequences when node is expanded
                     if (dbName != pgDb->getDatabaseName()) {
-                        std::cout << "Auto-switching to database: " << dbName
-                                  << " to load sequences" << std::endl;
-                        auto [success, error] = pgDb->switchToDatabase(dbName);
-                        if (success) {
-                            pgDb->refreshSequences();
-                        } else {
-                            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                               "  Failed to switch database: %s", error.c_str());
+                        if (!pgDb->isSwitchingDatabase()) {
+                            std::cout << "Auto-switching to database: " << dbName
+                                      << " to load sequences" << std::endl;
+                            pgDb->switchToDatabaseAsync(dbName);
                         }
+                        ImGui::Text("  Switching database...");
                     } else {
                         pgDb->refreshSequences();
                     }

@@ -239,6 +239,12 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             // Check for async loading completion for Postgres
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                if (pgDb->isLoadingDatabases()) {
+                    pgDb->checkDatabasesStatusAsync();
+                }
+                if (pgDb->isSwitchingDatabase()) {
+                    pgDb->checkDatabaseSwitchStatusAsync();
+                }
                 if (pgDb->isLoadingSchemas()) {
                     pgDb->checkSchemasStatusAsync();
                 }
@@ -263,6 +269,12 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             } else if (db->getType() == DatabaseType::MYSQL) {
                 auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
                 // Check for async loading completion for MySQL
+                if (mysqlDb->isLoadingDatabases()) {
+                    mysqlDb->checkDatabasesStatusAsync();
+                }
+                if (mysqlDb->isSwitchingDatabase()) {
+                    mysqlDb->checkDatabaseSwitchStatusAsync();
+                }
                 if (db->isLoadingTables()) {
                     db->checkTablesStatusAsync();
                 }

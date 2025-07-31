@@ -615,16 +615,12 @@ namespace HierarchyHelpers {
                         } else if (!dbData.tablesLoaded) {
                             // Auto-switch database and load tables when node is expanded
                             if (dbName != pgDb->getDatabaseName()) {
-                                std::cout << "Auto-switching to database: " << dbName
-                                          << " to load tables" << std::endl;
-                                auto [success, error] = pgDb->switchToDatabase(dbName);
-                                if (success) {
-                                    pgDb->refreshTables();
-                                } else {
-                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                                       "  Failed to switch database: %s",
-                                                       error.c_str());
+                                if (!pgDb->isSwitchingDatabase()) {
+                                    std::cout << "Auto-switching to database: " << dbName
+                                              << " to load tables" << std::endl;
+                                    pgDb->switchToDatabaseAsync(dbName);
                                 }
+                                ImGui::Text("  Switching database...");
                             } else {
                                 pgDb->refreshTables();
                             }
@@ -683,16 +679,12 @@ namespace HierarchyHelpers {
                         } else if (!dbData.tablesLoaded) {
                             // Auto-switch database and load tables when node is expanded
                             if (dbName != mysqlDb->getDatabaseName()) {
-                                std::cout << "Auto-switching to database: " << dbName
-                                          << " to load tables" << std::endl;
-                                auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                                if (success) {
-                                    mysqlDb->refreshTables();
-                                } else {
-                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                                       "  Failed to switch database: %s",
-                                                       error.c_str());
+                                if (!mysqlDb->isSwitchingDatabase()) {
+                                    std::cout << "Auto-switching to database: " << dbName
+                                              << " to load tables" << std::endl;
+                                    mysqlDb->switchToDatabaseAsync(dbName);
                                 }
+                                ImGui::Text("  Switching database...");
                             } else {
                                 mysqlDb->refreshTables();
                             }
@@ -756,16 +748,12 @@ namespace HierarchyHelpers {
                         } else if (!dbData.viewsLoaded) {
                             // Auto-switch database and load views when node is expanded
                             if (dbName != pgDb->getDatabaseName()) {
-                                std::cout << "Auto-switching to database: " << dbName
-                                          << " to load views" << std::endl;
-                                auto [success, error] = pgDb->switchToDatabase(dbName);
-                                if (success) {
-                                    pgDb->refreshViews();
-                                } else {
-                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                                       "  Failed to switch database: %s",
-                                                       error.c_str());
+                                if (!pgDb->isSwitchingDatabase()) {
+                                    std::cout << "Auto-switching to database: " << dbName
+                                              << " to load views" << std::endl;
+                                    pgDb->switchToDatabaseAsync(dbName);
                                 }
+                                ImGui::Text("  Switching database...");
                             } else {
                                 pgDb->refreshViews();
                             }
@@ -824,16 +812,12 @@ namespace HierarchyHelpers {
                         } else if (!dbData.viewsLoaded) {
                             // Auto-switch database and load views when node is expanded
                             if (dbName != mysqlDb->getDatabaseName()) {
-                                std::cout << "Auto-switching to database: " << dbName
-                                          << " to load views" << std::endl;
-                                auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                                if (success) {
-                                    mysqlDb->refreshViews();
-                                } else {
-                                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-                                                       "  Failed to switch database: %s",
-                                                       error.c_str());
+                                if (!mysqlDb->isSwitchingDatabase()) {
+                                    std::cout << "Auto-switching to database: " << dbName
+                                              << " to load views" << std::endl;
+                                    mysqlDb->switchToDatabaseAsync(dbName);
                                 }
+                                ImGui::Text("  Switching database...");
                             } else {
                                 mysqlDb->refreshViews();
                             }

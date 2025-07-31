@@ -152,13 +152,7 @@ namespace PostgresHierarchy {
                 }
 
                 // Show schemas for this database (cached or load if needed)
-                if (pgDb->isSwitchingDatabase()) {
-                    // Show switching indicator
-                    ImGui::Text("  Switching to database...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##switching_db_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                } else if (dbName == pgDb->getDatabaseName()) {
+                if (dbName == pgDb->getDatabaseName()) {
                     // Load schemas only when first expanded and not already loaded
                     if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
                         std::cout << "Database " << dbName
@@ -184,7 +178,13 @@ namespace PostgresHierarchy {
 
     void renderSchemasSection(PostgresDatabase *pgDb) {
         if (pgDb->getSchemas().empty()) {
-            if (pgDb->isLoadingSchemas()) {
+            if (pgDb->isSwitchingDatabase()) {
+                // Show connecting indicator when switching databases
+                ImGui::Text("  Connecting...");
+                ImGui::SameLine();
+                UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+            } else if (pgDb->isLoadingSchemas()) {
                 // Show loading indicator with spinner
                 ImGui::Text("  Loading schemas...");
                 ImGui::SameLine();
@@ -221,11 +221,18 @@ namespace PostgresHierarchy {
                                   << std::endl;
                         pgDb->switchToDatabaseAsync(dbName);
                     }
-                    ImGui::Text("  Switching database...");
+                    // Show single connecting message during database switch
+                    ImGui::Text("  Connecting...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
                 } else {
                     pgDb->refreshSchemas();
+                    ImGui::Text("  Loading schemas...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
                 }
-                ImGui::Text("  Loading schemas...");
             } else {
                 ImGui::Text("  No schemas found");
             }

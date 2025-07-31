@@ -1464,13 +1464,13 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
         return {true, ""}; // Already connected to the target database
     }
 
-    // Update database name and connection string
-    database = targetDatabase;
-    connectionString = buildConnectionString(targetDatabase);
-
-    // Check if we already have a connection to the target database
+    std::string targetConnectionString = buildConnectionString(targetDatabase);
     auto *session = getSessionForDatabase(targetDatabase);
+
     if (session) {
+        // update database name and connection string only after successful connection
+        database = targetDatabase;
+        connectionString = targetConnectionString;
         connected = true;
         std::cout << "Reusing existing connection to database: " << targetDatabase << std::endl;
         return {true, ""};
@@ -1479,7 +1479,7 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
     // Create new connection to the target database
     try {
         // Create the session outside the lock to avoid blocking other operations
-        auto newSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
+        auto newSession = std::make_unique<soci::session>(soci::postgresql, targetConnectionString);
 
         // Only lock when adding to the pool
         {
@@ -1487,6 +1487,9 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
             sessionPool[targetDatabase] = std::move(newSession);
         }
 
+        // Update database name and connection string only after successful connection
+        database = targetDatabase;
+        connectionString = targetConnectionString;
         connected = true;
         std::cout << "Created new connection to database: " << targetDatabase << std::endl;
         return {true, ""};

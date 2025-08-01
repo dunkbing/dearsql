@@ -3,6 +3,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "imgui_impl_glfw.h"
 #include "platform/default_platform.hpp"
 #include "platform/macos_platform.hpp"
 #include "themes.hpp"

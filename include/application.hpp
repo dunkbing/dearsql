@@ -2,7 +2,6 @@
 
 #include "app_state.hpp"
 #include "imgui.h"
-#include "imgui_impl_glfw.h"
 #include "platform/platform_interface.hpp"
 #include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"

@@ -1428,13 +1428,13 @@ void PostgresDatabase::checkSchemasStatusAsync(const std::string &dbName) {
         dbData.schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             dbData.schemas = dbData.schemasFuture.get();
-            std::cout << "Async schema loading completed for database " << dbName << ". Found " 
+            std::cout << "Async schema loading completed for database " << dbName << ". Found "
                       << dbData.schemas.size() << " schemas." << std::endl;
             dbData.schemasLoaded = true;
             dbData.loadingSchemas = false;
         } catch (const std::exception &e) {
-            std::cerr << "Error in async schema loading for database " << dbName << ": " 
-                      << e.what() << std::endl;
+            std::cerr << "Error in async schema loading for database " << dbName << ": " << e.what()
+                      << std::endl;
             dbData.schemasLoaded = true;
             dbData.loadingSchemas = false;
         }

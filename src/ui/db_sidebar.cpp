@@ -1,5 +1,4 @@
 #include "ui/db_sidebar.hpp"
-#include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
@@ -160,7 +159,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     } else if (db->getType() == DatabaseType::MYSQL) {
         dbIcon = ICON_FK_MYSQL;
     } else if (db->getType() == DatabaseType::REDIS) {
-        dbIcon = ICON_FA_DATABASE;
+        dbIcon = ICON_FK_DATABASE;
     } else {
         dbIcon = ICON_FK_DATABASE;
     }

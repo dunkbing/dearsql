@@ -1,5 +1,6 @@
 #include "platform/macos_platform.hpp"
 #include "application.hpp"
+#include "imgui_impl_glfw.h"
 #include "themes.hpp"
 #include <iostream>
 
@@ -86,6 +87,7 @@
         NSLog(@"Exception in sidebarToggleClicked: %@", exception);
     }
 }
+
 @end
 
 #endif
@@ -163,8 +165,11 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
 
-    // Create custom title bar accessory view for sidebar button aligned with toolbar
-    NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 12, 40, 30)];
+    // Create custom title bar accessory view with sidebar and plus buttons
+    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
+
+    // Sidebar toggle button
+    NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
     [sidebarButton setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
                                       accessibilityDescription:@"Toggle Sidebar"]];
     [sidebarButton setButtonType:NSButtonTypeMomentaryPushIn];
@@ -172,10 +177,22 @@ void MacOSPlatform::setupTitlebar() {
     [sidebarButton setTarget:toolbarDelegate_];
     [sidebarButton setAction:@selector(sidebarToggleClicked:)];
     [sidebarButton setBordered:NO];
+    [buttonContainer addSubview:sidebarButton];
+
+    // Plus button to add database connection
+    NSButton *plusButton = [[NSButton alloc] initWithFrame:NSMakeRect(32, 10, 30, 30)];
+    [plusButton setImage:[NSImage imageWithSystemSymbolName:@"plus"
+                                   accessibilityDescription:@"Add Database Connection"]];
+    [plusButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [plusButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [plusButton setTarget:toolbarDelegate_];
+    [plusButton setAction:@selector(connectButtonClicked:)];
+    [plusButton setBordered:NO];
+    [buttonContainer addSubview:plusButton];
 
     NSTitlebarAccessoryViewController *accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];
-    accessoryController.view = sidebarButton;
+    accessoryController.view = buttonContainer;
     accessoryController.layoutAttribute = NSLayoutAttributeLeading;
 
     [nsWindow addTitlebarAccessoryViewController:accessoryController];

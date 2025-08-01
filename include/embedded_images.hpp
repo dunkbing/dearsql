@@ -12,5 +12,4 @@ struct EmbeddedImage {
 extern "C" const EmbeddedImage *getEmbeddedImages();
 extern "C" size_t getEmbeddedImageCount();
 
-// Helper function to find an image by name
 const EmbeddedImage *findEmbeddedImage(const char *name);

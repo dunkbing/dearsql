@@ -83,7 +83,7 @@ namespace PostgresHierarchy {
             pgDb->checkDatabasesStatusAsync();
         }
 
-        std::vector<std::string> databases = pgDb->getDatabaseNames();
+        const std::vector<std::string> databases = pgDb->getDatabaseNames();
 
         // Show loading indicator if databases are being loaded
         if (pgDb->isLoadingDatabases() && databases.empty()) {

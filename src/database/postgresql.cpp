@@ -2,13 +2,13 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
-#include <typeinfo>
 #include <unordered_map>
 
 PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &host, const int port,
                                    const std::string &database, const std::string &username,
-                                   const std::string &password, bool showAllDatabases)
+                                   const std::string &password, const bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
     connectionString = buildConnectionString(database);
@@ -24,7 +24,7 @@ PostgresDatabase::~PostgresDatabase() {
     switchingDatabase = false;
 
     // Stop all table data loading operations
-    for (auto &[tableName, state] : tableDataStates) {
+    for (auto &state : tableDataStates | std::views::values) {
         state.loading = false;
         if (state.future.valid()) {
             state.future.wait();
@@ -32,7 +32,7 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     // Stop all per-database async operations
-    for (auto &[dbName, dbData] : databaseDataCache) {
+    for (auto &dbData : databaseDataCache | std::views::values) {
         dbData.loadingTables = false;
         dbData.loadingViews = false;
         dbData.loadingSequences = false;
@@ -73,7 +73,7 @@ PostgresDatabase::DatabaseData &PostgresDatabase::getCurrentDatabaseData() {
 
 const PostgresDatabase::DatabaseData &PostgresDatabase::getCurrentDatabaseData() const {
     static const DatabaseData emptyData;
-    auto it = databaseDataCache.find(database);
+    const auto it = databaseDataCache.find(database);
     return (it != databaseDataCache.end()) ? it->second : emptyData;
 }
 
@@ -84,15 +84,14 @@ PostgresDatabase::DatabaseData &PostgresDatabase::getDatabaseData(const std::str
 const PostgresDatabase::DatabaseData &
 PostgresDatabase::getDatabaseData(const std::string &dbName) const {
     static const DatabaseData emptyData;
-    auto it = databaseDataCache.find(dbName);
+    const auto it = databaseDataCache.find(dbName);
     return (it != databaseDataCache.end()) ? it->second : emptyData;
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
     std::cout << "Connection string: " << connectionString << std::endl;
 
-    // Check if we already have a connection to the current database
-    auto *session = getSessionForDatabase(database);
+    const auto *session = getSessionForDatabase(database);
     if (connected && session) {
         return {true, ""};
     }
@@ -199,7 +198,7 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
         const soci::rowset rs = session->prepare << query;
 
         // Get column names if available
-        auto it = rs.begin();
+        const auto it = rs.begin();
         if (it != rs.end()) {
             const soci::row &firstRow = *it;
             for (std::size_t i = 0; i < firstRow.size(); ++i) {
@@ -272,7 +271,7 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
         const soci::rowset rs = session->prepare << query;
 
         // Get column names if available
-        auto it = rs.begin();
+        const auto it = rs.begin();
         if (it != rs.end()) {
             const soci::row &firstRow = *it;
             for (std::size_t i = 0; i < firstRow.size(); ++i) {
@@ -288,12 +287,12 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
             std::vector<std::string> rowData;
             for (std::size_t i = 0; i < row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
-                    rowData.push_back("NULL");
+                    rowData.emplace_back("NULL");
                 } else {
                     try {
                         rowData.push_back(row.get<std::string>(i));
                     } catch (const std::bad_cast &) {
-                        rowData.push_back("[BINARY DATA]");
+                        rowData.emplace_back("[BINARY DATA]");
                     }
                 }
             }
@@ -303,7 +302,7 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
 
         return {columnNames, data};
     } catch (const soci::soci_error &e) {
-        // Return empty result on error
+        std::cout << "[soci] Postgres Error: " + std::string(e.what());
         return {columnNames, data};
     }
 }
@@ -1247,13 +1246,13 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
 }
 
 bool PostgresDatabase::isLoadingTableData(const std::string &tableName) const {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     return it != tableDataStates.end() && it->second.loading.load();
 }
 
 bool PostgresDatabase::isLoadingTableData() const {
     // Legacy method - return true if any table is loading
-    for (const auto &[name, state] : tableDataStates) {
+    for (const auto &state : tableDataStates | std::views::values) {
         if (state.loading.load()) {
             return true;
         }
@@ -1262,7 +1261,7 @@ bool PostgresDatabase::isLoadingTableData() const {
 }
 
 void PostgresDatabase::checkTableDataStatusAsync(const std::string &tableName) {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     if (it == tableDataStates.end() || !it->second.loading.load()) {
         return;
     }
@@ -1303,7 +1302,7 @@ bool PostgresDatabase::hasTableDataResult(const std::string &tableName) const {
 
 bool PostgresDatabase::hasTableDataResult() const {
     // Legacy method - return true if any table has results
-    for (const auto &[name, state] : tableDataStates) {
+    for (const auto &state : tableDataStates | std::views::values) {
         if (state.ready.load()) {
             return true;
         }
@@ -1313,7 +1312,7 @@ bool PostgresDatabase::hasTableDataResult() const {
 
 std::vector<std::vector<std::string>>
 PostgresDatabase::getTableDataResult(const std::string &tableName) {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     if (it != tableDataStates.end() && it->second.ready.load()) {
         return it->second.tableData;
     }
@@ -1322,7 +1321,7 @@ PostgresDatabase::getTableDataResult(const std::string &tableName) {
 
 std::vector<std::vector<std::string>> PostgresDatabase::getTableDataResult() {
     // Legacy method - return first available result
-    for (const auto &[name, state] : tableDataStates) {
+    for (const auto &state : tableDataStates | std::views::values) {
         if (state.ready.load()) {
             return state.tableData;
         }
@@ -1331,7 +1330,7 @@ std::vector<std::vector<std::string>> PostgresDatabase::getTableDataResult() {
 }
 
 std::vector<std::string> PostgresDatabase::getColumnNamesResult(const std::string &tableName) {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     if (it != tableDataStates.end() && it->second.ready.load()) {
         return it->second.columnNames;
     }
@@ -1340,7 +1339,7 @@ std::vector<std::string> PostgresDatabase::getColumnNamesResult(const std::strin
 
 std::vector<std::string> PostgresDatabase::getColumnNamesResult() {
     // Legacy method - return first available result
-    for (const auto &[name, state] : tableDataStates) {
+    for (const auto &state : tableDataStates | std::views::values) {
         if (state.ready.load()) {
             return state.columnNames;
         }
@@ -1349,7 +1348,7 @@ std::vector<std::string> PostgresDatabase::getColumnNamesResult() {
 }
 
 int PostgresDatabase::getRowCountResult(const std::string &tableName) {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     if (it != tableDataStates.end() && it->second.ready.load()) {
         return it->second.rowCount;
     }
@@ -1358,7 +1357,7 @@ int PostgresDatabase::getRowCountResult(const std::string &tableName) {
 
 int PostgresDatabase::getRowCountResult() {
     // Legacy method - return first available result
-    for (const auto &[name, state] : tableDataStates) {
+    for (const auto &state : tableDataStates | std::views::values) {
         if (state.ready.load()) {
             return state.rowCount;
         }
@@ -1367,7 +1366,7 @@ int PostgresDatabase::getRowCountResult() {
 }
 
 void PostgresDatabase::clearTableDataResult(const std::string &tableName) {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     if (it != tableDataStates.end()) {
         auto &state = it->second;
         state.ready = false;
@@ -1379,7 +1378,7 @@ void PostgresDatabase::clearTableDataResult(const std::string &tableName) {
 
 void PostgresDatabase::clearTableDataResult() {
     // Legacy method - clear all results
-    for (auto &[name, state] : tableDataStates) {
+    for (auto &state : tableDataStates | std::views::values) {
         state.ready = false;
         state.tableData.clear();
         state.columnNames.clear();
@@ -1411,7 +1410,7 @@ bool PostgresDatabase::areSchemasLoaded() const {
     return getCurrentDatabaseData().schemasLoaded;
 }
 
-void PostgresDatabase::setSchemasLoaded(bool loaded) {
+void PostgresDatabase::setSchemasLoaded(const bool loaded) {
     getCurrentDatabaseData().schemasLoaded = loaded;
 }
 
@@ -1503,9 +1502,6 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
             Schema schema;
             schema.name = schemaName;
 
-            // For now, we'll only load the schema structure, not the actual objects
-            // Objects will be loaded on demand when the schema is expanded
-
             result.push_back(schema);
             std::cout << "Loaded schema: " << schemaName << std::endl;
         }
@@ -1559,17 +1555,16 @@ std::vector<std::string> PostgresDatabase::getDatabaseNames() {
         return availableDatabases;
     }
 
-    // Start async loading if not already loading and we're connected
     if (!loadingDatabases.load() && isConnected()) {
         refreshDatabaseNames();
     }
 
-    return availableDatabases; // Return current state (may be empty if still loading)
+    return availableDatabases;
 }
 
 void PostgresDatabase::refreshDatabaseNames() {
     if (loadingDatabases.load()) {
-        return; // Already loading
+        return;
     }
 
     startRefreshDatabasesAsync();
@@ -1597,12 +1592,12 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
 }
 
 void PostgresDatabase::startRefreshDatabasesAsync() {
-    // Clear previous results
+    // clear previous results
     availableDatabases.clear();
     databasesLoaded = false;
     loadingDatabases = true;
 
-    // Start async loading with std::async
+    // start async loading with std::async
     databasesFuture = std::async(std::launch::async, [this]() { return getDatabaseNamesAsync(); });
 }
 
@@ -1696,8 +1691,8 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
 }
 
 void PostgresDatabase::switchToDatabaseAsync(const std::string &targetDatabase) {
-    if (switchingDatabase.load()) {
-        return; // Already switching
+    if (isSwitchingDatabase()) {
+        return;
     }
 
     targetDatabaseName = targetDatabase;
@@ -1722,7 +1717,6 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
             if (success) {
                 std::cout << "Async database switch completed successfully to: "
                           << targetDatabaseName << std::endl;
-                // The database and connection state are already updated by switchToDatabase
 
                 // Auto-start loading schemas if not already loaded
                 if (!areSchemasLoaded() && !isLoadingSchemas()) {
@@ -1743,10 +1737,10 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
 }
 
 bool PostgresDatabase::isDatabaseExpanded(const std::string &dbName) const {
-    return expandedDatabases.find(dbName) != expandedDatabases.end();
+    return expandedDatabases.contains(dbName);
 }
 
-void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, bool expanded) {
+void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, const bool expanded) {
     if (expanded) {
         expandedDatabases.insert(dbName);
     } else {
@@ -1756,7 +1750,7 @@ void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, bool expan
 
 soci::session *PostgresDatabase::getSessionForDatabase(const std::string &dbName) const {
     std::lock_guard lock(sessionMutex);
-    auto it = sessionPool.find(dbName);
+    const auto it = sessionPool.find(dbName);
     return (it != sessionPool.end()) ? it->second.get() : nullptr;
 }
 

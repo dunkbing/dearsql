@@ -12,5 +12,5 @@ namespace HierarchyHelpers {
     void renderCachedViewsSection(DatabaseInterface *db, const std::string &dbName);
     void renderCachedTableNode(DatabaseInterface *db, const std::string &dbName, int tableIndex);
     void renderCachedViewNode(DatabaseInterface *db, const std::string &dbName, int viewIndex);
-    void renderRedisHierarchy(std::shared_ptr<DatabaseInterface> db);
+    void renderRedisHierarchy(const std::shared_ptr<DatabaseInterface> &db);
 } // namespace HierarchyHelpers

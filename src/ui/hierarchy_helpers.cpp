@@ -406,8 +406,8 @@ namespace HierarchyHelpers {
             ImGui::TreePop();
         }
     }
-    void renderRedisHierarchy(std::shared_ptr<DatabaseInterface> db) {
-        auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
+    void renderRedisHierarchy(const std::shared_ptr<DatabaseInterface> &db) {
+        const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         if (!redisDb) {
             return;
         }

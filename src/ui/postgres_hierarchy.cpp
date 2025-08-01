@@ -83,7 +83,16 @@ namespace PostgresHierarchy {
             pgDb->checkDatabasesStatusAsync();
         }
 
+        // Check schema loading status for all expanded databases
         const std::vector<std::string> databases = pgDb->getDatabaseNames();
+        for (const auto &dbName : databases) {
+            if (pgDb->isDatabaseExpanded(dbName)) {
+                const auto &dbData = pgDb->getDatabaseData(dbName);
+                if (dbData.loadingSchemas) {
+                    pgDb->checkSchemasStatusAsync(dbName);
+                }
+            }
+        }
 
         // Show loading indicator if databases are being loaded
         if (pgDb->isLoadingDatabases() && databases.empty()) {

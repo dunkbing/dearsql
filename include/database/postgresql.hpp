@@ -67,6 +67,7 @@ public:
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
     void checkSchemasStatusAsync();
+    void checkSchemasStatusAsync(const std::string &dbName);
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();

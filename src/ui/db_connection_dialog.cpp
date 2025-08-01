@@ -14,26 +14,28 @@
 void DatabaseConnectionDialog::showDialog() {
     if (!isOpen) {
         isOpen = true;
-        showingTypeSelection = true;
-        showingPostgreSQLConnection = false;
-        showingMySQLConnection = false;
-        showingRedisConnection = false;
-        showingSavedConnections = false;
+        currentState = DialogState::TypeSelection;
         result = nullptr;
         loadSavedConnections();
         ImGui::OpenPopup("Connect to Database");
     }
 
-    if (showingTypeSelection) {
+    switch (currentState) {
+    case DialogState::TypeSelection:
         renderTypeSelection();
-    } else if (showingPostgreSQLConnection) {
+        break;
+    case DialogState::PostgreSQLConnection:
         renderPostgresConnection();
-    } else if (showingMySQLConnection) {
+        break;
+    case DialogState::MySQLConnection:
         renderMySQLConnection();
-    } else if (showingRedisConnection) {
+        break;
+    case DialogState::RedisConnection:
         renderRedisConnection();
-    } else if (showingSavedConnections) {
+        break;
+    case DialogState::SavedConnections:
         renderSavedConnections();
+        break;
     }
 }
 
@@ -49,34 +51,38 @@ void DatabaseConnectionDialog::renderTypeSelection() {
 
         if (!savedConnections.empty()) {
             if (ImGui::Button("Saved Connections", ImVec2(-1, 30))) {
-                showingTypeSelection = false;
-                showingSavedConnections = true;
+                currentState = DialogState::SavedConnections;
             }
             ImGui::Spacing();
             ImGui::Text("Or create a new connection:");
             ImGui::Spacing();
         }
 
-        ImGui::RadioButton("SQLite File", &selectedDatabaseType, 0);
+        int selectedType = static_cast<int>(selectedDatabaseType);
+        ImGui::RadioButton("SQLite File", &selectedType, static_cast<int>(DatabaseType::SQLITE));
         ImGui::Text("   Open a local SQLite database file");
         ImGui::Spacing();
 
-        ImGui::RadioButton("PostgreSQL Server", &selectedDatabaseType, 1);
+        ImGui::RadioButton("PostgreSQL Server", &selectedType,
+                           static_cast<int>(DatabaseType::POSTGRESQL));
         ImGui::Text("   Connect to a PostgreSQL server");
         ImGui::Spacing();
 
-        ImGui::RadioButton("MySQL Server", &selectedDatabaseType, 2);
+        ImGui::RadioButton("MySQL Server", &selectedType, static_cast<int>(DatabaseType::MYSQL));
         ImGui::Text("   Connect to a MySQL server");
         ImGui::Spacing();
 
-        ImGui::RadioButton("Redis Server", &selectedDatabaseType, 3);
+        ImGui::RadioButton("Redis Server", &selectedType, static_cast<int>(DatabaseType::REDIS));
         ImGui::Text("   Connect to a Redis key-value store");
         ImGui::Spacing();
+
+        selectedDatabaseType = static_cast<DatabaseType>(selectedType);
 
         ImGui::Separator();
 
         if (ImGui::Button("Next", ImVec2(100, 0))) {
-            if (selectedDatabaseType == 0) {
+            switch (selectedDatabaseType) {
+            case DatabaseType::SQLITE: {
                 // SQLite - directly open file dialog
                 const auto db = createSQLiteDatabase();
                 if (db) {
@@ -93,21 +99,23 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 }
                 ImGui::CloseCurrentPopup();
                 reset();
-            } else if (selectedDatabaseType == 1) {
+                break;
+            }
+            case DatabaseType::POSTGRESQL:
                 // Postgres - show connection dialog
-                showingTypeSelection = false;
-                showingPostgreSQLConnection = true;
+                currentState = DialogState::PostgreSQLConnection;
                 port = 5432; // Set default Postgres port
-            } else if (selectedDatabaseType == 2) {
+                break;
+            case DatabaseType::MYSQL:
                 // MySQL - show connection dialog
-                showingTypeSelection = false;
-                showingMySQLConnection = true;
+                currentState = DialogState::MySQLConnection;
                 port = 3306; // Set default MySQL port
-            } else if (selectedDatabaseType == 3) {
+                break;
+            case DatabaseType::REDIS:
                 // Redis - show connection dialog
-                showingTypeSelection = false;
-                showingRedisConnection = true;
+                currentState = DialogState::RedisConnection;
                 port = 6379; // Set default Redis port
+                break;
             }
         }
         ImGui::SameLine();
@@ -237,8 +245,7 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
         }
 
         if (ImGui::Button("Back", ImVec2(100, 0))) {
-            showingPostgreSQLConnection = false;
-            showingTypeSelection = true;
+            currentState = DialogState::TypeSelection;
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
@@ -371,8 +378,7 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
         }
 
         if (ImGui::Button("Back", ImVec2(100, 0))) {
-            showingMySQLConnection = false;
-            showingTypeSelection = true;
+            currentState = DialogState::TypeSelection;
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
@@ -471,8 +477,7 @@ void DatabaseConnectionDialog::renderRedisConnection() {
 
         ImGui::SameLine();
         if (ImGui::Button("Back", ImVec2(100, 0))) {
-            showingRedisConnection = false;
-            showingTypeSelection = true;
+            currentState = DialogState::TypeSelection;
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
@@ -496,11 +501,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
 
 void DatabaseConnectionDialog::reset() {
     isOpen = false;
-    showingTypeSelection = false;
-    showingPostgreSQLConnection = false;
-    showingMySQLConnection = false;
-    showingRedisConnection = false;
-    showingSavedConnections = false;
+    currentState = DialogState::TypeSelection;
     isConnecting = false;
     errorMessage.clear();
     selectedSavedConnection = -1;
@@ -598,7 +599,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
 
                 bool isSelected = (selectedSavedConnection == (int)i);
                 if (ImGui::Selectable((conn.name + " (" + conn.type + ")").c_str(), &isSelected)) {
-                    selectedSavedConnection = (int)i;
+                    selectedSavedConnection = static_cast<int>(i);
                 }
 
                 if (isSelected && ImGui::IsItemHovered()) {
@@ -735,8 +736,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
 
         ImGui::SameLine();
         if (ImGui::Button("Back", ImVec2(100, 0))) {
-            showingSavedConnections = false;
-            showingTypeSelection = true;
+            currentState = DialogState::TypeSelection;
         }
 
         ImGui::SameLine();
@@ -774,15 +774,21 @@ void DatabaseConnectionDialog::startAsyncConnection() {
     // Start connection using std::async
     connectionFuture = std::async(std::launch::async, [this]() {
         try {
-            // Try to create and connect to database based on current view
+            // Try to create and connect to database based on current state
             std::shared_ptr<DatabaseInterface> db;
-            if (showingPostgreSQLConnection) {
+            switch (currentState) {
+            case DialogState::PostgreSQLConnection:
                 db = createPostgreSQLDatabase();
-            } else if (showingMySQLConnection) {
+                break;
+            case DialogState::MySQLConnection:
                 db = createMySQLDatabase();
-            } else if (showingRedisConnection) {
+                break;
+            case DialogState::RedisConnection:
                 std::cout << "Creating Redis database connection..." << std::endl;
                 db = createRedisDatabase();
+                break;
+            default:
+                break;
             }
 
             if (db) {
@@ -813,12 +819,18 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             // Save successful connection
             SavedConnection conn;
             conn.name = std::string(connectionName);
-            if (showingPostgreSQLConnection) {
+            switch (currentState) {
+            case DialogState::PostgreSQLConnection:
                 conn.type = "postgresql";
-            } else if (showingMySQLConnection) {
+                break;
+            case DialogState::MySQLConnection:
                 conn.type = "mysql";
-            } else if (showingRedisConnection) {
+                break;
+            case DialogState::RedisConnection:
                 conn.type = "redis";
+                break;
+            default:
+                break;
             }
             conn.host = std::string(host);
             conn.port = port;

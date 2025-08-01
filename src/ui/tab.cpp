@@ -302,7 +302,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
     if (queryExecutionFuture.valid() &&
         queryExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            queryExecutionFuture.get(); // This will throw if there was an exception
+            queryExecutionFuture.get();
         } catch (const std::exception &e) {
             if (!shouldCancelQuery) {
                 queryResult = "Error in async query execution: " + std::string(e.what());
@@ -321,7 +321,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 
 void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
-    // Note: We can't actually cancel the database query once it's started,
+    // Note: We can't cancel the database query once it's started,
     // but we can prevent the results from being processed
     queryResult = "Query execution cancelled by user";
     queryError = queryResult;
@@ -540,7 +540,7 @@ void TableViewerTab::render() {
 
 void TableViewerTab::loadData() {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
 
     // Find database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
@@ -671,7 +671,7 @@ void TableViewerTab::loadDataAsync() {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database by connection string or path
+    // Find a database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
         if ((database->getConnectionString() == databasePath ||
@@ -712,7 +712,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
     auto &app = Application::getInstance();
     const auto &databases = app.getDatabases();
 
-    // Find database by connection string or path
+    // Find a database by connection string or path
     std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
         if ((database->getConnectionString() == databasePath ||

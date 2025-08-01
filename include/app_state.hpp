@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <sqlite3.h>
 #include <string>
 #include <vector>
@@ -27,19 +26,20 @@ public:
     bool initialize();
 
     // Connection history management
-    bool saveConnection(const SavedConnection &connection) const;
-    std::vector<SavedConnection> getSavedConnections() const;
-    bool deleteConnection(int connectionId) const;
-    bool updateLastUsed(int connectionId) const;
+    [[nodiscard]] bool saveConnection(const SavedConnection &connection) const;
+    [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
+    [[nodiscard]] bool deleteConnection(int connectionId) const;
+    [[nodiscard]] bool updateLastUsed(int connectionId) const;
 
     // Settings management
-    bool setSetting(const std::string &key, const std::string &value) const;
-    std::string getSetting(const std::string &key, const std::string &defaultValue = "") const;
+    [[nodiscard]] bool setSetting(const std::string &key, const std::string &value) const;
+    [[nodiscard]] std::string getSetting(const std::string &key,
+                                         const std::string &defaultValue = "") const;
 
 private:
     sqlite3 *db;
     std::string dbPath;
 
     bool createTables();
-    bool executeSQL(const std::string &sql) const;
+    [[nodiscard]] bool executeSQL(const std::string &sql) const;
 };

@@ -8,6 +8,14 @@
 #include <string>
 #include <vector>
 
+enum class DialogState {
+    TypeSelection,
+    PostgreSQLConnection,
+    MySQLConnection,
+    RedisConnection,
+    SavedConnections
+};
+
 class DatabaseInterface;
 
 class DatabaseConnectionDialog {
@@ -32,11 +40,7 @@ public:
 private:
     // Dialog state
     bool isOpen = false;
-    bool showingTypeSelection = false;
-    bool showingPostgreSQLConnection = false;
-    bool showingMySQLConnection = false;
-    bool showingRedisConnection = false;
-    bool showingSavedConnections = false;
+    DialogState currentState = DialogState::TypeSelection;
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
 
@@ -48,7 +52,7 @@ private:
     int selectedSavedConnection = -1;
 
     // Selected database type
-    int selectedDatabaseType = 0; // 0 = SQLite, 1 = PostgreSQL, 2 = MySQL, 3 = Redis
+    DatabaseType selectedDatabaseType = DatabaseType::SQLITE;
 
     // PostgreSQL/MySQL connection fields
     char connectionName[256] = "";

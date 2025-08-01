@@ -689,7 +689,11 @@ void TableViewerTab::loadDataAsync() {
     }
 
     // Clear any previous async result
-    db->clearTableDataResult();
+    if (db->getType() == DatabaseType::SQLITE) {
+        db->clearTableDataResult();
+    } else {
+        db->clearTableDataResult(tableName);
+    }
 
     // Start async data loading (includes metadata)
     const int offset = currentPage * rowsPerPage;
@@ -727,28 +731,54 @@ void TableViewerTab::checkAsyncLoadStatus() {
     }
 
     // Always check the async status first
-    db->checkTableDataStatusAsync();
+    if (db->getType() == DatabaseType::SQLITE) {
+        db->checkTableDataStatusAsync();
 
-    if (db->hasTableDataResult()) {
-        // Load completed - get all data including metadata
-        tableData = db->getTableDataResult();
-        columnNames = db->getColumnNamesResult();
-        totalRows = db->getRowCountResult();
-        originalData = tableData;
-        hasChanges = false;
-        isLoadingData = false;
+        if (db->hasTableDataResult()) {
+            // Load completed - get all data including metadata
+            tableData = db->getTableDataResult();
+            columnNames = db->getColumnNamesResult();
+            totalRows = db->getRowCountResult();
+            originalData = tableData;
+            hasChanges = false;
+            isLoadingData = false;
 
-        // Initialize edited cells tracking
-        editedCells = std::vector<std::vector<bool>>(tableData.size(),
-                                                     std::vector<bool>(columnNames.size(), false));
+            // Initialize edited cells tracking
+            editedCells = std::vector<std::vector<bool>>(
+                tableData.size(), std::vector<bool>(columnNames.size(), false));
 
-        // Clear the result to free memory
-        db->clearTableDataResult();
-    } else if (!db->isLoadingTableData()) {
-        // Loading stopped but no result - probably an error
-        isLoadingData = false;
-        hasLoadingError = true;
-        loadingError = "Failed to load table data";
+            // Clear the result to free memory
+            db->clearTableDataResult();
+        } else if (!db->isLoadingTableData()) {
+            // Loading stopped but no result - probably an error
+            isLoadingData = false;
+            hasLoadingError = true;
+            loadingError = "Failed to load table data";
+        }
+    } else {
+        db->checkTableDataStatusAsync(tableName);
+
+        if (db->hasTableDataResult(tableName)) {
+            // Load completed - get all data including metadata
+            tableData = db->getTableDataResult(tableName);
+            columnNames = db->getColumnNamesResult(tableName);
+            totalRows = db->getRowCountResult(tableName);
+            originalData = tableData;
+            hasChanges = false;
+            isLoadingData = false;
+
+            // Initialize edited cells tracking
+            editedCells = std::vector<std::vector<bool>>(
+                tableData.size(), std::vector<bool>(columnNames.size(), false));
+
+            // Clear the result to free memory
+            db->clearTableDataResult(tableName);
+        } else if (!db->isLoadingTableData(tableName)) {
+            // Loading stopped but no result - probably an error
+            isLoadingData = false;
+            hasLoadingError = true;
+            loadingError = "Failed to load table data";
+        }
     }
 }
 

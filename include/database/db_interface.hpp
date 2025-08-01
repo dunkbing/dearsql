@@ -84,6 +84,25 @@ public:
 
     // Async table data loading (includes metadata + data)
     virtual void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) {}
+    [[nodiscard]] virtual bool isLoadingTableData(const std::string &tableName) const {
+        return false;
+    }
+    virtual void checkTableDataStatusAsync(const std::string &tableName) {}
+    [[nodiscard]] virtual bool hasTableDataResult(const std::string &tableName) const {
+        return false;
+    }
+    virtual std::vector<std::vector<std::string>> getTableDataResult(const std::string &tableName) {
+        return {};
+    }
+    virtual std::vector<std::string> getColumnNamesResult(const std::string &tableName) {
+        return {};
+    }
+    virtual int getRowCountResult(const std::string &tableName) {
+        return 0;
+    }
+    virtual void clearTableDataResult(const std::string &tableName) {}
+
+    // Legacy methods for backward compatibility (use first table or default behavior)
     [[nodiscard]] virtual bool isLoadingTableData() const {
         return false;
     }

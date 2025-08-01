@@ -70,6 +70,15 @@ public:
 
     // Async table data loading
     void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) override;
+    bool isLoadingTableData(const std::string &tableName) const override;
+    void checkTableDataStatusAsync(const std::string &tableName) override;
+    bool hasTableDataResult(const std::string &tableName) const override;
+    std::vector<std::vector<std::string>> getTableDataResult(const std::string &tableName) override;
+    std::vector<std::string> getColumnNamesResult(const std::string &tableName) override;
+    int getRowCountResult(const std::string &tableName) override;
+    void clearTableDataResult(const std::string &tableName) override;
+
+    // Legacy methods for backward compatibility
     bool isLoadingTableData() const override;
     void checkTableDataStatusAsync() override;
     bool hasTableDataResult() const override;
@@ -178,13 +187,16 @@ private:
     std::atomic<bool> connecting = false;
     std::future<std::pair<bool, std::string>> connectionFuture;
 
-    // Async table data loading
-    std::atomic<bool> loadingTableData = false;
-    std::atomic<bool> hasTableDataReady = false;
-    std::vector<std::vector<std::string>> tableDataResult;
-    std::vector<std::string> columnNamesResult;
-    int rowCountResult = 0;
-    std::future<void> tableDataFuture;
+    // Async table data loading - per table
+    struct TableDataLoadState {
+        std::atomic<bool> loading = false;
+        std::atomic<bool> ready = false;
+        std::vector<std::vector<std::string>> tableData;
+        std::vector<std::string> columnNames;
+        int rowCount = 0;
+        std::future<void> future;
+    };
+    std::unordered_map<std::string, TableDataLoadState> tableDataStates;
 
     // Thread synchronization
     mutable std::mutex sessionMutex;

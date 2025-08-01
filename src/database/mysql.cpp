@@ -24,9 +24,16 @@ MySQLDatabase::MySQLDatabase(const std::string &name, const std::string &host, i
 MySQLDatabase::~MySQLDatabase() {
     // Stop all async operations before cleaning up
     connecting = false;
-    loadingTableData = false;
     loadingDatabases = false;
     switchingDatabase = false;
+
+    // Stop all table data loading operations
+    for (auto &[tableName, state] : tableDataStates) {
+        state.loading.store(false);
+        if (state.future.valid()) {
+            state.future.wait();
+        }
+    }
 
     // Stop all per-database async operations
     for (auto &[dbName, dbData] : databaseDataCache) {
@@ -44,9 +51,6 @@ MySQLDatabase::~MySQLDatabase() {
 
     if (connectionFuture.valid()) {
         connectionFuture.wait();
-    }
-    if (tableDataFuture.valid()) {
-        tableDataFuture.wait();
     }
     if (databasesFuture.valid()) {
         databasesFuture.wait();
@@ -718,87 +722,245 @@ int MySQLDatabase::getRowCount(const std::string &tableName) {
 }
 
 void MySQLDatabase::startTableDataLoadAsync(const std::string &tableName, int limit, int offset) {
-    if (loadingTableData.load()) {
-        return;
+    auto &state = tableDataStates[tableName];
+
+    if (state.loading.load()) {
+        return; // Already loading this table
     }
 
-    loadingTableData.store(true);
-    hasTableDataReady.store(false);
+    state.loading.store(true);
+    state.ready.store(false);
+    state.tableData.clear();
+    state.columnNames.clear();
+    state.rowCount = 0;
 
-    tableDataFuture = std::async(std::launch::async, [this, tableName, limit, offset]() {
-        if (!loadingTableData.load()) {
-            return;
+    state.future = std::async(std::launch::async, [this, tableName, limit, offset]() {
+        try {
+            // Create a separate session for this async operation to avoid mutex contention
+            std::unique_ptr<soci::session> asyncSession;
+            try {
+                asyncSession = std::make_unique<soci::session>(soci::mysql, connectionString);
+            } catch (const soci::soci_error &e) {
+                std::cerr << "Failed to create async session for table data loading: " << e.what()
+                          << std::endl;
+                auto &state = tableDataStates[tableName];
+                state.loading.store(false);
+                return;
+            }
+
+            // Get reference to the state for this table
+            auto &state = tableDataStates[tableName];
+
+            if (!state.loading.load()) {
+                return;
+            }
+
+            // Load table data
+            const std::string dataQuery = "SELECT * FROM `" + tableName + "` LIMIT " +
+                                          std::to_string(limit) + " OFFSET " +
+                                          std::to_string(offset);
+
+            const soci::rowset dataRs = asyncSession->prepare << dataQuery;
+
+            for (const auto &row : dataRs) {
+                if (!state.loading.load()) {
+                    break; // Stop if we should no longer be loading
+                }
+
+                std::vector<std::string> rowData;
+                for (std::size_t i = 0; i < row.size(); ++i) {
+                    if (row.get_indicator(i) == soci::i_null) {
+                        rowData.emplace_back("NULL");
+                    } else {
+                        try {
+                            rowData.emplace_back(row.get<std::string>(i));
+                        } catch (const std::bad_cast &) {
+                            rowData.emplace_back("[BINARY DATA]");
+                        }
+                    }
+                }
+                state.tableData.push_back(rowData);
+            }
+
+            if (!state.loading.load()) {
+                return;
+            }
+
+            // Load column names
+            const std::string columnQuery = "SHOW COLUMNS FROM `" + tableName + "`";
+            const soci::rowset columnRs = asyncSession->prepare << columnQuery;
+
+            for (const auto &row : columnRs) {
+                if (!state.loading.load()) {
+                    break;
+                }
+                state.columnNames.push_back(row.get<std::string>(0));
+            }
+
+            if (!state.loading.load()) {
+                return;
+            }
+
+            // Load row count
+            const std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
+            *asyncSession << countQuery, soci::into(state.rowCount);
+
+            if (state.loading.load()) {
+                state.ready.store(true);
+            }
+
+        } catch (const std::exception &e) {
+            std::cerr << "Error in async table data load: " << e.what() << std::endl;
+            // Clear results on error
+            auto &state = tableDataStates[tableName];
+            state.tableData.clear();
+            state.columnNames.clear();
+            state.rowCount = 0;
         }
 
-        tableDataResult = getTableData(tableName, limit, offset);
-
-        if (!loadingTableData.load()) {
-            return;
-        }
-
-        columnNamesResult = getColumnNames(tableName);
-
-        if (!loadingTableData.load()) {
-            return;
-        }
-
-        rowCountResult = getRowCount(tableName);
-
-        if (loadingTableData.load()) {
-            hasTableDataReady.store(true);
-        }
-
-        loadingTableData.store(false);
+        auto &state = tableDataStates[tableName];
+        state.loading.store(false);
     });
 }
 
-bool MySQLDatabase::isLoadingTableData() const {
-    return loadingTableData.load();
+bool MySQLDatabase::isLoadingTableData(const std::string &tableName) const {
+    auto it = tableDataStates.find(tableName);
+    return it != tableDataStates.end() && it->second.loading.load();
 }
 
-void MySQLDatabase::checkTableDataStatusAsync() {
-    if (!loadingTableData.load()) {
+bool MySQLDatabase::isLoadingTableData() const {
+    // Legacy method - return true if any table is loading
+    for (const auto &[name, state] : tableDataStates) {
+        if (state.loading.load()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MySQLDatabase::checkTableDataStatusAsync(const std::string &tableName) {
+    auto it = tableDataStates.find(tableName);
+    if (it == tableDataStates.end() || !it->second.loading.load()) {
         return;
     }
 
-    if (tableDataFuture.valid() &&
-        tableDataFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    auto &state = it->second;
+    if (state.future.valid() &&
+        state.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            tableDataFuture.get(); // This will throw if there was an exception
-            // The async operation handles setting hasTableDataReady and loadingTableData flags
+            state.future.get(); // This will throw if there was an exception
+            // The async operation handles setting ready and loading flags
         } catch (const std::exception &e) {
-            std::cerr << "Error loading table data: " << e.what() << std::endl;
-            loadingTableData.store(false);
-            hasTableDataReady.store(false);
+            std::cerr << "Error loading table data for " << tableName << ": " << e.what()
+                      << std::endl;
+            state.loading.store(false);
+            state.ready.store(false);
             // Clear results on error
-            tableDataResult.clear();
-            columnNamesResult.clear();
-            rowCountResult = 0;
+            state.tableData.clear();
+            state.columnNames.clear();
+            state.rowCount = 0;
         }
     }
 }
 
+void MySQLDatabase::checkTableDataStatusAsync() {
+    // Legacy method - check all tables
+    for (auto &[tableName, state] : tableDataStates) {
+        if (state.loading.load()) {
+            checkTableDataStatusAsync(tableName);
+        }
+    }
+}
+
+bool MySQLDatabase::hasTableDataResult(const std::string &tableName) const {
+    auto it = tableDataStates.find(tableName);
+    return it != tableDataStates.end() && it->second.ready.load();
+}
+
 bool MySQLDatabase::hasTableDataResult() const {
-    return hasTableDataReady.load();
+    // Legacy method - return true if any table has results
+    for (const auto &[name, state] : tableDataStates) {
+        if (state.ready.load()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::vector<std::string>>
+MySQLDatabase::getTableDataResult(const std::string &tableName) {
+    auto it = tableDataStates.find(tableName);
+    if (it != tableDataStates.end() && it->second.ready.load()) {
+        return it->second.tableData;
+    }
+    return {};
 }
 
 std::vector<std::vector<std::string>> MySQLDatabase::getTableDataResult() {
-    return tableDataResult;
+    // Legacy method - return first available result
+    for (const auto &[name, state] : tableDataStates) {
+        if (state.ready.load()) {
+            return state.tableData;
+        }
+    }
+    return {};
+}
+
+std::vector<std::string> MySQLDatabase::getColumnNamesResult(const std::string &tableName) {
+    auto it = tableDataStates.find(tableName);
+    if (it != tableDataStates.end() && it->second.ready.load()) {
+        return it->second.columnNames;
+    }
+    return {};
 }
 
 std::vector<std::string> MySQLDatabase::getColumnNamesResult() {
-    return columnNamesResult;
+    // Legacy method - return first available result
+    for (const auto &[name, state] : tableDataStates) {
+        if (state.ready.load()) {
+            return state.columnNames;
+        }
+    }
+    return {};
+}
+
+int MySQLDatabase::getRowCountResult(const std::string &tableName) {
+    auto it = tableDataStates.find(tableName);
+    if (it != tableDataStates.end() && it->second.ready.load()) {
+        return it->second.rowCount;
+    }
+    return 0;
 }
 
 int MySQLDatabase::getRowCountResult() {
-    return rowCountResult;
+    // Legacy method - return first available result
+    for (const auto &[name, state] : tableDataStates) {
+        if (state.ready.load()) {
+            return state.rowCount;
+        }
+    }
+    return 0;
+}
+
+void MySQLDatabase::clearTableDataResult(const std::string &tableName) {
+    auto it = tableDataStates.find(tableName);
+    if (it != tableDataStates.end()) {
+        auto &state = it->second;
+        state.ready.store(false);
+        state.tableData.clear();
+        state.columnNames.clear();
+        state.rowCount = 0;
+    }
 }
 
 void MySQLDatabase::clearTableDataResult() {
-    hasTableDataReady.store(false);
-    tableDataResult.clear();
-    columnNamesResult.clear();
-    rowCountResult = 0;
+    // Legacy method - clear all results
+    for (auto &[name, state] : tableDataStates) {
+        state.ready.store(false);
+        state.tableData.clear();
+        state.columnNames.clear();
+        state.rowCount = 0;
+    }
 }
 
 bool MySQLDatabase::isExpanded() const {

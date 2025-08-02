@@ -21,11 +21,11 @@
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"ConnectButton" ];
+    return @[ @"LogPanelToggle" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"SidebarToggle", @"ConnectButton", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"SidebarToggle", @"LogPanelToggle", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -48,34 +48,26 @@
 
         item.view = button;
         return item;
-    } else if ([itemIdentifier isEqualToString:@"ConnectButton"]) {
+    } else if ([itemIdentifier isEqualToString:@"LogPanelToggle"]) {
         NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"";
-        item.paletteLabel = @"Connect";
-        item.toolTip = @"Connect to Database";
+        item.paletteLabel = @"Toggle Log Panel";
+        item.toolTip = @"Show/Hide Log Panel";
 
         NSButton *button = [[NSButton alloc] init];
-        [button setTitle:@"Connect"];
+        [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.right"
+                                   accessibilityDescription:@"Toggle Log Panel"]];
         [button setButtonType:NSButtonTypeMomentaryPushIn];
-        [button setBezelStyle:NSBezelStyleRounded];
+        [button setBezelStyle:NSBezelStyleTexturedRounded];
         [button setTarget:self];
-        [button setAction:@selector(connectButtonClicked:)];
+        [button setAction:@selector(logPanelToggleClicked:)];
+        [button setBordered:NO];
         [button sizeToFit];
 
         item.view = button;
         return item;
     }
     return nil;
-}
-
-- (void)connectButtonClicked:(id)sender {
-    @try {
-        if (self.app) {
-            self.app->onConnectButtonClicked();
-        }
-    } @catch (NSException *exception) {
-        NSLog(@"Exception in connectButtonClicked: %@", exception);
-    }
 }
 
 - (void)sidebarToggleClicked:(id)sender {
@@ -85,6 +77,16 @@
         }
     } @catch (NSException *exception) {
         NSLog(@"Exception in sidebarToggleClicked: %@", exception);
+    }
+}
+
+- (void)logPanelToggleClicked:(id)sender {
+    @try {
+        if (self.app) {
+            self.app->onLogPanelToggleClicked();
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in logPanelToggleClicked: %@", exception);
     }
 }
 
@@ -165,8 +167,8 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
 
-    // Create custom title bar accessory view with sidebar and plus buttons
-    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
+    // Create custom title bar accessory view with sidebar button only
+    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 40, 0)];
 
     // Sidebar toggle button
     NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
@@ -178,17 +180,6 @@ void MacOSPlatform::setupTitlebar() {
     [sidebarButton setAction:@selector(sidebarToggleClicked:)];
     [sidebarButton setBordered:NO];
     [buttonContainer addSubview:sidebarButton];
-
-    // Plus button to add database connection
-    NSButton *plusButton = [[NSButton alloc] initWithFrame:NSMakeRect(32, 10, 30, 30)];
-    [plusButton setImage:[NSImage imageWithSystemSymbolName:@"plus"
-                                   accessibilityDescription:@"Add Database Connection"]];
-    [plusButton setButtonType:NSButtonTypeMomentaryPushIn];
-    [plusButton setBezelStyle:NSBezelStyleTexturedRounded];
-    [plusButton setTarget:toolbarDelegate_];
-    [plusButton setAction:@selector(connectButtonClicked:)];
-    [plusButton setBordered:NO];
-    [buttonContainer addSubview:plusButton];
 
     NSTitlebarAccessoryViewController *accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];
@@ -205,7 +196,7 @@ void MacOSPlatform::setupTitlebar() {
 
     [nsWindow setToolbar:toolbar];
 
-    std::cout << "Custom titlebar accessory view created for sidebar toggle next to title"
+    std::cout << "Custom titlebar accessory view created for sidebar and log panel toggles"
               << std::endl;
 
     // Set background color to match app theme
@@ -236,27 +227,21 @@ float MacOSPlatform::getTitlebarHeight() const {
 #endif
 }
 
-void MacOSPlatform::onConnectButtonClicked() {
-    std::cout << "Connect button clicked" << std::endl;
-    try {
-        // Show the connection dialog
-        if (app_->getDatabaseSidebar()) {
-            std::cout << "Showing connection dialog" << std::endl;
-            app_->getDatabaseSidebar()->showConnectionDialog();
-        } else {
-            std::cerr << "DatabaseSidebar is null" << std::endl;
-        }
-    } catch (const std::exception &e) {
-        std::cerr << "Exception in onConnectButtonClicked: " << e.what() << std::endl;
-    }
-}
-
 void MacOSPlatform::onSidebarToggleClicked() {
     std::cout << "Sidebar toggle clicked" << std::endl;
     try {
         app_->setSidebarVisible(!app_->isSidebarVisible());
     } catch (const std::exception &e) {
         std::cerr << "Exception in onSidebarToggleClicked: " << e.what() << std::endl;
+    }
+}
+
+void MacOSPlatform::onLogPanelToggleClicked() {
+    std::cout << "Log panel toggle clicked" << std::endl;
+    try {
+        app_->setLogPanelVisible(!app_->isLogPanelVisible());
+    } catch (const std::exception &e) {
+        std::cerr << "Exception in onLogPanelToggleClicked: " << e.what() << std::endl;
     }
 }
 

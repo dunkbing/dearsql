@@ -7,6 +7,7 @@
 #include "platform/default_platform.hpp"
 #include "platform/macos_platform.hpp"
 #include "themes.hpp"
+#include "ui/log_panel.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
 #include <csignal>
@@ -72,6 +73,7 @@ bool Application::initialize() {
     // Create managers
     tabManager = std::make_unique<TabManager>();
     databaseSidebar = std::make_unique<DatabaseSidebar>();
+    logPanel = std::make_unique<LogPanel>();
     fileDialog = std::make_unique<FileDialog>();
 
     // Initialize app state
@@ -144,6 +146,7 @@ void Application::cleanup() {
     // Cleanup components
     tabManager.reset();
     databaseSidebar.reset();
+    logPanel.reset();
     fileDialog.reset();
     std::cout << "Components cleaned up" << std::endl;
 
@@ -202,7 +205,8 @@ void Application::restorePreviousConnections() {
     }
 
     const auto savedConnections = appState->getSavedConnections();
-    std::cout << "Restoring " << savedConnections.size() << " previous connections..." << std::endl;
+    LogPanel::info("Restoring " + std::to_string(savedConnections.size()) +
+                   " previous connections");
 
     for (const auto &conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
@@ -221,8 +225,7 @@ void Application::restorePreviousConnections() {
         }
 
         if (db) {
-            std::cout << "Added connection (will connect when expanded): " << conn.name
-                      << std::endl;
+            LogPanel::debug("Added connection (will connect when expanded): " + conn.name);
             databases.push_back(db);
         }
     }
@@ -352,39 +355,74 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
 
-    // Check if we should use docking (no animation, just visibility)
-    bool shouldUseDocking = targetSidebarWidth > 0.01f;
+    // Check if we should use docking for sidebar and log panel
+    bool shouldUseSidebar = targetSidebarWidth > 0.01f;
+    bool shouldUseLogPanel = targetLogPanelWidth > 0.01f;
 
-    if (shouldUseDocking) {
-        // Create split layout when stable, use current width for consistent size
+    if (shouldUseSidebar && shouldUseLogPanel) {
+        // Three-panel layout: sidebar | center | log panel
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
-                                    &rightDockId);
+                                    &centerDockId);
+        ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Right,
+                                    logPanelWidth / (1.0f - sidebarWidth), &rightDockId,
+                                    &centerDockId);
 
-        // Make left dock node (sidebar) non-dockable and non-tabbed
+        // Configure dock nodes
+        ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+
+        // Dock windows
+        ImGui::DockBuilderDockWindow("Databases", leftDockId);
+        ImGui::DockBuilderDockWindow("Logs", rightDockId);
+        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
+
+        for (const auto &tab : tabManager->getTabs()) {
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
+        }
+    } else if (shouldUseSidebar) {
+        // Two-panel layout: sidebar | center
+        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
+                                    &centerDockId);
+
         ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
-        // Allow docking in the right dock node (Workspace panel) - remove restrictive flags
-        // This allows tabs to be docked and rearranged within the Workspace area
-        // Dock windows to fixed positions
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
-        ImGui::DockBuilderDockWindow("Workspace", rightDockId);
+        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
 
-        // Dock any existing tab windows to the right dock node
         for (const auto &tab : tabManager->getTabs()) {
-            ImGui::DockBuilderDockWindow(tab->getName().c_str(), rightDockId);
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
         }
+
+        rightDockId = 0;
+    } else if (shouldUseLogPanel) {
+        // Two-panel layout: center | log panel
+        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Right, logPanelWidth, &rightDockId,
+                                    &centerDockId);
+
+        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
+            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+
+        ImGui::DockBuilderDockWindow("Logs", rightDockId);
+        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
+
+        for (const auto &tab : tabManager->getTabs()) {
+            ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
+        }
+
+        leftDockId = 0;
     } else {
-        // When sidebar is hidden, use full space for workspace and allow docking
-        // Remove restrictive flags to allow tab docking in the main area
+        // Single panel layout: just center
         ImGui::DockBuilderDockWindow("Workspace", dockSpaceId);
 
-        // Dock any existing tab windows to the main dock-space
         for (const auto &tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockSpaceId);
         }
 
         leftDockId = 0;
+        centerDockId = 0;
         rightDockId = 0;
     }
 
@@ -396,18 +434,23 @@ void Application::renderMainUI() {
     // DockSpace setup
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
 
-    // Direct show/hide sidebar without animation
+    // Direct show/hide sidebar and log panel without animation
     sidebarWidth = targetSidebarWidth;
+    logPanelWidth = targetLogPanelWidth;
 
-    // Always use docking when sidebar is visible for proper resizing
-    bool shouldUseDocking = targetSidebarWidth > 0.01f;
+    // Always use docking when sidebar or log panel is visible for proper resizing
+    bool shouldUseDocking = targetSidebarWidth > 0.01f || targetLogPanelWidth > 0.01f;
 
-    // Rebuild layout when sidebar visibility changes
+    // Rebuild layout when sidebar or log panel visibility changes
     static bool lastSidebarVisible = false;
+    static bool lastLogPanelVisible = false;
     bool currentSidebarVisible = targetSidebarWidth > 0.01f;
-    if (lastSidebarVisible != currentSidebarVisible) {
+    bool currentLogPanelVisible = targetLogPanelWidth > 0.01f;
+    if (lastSidebarVisible != currentSidebarVisible ||
+        lastLogPanelVisible != currentLogPanelVisible) {
         dockingLayoutInitialized = false;
         lastSidebarVisible = currentSidebarVisible;
+        lastLogPanelVisible = currentLogPanelVisible;
     }
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
@@ -452,6 +495,7 @@ void Application::renderMainUI() {
 
     // Database sidebar rendering
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
+    const bool shouldShowLogPanel = logPanelWidth > 0.01f;
 
     if (shouldShowSidebar) {
         ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
@@ -459,18 +503,27 @@ void Application::renderMainUI() {
         ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-        if (shouldUseDocking) {
-            // Use docking system for resizing when sidebar is visible
-            ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
-            ImGui::Begin("Databases", nullptr,
-                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-        } else {
-            // This shouldn't happen since we only render sidebar when visible
-            ImGui::Begin("Databases", nullptr,
-                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-        }
+        ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+        ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
 
         databaseSidebar->render();
+        ImGui::End();
+
+        ImGui::PopStyleVar(1);
+        ImGui::PopStyleColor(3);
+    }
+
+    // Log panel rendering
+    if (shouldShowLogPanel) {
+        ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
+        ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
+
+        ImGui::SetNextWindowSizeConstraints(ImVec2(200, -1), ImVec2(600, -1));
+        ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+
+        logPanel->render();
         ImGui::End();
 
         ImGui::PopStyleVar(1);
@@ -541,15 +594,15 @@ void Application::renderMenuBar() {
 
 // Platform-specific methods that delegate to the platform implementation
 #ifdef USE_METAL_BACKEND
-void Application::onConnectButtonClicked() const {
-    if (platform_) {
-        platform_->onConnectButtonClicked();
-    }
-}
-
 void Application::onSidebarToggleClicked() const {
     if (platform_) {
         platform_->onSidebarToggleClicked();
+    }
+}
+
+void Application::onLogPanelToggleClicked() const {
+    if (platform_) {
+        platform_->onLogPanelToggleClicked();
     }
 }
 

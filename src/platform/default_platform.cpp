@@ -30,16 +30,14 @@ float DefaultPlatform::getTitlebarHeight() const {
     return 0.0f;
 }
 
-void DefaultPlatform::onConnectButtonClicked() {
-    // This would typically be handled through UI menus on non-macOS platforms
-    if (app_->getDatabaseSidebar()) {
-        app_->getDatabaseSidebar()->showConnectionDialog();
-    }
-}
-
 void DefaultPlatform::onSidebarToggleClicked() {
     // This would typically be handled through UI menus on non-macOS platforms
     app_->setSidebarVisible(!app_->isSidebarVisible());
+}
+
+void DefaultPlatform::onLogPanelToggleClicked() {
+    // This would typically be handled through UI menus on non-macOS platforms
+    app_->setLogPanelVisible(!app_->isLogPanelVisible());
 }
 
 void DefaultPlatform::cleanup() {

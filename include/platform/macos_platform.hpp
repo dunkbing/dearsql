@@ -23,8 +23,8 @@ public:
     bool initializeImGuiBackend() override;
     void setupTitlebar() override;
     float getTitlebarHeight() const override;
-    void onConnectButtonClicked() override;
     void onSidebarToggleClicked() override;
+    void onLogPanelToggleClicked() override;
     void cleanup() override;
     void renderFrame() override;
     void shutdownImGui() override;

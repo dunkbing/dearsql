@@ -7,6 +7,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/hierarchy_helpers.hpp"
+#include "ui/log_panel.hpp"
 #include "ui/mysql_hierarchy.hpp"
 #include "ui/postgres_hierarchy.hpp"
 #include "ui/sqlite_hierarchy.hpp"
@@ -22,6 +23,12 @@ void DatabaseSidebar::render() {
     auto &app = Application::getInstance();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
+
+    // Add connection button at the top
+    if (ImGui::Button("Add Connection", ImVec2(-1, 0))) {
+        LogPanel::info("Opening database connection dialog");
+        showConnectionDialog();
+    }
 
     // Check if we should show the connection dialog
     if (shouldShowConnectionDialog) {
@@ -42,10 +49,10 @@ void DatabaseSidebar::render() {
             if (db->getType() == DatabaseType::SQLITE) {
                 db->refreshTables();
             }
-            std::cout << "Adding database to list." << std::endl;
+            LogPanel::info("Database connection established: " + db->getName());
             app.addDatabase(db);
         } else {
-            std::cerr << "Failed to open database: " << error << std::endl;
+            LogPanel::error("Failed to connect to database '" + db->getName() + "': " + error);
         }
     }
 
@@ -69,6 +76,7 @@ void DatabaseSidebar::render() {
 
         if (ImGui::BeginPopup("AddDatabasePopup")) {
             if (ImGui::MenuItem("Add Database Connection")) {
+                LogPanel::info("Opening database connection dialog");
                 showConnectionDialog();
             }
             ImGui::EndPopup();
@@ -115,13 +123,14 @@ void DatabaseSidebar::render() {
 
                     if (matches) {
                         if (app.getAppState()->deleteConnection(conn.id)) {
-                            std::cout << "deleted " << conn.id << std::endl;
+                            LogPanel::info("Removed saved connection: " + conn.name);
                         }
                         break;
                     }
                 }
 
                 // Remove from application
+                LogPanel::info("Database removed: " + db->getName());
                 app.removeDatabase(databaseToDelete);
 
                 ImGui::CloseCurrentPopup();
@@ -212,7 +221,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     if (dbOpen) {
         // Auto-connect when database node is expanded
         if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
-            std::cout << "Starting async connection to database: " << db->getName() << std::endl;
+            LogPanel::info("Starting connection to database: " + db->getName());
             db->startConnectionAsync();
         }
 

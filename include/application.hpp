@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "platform/platform_interface.hpp"
 #include "ui/db_sidebar.hpp"
+#include "ui/log_panel.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <GLFW/glfw3.h>
@@ -29,6 +30,9 @@ public:
     }
     [[nodiscard]] DatabaseSidebar *getDatabaseSidebar() const {
         return databaseSidebar.get();
+    }
+    [[nodiscard]] LogPanel *getLogPanel() const {
+        return logPanel.get();
     }
     [[nodiscard]] FileDialog *getFileDialog() const {
         return fileDialog.get();
@@ -95,10 +99,21 @@ public:
         }
     }
 
+    // Log panel visibility
+    [[nodiscard]] bool isLogPanelVisible() const {
+        return logPanelVisible;
+    }
+    void setLogPanelVisible(const bool visible) {
+        if (logPanelVisible != visible) {
+            logPanelVisible = visible;
+            targetLogPanelWidth = visible ? 0.25f : 0.0f;
+        }
+    }
+
     // Platform-specific methods
 #ifdef USE_METAL_BACKEND
-    void onConnectButtonClicked() const;
     void onSidebarToggleClicked() const;
+    void onLogPanelToggleClicked() const;
     [[nodiscard]] float getTitlebarHeight() const;
 #endif
 
@@ -110,6 +125,7 @@ private:
     GLFWwindow *window = nullptr;
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
+    std::unique_ptr<LogPanel> logPanel;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
     std::unique_ptr<PlatformInterface> platform_;
@@ -117,10 +133,14 @@ private:
     // Application state
     bool darkTheme = true;
     bool sidebarVisible = true;
+    bool logPanelVisible = false;
     float sidebarWidth = 0.25f;
     float targetSidebarWidth = 0.25f;
+    float logPanelWidth = 0.0f;
+    float targetLogPanelWidth = 0.0f;
     float animationSpeed = 12.0f;
     ImGuiID leftDockId = 0;
+    ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;
     int selectedDatabase = -1;
     int selectedTable = -1;

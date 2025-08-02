@@ -4,7 +4,6 @@
 #include <sstream>
 
 LogPanel::LogPanel() {
-    // Add initial log entry
     addLog(LogLevel::INFO, "Log panel initialized");
 }
 
@@ -68,7 +67,7 @@ void LogPanel::render() {
     ImGui::End();
 }
 
-void LogPanel::addLog(LogLevel level, const std::string &message) {
+void LogPanel::addLog(const LogLevel level, const std::string &message) {
     LogEntry entry;
     entry.timestamp = std::chrono::system_clock::now();
     entry.level = level;
@@ -87,7 +86,7 @@ void LogPanel::clear() {
     addLog(LogLevel::INFO, "Log cleared");
 }
 
-const char *LogPanel::getLevelString(LogLevel level) const {
+const char *LogPanel::getLevelString(const LogLevel level) {
     switch (level) {
     case LogLevel::DEBUG:
         return "DEBUG";
@@ -102,25 +101,24 @@ const char *LogPanel::getLevelString(LogLevel level) const {
     }
 }
 
-ImVec4 LogPanel::getLevelColor(LogLevel level) const {
+ImVec4 LogPanel::getLevelColor(const LogLevel level) {
     switch (level) {
     case LogLevel::DEBUG:
-        return ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
+        return {0.7f, 0.7f, 0.7f, 1.0f}; // Gray
     case LogLevel::INFO:
-        return ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Light gray
+        return {0.8f, 0.8f, 0.8f, 1.0f}; // Light gray
     case LogLevel::WARN:
-        return ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Orange
+        return {1.0f, 0.8f, 0.2f, 1.0f}; // Orange
     case LogLevel::ERROR:
-        return ImVec4(1.0f, 0.3f, 0.3f, 1.0f); // Red
+        return {1.0f, 0.3f, 0.3f, 1.0f}; // Red
     default:
-        return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        return {1.0f, 1.0f, 1.0f, 1.0f};
     }
 }
 
-std::string
-LogPanel::formatTimestamp(const std::chrono::system_clock::time_point &timestamp) const {
-    auto time_t = std::chrono::system_clock::to_time_t(timestamp);
-    auto ms =
+std::string LogPanel::formatTimestamp(const std::chrono::system_clock::time_point &timestamp) {
+    const auto time_t = std::chrono::system_clock::to_time_t(timestamp);
+    const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
     std::stringstream ss;

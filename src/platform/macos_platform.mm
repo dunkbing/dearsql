@@ -70,6 +70,19 @@
     return nil;
 }
 
+- (void)connectButtonClicked:(id)sender {
+    @try {
+        if (self.app) {
+            // Show the connection dialog directly
+            if (self.app->getDatabaseSidebar()) {
+                self.app->getDatabaseSidebar()->showConnectionDialog();
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in connectButtonClicked: %@", exception);
+    }
+}
+
 - (void)sidebarToggleClicked:(id)sender {
     @try {
         if (self.app) {
@@ -167,8 +180,8 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
 
-    // Create custom title bar accessory view with sidebar button only
-    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 40, 0)];
+    // Create custom title bar accessory view with sidebar and plus buttons
+    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
 
     // Sidebar toggle button
     NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
@@ -180,6 +193,17 @@ void MacOSPlatform::setupTitlebar() {
     [sidebarButton setAction:@selector(sidebarToggleClicked:)];
     [sidebarButton setBordered:NO];
     [buttonContainer addSubview:sidebarButton];
+
+    // Plus button to add database connection
+    NSButton *plusButton = [[NSButton alloc] initWithFrame:NSMakeRect(32, 10, 30, 30)];
+    [plusButton setImage:[NSImage imageWithSystemSymbolName:@"plus"
+                                   accessibilityDescription:@"Add Database Connection"]];
+    [plusButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [plusButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [plusButton setTarget:toolbarDelegate_];
+    [plusButton setAction:@selector(connectButtonClicked:)];
+    [plusButton setBordered:NO];
+    [buttonContainer addSubview:plusButton];
 
     NSTitlebarAccessoryViewController *accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];

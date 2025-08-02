@@ -23,5 +23,5 @@ private:
 
     // Database deletion confirmation
     bool shouldShowDeleteConfirmation = false;
-    size_t databaseToDelete = 0;
+    int databaseToDelete = 0;
 };

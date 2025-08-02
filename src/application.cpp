@@ -439,13 +439,13 @@ void Application::renderMainUI() {
     logPanelWidth = targetLogPanelWidth;
 
     // Always use docking when sidebar or log panel is visible for proper resizing
-    bool shouldUseDocking = targetSidebarWidth > 0.01f || targetLogPanelWidth > 0.01f;
+    const bool shouldUseDocking = targetSidebarWidth > 0.01f || targetLogPanelWidth > 0.01f;
 
     // Rebuild layout when sidebar or log panel visibility changes
     static bool lastSidebarVisible = false;
     static bool lastLogPanelVisible = false;
-    bool currentSidebarVisible = targetSidebarWidth > 0.01f;
-    bool currentLogPanelVisible = targetLogPanelWidth > 0.01f;
+    const bool currentSidebarVisible = targetSidebarWidth > 0.01f;
+    const bool currentLogPanelVisible = targetLogPanelWidth > 0.01f;
     if (lastSidebarVisible != currentSidebarVisible ||
         lastLogPanelVisible != currentLogPanelVisible) {
         dockingLayoutInitialized = false;
@@ -465,8 +465,6 @@ void Application::renderMainUI() {
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
     ImGui::Begin("DockSpace Demo", nullptr, window_flags);
-
-    // Menu bar removed
 
     ImGui::PopStyleVar(3);
 

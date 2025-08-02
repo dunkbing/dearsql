@@ -35,7 +35,8 @@ private:
     bool showTimestamps_ = true;
     LogLevel filterLevel_ = LogLevel::ALL;
 
-    const char *getLevelString(LogLevel level) const;
-    ImVec4 getLevelColor(LogLevel level) const;
-    std::string formatTimestamp(const std::chrono::system_clock::time_point &timestamp) const;
+    [[nodiscard]] static const char *getLevelString(LogLevel level);
+    [[nodiscard]] static ImVec4 getLevelColor(LogLevel level);
+    [[nodiscard]] static std::string
+    formatTimestamp(const std::chrono::system_clock::time_point &timestamp);
 };

@@ -13,7 +13,6 @@
 #include "ui/sqlite_hierarchy.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/spinner.hpp"
-#include <iostream>
 
 void DatabaseSidebar::showConnectionDialog() {
     shouldShowConnectionDialog = true;
@@ -23,12 +22,6 @@ void DatabaseSidebar::render() {
     auto &app = Application::getInstance();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
-
-    // Add connection button at the top
-    if (ImGui::Button("Add Connection", ImVec2(-1, 0))) {
-        LogPanel::info("Opening database connection dialog");
-        showConnectionDialog();
-    }
 
     // Check if we should show the connection dialog
     if (shouldShowConnectionDialog) {
@@ -59,7 +52,7 @@ void DatabaseSidebar::render() {
     ImGui::Separator();
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
 
     if (databases.empty()) {
         // Show helpful message when no databases are connected
@@ -97,7 +90,6 @@ void DatabaseSidebar::render() {
 
     if (ImGui::BeginPopupModal("Confirm Delete Database", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
-        auto &databases = app.getDatabases();
         if (databaseToDelete < databases.size()) {
             const auto &db = databases[databaseToDelete];
             ImGui::Text("Are you sure you want to remove this database connection?");

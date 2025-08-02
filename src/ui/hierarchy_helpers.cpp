@@ -7,7 +7,6 @@
 #include "imgui.h"
 #include "ui/log_panel.hpp"
 #include "utils/spinner.hpp"
-#include <iostream>
 
 namespace HierarchyHelpers {
     void renderTableNode(DatabaseInterface *db, int tableIndex) {
@@ -31,7 +30,7 @@ namespace HierarchyHelpers {
         table.expanded = tableOpened;
 
         // Draw colored icon over the placeholder space
-        const ImVec2 tableIconPos =
+        const auto tableIconPos =
             ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                    ImGui::GetItemRectMin().y +
                        (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
@@ -46,7 +45,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(static_cast<int>(tableIndex));
+        ImGui::PushID(tableIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
@@ -74,8 +73,7 @@ namespace HierarchyHelpers {
                            (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
             ImGui::GetWindowDrawList()->AddText(
-                columnsIconPos,
-                ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
+                columnsIconPos, ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green
                 ICON_FA_TABLE_COLUMNS);
 
             if (columnsOpened) {

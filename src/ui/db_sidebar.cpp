@@ -23,6 +23,8 @@ void DatabaseSidebar::render() {
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
 
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 14.5f);
+
     // Check if we should show the connection dialog
     if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
@@ -38,7 +40,7 @@ void DatabaseSidebar::render() {
     if (const auto db = connectionDialog.getResult()) {
         auto [success, error] = db->connect();
         if (success) {
-            // Only refresh tables immediately for SQLite, PostgreSQL will do it async when needed
+            // Only refresh tables immediately for SQLite, Postgres will do it async when needed
             if (db->getType() == DatabaseType::SQLITE) {
                 db->refreshTables();
             }
@@ -350,7 +352,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
         ImGui::Separator();
         if (ImGui::MenuItem("Remove Database")) {
             shouldShowDeleteConfirmation = true;
-            databaseToDelete = databaseIndex;
+            databaseToDelete = static_cast<int>(databaseIndex);
         }
         ImGui::EndPopup();
     }
@@ -358,11 +360,11 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
 
 void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const size_t tableIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
-    auto &table = db->getTables()[tableIndex];
+    const auto &table = db->getTables()[tableIndex];
 
-    if (ImGui::BeginPopupContextItem(0)) {
+    if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
         }
@@ -379,7 +381,7 @@ void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const si
     auto &db = databases[databaseIndex];
     const auto &view = db->getViews()[viewIndex];
 
-    if (ImGui::BeginPopupContextItem(0)) {
+    if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
         }
@@ -397,7 +399,7 @@ void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
     auto &db = databases[databaseIndex];
     auto &sequence = db->getSequences()[sequenceIndex];
 
-    if (ImGui::BeginPopupContextItem(0)) {
+    if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Show Details")) {
             // TODO: Show sequence details in a tab
         }

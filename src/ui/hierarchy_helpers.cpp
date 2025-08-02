@@ -5,6 +5,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "ui/log_panel.hpp"
 #include "utils/spinner.hpp"
 #include <iostream>
 
@@ -288,8 +289,8 @@ namespace HierarchyHelpers {
 
         // Load tables when the tree node is opened and tables haven't been loaded yet
         if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
-            std::cout << "Tables node expanded and tables not loaded yet, attempting to load..."
-                      << std::endl;
+            LogPanel::debug(
+                "Tables node expanded and tables not loaded yet, attempting to load...");
             db->refreshTables();
         }
 
@@ -380,8 +381,7 @@ namespace HierarchyHelpers {
 
         // Load views when the tree node is opened and views haven't been loaded yet
         if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
-            std::cout << "Views node expanded and views not loaded yet, attempting to load..."
-                      << std::endl;
+            LogPanel::debug("Views node expanded and views not loaded yet, attempting to load...");
             db->refreshViews();
         }
 
@@ -616,8 +616,8 @@ namespace HierarchyHelpers {
                             // Auto-switch database and load tables when node is expanded
                             if (dbName != pgDb->getDatabaseName()) {
                                 if (!pgDb->isSwitchingDatabase()) {
-                                    std::cout << "Auto-switching to database: " << dbName
-                                              << " to load tables" << std::endl;
+                                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                                    " to load tables");
                                     pgDb->switchToDatabaseAsync(dbName);
                                 }
                                 ImGui::Text("  Switching database...");
@@ -680,8 +680,8 @@ namespace HierarchyHelpers {
                             // Auto-switch database and load tables when node is expanded
                             if (dbName != mysqlDb->getDatabaseName()) {
                                 if (!mysqlDb->isSwitchingDatabase()) {
-                                    std::cout << "Auto-switching to database: " << dbName
-                                              << " to load tables" << std::endl;
+                                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                                    " to load tables");
                                     mysqlDb->switchToDatabaseAsync(dbName);
                                 }
                                 ImGui::Text("  Switching database...");
@@ -749,8 +749,8 @@ namespace HierarchyHelpers {
                             // Auto-switch database and load views when node is expanded
                             if (dbName != pgDb->getDatabaseName()) {
                                 if (!pgDb->isSwitchingDatabase()) {
-                                    std::cout << "Auto-switching to database: " << dbName
-                                              << " to load views" << std::endl;
+                                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                                    " to load views");
                                     pgDb->switchToDatabaseAsync(dbName);
                                 }
                                 ImGui::Text("  Switching database...");
@@ -813,8 +813,8 @@ namespace HierarchyHelpers {
                             // Auto-switch database and load views when node is expanded
                             if (dbName != mysqlDb->getDatabaseName()) {
                                 if (!mysqlDb->isSwitchingDatabase()) {
-                                    std::cout << "Auto-switching to database: " << dbName
-                                              << " to load views" << std::endl;
+                                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                                    " to load views");
                                     mysqlDb->switchToDatabaseAsync(dbName);
                                 }
                                 ImGui::Text("  Switching database...");
@@ -895,22 +895,22 @@ namespace HierarchyHelpers {
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
                 if (pgDb && dbName != pgDb->getDatabaseName()) {
-                    std::cout << "Auto-switching to database: " << dbName
-                              << " to view table: " << table->name << std::endl;
+                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                    " to view table: " + table->name);
                     auto [success, error] = pgDb->switchToDatabase(dbName);
                     if (!success) {
-                        std::cout << "Failed to switch database: " << error << std::endl;
+                        LogPanel::error("Failed to switch database: " + error);
                         return;
                     }
                 }
             } else if (db->getType() == DatabaseType::MYSQL) {
                 auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
                 if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                    std::cout << "Auto-switching to database: " << dbName
-                              << " to view table: " << table->name << std::endl;
+                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                    " to view table: " + table->name);
                     auto [success, error] = mysqlDb->switchToDatabase(dbName);
                     if (!success) {
-                        std::cout << "Failed to switch database: " << error << std::endl;
+                        LogPanel::error("Failed to switch database: " + error);
                         return;
                     }
                 }
@@ -926,11 +926,11 @@ namespace HierarchyHelpers {
                 if (db->getType() == DatabaseType::POSTGRESQL) {
                     auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
                     if (pgDb && dbName != pgDb->getDatabaseName()) {
-                        std::cout << "Auto-switching to database: " << dbName
-                                  << " to view table: " << table->name << std::endl;
+                        LogPanel::debug("Auto-switching to database: " + dbName +
+                                        " to view table: " + table->name);
                         auto [success, error] = pgDb->switchToDatabase(dbName);
                         if (!success) {
-                            std::cout << "Failed to switch database: " << error << std::endl;
+                            LogPanel::error("Failed to switch database: " + error);
                             ImGui::EndPopup();
                             ImGui::PopID();
                             return;
@@ -939,11 +939,11 @@ namespace HierarchyHelpers {
                 } else if (db->getType() == DatabaseType::MYSQL) {
                     auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
                     if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                        std::cout << "Auto-switching to database: " << dbName
-                                  << " to view table: " << table->name << std::endl;
+                        LogPanel::debug("Auto-switching to database: " + dbName +
+                                        " to view table: " + table->name);
                         auto [success, error] = mysqlDb->switchToDatabase(dbName);
                         if (!success) {
-                            std::cout << "Failed to switch database: " << error << std::endl;
+                            LogPanel::error("Failed to switch database: " + error);
                             ImGui::EndPopup();
                             ImGui::PopID();
                             return;
@@ -1052,22 +1052,22 @@ namespace HierarchyHelpers {
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
                 if (pgDb && dbName != pgDb->getDatabaseName()) {
-                    std::cout << "Auto-switching to database: " << dbName
-                              << " to view: " << view->name << std::endl;
+                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                    " to view: " + view->name);
                     auto [success, error] = pgDb->switchToDatabase(dbName);
                     if (!success) {
-                        std::cout << "Failed to switch database: " << error << std::endl;
+                        LogPanel::error("Failed to switch database: " + error);
                         return;
                     }
                 }
             } else if (db->getType() == DatabaseType::MYSQL) {
                 auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
                 if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                    std::cout << "Auto-switching to database: " << dbName
-                              << " to view: " << view->name << std::endl;
+                    LogPanel::debug("Auto-switching to database: " + dbName +
+                                    " to view: " + view->name);
                     auto [success, error] = mysqlDb->switchToDatabase(dbName);
                     if (!success) {
-                        std::cout << "Failed to switch database: " << error << std::endl;
+                        LogPanel::error("Failed to switch database: " + error);
                         return;
                     }
                 }
@@ -1083,11 +1083,11 @@ namespace HierarchyHelpers {
                 if (db->getType() == DatabaseType::POSTGRESQL) {
                     auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
                     if (pgDb && dbName != pgDb->getDatabaseName()) {
-                        std::cout << "Auto-switching to database: " << dbName
-                                  << " to view: " << view->name << std::endl;
+                        LogPanel::debug("Auto-switching to database: " + dbName +
+                                        " to view: " + view->name);
                         auto [success, error] = pgDb->switchToDatabase(dbName);
                         if (!success) {
-                            std::cout << "Failed to switch database: " << error << std::endl;
+                            LogPanel::error("Failed to switch database: " + error);
                             ImGui::EndPopup();
                             ImGui::PopID();
                             return;
@@ -1096,11 +1096,11 @@ namespace HierarchyHelpers {
                 } else if (db->getType() == DatabaseType::MYSQL) {
                     auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
                     if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                        std::cout << "Auto-switching to database: " << dbName
-                                  << " to view: " << view->name << std::endl;
+                        LogPanel::debug("Auto-switching to database: " + dbName +
+                                        " to view: " + view->name);
                         auto [success, error] = mysqlDb->switchToDatabase(dbName);
                         if (!success) {
-                            std::cout << "Failed to switch database: " << error << std::endl;
+                            LogPanel::error("Failed to switch database: " + error);
                             ImGui::EndPopup();
                             ImGui::PopID();
                             return;

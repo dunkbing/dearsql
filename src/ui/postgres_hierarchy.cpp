@@ -5,8 +5,8 @@
 #include "database/postgresql.hpp"
 #include "imgui.h"
 #include "ui/hierarchy_helpers.hpp"
+#include "ui/log_panel.hpp"
 #include "utils/spinner.hpp"
-#include <iostream>
 
 // Forward declarations for helper functions from DatabaseSidebar
 namespace {
@@ -55,8 +55,7 @@ namespace PostgresHierarchy {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
-                std::cout << "Creating new SQL editor for database: " << pgDb->getDatabaseName()
-                          << std::endl;
+                LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
             }
             ImGui::EndPopup();
         }
@@ -64,9 +63,8 @@ namespace PostgresHierarchy {
         if (dbNodeOpen) {
             // Load schemas when database node is opened
             if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-                std::cout
-                    << "Database node expanded and schemas not loaded yet, attempting to load..."
-                    << std::endl;
+                LogPanel::debug(
+                    "Database node expanded and schemas not loaded yet, attempting to load...");
                 pgDb->refreshSchemas();
             }
 
@@ -140,7 +138,7 @@ namespace PostgresHierarchy {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     auto &app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
-                    std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
+                    LogPanel::debug("Creating new SQL editor for database: " + dbName);
                 }
                 ImGui::EndPopup();
             }
@@ -153,8 +151,7 @@ namespace PostgresHierarchy {
                     // Only switch database if we're not already connected to it
                     if (dbName != pgDb->getDatabaseName()) {
                         if (!pgDb->isSwitchingDatabase()) {
-                            std::cout << "Starting async switch to database: " << dbName
-                                      << std::endl;
+                            LogPanel::debug("Starting async switch to database: " + dbName);
                             pgDb->switchToDatabaseAsync(dbName);
                         }
                     }
@@ -164,8 +161,8 @@ namespace PostgresHierarchy {
                 if (dbName == pgDb->getDatabaseName()) {
                     // Load schemas only when first expanded and not already loaded
                     if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-                        std::cout << "Database " << dbName
-                                  << " expanded for first time, loading schemas..." << std::endl;
+                        LogPanel::debug("Database " + dbName +
+                                        " expanded for first time, loading schemas...");
                         pgDb->refreshSchemas();
                     }
                     // Show schemas for currently connected database
@@ -226,8 +223,8 @@ namespace PostgresHierarchy {
                 // Auto-switch database and load schemas when node is expanded
                 if (dbName != pgDb->getDatabaseName()) {
                     if (!pgDb->isSwitchingDatabase()) {
-                        std::cout << "Auto-switching to database: " << dbName << " to load schemas"
-                                  << std::endl;
+                        LogPanel::debug("Auto-switching to database: " + dbName +
+                                        " to load schemas");
                         pgDb->switchToDatabaseAsync(dbName);
                     }
                     // Show single connecting message during database switch
@@ -396,9 +393,8 @@ namespace {
 
         // Load sequences when the tree node is opened and sequences haven't been loaded yet
         if (sequencesOpen && !pgDb->areSequencesLoaded() && !pgDb->isLoadingSequences()) {
-            std::cout
-                << "Sequences node expanded and sequences not loaded yet, attempting to load..."
-                << std::endl;
+            LogPanel::debug(
+                "Sequences node expanded and sequences not loaded yet, attempting to load...");
             pgDb->refreshSequences();
         }
 
@@ -555,8 +551,8 @@ namespace PostgresHierarchy {
                     // Auto-switch database and load sequences when node is expanded
                     if (dbName != pgDb->getDatabaseName()) {
                         if (!pgDb->isSwitchingDatabase()) {
-                            std::cout << "Auto-switching to database: " << dbName
-                                      << " to load sequences" << std::endl;
+                            LogPanel::debug("Auto-switching to database: " + dbName +
+                                            " to load sequences");
                             pgDb->switchToDatabaseAsync(dbName);
                         }
                         ImGui::Text("  Switching database...");

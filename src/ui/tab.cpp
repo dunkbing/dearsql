@@ -1,6 +1,8 @@
 #include "ui/tab.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
 #include "imgui.h"
 
 #include "themes.hpp"
@@ -17,8 +19,11 @@
 Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(type) {}
 
 // SQLEditorTab implementation
-SQLEditorTab::SQLEditorTab(const std::string &name, const std::string &databaseConnectionString)
-    : Tab(name, TabType::SQL_EDITOR), databaseConnectionString(databaseConnectionString) {
+SQLEditorTab::SQLEditorTab(const std::string &name,
+                           std::shared_ptr<DatabaseInterface> serverDatabase,
+                           const std::string &selectedDatabaseName)
+    : Tab(name, TabType::SQL_EDITOR), serverDatabase(serverDatabase),
+      selectedDatabaseName(selectedDatabaseName) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
@@ -38,24 +43,15 @@ void SQLEditorTab::render() {
     checkQueryExecutionStatus();
 
     // Show database connection info if available
-    if (!databaseConnectionString.empty()) {
-        // Find the database by connection string
-        std::shared_ptr<DatabaseInterface> connectedDb = nullptr;
-        for (const auto &db : app.getDatabases()) {
-            if (db->getConnectionString() == databaseConnectionString ||
-                db->getPath() == databaseConnectionString) {
-                connectedDb = db;
-                break;
-            }
-        }
-
-        if (connectedDb) {
-            ImGui::Text("Connected to: %s", connectedDb->getName().c_str());
+    if (serverDatabase) {
+        if (!selectedDatabaseName.empty()) {
+            ImGui::Text("Server: %s | Database: %s", serverDatabase->getName().c_str(),
+                        selectedDatabaseName.c_str());
         } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Database connection not found");
+            ImGui::Text("Server: %s (No database selected)", serverDatabase->getName().c_str());
         }
     } else {
-        ImGui::Text("SQL Editor (No specific database)");
+        ImGui::Text("SQL Editor (No server connection)");
     }
     ImGui::Separator();
 
@@ -97,34 +93,65 @@ void SQLEditorTab::render() {
             if (ImGui::Button("Execute Query")) {
                 std::shared_ptr<DatabaseInterface> targetDb = nullptr;
 
-                if (!databaseConnectionString.empty()) {
-                    // Use the specific database connection
-                    for (const auto &db : app.getDatabases()) {
-                        if (db->getConnectionString() == databaseConnectionString ||
-                            db->getPath() == databaseConnectionString) {
-                            targetDb = db;
-                            break;
+                if (serverDatabase) {
+                    targetDb = serverDatabase;
+
+                    // For Postgres and MySQL, ensure we're connected to the right database
+                    if (!selectedDatabaseName.empty()) {
+                        if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                            if (pgDb && pgDb->getDatabaseName() != selectedDatabaseName) {
+                                // Need to switch database first
+                                auto [success, error] =
+                                    pgDb->switchToDatabase(selectedDatabaseName);
+                                if (!success) {
+                                    queryResult = "Error switching to database '" +
+                                                  selectedDatabaseName + "': " + error;
+                                    queryError = queryResult;
+                                    hasStructuredResults = false;
+                                    queryColumnNames.clear();
+                                    queryTableData.clear();
+                                    targetDb = nullptr;
+                                }
+                            }
+                        } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
+                            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+                            if (mysqlDb && mysqlDb->getDatabaseName() != selectedDatabaseName) {
+                                // Need to switch database first
+                                auto [success, error] =
+                                    mysqlDb->switchToDatabase(selectedDatabaseName);
+                                if (!success) {
+                                    queryResult = "Error switching to database '" +
+                                                  selectedDatabaseName + "': " + error;
+                                    queryError = queryResult;
+                                    hasStructuredResults = false;
+                                    queryColumnNames.clear();
+                                    queryTableData.clear();
+                                    targetDb = nullptr;
+                                }
+                            }
                         }
                     }
                 } else {
-                    // Fall back to selected database if no specific connection
+                    // Fall back to selected database if no server database set
                     const int selectedDb = app.getSelectedDatabase();
                     const auto &databases = app.getDatabases();
                     if (selectedDb >= 0 && selectedDb < static_cast<int>(databases.size())) {
                         targetDb = databases[selectedDb];
+                        // Update the server database reference
+                        serverDatabase = targetDb;
                     }
                 }
 
                 if (targetDb) {
                     startQueryExecutionAsync(targetDb, sqlQuery);
                 } else {
-                    queryResult = "Error: No database connection available";
+                    queryResult =
+                        "Error: No database selected. Please select a server and database.";
                     queryError = queryResult;
                     hasStructuredResults = false;
                     queryColumnNames.clear();
                     queryTableData.clear();
-                    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-                    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
                 }
             }
         }
@@ -137,6 +164,71 @@ void SQLEditorTab::render() {
             queryColumnNames.clear();
             queryTableData.clear();
             queryError.clear();
+        }
+
+        // Database selection dropdown
+        ImGui::SameLine();
+        ImGui::Text("Database:");
+        ImGui::SameLine();
+
+        std::string currentDbName = selectedDatabaseName.empty() ? "None" : selectedDatabaseName;
+        std::vector<std::string> availableDatabases;
+
+        // Get available databases from the server
+        if (serverDatabase) {
+            if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                if (pgDb && pgDb->shouldShowAllDatabases()) {
+                    availableDatabases = pgDb->getDatabaseNames();
+                } else if (pgDb) {
+                    // Single database mode - just show the connected database
+                    availableDatabases.push_back(pgDb->getDatabaseName());
+                }
+            } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
+                auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+                if (mysqlDb && mysqlDb->shouldShowAllDatabases()) {
+                    availableDatabases = mysqlDb->getDatabaseNames();
+                } else if (mysqlDb) {
+                    // Single database mode - just show the connected database
+                    availableDatabases.push_back(mysqlDb->getDatabaseName());
+                }
+            } else {
+                // For SQLite and Redis, there's only one "database"
+                availableDatabases.push_back(serverDatabase->getName());
+            }
+        }
+
+        ImGui::SetNextItemWidth(150.0f);
+        if (ImGui::BeginCombo("##database_combo", currentDbName.c_str())) {
+            // Option to clear database selection
+            if (ImGui::Selectable("None", selectedDatabaseName.empty())) {
+                selectedDatabaseName.clear();
+            }
+
+            // List available databases from the server
+            for (const auto &dbName : availableDatabases) {
+                const bool isSelected = (selectedDatabaseName == dbName);
+                if (ImGui::Selectable(dbName.c_str(), isSelected)) {
+                    selectedDatabaseName = dbName;
+
+                    // For Postgres and MySQL, switch to the selected database if needed
+                    if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                        if (pgDb && pgDb->getDatabaseName() != dbName) {
+                            pgDb->switchToDatabaseAsync(dbName);
+                        }
+                    } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
+                        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+                        if (mysqlDb && mysqlDb->getDatabaseName() != dbName) {
+                            mysqlDb->switchToDatabaseAsync(dbName);
+                        }
+                    }
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
         }
 
         ImGui::Separator();
@@ -223,16 +315,16 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
                 return;
             }
 
-            // Connect to database
-            auto [success, error] = targetDb->connect();
-            if (!success) {
-                if (!shouldCancelQuery) {
-                    queryResult = "Connection failed: " + error;
-                    queryError = queryResult;
-                    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-                    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
+            // Connect to database if not already connected
+            if (!targetDb->isConnected()) {
+                auto [success, error] = targetDb->connect();
+                if (!success) {
+                    if (!shouldCancelQuery) {
+                        queryResult = "Connection failed: " + error;
+                        queryError = queryResult;
+                    }
+                    return;
                 }
-                return;
             }
 
             // Check for cancellation before executing query
@@ -241,7 +333,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
             }
 
             // Time the query execution
-            auto startTime = std::chrono::high_resolution_clock::now();
+            const auto startTime = std::chrono::high_resolution_clock::now();
 
             // For Redis, also get the text result to check for errors
             std::string textResult;
@@ -252,7 +344,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
             // Get structured results for table display
             auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
 
-            auto endTime = std::chrono::high_resolution_clock::now();
+            const auto endTime = std::chrono::high_resolution_clock::now();
             lastQueryDuration =
                 std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
@@ -268,8 +360,6 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
                 hasStructuredResults = false;
                 queryColumnNames.clear();
                 queryTableData.clear();
-                strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-                resultBuffer[sizeof(resultBuffer) - 1] = '\0';
                 return;
             }
 
@@ -280,16 +370,12 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
             // Clear any previous error
             queryError.clear();
             queryResult.clear();
-            memset(resultBuffer, 0, sizeof(resultBuffer));
-
         } catch (const std::exception &e) {
             queryResult = "Error executing query: " + std::string(e.what());
             queryError = queryResult;
             hasStructuredResults = false;
             queryColumnNames.clear();
             queryTableData.clear();
-            strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-            resultBuffer[sizeof(resultBuffer) - 1] = '\0';
         }
     });
 }
@@ -310,8 +396,6 @@ void SQLEditorTab::checkQueryExecutionStatus() {
                 hasStructuredResults = false;
                 queryColumnNames.clear();
                 queryTableData.clear();
-                strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-                resultBuffer[sizeof(resultBuffer) - 1] = '\0';
             }
         }
 
@@ -328,8 +412,6 @@ void SQLEditorTab::cancelQueryExecution() {
     hasStructuredResults = false;
     queryColumnNames.clear();
     queryTableData.clear();
-    strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
-    resultBuffer[sizeof(resultBuffer) - 1] = '\0';
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float minSize1,

@@ -1,5 +1,7 @@
 #include "ui/tab_manager.hpp"
 #include "application.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
 #include "imgui.h"
 #include <algorithm>
 #include <iostream>
@@ -101,7 +103,37 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
         tabName = name;
     }
 
-    auto tab = std::make_shared<SQLEditorTab>(tabName, databaseConnectionString);
+    // Find the server database based on connection string
+    std::shared_ptr<DatabaseInterface> serverDb = nullptr;
+    std::string selectedDbName;
+
+    if (!databaseConnectionString.empty()) {
+        auto &app = Application::getInstance();
+        for (const auto &db : app.getDatabases()) {
+            if (db->getConnectionString() == databaseConnectionString ||
+                db->getPath() == databaseConnectionString) {
+                serverDb = db;
+
+                // Get current database name
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                    if (pgDb) {
+                        selectedDbName = pgDb->getDatabaseName();
+                    }
+                } else if (db->getType() == DatabaseType::MYSQL) {
+                    auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+                    if (mysqlDb) {
+                        selectedDbName = mysqlDb->getDatabaseName();
+                    }
+                } else {
+                    selectedDbName = db->getName();
+                }
+                break;
+            }
+        }
+    }
+
+    auto tab = std::make_shared<SQLEditorTab>(tabName, serverDb, selectedDbName);
     tab->setShouldFocus(true);
     addTab(tab);
 

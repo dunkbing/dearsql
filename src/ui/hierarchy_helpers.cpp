@@ -532,7 +532,7 @@ namespace HierarchyHelpers {
 
         // Context menu for Query
         if (ImGui::BeginPopupContextItem("query_context_menu")) {
-            if (ImGui::MenuItem("New Query Editor")) {
+            if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", redisDb->getConnectionString());
             }

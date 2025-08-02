@@ -6,6 +6,7 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Forward declarations
@@ -31,13 +32,13 @@ public:
     [[nodiscard]] bool isOpen() const {
         return open;
     }
-    void setOpen(bool isOpen) {
+    void setOpen(const bool isOpen) {
         open = isOpen;
     }
     [[nodiscard]] bool shouldFocus() const {
         return needsFocus;
     }
-    void setShouldFocus(bool focus) {
+    void setShouldFocus(const bool focus) {
         needsFocus = focus;
     }
 
@@ -54,8 +55,9 @@ protected:
 class SQLEditorTab final : public Tab {
 public:
     explicit SQLEditorTab(const std::string &name,
-                          const std::string &databaseConnectionString = "");
-    ~SQLEditorTab();
+                          std::shared_ptr<DatabaseInterface> serverDatabase = nullptr,
+                          const std::string &selectedDatabaseName = "");
+    ~SQLEditorTab() override;
 
     void render() override;
 
@@ -72,16 +74,25 @@ public:
     void setResult(const std::string &result) {
         queryResult = result;
     }
-    [[nodiscard]] const std::string &getDatabaseConnectionString() const {
-        return databaseConnectionString;
+    [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {
+        return serverDatabase;
+    }
+    void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
+        serverDatabase = std::move(db);
+    }
+    [[nodiscard]] const std::string &getSelectedDatabaseName() const {
+        return selectedDatabaseName;
+    }
+    void setSelectedDatabaseName(const std::string &dbName) {
+        selectedDatabaseName = dbName;
     }
 
 private:
     std::string sqlQuery;
     std::string queryResult;
-    std::string databaseConnectionString;
+    std::shared_ptr<DatabaseInterface> serverDatabase; // Server connection (Postgres/MySQL)
+    std::string selectedDatabaseName;                  // Selected database within the server
     TextEditor sqlEditor;
-    char resultBuffer[16384] = "";
 
     // Structured query results for table display
     std::vector<std::string> queryColumnNames;
@@ -137,7 +148,7 @@ public:
 
     // SQL generation and confirmation dialog
     std::vector<std::string> generateUpdateSQL();
-    std::vector<std::string> getPrimaryKeyColumns() const;
+    [[nodiscard]] std::vector<std::string> getPrimaryKeyColumns() const;
     void showSaveConfirmationDialog();
     void checkSQLExecutionStatus();
 

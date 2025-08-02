@@ -73,7 +73,6 @@ bool Application::initialize() {
     // Create managers
     tabManager = std::make_unique<TabManager>();
     databaseSidebar = std::make_unique<DatabaseSidebar>();
-    logPanel = std::make_unique<LogPanel>();
     fileDialog = std::make_unique<FileDialog>();
 
     // Initialize app state
@@ -146,7 +145,6 @@ void Application::cleanup() {
     // Cleanup components
     tabManager.reset();
     databaseSidebar.reset();
-    logPanel.reset();
     fileDialog.reset();
     std::cout << "Components cleaned up" << std::endl;
 
@@ -521,7 +519,7 @@ void Application::renderMainUI() {
         ImGui::SetNextWindowSizeConstraints(ImVec2(200, -1), ImVec2(600, -1));
         ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
 
-        logPanel->render();
+        LogPanel::getInstance().render();
         ImGui::End();
 
         ImGui::PopStyleVar(1);

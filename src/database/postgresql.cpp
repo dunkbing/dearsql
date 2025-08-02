@@ -90,8 +90,6 @@ PostgresDatabase::getDatabaseData(const std::string &dbName) const {
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
-    LogPanel::debug("Connection string: " + connectionString);
-
     const auto *session = getSessionForDatabase(database);
     if (connected && session) {
         return {true, ""};

@@ -31,9 +31,6 @@ public:
     [[nodiscard]] DatabaseSidebar *getDatabaseSidebar() const {
         return databaseSidebar.get();
     }
-    [[nodiscard]] LogPanel *getLogPanel() const {
-        return logPanel.get();
-    }
     [[nodiscard]] FileDialog *getFileDialog() const {
         return fileDialog.get();
     }
@@ -125,7 +122,6 @@ private:
     GLFWwindow *window = nullptr;
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
-    std::unique_ptr<LogPanel> logPanel;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
     std::unique_ptr<PlatformInterface> platform_;

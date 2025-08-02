@@ -9,12 +9,13 @@ LogPanel::LogPanel() {
 }
 
 LogPanel &LogPanel::getInstance() {
-    static LogPanel instance;
-    return instance;
+    static LogPanel *instance = nullptr;
+    static std::once_flag flag;
+    std::call_once(flag, []() { instance = new LogPanel(); });
+    return *instance;
 }
 
 void LogPanel::render() {
-    std::cout << logs_.size() << std::endl;
     ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
 
     // controls
@@ -39,21 +40,22 @@ void LogPanel::render() {
     // Log content area
     ImGui::BeginChild("LogContent", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-    for (const auto &[timestamp, level, message] : logs_) {
-        // if (filterLevel_ != LogLevel::ALL && level < filterLevel_) {
-        //     continue;
-        // }
+    for (const auto &entry : logs_) {
+        // Apply filter (skip if filter level is higher than entry level, unless ALL is selected)
+        if (filterLevel_ != LogLevel::ALL && entry.level < filterLevel_) {
+            continue;
+        }
 
         // Format log entry
         std::string logText;
         if (showTimestamps_) {
-            logText += "[" + formatTimestamp(timestamp) + "] ";
+            logText += "[" + formatTimestamp(entry.timestamp) + "] ";
         }
-        logText += "[" + std::string(getLevelString(level)) + "] ";
-        logText += message;
+        logText += "[" + std::string(getLevelString(entry.level)) + "] ";
+        logText += entry.message;
 
         // Apply color based on log level
-        ImVec4 color = getLevelColor(level);
+        ImVec4 color = getLevelColor(entry.level);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::TextWrapped("%s", logText.c_str());
         ImGui::PopStyleColor();

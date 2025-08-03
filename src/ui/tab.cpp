@@ -104,7 +104,8 @@ void SQLEditorTab::render() {
         totalContentHeight * (1.0f - splitterPosition) - 6.0f; // 6px hover area for splitter
 
     // SQL Editor section
-    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true)) {
+    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
+                          ImGuiWindowFlags_NoScrollbar)) {
         sqlEditor.Render("##SQL", true, ImVec2(-1, -1), true);
         sqlQuery = sqlEditor.GetText();
     }
@@ -114,7 +115,8 @@ void SQLEditorTab::render() {
     renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
 
     // Results section
-    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true)) {
+    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
+                          ImGuiWindowFlags_NoScrollbar)) {
         // Buttons row
         if (isExecutingQuery) {
             ImGui::BeginDisabled();

@@ -182,7 +182,9 @@ void TabManager::renderTabs() {
         bool isOpen = tab->isOpen();
 
         // Create a dockable window for each tab
-        constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar;
+        constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar |
+                                                 ImGuiWindowFlags_NoScrollbar |
+                                                 ImGuiWindowFlags_NoScrollWithMouse;
 
         if (ImGui::Begin(tab->getName().c_str(), &isOpen, windowFlags)) {
             tab->render();

@@ -86,12 +86,19 @@ public:
     void setSelectedDatabaseName(const std::string &dbName) {
         selectedDatabaseName = dbName;
     }
+    [[nodiscard]] const std::string &getSelectedSchemaName() const {
+        return selectedSchemaName;
+    }
+    void setSelectedSchemaName(const std::string &schemaName) {
+        selectedSchemaName = schemaName;
+    }
 
 private:
     std::string sqlQuery;
     std::string queryResult;
     std::shared_ptr<DatabaseInterface> serverDatabase; // Server connection (Postgres/MySQL)
     std::string selectedDatabaseName;                  // Selected database within the server
+    std::string selectedSchemaName;                    // Selected schema within the database
     TextEditor sqlEditor;
 
     // Structured query results for table display

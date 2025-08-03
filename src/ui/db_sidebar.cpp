@@ -106,7 +106,7 @@ void DatabaseSidebar::render() {
 
             if (ImGui::Button("Remove", ImVec2(100, 0))) {
                 // Remove from saved connections by finding matching connection
-                auto savedConnections = app.getAppState()->getSavedConnections();
+                const auto savedConnections = app.getAppState()->getSavedConnections();
                 for (const auto &conn : savedConnections) {
                     bool matches = false;
                     if (db->getType() == DatabaseType::POSTGRESQL && conn.type == "postgresql") {

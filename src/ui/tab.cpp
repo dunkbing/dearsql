@@ -27,6 +27,42 @@ SQLEditorTab::SQLEditorTab(const std::string &name,
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
+
+    // Start loading schemas immediately for PostgreSQL databases
+    if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+        if (pgDb) {
+            if (pgDb->shouldShowAllDatabases()) {
+                // Start loading database list if not already loaded (needed for combo)
+                if (!pgDb->isLoadingDatabases() && pgDb->getDatabaseNames().empty()) {
+                    pgDb->refreshDatabaseNames();
+                }
+
+                // Only load schemas for the target database initially
+                std::string targetDb = selectedDatabaseName;
+                if (targetDb.empty()) {
+                    targetDb = pgDb->getDatabaseName();
+                }
+
+                if (!targetDb.empty()) {
+                    const auto &dbData = pgDb->getDatabaseData(targetDb);
+                    if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
+                        // Switch to target database and load schemas
+                        if (targetDb != pgDb->getDatabaseName()) {
+                            pgDb->switchToDatabaseAsync(targetDb);
+                        } else if (!pgDb->isLoadingSchemas()) {
+                            pgDb->refreshSchemas();
+                        }
+                    }
+                }
+            } else {
+                // Single database mode: load schemas for current database
+                if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
+                    pgDb->refreshSchemas();
+                }
+            }
+        }
+    }
 }
 
 SQLEditorTab::~SQLEditorTab() {
@@ -200,85 +236,299 @@ void SQLEditorTab::render() {
         std::string currentSelection =
             selectedSchemaName.empty() ? "None" : (selectedDatabaseName + "." + selectedSchemaName);
         std::vector<std::string> availableDatabases;
+        bool isLoadingAnySchemas = false;
+        bool needsSchemasForTargetDb = false;
 
         // Get available databases from the server
         if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
             auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
             if (pgDb && pgDb->shouldShowAllDatabases()) {
                 availableDatabases = pgDb->getDatabaseNames();
+
+                // Only check if target database schemas are loading (not all databases)
+                std::string targetDb =
+                    selectedDatabaseName.empty() ? pgDb->getDatabaseName() : selectedDatabaseName;
+                if (!targetDb.empty()) {
+                    const auto &dbData = pgDb->getDatabaseData(targetDb);
+                    if (dbData.loadingSchemas) {
+                        isLoadingAnySchemas = true;
+                    }
+
+                    // Check if we need schemas for the target database
+                    if (selectedSchemaName.empty() && !dbData.schemasLoaded &&
+                        !dbData.loadingSchemas) {
+                        needsSchemasForTargetDb = true;
+                    }
+                }
+
+                // Also check if we're actively loading the current database schemas
+                if (pgDb->isLoadingSchemas() && targetDb == pgDb->getDatabaseName()) {
+                    isLoadingAnySchemas = true;
+                }
+
+                // Also check if databases themselves are still loading
+                if (pgDb->isLoadingDatabases()) {
+                    isLoadingAnySchemas = true;
+                }
             } else if (pgDb) {
                 // Single database mode - just show the connected database
                 availableDatabases.push_back(pgDb->getDatabaseName());
+                isLoadingAnySchemas = pgDb->isLoadingSchemas();
+
+                // Check if we need schemas for single database mode
+                if (selectedSchemaName.empty() && !pgDb->areSchemasLoaded() &&
+                    !pgDb->isLoadingSchemas()) {
+                    needsSchemasForTargetDb = true;
+                }
             }
         }
 
         ImGui::SetNextItemWidth(200.0f);
-        if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
-            // Option to clear schema selection
-            if (ImGui::Selectable("None", selectedSchemaName.empty())) {
-                selectedDatabaseName.clear();
-                selectedSchemaName.clear();
+
+        // Show loading spinner and disable combo if still loading or need to start loading
+        if (isLoadingAnySchemas || needsSchemasForTargetDb) {
+            ImGui::BeginDisabled();
+            if (ImGui::BeginCombo("##schema_combo", "Loading schemas...")) {
+                ImGui::EndCombo();
             }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            UIUtils::Spinner("##schema_loading_spinner", 8.0f, 2,
+                             ImGui::GetColorU32(ImGuiCol_Text));
+        } else {
+            if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
+                // When combo is opened, start loading schemas for other databases on-demand
+                if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                    if (pgDb) {
+                        // Check async operations status
+                        if (pgDb->isSwitchingDatabase()) {
+                            pgDb->checkDatabaseSwitchStatusAsync();
+                        }
 
-            // For PostgreSQL only - show hierarchical database/schema structure
-            if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-                if (pgDb) {
-                    for (const auto &dbName : availableDatabases) {
-                        // Show database name as a non-selectable label
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-                        ImGui::Text("%s", dbName.c_str());
-                        ImGui::PopStyleColor();
+                        // Check schema loading status for all databases
+                        if (pgDb->shouldShowAllDatabases()) {
+                            for (const auto &dbName : availableDatabases) {
+                                pgDb->checkSchemasStatusAsync(dbName);
+                            }
 
-                        // Get schemas for this database
-                        std::vector<std::string> schemas;
-                        if (dbName == pgDb->getDatabaseName()) {
-                            // Current database - get schemas if loaded
-                            if (pgDb->areSchemasLoaded()) {
-                                for (const auto &schema : pgDb->getSchemas()) {
-                                    schemas.push_back(schema.name);
+                            // Start loading schemas for databases that haven't been loaded yet
+                            // (on-demand)
+                            for (const auto &dbName : availableDatabases) {
+                                const auto &dbData = pgDb->getDatabaseData(dbName);
+                                if (!dbData.schemasLoaded && !dbData.loadingSchemas &&
+                                    dbName != pgDb->getDatabaseName()) {
+                                    // Only start loading if we're not already switching databases
+                                    if (!pgDb->isSwitchingDatabase()) {
+                                        pgDb->switchToDatabaseAsync(dbName);
+                                        break; // Only start one at a time to avoid overwhelming the
+                                               // server
+                                    }
                                 }
-                            } else if (!pgDb->isLoadingSchemas()) {
-                                // Start loading schemas if not already loading
-                                pgDb->refreshSchemas();
                             }
+                        } else {
+                            // For single database mode, just check current database schema status
+                            pgDb->checkSchemasStatusAsync();
                         }
+                    }
+                }
+                // Option to clear schema selection
+                if (ImGui::Selectable("None", selectedSchemaName.empty())) {
+                    selectedDatabaseName.clear();
+                    selectedSchemaName.clear();
+                }
 
-                        // Show schemas indented under the database
-                        for (const auto &schemaName : schemas) {
-                            ImGui::Indent(16.0f);
-                            const bool isSelected = (selectedDatabaseName == dbName &&
-                                                     selectedSchemaName == schemaName);
-                            const std::string schemaLabel = "  " + schemaName;
+                // For PostgreSQL only - show hierarchical database/schema structure
+                if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                    if (pgDb) {
+                        for (const auto &dbName : availableDatabases) {
+                            // Show database name as a non-selectable label
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+                            ImGui::Text("%s", dbName.c_str());
+                            ImGui::PopStyleColor();
 
-                            if (ImGui::Selectable(schemaLabel.c_str(), isSelected)) {
-                                // Switch database if needed
-                                if (pgDb->getDatabaseName() != dbName) {
-                                    pgDb->switchToDatabaseAsync(dbName);
-                                    // Clear schema when switching databases
-                                    selectedSchemaName.clear();
+                            // Get schemas for this database
+                            std::vector<std::string> schemas;
+                            if (dbName == pgDb->getDatabaseName()) {
+                                // Current database - get schemas if loaded
+                                if (pgDb->areSchemasLoaded()) {
+                                    for (const auto &schema : pgDb->getSchemas()) {
+                                        schemas.push_back(schema.name);
+                                    }
+                                } else if (!pgDb->isLoadingSchemas()) {
+                                    // Start loading schemas if not already loading
+                                    pgDb->refreshSchemas();
                                 }
-                                selectedDatabaseName = dbName;
-                                selectedSchemaName = schemaName;
+                            } else {
+                                // Other databases - get cached schemas or load them
+                                const auto &dbData = pgDb->getDatabaseData(dbName);
+                                if (dbData.schemasLoaded) {
+                                    for (const auto &schema : dbData.schemas) {
+                                        schemas.push_back(schema.name);
+                                    }
+                                } else if (!dbData.loadingSchemas) {
+                                    // Start loading schemas for this database by switching to it
+                                    // temporarily
+                                    if (!pgDb->isSwitchingDatabase()) {
+                                        pgDb->switchToDatabaseAsync(dbName);
+                                    }
+                                }
                             }
-                            if (isSelected) {
-                                ImGui::SetItemDefaultFocus();
+
+                            // Show schemas indented under the database
+                            for (const auto &schemaName : schemas) {
+                                ImGui::Indent(16.0f);
+                                const bool isSelected = (selectedDatabaseName == dbName &&
+                                                         selectedSchemaName == schemaName);
+                                const std::string schemaLabel = "  " + schemaName;
+                                // Create unique ID for each schema by combining database and schema
+                                // name
+                                const std::string schemaId =
+                                    schemaLabel + "##" + dbName + "_" + schemaName;
+
+                                if (ImGui::Selectable(schemaId.c_str(), isSelected)) {
+                                    // Switch database if needed
+                                    if (pgDb->getDatabaseName() != dbName) {
+                                        pgDb->switchToDatabaseAsync(dbName);
+                                        // Clear schema when switching databases
+                                        selectedSchemaName.clear();
+                                    }
+                                    selectedDatabaseName = dbName;
+                                    selectedSchemaName = schemaName;
+                                }
+                                if (isSelected) {
+                                    ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::Unindent(16.0f);
                             }
-                            ImGui::Unindent(16.0f);
-                        }
 
-                        // Show loading indicator if schemas are being loaded
-                        if (dbName == pgDb->getDatabaseName() && pgDb->isLoadingSchemas()) {
-                            ImGui::Indent(16.0f);
-                            ImGui::Text("  Loading schemas...");
-                            ImGui::Unindent(16.0f);
-                        }
+                            // Show loading indicator if schemas are being loaded
+                            if (dbName == pgDb->getDatabaseName() && pgDb->isLoadingSchemas()) {
+                                ImGui::Indent(16.0f);
+                                ImGui::Text("  Loading schemas...");
+                                ImGui::Unindent(16.0f);
+                            } else if (dbName != pgDb->getDatabaseName()) {
+                                const auto &dbData = pgDb->getDatabaseData(dbName);
+                                if (dbData.loadingSchemas) {
+                                    ImGui::Indent(16.0f);
+                                    ImGui::Text("  Loading schemas...");
+                                    ImGui::Unindent(16.0f);
+                                } else if (!dbData.schemasLoaded && schemas.empty()) {
+                                    ImGui::Indent(16.0f);
+                                    ImGui::Text("  Click to load schemas...");
+                                    ImGui::Unindent(16.0f);
+                                }
+                            }
 
-                        ImGui::Separator();
+                            ImGui::Separator();
+                        }
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        // Always check async operations status to update UI when loading completes
+        if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+            if (pgDb) {
+                // Check database switch status
+                if (pgDb->isSwitchingDatabase()) {
+                    pgDb->checkDatabaseSwitchStatusAsync();
+                }
+
+                // Start loading schemas if needed for target database only
+                if (needsSchemasForTargetDb) {
+                    if (pgDb->shouldShowAllDatabases()) {
+                        std::string targetDb = selectedDatabaseName.empty()
+                                                   ? pgDb->getDatabaseName()
+                                                   : selectedDatabaseName;
+                        if (!targetDb.empty()) {
+                            const auto &dbData = pgDb->getDatabaseData(targetDb);
+                            if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
+                                if (targetDb != pgDb->getDatabaseName() &&
+                                    !pgDb->isSwitchingDatabase()) {
+                                    pgDb->switchToDatabaseAsync(targetDb);
+                                } else if (targetDb == pgDb->getDatabaseName() &&
+                                           !pgDb->isLoadingSchemas()) {
+                                    pgDb->refreshSchemas();
+                                }
+                            }
+                        }
+                    } else {
+                        // Single database mode
+                        if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
+                            pgDb->refreshSchemas();
+                        }
+                    }
+                }
+
+                // Check async status for essential operations only
+                if (pgDb->shouldShowAllDatabases()) {
+                    // Check database loading status (needed for combo to show database list)
+                    if (pgDb->isLoadingDatabases()) {
+                        pgDb->checkDatabasesStatusAsync();
+                    }
+
+                    // Only check schema status for target database and current database
+                    std::string targetDb = selectedDatabaseName.empty() ? pgDb->getDatabaseName()
+                                                                        : selectedDatabaseName;
+                    if (!targetDb.empty()) {
+                        pgDb->checkSchemasStatusAsync(targetDb);
+                    }
+                    if (targetDb != pgDb->getDatabaseName()) {
+                        pgDb->checkSchemasStatusAsync(pgDb->getDatabaseName());
+                    }
+                } else {
+                    // For single database mode, just check current database schema status
+                    pgDb->checkSchemasStatusAsync();
+                }
+
+                // Auto-select default schema when schemas finish loading
+                if (!isLoadingAnySchemas && !needsSchemasForTargetDb &&
+                    selectedSchemaName.empty()) {
+                    std::string targetDb = selectedDatabaseName; // From constructor
+                    if (targetDb.empty()) {
+                        targetDb = pgDb->getDatabaseName(); // Fallback to current database
+                    }
+
+                    if (pgDb->shouldShowAllDatabases()) {
+                        // Multi-database mode: use the target database
+                        if (!targetDb.empty()) {
+                            const auto &dbData = pgDb->getDatabaseData(targetDb);
+                            if (dbData.schemasLoaded && !dbData.schemas.empty()) {
+                                selectedDatabaseName = targetDb;
+                                // Select "public" schema if available, otherwise first schema
+                                for (const auto &schema : dbData.schemas) {
+                                    if (schema.name == "public") {
+                                        selectedSchemaName = schema.name;
+                                        break;
+                                    }
+                                }
+                                if (selectedSchemaName.empty()) {
+                                    selectedSchemaName = dbData.schemas[0].name;
+                                }
+                            }
+                        }
+                    } else {
+                        // Single database mode: select current database
+                        if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
+                            selectedDatabaseName = pgDb->getDatabaseName();
+                            // Select "public" schema if available, otherwise first schema
+                            for (const auto &schema : pgDb->getSchemas()) {
+                                if (schema.name == "public") {
+                                    selectedSchemaName = schema.name;
+                                    break;
+                                }
+                            }
+                            if (selectedSchemaName.empty()) {
+                                selectedSchemaName = pgDb->getSchemas()[0].name;
+                            }
+                        }
                     }
                 }
             }
-            ImGui::EndCombo();
         }
 
         ImGui::Separator();

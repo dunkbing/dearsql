@@ -1722,9 +1722,11 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
                 LogPanel::info("Async database switch completed successfully to: " +
                                targetDatabaseName);
 
-                // Auto-start loading schemas if not already loaded
-                if (!areSchemasLoaded() && !isLoadingSchemas()) {
-                    LogPanel::debug("Auto-starting schema loading after database switch");
+                // Auto-start loading schemas for the switched database if not already loaded
+                auto &targetDbData = getDatabaseData(targetDatabaseName);
+                if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
+                    LogPanel::debug("Auto-starting schema loading after database switch to: " +
+                                    targetDatabaseName);
                     refreshSchemas();
                 }
             } else {

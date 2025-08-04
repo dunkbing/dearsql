@@ -4,7 +4,6 @@
 #include "imgui.h"
 #include "platform/platform_interface.hpp"
 #include "ui/db_sidebar.hpp"
-#include "ui/log_panel.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <GLFW/glfw3.h>

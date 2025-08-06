@@ -26,7 +26,10 @@
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"SidebarToggle", @"WorkspaceSelector", @"LogPanelToggle", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[
+        @"SidebarToggle", @"WorkspaceSelector", @"LogPanelToggle",
+        NSToolbarFlexibleSpaceItemIdentifier
+    ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -141,64 +144,69 @@
     if (!self.workspaceDropdown || !self.app) {
         return;
     }
-    
+
     [self.workspaceDropdown removeAllItems];
-    
+
     auto workspaces = self.app->getWorkspaces();
     int currentWorkspaceId = self.app->getCurrentWorkspaceId();
-    
-    for (const auto& workspace : workspaces) {
+
+    for (const auto &workspace : workspaces) {
         NSString *title = [NSString stringWithUTF8String:workspace.name.c_str()];
         [self.workspaceDropdown addItemWithTitle:title];
-        
+
         NSMenuItem *item = [self.workspaceDropdown lastItem];
         item.tag = workspace.id;
-        
+
         if (workspace.id == currentWorkspaceId) {
             [self.workspaceDropdown selectItem:item];
         }
     }
-    
+
     // Add "New Workspace..." option
     [self.workspaceDropdown.menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *newWorkspaceItem = [[NSMenuItem alloc] initWithTitle:@"New Workspace..." action:@selector(createNewWorkspace:) keyEquivalent:@""];
+    NSMenuItem *newWorkspaceItem = [[NSMenuItem alloc] initWithTitle:@"New Workspace..."
+                                                              action:@selector(createNewWorkspace:)
+                                                       keyEquivalent:@""];
     newWorkspaceItem.target = self;
     [self.workspaceDropdown.menu addItem:newWorkspaceItem];
 }
 
 - (void)createNewWorkspace:(id)sender {
     @try {
-        if (!self.app) return;
-        
+        if (!self.app)
+            return;
+
         // Get the main window from the application
         NSWindow *mainWindow = nil;
-        GLFWwindow* glfwWindow = self.app->getWindow();
+        GLFWwindow *glfwWindow = self.app->getWindow();
         if (glfwWindow) {
             mainWindow = glfwGetCocoaWindow(glfwWindow);
         }
-        
+
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Create New Workspace";
         alert.informativeText = @"Enter a name for the new workspace:";
         [alert addButtonWithTitle:@"Create"];
         [alert addButtonWithTitle:@"Cancel"];
-        
+
         NSTextField *textField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
         textField.placeholderString = @"Workspace name";
         alert.accessoryView = textField;
-        
+
         if (mainWindow) {
-            [alert beginSheetModalForWindow:mainWindow completionHandler:^(NSModalResponse returnCode) {
-                if (returnCode == NSAlertFirstButtonReturn) {
-                    NSString *workspaceName = textField.stringValue;
-                    if (workspaceName.length > 0 && self.app) {
-                        std::string name = [workspaceName UTF8String];
-                        if (self.app->createWorkspace(name)) {
-                            [self updateWorkspaceDropdown];
-                        }
-                    }
-                }
-            }];
+            [alert beginSheetModalForWindow:mainWindow
+                          completionHandler:^(NSModalResponse returnCode) {
+                            if (returnCode == NSAlertFirstButtonReturn) {
+                                NSString *workspaceName = textField.stringValue;
+                                if (workspaceName.length > 0 && self.app) {
+                                    std::string name = [workspaceName UTF8String];
+                                    int newWorkspaceId = self.app->createWorkspace(name);
+                                    if (newWorkspaceId > 0) {
+                                        [self updateWorkspaceDropdown];
+                                    }
+                                }
+                            }
+                          }];
         } else {
             // Fallback to modal dialog if no main window
             NSModalResponse returnCode = [alert runModal];
@@ -206,7 +214,8 @@
                 NSString *workspaceName = textField.stringValue;
                 if (workspaceName.length > 0 && self.app) {
                     std::string name = [workspaceName UTF8String];
-                    if (self.app->createWorkspace(name)) {
+                    int newWorkspaceId = self.app->createWorkspace(name);
+                    if (newWorkspaceId > 0) {
                         [self updateWorkspaceDropdown];
                     }
                 }

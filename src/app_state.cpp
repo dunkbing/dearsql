@@ -73,21 +73,36 @@ bool AppState::createTables() {
         );
     )";
 
-    // Add workspace_id column to existing saved_connections table if it doesn't exist
-    const std::string addWorkspaceIdColumn = R"(
-        ALTER TABLE saved_connections ADD COLUMN workspace_id INTEGER DEFAULT 1;
+    bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) &&
+                   executeSQL(createWorkspacesTable);
+
+    // Check if workspace_id column exists, add it if it doesn't
+    const std::string checkColumnSql = R"(
+        SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name='workspace_id';
     )";
 
-    bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) && executeSQL(createWorkspacesTable);
-    
-    // Try to add workspace_id column (will fail silently if it already exists)
-    executeSQL(addWorkspaceIdColumn);
-    
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, checkColumnSql.c_str(), -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        bool columnExists = false;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            columnExists = sqlite3_column_int(stmt, 0) > 0;
+        }
+        sqlite3_finalize(stmt);
+
+        if (!columnExists) {
+            const std::string addWorkspaceIdColumn = R"(
+                ALTER TABLE saved_connections ADD COLUMN workspace_id INTEGER DEFAULT 1;
+            )";
+            executeSQL(addWorkspaceIdColumn);
+        }
+    }
+
     // Ensure default workspace exists
     if (success) {
         ensureDefaultWorkspace();
     }
-    
+
     return success;
 }
 
@@ -237,7 +252,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
 
         const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
-        
+
         conn.workspaceId = sqlite3_column_int(stmt, 11);
 
         connections.push_back(conn);
@@ -332,9 +347,9 @@ std::string AppState::getSetting(const std::string &key, const std::string &defa
     return result;
 }
 
-bool AppState::saveWorkspace(const Workspace &workspace) const {
+int AppState::saveWorkspace(const Workspace &workspace) const {
     const std::string sql = R"(
-        INSERT OR REPLACE INTO workspaces (name, description, last_used)
+        INSERT INTO workspaces (name, description, last_used)
         VALUES (?, ?, CURRENT_TIMESTAMP);
     )";
 
@@ -343,7 +358,7 @@ bool AppState::saveWorkspace(const Workspace &workspace) const {
 
     if (rc != SQLITE_OK) {
         std::cerr << "Failed to prepare workspace statement: " << sqlite3_errmsg(db) << std::endl;
-        return false;
+        return -1;
     }
 
     sqlite3_bind_text(stmt, 1, workspace.name.c_str(), -1, SQLITE_STATIC);
@@ -352,7 +367,11 @@ bool AppState::saveWorkspace(const Workspace &workspace) const {
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    return rc == SQLITE_DONE;
+    if (rc == SQLITE_DONE) {
+        return static_cast<int>(sqlite3_last_insert_rowid(db));
+    }
+
+    return -1;
 }
 
 std::vector<Workspace> AppState::getWorkspaces() const {
@@ -376,16 +395,16 @@ std::vector<Workspace> AppState::getWorkspaces() const {
         Workspace workspace;
         workspace.id = sqlite3_column_int(stmt, 0);
         workspace.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        
+
         const auto *description = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
         workspace.description = description ? description : "";
-        
+
         const auto *createdAt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
         workspace.createdAt = createdAt ? createdAt : "";
-        
+
         const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
         workspace.lastUsed = lastUsed ? lastUsed : "";
-        
+
         workspaces.push_back(workspace);
     }
 
@@ -400,7 +419,8 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
     }
 
     // Move all connections to default workspace before deleting
-    const std::string moveConnectionsSql = "UPDATE saved_connections SET workspace_id = 1 WHERE workspace_id = ?;";
+    const std::string moveConnectionsSql =
+        "UPDATE saved_connections SET workspace_id = 1 WHERE workspace_id = ?;";
     sqlite3_stmt *moveStmt;
     int rc = sqlite3_prepare_v2(db, moveConnectionsSql.c_str(), -1, &moveStmt, nullptr);
     if (rc == SQLITE_OK) {
@@ -415,7 +435,8 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
     rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare workspace deletion statement: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "Failed to prepare workspace deletion statement: " << sqlite3_errmsg(db)
+                  << std::endl;
         return false;
     }
 
@@ -433,7 +454,8 @@ bool AppState::updateWorkspaceLastUsed(const int workspaceId) const {
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare workspace update statement: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "Failed to prepare workspace update statement: " << sqlite3_errmsg(db)
+                  << std::endl;
         return false;
     }
 
@@ -458,7 +480,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
     const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare workspace connections statement: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "Failed to prepare workspace connections statement: " << sqlite3_errmsg(db)
+                  << std::endl;
         return connections;
     }
 
@@ -479,8 +502,10 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
         conn.database = database ? database : "";
 
         // Decrypt sensitive data (similar to getSavedConnections)
-        const auto *encryptedUsername = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-        const auto *encryptedPassword = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
+        const auto *encryptedUsername =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
+        const auto *encryptedPassword =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
         const auto *saltStr = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
 
         try {
@@ -522,7 +547,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
 
         const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
-        
+
         conn.workspaceId = sqlite3_column_int(stmt, 11);
 
         connections.push_back(conn);
@@ -539,7 +564,8 @@ bool AppState::moveConnectionToWorkspace(const int connectionId, const int works
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare move connection statement: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "Failed to prepare move connection statement: " << sqlite3_errmsg(db)
+                  << std::endl;
         return false;
     }
 
@@ -556,26 +582,26 @@ bool AppState::ensureDefaultWorkspace() const {
     const std::string checkSql = "SELECT COUNT(*) FROM workspaces WHERE id = 1;";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, checkSql.c_str(), -1, &stmt, nullptr);
-    
+
     if (rc != SQLITE_OK) {
         return false;
     }
-    
+
     bool exists = false;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         exists = sqlite3_column_int(stmt, 0) > 0;
     }
     sqlite3_finalize(stmt);
-    
+
     if (exists) {
         return true;
     }
-    
+
     // Create default workspace
     const std::string insertSql = R"(
         INSERT INTO workspaces (id, name, description, created_at, last_used)
         VALUES (1, 'Default', 'Default workspace for all connections', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
     )";
-    
+
     return executeSQL(insertSql);
 }

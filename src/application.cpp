@@ -18,16 +18,7 @@
 #include "imgui_impl_opengl3.h"
 #endif
 
-// Forward declarations for embedded fonts
-extern "C" {
-struct EmbeddedFont {
-    const char *name;
-    const uint8_t *data;
-    size_t size;
-};
-const EmbeddedFont *getEmbeddedFonts();
-size_t getEmbeddedFontCount();
-}
+#include "embedded_fonts.hpp"
 
 static void signal_handler(int signal) {
     if (signal == SIGTERM || signal == SIGINT) {
@@ -85,7 +76,7 @@ bool Application::initialize() {
     // Restore current workspace from settings
     std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
     currentWorkspaceId = std::stoi(workspaceIdStr);
-    
+
     // Restore previous connections for current workspace
     restorePreviousConnections();
 
@@ -95,7 +86,7 @@ bool Application::initialize() {
 
     // Setup title bar after window creation
     platform_->setupTitlebar();
-    
+
 #ifdef USE_METAL_BACKEND
     // Update workspace dropdown after titlebar is set up
     updateWorkspaceDropdown();
@@ -310,12 +301,12 @@ bool Application::initializeImGui() const {
 }
 
 void Application::setupFonts() {
-    ImGuiIO &io = ImGui::GetIO();
-    ImFontConfig fontConfig;
+    const ImGuiIO &io = ImGui::GetIO();
 
     // load embedded fonts first
     const size_t embeddedFontCount = getEmbeddedFontCount();
     if (embeddedFontCount > 0) {
+        ImFontConfig fontConfig;
         const EmbeddedFont *embeddedFonts = getEmbeddedFonts();
         for (size_t i = 0; i < embeddedFontCount; ++i) {
             const EmbeddedFont &font = embeddedFonts[i];
@@ -358,15 +349,15 @@ void Application::setCurrentWorkspace(const int workspaceId) {
     if (currentWorkspaceId == workspaceId) {
         return;
     }
-    
+
     currentWorkspaceId = workspaceId;
-    
+
     // Save current workspace to settings
     if (appState) {
         appState->setSetting("current_workspace", std::to_string(currentWorkspaceId));
         appState->updateWorkspaceLastUsed(currentWorkspaceId);
     }
-    
+
     // Refresh connections for new workspace
     refreshWorkspaceConnections();
 }
@@ -382,49 +373,51 @@ std::string Application::getCurrentWorkspaceName() const {
     if (!appState) {
         return "Default";
     }
-    
+
     auto workspaces = appState->getWorkspaces();
-    for (const auto& workspace : workspaces) {
+    for (const auto &workspace : workspaces) {
         if (workspace.id == currentWorkspaceId) {
             return workspace.name;
         }
     }
-    
+
     return "Default"; // Fallback
 }
 
-bool Application::createWorkspace(const std::string &name, const std::string &description) {
+int Application::createWorkspace(const std::string &name, const std::string &description) {
     if (!appState) {
-        return false;
+        return -1;
     }
-    
+
     Workspace workspace;
     workspace.name = name;
     workspace.description = description;
-    
-    bool success = appState->saveWorkspace(workspace);
-    
+
+    const int newWorkspaceId = appState->saveWorkspace(workspace);
+
+    if (newWorkspaceId > 0) {
 #ifdef USE_METAL_BACKEND
-    if (success) {
         updateWorkspaceDropdown();
-    }
 #endif
-    
-    return success;
+        // Switch to the newly created workspace
+        setCurrentWorkspace(newWorkspaceId);
+    }
+
+    return newWorkspaceId;
 }
 
 bool Application::deleteWorkspace(const int workspaceId) {
     if (!appState || workspaceId == 1) { // Can't delete default workspace
         return false;
     }
-    
+
     bool success = appState->deleteWorkspace(workspaceId);
-    
+
     // If we deleted the current workspace, switch to default
     if (success && currentWorkspaceId == workspaceId) {
         setCurrentWorkspace(1);
     }
-    
+
     return success;
 }
 
@@ -436,10 +429,10 @@ void Application::refreshWorkspaceConnections() {
         }
     }
     databases.clear();
-    
+
     // Restore connections for current workspace
     restorePreviousConnections();
-    
+
     // Reset UI state
     selectedDatabase = -1;
     selectedTable = -1;

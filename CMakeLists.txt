@@ -66,6 +66,7 @@ set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
     src/embedded_images.cpp
+    src/embedded_fonts.cpp
 
     # Database
     src/database/sqlite.cpp

@@ -46,7 +46,7 @@ public:
                                          const std::string &defaultValue = "") const;
 
     // Workspace management
-    [[nodiscard]] bool saveWorkspace(const Workspace &workspace) const;
+    [[nodiscard]] int saveWorkspace(const Workspace &workspace) const;
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
     [[nodiscard]] bool deleteWorkspace(int workspaceId) const;
     [[nodiscard]] bool updateWorkspaceLastUsed(int workspaceId) const;

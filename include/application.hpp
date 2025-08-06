@@ -113,7 +113,7 @@ public:
     [[nodiscard]] std::string getCurrentWorkspaceName() const;
     void setCurrentWorkspace(int workspaceId);
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
-    bool createWorkspace(const std::string &name, const std::string &description = "");
+    int createWorkspace(const std::string &name, const std::string &description = "");
     bool deleteWorkspace(int workspaceId);
     void refreshWorkspaceConnections();
 

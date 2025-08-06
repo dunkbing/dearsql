@@ -38,5 +38,5 @@ A simple, cross-platform database client built with Dear ImGui.
 - [Dear ImGui](https://github.com/ocornut/imgui) - Immediate mode GUI
 - [Native File Dialog](https://github.com/btzy/nativefiledialog-extended) - File pickers
 - [soci](https://github.com/SOCI/soci) - DB client
-- [hiredis](https://github.com/redis/hiredis) - DB client
+- [hiredis](https://github.com/redis/hiredis) - Redis client
 - [IconFontCppHeaders](https://github.com/juliettef/IconFontCppHeaders) - icon fonts

@@ -68,6 +68,7 @@ public:
     bool isLoadingSchemas() const;
     void checkSchemasStatusAsync();
     void checkSchemasStatusAsync(const std::string &dbName);
+    void startSchemasLoadAsync(const std::string &dbName);
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();
@@ -141,6 +142,7 @@ protected:
     std::vector<std::string> getSequencesAsync() const;
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
+    std::vector<Schema> getSchemasForDatabaseAsync(const std::string &dbName) const;
     void startRefreshDatabasesAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
 
@@ -197,6 +199,9 @@ private:
     std::atomic<bool> switchingDatabase = false;
     std::string targetDatabaseName;
     std::future<std::pair<bool, std::string>> databaseSwitchFuture;
+
+    // Per-database schema loading (for parallel loading without switching)
+    std::unordered_map<std::string, std::future<std::vector<Schema>>> databaseSchemaFutures;
 
 public:
     // Helper methods for per-database data access

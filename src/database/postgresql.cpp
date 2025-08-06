@@ -64,6 +64,13 @@ PostgresDatabase::~PostgresDatabase() {
         databaseSwitchFuture.wait();
     }
 
+    // Wait for all per-database schema futures to complete
+    for (auto &future : databaseSchemaFutures | std::views::values) {
+        if (future.valid()) {
+            future.wait();
+        }
+    }
+
     PostgresDatabase::disconnect();
 }
 
@@ -1422,6 +1429,30 @@ void PostgresDatabase::checkSchemasStatusAsync() {
 
 void PostgresDatabase::checkSchemasStatusAsync(const std::string &dbName) {
     auto &dbData = getDatabaseData(dbName);
+
+    // Check the per-database schema future first (for parallel loading)
+    auto schemaFutureIt = databaseSchemaFutures.find(dbName);
+    if (schemaFutureIt != databaseSchemaFutures.end() && schemaFutureIt->second.valid() &&
+        schemaFutureIt->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            dbData.schemas = schemaFutureIt->second.get();
+            LogPanel::info(std::format(
+                "Async parallel schema loading completed for database {}. Found {} schemas", dbName,
+                dbData.schemas.size()));
+            dbData.schemasLoaded = true;
+            dbData.loadingSchemas = false;
+            databaseSchemaFutures.erase(schemaFutureIt); // Clean up completed future
+        } catch (const std::exception &e) {
+            std::cerr << "Error in async parallel schema loading for database " << dbName << ": "
+                      << e.what() << std::endl;
+            dbData.schemasLoaded = true;
+            dbData.loadingSchemas = false;
+            databaseSchemaFutures.erase(schemaFutureIt);
+        }
+        return;
+    }
+
+    // Fall back to the regular schema future (for current database)
     if (dbData.schemasFuture.valid() &&
         dbData.schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
@@ -1449,6 +1480,96 @@ void PostgresDatabase::startRefreshSchemaAsync() {
 
     // Start async loading with std::async
     dbData.schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
+}
+
+void PostgresDatabase::startSchemasLoadAsync(const std::string &dbName) {
+    auto &dbData = getDatabaseData(dbName);
+
+    // Don't start if already loading or loaded
+    if (dbData.loadingSchemas.load() || dbData.schemasLoaded) {
+        return;
+    }
+
+    // Check if we already have a future running for this database
+    if (databaseSchemaFutures.find(dbName) != databaseSchemaFutures.end()) {
+        return;
+    }
+
+    dbData.loadingSchemas = true;
+
+    // Start async loading with a separate session for this database
+    databaseSchemaFutures[dbName] = std::async(
+        std::launch::async, [this, dbName]() { return getSchemasForDatabaseAsync(dbName); });
+
+    LogPanel::debug("Started parallel schema loading for database: " + dbName);
+}
+
+std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::string &dbName) const {
+    std::vector<Schema> result;
+    auto &dbData = getDatabaseData(dbName);
+
+    // Check if we're still supposed to be loading
+    if (!dbData.loadingSchemas.load()) {
+        return result;
+    }
+
+    try {
+        // Create a separate session for this specific database
+        std::string dbConnectionString = buildConnectionString(dbName);
+        std::unique_ptr<soci::session> asyncSession;
+        try {
+            asyncSession = std::make_unique<soci::session>(soci::postgresql, dbConnectionString);
+        } catch (const soci::soci_error &e) {
+            std::cerr << "Failed to create async session for schema loading in database " << dbName
+                      << ": " << e.what() << std::endl;
+            return result;
+        }
+
+        if (!dbData.loadingSchemas.load()) {
+            return result;
+        }
+
+        // Get schema names using the async session
+        std::vector<std::string> schemaNames;
+        const std::string sql =
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
+            "AND schema_name NOT LIKE 'pg_temp_%' "
+            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
+            "ORDER BY schema_name";
+
+        const soci::rowset rs = asyncSession->prepare << sql;
+        for (const auto &row : rs) {
+            if (!dbData.loadingSchemas.load()) {
+                return result;
+            }
+            schemaNames.push_back(row.get<std::string>(0));
+        }
+
+        LogPanel::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
+                        dbName);
+
+        if (schemaNames.empty() || !dbData.loadingSchemas.load()) {
+            return result;
+        }
+
+        for (const auto &schemaName : schemaNames) {
+            if (!dbData.loadingSchemas.load()) {
+                break;
+            }
+
+            Schema schema;
+            schema.name = schemaName;
+
+            result.push_back(schema);
+            LogPanel::debug("Loaded schema: " + schemaName + " from database: " + dbName);
+        }
+    } catch (const soci::soci_error &e) {
+        std::cerr << "Error getting schemas for database " << dbName << ": " << e.what()
+                  << std::endl;
+    }
+
+    return result;
 }
 
 std::vector<Schema> PostgresDatabase::getSchemasAsync() const {

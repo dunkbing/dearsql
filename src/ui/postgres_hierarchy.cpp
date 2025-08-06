@@ -54,7 +54,8 @@ namespace PostgresHierarchy {
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
-                app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
+                app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString(),
+                                                        pgDb->getDatabaseName());
                 LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
             }
             ImGui::EndPopup();
@@ -137,7 +138,8 @@ namespace PostgresHierarchy {
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     auto &app = Application::getInstance();
-                    app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString());
+                    app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString(),
+                                                            dbName);
                     LogPanel::debug("Creating new SQL editor for database: " + dbName);
                 }
                 ImGui::EndPopup();
@@ -220,17 +222,12 @@ namespace PostgresHierarchy {
                 UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
                                  ImGui::GetColorU32(ImGuiCol_Text));
             } else if (!dbData.schemasLoaded) {
-                // Auto-switch database and load schemas when node is expanded
+                // Start parallel schema loading for this database
                 if (dbName != pgDb->getDatabaseName()) {
-                    if (!pgDb->isSwitchingDatabase()) {
-                        LogPanel::debug("Auto-switching to database: " + dbName +
-                                        " to load schemas");
-                        pgDb->switchToDatabaseAsync(dbName);
-                    }
-                    // Show single connecting message during database switch
-                    ImGui::Text("  Connecting...");
+                    pgDb->startSchemasLoadAsync(dbName);
+                    ImGui::Text("  Loading schemas...");
                     ImGui::SameLine();
-                    UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
+                    UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
                                      ImGui::GetColorU32(ImGuiCol_Text));
                 } else {
                     pgDb->refreshSchemas();

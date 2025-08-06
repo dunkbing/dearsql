@@ -69,7 +69,8 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
 }
 
 std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
-                                                    const std::string &databaseConnectionString) {
+                                                    const std::string &databaseConnectionString,
+                                                    const std::string &selectedDatabaseName) {
     std::string tabName;
     if (name.empty()) {
         // Generate a name based on the database connection if available
@@ -114,19 +115,25 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
                 db->getPath() == databaseConnectionString) {
                 serverDb = db;
 
-                // Get current database name
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                    if (pgDb) {
-                        selectedDbName = pgDb->getDatabaseName();
-                    }
-                } else if (db->getType() == DatabaseType::MYSQL) {
-                    auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                    if (mysqlDb) {
-                        selectedDbName = mysqlDb->getDatabaseName();
-                    }
+                // Use provided selectedDatabaseName if available, otherwise get current database
+                // name
+                if (!selectedDatabaseName.empty()) {
+                    selectedDbName = selectedDatabaseName;
                 } else {
-                    selectedDbName = db->getName();
+                    // Get current database name as fallback
+                    if (db->getType() == DatabaseType::POSTGRESQL) {
+                        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                        if (pgDb) {
+                            selectedDbName = pgDb->getDatabaseName();
+                        }
+                    } else if (db->getType() == DatabaseType::MYSQL) {
+                        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+                        if (mysqlDb) {
+                            selectedDbName = mysqlDb->getDatabaseName();
+                        }
+                    } else {
+                        selectedDbName = db->getName();
+                    }
                 }
                 break;
             }

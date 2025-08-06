@@ -17,15 +17,16 @@
 // Toolbar delegate interface
 @interface ToolbarDelegate : NSObject <NSToolbarDelegate>
 @property(nonatomic, assign) Application *app;
+@property(nonatomic, strong) NSPopUpButton *workspaceDropdown;
 @end
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"LogPanelToggle" ];
+    return @[ @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier, @"LogPanelToggle" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[ @"SidebarToggle", @"LogPanelToggle", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"SidebarToggle", @"WorkspaceSelector", @"LogPanelToggle", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -47,6 +48,24 @@
         [button sizeToFit];
 
         item.view = button;
+        return item;
+    } else if ([itemIdentifier isEqualToString:@"WorkspaceSelector"]) {
+        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        item.label = @"Workspace";
+        item.paletteLabel = @"Workspace Selector";
+        item.toolTip = @"Select Workspace";
+
+        self.workspaceDropdown = [[NSPopUpButton alloc] init];
+        [self.workspaceDropdown setBezelStyle:NSBezelStyleTexturedRounded];
+        [self.workspaceDropdown setBordered:YES];
+        [self.workspaceDropdown setTarget:self];
+        [self.workspaceDropdown setAction:@selector(workspaceChanged:)];
+        [self updateWorkspaceDropdown];
+        [self.workspaceDropdown sizeToFit];
+
+        item.view = self.workspaceDropdown;
+        item.minSize = NSMakeSize(120, 30);
+        item.maxSize = NSMakeSize(200, 30);
         return item;
     } else if ([itemIdentifier isEqualToString:@"LogPanelToggle"]) {
         NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
@@ -100,6 +119,101 @@
         }
     } @catch (NSException *exception) {
         NSLog(@"Exception in logPanelToggleClicked: %@", exception);
+    }
+}
+
+- (void)workspaceChanged:(id)sender {
+    @try {
+        if (self.app && self.workspaceDropdown) {
+            NSInteger selectedIndex = [self.workspaceDropdown indexOfSelectedItem];
+            if (selectedIndex >= 0) {
+                NSMenuItem *selectedItem = [self.workspaceDropdown itemAtIndex:selectedIndex];
+                int workspaceId = (int)selectedItem.tag;
+                self.app->setCurrentWorkspace(workspaceId);
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in workspaceChanged: %@", exception);
+    }
+}
+
+- (void)updateWorkspaceDropdown {
+    if (!self.workspaceDropdown || !self.app) {
+        return;
+    }
+    
+    [self.workspaceDropdown removeAllItems];
+    
+    auto workspaces = self.app->getWorkspaces();
+    int currentWorkspaceId = self.app->getCurrentWorkspaceId();
+    
+    for (const auto& workspace : workspaces) {
+        NSString *title = [NSString stringWithUTF8String:workspace.name.c_str()];
+        [self.workspaceDropdown addItemWithTitle:title];
+        
+        NSMenuItem *item = [self.workspaceDropdown lastItem];
+        item.tag = workspace.id;
+        
+        if (workspace.id == currentWorkspaceId) {
+            [self.workspaceDropdown selectItem:item];
+        }
+    }
+    
+    // Add "New Workspace..." option
+    [self.workspaceDropdown.menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *newWorkspaceItem = [[NSMenuItem alloc] initWithTitle:@"New Workspace..." action:@selector(createNewWorkspace:) keyEquivalent:@""];
+    newWorkspaceItem.target = self;
+    [self.workspaceDropdown.menu addItem:newWorkspaceItem];
+}
+
+- (void)createNewWorkspace:(id)sender {
+    @try {
+        if (!self.app) return;
+        
+        // Get the main window from the application
+        NSWindow *mainWindow = nil;
+        GLFWwindow* glfwWindow = self.app->getWindow();
+        if (glfwWindow) {
+            mainWindow = glfwGetCocoaWindow(glfwWindow);
+        }
+        
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Create New Workspace";
+        alert.informativeText = @"Enter a name for the new workspace:";
+        [alert addButtonWithTitle:@"Create"];
+        [alert addButtonWithTitle:@"Cancel"];
+        
+        NSTextField *textField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+        textField.placeholderString = @"Workspace name";
+        alert.accessoryView = textField;
+        
+        if (mainWindow) {
+            [alert beginSheetModalForWindow:mainWindow completionHandler:^(NSModalResponse returnCode) {
+                if (returnCode == NSAlertFirstButtonReturn) {
+                    NSString *workspaceName = textField.stringValue;
+                    if (workspaceName.length > 0 && self.app) {
+                        std::string name = [workspaceName UTF8String];
+                        if (self.app->createWorkspace(name)) {
+                            [self updateWorkspaceDropdown];
+                        }
+                    }
+                }
+            }];
+        } else {
+            // Fallback to modal dialog if no main window
+            NSModalResponse returnCode = [alert runModal];
+            if (returnCode == NSAlertFirstButtonReturn) {
+                NSString *workspaceName = textField.stringValue;
+                if (workspaceName.length > 0 && self.app) {
+                    std::string name = [workspaceName UTF8String];
+                    if (self.app->createWorkspace(name)) {
+                        [self updateWorkspaceDropdown];
+                    }
+                }
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"Exception in createNewWorkspace: %@", exception);
     }
 }
 
@@ -336,5 +450,13 @@ void MacOSPlatform::shutdownImGui() {
 #ifdef USE_METAL_BACKEND
     ImGui_ImplMetal_Shutdown();
     std::cout << "ImGui Metal backend shutdown" << std::endl;
+#endif
+}
+
+void MacOSPlatform::updateWorkspaceDropdown() {
+#ifdef USE_METAL_BACKEND
+    if (toolbarDelegate_) {
+        [toolbarDelegate_ updateWorkspaceDropdown];
+    }
 #endif
 }

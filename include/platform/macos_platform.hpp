@@ -28,6 +28,7 @@ public:
     void cleanup() override;
     void renderFrame() override;
     void shutdownImGui() override;
+    void updateWorkspaceDropdown() override;
 
 private:
     Application *app_;

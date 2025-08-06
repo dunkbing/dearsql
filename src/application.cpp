@@ -82,7 +82,11 @@ bool Application::initialize() {
         return false;
     }
 
-    // Restore previous connections
+    // Restore current workspace from settings
+    std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
+    currentWorkspaceId = std::stoi(workspaceIdStr);
+    
+    // Restore previous connections for current workspace
     restorePreviousConnections();
 
     // Register signal handler
@@ -91,6 +95,11 @@ bool Application::initialize() {
 
     // Setup title bar after window creation
     platform_->setupTitlebar();
+    
+#ifdef USE_METAL_BACKEND
+    // Update workspace dropdown after titlebar is set up
+    updateWorkspaceDropdown();
+#endif
 
 #ifdef USE_METAL_BACKEND
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
@@ -202,9 +211,9 @@ void Application::restorePreviousConnections() {
         return;
     }
 
-    const auto savedConnections = appState->getSavedConnections();
+    const auto savedConnections = appState->getConnectionsForWorkspace(currentWorkspaceId);
     LogPanel::info("Restoring " + std::to_string(savedConnections.size()) +
-                   " previous connections");
+                   " connections for current workspace");
 
     for (const auto &conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
@@ -345,6 +354,98 @@ void Application::setupFonts() {
 #endif
 }
 
+void Application::setCurrentWorkspace(const int workspaceId) {
+    if (currentWorkspaceId == workspaceId) {
+        return;
+    }
+    
+    currentWorkspaceId = workspaceId;
+    
+    // Save current workspace to settings
+    if (appState) {
+        appState->setSetting("current_workspace", std::to_string(currentWorkspaceId));
+        appState->updateWorkspaceLastUsed(currentWorkspaceId);
+    }
+    
+    // Refresh connections for new workspace
+    refreshWorkspaceConnections();
+}
+
+std::vector<Workspace> Application::getWorkspaces() const {
+    if (!appState) {
+        return {};
+    }
+    return appState->getWorkspaces();
+}
+
+std::string Application::getCurrentWorkspaceName() const {
+    if (!appState) {
+        return "Default";
+    }
+    
+    auto workspaces = appState->getWorkspaces();
+    for (const auto& workspace : workspaces) {
+        if (workspace.id == currentWorkspaceId) {
+            return workspace.name;
+        }
+    }
+    
+    return "Default"; // Fallback
+}
+
+bool Application::createWorkspace(const std::string &name, const std::string &description) {
+    if (!appState) {
+        return false;
+    }
+    
+    Workspace workspace;
+    workspace.name = name;
+    workspace.description = description;
+    
+    bool success = appState->saveWorkspace(workspace);
+    
+#ifdef USE_METAL_BACKEND
+    if (success) {
+        updateWorkspaceDropdown();
+    }
+#endif
+    
+    return success;
+}
+
+bool Application::deleteWorkspace(const int workspaceId) {
+    if (!appState || workspaceId == 1) { // Can't delete default workspace
+        return false;
+    }
+    
+    bool success = appState->deleteWorkspace(workspaceId);
+    
+    // If we deleted the current workspace, switch to default
+    if (success && currentWorkspaceId == workspaceId) {
+        setCurrentWorkspace(1);
+    }
+    
+    return success;
+}
+
+void Application::refreshWorkspaceConnections() {
+    // Clear current connections
+    for (auto &db : databases) {
+        if (db) {
+            db->disconnect();
+        }
+    }
+    databases.clear();
+    
+    // Restore connections for current workspace
+    restorePreviousConnections();
+    
+    // Reset UI state
+    selectedDatabase = -1;
+    selectedTable = -1;
+    resetDockingLayout();
+}
+
 void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     if (dockingLayoutInitialized)
         return;
@@ -374,7 +475,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         // Dock windows
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
         ImGui::DockBuilderDockWindow("Logs", rightDockId);
-        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
+        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
         for (const auto &tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
@@ -388,7 +489,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
-        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
+        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
         for (const auto &tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
@@ -404,7 +505,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
         ImGui::DockBuilderDockWindow("Logs", rightDockId);
-        ImGui::DockBuilderDockWindow("Workspace", centerDockId);
+        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
         for (const auto &tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
@@ -413,7 +514,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         leftDockId = 0;
     } else {
         // Single panel layout: just center
-        ImGui::DockBuilderDockWindow("Workspace", dockSpaceId);
+        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), dockSpaceId);
 
         for (const auto &tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockSpaceId);
@@ -533,8 +634,9 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     if (tabManager->isEmpty()) {
-        // Show empty state in a dockable Workspace window when no tabs are open
-        ImGui::Begin("Workspace", nullptr,
+        // Show empty state in a dockable workspace window when no tabs are open
+        std::string workspaceTitle = getCurrentWorkspaceName();
+        ImGui::Begin(workspaceTitle.c_str(), nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         tabManager->renderEmptyState();
@@ -607,5 +709,11 @@ float Application::getTitlebarHeight() const {
         return platform_->getTitlebarHeight();
     }
     return 0.0f;
+}
+
+void Application::updateWorkspaceDropdown() const {
+    if (platform_) {
+        platform_->updateWorkspaceDropdown();
+    }
 }
 #endif

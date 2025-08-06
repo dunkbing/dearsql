@@ -15,4 +15,5 @@ public:
     virtual void cleanup() = 0;
     virtual void renderFrame() = 0;
     virtual void shutdownImGui() = 0;
+    virtual void updateWorkspaceDropdown() {}
 };

@@ -15,6 +15,15 @@ struct SavedConnection {
     std::string password;
     std::string path; // sqlite files
     std::string lastUsed;
+    int workspaceId = 1; // Associated workspace ID, defaults to 1 (default workspace)
+};
+
+struct Workspace {
+    int id;
+    std::string name;
+    std::string description;
+    std::string createdAt;
+    std::string lastUsed;
 };
 
 class AppState {
@@ -35,6 +44,15 @@ public:
     [[nodiscard]] bool setSetting(const std::string &key, const std::string &value) const;
     [[nodiscard]] std::string getSetting(const std::string &key,
                                          const std::string &defaultValue = "") const;
+
+    // Workspace management
+    [[nodiscard]] bool saveWorkspace(const Workspace &workspace) const;
+    [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
+    [[nodiscard]] bool deleteWorkspace(int workspaceId) const;
+    [[nodiscard]] bool updateWorkspaceLastUsed(int workspaceId) const;
+    [[nodiscard]] std::vector<SavedConnection> getConnectionsForWorkspace(int workspaceId) const;
+    [[nodiscard]] bool moveConnectionToWorkspace(int connectionId, int workspaceId) const;
+    [[nodiscard]] bool ensureDefaultWorkspace() const;
 
 private:
     sqlite3 *db;

@@ -106,11 +106,23 @@ public:
         }
     }
 
+    // Workspace management
+    [[nodiscard]] int getCurrentWorkspaceId() const {
+        return currentWorkspaceId;
+    }
+    [[nodiscard]] std::string getCurrentWorkspaceName() const;
+    void setCurrentWorkspace(int workspaceId);
+    [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
+    bool createWorkspace(const std::string &name, const std::string &description = "");
+    bool deleteWorkspace(int workspaceId);
+    void refreshWorkspaceConnections();
+
     // Platform-specific methods
 #ifdef USE_METAL_BACKEND
     void onSidebarToggleClicked() const;
     void onLogPanelToggleClicked() const;
     [[nodiscard]] float getTitlebarHeight() const;
+    void updateWorkspaceDropdown() const;
 #endif
 
 private:
@@ -143,6 +155,7 @@ private:
 
     // Data
     std::vector<std::shared_ptr<DatabaseInterface>> databases;
+    int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods
     bool initializeGLFW();

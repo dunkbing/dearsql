@@ -91,6 +91,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                     conn.name = db->getName();
                     conn.type = "sqlite";
                     conn.path = db->getPath();
+                    conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
                     const auto &app = Application::getInstance();
                     app.getAppState()->saveConnection(conn);
@@ -837,6 +838,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.database = std::string(database);
             conn.username = std::string(username);
             conn.password = std::string(password);
+            conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
             const auto &app = Application::getInstance();
             app.getAppState()->saveConnection(conn);

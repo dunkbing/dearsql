@@ -4,6 +4,8 @@
 #include <memory>
 #include <vector>
 
+class DatabaseInterface;
+
 class TabManager {
 public:
     TabManager() = default;
@@ -34,14 +36,14 @@ public:
     // Tab creation helpers
     std::shared_ptr<Tab> createSQLEditorTab(const std::string &name = "");
     std::shared_ptr<Tab> createSQLEditorTab(const std::string &name,
-                                            const std::string &databaseConnectionString,
+                                            const std::shared_ptr<DatabaseInterface> &database,
                                             const std::string &selectedDatabaseName = "");
     std::shared_ptr<Tab> createTableViewerTab(const std::string &databasePath,
                                               const std::string &tableName);
 
     // UI rendering
     void renderTabs();
-    void renderEmptyState();
+    static void renderEmptyState();
 
 private:
     std::vector<std::shared_ptr<Tab>> tabs;

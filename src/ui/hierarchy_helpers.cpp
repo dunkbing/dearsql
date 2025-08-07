@@ -525,14 +525,14 @@ namespace HierarchyHelpers {
         // Double-click to open Redis query editor
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             auto &app = Application::getInstance();
-            app.getTabManager()->createSQLEditorTab("", redisDb->getConnectionString());
+            app.getTabManager()->createSQLEditorTab("", db);
         }
 
         // Context menu for Query
         if (ImGui::BeginPopupContextItem("query_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
-                app.getTabManager()->createSQLEditorTab("", redisDb->getConnectionString());
+                app.getTabManager()->createSQLEditorTab("", db);
             }
             ImGui::EndPopup();
         }

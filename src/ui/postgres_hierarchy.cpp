@@ -54,9 +54,20 @@ namespace PostgresHierarchy {
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
-                app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString(),
-                                                        pgDb->getDatabaseName());
-                LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
+                // Find the shared_ptr for this database from the application
+                std::shared_ptr<DatabaseInterface> dbInterface = nullptr;
+                for (const auto &db : app.getDatabases()) {
+                    if (db.get() == pgDb) {
+                        dbInterface = db;
+                        break;
+                    }
+                }
+                if (dbInterface) {
+                    app.getTabManager()->createSQLEditorTab("", dbInterface,
+                                                            pgDb->getDatabaseName());
+                    LogPanel::debug("Creating new SQL editor for database: " +
+                                    pgDb->getDatabaseName());
+                }
             }
             ImGui::EndPopup();
         }
@@ -138,9 +149,18 @@ namespace PostgresHierarchy {
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     auto &app = Application::getInstance();
-                    app.getTabManager()->createSQLEditorTab("", pgDb->getConnectionString(),
-                                                            dbName);
-                    LogPanel::debug("Creating new SQL editor for database: " + dbName);
+                    // Find the shared_ptr for this database from the application
+                    std::shared_ptr<DatabaseInterface> dbInterface = nullptr;
+                    for (const auto &db : app.getDatabases()) {
+                        if (db.get() == pgDb) {
+                            dbInterface = db;
+                            break;
+                        }
+                    }
+                    if (dbInterface) {
+                        app.getTabManager()->createSQLEditorTab("", dbInterface, dbName);
+                        LogPanel::debug("Creating new SQL editor for database: " + dbName);
+                    }
                 }
                 ImGui::EndPopup();
             }

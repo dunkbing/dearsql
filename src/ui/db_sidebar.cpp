@@ -283,7 +283,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
                 if (db->isLoadingViews()) {
                     db->checkViewsStatusAsync();
                 }
-                MySQLHierarchy::renderMySQLHierarchy(mysqlDb);
+                MySQLHierarchy::renderMySQLHierarchy(std::dynamic_pointer_cast<MySQLDatabase>(db));
             } else if (db->getType() == DatabaseType::REDIS) {
                 // Check for async loading completion for Redis
                 if (db->isLoadingTables()) {
@@ -344,7 +344,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
             db->startConnectionAsync();
         }
         if (ImGui::MenuItem("New SQL Editor")) {
-            app.getTabManager()->createSQLEditorTab("", db->getConnectionString());
+            app.getTabManager()->createSQLEditorTab("", db);
         }
         if (ImGui::MenuItem("Disconnect")) {
             db->disconnect();

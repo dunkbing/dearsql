@@ -8,7 +8,7 @@
 #include <iostream>
 
 namespace MySQLHierarchy {
-    void renderMySQLHierarchy(MySQLDatabase *mysqlDb) {
+    void renderMySQLHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
         if (mysqlDb->shouldShowAllDatabases()) {
             // Show all databases from the server
             renderAllDatabasesHierarchy(mysqlDb);
@@ -18,7 +18,7 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderSingleDatabaseHierarchy(MySQLDatabase *mysqlDb) {
+    void renderSingleDatabaseHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
         // First show the connected database as a child node
         ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -56,7 +56,7 @@ namespace MySQLHierarchy {
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto &app = Application::getInstance();
-                app.getTabManager()->createSQLEditorTab("", mysqlDb->getConnectionString());
+                app.getTabManager()->createSQLEditorTab("", mysqlDb, mysqlDb->getDatabaseName());
                 std::cout << "Creating new SQL editor for database: " << mysqlDb->getDatabaseName()
                           << std::endl;
             }
@@ -78,8 +78,8 @@ namespace MySQLHierarchy {
             }
 
             // Show tables and views
-            HierarchyHelpers::renderTablesSection(mysqlDb);
-            HierarchyHelpers::renderViewsSection(mysqlDb);
+            HierarchyHelpers::renderTablesSection(mysqlDb.get());
+            HierarchyHelpers::renderViewsSection(mysqlDb.get());
 
             ImGui::TreePop();
         } else {
@@ -90,7 +90,7 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderAllDatabasesHierarchy(MySQLDatabase *mysqlDb) {
+    void renderAllDatabasesHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
         // Check for async database loading completion
         if (mysqlDb->isLoadingDatabases()) {
             mysqlDb->checkDatabasesStatusAsync();
@@ -144,7 +144,7 @@ namespace MySQLHierarchy {
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     auto &app = Application::getInstance();
-                    app.getTabManager()->createSQLEditorTab("", mysqlDb->getConnectionString());
+                    app.getTabManager()->createSQLEditorTab("", mysqlDb, dbName);
                     std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
                 }
                 ImGui::EndPopup();
@@ -180,12 +180,12 @@ namespace MySQLHierarchy {
                         mysqlDb->refreshTables();
                     }
                     // Show tables for currently connected database
-                    HierarchyHelpers::renderTablesSection(mysqlDb);
-                    HierarchyHelpers::renderViewsSection(mysqlDb);
+                    HierarchyHelpers::renderTablesSection(mysqlDb.get());
+                    HierarchyHelpers::renderViewsSection(mysqlDb.get());
                 } else {
                     // Show cached tables for other databases
-                    HierarchyHelpers::renderCachedTablesSection(mysqlDb, dbName);
-                    HierarchyHelpers::renderCachedViewsSection(mysqlDb, dbName);
+                    HierarchyHelpers::renderCachedTablesSection(mysqlDb.get(), dbName);
+                    HierarchyHelpers::renderCachedViewsSection(mysqlDb.get(), dbName);
                 }
 
                 ImGui::TreePop();

@@ -68,34 +68,22 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
     return tab;
 }
 
-std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
-                                                    const std::string &databaseConnectionString,
-                                                    const std::string &selectedDatabaseName) {
+std::shared_ptr<Tab>
+TabManager::createSQLEditorTab(const std::string &name,
+                               const std::shared_ptr<DatabaseInterface> &database,
+                               const std::string &selectedDatabaseName) {
     std::string tabName;
     if (name.empty()) {
         // Generate a name based on the database connection if available
-        if (!databaseConnectionString.empty()) {
-            // Try to find the database to get a friendly name
-            auto &app = Application::getInstance();
-            std::string baseName;
-            for (const auto &db : app.getDatabases()) {
-                if (db->getConnectionString() == databaseConnectionString ||
-                    db->getPath() == databaseConnectionString) {
-                    baseName = "SQL - " + db->getName();
-                    break;
-                }
-            }
+        if (database) {
+            std::string baseName = "SQL - " + database->getName();
 
-            if (!baseName.empty()) {
-                // Make sure the name is unique
-                int count = 1;
-                tabName = baseName;
-                while (hasTab(tabName)) {
-                    count++;
-                    tabName = baseName + " (" + std::to_string(count) + ")";
-                }
-            } else {
-                tabName = generateSQLEditorName();
+            // Make sure the name is unique
+            int count = 1;
+            tabName = baseName;
+            while (hasTab(tabName)) {
+                count++;
+                tabName = baseName + " (" + std::to_string(count) + ")";
             }
         } else {
             tabName = generateSQLEditorName();
@@ -104,43 +92,30 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name,
         tabName = name;
     }
 
-    // Find the server database based on connection string
-    std::shared_ptr<DatabaseInterface> serverDb = nullptr;
     std::string selectedDbName;
-
-    if (!databaseConnectionString.empty()) {
-        auto &app = Application::getInstance();
-        for (const auto &db : app.getDatabases()) {
-            if (db->getConnectionString() == databaseConnectionString ||
-                db->getPath() == databaseConnectionString) {
-                serverDb = db;
-
-                // Use provided selectedDatabaseName if available, otherwise get current database
-                // name
-                if (!selectedDatabaseName.empty()) {
-                    selectedDbName = selectedDatabaseName;
-                } else {
-                    // Get current database name as fallback
-                    if (db->getType() == DatabaseType::POSTGRESQL) {
-                        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                        if (pgDb) {
-                            selectedDbName = pgDb->getDatabaseName();
-                        }
-                    } else if (db->getType() == DatabaseType::MYSQL) {
-                        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                        if (mysqlDb) {
-                            selectedDbName = mysqlDb->getDatabaseName();
-                        }
-                    } else {
-                        selectedDbName = db->getName();
-                    }
+    if (database) {
+        // Use provided selectedDatabaseName if available, otherwise get current database name
+        if (!selectedDatabaseName.empty()) {
+            selectedDbName = selectedDatabaseName;
+        } else {
+            // Get current database name as fallback
+            if (database->getType() == DatabaseType::POSTGRESQL) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+                if (pgDb) {
+                    selectedDbName = pgDb->getDatabaseName();
                 }
-                break;
+            } else if (database->getType() == DatabaseType::MYSQL) {
+                auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+                if (mysqlDb) {
+                    selectedDbName = mysqlDb->getDatabaseName();
+                }
+            } else {
+                selectedDbName = database->getName();
             }
         }
     }
 
-    auto tab = std::make_shared<SQLEditorTab>(tabName, serverDb, selectedDbName);
+    auto tab = std::make_shared<SQLEditorTab>(tabName, database, selectedDbName);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -221,7 +196,7 @@ void TabManager::renderEmptyState() {
 
 std::string TabManager::generateSQLEditorName() const {
     int count = 1;
-    std::string baseName = "SQL Editor ";
+    const std::string baseName = "SQL Editor ";
 
     while (hasTab(baseName + std::to_string(count))) {
         count++;

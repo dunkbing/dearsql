@@ -1,5 +1,4 @@
 #include "ui/mysql_hierarchy.hpp"
-#include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/mysql.hpp"
@@ -21,18 +20,25 @@ namespace MySQLHierarchy {
 
     void renderSingleDatabaseHierarchy(MySQLDatabase *mysqlDb) {
         // First show the connected database as a child node
-        constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                   ImGuiTreeNodeFlags_FramePadding;
+        ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                         ImGuiTreeNodeFlags_FramePadding;
+
+        // Keep the node expanded if it was previously expanded
+        std::string actualDbName = mysqlDb->getDatabaseName();
+        if (mysqlDb->isDatabaseExpanded(actualDbName)) {
+            dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            // Also explicitly set the next item to be open to prevent collapse
+            ImGui::SetNextItemOpen(true);
+        }
 
         // Draw database node with placeholder space for icon
-        std::string dbName = mysqlDb->getDatabaseName();
+        std::string dbName = actualDbName;
         // Add table count if tables are loaded
         if (mysqlDb->areTablesLoaded() && !mysqlDb->getTables().empty()) {
             dbName = std::format("{} ({} tables)", dbName, mysqlDb->getTables().size());
         }
-        const std::string dbNodeLabel = std::format(
-            "   {}###db_single_{}", dbName, dbName); // 3 spaces for icon, unique ID per database
+        const std::string dbNodeLabel = std::format("   {}###db_single_{}", dbName, actualDbName);
         const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
         // Draw colored icon over the placeholder space
@@ -58,6 +64,11 @@ namespace MySQLHierarchy {
         }
 
         if (dbNodeOpen) {
+            // Track that this database is expanded
+            if (!mysqlDb->isDatabaseExpanded(actualDbName)) {
+                mysqlDb->setDatabaseExpanded(actualDbName, true);
+            }
+
             // Load tables when database node is opened
             if (!mysqlDb->areTablesLoaded() && !mysqlDb->isLoadingTables()) {
                 std::cout
@@ -71,6 +82,11 @@ namespace MySQLHierarchy {
             HierarchyHelpers::renderViewsSection(mysqlDb);
 
             ImGui::TreePop();
+        } else {
+            // Node is collapsed, mark as not expanded
+            if (mysqlDb->isDatabaseExpanded(actualDbName)) {
+                mysqlDb->setDatabaseExpanded(actualDbName, false);
+            }
         }
     }
 

@@ -69,6 +69,18 @@ SQLEditorTab::SQLEditorTab(const std::string &name,
             }
         }
     }
+    // Start loading databases immediately for MySQL databases
+    else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+        if (mysqlDb) {
+            if (mysqlDb->shouldShowAllDatabases()) {
+                // Start loading database list if not already loaded (needed for combo)
+                if (!mysqlDb->isLoadingDatabases() && mysqlDb->getDatabaseNames().empty()) {
+                    mysqlDb->refreshDatabaseNames();
+                }
+            }
+        }
+    }
 }
 
 SQLEditorTab::~SQLEditorTab() {
@@ -87,7 +99,8 @@ void SQLEditorTab::render() {
     // Show database connection info if available
     if (serverDatabase) {
         if (!selectedDatabaseName.empty()) {
-            if (!selectedSchemaName.empty()) {
+            if (!selectedSchemaName.empty() &&
+                serverDatabase->getType() == DatabaseType::POSTGRESQL) {
                 ImGui::Text("Server: %s | Database: %s | Schema: %s",
                             serverDatabase->getName().c_str(), selectedDatabaseName.c_str(),
                             selectedSchemaName.c_str());
@@ -238,11 +251,21 @@ void SQLEditorTab::render() {
 
         // Database and Schema selection dropdown
         ImGui::SameLine();
-        ImGui::Text("Schema:");
+        if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+            ImGui::Text("Database:");
+        } else {
+            ImGui::Text("Schema:");
+        }
         ImGui::SameLine();
 
-        std::string currentSelection =
-            selectedSchemaName.empty() ? "None" : (selectedDatabaseName + "." + selectedSchemaName);
+        std::string currentSelection;
+        if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+            currentSelection = selectedDatabaseName.empty() ? "None" : selectedDatabaseName;
+        } else {
+            currentSelection = selectedSchemaName.empty()
+                                   ? "None"
+                                   : (selectedDatabaseName + "." + selectedSchemaName);
+        }
         std::vector<std::string> availableDatabases;
         bool isLoadingAnySchemas = false;
         bool needsSchemasForTargetDb = false;
@@ -289,6 +312,19 @@ void SQLEditorTab::render() {
                     needsSchemasForTargetDb = true;
                 }
             }
+        } else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+            if (mysqlDb && mysqlDb->shouldShowAllDatabases()) {
+                availableDatabases = mysqlDb->getDatabaseNames();
+
+                // Check if databases are still loading
+                if (mysqlDb->isLoadingDatabases()) {
+                    isLoadingAnySchemas = true;
+                }
+            } else if (mysqlDb) {
+                // Single database mode - just show the connected database
+                availableDatabases.push_back(mysqlDb->getDatabaseName());
+            }
         }
 
         ImGui::SetNextItemWidth(200.0f);
@@ -296,7 +332,11 @@ void SQLEditorTab::render() {
         // Show loading spinner and disable combo if still loading or need to start loading
         if (isLoadingAnySchemas || needsSchemasForTargetDb) {
             ImGui::BeginDisabled();
-            if (ImGui::BeginCombo("##schema_combo", "Loading schemas...")) {
+            std::string loadingText =
+                (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL)
+                    ? "Loading databases..."
+                    : "Loading schemas...";
+            if (ImGui::BeginCombo("##schema_combo", loadingText.c_str())) {
                 ImGui::EndCombo();
             }
             ImGui::EndDisabled();
@@ -355,14 +395,50 @@ void SQLEditorTab::render() {
                         }
                     }
                 }
-                // Option to clear schema selection
-                if (ImGui::Selectable("None", selectedSchemaName.empty())) {
-                    selectedDatabaseName.clear();
-                    selectedSchemaName.clear();
+                // Option to clear selection
+                if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+                    if (ImGui::Selectable("None", selectedDatabaseName.empty())) {
+                        selectedDatabaseName.clear();
+                    }
+                } else {
+                    if (ImGui::Selectable("None", selectedSchemaName.empty())) {
+                        selectedDatabaseName.clear();
+                        selectedSchemaName.clear();
+                    }
                 }
 
+                // For MySQL - show flat database list
+                if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+                    auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+                    if (mysqlDb) {
+                        // Check async database loading status
+                        if (mysqlDb->isLoadingDatabases()) {
+                            mysqlDb->checkDatabasesStatusAsync();
+                        }
+
+                        for (const auto &dbName : availableDatabases) {
+                            const bool isSelected = (selectedDatabaseName == dbName);
+                            if (ImGui::Selectable(dbName.c_str(), isSelected)) {
+                                // Switch database if needed
+                                if (mysqlDb->getDatabaseName() != dbName) {
+                                    mysqlDb->switchToDatabaseAsync(dbName);
+                                }
+                                selectedDatabaseName = dbName;
+                                selectedSchemaName.clear(); // Clear schema for MySQL
+                            }
+                            if (isSelected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+
+                        // Show loading indicator if databases are being loaded
+                        if (mysqlDb->isLoadingDatabases()) {
+                            ImGui::Text("  Loading databases...");
+                        }
+                    }
+                }
                 // For PostgreSQL only - show hierarchical database/schema structure
-                if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                else if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
                     auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
                     if (pgDb) {
                         for (const auto &dbName : availableDatabases) {
@@ -561,6 +637,26 @@ void SQLEditorTab::render() {
                             }
                         }
                     }
+                }
+            }
+        } else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+            if (mysqlDb) {
+                // Check database switch status
+                if (mysqlDb->isSwitchingDatabase()) {
+                    mysqlDb->checkDatabaseSwitchStatusAsync();
+                }
+
+                // Check database loading status if needed
+                if (mysqlDb->shouldShowAllDatabases()) {
+                    if (mysqlDb->isLoadingDatabases()) {
+                        mysqlDb->checkDatabasesStatusAsync();
+                    }
+                }
+
+                // Auto-select current database if no database is selected
+                if (selectedDatabaseName.empty()) {
+                    selectedDatabaseName = mysqlDb->getDatabaseName();
                 }
             }
         }

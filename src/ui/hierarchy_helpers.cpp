@@ -9,7 +9,7 @@
 #include "utils/spinner.hpp"
 
 namespace HierarchyHelpers {
-    void renderTableNode(DatabaseInterface *db, int tableIndex) {
+    void renderTableNode(const std::shared_ptr<DatabaseInterface> &db, int tableIndex) {
         auto &app = Application::getInstance();
         auto &table = db->getTables()[tableIndex];
 
@@ -170,8 +170,8 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderViewNode(DatabaseInterface *db, const int viewIndex) {
-        auto &app = Application::getInstance();
+    void renderViewNode(const std::shared_ptr<DatabaseInterface> &db, const int viewIndex) {
+        const auto &app = Application::getInstance();
         const auto &view = db->getViews()[viewIndex];
 
         constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
@@ -184,7 +184,7 @@ namespace HierarchyHelpers {
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
         // Draw colored icon over the placeholder space
-        const ImVec2 viewIconPos =
+        const auto viewIconPos =
             ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                    ImGui::GetItemRectMin().y +
                        (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
@@ -213,19 +213,15 @@ namespace HierarchyHelpers {
         ImGui::PopID();
     }
 
-    void renderTablesSection(DatabaseInterface *db) {
+    void renderTablesSection(const std::shared_ptr<DatabaseInterface> &db) {
         // Get expansion state from the current database data
         bool tablesExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                tablesExpanded = pgDb->getCurrentDatabaseData().tablesExpanded;
-            }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            tablesExpanded = pgDb->getCurrentDatabaseData().tablesExpanded;
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                tablesExpanded = mysqlDb->getCurrentDatabaseData().tablesExpanded;
-            }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            tablesExpanded = mysqlDb->getCurrentDatabaseData().tablesExpanded;
         }
 
         ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -248,15 +244,11 @@ namespace HierarchyHelpers {
 
         // Update the expansion state based on the current UI state
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                pgDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
-            }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            pgDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                mysqlDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
-            }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            mysqlDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
         }
 
         // Draw colored icon over the placeholder space
@@ -314,19 +306,15 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderViewsSection(DatabaseInterface *db) {
+    void renderViewsSection(const std::shared_ptr<DatabaseInterface> &db) {
         // Get expansion state from the current database data
         bool viewsExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                viewsExpanded = pgDb->getCurrentDatabaseData().viewsExpanded;
-            }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            viewsExpanded = pgDb->getCurrentDatabaseData().viewsExpanded;
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                viewsExpanded = mysqlDb->getCurrentDatabaseData().viewsExpanded;
-            }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            viewsExpanded = mysqlDb->getCurrentDatabaseData().viewsExpanded;
         }
 
         ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -349,15 +337,11 @@ namespace HierarchyHelpers {
 
         // Update the expansion state based on the current UI state
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                pgDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
-            }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            pgDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                mysqlDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
-            }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            mysqlDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
         }
 
         // Draw colored icon over the placeholder space
@@ -512,7 +496,7 @@ namespace HierarchyHelpers {
         ImGui::TreeNodeEx(queryLabel.c_str(), queryFlags);
 
         // Draw colored icon over the placeholder space
-        const ImVec2 queryIconPos =
+        const auto queryIconPos =
             ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                    ImGui::GetItemRectMin().y +
                        (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
@@ -524,7 +508,7 @@ namespace HierarchyHelpers {
 
         // Double-click to open Redis query editor
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            auto &app = Application::getInstance();
+            const auto &app = Application::getInstance();
             app.getTabManager()->createSQLEditorTab("", db);
         }
 
@@ -568,292 +552,283 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedTablesSection(DatabaseInterface *db, const std::string &dbName) {
+    void renderCachedTablesSection(const std::shared_ptr<DatabaseInterface> &db,
+                                   const std::string &dbName) {
         // For PostgreSQL and MySQL, we need to cast to access cached data
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                const auto &dbData = pgDb->getDatabaseData(dbName);
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            const auto &dbData = pgDb->getDatabaseData(dbName);
 
-                ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                 ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                             ImGuiTreeNodeFlags_FramePadding;
 
-                // Set the default open state based on the expansion state
-                if (dbData.tablesExpanded) {
-                    tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                }
+            // Set the default open state based on the expansion state
+            if (dbData.tablesExpanded) {
+                tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
 
-                const std::string tablesLabel = std::format("   Tables ({})###tables_cached_pg_{}",
-                                                            dbData.tables.size(), dbName);
-                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+            const std::string tablesLabel =
+                std::format("   Tables ({})###tables_cached_pg_{}", dbData.tables.size(), dbName);
+            const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
-                // Update the expansion state based on the current UI state
-                pgDb->getDatabaseData(dbName).tablesExpanded = tablesOpen;
+            // Update the expansion state based on the current UI state
+            pgDb->getDatabaseData(dbName).tablesExpanded = tablesOpen;
 
-                const auto tablesSectionIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            const auto tablesSectionIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-                ImGui::GetWindowDrawList()->AddText(
-                    tablesSectionIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
-                    ICON_FA_TABLE);
+            ImGui::GetWindowDrawList()->AddText(tablesSectionIconPos,
+                                                ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
+                                                ICON_FA_TABLE);
 
-                if (dbData.loadingTables) {
-                    ImGui::SameLine();
-                    UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                }
+            if (dbData.loadingTables) {
+                ImGui::SameLine();
+                UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+            }
 
-                if (tablesOpen) {
-                    if (dbData.tables.empty()) {
-                        if (dbData.loadingTables) {
-                            ImGui::Text("  Loading tables...");
-                        } else if (!dbData.tablesLoaded) {
-                            // Auto-switch database and load tables when node is expanded
-                            if (dbName != pgDb->getDatabaseName()) {
-                                if (!pgDb->isSwitchingDatabase()) {
-                                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                                    " to load tables");
-                                    pgDb->switchToDatabaseAsync(dbName);
-                                }
-                                ImGui::Text("  Switching database...");
-                            } else {
-                                pgDb->refreshTables();
+            if (tablesOpen) {
+                if (dbData.tables.empty()) {
+                    if (dbData.loadingTables) {
+                        ImGui::Text("  Loading tables...");
+                    } else if (!dbData.tablesLoaded) {
+                        // Auto-switch database and load tables when node is expanded
+                        if (dbName != pgDb->getDatabaseName()) {
+                            if (!pgDb->isSwitchingDatabase()) {
+                                LogPanel::debug("Auto-switching to database: " + dbName +
+                                                " to load tables");
+                                pgDb->switchToDatabaseAsync(dbName);
                             }
-                            ImGui::Text("  Loading tables...");
+                            ImGui::Text("  Switching database...");
                         } else {
-                            ImGui::Text("  No tables found");
+                            pgDb->refreshTables();
                         }
+                        ImGui::Text("  Loading tables...");
                     } else {
-                        for (int j = 0; j < dbData.tables.size(); j++) {
-                            renderCachedTableNode(db, dbName, j);
-                        }
+                        ImGui::Text("  No tables found");
                     }
-                    ImGui::TreePop();
+                } else {
+                    for (int j = 0; j < dbData.tables.size(); j++) {
+                        renderCachedTableNode(db, dbName, j);
+                    }
                 }
+                ImGui::TreePop();
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                auto &dbData = mysqlDb->getDatabaseData(dbName);
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            auto &dbData = mysqlDb->getDatabaseData(dbName);
 
-                ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                 ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                             ImGuiTreeNodeFlags_FramePadding;
 
-                // Set the default open state based on the expansion state
-                if (dbData.tablesExpanded) {
-                    tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                }
+            // Set the default open state based on the expansion state
+            if (dbData.tablesExpanded) {
+                tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
 
-                const std::string tablesLabel = std::format(
-                    "   Tables ({})###tables_cached_mysql_{}", dbData.tables.size(), dbName);
-                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+            const std::string tablesLabel = std::format("   Tables ({})###tables_cached_mysql_{}",
+                                                        dbData.tables.size(), dbName);
+            const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
-                // Update the expansion state based on the current UI state
-                dbData.tablesExpanded = tablesOpen;
+            // Update the expansion state based on the current UI state
+            dbData.tablesExpanded = tablesOpen;
 
-                const auto tablesSectionIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            const auto tablesSectionIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-                ImGui::GetWindowDrawList()->AddText(
-                    tablesSectionIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
-                    ICON_FA_TABLE);
+            ImGui::GetWindowDrawList()->AddText(tablesSectionIconPos,
+                                                ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
+                                                ICON_FA_TABLE);
 
-                if (dbData.loadingTables) {
-                    ImGui::SameLine();
-                    UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                }
+            if (dbData.loadingTables) {
+                ImGui::SameLine();
+                UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+            }
 
-                if (tablesOpen) {
-                    if (dbData.tables.empty()) {
-                        if (dbData.loadingTables) {
-                            ImGui::Text("  Loading tables...");
-                        } else if (!dbData.tablesLoaded) {
-                            // Auto-switch database and load tables when node is expanded
-                            if (dbName != mysqlDb->getDatabaseName()) {
-                                if (!mysqlDb->isSwitchingDatabase()) {
-                                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                                    " to load tables");
-                                    mysqlDb->switchToDatabaseAsync(dbName);
-                                }
-                                ImGui::Text("  Switching database...");
-                            } else {
-                                mysqlDb->refreshTables();
+            if (tablesOpen) {
+                if (dbData.tables.empty()) {
+                    if (dbData.loadingTables) {
+                        ImGui::Text("  Loading tables...");
+                    } else if (!dbData.tablesLoaded) {
+                        // Auto-switch database and load tables when node is expanded
+                        if (dbName != mysqlDb->getDatabaseName()) {
+                            if (!mysqlDb->isSwitchingDatabase()) {
+                                LogPanel::debug("Auto-switching to database: " + dbName +
+                                                " to load tables");
+                                mysqlDb->switchToDatabaseAsync(dbName);
                             }
-                            ImGui::Text("  Loading tables...");
+                            ImGui::Text("  Switching database...");
                         } else {
-                            ImGui::Text("  No tables found");
+                            mysqlDb->refreshTables();
                         }
+                        ImGui::Text("  Loading tables...");
                     } else {
-                        for (int j = 0; j < dbData.tables.size(); j++) {
-                            renderCachedTableNode(db, dbName, j);
-                        }
+                        ImGui::Text("  No tables found");
                     }
-                    ImGui::TreePop();
+                } else {
+                    for (int j = 0; j < dbData.tables.size(); j++) {
+                        renderCachedTableNode(db, dbName, j);
+                    }
                 }
+                ImGui::TreePop();
             }
         }
     }
 
-    void renderCachedViewsSection(DatabaseInterface *db, const std::string &dbName) {
+    void renderCachedViewsSection(const std::shared_ptr<DatabaseInterface> &db,
+                                  const std::string &dbName) {
         // For PostgreSQL and MySQL, we need to cast to access cached data
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                auto &dbData = pgDb->getDatabaseData(dbName);
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            auto &dbData = pgDb->getDatabaseData(dbName);
 
-                ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                            ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                            ImGuiTreeNodeFlags_FramePadding;
 
-                // Set the default open state based on the expansion state
-                if (dbData.viewsExpanded) {
-                    viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                }
+            // Set the default open state based on the expansion state
+            if (dbData.viewsExpanded) {
+                viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
 
-                const std::string viewsLabel =
-                    std::format("   Views ({})###views_cached_pg_{}", dbData.views.size(), dbName);
-                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+            const std::string viewsLabel =
+                std::format("   Views ({})###views_cached_pg_{}", dbData.views.size(), dbName);
+            const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
-                // Update the expansion state based on the current UI state
-                dbData.viewsExpanded = viewsOpen;
+            // Update the expansion state based on the current UI state
+            dbData.viewsExpanded = viewsOpen;
 
-                const auto viewsSectionIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            const auto viewsSectionIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-                ImGui::GetWindowDrawList()->AddText(
-                    viewsSectionIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
-                    ICON_FA_EYE);
+            ImGui::GetWindowDrawList()->AddText(viewsSectionIconPos,
+                                                ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
+                                                ICON_FA_EYE);
 
-                if (dbData.loadingViews) {
-                    ImGui::SameLine();
-                    UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                }
+            if (dbData.loadingViews) {
+                ImGui::SameLine();
+                UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+            }
 
-                if (viewsOpen) {
-                    if (dbData.views.empty()) {
-                        if (dbData.loadingViews) {
-                            ImGui::Text("  Loading views...");
-                        } else if (!dbData.viewsLoaded) {
-                            // Auto-switch database and load views when node is expanded
-                            if (dbName != pgDb->getDatabaseName()) {
-                                if (!pgDb->isSwitchingDatabase()) {
-                                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                                    " to load views");
-                                    pgDb->switchToDatabaseAsync(dbName);
-                                }
-                                ImGui::Text("  Switching database...");
-                            } else {
-                                pgDb->refreshViews();
+            if (viewsOpen) {
+                if (dbData.views.empty()) {
+                    if (dbData.loadingViews) {
+                        ImGui::Text("  Loading views...");
+                    } else if (!dbData.viewsLoaded) {
+                        // Auto-switch database and load views when node is expanded
+                        if (dbName != pgDb->getDatabaseName()) {
+                            if (!pgDb->isSwitchingDatabase()) {
+                                LogPanel::debug("Auto-switching to database: " + dbName +
+                                                " to load views");
+                                pgDb->switchToDatabaseAsync(dbName);
                             }
-                            ImGui::Text("  Loading views...");
+                            ImGui::Text("  Switching database...");
                         } else {
-                            ImGui::Text("  No views found");
+                            pgDb->refreshViews();
                         }
+                        ImGui::Text("  Loading views...");
                     } else {
-                        for (int j = 0; j < dbData.views.size(); j++) {
-                            renderCachedViewNode(db, dbName, j);
-                        }
+                        ImGui::Text("  No views found");
                     }
-                    ImGui::TreePop();
+                } else {
+                    for (int j = 0; j < dbData.views.size(); j++) {
+                        renderCachedViewNode(db, dbName, j);
+                    }
                 }
+                ImGui::TreePop();
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                auto &dbData = mysqlDb->getDatabaseData(dbName);
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            auto &dbData = mysqlDb->getDatabaseData(dbName);
 
-                ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                            ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                            ImGuiTreeNodeFlags_FramePadding;
 
-                // Set the default open state based on the expansion state
-                if (dbData.viewsExpanded) {
-                    viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                }
+            // Set the default open state based on the expansion state
+            if (dbData.viewsExpanded) {
+                viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
 
-                const std::string viewsLabel = std::format("   Views ({})###views_cached_mysql_{}",
-                                                           dbData.views.size(), dbName);
-                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+            const std::string viewsLabel =
+                std::format("   Views ({})###views_cached_mysql_{}", dbData.views.size(), dbName);
+            const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
-                // Update the expansion state based on the current UI state
-                dbData.viewsExpanded = viewsOpen;
+            // Update the expansion state based on the current UI state
+            dbData.viewsExpanded = viewsOpen;
 
-                const auto viewsSectionIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            const auto viewsSectionIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
-                ImGui::GetWindowDrawList()->AddText(
-                    viewsSectionIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
-                    ICON_FA_EYE);
+            ImGui::GetWindowDrawList()->AddText(viewsSectionIconPos,
+                                                ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
+                                                ICON_FA_EYE);
 
-                if (dbData.loadingViews) {
-                    ImGui::SameLine();
-                    UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
-                }
+            if (dbData.loadingViews) {
+                ImGui::SameLine();
+                UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+            }
 
-                if (viewsOpen) {
-                    if (dbData.views.empty()) {
-                        if (dbData.loadingViews) {
-                            ImGui::Text("  Loading views...");
-                        } else if (!dbData.viewsLoaded) {
-                            // Auto-switch database and load views when node is expanded
-                            if (dbName != mysqlDb->getDatabaseName()) {
-                                if (!mysqlDb->isSwitchingDatabase()) {
-                                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                                    " to load views");
-                                    mysqlDb->switchToDatabaseAsync(dbName);
-                                }
-                                ImGui::Text("  Switching database...");
-                            } else {
-                                mysqlDb->refreshViews();
+            if (viewsOpen) {
+                if (dbData.views.empty()) {
+                    if (dbData.loadingViews) {
+                        ImGui::Text("  Loading views...");
+                    } else if (!dbData.viewsLoaded) {
+                        // Auto-switch database and load views when node is expanded
+                        if (dbName != mysqlDb->getDatabaseName()) {
+                            if (!mysqlDb->isSwitchingDatabase()) {
+                                LogPanel::debug("Auto-switching to database: " + dbName +
+                                                " to load views");
+                                mysqlDb->switchToDatabaseAsync(dbName);
                             }
-                            ImGui::Text("  Loading views...");
+                            ImGui::Text("  Switching database...");
                         } else {
-                            ImGui::Text("  No views found");
+                            mysqlDb->refreshViews();
                         }
+                        ImGui::Text("  Loading views...");
                     } else {
-                        for (int j = 0; j < dbData.views.size(); j++) {
-                            renderCachedViewNode(db, dbName, j);
-                        }
+                        ImGui::Text("  No views found");
                     }
-                    ImGui::TreePop();
+                } else {
+                    for (int j = 0; j < dbData.views.size(); j++) {
+                        renderCachedViewNode(db, dbName, j);
+                    }
                 }
+                ImGui::TreePop();
             }
         }
     }
 
-    void renderCachedTableNode(DatabaseInterface *db, const std::string &dbName, int tableIndex) {
+    void renderCachedTableNode(const std::shared_ptr<DatabaseInterface> &db,
+                               const std::string &dbName, int tableIndex) {
         auto &app = Application::getInstance();
 
         // Get the cached table data
         Table *table = nullptr;
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                auto &dbData = pgDb->getDatabaseData(dbName);
-                if (tableIndex < dbData.tables.size()) {
-                    table = &dbData.tables[tableIndex];
-                }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            auto &dbData = pgDb->getDatabaseData(dbName);
+            if (tableIndex < dbData.tables.size()) {
+                table = &dbData.tables[tableIndex];
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                auto &dbData = mysqlDb->getDatabaseData(dbName);
-                if (tableIndex < dbData.tables.size()) {
-                    table = &dbData.tables[tableIndex];
-                }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            auto &dbData = mysqlDb->getDatabaseData(dbName);
+            if (tableIndex < dbData.tables.size()) {
+                table = &dbData.tables[tableIndex];
             }
         }
 
@@ -891,7 +866,7 @@ namespace HierarchyHelpers {
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             // Auto-switch to the correct database before opening table viewer
             if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 if (pgDb && dbName != pgDb->getDatabaseName()) {
                     LogPanel::debug("Auto-switching to database: " + dbName +
                                     " to view table: " + table->name);
@@ -902,7 +877,7 @@ namespace HierarchyHelpers {
                     }
                 }
             } else if (db->getType() == DatabaseType::MYSQL) {
-                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
                 if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
                     LogPanel::debug("Auto-switching to database: " + dbName +
                                     " to view table: " + table->name);
@@ -922,7 +897,7 @@ namespace HierarchyHelpers {
             if (ImGui::MenuItem("View Data")) {
                 // Auto-switch to the correct database before opening table viewer
                 if (db->getType() == DatabaseType::POSTGRESQL) {
-                    auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                    const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                     if (pgDb && dbName != pgDb->getDatabaseName()) {
                         LogPanel::debug("Auto-switching to database: " + dbName +
                                         " to view table: " + table->name);
@@ -935,7 +910,7 @@ namespace HierarchyHelpers {
                         }
                     }
                 } else if (db->getType() == DatabaseType::MYSQL) {
-                    auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                    const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
                     if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
                         LogPanel::debug("Auto-switching to database: " + dbName +
                                         " to view table: " + table->name);
@@ -998,26 +973,23 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedViewNode(DatabaseInterface *db, const std::string &dbName, int viewIndex) {
+    void renderCachedViewNode(const std::shared_ptr<DatabaseInterface> &db,
+                              const std::string &dbName, int viewIndex) {
         auto &app = Application::getInstance();
 
         // Get the cached view data
         const Table *view = nullptr;
         if (db->getType() == DatabaseType::POSTGRESQL) {
-            auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
-            if (pgDb) {
-                const auto &dbData = pgDb->getDatabaseData(dbName);
-                if (viewIndex < dbData.views.size()) {
-                    view = &dbData.views[viewIndex];
-                }
+            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+            const auto &dbData = pgDb->getDatabaseData(dbName);
+            if (viewIndex < dbData.views.size()) {
+                view = &dbData.views[viewIndex];
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
-            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
-            if (mysqlDb) {
-                const auto &dbData = mysqlDb->getDatabaseData(dbName);
-                if (viewIndex < dbData.views.size()) {
-                    view = &dbData.views[viewIndex];
-                }
+            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+            const auto &dbData = mysqlDb->getDatabaseData(dbName);
+            if (viewIndex < dbData.views.size()) {
+                view = &dbData.views[viewIndex];
             }
         }
 
@@ -1048,7 +1020,7 @@ namespace HierarchyHelpers {
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             // Auto-switch to the correct database before opening view viewer
             if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 if (pgDb && dbName != pgDb->getDatabaseName()) {
                     LogPanel::debug("Auto-switching to database: " + dbName +
                                     " to view: " + view->name);
@@ -1059,7 +1031,7 @@ namespace HierarchyHelpers {
                     }
                 }
             } else if (db->getType() == DatabaseType::MYSQL) {
-                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
                 if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
                     LogPanel::debug("Auto-switching to database: " + dbName +
                                     " to view: " + view->name);
@@ -1079,7 +1051,7 @@ namespace HierarchyHelpers {
             if (ImGui::MenuItem("View Data")) {
                 // Auto-switch to the correct database before opening view viewer
                 if (db->getType() == DatabaseType::POSTGRESQL) {
-                    auto *pgDb = dynamic_cast<PostgresDatabase *>(db);
+                    const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                     if (pgDb && dbName != pgDb->getDatabaseName()) {
                         LogPanel::debug("Auto-switching to database: " + dbName +
                                         " to view: " + view->name);
@@ -1092,7 +1064,7 @@ namespace HierarchyHelpers {
                         }
                     }
                 } else if (db->getType() == DatabaseType::MYSQL) {
-                    auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db);
+                    const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
                     if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
                         LogPanel::debug("Auto-switching to database: " + dbName +
                                         " to view: " + view->name);

@@ -3,7 +3,7 @@
 #include "ui/hierarchy_helpers.hpp"
 
 namespace SQLiteHierarchy {
-    void renderSQLiteHierarchy(SQLiteDatabase *sqliteDb) {
+    void renderSQLiteHierarchy(const std::shared_ptr<SQLiteDatabase> &sqliteDb) {
         HierarchyHelpers::renderTablesSection(sqliteDb);
         HierarchyHelpers::renderViewsSection(sqliteDb);
     }

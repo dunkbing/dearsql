@@ -78,8 +78,8 @@ namespace MySQLHierarchy {
             }
 
             // Show tables and views
-            HierarchyHelpers::renderTablesSection(mysqlDb.get());
-            HierarchyHelpers::renderViewsSection(mysqlDb.get());
+            HierarchyHelpers::renderTablesSection(mysqlDb);
+            HierarchyHelpers::renderViewsSection(mysqlDb);
 
             ImGui::TreePop();
         } else {
@@ -180,12 +180,12 @@ namespace MySQLHierarchy {
                         mysqlDb->refreshTables();
                     }
                     // Show tables for currently connected database
-                    HierarchyHelpers::renderTablesSection(mysqlDb.get());
-                    HierarchyHelpers::renderViewsSection(mysqlDb.get());
+                    HierarchyHelpers::renderTablesSection(mysqlDb);
+                    HierarchyHelpers::renderViewsSection(mysqlDb);
                 } else {
                     // Show cached tables for other databases
-                    HierarchyHelpers::renderCachedTablesSection(mysqlDb.get(), dbName);
-                    HierarchyHelpers::renderCachedViewsSection(mysqlDb.get(), dbName);
+                    HierarchyHelpers::renderCachedTablesSection(mysqlDb, dbName);
+                    HierarchyHelpers::renderCachedViewsSection(mysqlDb, dbName);
                 }
 
                 ImGui::TreePop();
@@ -198,19 +198,21 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderTableNode(MySQLDatabase *mysqlDb, int tableIndex) {
+    void renderTableNode(const std::shared_ptr<MySQLDatabase> &mysqlDb, int tableIndex) {
         HierarchyHelpers::renderTableNode(mysqlDb, tableIndex);
     }
 
-    void renderViewNode(MySQLDatabase *mysqlDb, int viewIndex) {
+    void renderViewNode(const std::shared_ptr<MySQLDatabase> &mysqlDb, int viewIndex) {
         HierarchyHelpers::renderViewNode(mysqlDb, viewIndex);
     }
 
-    void renderCachedTableNode(MySQLDatabase *mysqlDb, const std::string &dbName, int tableIndex) {
+    void renderCachedTableNode(const std::shared_ptr<MySQLDatabase> &mysqlDb,
+                               const std::string &dbName, int tableIndex) {
         HierarchyHelpers::renderCachedTableNode(mysqlDb, dbName, tableIndex);
     }
 
-    void renderCachedViewNode(MySQLDatabase *mysqlDb, const std::string &dbName, int viewIndex) {
+    void renderCachedViewNode(const std::shared_ptr<MySQLDatabase> &mysqlDb,
+                              const std::string &dbName, int viewIndex) {
         HierarchyHelpers::renderCachedViewNode(mysqlDb, dbName, viewIndex);
     }
 

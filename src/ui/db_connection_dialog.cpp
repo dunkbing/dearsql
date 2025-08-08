@@ -598,7 +598,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
             for (size_t i = 0; i < savedConnections.size(); i++) {
                 const auto &conn = savedConnections[i];
 
-                bool isSelected = (selectedSavedConnection == (int)i);
+                bool isSelected = (selectedSavedConnection == static_cast<int>(i));
                 if (ImGui::Selectable((conn.name + " (" + conn.type + ")").c_str(), &isSelected)) {
                     selectedSavedConnection = static_cast<int>(i);
                 }
@@ -653,7 +653,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        auto &app = Application::getInstance();
+                        const auto &app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;
@@ -729,7 +729,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
 
         ImGui::SameLine();
         if (ImGui::Button("Delete", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
-            auto &app = Application::getInstance();
+            const auto &app = Application::getInstance();
             app.getAppState()->deleteConnection(savedConnections[selectedSavedConnection].id);
             loadSavedConnections(); // Refresh list
             selectedSavedConnection = -1;

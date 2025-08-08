@@ -123,7 +123,6 @@ void DatabaseSidebar::render() {
                     }
                 }
 
-                // Remove from application
                 LogPanel::info("Database removed: " + db->getName());
                 app.removeDatabase(databaseToDelete);
 
@@ -263,10 +262,10 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
             // Show hierarchical structure based on database type
             if (db->getType() == DatabaseType::SQLITE) {
-                auto *sqliteDb = dynamic_cast<SQLiteDatabase *>(db.get());
+                const auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
                 SQLiteHierarchy::renderSQLiteHierarchy(sqliteDb);
             } else if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 PostgresHierarchy::renderPostgresHierarchy(pgDb);
             } else if (db->getType() == DatabaseType::MYSQL) {
                 auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());

@@ -1,9 +1,8 @@
 #pragma once
+#include <memory>
 
 class SQLiteDatabase;
 
 namespace SQLiteHierarchy {
-    void renderSQLiteHierarchy(SQLiteDatabase *sqliteDb);
-    void renderTableNode(SQLiteDatabase *sqliteDb, int tableIndex);
-    void renderViewNode(SQLiteDatabase *sqliteDb, int viewIndex);
+    void renderSQLiteHierarchy(const std::shared_ptr<SQLiteDatabase> &sqliteDb);
 } // namespace SQLiteHierarchy

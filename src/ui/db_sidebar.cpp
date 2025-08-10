@@ -6,6 +6,7 @@
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/column_dialog.hpp"
 #include "ui/hierarchy_helpers.hpp"
 #include "ui/log_panel.hpp"
 #include "ui/mysql_hierarchy.hpp"
@@ -13,6 +14,16 @@
 #include "ui/sqlite_hierarchy.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/spinner.hpp"
+
+// Static column dialog instance
+static ColumnDialog columnDialog;
+
+// Function to access the column dialog from hierarchy helpers
+namespace HierarchyHelpers {
+    ColumnDialog &getColumnDialog() {
+        return columnDialog;
+    }
+} // namespace HierarchyHelpers
 
 void DatabaseSidebar::showConnectionDialog() {
     shouldShowConnectionDialog = true;
@@ -134,6 +145,17 @@ void DatabaseSidebar::render() {
             }
         }
         ImGui::EndPopup();
+    }
+
+    // Render column dialog if open
+    if (columnDialog.isDialogOpen()) {
+        columnDialog.renderDialog();
+    }
+
+    // Handle dialog completion
+    if (columnDialog.hasResult()) {
+        columnDialog.clearResult();
+        // Table structure will be refreshed automatically by the dialog
     }
 
     ImGui::End();

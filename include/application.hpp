@@ -14,11 +14,10 @@ class Application {
 public:
     static Application &getInstance();
 
-    // Delete copy constructor and assignment operator
     Application(const Application &) = delete;
     Application &operator=(const Application &) = delete;
 
-    // Main application lifecycle
+    // main app life-cycle
     bool initialize();
     void run() const;
     void cleanup();

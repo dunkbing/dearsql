@@ -5,10 +5,14 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "ui/column_dialog.hpp"
 #include "ui/log_panel.hpp"
 #include "utils/spinner.hpp"
 
 namespace HierarchyHelpers {
+    // Forward declaration for external column dialog
+    extern ColumnDialog &getColumnDialog();
+
     void renderTableNode(const std::shared_ptr<DatabaseInterface> &db, int tableIndex) {
         auto &app = Application::getInstance();
         auto &table = db->getTables()[tableIndex];
@@ -76,8 +80,17 @@ namespace HierarchyHelpers {
                 columnsIconPos, ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green
                 ICON_FA_TABLE_COLUMNS);
 
+            // Context menu for Columns section
+            if (ImGui::BeginPopupContextItem("columns_context_menu")) {
+                if (ImGui::MenuItem("New Column")) {
+                    getColumnDialog().showAddColumnDialog(db, table.name);
+                }
+                ImGui::EndPopup();
+            }
+
             if (columnsOpened) {
-                for (const auto &[name, type, isPrimaryKey, isNotNull] : table.columns) {
+                for (int colIndex = 0; colIndex < table.columns.size(); colIndex++) {
+                    const auto &[name, type, isPrimaryKey, isNotNull] = table.columns[colIndex];
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
@@ -92,7 +105,23 @@ namespace HierarchyHelpers {
                     }
                     columnDisplay += ")";
 
+                    ImGui::PushID(colIndex);
                     ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+
+                    // Context menu for individual column
+                    if (ImGui::BeginPopupContextItem("column_context_menu")) {
+                        if (ImGui::MenuItem("Edit Column")) {
+                            getColumnDialog().showEditColumnDialog(db, table.name,
+                                                                   table.columns[colIndex]);
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Drop Column")) {
+                            // TODO: Implement drop column functionality
+                            LogPanel::info("Drop column functionality not yet implemented");
+                        }
+                        ImGui::EndPopup();
+                    }
+                    ImGui::PopID();
                 }
                 ImGui::TreePop();
             }
@@ -950,8 +979,17 @@ namespace HierarchyHelpers {
                 ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
                 ICON_FA_TABLE_COLUMNS);
 
+            // Context menu for Columns section
+            if (ImGui::BeginPopupContextItem("cached_columns_context_menu")) {
+                if (ImGui::MenuItem("New Column")) {
+                    getColumnDialog().showAddColumnDialog(db, table->name);
+                }
+                ImGui::EndPopup();
+            }
+
             if (columnsOpened) {
-                for (const auto &[name, type, isPrimaryKey, isNotNull] : table->columns) {
+                for (int colIndex = 0; colIndex < table->columns.size(); colIndex++) {
+                    const auto &[name, type, isPrimaryKey, isNotNull] = table->columns[colIndex];
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
@@ -965,7 +1003,23 @@ namespace HierarchyHelpers {
                     }
                     columnDisplay += ")";
 
+                    ImGui::PushID(colIndex + 1000); // Offset to avoid ID conflicts
                     ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+
+                    // Context menu for individual column
+                    if (ImGui::BeginPopupContextItem("cached_column_context_menu")) {
+                        if (ImGui::MenuItem("Edit Column")) {
+                            getColumnDialog().showEditColumnDialog(db, table->name,
+                                                                   table->columns[colIndex]);
+                        }
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Drop Column")) {
+                            // TODO: Implement drop column functionality
+                            LogPanel::info("Drop column functionality not yet implemented");
+                        }
+                        ImGui::EndPopup();
+                    }
+                    ImGui::PopID();
                 }
                 ImGui::TreePop();
             }

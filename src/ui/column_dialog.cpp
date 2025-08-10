@@ -1,7 +1,6 @@
 #include "ui/column_dialog.hpp"
 #include "imgui.h"
 #include "ui/log_panel.hpp"
-#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <sstream>

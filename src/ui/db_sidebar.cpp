@@ -7,6 +7,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/column_dialog.hpp"
+#include "ui/drop_column_dialog.hpp"
 #include "ui/hierarchy_helpers.hpp"
 #include "ui/log_panel.hpp"
 #include "ui/mysql_hierarchy.hpp"
@@ -15,13 +16,18 @@
 #include "ui/tab_manager.hpp"
 #include "utils/spinner.hpp"
 
-// Static column dialog instance
+// Static dialog instances
 static ColumnDialog columnDialog;
+static DropColumnDialog dropColumnDialog;
 
-// Function to access the column dialog from hierarchy helpers
+// Function to access the dialogs from hierarchy helpers
 namespace HierarchyHelpers {
     ColumnDialog &getColumnDialog() {
         return columnDialog;
+    }
+
+    DropColumnDialog &getDropColumnDialog() {
+        return dropColumnDialog;
     }
 } // namespace HierarchyHelpers
 
@@ -152,9 +158,20 @@ void DatabaseSidebar::render() {
         columnDialog.renderDialog();
     }
 
-    // Handle dialog completion
+    // Handle column dialog completion
     if (columnDialog.hasResult()) {
         columnDialog.clearResult();
+        // Table structure will be refreshed automatically by the dialog
+    }
+
+    // Render drop column dialog if open
+    if (dropColumnDialog.isDialogOpen()) {
+        dropColumnDialog.renderDialog();
+    }
+
+    // Handle drop column dialog completion
+    if (dropColumnDialog.hasResult()) {
+        dropColumnDialog.clearResult();
         // Table structure will be refreshed automatically by the dialog
     }
 

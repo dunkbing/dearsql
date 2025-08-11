@@ -629,11 +629,14 @@ void Application::renderMainUI() {
     if (tabManager->isEmpty()) {
         // Show empty state in a dockable workspace window when no tabs are open
         std::string workspaceTitle = getCurrentWorkspaceName();
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
         ImGui::Begin(workspaceTitle.c_str(), nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         tabManager->renderEmptyState();
         ImGui::End();
+        ImGui::PopStyleColor(1);
     } else {
         // Render individual dockable tab windows
         tabManager->renderTabs();

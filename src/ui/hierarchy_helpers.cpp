@@ -92,7 +92,7 @@ namespace HierarchyHelpers {
 
             if (columnsOpened) {
                 for (const auto &column : table.columns) {
-                    const auto &[name, type, isPrimaryKey, isNotNull] = column;
+                    const auto &[name, type, comment, isPrimaryKey, isNotNull] = column;
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
@@ -987,7 +987,7 @@ namespace HierarchyHelpers {
 
             if (columnsOpened) {
                 for (const auto &column : table->columns) {
-                    const auto &[name, type, isPrimaryKey, isNotNull] = column;
+                    const auto &[name, type, comment, isPrimaryKey, isNotNull] = column;
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;

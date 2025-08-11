@@ -1,6 +1,7 @@
 #include "ui/column_dialog.hpp"
 #include "imgui.h"
 #include "ui/log_panel.hpp"
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <sstream>
@@ -89,30 +90,52 @@ void ColumnDialog::renderFormFields() {
 
     ImGui::Spacing();
 
-    // Data Type with dropdown
+    // Data Type with editable dropdown
     ImGui::Text("Data Type:");
     ImGui::SetNextItemWidth(300);
-    if (ImGui::BeginCombo("##column_type", columnType)) {
+
+    // Set content size before opening combo to prevent width animation
+    ImGui::SetNextWindowContentSize(ImVec2(250, 0));
+
+    // Create an editable combo box
+    if (ImGui::BeginCombo("##column_type", columnType, ImGuiComboFlags_None)) {
+        // Add input field at the top for filtering/editing
+        ImGui::SetNextItemWidth(-1);
+
+        // Set focus to the input field when combo opens
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+
+        if (ImGui::InputText("##type_filter", columnType, sizeof(columnType))) {
+            // Input changed, we can add filtering logic here if needed
+        }
+
+        ImGui::Separator();
+
         auto commonTypes = getCommonDataTypes();
+        std::string currentInput = std::string(columnType);
+
+        // Filter types based on current input (case-insensitive)
         for (const auto &type : commonTypes) {
-            bool isSelected = (type == std::string(columnType));
-            if (ImGui::Selectable(type.c_str(), isSelected)) {
-                strncpy(columnType, type.c_str(), sizeof(columnType) - 1);
-                columnType[sizeof(columnType) - 1] = '\0';
-            }
-            if (isSelected) {
-                ImGui::SetItemDefaultFocus();
+            std::string lowerType = type;
+            std::string lowerInput = currentInput;
+            std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
+            std::transform(lowerInput.begin(), lowerInput.end(), lowerInput.begin(), ::tolower);
+
+            if (lowerInput.empty() || lowerType.find(lowerInput) != std::string::npos) {
+                bool isSelected = (type == currentInput);
+                if (ImGui::Selectable(type.c_str(), isSelected)) {
+                    strncpy(columnType, type.c_str(), sizeof(columnType) - 1);
+                    columnType[sizeof(columnType) - 1] = '\0';
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
             }
         }
         ImGui::EndCombo();
     }
-
-    // Allow manual input for custom types
-    ImGui::SameLine();
-    ImGui::Text("or");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(150);
-    ImGui::InputText("##custom_type", columnType, sizeof(columnType));
 
     ImGui::Spacing();
 
@@ -130,9 +153,6 @@ void ColumnDialog::renderFormFields() {
     ImGui::Text("Default Value (optional):");
     ImGui::SetNextItemWidth(300);
     ImGui::InputText("##default_value", defaultValue, sizeof(defaultValue));
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Leave empty for no default value");
-    }
 
     ImGui::Spacing();
 
@@ -140,7 +160,7 @@ void ColumnDialog::renderFormFields() {
     if (database->getType() == DatabaseType::MYSQL ||
         database->getType() == DatabaseType::POSTGRESQL) {
         ImGui::Text("Comment:");
-        ImGui::SetNextItemWidth(400);
+        ImGui::SetNextItemWidth(350);
         ImGui::InputTextMultiline("##column_comment", columnComment, sizeof(columnComment),
                                   ImVec2(0, 60));
     }
@@ -460,12 +480,10 @@ void ColumnDialog::resetForm() {
 void ColumnDialog::populateFormFromColumn(const Column &column) {
     strncpy(columnName, column.name.c_str(), sizeof(columnName) - 1);
     strncpy(columnType, column.type.c_str(), sizeof(columnType) - 1);
+    strncpy(columnComment, column.comment.c_str(), sizeof(columnComment) - 1);
 
     isPrimaryKey = column.isPrimaryKey;
     isNotNull = column.isNotNull;
-
-    // Note: Comment and other properties are not stored in the current Column struct
-    // This would need to be extended if we want to support editing all properties
 }
 
 std::vector<std::string> ColumnDialog::getCommonDataTypes() {

@@ -86,7 +86,7 @@ public:
     bool isSwitchingDatabase() const;
     void checkDatabaseSwitchStatusAsync();
     bool isDatabaseExpanded(const std::string &dbName) const;
-    void setDatabaseExpanded(const std::string &dbName, bool expanded);
+    void setDatabaseExpanded(const std::string &dbName, bool expanded_);
 
     // Query execution
     std::string executeQuery(const std::string &query) override;

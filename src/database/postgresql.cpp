@@ -1562,7 +1562,6 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
             schema.name = schemaName;
 
             result.push_back(schema);
-            LogPanel::debug("Loaded schema: " + schemaName + " from database: " + dbName);
         }
     } catch (const soci::soci_error &e) {
         std::cerr << "Error getting schemas for database " << dbName << ": " << e.what()
@@ -1867,8 +1866,8 @@ bool PostgresDatabase::isDatabaseExpanded(const std::string &dbName) const {
     return expandedDatabases.contains(dbName);
 }
 
-void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, const bool expanded) {
-    if (expanded) {
+void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, const bool expanded_) {
+    if (expanded_) {
         expandedDatabases.insert(dbName);
     } else {
         expandedDatabases.erase(dbName);

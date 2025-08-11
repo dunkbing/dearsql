@@ -1,5 +1,7 @@
 #include "ui/drop_column_dialog.hpp"
+#include "application.hpp"
 #include "imgui.h"
+#include "themes.hpp"
 #include "ui/log_panel.hpp"
 
 void DropColumnDialog::showDropColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
@@ -18,7 +20,7 @@ void DropColumnDialog::renderDialog() {
     if (!isOpen)
         return;
 
-    const char *title = "Drop Column";
+    const auto title = "Drop Column";
 
     // Always try to open the popup when dialog is active
     if (!ImGui::IsPopupOpen(title)) {
@@ -30,8 +32,9 @@ void DropColumnDialog::renderDialog() {
 
     if (ImGui::BeginPopupModal(title, &isOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
         // Warning icon and message
-        ImGui::PushStyleColor(ImGuiCol_Text,
-                              ImVec4(1.0f, 0.6f, 0.0f, 1.0f)); // Orange warning color
+        const auto &theme =
+            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+        ImGui::PushStyleColor(ImGuiCol_Text, theme.peach); // Warning color
         ImGui::Text("⚠️ Warning: This action cannot be undone!");
         ImGui::PopStyleColor();
 
@@ -59,16 +62,17 @@ void DropColumnDialog::renderDialog() {
 
         // Show error message if any
         if (!errorMessage.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.red);
             ImGui::TextWrapped("Error: %s", errorMessage.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
         }
 
         // Buttons
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red button
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, theme.red);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.maroon);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(theme.red.x * 0.8f, theme.red.y * 0.8f,
+                                                            theme.red.z * 0.8f, 1.0f));
 
         if (ImGui::Button("Drop Column", ImVec2(120, 0))) {
             if (executeDropColumn()) {
@@ -95,14 +99,14 @@ void DropColumnDialog::renderDialog() {
 
 bool DropColumnDialog::executeDropColumn() {
     try {
-        std::string sql = generateDropColumnSQL();
+        const std::string sql = generateDropColumnSQL();
         if (sql.empty()) {
-            return false; // Error message already set in generateDropColumnSQL
+            return false;
         }
 
         LogPanel::info("Executing: " + sql);
 
-        std::string result = database->executeQuery(sql);
+        const std::string result = database->executeQuery(sql);
 
         // Check if there was an error in the result
         if (result.find("ERROR") != std::string::npos ||
@@ -115,8 +119,6 @@ bool DropColumnDialog::executeDropColumn() {
         database->setTablesLoaded(false);
         database->refreshTables();
 
-        LogPanel::info("Column '" + targetColumnName + "' dropped successfully from table '" +
-                       targetTableName + "'");
         return true;
 
     } catch (const std::exception &e) {
@@ -129,7 +131,6 @@ bool DropColumnDialog::executeDropColumn() {
 std::string DropColumnDialog::generateDropColumnSQL() {
     std::string sql;
 
-    // Different databases have different syntax for dropping columns
     switch (database->getType()) {
     case DatabaseType::POSTGRESQL:
     case DatabaseType::MYSQL:

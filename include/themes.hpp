@@ -95,7 +95,7 @@ namespace Theme {
     const Colors MOCHA = NATIVE_DARK;
     const Colors LATTE = NATIVE_LIGHT;
 
-    inline void ApplyNativeTheme(const Colors &colors, bool isLight = false) {
+    inline void ApplyNativeTheme(const Colors &colors) {
         ImGuiStyle &style = ImGui::GetStyle();
 
         // Native-like padding and spacing
@@ -214,6 +214,6 @@ namespace Theme {
 
     // Legacy function for backward compatibility
     inline void ApplyTheme(const Colors &colors) {
-        ApplyNativeTheme(colors, false);
+        ApplyNativeTheme(colors);
     }
 } // namespace Theme

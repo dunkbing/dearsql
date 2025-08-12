@@ -32,7 +32,7 @@ namespace Theme {
     };
 
     // Native Dark Theme (inspired by macOS/Windows dark modes)
-    const Colors NATIVE_DARK = {
+    constexpr Colors NATIVE_DARK = {
         ImVec4(0.95f, 0.85f, 0.85f, 1.0f), // rosewater
         ImVec4(0.93f, 0.79f, 0.81f, 1.0f), // flamingo
         ImVec4(0.96f, 0.76f, 0.82f, 1.0f), // pink
@@ -62,7 +62,7 @@ namespace Theme {
     };
 
     // Native Light Theme (inspired by macOS/Windows light modes)
-    const Colors NATIVE_LIGHT = {
+    constexpr Colors NATIVE_LIGHT = {
         ImVec4(0.86f, 0.56f, 0.54f, 1.0f), // rosewater
         ImVec4(0.84f, 0.48f, 0.48f, 1.0f), // flamingo
         ImVec4(0.53f, 0.46f, 0.85f, 1.0f), // pink
@@ -92,8 +92,8 @@ namespace Theme {
     };
 
     // Legacy themes for compatibility
-    const Colors MOCHA = NATIVE_DARK;
-    const Colors LATTE = NATIVE_LIGHT;
+    constexpr Colors MOCHA = NATIVE_DARK;
+    constexpr Colors LATTE = NATIVE_LIGHT;
 
     inline void ApplyNativeTheme(const Colors &colors) {
         ImGuiStyle &style = ImGui::GetStyle();

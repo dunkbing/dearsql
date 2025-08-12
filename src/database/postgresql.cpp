@@ -201,52 +201,66 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
         std::lock_guard lock(sessionMutex);
 
         std::stringstream output;
-        const soci::rowset rs = session->prepare << query;
 
-        // Get column names if available
-        const auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row &firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                output << firstRow.get_properties(i).get_name();
-                if (i < firstRow.size() - 1)
-                    output << " | ";
-            }
-            output << "\n";
+        // Check if this is a DDL statement (ALTER, CREATE, DROP, etc.)
+        std::string upperQuery = query;
+        std::ranges::transform(upperQuery, upperQuery.begin(), ::toupper);
+        const bool isDDL = upperQuery.find("ALTER ") == 0 || upperQuery.find("CREATE ") == 0 ||
+                           upperQuery.find("DROP ") == 0 || upperQuery.find("COMMENT ") == 0;
 
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                output << "----------";
-                if (i < firstRow.size() - 1)
-                    output << "-+-";
-            }
-            output << "\n";
-        }
-
-        int rowCount = 0;
-        for (const auto &row : rs) {
-            if (rowCount >= 1000)
-                break;
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    output << "NULL";
-                } else {
-                    try {
-                        output << row.get<std::string>(i);
-                    } catch (const std::bad_cast &) {
-                        output << "[BINARY DATA]";
-                    }
-                }
-                if (i < row.size() - 1)
-                    output << " | ";
-            }
-            output << "\n";
-            rowCount++;
-        }
-
-        if (rowCount == 0) {
+        if (isDDL) {
+            // Use once() for DDL statements
+            *session << query;
             output << "Query executed successfully.";
-        } else if (rowCount == 1000) {
-            output << "\n... (showing first 1000 rows)";
+        } else {
+            // Use prepare for SELECT and other DML statements
+            const soci::rowset rs = session->prepare << query;
+
+            // Get column names if available
+            const auto it = rs.begin();
+            if (it != rs.end()) {
+                const soci::row &firstRow = *it;
+                for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                    output << firstRow.get_properties(i).get_name();
+                    if (i < firstRow.size() - 1)
+                        output << " | ";
+                }
+                output << "\n";
+
+                for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                    output << "----------";
+                    if (i < firstRow.size() - 1)
+                        output << "-+-";
+                }
+                output << "\n";
+            }
+
+            int rowCount = 0;
+            for (const auto &row : rs) {
+                if (rowCount >= 1000)
+                    break;
+                for (std::size_t i = 0; i < row.size(); ++i) {
+                    if (row.get_indicator(i) == soci::i_null) {
+                        output << "NULL";
+                    } else {
+                        try {
+                            output << row.get<std::string>(i);
+                        } catch (const std::bad_cast &) {
+                            output << "[BINARY DATA]";
+                        }
+                    }
+                    if (i < row.size() - 1)
+                        output << " | ";
+                }
+                output << "\n";
+                rowCount++;
+            }
+
+            if (rowCount == 0) {
+                output << "Query executed successfully.";
+            } else if (rowCount == 1000) {
+                output << "\n... (showing first 1000 rows)";
+            }
         }
 
         return output.str();
@@ -1491,7 +1505,7 @@ void PostgresDatabase::startSchemasLoadAsync(const std::string &dbName) {
     }
 
     // Check if we already have a future running for this database
-    if (databaseSchemaFutures.find(dbName) != databaseSchemaFutures.end()) {
+    if (databaseSchemaFutures.contains(dbName)) {
         return;
     }
 
@@ -1790,14 +1804,9 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
 
     // Create new connection to the target database
     try {
-        // Create the session outside the lock to avoid blocking other operations
         auto newSession = std::make_unique<soci::session>(soci::postgresql, targetConnectionString);
-
-        // Only lock when adding to the pool
-        {
-            std::lock_guard lock(sessionMutex);
-            sessionPool[targetDatabase] = std::move(newSession);
-        }
+        std::lock_guard lock(sessionMutex);
+        sessionPool[targetDatabase] = std::move(newSession);
 
         // Update database name and connection string only after successful connection
         database = targetDatabase;

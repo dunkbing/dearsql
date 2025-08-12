@@ -175,6 +175,116 @@ void DatabaseSidebar::render() {
         // Table structure will be refreshed automatically by the dialog
     }
 
+    // Handle create database dialog
+    if (shouldShowCreateDatabaseDialog) {
+        ImGui::OpenPopup("Create Database");
+        shouldShowCreateDatabaseDialog = false;
+    }
+
+    if (ImGui::BeginPopupModal("Create Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const auto &databases = app.getDatabases();
+        if (createDatabaseForConnection < static_cast<int>(databases.size())) {
+            auto &db = databases[createDatabaseForConnection];
+
+            ImGui::Text("Create new database on:");
+            ImGui::Text("Connection: %s", db->getName().c_str());
+            ImGui::Text("Type: %s",
+                        db->getType() == DatabaseType::POSTGRESQL ? "PostgreSQL" : "MySQL");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            static char dbName[256] = "";
+            ImGui::Text("Database Name:");
+            ImGui::SetNextItemWidth(300);
+            ImGui::InputText("##db_name", dbName, sizeof(dbName));
+
+            ImGui::Spacing();
+
+            static char dbComment[512] = "";
+            if (db->getType() == DatabaseType::MYSQL) {
+                ImGui::Text("Comment (optional):");
+                ImGui::SetNextItemWidth(300);
+                ImGui::InputText("##db_comment", dbComment, sizeof(dbComment));
+                ImGui::Spacing();
+            }
+
+            static std::string errorMessage;
+            if (!errorMessage.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                ImGui::TextWrapped("Error: %s", errorMessage.c_str());
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+
+            ImGui::Separator();
+
+            const auto &colors = Application::getInstance().getCurrentColors();
+
+            // Create button
+            ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
+
+            if (ImGui::Button("Create Database", ImVec2(120, 0))) {
+                if (strlen(dbName) == 0) {
+                    errorMessage = "Database name cannot be empty";
+                } else {
+                    // Create the database
+                    std::string sql;
+                    if (db->getType() == DatabaseType::POSTGRESQL) {
+                        sql = "CREATE DATABASE \"" + std::string(dbName) + "\"";
+                    } else if (db->getType() == DatabaseType::MYSQL) {
+                        sql = "CREATE DATABASE `" + std::string(dbName) + "`";
+                        if (strlen(dbComment) > 0) {
+                            sql += " COMMENT '" + std::string(dbComment) + "'";
+                        }
+                    }
+
+                    std::string result = db->executeQuery(sql);
+                    if (result.find("Error") != std::string::npos) {
+                        errorMessage = result;
+                    } else {
+                        LogPanel::info("Database '" + std::string(dbName) +
+                                       "' created successfully");
+                        // Clear the form and close dialog
+                        memset(dbName, 0, sizeof(dbName));
+                        memset(dbComment, 0, sizeof(dbComment));
+                        errorMessage.clear();
+                        ImGui::CloseCurrentPopup();
+
+                        // Refresh database list if this is a multi-database connection
+                        if (db->getType() == DatabaseType::POSTGRESQL) {
+                            auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                            pgDb->refreshDatabaseNames();
+                        } else if (db->getType() == DatabaseType::MYSQL) {
+                            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
+                            mysqlDb->refreshDatabaseNames();
+                        }
+                    }
+                }
+            }
+
+            ImGui::PopStyleColor(3);
+            ImGui::SameLine();
+
+            // Cancel button
+            ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                // Clear the form and close dialog
+                memset(dbName, 0, sizeof(dbName));
+                memset(dbComment, 0, sizeof(dbComment));
+                errorMessage.clear();
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::PopStyleColor(3);
+        }
+        ImGui::EndPopup();
+    }
+
     ImGui::End();
 }
 
@@ -384,6 +494,15 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
         if (ImGui::MenuItem("New SQL Editor")) {
             app.getTabManager()->createSQLEditorTab("", db);
         }
+
+        // Add "Create new database" for PostgreSQL and MySQL
+        if (db->getType() == DatabaseType::POSTGRESQL || db->getType() == DatabaseType::MYSQL) {
+            if (ImGui::MenuItem("Create new database")) {
+                shouldShowCreateDatabaseDialog = true;
+                createDatabaseForConnection = static_cast<int>(databaseIndex);
+            }
+        }
+
         if (ImGui::MenuItem("Disconnect")) {
             db->disconnect();
         }

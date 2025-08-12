@@ -24,4 +24,8 @@ private:
     // Database deletion confirmation
     bool shouldShowDeleteConfirmation = false;
     int databaseToDelete = 0;
+
+    // Database creation dialog
+    bool shouldShowCreateDatabaseDialog = false;
+    int createDatabaseForConnection = 0;
 };

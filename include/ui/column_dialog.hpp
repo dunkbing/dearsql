@@ -14,11 +14,12 @@ public:
 
     // Show dialog for adding a new column
     void showAddColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                             const std::string &tableName);
+                             const std::string &tableName, const std::string &schemaName = "");
 
     // Show dialog for editing an existing column
     void showEditColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                              const std::string &tableName, const Column &column);
+                              const std::string &tableName, const Column &column,
+                              const std::string &schemaName = "");
 
     // Check if dialog is currently open
     bool isDialogOpen() const {
@@ -45,6 +46,7 @@ private:
     // Database context
     std::shared_ptr<DatabaseInterface> database;
     std::string targetTableName;
+    std::string targetSchemaName;   // For PostgreSQL schema qualification
     std::string originalColumnName; // For edit mode
 
     // Form fields

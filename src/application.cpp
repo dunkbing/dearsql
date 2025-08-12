@@ -175,6 +175,10 @@ void Application::setDarkTheme(const bool dark) {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
 
+const Theme::Colors &Application::getCurrentColors() const {
+    return darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+}
+
 void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
     databases.push_back(db);
 }

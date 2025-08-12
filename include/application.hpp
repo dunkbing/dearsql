@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "imgui.h"
 #include "platform/platform_interface.hpp"
+#include "themes.hpp"
 #include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
@@ -41,6 +42,7 @@ public:
         return darkTheme;
     }
     void setDarkTheme(bool dark);
+    [[nodiscard]] const Theme::Colors &getCurrentColors() const;
 
     // Selection state
     [[nodiscard]] int getSelectedDatabase() const {

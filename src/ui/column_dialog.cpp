@@ -1,15 +1,20 @@
 #include "ui/column_dialog.hpp"
+#include "application.hpp"
 #include "imgui.h"
+#include "themes.hpp"
 #include "ui/log_panel.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <iostream>
 #include <sstream>
 
 void ColumnDialog::showAddColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                       const std::string &tableName) {
+                                       const std::string &tableName,
+                                       const std::string &schemaName) {
     database = db;
     targetTableName = tableName;
+    targetSchemaName = schemaName;
     mode = ColumnDialogMode::Add;
     originalColumnName = "";
 
@@ -20,9 +25,11 @@ void ColumnDialog::showAddColumnDialog(const std::shared_ptr<DatabaseInterface> 
 }
 
 void ColumnDialog::showEditColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                        const std::string &tableName, const Column &column) {
+                                        const std::string &tableName, const Column &column,
+                                        const std::string &schemaName) {
     database = db;
     targetTableName = tableName;
+    targetSchemaName = schemaName;
     mode = ColumnDialogMode::Edit;
     originalColumnName = column.name;
 
@@ -173,6 +180,13 @@ void ColumnDialog::renderFormFields() {
 void ColumnDialog::renderButtons() {
     const char *actionText = (mode == ColumnDialogMode::Add) ? "Add Column" : "Update Column";
 
+    const auto &colors = Application::getInstance().getCurrentColors();
+
+    // button colors
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
+
     if (ImGui::Button(actionText, ImVec2(120, 0))) {
         if (validateInput()) {
             bool success = false;
@@ -189,10 +203,20 @@ void ColumnDialog::renderButtons() {
         }
     }
 
+    ImGui::PopStyleColor(3); // Pop the 3 button colors
+
     ImGui::SameLine();
+
+    // cancel button colors
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
+
     if (ImGui::Button("Cancel", ImVec2(120, 0))) {
         isOpen = false;
     }
+
+    ImGui::PopStyleColor(3); // Pop the 3 button colors
 }
 
 bool ColumnDialog::validateInput() {
@@ -231,6 +255,7 @@ bool ColumnDialog::executeAddColumn() {
 
                 // Execute ADD COLUMN first
                 std::string result1 = database->executeQuery(addColumnSQL);
+                std::cout << "Add column result: " << result1 << std::endl;
                 if (result1.find("ERROR") != std::string::npos ||
                     result1.find("Error") != std::string::npos) {
                     // Extract the actual error message
@@ -255,6 +280,7 @@ bool ColumnDialog::executeAddColumn() {
         } else {
             // Single statement execution
             std::string result = database->executeQuery(sql);
+            std::cout << "Add column result: " << result << std::endl;
 
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
@@ -349,8 +375,18 @@ bool ColumnDialog::executeEditColumn() {
 }
 
 std::string ColumnDialog::generateAddColumnSQL() {
-    std::string sql = "ALTER TABLE " + targetTableName + " ADD COLUMN " + std::string(columnName) +
-                      " " + std::string(columnType);
+    // For PostgreSQL, ensure table name is schema-qualified
+    std::string qualifiedTableName = targetTableName;
+    if (database->getType() == DatabaseType::POSTGRESQL) {
+        // If table name doesn't already contain a schema prefix, add schema
+        if (qualifiedTableName.find('.') == std::string::npos) {
+            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
+            qualifiedTableName = schemaName + "." + qualifiedTableName;
+        }
+    }
+
+    std::string sql = "ALTER TABLE " + qualifiedTableName + " ADD COLUMN " +
+                      std::string(columnName) + " " + std::string(columnType);
 
     // Add constraints
     if (isNotNull) {
@@ -372,7 +408,7 @@ std::string ColumnDialog::generateAddColumnSQL() {
             sql += " COMMENT '" + std::string(columnComment) + "'";
         } else if (database->getType() == DatabaseType::POSTGRESQL) {
             // PostgreSQL requires a separate COMMENT ON COLUMN statement
-            sql += "; COMMENT ON COLUMN " + targetTableName + "." + std::string(columnName) +
+            sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + std::string(columnName) +
                    " IS '" + std::string(columnComment) + "'";
         }
     }
@@ -386,41 +422,47 @@ std::string ColumnDialog::generateEditColumnSQL() {
     // Different databases have different syntax for altering columns
     switch (database->getType()) {
     case DatabaseType::POSTGRESQL: {
+        std::string qualifiedTableName = targetTableName;
+        if (qualifiedTableName.find('.') == std::string::npos) {
+            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
+            qualifiedTableName = schemaName + "." + qualifiedTableName;
+        }
+
         // PostgreSQL uses ALTER COLUMN for each property
         std::vector<std::string> statements;
 
         // Rename column if needed
         if (std::string(columnName) != originalColumnName) {
-            statements.push_back("ALTER TABLE " + targetTableName + " RENAME COLUMN " +
+            statements.push_back("ALTER TABLE " + qualifiedTableName + " RENAME COLUMN " +
                                  originalColumnName + " TO " + std::string(columnName));
         }
 
         // Change column type
-        statements.push_back("ALTER TABLE " + targetTableName + " ALTER COLUMN " +
+        statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                              std::string(columnName) + " TYPE " + std::string(columnType));
 
         // Handle NOT NULL constraint
         if (isNotNull) {
-            statements.push_back("ALTER TABLE " + targetTableName + " ALTER COLUMN " +
+            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                                  std::string(columnName) + " SET NOT NULL");
         } else {
-            statements.push_back("ALTER TABLE " + targetTableName + " ALTER COLUMN " +
+            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                                  std::string(columnName) + " DROP NOT NULL");
         }
 
         // Handle default value
         if (strlen(defaultValue) > 0) {
-            statements.push_back("ALTER TABLE " + targetTableName + " ALTER COLUMN " +
+            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                                  std::string(columnName) + " SET DEFAULT " +
                                  std::string(defaultValue));
         } else {
-            statements.push_back("ALTER TABLE " + targetTableName + " ALTER COLUMN " +
+            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                                  std::string(columnName) + " DROP DEFAULT");
         }
 
         // Handle comment
         if (strlen(columnComment) > 0) {
-            statements.push_back("COMMENT ON COLUMN " + targetTableName + "." +
+            statements.push_back("COMMENT ON COLUMN " + qualifiedTableName + "." +
                                  std::string(columnName) + " IS '" + std::string(columnComment) +
                                  "'");
         }

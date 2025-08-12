@@ -67,8 +67,6 @@
         [self.workspaceDropdown sizeToFit];
 
         item.view = self.workspaceDropdown;
-        item.minSize = NSMakeSize(120, 30);
-        item.maxSize = NSMakeSize(200, 30);
         return item;
     } else if ([itemIdentifier isEqualToString:@"LogPanelToggle"]) {
         NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];

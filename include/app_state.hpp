@@ -35,13 +35,13 @@ public:
     bool initialize();
 
     // Connection history management
-    [[nodiscard]] bool saveConnection(const SavedConnection &connection) const;
+    bool saveConnection(const SavedConnection &connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
-    [[nodiscard]] bool deleteConnection(int connectionId) const;
-    [[nodiscard]] bool updateLastUsed(int connectionId) const;
+    bool deleteConnection(int connectionId) const;
+    bool updateLastUsed(int connectionId) const;
 
     // Settings management
-    [[nodiscard]] bool setSetting(const std::string &key, const std::string &value) const;
+    bool setSetting(const std::string &key, const std::string &value) const;
     [[nodiscard]] std::string getSetting(const std::string &key,
                                          const std::string &defaultValue = "") const;
 
@@ -49,15 +49,15 @@ public:
     [[nodiscard]] int saveWorkspace(const Workspace &workspace) const;
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
     [[nodiscard]] bool deleteWorkspace(int workspaceId) const;
-    [[nodiscard]] bool updateWorkspaceLastUsed(int workspaceId) const;
+    bool updateWorkspaceLastUsed(int workspaceId) const;
     [[nodiscard]] std::vector<SavedConnection> getConnectionsForWorkspace(int workspaceId) const;
     [[nodiscard]] bool moveConnectionToWorkspace(int connectionId, int workspaceId) const;
-    [[nodiscard]] bool ensureDefaultWorkspace() const;
+    bool ensureDefaultWorkspace() const;
 
 private:
     sqlite3 *db;
     std::string dbPath;
 
     bool createTables();
-    [[nodiscard]] bool executeSQL(const std::string &sql) const;
+    bool executeSQL(const std::string &sql) const;
 };

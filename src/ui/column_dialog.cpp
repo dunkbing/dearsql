@@ -4,8 +4,6 @@
 #include "themes.hpp"
 #include "ui/log_panel.hpp"
 #include <algorithm>
-#include <cctype>
-#include <cstring>
 #include <iostream>
 #include <sstream>
 
@@ -120,15 +118,15 @@ void ColumnDialog::renderFormFields() {
 
         ImGui::Separator();
 
-        auto commonTypes = getCommonDataTypes();
-        std::string currentInput = std::string(columnType);
+        const auto commonTypes = getCommonDataTypes();
+        const auto currentInput = std::string(columnType);
 
         // Filter types based on current input (case-insensitive)
         for (const auto &type : commonTypes) {
             std::string lowerType = type;
             std::string lowerInput = currentInput;
-            std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
-            std::transform(lowerInput.begin(), lowerInput.end(), lowerInput.begin(), ::tolower);
+            std::ranges::transform(lowerType, lowerType.begin(), ::tolower);
+            std::ranges::transform(lowerInput, lowerInput.begin(), ::tolower);
 
             if (lowerInput.empty() || lowerType.find(lowerInput) != std::string::npos) {
                 bool isSelected = (type == currentInput);
@@ -258,8 +256,7 @@ bool ColumnDialog::executeAddColumn() {
                 std::cout << "Add column result: " << result1 << std::endl;
                 if (result1.find("ERROR") != std::string::npos ||
                     result1.find("Error") != std::string::npos) {
-                    // Extract the actual error message
-                    std::string cleanError = result1;
+                    const std::string &cleanError = result1;
                     if (cleanError.find("already exists") != std::string::npos) {
                         errorMessage = "Column '" + std::string(columnName) +
                                        "' already exists in table '" + targetTableName + "'";
@@ -285,8 +282,7 @@ bool ColumnDialog::executeAddColumn() {
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
-                // Extract the actual error message
-                std::string cleanError = result;
+                const std::string &cleanError = result;
                 if (cleanError.find("already exists") != std::string::npos) {
                     errorMessage = "Column '" + std::string(columnName) +
                                    "' already exists in table '" + targetTableName + "'";
@@ -528,7 +524,7 @@ void ColumnDialog::populateFormFromColumn(const Column &column) {
     isNotNull = column.isNotNull;
 }
 
-std::vector<std::string> ColumnDialog::getCommonDataTypes() {
+std::vector<std::string> ColumnDialog::getCommonDataTypes() const {
     std::vector<std::string> types;
 
     switch (database->getType()) {

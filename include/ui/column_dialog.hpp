@@ -75,5 +75,5 @@ private:
     void populateFormFromColumn(const Column &column);
     std::string generateAddColumnSQL();
     std::string generateEditColumnSQL();
-    std::vector<std::string> getCommonDataTypes();
+    [[nodiscard]] std::vector<std::string> getCommonDataTypes() const;
 };

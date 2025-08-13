@@ -47,14 +47,14 @@ namespace HierarchyHelpers {
 
         // Double-click to open table viewer (async loading will be handled by the tab)
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
+            app.getTabManager()->createTableViewerTab(db, table.name);
         }
 
         // Context menu
         ImGui::PushID(tableIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
+                app.getTabManager()->createTableViewerTab(db, table.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -236,14 +236,14 @@ namespace HierarchyHelpers {
         const auto &tabManager = app.getTabManager();
         // Double-click to open view viewer (async loading will be handled by the tab)
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            tabManager->createTableViewerTab(db->getConnectionString(), view.name);
+            tabManager->createTableViewerTab(db, view.name);
         }
 
         // Context menu
         ImGui::PushID(viewIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                tabManager->createTableViewerTab(db->getConnectionString(), view.name);
+                tabManager->createTableViewerTab(db, view.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab
@@ -504,8 +504,7 @@ namespace HierarchyHelpers {
                 // Double-click to open Redis key viewer
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     auto &app = Application::getInstance();
-                    app.getTabManager()->createTableViewerTab(redisDb->getConnectionString(),
-                                                              table.name);
+                    app.getTabManager()->createTableViewerTab(redisDb, table.name);
                 }
 
                 // Context menu
@@ -513,8 +512,7 @@ namespace HierarchyHelpers {
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("View Keys")) {
                         auto &app = Application::getInstance();
-                        app.getTabManager()->createTableViewerTab(redisDb->getConnectionString(),
-                                                                  table.name);
+                        app.getTabManager()->createTableViewerTab(redisDb, table.name);
                     }
                     if (ImGui::MenuItem("Refresh Keys")) {
                         redisDb->setTablesLoaded(false);
@@ -926,7 +924,7 @@ namespace HierarchyHelpers {
                     }
                 }
             }
-            app.getTabManager()->createTableViewerTab(db->getConnectionString(), table->name);
+            app.getTabManager()->createTableViewerTab(db, table->name);
         }
 
         // Context menu
@@ -961,7 +959,7 @@ namespace HierarchyHelpers {
                         }
                     }
                 }
-                app.getTabManager()->createTableViewerTab(db->getConnectionString(), table->name);
+                app.getTabManager()->createTableViewerTab(db, table->name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -1114,7 +1112,7 @@ namespace HierarchyHelpers {
                     }
                 }
             }
-            tabManager->createTableViewerTab(db->getConnectionString(), view->name);
+            tabManager->createTableViewerTab(db, view->name);
         }
 
         // Context menu
@@ -1149,7 +1147,7 @@ namespace HierarchyHelpers {
                         }
                     }
                 }
-                tabManager->createTableViewerTab(db->getConnectionString(), view->name);
+                tabManager->createTableViewerTab(db, view->name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

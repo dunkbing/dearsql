@@ -137,8 +137,55 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databas
         return existingTab;
     }
 
+    // Find the database interface by connection string or path
+    auto &app = Application::getInstance();
+    const auto &databases = app.getDatabases();
+    std::shared_ptr<DatabaseInterface> serverDatabase = nullptr;
+
+    for (auto &database : databases) {
+        if ((database->getConnectionString() == databasePath ||
+             database->getPath() == databasePath) &&
+            database->isConnected()) {
+            serverDatabase = database;
+            break;
+        }
+    }
+
     // Create new tab
-    auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName);
+    auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName, serverDatabase);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    app.resetDockingLayout();
+
+    std::cout << "Created new tab for table: " << tableName << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab>
+TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &database,
+                                 const std::string &tableName) {
+    if (!database) {
+        std::cout << "Cannot create table viewer tab: database is null" << std::endl;
+        return nullptr;
+    }
+
+    const std::string databasePath = database->getConnectionString().empty()
+                                         ? database->getPath()
+                                         : database->getConnectionString();
+
+    auto existingTab = findTableTab(databasePath, tableName);
+    if (existingTab) {
+        // Tab already exists, mark it to be focused
+        existingTab->setShouldFocus(true);
+        std::cout << "Table " << tableName << " is already open, focusing existing tab"
+                  << std::endl;
+        return existingTab;
+    }
+
+    // Create new tab with direct database reference
+    auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName, database);
     tab->setShouldFocus(true);
     addTab(tab);
 

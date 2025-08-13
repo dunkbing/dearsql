@@ -523,7 +523,7 @@ void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const s
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
-            app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
+            app.getTabManager()->createTableViewerTab(db, table.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -540,7 +540,7 @@ void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const si
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
-            app.getTabManager()->createTableViewerTab(db->getConnectionString(), view.name);
+            app.getTabManager()->createTableViewerTab(db, view.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show view structure in a tab

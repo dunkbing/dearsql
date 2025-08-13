@@ -903,9 +903,10 @@ bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float
 
 // TableViewerTab implementation
 TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath,
-                               std::string tableName)
+                               std::string tableName,
+                               std::shared_ptr<DatabaseInterface> serverDatabase)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)) {
+      tableName(std::move(tableName)), serverDatabase(std::move(serverDatabase)) {
 
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
@@ -1050,30 +1051,16 @@ void TableViewerTab::render() {
 }
 
 void TableViewerTab::loadData() {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-
-    // Find database by connection string or path
-    std::shared_ptr<DatabaseInterface> db = nullptr;
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            db = database;
-            break;
-        }
-    }
-
-    if (!db) {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
         return;
     }
 
-    totalRows = db->getRowCount(tableName);
-    columnNames = db->getColumnNames(tableName);
+    totalRows = serverDatabase->getRowCount(tableName);
+    columnNames = serverDatabase->getColumnNames(tableName);
 
     // Get data with pagination
     const int offset = currentPage * rowsPerPage;
-    tableData = db->getTableData(tableName, rowsPerPage, offset);
+    tableData = serverDatabase->getTableData(tableName, rowsPerPage, offset);
 
     // Store original data for change tracking
     originalData = tableData;
@@ -1179,31 +1166,17 @@ void TableViewerTab::selectCell(const int row, const int col) {
 }
 
 void TableViewerTab::loadDataAsync() {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-
-    // Find a database by connection string or path
-    std::shared_ptr<DatabaseInterface> db = nullptr;
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            db = database;
-            break;
-        }
-    }
-
-    if (!db) {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
         hasLoadingError = true;
         loadingError = "Database not found or not connected";
         return;
     }
 
     // Clear any previous async result
-    if (db->getType() == DatabaseType::SQLITE) {
-        db->clearTableDataResult();
+    if (serverDatabase->getType() == DatabaseType::SQLITE) {
+        serverDatabase->clearTableDataResult();
     } else {
-        db->clearTableDataResult(tableName);
+        serverDatabase->clearTableDataResult(tableName);
     }
 
     // Start async data loading (includes metadata)
@@ -1212,7 +1185,7 @@ void TableViewerTab::loadDataAsync() {
     hasLoadingError = false;
     loadingError.clear();
 
-    db->startTableDataLoadAsync(tableName, rowsPerPage, offset);
+    serverDatabase->startTableDataLoadAsync(tableName, rowsPerPage, offset);
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {
@@ -1220,21 +1193,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
         return;
     }
 
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-
-    // Find a database by connection string or path
-    std::shared_ptr<DatabaseInterface> db = nullptr;
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            db = database;
-            break;
-        }
-    }
-
-    if (!db) {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
         isLoadingData = false;
         hasLoadingError = true;
         loadingError = "Database not found or not connected";
@@ -1242,14 +1201,14 @@ void TableViewerTab::checkAsyncLoadStatus() {
     }
 
     // Always check the async status first
-    if (db->getType() == DatabaseType::SQLITE) {
-        db->checkTableDataStatusAsync();
+    if (serverDatabase->getType() == DatabaseType::SQLITE) {
+        serverDatabase->checkTableDataStatusAsync();
 
-        if (db->hasTableDataResult()) {
+        if (serverDatabase->hasTableDataResult()) {
             // Load completed - get all data including metadata
-            tableData = db->getTableDataResult();
-            columnNames = db->getColumnNamesResult();
-            totalRows = db->getRowCountResult();
+            tableData = serverDatabase->getTableDataResult();
+            columnNames = serverDatabase->getColumnNamesResult();
+            totalRows = serverDatabase->getRowCountResult();
             originalData = tableData;
             hasChanges = false;
             isLoadingData = false;
@@ -1259,21 +1218,21 @@ void TableViewerTab::checkAsyncLoadStatus() {
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
 
             // Clear the result to free memory
-            db->clearTableDataResult();
-        } else if (!db->isLoadingTableData()) {
+            serverDatabase->clearTableDataResult();
+        } else if (!serverDatabase->isLoadingTableData()) {
             // Loading stopped but no result - probably an error
             isLoadingData = false;
             hasLoadingError = true;
             loadingError = "Failed to load table data";
         }
     } else {
-        db->checkTableDataStatusAsync(tableName);
+        serverDatabase->checkTableDataStatusAsync(tableName);
 
-        if (db->hasTableDataResult(tableName)) {
+        if (serverDatabase->hasTableDataResult(tableName)) {
             // Load completed - get all data including metadata
-            tableData = db->getTableDataResult(tableName);
-            columnNames = db->getColumnNamesResult(tableName);
-            totalRows = db->getRowCountResult(tableName);
+            tableData = serverDatabase->getTableDataResult(tableName);
+            columnNames = serverDatabase->getColumnNamesResult(tableName);
+            totalRows = serverDatabase->getRowCountResult(tableName);
             originalData = tableData;
             hasChanges = false;
             isLoadingData = false;
@@ -1283,8 +1242,8 @@ void TableViewerTab::checkAsyncLoadStatus() {
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
 
             // Clear the result to free memory
-            db->clearTableDataResult(tableName);
-        } else if (!db->isLoadingTableData(tableName)) {
+            serverDatabase->clearTableDataResult(tableName);
+        } else if (!serverDatabase->isLoadingTableData(tableName)) {
             // Loading stopped but no result - probably an error
             isLoadingData = false;
             hasLoadingError = true;
@@ -1294,27 +1253,13 @@ void TableViewerTab::checkAsyncLoadStatus() {
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-
-    // Find database by connection string or path
-    std::shared_ptr<DatabaseInterface> db = nullptr;
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            db = database;
-            break;
-        }
-    }
-
     std::vector<std::string> pkColumns;
-    if (!db) {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
         return pkColumns;
     }
 
     // Find table columns
-    const auto &tables = db->getTables();
+    const auto &tables = serverDatabase->getTables();
     for (const auto &table : tables) {
         if (table.name == tableName) {
             for (const auto &column : table.columns) {
@@ -1331,25 +1276,12 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
 
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::vector<std::string> sqlStatements;
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
 
-    // Find database by connection string or path
-    std::shared_ptr<DatabaseInterface> db = nullptr;
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            db = database;
-            break;
-        }
-    }
-
-    if (!db) {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
         return sqlStatements;
     }
 
-    const bool isSQLite = (db->getType() == DatabaseType::SQLITE);
+    const bool isSQLite = (serverDatabase->getType() == DatabaseType::SQLITE);
     const std::vector<std::string> pkColumns = getPrimaryKeyColumns();
 
     std::cout << "Generating UPDATE SQL for table: " << tableName << std::endl;
@@ -1495,26 +1427,15 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::Text("Executing...");
         } else {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
-                // Start async SQL execution
-                auto &app = Application::getInstance();
-                const auto &databases = app.getDatabases();
-
-                std::shared_ptr<DatabaseInterface> db = nullptr;
-                for (auto &database : databases) {
-                    if (database->getPath() == databasePath && database->isConnected()) {
-                        db = database;
-                        break;
-                    }
-                }
-
-                if (db) {
+                if (serverDatabase && serverDatabase->isConnected()) {
                     executingSQL = true;
 
                     // Copy SQL statements and database pointer for async execution
                     auto sqlStatements = pendingUpdateSQL;
 
                     sqlExecutionFuture = std::async(
-                        std::launch::async, [db, sqlStatements]() -> std::pair<bool, std::string> {
+                        std::launch::async,
+                        [db = serverDatabase, sqlStatements]() -> std::pair<bool, std::string> {
                             bool allSuccess = true;
                             std::string errorMessage;
 

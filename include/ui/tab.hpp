@@ -131,7 +131,8 @@ private:
 
 class TableViewerTab final : public Tab {
 public:
-    TableViewerTab(const std::string &name, std::string databasePath, std::string tableName);
+    TableViewerTab(const std::string &name, std::string databasePath, std::string tableName,
+                   std::shared_ptr<DatabaseInterface> serverDatabase = nullptr);
 
     void render() override;
 
@@ -141,6 +142,12 @@ public:
     }
     [[nodiscard]] const std::string &getTableName() const {
         return tableName;
+    }
+    [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {
+        return serverDatabase;
+    }
+    void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
+        serverDatabase = std::move(db);
     }
     void loadData();
     void loadDataAsync();
@@ -162,6 +169,7 @@ public:
 private:
     std::string databasePath;
     std::string tableName;
+    std::shared_ptr<DatabaseInterface> serverDatabase;
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;

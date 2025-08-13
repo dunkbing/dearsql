@@ -725,7 +725,7 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string &tableName, int li
     auto &state = tableDataStates[tableName];
 
     if (state.loading.load()) {
-        return; // Already loading this table
+        return;
     }
 
     state.loading.store(true);

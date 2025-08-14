@@ -55,7 +55,7 @@ protected:
 class SQLEditorTab final : public Tab {
 public:
     explicit SQLEditorTab(const std::string &name,
-                          std::shared_ptr<DatabaseInterface> serverDatabase = nullptr,
+                          const std::shared_ptr<DatabaseInterface> &serverDatabase = nullptr,
                           const std::string &selectedDatabaseName = "");
     ~SQLEditorTab() override;
 

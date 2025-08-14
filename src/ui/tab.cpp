@@ -21,7 +21,7 @@ Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(typ
 
 // SQLEditorTab implementation
 SQLEditorTab::SQLEditorTab(const std::string &name,
-                           std::shared_ptr<DatabaseInterface> serverDatabase,
+                           const std::shared_ptr<DatabaseInterface> &serverDatabase,
                            const std::string &selectedDatabaseName)
     : Tab(name, TabType::SQL_EDITOR), serverDatabase(serverDatabase),
       selectedDatabaseName(selectedDatabaseName), selectedSchemaName("") {

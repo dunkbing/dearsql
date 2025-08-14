@@ -41,7 +41,7 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::string &databasePath,
                                               const std::string &tableName) const {
     for (auto &tab : tabs) {
         if (tab->getType() == TabType::TABLE_VIEWER) {
-            auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
+            const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
             if (tableTab && tableTab->getDatabasePath() == databasePath &&
                 tableTab->getTableName() == tableName) {
                 return tab;
@@ -53,19 +53,6 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::string &databasePath,
 
 bool TabManager::hasTab(const std::string &name) const {
     return findTab(name) != nullptr;
-}
-
-std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string &name) {
-    std::string tabName = name.empty() ? generateSQLEditorName() : name;
-    auto tab = std::make_shared<SQLEditorTab>(tabName);
-    tab->setShouldFocus(true);
-    addTab(tab);
-
-    // Force docking layout to be rebuilt to include the new tab
-    auto &app = Application::getInstance();
-    app.resetDockingLayout();
-
-    return tab;
 }
 
 std::shared_ptr<Tab>
@@ -123,43 +110,6 @@ TabManager::createSQLEditorTab(const std::string &name,
     auto &app = Application::getInstance();
     app.resetDockingLayout();
 
-    return tab;
-}
-
-std::shared_ptr<Tab> TabManager::createTableViewerTab(const std::string &databasePath,
-                                                      const std::string &tableName) {
-    auto existingTab = findTableTab(databasePath, tableName);
-    if (existingTab) {
-        // Tab already exists, mark it to be focused
-        existingTab->setShouldFocus(true);
-        std::cout << "Table " << tableName << " is already open, focusing existing tab"
-                  << std::endl;
-        return existingTab;
-    }
-
-    // Find the database interface by connection string or path
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    std::shared_ptr<DatabaseInterface> serverDatabase = nullptr;
-
-    for (auto &database : databases) {
-        if ((database->getConnectionString() == databasePath ||
-             database->getPath() == databasePath) &&
-            database->isConnected()) {
-            serverDatabase = database;
-            break;
-        }
-    }
-
-    // Create new tab
-    auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName, serverDatabase);
-    tab->setShouldFocus(true);
-    addTab(tab);
-
-    // Force docking layout to be rebuilt to include the new tab
-    app.resetDockingLayout();
-
-    std::cout << "Created new tab for table: " << tableName << std::endl;
     return tab;
 }
 

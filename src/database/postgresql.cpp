@@ -851,6 +851,8 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
             Table table;
             table.name = tableName;
+            table.fullName = name + "." + database + ".public." +
+                             tableName;              // PostgreSQL: connection.database.schema.table
             table.columns = tableColumns[tableName]; // Will be empty if table has no columns
             result.push_back(table);
             LogPanel::debug("Loaded table: " + tableName + " with " +
@@ -988,6 +990,8 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
             Table view;
             view.name = viewName;
+            view.fullName = name + "." + database + ".public." +
+                            viewName;             // PostgreSQL: connection.database.schema.view
             view.columns = viewColumns[viewName]; // Will be empty if view has no columns
             result.push_back(view);
             LogPanel::debug("Loaded view: " + viewName + " with " +

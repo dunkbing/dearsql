@@ -877,6 +877,7 @@ void RedisDatabase::groupKeysByPattern() {
     // Use "*" as the name so it can be used as a Redis key pattern
     Table allKeys;
     allKeys.name = "*";
+    allKeys.fullName = name + ".*";
     allKeys.columns = getTableColumns("*");
     tables.push_back(allKeys);
 }

@@ -37,13 +37,51 @@ std::shared_ptr<Tab> TabManager::findTab(const std::string &name) const {
     return (it != tabs.end()) ? *it : nullptr;
 }
 
-std::shared_ptr<Tab> TabManager::findTableTab(const std::string &databasePath,
+std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInterface> &database,
                                               const std::string &tableName) const {
+    // Use Table.fullName for precise tab identification - this handles cases where:
+    // - Same table name exists in different databases within the same connection
+    // - Same table name exists in different schemas (PostgreSQL)
+    // - Different connection types need different identification schemes
+    std::string tableFullName;
+
+    // Search in tables
+    for (const auto &table : database->getTables()) {
+        if (table.name == tableName) {
+            tableFullName = table.fullName;
+            break;
+        }
+    }
+
+    // If not found in tables, search in views
+    if (tableFullName.empty()) {
+        for (const auto &view : database->getViews()) {
+            if (view.name == tableName) {
+                tableFullName = view.fullName;
+                break;
+            }
+        }
+    }
+
+    // If we still don't have a fullName, fall back to basic identification
+    if (tableFullName.empty()) {
+        for (auto &tab : tabs) {
+            if (tab->getType() == TabType::TABLE_VIEWER) {
+                const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
+                if (tableTab && tableTab->getServerDatabase() == database &&
+                    tableTab->getTableName() == tableName) {
+                    return tab;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    // Use fullName for precise tab identification
     for (auto &tab : tabs) {
         if (tab->getType() == TabType::TABLE_VIEWER) {
             const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
-            if (tableTab && tableTab->getDatabasePath() == databasePath &&
-                tableTab->getTableName() == tableName) {
+            if (tableTab && tableTab->getDatabasePath() == tableFullName) {
                 return tab;
             }
         }
@@ -121,11 +159,8 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
         return nullptr;
     }
 
-    const std::string databasePath = database->getConnectionString().empty()
-                                         ? database->getPath()
-                                         : database->getConnectionString();
-
-    auto existingTab = findTableTab(databasePath, tableName);
+    // Check if tab already exists using fullName-based lookup
+    auto existingTab = findTableTab(database, tableName);
     if (existingTab) {
         // Tab already exists, mark it to be focused
         existingTab->setShouldFocus(true);
@@ -134,8 +169,78 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
         return existingTab;
     }
 
-    // Create new tab with direct database reference
-    auto tab = std::make_shared<TableViewerTab>(tableName, databasePath, tableName, database);
+    // Find the table to get its fullName for precise identification
+    std::string tableFullName;
+
+    // Search in tables first
+    for (const auto &table : database->getTables()) {
+        if (table.name == tableName) {
+            tableFullName = table.fullName;
+            break;
+        }
+    }
+
+    // If not found in tables, search in views
+    if (tableFullName.empty()) {
+        for (const auto &view : database->getViews()) {
+            if (view.name == tableName) {
+                tableFullName = view.fullName;
+                break;
+            }
+        }
+    }
+
+    // Fallback if fullName is not set yet
+    if (tableFullName.empty()) {
+        if (database->getType() == DatabaseType::POSTGRESQL) {
+            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+            if (pgDb) {
+                tableFullName =
+                    database->getName() + "." + pgDb->getDatabaseName() + ".public." + tableName;
+            }
+        } else if (database->getType() == DatabaseType::MYSQL) {
+            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+            if (mysqlDb) {
+                tableFullName =
+                    database->getName() + "." + mysqlDb->getDatabaseName() + "." + tableName;
+            }
+        } else {
+            tableFullName = database->getName() + "." + tableName;
+        }
+    }
+
+    // Create user-friendly tab name (just table name + database context)
+    std::string contextName;
+    if (database->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+        if (pgDb) {
+            contextName = pgDb->getDatabaseName(); // Just the database name
+        } else {
+            contextName = database->getName();
+        }
+    } else if (database->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+        if (mysqlDb) {
+            contextName = mysqlDb->getDatabaseName(); // Just the database name
+        } else {
+            contextName = database->getName();
+        }
+    } else {
+        contextName = database->getName(); // For SQLite/Redis, use connection name
+    }
+
+    std::string tabName = tableName + " (" + contextName + ")";
+
+    // Ensure tab name is unique
+    int counter = 1;
+    std::string originalTabName = tabName;
+    while (hasTab(tabName)) {
+        counter++;
+        tabName = originalTabName + " #" + std::to_string(counter);
+    }
+
+    // Create new tab using fullName as the databasePath for precise identification
+    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, database);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -143,7 +248,8 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
     auto &app = Application::getInstance();
     app.resetDockingLayout();
 
-    std::cout << "Created new tab for table: " << tableName << std::endl;
+    std::cout << "Created new tab for table: " << tableName << " with fullName: " << tableFullName
+              << std::endl;
     return tab;
 }
 

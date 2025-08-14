@@ -78,6 +78,7 @@ void SQLiteDatabase::refreshTables() {
         std::cout << "Adding table: " << tableName << std::endl;
         Table table;
         table.name = tableName;
+        table.fullName = name + "." + tableName; // SQLite: connection.table
         table.columns = getTableColumns(tableName);
         tables.push_back(table);
     }
@@ -404,6 +405,7 @@ void SQLiteDatabase::refreshViews() {
         std::cout << "Adding view: " << viewName << std::endl;
         Table view;
         view.name = viewName;
+        view.fullName = name + "." + viewName; // SQLite: connection.view
         view.columns = getViewColumns(viewName);
         views.push_back(view);
     }

@@ -253,6 +253,8 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
 
             Table table;
             table.name = tableName;
+            table.fullName =
+                name + "." + database + "." + tableName; // MySQL: connection.database.table
 
             // Get table columns using the async session
             const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
@@ -373,6 +375,8 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
 
             Table view;
             view.name = viewName;
+            view.fullName =
+                name + "." + database + "." + viewName; // MySQL: connection.database.view
 
             // Get view columns using the async session (same as table columns for MySQL)
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);

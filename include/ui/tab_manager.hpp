@@ -19,7 +19,7 @@ public:
 
     // Tab queries
     std::shared_ptr<Tab> findTab(const std::string &name) const;
-    std::shared_ptr<Tab> findTableTab(const std::string &databasePath,
+    std::shared_ptr<Tab> findTableTab(const std::shared_ptr<DatabaseInterface> &database,
                                       const std::string &tableName) const;
     bool hasTab(const std::string &name) const;
     bool isEmpty() const {

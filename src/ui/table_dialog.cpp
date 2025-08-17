@@ -89,7 +89,7 @@ void TableDialog::renderDialog() {
         ImGui::Spacing();
 
         // Main content area with splitter
-        const float leftPanelWidth = 300.0f;
+        constexpr float leftPanelWidth = 300.0f;
         const float rightPanelWidth = ImGui::GetContentRegionAvail().x - leftPanelWidth - 10.0f;
 
         // Left panel - Table structure tree
@@ -281,7 +281,7 @@ void TableDialog::renderColumnsNode() {
             }
 
             ImGui::PushID(i);
-            bool clicked = ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+            ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
 
             if (ImGui::IsItemClicked()) {
                 startEditColumn(i);
@@ -320,8 +320,9 @@ void TableDialog::renderColumnsNode() {
     }
 }
 
-void TableDialog::renderKeysNode() {
-    ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+void TableDialog::renderKeysNode() const {
+    constexpr ImGuiTreeNodeFlags keysFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
     const std::string keysLabel = "   Keys";
     bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
@@ -477,7 +478,7 @@ void TableDialog::renderColumnEditor() {
     }
 }
 
-void TableDialog::renderPreviewPanel() {
+void TableDialog::renderPreviewPanel() const {
     ImGui::Text("SQL Preview:");
     ImGui::Separator();
 
@@ -773,7 +774,7 @@ std::string TableDialog::generateAddColumnSQL() {
     if (database->getType() == DatabaseType::POSTGRESQL) {
         // If table name doesn't already contain a schema prefix, add schema
         if (qualifiedTableName.find('.') == std::string::npos) {
-            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
+            const std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
             qualifiedTableName = schemaName + "." + qualifiedTableName;
         }
     }
@@ -817,7 +818,7 @@ std::string TableDialog::generateEditColumnSQL() {
     case DatabaseType::POSTGRESQL: {
         std::string qualifiedTableName = targetTableName;
         if (qualifiedTableName.find('.') == std::string::npos) {
-            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
+            const std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
             qualifiedTableName = schemaName + "." + qualifiedTableName;
         }
 
@@ -1087,7 +1088,7 @@ bool TableDialog::executeCreateTable() {
 
             std::string commentSQL;
             if (database->getType() == DatabaseType::POSTGRESQL) {
-                std::string qualifiedTableName = std::string(newTableName);
+                auto qualifiedTableName = std::string(newTableName);
                 if (qualifiedTableName.find('.') == std::string::npos) {
                     std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
                     qualifiedTableName = schemaName + "." + qualifiedTableName;
@@ -1186,6 +1187,7 @@ std::string TableDialog::generateCreateTableSQL() {
 
     return sql;
 }
+
 void TableDialog::updateCurrentColumn() {
     if (selectedColumnIndex >= 0 && selectedColumnIndex < tableColumns.size()) {
         auto &column = tableColumns[selectedColumnIndex];
@@ -1211,11 +1213,10 @@ bool TableDialog::saveTableChanges() {
             std::string renameSQL;
             if (database->getType() == DatabaseType::POSTGRESQL) {
                 std::string qualifiedOldName = targetTableName;
-                std::string qualifiedNewName = std::string(editTableName);
+                auto qualifiedNewName = std::string(editTableName);
                 if (qualifiedOldName.find('.') == std::string::npos) {
                     std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
                     qualifiedOldName = schemaName + "." + qualifiedOldName;
-                    qualifiedNewName = schemaName + "." + qualifiedNewName;
                 }
                 renameSQL =
                     "ALTER TABLE " + qualifiedOldName + " RENAME TO " + std::string(editTableName);
@@ -1243,9 +1244,7 @@ bool TableDialog::saveTableChanges() {
         }
 
         // Compare current columns with original columns and generate ALTER statements
-        for (size_t i = 0; i < tableColumns.size(); ++i) {
-            const auto &currentColumn = tableColumns[i];
-
+        for (const auto &currentColumn : tableColumns) {
             // Find corresponding original column
             bool foundOriginal = false;
             for (const auto &originalColumn : originalColumns) {
@@ -1299,7 +1298,7 @@ bool TableDialog::saveTableChanges() {
                     if (qualifiedTableName.find('.') == std::string::npos) {
                         std::string schemaName =
                             targetSchemaName.empty() ? "public" : targetSchemaName;
-                        qualifiedTableName = schemaName + "." + qualifiedTableName;
+                        qualifiedTableName = std::format("{}.{}", schemaName, qualifiedTableName);
                     }
                     dropSQL =
                         "ALTER TABLE " + qualifiedTableName + " DROP COLUMN " + originalColumn.name;
@@ -1325,7 +1324,7 @@ bool TableDialog::saveTableChanges() {
 
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
-                errorMessage = "Failed to execute: " + sql + "\nError: " + result;
+                errorMessage = std::format("Failed to execute: {}", sql);
                 LogPanel::error(errorMessage);
                 return false;
             }

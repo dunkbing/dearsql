@@ -84,11 +84,11 @@ private:
     void renderRightPanel();
     void renderTableTree();
     void renderColumnsNode();
-    void renderKeysNode();
+    void renderKeysNode() const;
     void renderColumnEditor();
     void renderTableProperties();
-    void renderInstructions();
-    void renderPreviewPanel();
+    static void renderInstructions();
+    void renderPreviewPanel() const;
     void renderButtons();
 
     // Column operations

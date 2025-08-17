@@ -6,6 +6,7 @@
 #include <ranges>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 PostgresDatabase::PostgresDatabase(const std::string &name, const std::string &host, const int port,
                                    const std::string &database, const std::string &username,
@@ -97,16 +98,15 @@ PostgresDatabase::getDatabaseData(const std::string &dbName) const {
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
-    const auto *session = getSessionForDatabase(database);
-    if (connected && session) {
+    const auto *pool = getConnectionPoolForDatabase(database);
+    if (connected && pool) {
         return {true, ""};
     }
 
     attemptedConnection = true;
 
     try {
-        std::lock_guard lock(sessionMutex);
-        sessionPool[database] = std::make_unique<soci::session>(soci::postgresql, connectionString);
+        initializeConnectionPool(database, connectionString);
         LogPanel::info("Successfully connected to PostgreSQL database: " + database);
         connected = true;
         lastConnectionError.clear();
@@ -121,7 +121,7 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
     } catch (const soci::soci_error &e) {
         std::cerr << "Connection to database failed: " << e.what() << std::endl;
         std::lock_guard lock(sessionMutex);
-        sessionPool.erase(database);
+        connectionPools.erase(database);
         connected = false;
         lastConnectionError = e.what();
         return {false, e.what()};
@@ -130,12 +130,12 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 
 void PostgresDatabase::disconnect() {
     std::lock_guard lock(sessionMutex);
-    sessionPool.clear();
+    connectionPools.clear();
     connected = false;
 }
 
 bool PostgresDatabase::isConnected() const {
-    return connected && getSessionForDatabase(database) != nullptr;
+    return connected && getConnectionPoolForDatabase(database) != nullptr;
 }
 
 const std::string &PostgresDatabase::getName() const {
@@ -194,12 +194,12 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
     }
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
-            return "Error: Database session is not available";
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            return "Error: Database connection pool is not available";
         }
-        std::lock_guard lock(sessionMutex);
 
+        soci::session sql(*pool);
         std::stringstream output;
 
         // Check if this is a DDL statement (ALTER, CREATE, DROP, etc.)
@@ -210,11 +210,11 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
 
         if (isDDL) {
             // Use once() for DDL statements
-            *session << query;
+            sql << query;
             output << "Query executed successfully.";
         } else {
             // Use prepare for SELECT and other DML statements
-            const soci::rowset rs = session->prepare << query;
+            const soci::rowset rs = sql.prepare << query;
 
             // Get column names if available
             const auto it = rs.begin();
@@ -282,13 +282,13 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
     }
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return {columnNames, data};
         }
-        std::lock_guard lock(sessionMutex);
 
-        const soci::rowset rs = session->prepare << query;
+        soci::session sql(*pool);
+        const soci::rowset rs = sql.prepare << query;
 
         // Get column names if available
         const auto it = rs.begin();
@@ -339,16 +339,16 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
     }
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return data;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql = "SELECT * FROM \"" + tableName + "\" LIMIT " +
-                                std::to_string(limit) + " OFFSET " + std::to_string(offset);
+        soci::session sql(*pool);
+        const std::string sqlQuery = "SELECT * FROM \"" + tableName + "\" LIMIT " +
+                                     std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
-        soci::rowset rs = session->prepare << sql;
+        soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             std::vector<std::string> rowData;
@@ -423,17 +423,18 @@ std::vector<std::string> PostgresDatabase::getColumnNames(const std::string &tab
     }
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return columnNames;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql = std::format("SELECT column_name FROM information_schema.columns "
-                                            "WHERE table_name = '{}' ORDER BY ordinal_position",
-                                            tableName);
+        soci::session sql(*pool);
+        const std::string sqlQuery =
+            std::format("SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = '{}' ORDER BY ordinal_position",
+                        tableName);
 
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             columnNames.push_back(row.get<std::string>(0));
@@ -455,15 +456,15 @@ int PostgresDatabase::getRowCount(const std::string &tableName) {
     }
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return 0;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
+        soci::session sql(*pool);
+        const std::string sqlQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
         int count = 0;
-        *session << sql, soci::into(count);
+        sql << sqlQuery, soci::into(count);
         return count;
     } catch (const soci::soci_error &e) {
         std::cerr << "Error getting row count: " << e.what() << std::endl;
@@ -496,24 +497,24 @@ void PostgresDatabase::setLastConnectionError(const std::string &error) {
 }
 
 void *PostgresDatabase::getConnection() const {
-    return getSessionForDatabase(database);
+    return getConnectionPoolForDatabase(database);
 }
 
 std::vector<std::string> PostgresDatabase::getTableNames() {
     std::vector<std::string> tableNames;
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return tableNames;
         }
-        std::lock_guard<std::mutex> lock(sessionMutex);
 
-        const std::string sql =
+        soci::session sql(*pool);
+        const std::string sqlQuery =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
 
         LogPanel::debug("Executing query to get table names...");
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             auto tableName = row.get<std::string>(0);
@@ -532,13 +533,13 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableNa
     std::vector<Column> columns;
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return columns;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql =
+        soci::session sql(*pool);
+        const std::string sqlQuery =
             "SELECT c.column_name, c.data_type, c.is_nullable, "
             "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
             "as is_primary_key "
@@ -552,7 +553,7 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string &tableNa
             "' "
             "ORDER BY c.ordinal_position";
 
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             Column col;
@@ -630,17 +631,17 @@ std::vector<std::string> PostgresDatabase::getViewNames() {
     std::vector<std::string> viewNames;
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return viewNames;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql =
+        soci::session sql(*pool);
+        const std::string sqlQuery =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
 
         std::cout << "Executing query to get view names..." << std::endl;
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             auto viewName = row.get<std::string>(0);
@@ -659,20 +660,20 @@ std::vector<Column> PostgresDatabase::getViewColumns(const std::string &viewName
     std::vector<Column> columns;
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return columns;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql = "SELECT c.column_name, c.data_type, c.is_nullable "
-                                "FROM information_schema.columns c "
-                                "WHERE c.table_name = '" +
-                                viewName +
-                                "' "
-                                "ORDER BY c.ordinal_position";
+        soci::session sql(*pool);
+        const std::string sqlQuery = "SELECT c.column_name, c.data_type, c.is_nullable "
+                                     "FROM information_schema.columns c "
+                                     "WHERE c.table_name = '" +
+                                     viewName +
+                                     "' "
+                                     "ORDER BY c.ordinal_position";
 
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             Column col;
@@ -693,18 +694,18 @@ std::vector<std::string> PostgresDatabase::getSequenceNames() {
     std::vector<std::string> sequenceNames;
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
             return sequenceNames;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql =
+        soci::session sql(*pool);
+        const std::string sqlQuery =
             "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
             "BY sequencename";
 
         std::cout << "Executing query to get sequence names..." << std::endl;
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             auto sequenceName = row.get<std::string>(0);
@@ -763,13 +764,10 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
     }
 
     try {
-        // Create a separate session for this async operation to avoid mutex contention
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for table loading: " << e.what()
-                      << std::endl;
+        // Use connection pool instead of creating a new session
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "Connection pool not available for table loading" << std::endl;
             return result;
         }
 
@@ -777,17 +775,20 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
             return result;
         }
 
-        // Get table names using the async session
+        // Get table names using the connection pool
         std::vector<std::string> tableNames;
         const std::string tableNamesQuery =
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
 
-        const soci::rowset tableRs = asyncSession->prepare << tableNamesQuery;
-        for (const auto &row : tableRs) {
-            if (!dbData.loadingTables.load()) {
-                return result;
+        {
+            soci::session sql(*pool);
+            const soci::rowset tableRs = sql.prepare << tableNamesQuery;
+            for (const auto &row : tableRs) {
+                if (!dbData.loadingTables.load()) {
+                    return result;
+                }
+                tableNames.push_back(row.get<std::string>(0));
             }
-            tableNames.push_back(row.get<std::string>(0));
         }
 
         LogPanel::debug("Found " + std::to_string(tableNames.size()) +
@@ -798,7 +799,7 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
         }
 
         // Build a single query to get all columns for all tables at once
-        std::string sql =
+        std::string sqlQuery =
             "SELECT "
             "c.table_name, "
             "c.column_name, "
@@ -815,32 +816,33 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
         // Add table names to the query
         for (size_t i = 0; i < tableNames.size(); ++i) {
-            sql += "'" + tableNames[i] + "'";
+            sqlQuery += "'" + tableNames[i] + "'";
             if (i < tableNames.size() - 1) {
-                sql += ", ";
+                sqlQuery += ", ";
             }
         }
-        sql += ") ORDER BY c.table_name, c.ordinal_position";
+        sqlQuery += ") ORDER BY c.table_name, c.ordinal_position";
 
-        // Execute the query using the async session
-        const soci::rowset rs = asyncSession->prepare << sql;
-
-        // Group columns by table name
+        // Execute the query using the connection pool
         std::unordered_map<std::string, std::vector<Column>> tableColumns;
+        {
+            soci::session sql(*pool);
+            const soci::rowset rs = sql.prepare << sqlQuery;
 
-        for (const auto &row : rs) {
-            if (!dbData.loadingTables.load()) {
-                break; // Stop processing if we should no longer be loading
+            for (const auto &row : rs) {
+                if (!dbData.loadingTables.load()) {
+                    break; // Stop processing if we should no longer be loading
+                }
+
+                auto tableName = row.get<std::string>(0);
+                Column col;
+                col.name = row.get<std::string>(1);
+                col.type = row.get<std::string>(2);
+                col.isNotNull = row.get<std::string>(3) == "NO";
+                col.isPrimaryKey = row.get<std::string>(4) == "true";
+
+                tableColumns[tableName].push_back(col);
             }
-
-            auto tableName = row.get<std::string>(0);
-            Column col;
-            col.name = row.get<std::string>(1);
-            col.type = row.get<std::string>(2);
-            col.isNotNull = row.get<std::string>(3) == "NO";
-            col.isPrimaryKey = row.get<std::string>(4) == "true";
-
-            tableColumns[tableName].push_back(col);
         }
 
         // Build the result tables
@@ -910,13 +912,10 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
     }
 
     try {
-        // Create a separate session for this async operation to avoid mutex contention
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for view loading: " << e.what()
-                      << std::endl;
+        // Use connection pool instead of creating a new session
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "Connection pool not available for view loading" << std::endl;
             return result;
         }
 
@@ -924,17 +923,20 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
             return result;
         }
 
-        // Get view names using the async session
+        // Get view names using the connection pool
         std::vector<std::string> viewNames;
         const std::string viewNamesQuery =
             "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
 
-        const soci::rowset viewRs = asyncSession->prepare << viewNamesQuery;
-        for (const auto &row : viewRs) {
-            if (!dbData.loadingViews.load()) {
-                return result;
+        {
+            soci::session sql(*pool);
+            const soci::rowset viewRs = sql.prepare << viewNamesQuery;
+            for (const auto &row : viewRs) {
+                if (!dbData.loadingViews.load()) {
+                    return result;
+                }
+                viewNames.push_back(row.get<std::string>(0));
             }
-            viewNames.push_back(row.get<std::string>(0));
         }
 
         LogPanel::debug("Found " + std::to_string(viewNames.size()) + " views, loading columns...");
@@ -944,42 +946,43 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
         }
 
         // Build a single query to get all columns for all views at once
-        std::string sql = "SELECT "
-                          "c.table_name, "
-                          "c.column_name, "
-                          "c.data_type, "
-                          "c.is_nullable "
-                          "FROM information_schema.columns c "
-                          "WHERE c.table_name IN (";
+        std::string sqlQuery = "SELECT "
+                               "c.table_name, "
+                               "c.column_name, "
+                               "c.data_type, "
+                               "c.is_nullable "
+                               "FROM information_schema.columns c "
+                               "WHERE c.table_name IN (";
 
         // Add view names to the query
         for (size_t i = 0; i < viewNames.size(); ++i) {
-            sql += "'" + viewNames[i] + "'";
+            sqlQuery += "'" + viewNames[i] + "'";
             if (i < viewNames.size() - 1) {
-                sql += ", ";
+                sqlQuery += ", ";
             }
         }
-        sql += ") ORDER BY c.table_name, c.ordinal_position";
+        sqlQuery += ") ORDER BY c.table_name, c.ordinal_position";
 
-        // Execute the query using the async session
-        const soci::rowset rs = asyncSession->prepare << sql;
-
-        // Group columns by view name
+        // Execute the query using the connection pool
         std::unordered_map<std::string, std::vector<Column>> viewColumns;
+        {
+            soci::session sql(*pool);
+            const soci::rowset rs = sql.prepare << sqlQuery;
 
-        for (const auto &row : rs) {
-            if (!dbData.loadingViews.load()) {
-                break; // Stop processing if we should no longer be loading
+            for (const auto &row : rs) {
+                if (!dbData.loadingViews.load()) {
+                    break; // Stop processing if we should no longer be loading
+                }
+
+                auto viewName = row.get<std::string>(0);
+                Column col;
+                col.name = row.get<std::string>(1);
+                col.type = row.get<std::string>(2);
+                col.isNotNull = row.get<std::string>(3) == "NO";
+                col.isPrimaryKey = false; // Views don't have primary keys
+
+                viewColumns[viewName].push_back(col);
             }
-
-            auto viewName = row.get<std::string>(0);
-            Column col;
-            col.name = row.get<std::string>(1);
-            col.type = row.get<std::string>(2);
-            col.isNotNull = row.get<std::string>(3) == "NO";
-            col.isPrimaryKey = false; // Views don't have primary keys
-
-            viewColumns[viewName].push_back(col);
         }
 
         // Build the result views
@@ -1049,13 +1052,10 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
     }
 
     try {
-        // Create a separate session for this async operation to avoid mutex contention
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for sequence loading: " << e.what()
-                      << std::endl;
+        // Use connection pool instead of creating a new session
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "Connection pool not available for sequence loading" << std::endl;
             return result;
         }
 
@@ -1063,11 +1063,13 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
             return result;
         }
 
-        const std::string sql = "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' "
-                                "ORDER BY sequencename";
+        const std::string sqlQuery =
+            "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' "
+            "ORDER BY sequencename";
 
         std::cout << "Executing query to get sequence names..." << std::endl;
-        const soci::rowset rs = asyncSession->prepare << sql;
+        soci::session sql(*pool);
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             if (!dbData.loadingSequences.load()) {
@@ -1147,16 +1149,15 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
     state.columnNames.clear();
     state.rowCount = 0;
 
-    // Start async operation that loads everything using a separate session
+    // Start async operation that loads everything using connection pool
     state.future = std::async(std::launch::async, [this, tableName, limit, offset]() {
         try {
-            // Create a separate session for this async operation to avoid mutex contention
-            std::unique_ptr<soci::session> asyncSession;
-            try {
-                asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-            } catch (const soci::soci_error &e) {
-                std::cerr << "Failed to create async session for table data loading: " << e.what()
-                          << std::endl;
+            // Use connection pool instead of creating a new session
+            auto *pool = getConnectionPoolForDatabase(database);
+            if (!pool) {
+                std::cerr << "Connection pool not available for table data loading" << std::endl;
+                auto &state = tableDataStates[tableName];
+                state.loading = false;
                 return;
             }
 
@@ -1173,62 +1174,66 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
                                           std::to_string(limit) + " OFFSET " +
                                           std::to_string(offset);
 
-            soci::rowset dataRs = asyncSession->prepare << dataQuery;
+            {
+                soci::session sql(*pool);
+                soci::rowset dataRs = sql.prepare << dataQuery;
 
-            for (const auto &row : dataRs) {
-                if (!state.loading.load()) {
-                    break; // Stop if we should no longer be loading
-                }
-
-                std::vector<std::string> rowData;
-                for (std::size_t i = 0; i < row.size(); ++i) {
-                    if (row.get_indicator(i) == soci::i_null) {
-                        rowData.emplace_back("NULL");
-                        continue;
+                for (const auto &row : dataRs) {
+                    if (!state.loading.load()) {
+                        break; // Stop if we should no longer be loading
                     }
-                    switch (soci::column_properties cp = row.get_properties(i); cp.get_db_type()) {
-                    case soci::db_string:
-                        rowData.emplace_back(row.get<std::string>(i));
-                        break;
-                    case soci::db_wstring: {
-                        auto ws = row.get<std::wstring>(i);
-                        std::string utf8_str(ws.begin(), ws.end());
-                        rowData.emplace_back(utf8_str);
-                    } break;
-                    case soci::db_int8:
-                        rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
-                        break;
-                    case soci::db_int16:
-                        rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
-                        break;
-                    case soci::db_int32:
-                        rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
-                        break;
-                    case soci::db_int64:
-                        rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                        break;
-                    case soci::db_double:
-                        rowData.emplace_back(std::to_string(row.get<double>(i)));
-                        break;
-                    case soci::db_date: {
-                        auto date = row.get<std::tm>(i);
-                        char buffer[32];
-                        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-                        rowData.emplace_back(buffer);
-                    } break;
-                    case soci::db_blob:
-                        rowData.emplace_back("[BINARY DATA]");
-                        break;
-                    default:
-                        try {
-                            rowData.emplace_back(row.get<std::string>(i));
-                        } catch (const std::bad_cast &) {
-                            rowData.emplace_back("[UNKNOWN DATA TYPE]");
+
+                    std::vector<std::string> rowData;
+                    for (std::size_t i = 0; i < row.size(); ++i) {
+                        if (row.get_indicator(i) == soci::i_null) {
+                            rowData.emplace_back("NULL");
+                            continue;
                         }
-                        break;
+                        switch (soci::column_properties cp = row.get_properties(i);
+                                cp.get_db_type()) {
+                        case soci::db_string:
+                            rowData.emplace_back(row.get<std::string>(i));
+                            break;
+                        case soci::db_wstring: {
+                            auto ws = row.get<std::wstring>(i);
+                            std::string utf8_str(ws.begin(), ws.end());
+                            rowData.emplace_back(utf8_str);
+                        } break;
+                        case soci::db_int8:
+                            rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                            break;
+                        case soci::db_int16:
+                            rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                            break;
+                        case soci::db_int32:
+                            rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                            break;
+                        case soci::db_int64:
+                            rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
+                            break;
+                        case soci::db_double:
+                            rowData.emplace_back(std::to_string(row.get<double>(i)));
+                            break;
+                        case soci::db_date: {
+                            auto date = row.get<std::tm>(i);
+                            char buffer[32];
+                            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
+                            rowData.emplace_back(buffer);
+                        } break;
+                        case soci::db_blob:
+                            rowData.emplace_back("[BINARY DATA]");
+                            break;
+                        default:
+                            try {
+                                rowData.emplace_back(row.get<std::string>(i));
+                            } catch (const std::bad_cast &) {
+                                rowData.emplace_back("[UNKNOWN DATA TYPE]");
+                            }
+                            break;
+                        }
                     }
+                    state.tableData.push_back(rowData);
                 }
-                state.tableData.push_back(rowData);
             }
 
             if (!state.loading.load()) {
@@ -1241,12 +1246,15 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
                             "WHERE table_name = '{}' ORDER BY ordinal_position",
                             tableName);
 
-            const soci::rowset columnRs = asyncSession->prepare << columnQuery;
-            for (const auto &row : columnRs) {
-                if (!state.loading.load()) {
-                    break;
+            {
+                soci::session sql(*pool);
+                const soci::rowset columnRs = sql.prepare << columnQuery;
+                for (const auto &row : columnRs) {
+                    if (!state.loading.load()) {
+                        break;
+                    }
+                    state.columnNames.push_back(row.get<std::string>(0));
                 }
-                state.columnNames.push_back(row.get<std::string>(0));
             }
 
             if (!state.loading.load()) {
@@ -1255,7 +1263,10 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
 
             // Load row count
             const std::string countQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
-            *asyncSession << countQuery, soci::into(state.rowCount);
+            {
+                soci::session sql(*pool);
+                sql << countQuery, soci::into(state.rowCount);
+            }
 
         } catch (const std::exception &e) {
             std::cerr << "Error in async table data load: " << e.what() << std::endl;
@@ -1532,36 +1543,43 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
     }
 
     try {
-        // Create a separate session for this specific database
-        std::string dbConnectionString = buildConnectionString(dbName);
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, dbConnectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for schema loading in database " << dbName
-                      << ": " << e.what() << std::endl;
-            return result;
+        // Use connection pool for the specific database
+        auto *pool = getConnectionPoolForDatabase(dbName);
+        if (!pool) {
+            // If no pool exists for this database, create one temporarily
+            std::string dbConnectionString = buildConnectionString(dbName);
+            const_cast<PostgresDatabase *>(this)->initializeConnectionPool(dbName,
+                                                                           dbConnectionString);
+            pool = getConnectionPoolForDatabase(dbName);
+            if (!pool) {
+                std::cerr << "Failed to create connection pool for schema loading in database "
+                          << dbName << std::endl;
+                return result;
+            }
         }
 
         if (!dbData.loadingSchemas.load()) {
             return result;
         }
 
-        // Get schema names using the async session
+        // Get schema names using the connection pool
         std::vector<std::string> schemaNames;
-        const std::string sql =
+        const std::string sqlQuery =
             "SELECT schema_name FROM information_schema.schemata "
             "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
             "AND schema_name NOT LIKE 'pg_temp_%' "
             "AND schema_name NOT LIKE 'pg_toast_temp_%' "
             "ORDER BY schema_name";
 
-        const soci::rowset rs = asyncSession->prepare << sql;
-        for (const auto &row : rs) {
-            if (!dbData.loadingSchemas.load()) {
-                return result;
+        {
+            soci::session sql(*pool);
+            const soci::rowset rs = sql.prepare << sqlQuery;
+            for (const auto &row : rs) {
+                if (!dbData.loadingSchemas.load()) {
+                    return result;
+                }
+                schemaNames.push_back(row.get<std::string>(0));
             }
-            schemaNames.push_back(row.get<std::string>(0));
         }
 
         LogPanel::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
@@ -1599,13 +1617,10 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
     }
 
     try {
-        // Create a separate session for this async operation to avoid mutex contention
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for schema loading: " << e.what()
-                      << std::endl;
+        // Use connection pool instead of creating a new session
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "Connection pool not available for schema loading" << std::endl;
             return result;
         }
 
@@ -1613,21 +1628,24 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
             return result;
         }
 
-        // Get schema names using the async session
+        // Get schema names using the connection pool
         std::vector<std::string> schemaNames;
-        const std::string sql =
+        const std::string sqlQuery =
             "SELECT schema_name FROM information_schema.schemata "
             "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
             "AND schema_name NOT LIKE 'pg_temp_%' "
             "AND schema_name NOT LIKE 'pg_toast_temp_%' "
             "ORDER BY schema_name";
 
-        const soci::rowset rs = asyncSession->prepare << sql;
-        for (const auto &row : rs) {
-            if (!dbData.loadingSchemas.load()) {
-                return result;
+        {
+            soci::session sql(*pool);
+            const soci::rowset rs = sql.prepare << sqlQuery;
+            for (const auto &row : rs) {
+                if (!dbData.loadingSchemas.load()) {
+                    return result;
+                }
+                schemaNames.push_back(row.get<std::string>(0));
             }
-            schemaNames.push_back(row.get<std::string>(0));
         }
 
         std::cout << "Found " << schemaNames.size() << " schemas, loading objects..." << std::endl;
@@ -1659,13 +1677,13 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
     const auto &dbData = getCurrentDatabaseData();
 
     try {
-        auto *session = getSessionForDatabase(database);
-        if (!session || !dbData.loadingSchemas.load()) {
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool || !dbData.loadingSchemas.load()) {
             return schemaNames;
         }
-        std::lock_guard lock(sessionMutex);
 
-        const std::string sql =
+        soci::session sql(*pool);
+        const std::string sqlQuery =
             "SELECT schema_name FROM information_schema.schemata "
             "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
             "AND schema_name NOT LIKE 'pg_temp_%' "
@@ -1673,7 +1691,7 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
             "ORDER BY schema_name";
 
         std::cout << "Executing query to get schema names..." << std::endl;
-        const soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             if (!dbData.loadingSchemas.load()) {
@@ -1752,13 +1770,10 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
     }
 
     try {
-        // Create a new session for this async operation to avoid blocking the main session
-        std::unique_ptr<soci::session> asyncSession;
-        try {
-            asyncSession = std::make_unique<soci::session>(soci::postgresql, connectionString);
-        } catch (const soci::soci_error &e) {
-            std::cerr << "Failed to create async session for database query: " << e.what()
-                      << std::endl;
+        // Use connection pool instead of creating a new session
+        auto *pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "Connection pool not available for database query" << std::endl;
             return result;
         }
 
@@ -1766,11 +1781,12 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
             return result;
         }
 
-        const std::string sql =
+        const std::string sqlQuery =
             "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname";
 
         std::cout << "Executing async query to get database names..." << std::endl;
-        const soci::rowset rs = asyncSession->prepare << sql;
+        soci::session sql(*pool);
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             if (!loadingDatabases.load()) {
@@ -1795,28 +1811,26 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
     }
 
     std::string targetConnectionString = buildConnectionString(targetDatabase);
-    auto *session = getSessionForDatabase(targetDatabase);
+    auto *pool = getConnectionPoolForDatabase(targetDatabase);
 
-    if (session) {
+    if (pool) {
         // update database name and connection string only after successful connection
         database = targetDatabase;
         connectionString = targetConnectionString;
         connected = true;
-        LogPanel::debug("Reusing existing connection to database: " + targetDatabase);
+        LogPanel::debug("Reusing existing connection pool to database: " + targetDatabase);
         return {true, ""};
     }
 
-    // Create new connection to the target database
+    // Create new connection pool to the target database
     try {
-        auto newSession = std::make_unique<soci::session>(soci::postgresql, targetConnectionString);
-        std::lock_guard lock(sessionMutex);
-        sessionPool[targetDatabase] = std::move(newSession);
+        initializeConnectionPool(targetDatabase, targetConnectionString);
 
         // Update database name and connection string only after successful connection
         database = targetDatabase;
         connectionString = targetConnectionString;
         connected = true;
-        LogPanel::info("Created new connection to database: " + targetDatabase);
+        LogPanel::info("Created new connection pool to database: " + targetDatabase);
         return {true, ""};
     } catch (const soci::soci_error &e) {
         std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
@@ -1887,10 +1901,42 @@ void PostgresDatabase::setDatabaseExpanded(const std::string &dbName, const bool
     }
 }
 
-soci::session *PostgresDatabase::getSessionForDatabase(const std::string &dbName) const {
+soci::connection_pool *
+PostgresDatabase::getConnectionPoolForDatabase(const std::string &dbName) const {
+    // std::lock_guard lock(sessionMutex);
+    const auto it = connectionPools.find(dbName);
+    return (it != connectionPools.end()) ? it->second.get() : nullptr;
+}
+
+void PostgresDatabase::initializeConnectionPool(const std::string &dbName,
+                                                const std::string &connStr) {
     std::lock_guard lock(sessionMutex);
-    const auto it = sessionPool.find(dbName);
-    return (it != sessionPool.end()) ? it->second.get() : nullptr;
+
+    // Don't recreate if pool already exists
+    if (connectionPools.find(dbName) != connectionPools.end()) {
+        return;
+    }
+
+    const size_t poolSize = 3;
+    auto pool = std::make_unique<soci::connection_pool>(poolSize);
+
+    // Initialize connections in parallel for faster startup
+    std::vector<std::future<void>> connectionFutures;
+    connectionFutures.reserve(poolSize);
+
+    for (size_t i = 0; i != poolSize; ++i) {
+        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
+            soci::session &sql = pool->at(i);
+            sql.open(soci::postgresql, connStr);
+        }));
+    }
+
+    // Wait for all connections to complete
+    for (auto &future : connectionFutures) {
+        future.wait();
+    }
+
+    connectionPools[dbName] = std::move(pool);
 }
 
 std::string PostgresDatabase::buildConnectionString(const std::string &dbName) const {

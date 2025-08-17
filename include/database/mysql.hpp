@@ -5,6 +5,7 @@
 #include <future>
 #include <mutex>
 #include <set>
+#include <soci/connection-pool.h>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 #include <unordered_map>
@@ -139,7 +140,7 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
-    std::unordered_map<std::string, std::unique_ptr<soci::session>> sessionPool;
+    std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
     // Per-database data structures
     struct DatabaseData {
         std::vector<Table> tables;
@@ -202,6 +203,7 @@ private:
     mutable std::mutex sessionMutex;
 
     // Helper methods for connection pool
-    soci::session *getSessionForDatabase(const std::string &dbName) const;
+    soci::connection_pool *getConnectionPoolForDatabase(const std::string &dbName) const;
     std::string buildConnectionString(const std::string &dbName) const;
+    void initializeConnectionPool(const std::string &dbName, const std::string &connStr);
 };

@@ -78,7 +78,7 @@ set(APP_SOURCES
     # UI
     src/ui/db_sidebar.cpp
     src/ui/db_connection_dialog.cpp
-    src/ui/column_dialog.cpp
+    src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
     src/ui/log_panel.cpp
     src/ui/tab.cpp

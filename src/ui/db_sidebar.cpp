@@ -6,7 +6,6 @@
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
-#include "ui/column_dialog.hpp"
 #include "ui/drop_column_dialog.hpp"
 #include "ui/hierarchy_helpers.hpp"
 #include "ui/log_panel.hpp"
@@ -14,16 +13,17 @@
 #include "ui/postgres_hierarchy.hpp"
 #include "ui/sqlite_hierarchy.hpp"
 #include "ui/tab_manager.hpp"
+#include "ui/table_dialog.hpp"
 #include "utils/spinner.hpp"
 
 // Static dialog instances
-static ColumnDialog columnDialog;
+static TableDialog tableDialog;
 static DropColumnDialog dropColumnDialog;
 
 // Function to access the dialogs from hierarchy helpers
 namespace HierarchyHelpers {
-    ColumnDialog &getColumnDialog() {
-        return columnDialog;
+    TableDialog &getTableDialog() {
+        return tableDialog;
     }
 
     DropColumnDialog &getDropColumnDialog() {
@@ -153,14 +153,14 @@ void DatabaseSidebar::render() {
         ImGui::EndPopup();
     }
 
-    // Render column dialog if open
-    if (columnDialog.isDialogOpen()) {
-        columnDialog.renderDialog();
+    // Render table dialog if open
+    if (tableDialog.isDialogOpen()) {
+        tableDialog.renderDialog();
     }
 
-    // Handle column dialog completion
-    if (columnDialog.hasResult()) {
-        columnDialog.clearResult();
+    // Handle table dialog completion
+    if (tableDialog.hasResult()) {
+        tableDialog.clearResult();
         // Table structure will be refreshed automatically by the dialog
     }
 

@@ -5,14 +5,14 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
-#include "ui/column_dialog.hpp"
 #include "ui/drop_column_dialog.hpp"
 #include "ui/log_panel.hpp"
+#include "ui/table_dialog.hpp"
 #include "utils/spinner.hpp"
 
 namespace HierarchyHelpers {
     // Forward declarations for external dialogs
-    extern ColumnDialog &getColumnDialog();
+    extern TableDialog &getTableDialog();
     extern DropColumnDialog &getDropColumnDialog();
 
     void renderTableNode(const std::shared_ptr<DatabaseInterface> &db, int tableIndex) {
@@ -56,6 +56,14 @@ namespace HierarchyHelpers {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(db, table.name);
             }
+            if (ImGui::MenuItem("Edit Table")) {
+                // For PostgreSQL, pass the schema name (default to "public" for now)
+                std::string schemaName = "";
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    schemaName = "public"; // TODO: Get actual schema from context
+                }
+                getTableDialog().showTableDialog(db, table.name, schemaName);
+            }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
             }
@@ -84,13 +92,13 @@ namespace HierarchyHelpers {
 
             // Context menu for Columns section
             if (ImGui::BeginPopupContextItem("columns_context_menu")) {
-                if (ImGui::MenuItem("New Column")) {
+                if (ImGui::MenuItem("Edit Table")) {
                     // For PostgreSQL, pass the schema name (default to "public" for now)
                     std::string schemaName = "";
                     if (db->getType() == DatabaseType::POSTGRESQL) {
                         schemaName = "public"; // TODO: Get actual schema from context
                     }
-                    getColumnDialog().showAddColumnDialog(db, table.name, schemaName);
+                    getTableDialog().showTableDialog(db, table.name, schemaName);
                 }
                 ImGui::EndPopup();
             }
@@ -117,14 +125,13 @@ namespace HierarchyHelpers {
 
                     // Context menu for individual column
                     if (ImGui::BeginPopupContextItem("column_context_menu")) {
-                        if (ImGui::MenuItem("Edit Column")) {
+                        if (ImGui::MenuItem("Edit Table")) {
                             // For PostgreSQL, pass the schema name (default to "public" for now)
                             std::string schemaName = "";
                             if (db->getType() == DatabaseType::POSTGRESQL) {
                                 schemaName = "public"; // TODO: Get actual schema from context
                             }
-                            getColumnDialog().showEditColumnDialog(db, table.name, column,
-                                                                   schemaName);
+                            getTableDialog().showTableDialog(db, table.name, schemaName);
                         }
                         ImGui::Separator();
                         if (ImGui::MenuItem("Drop Column")) {
@@ -310,6 +317,15 @@ namespace HierarchyHelpers {
 
         // Context menu for Tables section
         if (ImGui::BeginPopupContextItem("tables_context_menu")) {
+            if (ImGui::MenuItem("Create New Table")) {
+                // For PostgreSQL, pass the schema name (default to "public" for now)
+                std::string schemaName = "";
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    schemaName = "public"; // TODO: Get actual schema from context
+                }
+                getTableDialog().showCreateTableDialog(db, schemaName);
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Refresh")) {
                 db->setTablesLoaded(false);
                 db->refreshTables();
@@ -626,6 +642,30 @@ namespace HierarchyHelpers {
                                  ImGui::GetColorU32(ImGuiCol_Text));
             }
 
+            // Context menu for cached Tables section (PostgreSQL)
+            if (ImGui::BeginPopupContextItem(("cached_tables_context_menu_pg_" + dbName).c_str())) {
+                if (ImGui::MenuItem("Create New Table")) {
+                    // For PostgreSQL, pass the schema name (default to "public" for now)
+                    std::string schemaName = "public"; // TODO: Get actual schema from context
+                    getTableDialog().showCreateTableDialog(db, schemaName);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Refresh")) {
+                    // Auto-switch to the correct database before refreshing
+                    if (dbName != pgDb->getDatabaseName()) {
+                        if (!pgDb->isSwitchingDatabase()) {
+                            LogPanel::debug("Auto-switching to database: " + dbName +
+                                            " to refresh tables");
+                            pgDb->switchToDatabaseAsync(dbName);
+                        }
+                    } else {
+                        pgDb->setTablesLoaded(false);
+                        pgDb->refreshTables();
+                    }
+                }
+                ImGui::EndPopup();
+            }
+
             if (tablesOpen) {
                 if (dbData.tables.empty()) {
                     if (dbData.loadingTables) {
@@ -686,6 +726,29 @@ namespace HierarchyHelpers {
                 ImGui::SameLine();
                 UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
                                  ImGui::GetColorU32(ImGuiCol_Text));
+            }
+
+            // Context menu for cached Tables section (MySQL)
+            if (ImGui::BeginPopupContextItem(
+                    ("cached_tables_context_menu_mysql_" + dbName).c_str())) {
+                if (ImGui::MenuItem("Create New Table")) {
+                    getTableDialog().showCreateTableDialog(db, "");
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Refresh")) {
+                    // Auto-switch to the correct database before refreshing
+                    if (dbName != mysqlDb->getDatabaseName()) {
+                        if (!mysqlDb->isSwitchingDatabase()) {
+                            LogPanel::debug("Auto-switching to database: " + dbName +
+                                            " to refresh tables");
+                            mysqlDb->switchToDatabaseAsync(dbName);
+                        }
+                    } else {
+                        mysqlDb->setTablesLoaded(false);
+                        mysqlDb->refreshTables();
+                    }
+                }
+                ImGui::EndPopup();
             }
 
             if (tablesOpen) {
@@ -961,6 +1024,14 @@ namespace HierarchyHelpers {
                 }
                 app.getTabManager()->createTableViewerTab(db, table->name);
             }
+            if (ImGui::MenuItem("Edit Table")) {
+                // For PostgreSQL, pass the schema name (default to "public" for now)
+                std::string schemaName = "";
+                if (db->getType() == DatabaseType::POSTGRESQL) {
+                    schemaName = "public"; // TODO: Get actual schema from context
+                }
+                getTableDialog().showTableDialog(db, table->name, schemaName);
+            }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
             }
@@ -988,13 +1059,13 @@ namespace HierarchyHelpers {
 
             // Context menu for Columns section
             if (ImGui::BeginPopupContextItem("cached_columns_context_menu")) {
-                if (ImGui::MenuItem("New Column")) {
+                if (ImGui::MenuItem("Edit Table")) {
                     // For PostgreSQL, pass the schema name (default to "public" for now)
                     std::string schemaName = "";
                     if (db->getType() == DatabaseType::POSTGRESQL) {
                         schemaName = "public"; // TODO: Get actual schema from context
                     }
-                    getColumnDialog().showAddColumnDialog(db, table->name, schemaName);
+                    getTableDialog().showTableDialog(db, table->name, schemaName);
                 }
                 ImGui::EndPopup();
             }
@@ -1020,14 +1091,13 @@ namespace HierarchyHelpers {
 
                     // Context menu for individual column
                     if (ImGui::BeginPopupContextItem("cached_column_context_menu")) {
-                        if (ImGui::MenuItem("Edit Column")) {
+                        if (ImGui::MenuItem("Edit Table")) {
                             // For PostgreSQL, pass the schema name (default to "public" for now)
                             std::string schemaName = "";
                             if (db->getType() == DatabaseType::POSTGRESQL) {
                                 schemaName = "public"; // TODO: Get actual schema from context
                             }
-                            getColumnDialog().showEditColumnDialog(db, table->name, column,
-                                                                   schemaName);
+                            getTableDialog().showTableDialog(db, table->name, schemaName);
                         }
                         ImGui::Separator();
                         if (ImGui::MenuItem("Drop Column")) {

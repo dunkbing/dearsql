@@ -234,4 +234,7 @@ private:
     soci::connection_pool *getConnectionPoolForDatabase(const std::string &dbName) const;
     std::string buildConnectionString(const std::string &dbName) const;
     void initializeConnectionPool(const std::string &dbName, const std::string &connStr);
+
+    // Helper method for row data type conversion
+    std::string convertRowValue(const soci::row &row, std::size_t columnIndex) const;
 };

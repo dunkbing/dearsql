@@ -181,7 +181,7 @@ bool PostgresDatabase::areTablesLoaded() const {
     return getCurrentDatabaseData().tablesLoaded;
 }
 
-void PostgresDatabase::setTablesLoaded(bool loaded) {
+void PostgresDatabase::setTablesLoaded(const bool loaded) {
     getCurrentDatabaseData().tablesLoaded = loaded;
 }
 
@@ -240,15 +240,7 @@ std::string PostgresDatabase::executeQuery(const std::string &query) {
                 if (rowCount >= 1000)
                     break;
                 for (std::size_t i = 0; i < row.size(); ++i) {
-                    if (row.get_indicator(i) == soci::i_null) {
-                        output << "NULL";
-                    } else {
-                        try {
-                            output << row.get<std::string>(i);
-                        } catch (const std::bad_cast &) {
-                            output << "[BINARY DATA]";
-                        }
-                    }
+                    output << convertRowValue(row, i);
                     if (i < row.size() - 1)
                         output << " | ";
                 }
@@ -305,16 +297,9 @@ PostgresDatabase::executeQueryStructured(const std::string &query) {
                 break;
 
             std::vector<std::string> rowData;
+            rowData.reserve(row.size());
             for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                } else {
-                    try {
-                        rowData.push_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast &) {
-                        rowData.emplace_back("[BINARY DATA]");
-                    }
-                }
+                rowData.emplace_back(convertRowValue(row, i));
             }
             data.push_back(rowData);
             rowCount++;
@@ -348,60 +333,14 @@ PostgresDatabase::getTableData(const std::string &tableName, const int limit, co
         const std::string sqlQuery = "SELECT * FROM \"" + tableName + "\" LIMIT " +
                                      std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
-        soci::rowset rs = sql.prepare << sqlQuery;
+        const soci::rowset rs = sql.prepare << sqlQuery;
 
         for (const auto &row : rs) {
             std::vector<std::string> rowData;
+            rowData.reserve(row.size());
 
             for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                    continue;
-                }
-                switch (soci::column_properties cp = row.get_properties(i); cp.get_db_type()) {
-                case soci::db_string:
-                    rowData.emplace_back(row.get<std::string>(i));
-                    break;
-                case soci::db_wstring:
-                    // convert to UTF-8 string
-                    {
-                        auto ws = row.get<std::wstring>(i);
-                        std::string utf8_str(ws.begin(), ws.end());
-                        rowData.emplace_back(utf8_str);
-                    }
-                    break;
-                case soci::db_int8:
-                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
-                    break;
-                case soci::db_int16:
-                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
-                    break;
-                case soci::db_int32:
-                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
-                    break;
-                case soci::db_int64:
-                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                    break;
-                case soci::db_double:
-                    rowData.emplace_back(std::to_string(row.get<double>(i)));
-                    break;
-                case soci::db_date: {
-                    auto date = row.get<std::tm>(i);
-                    char buffer[32];
-                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-                    rowData.emplace_back(buffer);
-                } break;
-                case soci::db_blob:
-                    rowData.emplace_back("[BINARY DATA]");
-                    break;
-                default:
-                    try {
-                        rowData.emplace_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast &) {
-                        rowData.emplace_back("[UNKNOWN DATA TYPE]");
-                    }
-                    break;
-                }
+                rowData.emplace_back(convertRowValue(row, i));
             }
             data.push_back(rowData);
         }
@@ -1184,53 +1123,9 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string &tableName, int
                     }
 
                     std::vector<std::string> rowData;
+                    rowData.reserve(row.size());
                     for (std::size_t i = 0; i < row.size(); ++i) {
-                        if (row.get_indicator(i) == soci::i_null) {
-                            rowData.emplace_back("NULL");
-                            continue;
-                        }
-                        switch (soci::column_properties cp = row.get_properties(i);
-                                cp.get_db_type()) {
-                        case soci::db_string:
-                            rowData.emplace_back(row.get<std::string>(i));
-                            break;
-                        case soci::db_wstring: {
-                            auto ws = row.get<std::wstring>(i);
-                            std::string utf8_str(ws.begin(), ws.end());
-                            rowData.emplace_back(utf8_str);
-                        } break;
-                        case soci::db_int8:
-                            rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
-                            break;
-                        case soci::db_int16:
-                            rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
-                            break;
-                        case soci::db_int32:
-                            rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
-                            break;
-                        case soci::db_int64:
-                            rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                            break;
-                        case soci::db_double:
-                            rowData.emplace_back(std::to_string(row.get<double>(i)));
-                            break;
-                        case soci::db_date: {
-                            auto date = row.get<std::tm>(i);
-                            char buffer[32];
-                            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-                            rowData.emplace_back(buffer);
-                        } break;
-                        case soci::db_blob:
-                            rowData.emplace_back("[BINARY DATA]");
-                            break;
-                        default:
-                            try {
-                                rowData.emplace_back(row.get<std::string>(i));
-                            } catch (const std::bad_cast &) {
-                                rowData.emplace_back("[UNKNOWN DATA TYPE]");
-                            }
-                            break;
-                        }
+                        rowData.emplace_back(convertRowValue(row, i));
                     }
                     state.tableData.push_back(rowData);
                 }
@@ -1286,12 +1181,8 @@ bool PostgresDatabase::isLoadingTableData(const std::string &tableName) const {
 
 bool PostgresDatabase::isLoadingTableData() const {
     // Legacy method - return true if any table is loading
-    for (const auto &state : tableDataStates | std::views::values) {
-        if (state.loading.load()) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(tableDataStates | std::views::values,
+                               [](const auto &state) { return state.loading.load(); });
 }
 
 void PostgresDatabase::checkTableDataStatusAsync(const std::string &tableName) {
@@ -1330,18 +1221,14 @@ void PostgresDatabase::checkTableDataStatusAsync() {
 }
 
 bool PostgresDatabase::hasTableDataResult(const std::string &tableName) const {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     return it != tableDataStates.end() && it->second.ready.load();
 }
 
 bool PostgresDatabase::hasTableDataResult() const {
     // Legacy method - return true if any table has results
-    for (const auto &state : tableDataStates | std::views::values) {
-        if (state.ready.load()) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(tableDataStates | std::views::values,
+                               [](const auto &state) { return state.ready.load(); });
 }
 
 std::vector<std::vector<std::string>>
@@ -1870,7 +1757,7 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
                                targetDatabaseName);
 
                 // Auto-start loading schemas for the switched database if not already loaded
-                auto &targetDbData = getDatabaseData(targetDatabaseName);
+                const auto &targetDbData = getDatabaseData(targetDatabaseName);
                 if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
                     LogPanel::debug("Auto-starting schema loading after database switch to: " +
                                     targetDatabaseName);
@@ -1913,11 +1800,11 @@ void PostgresDatabase::initializeConnectionPool(const std::string &dbName,
     std::lock_guard lock(sessionMutex);
 
     // Don't recreate if pool already exists
-    if (connectionPools.find(dbName) != connectionPools.end()) {
+    if (connectionPools.contains(dbName)) {
         return;
     }
 
-    const size_t poolSize = 3;
+    constexpr size_t poolSize = 3;
     auto pool = std::make_unique<soci::connection_pool>(poolSize);
 
     // Initialize connections in parallel for faster startup
@@ -1958,4 +1845,44 @@ std::string PostgresDatabase::buildConnectionString(const std::string &dbName) c
     }
 
     return ss.str();
+}
+
+std::string PostgresDatabase::convertRowValue(const soci::row &row,
+                                              const std::size_t columnIndex) const {
+    if (row.get_indicator(columnIndex) == soci::i_null) {
+        return "NULL";
+    }
+
+    switch (const soci::column_properties &cp = row.get_properties(columnIndex); cp.get_db_type()) {
+    case soci::db_string:
+        return row.get<std::string>(columnIndex);
+    case soci::db_wstring: {
+        auto ws = row.get<std::wstring>(columnIndex);
+        return {ws.begin(), ws.end()};
+    }
+    case soci::db_int8:
+        return std::to_string(row.get<int8_t>(columnIndex));
+    case soci::db_int16:
+        return std::to_string(row.get<int16_t>(columnIndex));
+    case soci::db_int32:
+        return std::to_string(row.get<int32_t>(columnIndex));
+    case soci::db_int64:
+        return std::to_string(row.get<int64_t>(columnIndex));
+    case soci::db_double:
+        return std::to_string(row.get<double>(columnIndex));
+    case soci::db_date: {
+        const auto date = row.get<std::tm>(columnIndex);
+        char buffer[32];
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
+        return {buffer};
+    }
+    case soci::db_blob:
+        return "[BINARY DATA]";
+    default:
+        try {
+            return row.get<std::string>(columnIndex);
+        } catch (const std::bad_cast &) {
+            return "[UNKNOWN DATA TYPE]";
+        }
+    }
 }

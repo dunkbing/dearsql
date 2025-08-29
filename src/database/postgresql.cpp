@@ -1847,8 +1847,7 @@ std::string PostgresDatabase::buildConnectionString(const std::string &dbName) c
     return ss.str();
 }
 
-std::string PostgresDatabase::convertRowValue(const soci::row &row,
-                                              const std::size_t columnIndex) const {
+std::string PostgresDatabase::convertRowValue(const soci::row &row, const std::size_t columnIndex) {
     if (row.get_indicator(columnIndex) == soci::i_null) {
         return "NULL";
     }

@@ -87,8 +87,8 @@ public:
     void setLastConnectionError(const std::string &error) override;
 
     // Redis-specific methods
-    std::vector<RedisKey> getKeys(const std::string &pattern = "*", int limit = 1000);
-    std::string getKeyValue(const std::string &key);
+    std::vector<RedisKey> getKeys(const std::string &pattern = "*", int limit = 1000) const;
+    std::string getKeyValue(const std::string &key) const;
     std::string getKeyType(const std::string &key) const;
     int64_t getKeyTTL(const std::string &key) const;
 
@@ -137,7 +137,7 @@ private:
     // Helper methods
     redisReply *executeRedisCommand(const std::string &command) const;
     redisReply *executeRedisCommandParsed(const std::vector<std::string> &commandParts) const;
-    std::string formatRedisReply(redisReply *reply);
-    std::vector<std::string> parseRedisCommand(const std::string &command);
+    static std::string formatRedisReply(redisReply *reply);
+    static std::vector<std::string> parseRedisCommand(const std::string &command);
     void groupKeysByPattern();
 };

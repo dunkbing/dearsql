@@ -344,6 +344,7 @@ RedisDatabase::executeQueryStructured(const std::string &command) {
         freeReplyObject(reply);
         return {columnNames, data};
     } catch (const std::exception &e) {
+        std::cerr << "[Redis] Error: " + std::string(e.what());
         // Return empty data and let the error be handled by the calling code
         return {columnNames, data};
     }
@@ -510,7 +511,7 @@ void RedisDatabase::setLastConnectionError(const std::string &error) {
 }
 
 // Redis-specific methods
-std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, int limit) {
+std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, const int limit) const {
     std::vector<RedisKey> keys;
 
     if (!isConnected()) {
@@ -545,7 +546,7 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, int lim
     return keys;
 }
 
-std::string RedisDatabase::getKeyValue(const std::string &key) {
+std::string RedisDatabase::getKeyValue(const std::string &key) const {
     if (!isConnected()) {
         return "";
     }

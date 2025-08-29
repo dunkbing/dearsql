@@ -7,19 +7,18 @@
 void UIUtils::ToggleButton(const char *str_id, bool *v) {
     const auto &colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    ImVec2 p = ImGui::GetCursorScreenPos();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
     ImDrawList *draw_list = ImGui::GetWindowDrawList();
 
-    float height = ImGui::GetFrameHeight();
-    float width = height * 1.55f;
-    float radius = height * 0.50f;
+    const float height = ImGui::GetFrameHeight();
+    const float width = height * 1.55f;
+    const float radius = height * 0.50f;
 
     ImGui::InvisibleButton(str_id, ImVec2(width, height));
     if (ImGui::IsItemClicked())
         *v = !*v;
 
     ImGuiContext &gg = *GImGui;
-    float ANIM_SPEED = 0.085f;
     if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id)) {
         if (ImGui::IsItemHovered()) {
             draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height),
@@ -33,6 +32,6 @@ void UIUtils::ToggleButton(const char *str_id, bool *v) {
     }
 
     draw_list->AddCircleFilled(
-        ImVec2(p.x + radius + (*v ? 1 : 0) * (width - radius * 2.0f), p.y + radius), radius - 1.5f,
-        ImGui::GetColorU32(colors.text));
+        ImVec2(p.x + radius + (*v ? 1.0f : 0.0f) * (width - radius * 2.0f), p.y + radius),
+        radius - 1.5f, ImGui::GetColorU32(colors.text));
 }

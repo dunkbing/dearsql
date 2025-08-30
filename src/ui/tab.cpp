@@ -1039,6 +1039,11 @@ void TableViewerTab::render() {
         tableRenderer->setSelectedCell(selectedRow, selectedCol);
 
         tableRenderer->render("TableData");
+
+        // Handle keyboard navigation - check if we have a selection and the tab is active
+        if (selectedRow >= 0 && selectedCol >= 0) {
+            handleKeyboardNavigation();
+        }
     } else {
         ImGui::Text("No data to display");
     }
@@ -1075,6 +1080,10 @@ void TableViewerTab::nextPage() {
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
     if (currentPage < totalPages - 1 && !isLoadingData) {
         currentPage++;
+        // When moving to next page from keyboard navigation, select first row
+        if (selectedRow >= 0 && selectedCol >= 0) {
+            selectedRow = 0; // Select first row of new page
+        }
         loadDataAsync();
     }
 }
@@ -1082,6 +1091,12 @@ void TableViewerTab::nextPage() {
 void TableViewerTab::previousPage() {
     if (currentPage > 0 && !isLoadingData) {
         currentPage--;
+        // When moving to previous page from keyboard navigation, select last row
+        if (selectedRow >= 0 && selectedCol >= 0) {
+            // We'll set this to the last row after data loads
+            selectedRow =
+                rowsPerPage - 1; // This will be adjusted in checkAsyncLoadStatus if needed
+        }
         loadDataAsync();
     }
 }
@@ -1165,6 +1180,70 @@ void TableViewerTab::selectCell(const int row, const int col) {
     }
 }
 
+void TableViewerTab::handleKeyboardNavigation() {
+    // Basic validation
+    if (selectedRow < 0 || selectedCol < 0 || tableData.empty() || columnNames.empty()) {
+        return;
+    }
+
+    // Only handle keyboard input if this window/tab is focused
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        return;
+    }
+
+    const int maxRows = static_cast<int>(tableData.size());
+    const int maxCols = static_cast<int>(columnNames.size());
+
+    int newRow = selectedRow;
+    int newCol = selectedCol;
+    bool moved = false;
+
+    // Handle arrow key navigation - try both with and without repeat
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) || ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) {
+        if (selectedRow > 0) {
+            newRow = selectedRow - 1;
+            moved = true;
+        } else if (currentPage > 0) {
+            previousPage();
+            return;
+        }
+    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
+               ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)) {
+        if (selectedRow < maxRows - 1) {
+            newRow = selectedRow + 1;
+            moved = true;
+        } else {
+            const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
+            if (currentPage < totalPages - 1) {
+                nextPage();
+                return;
+            }
+        }
+    } else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ||
+               ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)) {
+        if (selectedCol > 0) {
+            newCol = selectedCol - 1;
+            moved = true;
+        }
+    } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ||
+               ImGui::IsKeyPressed(ImGuiKey_RightArrow, false)) {
+        if (selectedCol < maxCols - 1) {
+            newCol = selectedCol + 1;
+            moved = true;
+        }
+    }
+
+    // Update selection if we moved
+    if (moved) {
+        selectCell(newRow, newCol);
+
+        // Scroll to the new cell to keep it visible
+        if (tableRenderer) {
+            tableRenderer->scrollToCell(newRow, newCol);
+        }
+    }
+}
+
 void TableViewerTab::loadDataAsync() {
     if (!serverDatabase || !serverDatabase->isConnected()) {
         hasLoadingError = true;
@@ -1217,6 +1296,25 @@ void TableViewerTab::checkAsyncLoadStatus() {
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
 
+            // Adjust selection if it's out of bounds after page change
+            if (selectedRow >= 0 && selectedCol >= 0) {
+                const int maxRows = static_cast<int>(tableData.size());
+                const int maxCols = static_cast<int>(columnNames.size());
+
+                // Clamp selection to valid bounds
+                if (selectedRow >= maxRows) {
+                    selectedRow = std::max(0, maxRows - 1);
+                }
+                if (selectedCol >= maxCols) {
+                    selectedCol = std::max(0, maxCols - 1);
+                }
+
+                // Scroll to the selected cell after page change
+                if (tableRenderer && selectedRow >= 0 && selectedCol >= 0) {
+                    tableRenderer->scrollToCell(selectedRow, selectedCol);
+                }
+            }
+
             // Clear the result to free memory
             serverDatabase->clearTableDataResult();
         } else if (!serverDatabase->isLoadingTableData()) {
@@ -1240,6 +1338,25 @@ void TableViewerTab::checkAsyncLoadStatus() {
             // Initialize edited cells tracking
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
+
+            // Adjust selection if it's out of bounds after page change
+            if (selectedRow >= 0 && selectedCol >= 0) {
+                const int maxRows = static_cast<int>(tableData.size());
+                const int maxCols = static_cast<int>(columnNames.size());
+
+                // Clamp selection to valid bounds
+                if (selectedRow >= maxRows) {
+                    selectedRow = std::max(0, maxRows - 1);
+                }
+                if (selectedCol >= maxCols) {
+                    selectedCol = std::max(0, maxCols - 1);
+                }
+
+                // Scroll to the selected cell after page change
+                if (tableRenderer && selectedRow >= 0 && selectedCol >= 0) {
+                    tableRenderer->scrollToCell(selectedRow, selectedCol);
+                }
+            }
 
             // Clear the result to free memory
             serverDatabase->clearTableDataResult(tableName);

@@ -202,4 +202,5 @@ private:
 
     // Helper methods
     void selectCell(int row, int col);
+    void handleKeyboardNavigation();
 };

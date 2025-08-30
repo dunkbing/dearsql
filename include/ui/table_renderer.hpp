@@ -69,6 +69,9 @@ public:
     void enterEditMode(int row, int col);
     void exitEditMode(bool saveEdit = true);
 
+    // Scrolling control
+    void scrollToCell(int row, int col);
+
 private:
     Config config;
     std::vector<std::string> columns;
@@ -81,6 +84,11 @@ private:
     int editingCol = -1;
 
     char editBuffer[1024] = {0};
+
+    // Scrolling state
+    bool shouldScrollToCell = false;
+    int scrollTargetRow = -1;
+    int scrollTargetCol = -1;
 
     // Callbacks
     OnCellEditCallback onCellEdit;

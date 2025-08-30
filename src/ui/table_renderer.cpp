@@ -87,7 +87,54 @@ void TableRenderer::render(const char* tableId) {
                  colIdx < static_cast<int>(row.size()) && colIdx < static_cast<int>(columns.size());
                  colIdx++) {
                 ImGui::TableNextColumn();
+
                 renderCell(rowIdx, colIdx);
+
+                // Handle scrolling to target cell after rendering (so we can check visibility)
+                if (shouldScrollToCell && rowIdx == scrollTargetRow && colIdx == scrollTargetCol) {
+                    // Check if the cell is actually visible before scrolling
+                    const ImVec2 cellMin = ImGui::GetItemRectMin();
+                    const ImVec2 cellMax = ImGui::GetItemRectMax();
+                    const ImVec2 windowContentMin = ImGui::GetWindowContentRegionMin();
+                    const ImVec2 windowContentMax = ImGui::GetWindowContentRegionMax();
+                    const ImVec2 windowPos = ImGui::GetWindowPos();
+
+                    // Convert to absolute coordinates
+                    const ImVec2 contentMin =
+                        ImVec2(windowPos.x + windowContentMin.x, windowPos.y + windowContentMin.y);
+                    const ImVec2 contentMax =
+                        ImVec2(windowPos.x + windowContentMax.x, windowPos.y + windowContentMax.y);
+
+                    // Check if cell is visible horizontally
+                    const bool cellVisibleX =
+                        (cellMax.x > contentMin.x && cellMin.x < contentMax.x);
+                    // Check if cell is visible vertically
+                    const bool cellVisibleY =
+                        (cellMax.y > contentMin.y && cellMin.y < contentMax.y);
+
+                    // Only scroll if the cell is not fully visible
+                    if (!cellVisibleY) {
+                        ImGui::SetScrollHereY(0.5f); // Center the row vertically
+                    }
+
+                    if (!cellVisibleX) {
+                        // Smart horizontal scrolling based on column position
+                        float scrollRatio = 0.5f; // Default to center
+
+                        if (colIdx == 0) {
+                            // First column - scroll to left edge
+                            scrollRatio = 0.0f;
+                        } else if (colIdx == static_cast<int>(columns.size()) - 1) {
+                            // Last column - scroll to right edge
+                            scrollRatio = 1.0f;
+                        }
+
+                        ImGui::SetScrollHereX(scrollRatio);
+                    }
+
+                    // Reset the scroll flag after checking
+                    shouldScrollToCell = false;
+                }
             }
         }
 
@@ -205,4 +252,16 @@ void TableRenderer::exitEditMode(bool saveEdit) {
         editingCol = -1;
         memset(editBuffer, 0, sizeof(editBuffer));
     }
+}
+
+void TableRenderer::scrollToCell(int row, int col) {
+    if (row < 0 || row >= static_cast<int>(data.size()) || col < 0 ||
+        col >= static_cast<int>(columns.size())) {
+        return;
+    }
+
+    // Set flag to scroll to this cell on next render
+    shouldScrollToCell = true;
+    scrollTargetRow = row;
+    scrollTargetCol = col;
 }

@@ -10,11 +10,11 @@
 
 // Forward declarations for helper functions from DatabaseSidebar
 namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase> &pgDb);
+    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb);
 } // namespace
 
 namespace PostgresHierarchy {
-    void renderPostgresHierarchy(const std::shared_ptr<PostgresDatabase> &pgDb) {
+    void renderPostgresHierarchy(const std::shared_ptr<PostgresDatabase>& pgDb) {
         if (pgDb->shouldShowAllDatabases()) {
             // Show all databases from the server
             renderAllDatabasesHierarchy(pgDb);
@@ -24,7 +24,7 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderSingleDatabaseHierarchy(const std::shared_ptr<PostgresDatabase> &pgDb) {
+    void renderSingleDatabaseHierarchy(const std::shared_ptr<PostgresDatabase>& pgDb) {
         // First show the connected database as a child node
         constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -53,7 +53,7 @@ namespace PostgresHierarchy {
         // Context menu for database node
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                auto &app = Application::getInstance();
+                auto& app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", pgDb, pgDb->getDatabaseName());
                 LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
             }
@@ -75,7 +75,7 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderAllDatabasesHierarchy(const std::shared_ptr<PostgresDatabase> &pgDb) {
+    void renderAllDatabasesHierarchy(const std::shared_ptr<PostgresDatabase>& pgDb) {
         // Check for async database loading completion
         if (pgDb->isLoadingDatabases()) {
             pgDb->checkDatabasesStatusAsync();
@@ -83,9 +83,9 @@ namespace PostgresHierarchy {
 
         // Check schema loading status for all expanded databases
         const std::vector<std::string> databases = pgDb->getDatabaseNames();
-        for (const auto &dbName : databases) {
+        for (const auto& dbName : databases) {
             if (pgDb->isDatabaseExpanded(dbName)) {
-                const auto &dbData = pgDb->getDatabaseData(dbName);
+                const auto& dbData = pgDb->getDatabaseData(dbName);
                 if (dbData.loadingSchemas) {
                     pgDb->checkSchemasStatusAsync(dbName);
                 }
@@ -106,7 +106,7 @@ namespace PostgresHierarchy {
             return;
         }
 
-        for (const auto &dbName : databases) {
+        for (const auto& dbName : databases) {
             ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                              ImGuiTreeNodeFlags_FramePadding;
@@ -136,7 +136,7 @@ namespace PostgresHierarchy {
             // Context menu for database node
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
-                    auto &app = Application::getInstance();
+                    auto& app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", pgDb, dbName);
                     LogPanel::debug("Creating new SQL editor for database: " + dbName);
                 }
@@ -182,7 +182,7 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderSchemasSection(const std::shared_ptr<PostgresDatabase> &pgDb) {
+    void renderSchemasSection(const std::shared_ptr<PostgresDatabase>& pgDb) {
         if (pgDb->getSchemas().empty()) {
             if (pgDb->isSwitchingDatabase()) {
                 // Show connecting indicator when switching databases
@@ -208,10 +208,10 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderCachedSchemasSection(const std::shared_ptr<PostgresDatabase> &pgDb,
-                                    const std::string &dbName) {
+    void renderCachedSchemasSection(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                    const std::string& dbName) {
         // Get cached data for this specific database
-        const auto &dbData = pgDb->getDatabaseData(dbName);
+        const auto& dbData = pgDb->getDatabaseData(dbName);
 
         if (dbData.schemas.empty()) {
             if (dbData.loadingSchemas) {
@@ -246,8 +246,8 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderSchemaNode(const std::shared_ptr<PostgresDatabase> &pgDb, int schemaIndex) {
-        auto &schema = pgDb->getSchemas()[schemaIndex];
+    void renderSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb, int schemaIndex) {
+        auto& schema = pgDb->getSchemas()[schemaIndex];
 
         ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -288,10 +288,10 @@ namespace PostgresHierarchy {
         }
     }
 
-    void renderCachedSchemaNode(const std::shared_ptr<PostgresDatabase> &pgDb,
-                                const std::string &dbName, int schemaIndex) {
-        auto &dbData = pgDb->getDatabaseData(dbName);
-        auto &schema = dbData.schemas[schemaIndex];
+    void renderCachedSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                const std::string& dbName, int schemaIndex) {
+        auto& dbData = pgDb->getDatabaseData(dbName);
+        auto& schema = dbData.schemas[schemaIndex];
 
         ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -334,7 +334,7 @@ namespace PostgresHierarchy {
 } // namespace PostgresHierarchy
 
 namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase> &pgDb) {
+    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb) {
         const bool sequencesExpanded = pgDb->getCurrentDatabaseData().sequencesExpanded;
 
         ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -415,9 +415,9 @@ namespace {
 
 // Node rendering functions
 namespace PostgresHierarchy {
-    void renderSequenceNode(const std::shared_ptr<PostgresDatabase> &pgDb,
+    void renderSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb,
                             const int sequenceIndex) {
-        auto &sequence = pgDb->getSequences()[sequenceIndex];
+        auto& sequence = pgDb->getSequences()[sequenceIndex];
 
         constexpr ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -451,10 +451,10 @@ namespace PostgresHierarchy {
         ImGui::PopID();
     }
 
-    void renderCachedSequenceNode(const std::shared_ptr<PostgresDatabase> &pgDb,
-                                  const std::string &dbName, const int sequenceIndex) {
-        const auto &dbData = pgDb->getDatabaseData(dbName);
-        const auto &sequence = dbData.sequences[sequenceIndex];
+    void renderCachedSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                  const std::string& dbName, const int sequenceIndex) {
+        const auto& dbData = pgDb->getDatabaseData(dbName);
+        const auto& sequence = dbData.sequences[sequenceIndex];
 
         constexpr ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -488,9 +488,9 @@ namespace PostgresHierarchy {
         ImGui::PopID();
     }
 
-    void renderCachedSequencesSection(const std::shared_ptr<PostgresDatabase> &pgDb,
-                                      const std::string &dbName) {
-        auto &dbData = pgDb->getDatabaseData(dbName);
+    void renderCachedSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                      const std::string& dbName) {
+        auto& dbData = pgDb->getDatabaseData(dbName);
 
         ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |

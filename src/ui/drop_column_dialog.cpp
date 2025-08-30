@@ -4,9 +4,9 @@
 #include "themes.hpp"
 #include "ui/log_panel.hpp"
 
-void DropColumnDialog::showDropColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                            const std::string &tableName,
-                                            const std::string &columnName) {
+void DropColumnDialog::showDropColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                                            const std::string& tableName,
+                                            const std::string& columnName) {
     database = db;
     targetTableName = tableName;
     targetColumnName = columnName;
@@ -32,7 +32,7 @@ void DropColumnDialog::renderDialog() {
 
     if (ImGui::BeginPopupModal(title, &isOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
         // Warning icon and message
-        const auto &theme =
+        const auto& theme =
             Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
         ImGui::PushStyleColor(ImGuiCol_Text, theme.peach); // Warning color
         ImGui::Text("⚠️ Warning: This action cannot be undone!");
@@ -121,7 +121,7 @@ bool DropColumnDialog::executeDropColumn() {
 
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to drop column: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;

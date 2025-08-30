@@ -6,20 +6,20 @@
 #include <algorithm>
 #include <iostream>
 
-void TabManager::addTab(const std::shared_ptr<Tab> &tab) {
+void TabManager::addTab(const std::shared_ptr<Tab>& tab) {
     tabs.push_back(tab);
 }
 
-void TabManager::removeTab(const std::shared_ptr<Tab> &tab) {
+void TabManager::removeTab(const std::shared_ptr<Tab>& tab) {
     const auto it = std::ranges::find(tabs, tab);
     if (it != tabs.end()) {
         tabs.erase(it);
     }
 }
 
-void TabManager::closeTab(const std::string &name) {
+void TabManager::closeTab(const std::string& name) {
     const auto it = std::ranges::find_if(
-        tabs, [&name](const std::shared_ptr<Tab> &tab) { return tab->getName() == name; });
+        tabs, [&name](const std::shared_ptr<Tab>& tab) { return tab->getName() == name; });
 
     if (it != tabs.end()) {
         tabs.erase(it);
@@ -30,15 +30,15 @@ void TabManager::closeAllTabs() {
     tabs.clear();
 }
 
-std::shared_ptr<Tab> TabManager::findTab(const std::string &name) const {
+std::shared_ptr<Tab> TabManager::findTab(const std::string& name) const {
     const auto it = std::ranges::find_if(
-        tabs, [&name](const std::shared_ptr<Tab> &tab) { return tab->getName() == name; });
+        tabs, [&name](const std::shared_ptr<Tab>& tab) { return tab->getName() == name; });
 
     return (it != tabs.end()) ? *it : nullptr;
 }
 
-std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInterface> &database,
-                                              const std::string &tableName) const {
+std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInterface>& database,
+                                              const std::string& tableName) const {
     // Use Table.fullName for precise tab identification - this handles cases where:
     // - Same table name exists in different databases within the same connection
     // - Same table name exists in different schemas (PostgreSQL)
@@ -46,7 +46,7 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInte
     std::string tableFullName;
 
     // Search in tables
-    for (const auto &table : database->getTables()) {
+    for (const auto& table : database->getTables()) {
         if (table.name == tableName) {
             tableFullName = table.fullName;
             break;
@@ -55,7 +55,7 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInte
 
     // If not found in tables, search in views
     if (tableFullName.empty()) {
-        for (const auto &view : database->getViews()) {
+        for (const auto& view : database->getViews()) {
             if (view.name == tableName) {
                 tableFullName = view.fullName;
                 break;
@@ -65,7 +65,7 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInte
 
     // If we still don't have a fullName, fall back to basic identification
     if (tableFullName.empty()) {
-        for (auto &tab : tabs) {
+        for (auto& tab : tabs) {
             if (tab->getType() == TabType::TABLE_VIEWER) {
                 const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
                 if (tableTab && tableTab->getServerDatabase() == database &&
@@ -78,7 +78,7 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInte
     }
 
     // Use fullName for precise tab identification
-    for (auto &tab : tabs) {
+    for (auto& tab : tabs) {
         if (tab->getType() == TabType::TABLE_VIEWER) {
             const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
             if (tableTab && tableTab->getDatabasePath() == tableFullName) {
@@ -89,14 +89,14 @@ std::shared_ptr<Tab> TabManager::findTableTab(const std::shared_ptr<DatabaseInte
     return nullptr;
 }
 
-bool TabManager::hasTab(const std::string &name) const {
+bool TabManager::hasTab(const std::string& name) const {
     return findTab(name) != nullptr;
 }
 
 std::shared_ptr<Tab>
-TabManager::createSQLEditorTab(const std::string &name,
-                               const std::shared_ptr<DatabaseInterface> &database,
-                               const std::string &selectedDatabaseName) {
+TabManager::createSQLEditorTab(const std::string& name,
+                               const std::shared_ptr<DatabaseInterface>& database,
+                               const std::string& selectedDatabaseName) {
     std::string tabName;
     if (name.empty()) {
         // Generate a name based on the database connection if available
@@ -145,15 +145,15 @@ TabManager::createSQLEditorTab(const std::string &name,
     addTab(tab);
 
     // Force docking layout to be rebuilt to include the new tab
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
     app.resetDockingLayout();
 
     return tab;
 }
 
 std::shared_ptr<Tab>
-TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &database,
-                                 const std::string &tableName) {
+TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface>& database,
+                                 const std::string& tableName) {
     if (!database) {
         std::cout << "Cannot create table viewer tab: database is null" << std::endl;
         return nullptr;
@@ -173,7 +173,7 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
     std::string tableFullName;
 
     // Search in tables first
-    for (const auto &table : database->getTables()) {
+    for (const auto& table : database->getTables()) {
         if (table.name == tableName) {
             tableFullName = table.fullName;
             break;
@@ -182,7 +182,7 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
 
     // If not found in tables, search in views
     if (tableFullName.empty()) {
-        for (const auto &view : database->getViews()) {
+        for (const auto& view : database->getViews()) {
             if (view.name == tableName) {
                 tableFullName = view.fullName;
                 break;
@@ -245,7 +245,7 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
     addTab(tab);
 
     // Force docking layout to be rebuilt to include the new tab
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
     app.resetDockingLayout();
 
     std::cout << "Created new tab for table: " << tableName << " with fullName: " << tableFullName
@@ -256,7 +256,7 @@ TabManager::createTableViewerTab(const std::shared_ptr<DatabaseInterface> &datab
 void TabManager::renderTabs() {
     // Render each tab as a separate dockable window
     for (auto it = tabs.begin(); it != tabs.end();) {
-        const auto &tab = *it;
+        const auto& tab = *it;
 
         // Handle tab focusing by setting next window focus
         if (tab->shouldFocus()) {
@@ -291,7 +291,7 @@ void TabManager::renderEmptyState() {
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2 - 40);
 
     // Center the text
-    const char *text = "Connect to a database to get started";
+    const char* text = "Connect to a database to get started";
     float textWidth = ImGui::CalcTextSize(text).x;
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) / 2);
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);

@@ -8,7 +8,7 @@ namespace fs = std::filesystem;
 AppState::AppState() : db(nullptr) {
     fs::path dbPath_;
 
-    if (const char *home = std::getenv("HOME")) {
+    if (const char* home = std::getenv("HOME")) {
         dbPath_ = fs::path(home) / ".dear-sql" / "app_state.db";
     } else {
         dbPath_ = fs::path("./app_state.db");
@@ -81,7 +81,7 @@ bool AppState::createTables() {
         SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name='workspace_id';
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, checkColumnSql.c_str(), -1, &stmt, nullptr);
     if (rc == SQLITE_OK) {
         bool columnExists = false;
@@ -106,8 +106,8 @@ bool AppState::createTables() {
     return success;
 }
 
-bool AppState::executeSQL(const std::string &sql) const {
-    char *errMsg = nullptr;
+bool AppState::executeSQL(const std::string& sql) const {
+    char* errMsg = nullptr;
     const int rc = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg);
 
     if (rc != SQLITE_OK) {
@@ -119,14 +119,14 @@ bool AppState::executeSQL(const std::string &sql) const {
     return true;
 }
 
-bool AppState::saveConnection(const SavedConnection &connection) const {
+bool AppState::saveConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?);
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -176,7 +176,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         ORDER BY last_used DESC;
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -187,23 +187,21 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         SavedConnection conn;
         conn.id = sqlite3_column_int(stmt, 0);
-        conn.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        conn.type = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+        conn.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        conn.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
 
-        const auto host = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+        const auto host = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         conn.host = host ? host : "";
 
         conn.port = sqlite3_column_int(stmt, 4);
 
-        const auto database = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+        const auto database = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
         conn.database = database ? database : "";
 
         // Decrypt sensitive data
-        const auto *encryptedUsername =
-            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-        const auto *encryptedPassword =
-            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
-        const auto *saltStr = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
+        const auto* encryptedUsername = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        const auto* encryptedPassword = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        const auto* saltStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
 
         try {
             if (saltStr && strlen(saltStr) > 0) {
@@ -215,7 +213,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 if (encryptedUsername && strlen(encryptedUsername) > 0) {
                     try {
                         conn.username = CryptoUtils::decrypt(encryptedUsername, encryptionKey);
-                    } catch (const std::exception &e) {
+                    } catch (const std::exception& e) {
                         std::cerr << "Failed to decrypt username for connection " << conn.name
                                   << ": " << e.what() << std::endl;
                         conn.username = "";
@@ -228,7 +226,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 if (encryptedPassword && strlen(encryptedPassword) > 0) {
                     try {
                         conn.password = CryptoUtils::decrypt(encryptedPassword, encryptionKey);
-                    } catch (const std::exception &e) {
+                    } catch (const std::exception& e) {
                         std::cerr << "Failed to decrypt password for connection " << conn.name
                                   << ": " << e.what() << std::endl;
                         conn.password = "";
@@ -240,17 +238,17 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 conn.username = encryptedUsername ? encryptedUsername : "";
                 conn.password = encryptedPassword ? encryptedPassword : "";
             }
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             std::cerr << "Failed to process credentials for connection " << conn.name << ": "
                       << e.what() << std::endl;
             conn.username = "";
             conn.password = "";
         }
 
-        const auto *path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
+        const auto* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
         conn.path = path ? path : "";
 
-        const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
+        const auto* lastUsed = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
@@ -265,7 +263,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
 bool AppState::deleteConnection(const int connectionId) const {
     const std::string sql = "DELETE FROM saved_connections WHERE id = ?;";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -284,7 +282,7 @@ bool AppState::updateLastUsed(const int connectionId) const {
     const std::string sql =
         "UPDATE saved_connections SET last_used = CURRENT_TIMESTAMP WHERE id = ?;";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -299,13 +297,13 @@ bool AppState::updateLastUsed(const int connectionId) const {
     return rc == SQLITE_DONE;
 }
 
-bool AppState::setSetting(const std::string &key, const std::string &value) const {
+bool AppState::setSetting(const std::string& key, const std::string& value) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO app_settings (key, value, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP);
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -322,10 +320,10 @@ bool AppState::setSetting(const std::string &key, const std::string &value) cons
     return rc == SQLITE_DONE;
 }
 
-std::string AppState::getSetting(const std::string &key, const std::string &defaultValue) const {
+std::string AppState::getSetting(const std::string& key, const std::string& defaultValue) const {
     const std::string sql = "SELECT value FROM app_settings WHERE key = ?;";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -337,7 +335,7 @@ std::string AppState::getSetting(const std::string &key, const std::string &defa
 
     std::string result = defaultValue;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-        const auto value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        const auto value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         if (value) {
             result = value;
         }
@@ -347,13 +345,13 @@ std::string AppState::getSetting(const std::string &key, const std::string &defa
     return result;
 }
 
-int AppState::saveWorkspace(const Workspace &workspace) const {
+int AppState::saveWorkspace(const Workspace& workspace) const {
     const std::string sql = R"(
         INSERT INTO workspaces (name, description, last_used)
         VALUES (?, ?, CURRENT_TIMESTAMP);
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -383,7 +381,7 @@ std::vector<Workspace> AppState::getWorkspaces() const {
         ORDER BY last_used DESC;
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -394,15 +392,15 @@ std::vector<Workspace> AppState::getWorkspaces() const {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         Workspace workspace;
         workspace.id = sqlite3_column_int(stmt, 0);
-        workspace.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+        workspace.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
 
-        const auto *description = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+        const auto* description = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         workspace.description = description ? description : "";
 
-        const auto *createdAt = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+        const auto* createdAt = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         workspace.createdAt = createdAt ? createdAt : "";
 
-        const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+        const auto* lastUsed = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
         workspace.lastUsed = lastUsed ? lastUsed : "";
 
         workspaces.push_back(workspace);
@@ -421,7 +419,7 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
     // Move all connections to default workspace before deleting
     const std::string moveConnectionsSql =
         "UPDATE saved_connections SET workspace_id = 1 WHERE workspace_id = ?;";
-    sqlite3_stmt *moveStmt;
+    sqlite3_stmt* moveStmt;
     int rc = sqlite3_prepare_v2(db, moveConnectionsSql.c_str(), -1, &moveStmt, nullptr);
     if (rc == SQLITE_OK) {
         sqlite3_bind_int(moveStmt, 1, workspaceId);
@@ -431,7 +429,7 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
 
     // Delete the workspace
     const std::string sql = "DELETE FROM workspaces WHERE id = ?;";
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -450,7 +448,7 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
 bool AppState::updateWorkspaceLastUsed(const int workspaceId) const {
     const std::string sql = "UPDATE workspaces SET last_used = CURRENT_TIMESTAMP WHERE id = ?;";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -476,7 +474,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
         ORDER BY last_used DESC;
     )";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     const int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -490,23 +488,21 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         SavedConnection conn;
         conn.id = sqlite3_column_int(stmt, 0);
-        conn.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
-        conn.type = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+        conn.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        conn.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
 
-        const auto host = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+        const auto host = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         conn.host = host ? host : "";
 
         conn.port = sqlite3_column_int(stmt, 4);
 
-        const auto database = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+        const auto database = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
         conn.database = database ? database : "";
 
         // Decrypt sensitive data (similar to getSavedConnections)
-        const auto *encryptedUsername =
-            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 6));
-        const auto *encryptedPassword =
-            reinterpret_cast<const char *>(sqlite3_column_text(stmt, 7));
-        const auto *saltStr = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
+        const auto* encryptedUsername = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        const auto* encryptedPassword = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        const auto* saltStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
 
         try {
             if (saltStr && strlen(saltStr) > 0) {
@@ -517,7 +513,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 if (encryptedUsername && strlen(encryptedUsername) > 0) {
                     try {
                         conn.username = CryptoUtils::decrypt(encryptedUsername, encryptionKey);
-                    } catch (const std::exception &e) {
+                    } catch (const std::exception& e) {
                         conn.username = "";
                     }
                 } else {
@@ -527,7 +523,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 if (encryptedPassword && strlen(encryptedPassword) > 0) {
                     try {
                         conn.password = CryptoUtils::decrypt(encryptedPassword, encryptionKey);
-                    } catch (const std::exception &e) {
+                    } catch (const std::exception& e) {
                         conn.password = "";
                     }
                 } else {
@@ -537,15 +533,15 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 conn.username = encryptedUsername ? encryptedUsername : "";
                 conn.password = encryptedPassword ? encryptedPassword : "";
             }
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             conn.username = "";
             conn.password = "";
         }
 
-        const auto *path = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 8));
+        const auto* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
         conn.path = path ? path : "";
 
-        const auto *lastUsed = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
+        const auto* lastUsed = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
@@ -560,7 +556,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
 bool AppState::moveConnectionToWorkspace(const int connectionId, const int workspaceId) const {
     const std::string sql = "UPDATE saved_connections SET workspace_id = ? WHERE id = ?;";
 
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {
@@ -580,7 +576,7 @@ bool AppState::moveConnectionToWorkspace(const int connectionId, const int works
 bool AppState::ensureDefaultWorkspace() const {
     // Check if default workspace exists
     const std::string checkSql = "SELECT COUNT(*) FROM workspaces WHERE id = 1;";
-    sqlite3_stmt *stmt;
+    sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, checkSql.c_str(), -1, &stmt, nullptr);
 
     if (rc != SQLITE_OK) {

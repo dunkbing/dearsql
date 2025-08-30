@@ -21,7 +21,7 @@ void FileDialog::cleanup() {
 }
 
 std::shared_ptr<DatabaseInterface> FileDialog::openSQLiteFile() {
-    nfdchar_t *outPath;
+    nfdchar_t* outPath;
     constexpr nfdfilteritem_t filterItem[2] = {{"SQLite Database", "db,sqlite,sqlite3"},
                                                {"All Files", "*"}};
 

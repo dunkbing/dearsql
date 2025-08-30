@@ -16,32 +16,32 @@
 
 // Toolbar delegate interface
 @interface ToolbarDelegate : NSObject <NSToolbarDelegate>
-@property(nonatomic, assign) Application *app;
-@property(nonatomic, strong) NSPopUpButton *workspaceDropdown;
+@property(nonatomic, assign) Application* app;
+@property(nonatomic, strong) NSPopUpButton* workspaceDropdown;
 @end
 
 @implementation ToolbarDelegate
-- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
+- (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar {
     return @[ @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier, @"LogPanelToggle" ];
 }
 
-- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
+- (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar {
     return @[
         @"SidebarToggle", @"WorkspaceSelector", @"LogPanelToggle",
         NSToolbarFlexibleSpaceItemIdentifier
     ];
 }
 
-- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
+- (NSToolbarItem*)toolbar:(NSToolbar*)toolbar
         itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
     willBeInsertedIntoToolbar:(BOOL)flag {
     if ([itemIdentifier isEqualToString:@"SidebarToggle"]) {
-        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"";
         item.paletteLabel = @"Toggle Sidebar";
         item.toolTip = @"Show/Hide Sidebar";
 
-        NSButton *button = [[NSButton alloc] init];
+        NSButton* button = [[NSButton alloc] init];
         [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
                                    accessibilityDescription:@"Toggle Sidebar"]];
         [button setButtonType:NSButtonTypeMomentaryPushIn];
@@ -53,7 +53,7 @@
         item.view = button;
         return item;
     } else if ([itemIdentifier isEqualToString:@"WorkspaceSelector"]) {
-        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"Workspace";
         item.paletteLabel = @"Workspace Selector";
         item.toolTip = @"Select Workspace";
@@ -69,12 +69,12 @@
         item.view = self.workspaceDropdown;
         return item;
     } else if ([itemIdentifier isEqualToString:@"LogPanelToggle"]) {
-        NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"";
         item.paletteLabel = @"Toggle Log Panel";
         item.toolTip = @"Show/Hide Log Panel";
 
-        NSButton *button = [[NSButton alloc] init];
+        NSButton* button = [[NSButton alloc] init];
         [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.right"
                                    accessibilityDescription:@"Toggle Log Panel"]];
         [button setButtonType:NSButtonTypeMomentaryPushIn];
@@ -98,7 +98,7 @@
                 self.app->getDatabaseSidebar()->showConnectionDialog();
             }
         }
-    } @catch (NSException *exception) {
+    } @catch (NSException* exception) {
         NSLog(@"Exception in connectButtonClicked: %@", exception);
     }
 }
@@ -108,7 +108,7 @@
         if (self.app) {
             self.app->onSidebarToggleClicked();
         }
-    } @catch (NSException *exception) {
+    } @catch (NSException* exception) {
         NSLog(@"Exception in sidebarToggleClicked: %@", exception);
     }
 }
@@ -118,7 +118,7 @@
         if (self.app) {
             self.app->onLogPanelToggleClicked();
         }
-    } @catch (NSException *exception) {
+    } @catch (NSException* exception) {
         NSLog(@"Exception in logPanelToggleClicked: %@", exception);
     }
 }
@@ -128,12 +128,12 @@
         if (self.app && self.workspaceDropdown) {
             NSInteger selectedIndex = [self.workspaceDropdown indexOfSelectedItem];
             if (selectedIndex >= 0) {
-                NSMenuItem *selectedItem = [self.workspaceDropdown itemAtIndex:selectedIndex];
+                NSMenuItem* selectedItem = [self.workspaceDropdown itemAtIndex:selectedIndex];
                 int workspaceId = (int)selectedItem.tag;
                 self.app->setCurrentWorkspace(workspaceId);
             }
         }
-    } @catch (NSException *exception) {
+    } @catch (NSException* exception) {
         NSLog(@"Exception in workspaceChanged: %@", exception);
     }
 }
@@ -148,11 +148,11 @@
     auto workspaces = self.app->getWorkspaces();
     int currentWorkspaceId = self.app->getCurrentWorkspaceId();
 
-    for (const auto &workspace : workspaces) {
-        NSString *title = [NSString stringWithUTF8String:workspace.name.c_str()];
+    for (const auto& workspace : workspaces) {
+        NSString* title = [NSString stringWithUTF8String:workspace.name.c_str()];
         [self.workspaceDropdown addItemWithTitle:title];
 
-        NSMenuItem *item = [self.workspaceDropdown lastItem];
+        NSMenuItem* item = [self.workspaceDropdown lastItem];
         item.tag = workspace.id;
 
         if (workspace.id == currentWorkspaceId) {
@@ -162,7 +162,7 @@
 
     // Add "New Workspace..." option
     [self.workspaceDropdown.menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *newWorkspaceItem = [[NSMenuItem alloc] initWithTitle:@"New Workspace..."
+    NSMenuItem* newWorkspaceItem = [[NSMenuItem alloc] initWithTitle:@"New Workspace..."
                                                               action:@selector(createNewWorkspace:)
                                                        keyEquivalent:@""];
     newWorkspaceItem.target = self;
@@ -175,19 +175,19 @@
             return;
 
         // Get the main window from the application
-        NSWindow *mainWindow = nil;
-        GLFWwindow *glfwWindow = self.app->getWindow();
+        NSWindow* mainWindow = nil;
+        GLFWwindow* glfwWindow = self.app->getWindow();
         if (glfwWindow) {
             mainWindow = glfwGetCocoaWindow(glfwWindow);
         }
 
-        NSAlert *alert = [[NSAlert alloc] init];
+        NSAlert* alert = [[NSAlert alloc] init];
         alert.messageText = @"Create New Workspace";
         alert.informativeText = @"Enter a name for the new workspace:";
         [alert addButtonWithTitle:@"Create"];
         [alert addButtonWithTitle:@"Cancel"];
 
-        NSTextField *textField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+        NSTextField* textField = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
         textField.placeholderString = @"Workspace name";
         alert.accessoryView = textField;
 
@@ -195,7 +195,7 @@
             [alert beginSheetModalForWindow:mainWindow
                           completionHandler:^(NSModalResponse returnCode) {
                             if (returnCode == NSAlertFirstButtonReturn) {
-                                NSString *workspaceName = textField.stringValue;
+                                NSString* workspaceName = textField.stringValue;
                                 if (workspaceName.length > 0 && self.app) {
                                     std::string name = [workspaceName UTF8String];
                                     int newWorkspaceId = self.app->createWorkspace(name);
@@ -209,7 +209,7 @@
             // Fallback to modal dialog if no main window
             NSModalResponse returnCode = [alert runModal];
             if (returnCode == NSAlertFirstButtonReturn) {
-                NSString *workspaceName = textField.stringValue;
+                NSString* workspaceName = textField.stringValue;
                 if (workspaceName.length > 0 && self.app) {
                     std::string name = [workspaceName UTF8String];
                     int newWorkspaceId = self.app->createWorkspace(name);
@@ -219,7 +219,7 @@
                 }
             }
         }
-    } @catch (NSException *exception) {
+    } @catch (NSException* exception) {
         NSLog(@"Exception in createNewWorkspace: %@", exception);
     }
 }
@@ -228,7 +228,7 @@
 
 #endif
 
-MacOSPlatform::MacOSPlatform(Application *app) : app_(app), window_(nullptr) {
+MacOSPlatform::MacOSPlatform(Application* app) : app_(app), window_(nullptr) {
 #ifdef USE_METAL_BACKEND
     toolbarDelegate_ = nullptr;
     metalDevice_ = nullptr;
@@ -241,7 +241,7 @@ MacOSPlatform::~MacOSPlatform() {
     cleanup();
 }
 
-bool MacOSPlatform::initializePlatform(GLFWwindow *window) {
+bool MacOSPlatform::initializePlatform(GLFWwindow* window) {
     window_ = window;
 
 #ifdef USE_METAL_BACKEND
@@ -259,8 +259,8 @@ bool MacOSPlatform::initializePlatform(GLFWwindow *window) {
     }
 
     // Set up Metal layer
-    NSWindow *nsWindow = glfwGetCocoaWindow(window);
-    CAMetalLayer *layer = [CAMetalLayer layer];
+    NSWindow* nsWindow = glfwGetCocoaWindow(window);
+    CAMetalLayer* layer = [CAMetalLayer layer];
     layer.device = (id<MTLDevice>)metalDevice_;
     layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     layer.displaySyncEnabled = YES; // vsync
@@ -285,7 +285,7 @@ bool MacOSPlatform::initializeImGuiBackend() {
 void MacOSPlatform::setupTitlebar() {
 #ifdef USE_METAL_BACKEND
     // Get the native NSWindow from GLFW
-    NSWindow *nsWindow = glfwGetCocoaWindow(window_);
+    NSWindow* nsWindow = glfwGetCocoaWindow(window_);
     if (!nsWindow) {
         std::cerr << "Failed to get NSWindow from GLFW" << std::endl;
         return;
@@ -302,10 +302,10 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_.app = app_;
 
     // Create custom title bar accessory view with sidebar and plus buttons
-    NSView *buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
+    NSView* buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
 
     // Sidebar toggle button
-    NSButton *sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
+    NSButton* sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
     [sidebarButton setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
                                       accessibilityDescription:@"Toggle Sidebar"]];
     [sidebarButton setButtonType:NSButtonTypeMomentaryPushIn];
@@ -316,7 +316,7 @@ void MacOSPlatform::setupTitlebar() {
     [buttonContainer addSubview:sidebarButton];
 
     // Plus button to add database connection
-    NSButton *plusButton = [[NSButton alloc] initWithFrame:NSMakeRect(32, 10, 30, 30)];
+    NSButton* plusButton = [[NSButton alloc] initWithFrame:NSMakeRect(32, 10, 30, 30)];
     [plusButton setImage:[NSImage imageWithSystemSymbolName:@"plus"
                                    accessibilityDescription:@"Add Database Connection"]];
     [plusButton setButtonType:NSButtonTypeMomentaryPushIn];
@@ -326,7 +326,7 @@ void MacOSPlatform::setupTitlebar() {
     [plusButton setBordered:NO];
     [buttonContainer addSubview:plusButton];
 
-    NSTitlebarAccessoryViewController *accessoryController =
+    NSTitlebarAccessoryViewController* accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];
     accessoryController.view = buttonContainer;
     accessoryController.layoutAttribute = NSLayoutAttributeLeading;
@@ -334,7 +334,7 @@ void MacOSPlatform::setupTitlebar() {
     [nsWindow addTitlebarAccessoryViewController:accessoryController];
 
     // Connect button
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
+    NSToolbar* toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
     toolbar.allowsUserCustomization = NO;
     toolbar.delegate = toolbarDelegate_;
@@ -345,8 +345,8 @@ void MacOSPlatform::setupTitlebar() {
               << std::endl;
 
     // Set background color to match app theme
-    const auto &colors = app_->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    NSColor *bgColor = [NSColor colorWithRed:colors.base.x
+    const auto& colors = app_->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    NSColor* bgColor = [NSColor colorWithRed:colors.base.x
                                        green:colors.base.y
                                         blue:colors.base.z
                                        alpha:colors.base.w];
@@ -358,7 +358,7 @@ void MacOSPlatform::setupTitlebar() {
 
 float MacOSPlatform::getTitlebarHeight() const {
 #ifdef USE_METAL_BACKEND
-    NSWindow *nsWindow = glfwGetCocoaWindow(window_);
+    NSWindow* nsWindow = glfwGetCocoaWindow(window_);
     if (!nsWindow) {
         return 0.0f;
     }
@@ -376,7 +376,7 @@ void MacOSPlatform::onSidebarToggleClicked() {
     std::cout << "Sidebar toggle clicked" << std::endl;
     try {
         app_->setSidebarVisible(!app_->isSidebarVisible());
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Exception in onSidebarToggleClicked: " << e.what() << std::endl;
     }
 }
@@ -385,7 +385,7 @@ void MacOSPlatform::onLogPanelToggleClicked() {
     std::cout << "Log panel toggle clicked" << std::endl;
     try {
         app_->setLogPanelVisible(!app_->isLogPanelVisible());
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Exception in onLogPanelToggleClicked: " << e.what() << std::endl;
     }
 }
@@ -405,13 +405,13 @@ void MacOSPlatform::renderFrame() {
 #ifdef USE_METAL_BACKEND
     @autoreleasepool {
         // Get the Metal drawable
-        id<CAMetalDrawable> drawable = [(CAMetalLayer *)metalLayer_ nextDrawable];
+        id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer_ nextDrawable];
         if (!drawable) {
             return;
         }
 
         // Create render pass descriptor
-        MTLRenderPassDescriptor *renderPassDescriptor =
+        MTLRenderPassDescriptor* renderPassDescriptor =
             [MTLRenderPassDescriptor renderPassDescriptor];
         renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
         renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -440,7 +440,7 @@ void MacOSPlatform::renderFrame() {
         glfwGetFramebufferSize(window_, &display_w, &display_h);
 
         // Update Metal layer drawable size
-        ((CAMetalLayer *)metalLayer_).drawableSize = CGSizeMake(display_w, display_h);
+        ((CAMetalLayer*)metalLayer_).drawableSize = CGSizeMake(display_w, display_h);
 
         // Render ImGui draw data
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);

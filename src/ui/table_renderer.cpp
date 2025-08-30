@@ -10,7 +10,7 @@ TableRenderer::TableRenderer() {
                         ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
 }
 
-TableRenderer::TableRenderer(const Config &config) : config(config) {
+TableRenderer::TableRenderer(const Config& config) : config(config) {
     // Set default table flags if none provided
     if (this->config.tableFlags == 0) {
         this->config.tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
@@ -19,15 +19,15 @@ TableRenderer::TableRenderer(const Config &config) : config(config) {
     }
 }
 
-void TableRenderer::setColumns(const std::vector<std::string> &columnNames) {
+void TableRenderer::setColumns(const std::vector<std::string>& columnNames) {
     columns = columnNames;
 }
 
-void TableRenderer::setData(const std::vector<std::vector<std::string>> &tableData) {
+void TableRenderer::setData(const std::vector<std::vector<std::string>>& tableData) {
     data = tableData;
 }
 
-void TableRenderer::setCellEditedStatus(const std::vector<std::vector<bool>> &editedCellsStatus) {
+void TableRenderer::setCellEditedStatus(const std::vector<std::vector<bool>>& editedCellsStatus) {
     editedCells = editedCellsStatus;
 }
 
@@ -36,7 +36,7 @@ void TableRenderer::setSelectedCell(int row, int col) {
     selectedCol = col;
 }
 
-void TableRenderer::render(const char *tableId) {
+void TableRenderer::render(const char* tableId) {
     if (columns.empty()) {
         ImGui::Text("No columns defined");
         return;
@@ -47,7 +47,7 @@ void TableRenderer::render(const char *tableId) {
         return;
     }
 
-    const auto &colors =
+    const auto& colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
 
     int colCount = static_cast<int>(columns.size());
@@ -66,14 +66,14 @@ void TableRenderer::render(const char *tableId) {
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
         }
 
-        for (const auto &colName : columns) {
+        for (const auto& colName : columns) {
             ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
         }
         ImGui::TableHeadersRow();
 
         // Render data rows
         for (int rowIdx = 0; rowIdx < static_cast<int>(data.size()); rowIdx++) {
-            const auto &row = data[rowIdx];
+            const auto& row = data[rowIdx];
             ImGui::TableNextRow();
 
             // Row number column
@@ -96,7 +96,7 @@ void TableRenderer::render(const char *tableId) {
 }
 
 void TableRenderer::renderCell(int row, int col) {
-    const auto &colors =
+    const auto& colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
 
     // Check if this cell is being edited
@@ -129,7 +129,7 @@ void TableRenderer::renderCell(int row, int col) {
             ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface2));
         }
 
-        const std::string &cellValue = data[row][col];
+        const std::string& cellValue = data[row][col];
 
         if (config.allowSelection) {
             handleCellInteraction(row, col, isSelected);
@@ -148,7 +148,7 @@ void TableRenderer::renderCell(int row, int col) {
 }
 
 void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
-    const std::string &cellValue = data[row][col];
+    const std::string& cellValue = data[row][col];
 
     if (ImGui::Selectable(cellValue.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
         // Single click - select cell
@@ -187,7 +187,7 @@ void TableRenderer::enterEditMode(int row, int col) {
         editingCol = col;
 
         // Copy current cell value to edit buffer
-        const std::string &currentValue = data[row][col];
+        const std::string& currentValue = data[row][col];
         strncpy(editBuffer, currentValue.c_str(), sizeof(editBuffer) - 1);
         editBuffer[sizeof(editBuffer) - 1] = '\0';
     }

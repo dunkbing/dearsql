@@ -35,18 +35,18 @@ public:
     bool initialize();
 
     // Connection history management
-    bool saveConnection(const SavedConnection &connection) const;
+    bool saveConnection(const SavedConnection& connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
     bool deleteConnection(int connectionId) const;
     bool updateLastUsed(int connectionId) const;
 
     // Settings management
-    bool setSetting(const std::string &key, const std::string &value) const;
-    [[nodiscard]] std::string getSetting(const std::string &key,
-                                         const std::string &defaultValue = "") const;
+    bool setSetting(const std::string& key, const std::string& value) const;
+    [[nodiscard]] std::string getSetting(const std::string& key,
+                                         const std::string& defaultValue = "") const;
 
     // Workspace management
-    [[nodiscard]] int saveWorkspace(const Workspace &workspace) const;
+    [[nodiscard]] int saveWorkspace(const Workspace& workspace) const;
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
     [[nodiscard]] bool deleteWorkspace(int workspaceId) const;
     bool updateWorkspaceLastUsed(int workspaceId) const;
@@ -55,9 +55,9 @@ public:
     bool ensureDefaultWorkspace() const;
 
 private:
-    sqlite3 *db;
+    sqlite3* db;
     std::string dbPath;
 
     bool createTables();
-    bool executeSQL(const std::string &sql) const;
+    bool executeSQL(const std::string& sql) const;
 };

@@ -93,7 +93,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                     conn.path = db->getPath();
                     conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
-                    const auto &app = Application::getInstance();
+                    const auto& app = Application::getInstance();
                     app.getAppState()->saveConnection(conn);
 
                     result = db;
@@ -140,7 +140,7 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
         ImGui::Spacing();
 
         // Add visual styling for input fields using Theme colors
-        const auto &colors =
+        const auto& colors =
             Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
@@ -273,7 +273,7 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
         ImGui::Spacing();
 
         // Add visual styling for input fields using Theme colors
-        const auto &colors =
+        const auto& colors =
             Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
@@ -577,7 +577,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
 }
 
 void DatabaseConnectionDialog::loadSavedConnections() {
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
     savedConnections = app.getAppState()->getSavedConnections();
 }
 
@@ -596,7 +596,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
         } else {
             // List saved connections
             for (size_t i = 0; i < savedConnections.size(); i++) {
-                const auto &conn = savedConnections[i];
+                const auto& conn = savedConnections[i];
 
                 bool isSelected = (selectedSavedConnection == static_cast<int>(i));
                 if (ImGui::Selectable((conn.name + " (" + conn.type + ")").c_str(), &isSelected)) {
@@ -637,7 +637,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
         ImGui::Separator();
 
         if (ImGui::Button("Connect", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
-            const auto &conn = savedConnections[selectedSavedConnection];
+            const auto& conn = savedConnections[selectedSavedConnection];
 
             if (conn.type == "postgresql") {
                 // Fill in the PostgreSQL fields and connect
@@ -653,7 +653,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        const auto &app = Application::getInstance();
+                        const auto& app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;
@@ -677,7 +677,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        auto &app = Application::getInstance();
+                        auto& app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;
@@ -714,7 +714,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        const auto &app = Application::getInstance();
+                        const auto& app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;
@@ -729,7 +729,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
 
         ImGui::SameLine();
         if (ImGui::Button("Delete", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
-            const auto &app = Application::getInstance();
+            const auto& app = Application::getInstance();
             app.getAppState()->deleteConnection(savedConnections[selectedSavedConnection].id);
             loadSavedConnections(); // Refresh list
             selectedSavedConnection = -1;
@@ -804,7 +804,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
                                       std::string("Please fill in all required fields"));
             }
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
                                   std::string("Connection error: " + std::string(e.what())));
         }
@@ -840,7 +840,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.password = std::string(password);
             conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
-            const auto &app = Application::getInstance();
+            const auto& app = Application::getInstance();
             app.getAppState()->saveConnection(conn);
 
             result = db;

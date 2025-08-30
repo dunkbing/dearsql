@@ -95,8 +95,8 @@ namespace Theme {
     constexpr Colors MOCHA = NATIVE_DARK;
     constexpr Colors LATTE = NATIVE_LIGHT;
 
-    inline void ApplyNativeTheme(const Colors &colors) {
-        ImGuiStyle &style = ImGui::GetStyle();
+    inline void ApplyNativeTheme(const Colors& colors) {
+        ImGuiStyle& style = ImGui::GetStyle();
 
         // Native-like padding and spacing
         style.WindowPadding = ImVec2(16.0f, 16.0f);   // Larger padding for native feel
@@ -150,7 +150,7 @@ namespace Theme {
         style.WindowMinSize = ImVec2(200.0f, 200.0f); // Reasonable minimum size
 
         // Colors with native appearance
-        ImVec4 *colors_array = style.Colors;
+        ImVec4* colors_array = style.Colors;
         colors_array[ImGuiCol_Text] = colors.text;
         colors_array[ImGuiCol_TextDisabled] = colors.subtext0;
         colors_array[ImGuiCol_WindowBg] = colors.base;
@@ -213,7 +213,7 @@ namespace Theme {
     }
 
     // Legacy function for backward compatibility
-    inline void ApplyTheme(const Colors &colors) {
+    inline void ApplyTheme(const Colors& colors) {
         ApplyNativeTheme(colors);
     }
 } // namespace Theme

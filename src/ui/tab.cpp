@@ -20,9 +20,9 @@
 Tab::Tab(std::string name, const TabType type) : name(std::move(name)), type(type) {}
 
 // SQLEditorTab implementation
-SQLEditorTab::SQLEditorTab(const std::string &name,
-                           const std::shared_ptr<DatabaseInterface> &serverDatabase,
-                           const std::string &selectedDatabaseName)
+SQLEditorTab::SQLEditorTab(const std::string& name,
+                           const std::shared_ptr<DatabaseInterface>& serverDatabase,
+                           const std::string& selectedDatabaseName)
     : Tab(name, TabType::SQL_EDITOR), serverDatabase(serverDatabase),
       selectedDatabaseName(selectedDatabaseName), selectedSchemaName("") {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
@@ -46,7 +46,7 @@ SQLEditorTab::SQLEditorTab(const std::string &name,
                 }
 
                 if (!targetDb.empty()) {
-                    const auto &dbData = pgDb->getDatabaseData(targetDb);
+                    const auto& dbData = pgDb->getDatabaseData(targetDb);
                     if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
                         // Load schemas for target database with high priority
                         if (targetDb != pgDb->getDatabaseName()) {
@@ -91,7 +91,7 @@ SQLEditorTab::~SQLEditorTab() {
 }
 
 void SQLEditorTab::render() {
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
 
     // Check async query execution status
     checkQueryExecutionStatus();
@@ -198,7 +198,7 @@ void SQLEditorTab::render() {
                 } else {
                     // Fall back to selected database if no server database set
                     const int selectedDb = app.getSelectedDatabase();
-                    const auto &databases = app.getDatabases();
+                    const auto& databases = app.getDatabases();
                     if (selectedDb >= 0 && selectedDb < static_cast<int>(databases.size())) {
                         targetDb = databases[selectedDb];
                         // Update the server database reference
@@ -280,7 +280,7 @@ void SQLEditorTab::render() {
                 std::string targetDb =
                     selectedDatabaseName.empty() ? pgDb->getDatabaseName() : selectedDatabaseName;
                 if (!targetDb.empty()) {
-                    const auto &dbData = pgDb->getDatabaseData(targetDb);
+                    const auto& dbData = pgDb->getDatabaseData(targetDb);
                     if (dbData.loadingSchemas) {
                         isLoadingAnySchemas = true;
                     }
@@ -356,7 +356,7 @@ void SQLEditorTab::render() {
 
                         // Check schema loading status for all databases
                         if (pgDb->shouldShowAllDatabases()) {
-                            for (const auto &dbName : availableDatabases) {
+                            for (const auto& dbName : availableDatabases) {
                                 pgDb->checkSchemasStatusAsync(dbName);
                             }
 
@@ -368,7 +368,7 @@ void SQLEditorTab::render() {
 
                             // Ensure target database schemas are loaded first
                             if (!targetDb.empty()) {
-                                const auto &targetDbData = pgDb->getDatabaseData(targetDb);
+                                const auto& targetDbData = pgDb->getDatabaseData(targetDb);
                                 if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
                                     if (targetDb == pgDb->getDatabaseName()) {
                                         if (!pgDb->isLoadingSchemas()) {
@@ -381,9 +381,9 @@ void SQLEditorTab::render() {
                             }
 
                             // Load other databases' schemas on-demand (only when combo is opened)
-                            for (const auto &dbName : availableDatabases) {
+                            for (const auto& dbName : availableDatabases) {
                                 if (dbName != targetDb) {
-                                    const auto &dbData = pgDb->getDatabaseData(dbName);
+                                    const auto& dbData = pgDb->getDatabaseData(dbName);
                                     if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
                                         pgDb->startSchemasLoadAsync(dbName);
                                     }
@@ -416,7 +416,7 @@ void SQLEditorTab::render() {
                             mysqlDb->checkDatabasesStatusAsync();
                         }
 
-                        for (const auto &dbName : availableDatabases) {
+                        for (const auto& dbName : availableDatabases) {
                             const bool isSelected = (selectedDatabaseName == dbName);
                             if (ImGui::Selectable(dbName.c_str(), isSelected)) {
                                 // Switch database if needed
@@ -441,7 +441,7 @@ void SQLEditorTab::render() {
                 else if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
                     auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
                     if (pgDb) {
-                        for (const auto &dbName : availableDatabases) {
+                        for (const auto& dbName : availableDatabases) {
                             // Show database name as a non-selectable label
                             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
                             ImGui::Text("%s", dbName.c_str());
@@ -452,7 +452,7 @@ void SQLEditorTab::render() {
                             if (dbName == pgDb->getDatabaseName()) {
                                 // Current database - get schemas if loaded
                                 if (pgDb->areSchemasLoaded()) {
-                                    for (const auto &schema : pgDb->getSchemas()) {
+                                    for (const auto& schema : pgDb->getSchemas()) {
                                         schemas.push_back(schema.name);
                                     }
                                 } else if (!pgDb->isLoadingSchemas()) {
@@ -461,9 +461,9 @@ void SQLEditorTab::render() {
                                 }
                             } else {
                                 // Other databases - get cached schemas or load them
-                                const auto &dbData = pgDb->getDatabaseData(dbName);
+                                const auto& dbData = pgDb->getDatabaseData(dbName);
                                 if (dbData.schemasLoaded) {
-                                    for (const auto &schema : dbData.schemas) {
+                                    for (const auto& schema : dbData.schemas) {
                                         schemas.push_back(schema.name);
                                     }
                                 } else if (!dbData.loadingSchemas) {
@@ -474,7 +474,7 @@ void SQLEditorTab::render() {
                             }
 
                             // Show schemas indented under the database
-                            for (const auto &schemaName : schemas) {
+                            for (const auto& schemaName : schemas) {
                                 ImGui::Indent(16.0f);
                                 const bool isSelected = (selectedDatabaseName == dbName &&
                                                          selectedSchemaName == schemaName);
@@ -506,7 +506,7 @@ void SQLEditorTab::render() {
                                 ImGui::Text("  Loading schemas...");
                                 ImGui::Unindent(16.0f);
                             } else if (dbName != pgDb->getDatabaseName()) {
-                                const auto &dbData = pgDb->getDatabaseData(dbName);
+                                const auto& dbData = pgDb->getDatabaseData(dbName);
                                 if (dbData.loadingSchemas) {
                                     ImGui::Indent(16.0f);
                                     ImGui::Text("  Loading schemas...");
@@ -542,7 +542,7 @@ void SQLEditorTab::render() {
                                                    ? pgDb->getDatabaseName()
                                                    : selectedDatabaseName;
                         if (!targetDb.empty()) {
-                            const auto &dbData = pgDb->getDatabaseData(targetDb);
+                            const auto& dbData = pgDb->getDatabaseData(targetDb);
                             if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
                                 if (targetDb != pgDb->getDatabaseName()) {
                                     pgDb->startSchemasLoadAsync(targetDb);
@@ -590,14 +590,14 @@ void SQLEditorTab::render() {
                     if (pgDb->shouldShowAllDatabases()) {
                         // Multi-database mode: prioritize the target database
                         if (!targetDb.empty()) {
-                            const auto &dbData = pgDb->getDatabaseData(targetDb);
+                            const auto& dbData = pgDb->getDatabaseData(targetDb);
                             // Only auto-select if target database schemas are loaded and not
                             // loading
                             if (dbData.schemasLoaded && !dbData.loadingSchemas &&
                                 !dbData.schemas.empty()) {
                                 selectedDatabaseName = targetDb;
                                 // Select "public" schema if available, otherwise first schema
-                                for (const auto &schema : dbData.schemas) {
+                                for (const auto& schema : dbData.schemas) {
                                     if (schema.name == "public") {
                                         selectedSchemaName = schema.name;
                                         LogPanel::debug(
@@ -620,7 +620,7 @@ void SQLEditorTab::render() {
                             !pgDb->getSchemas().empty()) {
                             selectedDatabaseName = pgDb->getDatabaseName();
                             // Select "public" schema if available, otherwise first schema
-                            for (const auto &schema : pgDb->getSchemas()) {
+                            for (const auto& schema : pgDb->getSchemas()) {
                                 if (schema.name == "public") {
                                     selectedSchemaName = schema.name;
                                     LogPanel::debug(
@@ -723,8 +723,8 @@ void SQLEditorTab::render() {
     ImGui::EndChild(); // End SQLResults child window
 }
 
-void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface> &targetDb,
-                                            const std::string &query) {
+void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface>& targetDb,
+                                            const std::string& query) {
     if (isExecutingQuery) {
         return; // Already executing
     }
@@ -799,7 +799,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
             // Clear any previous error
             queryError.clear();
             queryResult.clear();
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             queryResult = "Error executing query: " + std::string(e.what());
             queryError = queryResult;
             hasStructuredResults = false;
@@ -818,7 +818,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
         queryExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             queryExecutionFuture.get();
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             if (!shouldCancelQuery) {
                 queryResult = "Error in async query execution: " + std::string(e.what());
                 queryError = queryResult;
@@ -843,7 +843,7 @@ void SQLEditorTab::cancelQueryExecution() {
     queryTableData.clear();
 }
 
-bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float minSize1,
+bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,
                                           float minSize2) const {
     constexpr float hoverThickness = 6.0f;
     constexpr float visualThickness = 2.0f;
@@ -902,7 +902,7 @@ bool SQLEditorTab::renderVerticalSplitter(const char *id, float *position, float
 }
 
 // TableViewerTab implementation
-TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath,
+TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
                                std::string tableName,
                                std::shared_ptr<DatabaseInterface> serverDatabase)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
@@ -918,7 +918,7 @@ TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath
     tableRenderer = std::make_unique<TableRenderer>(config);
 
     // Set up callbacks
-    tableRenderer->setOnCellEdit([this](int row, int col, const std::string &newValue) {
+    tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
         if (newValue != tableData[row][col]) {
             tableData[row][col] = newValue;
             hasChanges = true;
@@ -936,7 +936,7 @@ TableViewerTab::TableViewerTab(const std::string &name, std::string databasePath
 }
 
 void TableViewerTab::render() {
-    const auto &colors =
+    const auto& colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
 
     checkAsyncLoadStatus();
@@ -1112,7 +1112,7 @@ void TableViewerTab::refreshData() {
         loadingError.clear();
 
         // Clear edited cells tracking
-        for (auto &row : editedCells) {
+        for (auto& row : editedCells) {
             std::fill(row.begin(), row.end(), false);
         }
 
@@ -1131,7 +1131,7 @@ void TableViewerTab::saveChanges() {
     if (pendingUpdateSQL.empty()) {
         // No valid SQL generated, just clear changes
         hasChanges = false;
-        for (auto &row : editedCells) {
+        for (auto& row : editedCells) {
             std::fill(row.begin(), row.end(), false);
         }
         return;
@@ -1147,7 +1147,7 @@ void TableViewerTab::cancelChanges() {
     hasChanges = false;
 
     // Clear edited cells tracking
-    for (auto &row : editedCells) {
+    for (auto& row : editedCells) {
         std::fill(row.begin(), row.end(), false);
     }
 
@@ -1259,10 +1259,10 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     }
 
     // Find table columns
-    const auto &tables = serverDatabase->getTables();
-    for (const auto &table : tables) {
+    const auto& tables = serverDatabase->getTables();
+    for (const auto& table : tables) {
         if (table.name == tableName) {
-            for (const auto &column : table.columns) {
+            for (const auto& column : table.columns) {
                 if (column.isPrimaryKey) {
                     pkColumns.push_back(column.name);
                 }
@@ -1287,7 +1287,7 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::cout << "Generating UPDATE SQL for table: " << tableName << std::endl;
     std::cout << "Database type: " << (isSQLite ? "SQLite" : "Postgres") << std::endl;
     std::cout << "Primary key columns: ";
-    for (const auto &pk : pkColumns) {
+    for (const auto& pk : pkColumns) {
         std::cout << pk << " ";
     }
     std::cout << std::endl;
@@ -1299,8 +1299,8 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
                 continue; // Cell not edited
             }
 
-            const std::string &columnName = columnNames[colIdx];
-            const std::string &newValue = tableData[rowIdx][colIdx];
+            const std::string& columnName = columnNames[colIdx];
+            const std::string& newValue = tableData[rowIdx][colIdx];
 
             // Build UPDATE statement
             std::string sql;
@@ -1324,12 +1324,12 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
 
             if (!pkColumns.empty()) {
                 // Use primary key columns
-                for (const auto &pkCol : pkColumns) {
+                for (const auto& pkCol : pkColumns) {
                     auto pkColIt = std::ranges::find(columnNames, pkCol);
                     if (pkColIt != columnNames.end()) {
                         const int pkColIdx =
                             static_cast<int>(std::distance(columnNames.begin(), pkColIt));
-                        const std::string &pkValue = originalData[rowIdx][pkColIdx];
+                        const std::string& pkValue = originalData[rowIdx][pkColIdx];
 
                         if (isSQLite) {
                             whereConditions.push_back(std::format("{} = '{}'", pkCol, pkValue));
@@ -1341,7 +1341,7 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
             } else if (isSQLite) {
                 // For SQLite without primary key, use all columns as condition to identify the row
                 for (int condColIdx = 0; condColIdx < columnNames.size(); condColIdx++) {
-                    const std::string &condValue = originalData[rowIdx][condColIdx];
+                    const std::string& condValue = originalData[rowIdx][condColIdx];
                     if (condValue == "NULL") {
                         whereConditions.push_back(
                             std::format("{} IS NULL", columnNames[condColIdx]));
@@ -1353,7 +1353,7 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
             } else {
                 // For Postgres without primary key, use all columns as condition
                 for (int condColIdx = 0; condColIdx < columnNames.size(); condColIdx++) {
-                    const std::string &condValue = originalData[rowIdx][condColIdx];
+                    const std::string& condValue = originalData[rowIdx][condColIdx];
                     if (condValue == "NULL") {
                         whereConditions.push_back(
                             std::format("\"{}\" IS NULL", columnNames[condColIdx]));
@@ -1419,7 +1419,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::EndDisabled();
 
             ImGui::SameLine();
-            const auto &colors =
+            const auto& colors =
                 Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
             UIUtils::Spinner("##spinner", 8.0f, 2, ImGui::GetColorU32(colors.blue));
 
@@ -1439,7 +1439,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
                             bool allSuccess = true;
                             std::string errorMessage;
 
-                            for (const auto &sql : sqlStatements) {
+                            for (const auto& sql : sqlStatements) {
                                 std::cout << "Executing SQL: " << sql << std::endl;
                                 const std::string result = db->executeQuery(sql);
                                 std::cout << "SQL Result: " << result << std::endl;
@@ -1501,7 +1501,7 @@ void TableViewerTab::checkSQLExecutionStatus() {
                 // Mark changes as saved
                 hasChanges = false;
                 originalData = tableData;
-                for (auto &row : editedCells) {
+                for (auto& row : editedCells) {
                     std::fill(row.begin(), row.end(), false);
                 }
             } else {
@@ -1519,7 +1519,7 @@ void TableViewerTab::checkSQLExecutionStatus() {
                 dialogOpened = false;
             }
 
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             std::cerr << "Exception during SQL execution: " << e.what() << std::endl;
             executingSQL = false;
         }

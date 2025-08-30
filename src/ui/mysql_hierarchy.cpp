@@ -8,7 +8,7 @@
 #include <iostream>
 
 namespace MySQLHierarchy {
-    void renderMySQLHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
+    void renderMySQLHierarchy(const std::shared_ptr<MySQLDatabase>& mysqlDb) {
         if (mysqlDb->shouldShowAllDatabases()) {
             // Show all databases from the server
             renderAllDatabasesHierarchy(mysqlDb);
@@ -18,7 +18,7 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderSingleDatabaseHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
+    void renderSingleDatabaseHierarchy(const std::shared_ptr<MySQLDatabase>& mysqlDb) {
         // First show the connected database as a child node
         ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -55,7 +55,7 @@ namespace MySQLHierarchy {
         // Context menu for database node
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                auto &app = Application::getInstance();
+                auto& app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", mysqlDb, mysqlDb->getDatabaseName());
                 std::cout << "Creating new SQL editor for database: " << mysqlDb->getDatabaseName()
                           << std::endl;
@@ -90,7 +90,7 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderAllDatabasesHierarchy(const std::shared_ptr<MySQLDatabase> &mysqlDb) {
+    void renderAllDatabasesHierarchy(const std::shared_ptr<MySQLDatabase>& mysqlDb) {
         // Check for async database loading completion
         if (mysqlDb->isLoadingDatabases()) {
             mysqlDb->checkDatabasesStatusAsync();
@@ -113,7 +113,7 @@ namespace MySQLHierarchy {
             return;
         }
 
-        for (const auto &dbName : databases) {
+        for (const auto& dbName : databases) {
             ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                              ImGuiTreeNodeFlags_FramePadding;
@@ -143,7 +143,7 @@ namespace MySQLHierarchy {
             // Context menu for database node
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
                 if (ImGui::MenuItem("New SQL Editor")) {
-                    auto &app = Application::getInstance();
+                    auto& app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", mysqlDb, dbName);
                     std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
                 }
@@ -198,21 +198,21 @@ namespace MySQLHierarchy {
         }
     }
 
-    void renderTableNode(const std::shared_ptr<MySQLDatabase> &mysqlDb, int tableIndex) {
+    void renderTableNode(const std::shared_ptr<MySQLDatabase>& mysqlDb, int tableIndex) {
         HierarchyHelpers::renderTableNode(mysqlDb, tableIndex);
     }
 
-    void renderViewNode(const std::shared_ptr<MySQLDatabase> &mysqlDb, int viewIndex) {
+    void renderViewNode(const std::shared_ptr<MySQLDatabase>& mysqlDb, int viewIndex) {
         HierarchyHelpers::renderViewNode(mysqlDb, viewIndex);
     }
 
-    void renderCachedTableNode(const std::shared_ptr<MySQLDatabase> &mysqlDb,
-                               const std::string &dbName, int tableIndex) {
+    void renderCachedTableNode(const std::shared_ptr<MySQLDatabase>& mysqlDb,
+                               const std::string& dbName, int tableIndex) {
         HierarchyHelpers::renderCachedTableNode(mysqlDb, dbName, tableIndex);
     }
 
-    void renderCachedViewNode(const std::shared_ptr<MySQLDatabase> &mysqlDb,
-                              const std::string &dbName, int viewIndex) {
+    void renderCachedViewNode(const std::shared_ptr<MySQLDatabase>& mysqlDb,
+                              const std::string& dbName, int viewIndex) {
         HierarchyHelpers::renderCachedViewNode(mysqlDb, dbName, viewIndex);
     }
 

@@ -13,10 +13,10 @@
 
 class Application {
 public:
-    static Application &getInstance();
+    static Application& getInstance();
 
-    Application(const Application &) = delete;
-    Application &operator=(const Application &) = delete;
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
 
     // main app life-cycle
     bool initialize();
@@ -24,16 +24,16 @@ public:
     void cleanup();
 
     // Getters for managers and state
-    [[nodiscard]] TabManager *getTabManager() const {
+    [[nodiscard]] TabManager* getTabManager() const {
         return tabManager.get();
     }
-    [[nodiscard]] DatabaseSidebar *getDatabaseSidebar() const {
+    [[nodiscard]] DatabaseSidebar* getDatabaseSidebar() const {
         return databaseSidebar.get();
     }
-    [[nodiscard]] FileDialog *getFileDialog() const {
+    [[nodiscard]] FileDialog* getFileDialog() const {
         return fileDialog.get();
     }
-    [[nodiscard]] AppState *getAppState() const {
+    [[nodiscard]] AppState* getAppState() const {
         return appState.get();
     }
 
@@ -42,7 +42,7 @@ public:
         return darkTheme;
     }
     void setDarkTheme(bool dark);
-    [[nodiscard]] const Theme::Colors &getCurrentColors() const;
+    [[nodiscard]] const Theme::Colors& getCurrentColors() const;
 
     // Selection state
     [[nodiscard]] int getSelectedDatabase() const {
@@ -70,18 +70,18 @@ public:
     }
 
     // Database management
-    std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() {
+    std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {
         return databases;
     }
-    [[nodiscard]] const std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() const {
+    [[nodiscard]] const std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() const {
         return databases;
     }
-    void addDatabase(const std::shared_ptr<DatabaseInterface> &db);
+    void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
     void removeDatabase(int index);
     void restorePreviousConnections();
 
     // Window reference
-    [[nodiscard]] GLFWwindow *getWindow() const {
+    [[nodiscard]] GLFWwindow* getWindow() const {
         return window;
     }
 
@@ -114,7 +114,7 @@ public:
     [[nodiscard]] std::string getCurrentWorkspaceName() const;
     void setCurrentWorkspace(int workspaceId);
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
-    int createWorkspace(const std::string &name, const std::string &description = "");
+    int createWorkspace(const std::string& name, const std::string& description = "");
     bool deleteWorkspace(int workspaceId);
     void refreshWorkspaceConnections();
 
@@ -131,7 +131,7 @@ private:
     ~Application() = default;
 
     // Core components
-    GLFWwindow *window = nullptr;
+    GLFWwindow* window = nullptr;
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;

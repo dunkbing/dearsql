@@ -6,10 +6,10 @@ class Application;
 
 class DefaultPlatform final : public PlatformInterface {
 public:
-    explicit DefaultPlatform(Application *app);
+    explicit DefaultPlatform(Application* app);
     ~DefaultPlatform() override = default;
 
-    bool initializePlatform(GLFWwindow *window) override;
+    bool initializePlatform(GLFWwindow* window) override;
     bool initializeImGuiBackend() override;
     void setupTitlebar() override;
     float getTitlebarHeight() const override;
@@ -20,6 +20,6 @@ public:
     void shutdownImGui() override;
 
 private:
-    Application *app_;
-    GLFWwindow *window_;
+    Application* app_;
+    GLFWwindow* window_;
 };

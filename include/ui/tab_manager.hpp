@@ -12,16 +12,16 @@ public:
     ~TabManager() = default;
 
     // Tab management
-    void addTab(const std::shared_ptr<Tab> &tab);
-    void removeTab(const std::shared_ptr<Tab> &tab);
-    void closeTab(const std::string &name);
+    void addTab(const std::shared_ptr<Tab>& tab);
+    void removeTab(const std::shared_ptr<Tab>& tab);
+    void closeTab(const std::string& name);
     void closeAllTabs();
 
     // Tab queries
-    std::shared_ptr<Tab> findTab(const std::string &name) const;
-    std::shared_ptr<Tab> findTableTab(const std::shared_ptr<DatabaseInterface> &database,
-                                      const std::string &tableName) const;
-    bool hasTab(const std::string &name) const;
+    std::shared_ptr<Tab> findTab(const std::string& name) const;
+    std::shared_ptr<Tab> findTableTab(const std::shared_ptr<DatabaseInterface>& database,
+                                      const std::string& tableName) const;
+    bool hasTab(const std::string& name) const;
     bool isEmpty() const {
         return tabs.empty();
     }
@@ -29,16 +29,16 @@ public:
         return tabs.size();
     }
 
-    const std::vector<std::shared_ptr<Tab>> &getTabs() const {
+    const std::vector<std::shared_ptr<Tab>>& getTabs() const {
         return tabs;
     }
 
     // Tab creation helpers
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string &name,
-                                            const std::shared_ptr<DatabaseInterface> &database,
-                                            const std::string &selectedDatabaseName = "");
-    std::shared_ptr<Tab> createTableViewerTab(const std::shared_ptr<DatabaseInterface> &database,
-                                              const std::string &tableName);
+    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name,
+                                            const std::shared_ptr<DatabaseInterface>& database,
+                                            const std::string& selectedDatabaseName = "");
+    std::shared_ptr<Tab> createTableViewerTab(const std::shared_ptr<DatabaseInterface>& database,
+                                              const std::string& tableName);
 
     // UI rendering
     void renderTabs();

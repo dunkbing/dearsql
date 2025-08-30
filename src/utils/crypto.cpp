@@ -7,12 +7,12 @@
 #include <stdexcept>
 
 namespace CryptoUtils {
-    std::string encrypt(const std::string &plaintext, const std::string &key) {
+    std::string encrypt(const std::string& plaintext, const std::string& key) {
         if (key.length() != 32) {
             throw std::invalid_argument("Key must be 32 bytes for AES-256");
         }
 
-        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         if (!ctx) {
             throw std::runtime_error("Failed to create cipher context");
         }
@@ -38,7 +38,7 @@ namespace CryptoUtils {
 
         // Set key and IV
         if (EVP_EncryptInit_ex(ctx, nullptr, nullptr,
-                               reinterpret_cast<const unsigned char *>(key.c_str()), iv) != 1) {
+                               reinterpret_cast<const unsigned char*>(key.c_str()), iv) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set key and IV");
         }
@@ -48,7 +48,7 @@ namespace CryptoUtils {
                                               EVP_CIPHER_block_size(EVP_aes_256_gcm()));
         int len;
         if (EVP_EncryptUpdate(ctx, ciphertext.data(), &len,
-                              reinterpret_cast<const unsigned char *>(plaintext.c_str()),
+                              reinterpret_cast<const unsigned char*>(plaintext.c_str()),
                               plaintext.length()) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to encrypt");
@@ -81,7 +81,7 @@ namespace CryptoUtils {
         return base64Encode(result);
     }
 
-    std::string decrypt(const std::string &ciphertext, const std::string &key) {
+    std::string decrypt(const std::string& ciphertext, const std::string& key) {
         if (key.length() != 32) {
             throw std::invalid_argument("Key must be 32 bytes for AES-256");
         }
@@ -101,7 +101,7 @@ namespace CryptoUtils {
 
         size_t cipher_len = data.size() - 12 - 16;
 
-        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
         if (!ctx) {
             throw std::runtime_error("Failed to create cipher context");
         }
@@ -120,7 +120,7 @@ namespace CryptoUtils {
 
         // Set key and IV
         if (EVP_DecryptInit_ex(ctx, nullptr, nullptr,
-                               reinterpret_cast<const unsigned char *>(key.c_str()), iv) != 1) {
+                               reinterpret_cast<const unsigned char*>(key.c_str()), iv) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set key and IV");
         }
@@ -158,20 +158,20 @@ namespace CryptoUtils {
         if (RAND_bytes(key, sizeof(key)) != 1) {
             throw std::runtime_error("Failed to generate random key");
         }
-        return std::string(reinterpret_cast<char *>(key), sizeof(key));
+        return std::string(reinterpret_cast<char*>(key), sizeof(key));
     }
 
-    std::string deriveKey(const std::string &password, const std::string &salt) {
+    std::string deriveKey(const std::string& password, const std::string& salt) {
         unsigned char key[32];
 
         if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(),
-                              reinterpret_cast<const unsigned char *>(salt.c_str()), salt.length(),
+                              reinterpret_cast<const unsigned char*>(salt.c_str()), salt.length(),
                               100000, // iterations
                               EVP_sha256(), sizeof(key), key) != 1) {
             throw std::runtime_error("Failed to derive key from password");
         }
 
-        return std::string(reinterpret_cast<char *>(key), sizeof(key));
+        return std::string(reinterpret_cast<char*>(key), sizeof(key));
     }
 
     std::string generateSalt() {
@@ -179,12 +179,12 @@ namespace CryptoUtils {
         if (RAND_bytes(salt, sizeof(salt)) != 1) {
             throw std::runtime_error("Failed to generate salt");
         }
-        return std::string(reinterpret_cast<char *>(salt), sizeof(salt));
+        return std::string(reinterpret_cast<char*>(salt), sizeof(salt));
     }
 
-    std::string base64Encode(const std::vector<uint8_t> &data) {
+    std::string base64Encode(const std::vector<uint8_t>& data) {
         BIO *bio, *b64;
-        BUF_MEM *bufferPtr;
+        BUF_MEM* bufferPtr;
 
         b64 = BIO_new(BIO_f_base64());
         bio = BIO_new(BIO_s_mem());
@@ -201,7 +201,7 @@ namespace CryptoUtils {
         return result;
     }
 
-    std::vector<uint8_t> base64Decode(const std::string &encoded) {
+    std::vector<uint8_t> base64Decode(const std::string& encoded) {
         BIO *bio, *b64;
 
         b64 = BIO_new(BIO_f_base64());

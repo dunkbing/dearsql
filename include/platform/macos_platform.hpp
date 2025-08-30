@@ -16,10 +16,10 @@ class Application;
 
 class MacOSPlatform final : public PlatformInterface {
 public:
-    MacOSPlatform(Application *app);
+    MacOSPlatform(Application* app);
     ~MacOSPlatform() override;
 
-    bool initializePlatform(GLFWwindow *window) override;
+    bool initializePlatform(GLFWwindow* window) override;
     bool initializeImGuiBackend() override;
     void setupTitlebar() override;
     float getTitlebarHeight() const override;
@@ -31,19 +31,19 @@ public:
     void updateWorkspaceDropdown() override;
 
 private:
-    Application *app_;
-    GLFWwindow *window_;
+    Application* app_;
+    GLFWwindow* window_;
 
 #ifdef USE_METAL_BACKEND
-    ToolbarDelegate *toolbarDelegate_;
+    ToolbarDelegate* toolbarDelegate_;
 #ifdef __OBJC__
     id metalDevice_;
     id metalCommandQueue_;
     id metalLayer_;
 #else
-    void *metalDevice_;
-    void *metalCommandQueue_;
-    void *metalLayer_;
+    void* metalDevice_;
+    void* metalCommandQueue_;
+    void* metalLayer_;
 #endif
 #endif
 };

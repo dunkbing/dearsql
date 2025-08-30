@@ -2,13 +2,13 @@
 #include "imgui_internal.h"
 
 namespace UIUtils {
-    bool Spinner(const char *label, float radius, int thickness, const ImU32 &color) {
-        ImGuiWindow *window = ImGui::GetCurrentWindow();
+    bool Spinner(const char* label, float radius, int thickness, const ImU32& color) {
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
         if (window->SkipItems)
             return false;
 
-        ImGuiContext &g = *GImGui;
-        const ImGuiStyle &style = g.Style;
+        ImGuiContext& g = *GImGui;
+        const ImGuiStyle& style = g.Style;
         const ImGuiID id = window->GetID(label);
 
         const ImVec2 pos = window->DC.CursorPos;

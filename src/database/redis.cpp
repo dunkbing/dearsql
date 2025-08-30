@@ -50,17 +50,17 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         if (!password.empty()) {
             std::cout << "Authenticating with Redis server..." << std::endl;
 
-            redisReply *reply = nullptr;
+            redisReply* reply = nullptr;
 
             // Use Redis 6+ ACL authentication if username is provided
             if (!username.empty()) {
                 std::cout << "Using Redis ACL authentication with username: " << username
                           << std::endl;
-                reply = (redisReply *)redisCommand(context, "AUTH %s %s", username.c_str(),
-                                                   password.c_str());
+                reply = (redisReply*)redisCommand(context, "AUTH %s %s", username.c_str(),
+                                                  password.c_str());
             } else {
                 std::cout << "Using legacy Redis authentication (password only)" << std::endl;
-                reply = (redisReply *)redisCommand(context, "AUTH %s", password.c_str());
+                reply = (redisReply*)redisCommand(context, "AUTH %s", password.c_str());
             }
 
             if (!reply || reply->type == REDIS_REPLY_ERROR) {
@@ -78,7 +78,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         }
 
         // Test connection with PING
-        auto *reply = (redisReply *)redisCommand(context, "PING");
+        auto* reply = (redisReply*)redisCommand(context, "PING");
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
             std::string error = reply ? reply->str : "Connection test failed";
             lastConnectionError = error;
@@ -94,7 +94,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         lastConnectionError.clear();
         std::cout << "Successfully connected to Redis: " << connectionString << std::endl;
         return {true, ""};
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::string error = e.what();
         lastConnectionError = error;
         if (context) {
@@ -149,26 +149,26 @@ void RedisDatabase::checkConnectionStatusAsync() {
             auto result = connectionFuture.get();
             connecting = false;
             // Connection result is already stored in the connect() method
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             connecting = false;
             lastConnectionError = e.what();
         }
     }
 }
 
-const std::string &RedisDatabase::getName() const {
+const std::string& RedisDatabase::getName() const {
     return name;
 }
 
-const std::string &RedisDatabase::getConnectionString() const {
+const std::string& RedisDatabase::getConnectionString() const {
     return connectionString;
 }
 
-const std::string &RedisDatabase::getPath() const {
+const std::string& RedisDatabase::getPath() const {
     return connectionString;
 }
 
-void *RedisDatabase::getConnection() const {
+void* RedisDatabase::getConnection() const {
     return context;
 }
 
@@ -198,7 +198,7 @@ void RedisDatabase::checkTablesStatusAsync() {
             tablesFuture.get();
             loadingTables = false;
             tablesLoaded = true;
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             std::cerr << "Error loading Redis keys: " << e.what() << std::endl;
             loadingTables = false;
             tablesLoaded = true;
@@ -206,11 +206,11 @@ void RedisDatabase::checkTablesStatusAsync() {
     }
 }
 
-const std::vector<Table> &RedisDatabase::getTables() const {
+const std::vector<Table>& RedisDatabase::getTables() const {
     return tables;
 }
 
-std::vector<Table> &RedisDatabase::getTables() {
+std::vector<Table>& RedisDatabase::getTables() {
     return tables;
 }
 
@@ -228,11 +228,11 @@ void RedisDatabase::refreshViews() {
     viewsLoaded = true;
 }
 
-const std::vector<Table> &RedisDatabase::getViews() const {
+const std::vector<Table>& RedisDatabase::getViews() const {
     return views;
 }
 
-std::vector<Table> &RedisDatabase::getViews() {
+std::vector<Table>& RedisDatabase::getViews() {
     return views;
 }
 
@@ -250,11 +250,11 @@ void RedisDatabase::refreshSequences() {
     sequencesLoaded = true;
 }
 
-const std::vector<std::string> &RedisDatabase::getSequences() const {
+const std::vector<std::string>& RedisDatabase::getSequences() const {
     return sequences;
 }
 
-std::vector<std::string> &RedisDatabase::getSequences() {
+std::vector<std::string>& RedisDatabase::getSequences() {
     return sequences;
 }
 
@@ -266,7 +266,7 @@ void RedisDatabase::setSequencesLoaded(const bool loaded) {
     sequencesLoaded = loaded;
 }
 
-std::string RedisDatabase::executeQuery(const std::string &command) {
+std::string RedisDatabase::executeQuery(const std::string& command) {
     if (!isConnected()) {
         return "Error: Not connected to Redis server";
     }
@@ -278,7 +278,7 @@ std::string RedisDatabase::executeQuery(const std::string &command) {
             return "Error: Empty command";
         }
 
-        redisReply *reply = executeRedisCommandParsed(commandParts);
+        redisReply* reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
             return "Error: Failed to execute command";
         }
@@ -293,13 +293,13 @@ std::string RedisDatabase::executeQuery(const std::string &command) {
         std::string result = formatRedisReply(reply);
         freeReplyObject(reply);
         return result;
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         return "Error: " + std::string(e.what());
     }
 }
 
 std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-RedisDatabase::executeQueryStructured(const std::string &command) {
+RedisDatabase::executeQueryStructured(const std::string& command) {
     std::vector<std::string> columnNames = {"Result"};
     std::vector<std::vector<std::string>> data;
 
@@ -316,7 +316,7 @@ RedisDatabase::executeQueryStructured(const std::string &command) {
             return {columnNames, data};
         }
 
-        redisReply *reply = executeRedisCommandParsed(commandParts);
+        redisReply* reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
             // Return empty data and let the error be handled by the calling code
             return {columnNames, data};
@@ -343,14 +343,14 @@ RedisDatabase::executeQueryStructured(const std::string &command) {
 
         freeReplyObject(reply);
         return {columnNames, data};
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "[Redis] Error: " + std::string(e.what());
         // Return empty data and let the error be handled by the calling code
         return {columnNames, data};
     }
 }
 
-std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::string &keyPattern,
+std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::string& keyPattern,
                                                                   int limit, int offset) {
     std::vector<std::vector<std::string>> data;
 
@@ -377,18 +377,18 @@ std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::str
             row.push_back(it->ttl == -1 ? "No expiration" : std::to_string(it->ttl) + "s");
             data.push_back(row);
         }
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key data: " << e.what() << std::endl;
     }
 
     return data;
 }
 
-std::vector<std::string> RedisDatabase::getColumnNames(const std::string &keyPattern) {
+std::vector<std::string> RedisDatabase::getColumnNames(const std::string& keyPattern) {
     return {"Key", "Type", "Value", "TTL"};
 }
 
-int RedisDatabase::getRowCount(const std::string &keyPattern) {
+int RedisDatabase::getRowCount(const std::string& keyPattern) {
     if (!isConnected()) {
         return 0;
     }
@@ -396,14 +396,14 @@ int RedisDatabase::getRowCount(const std::string &keyPattern) {
     try {
         auto keys = getKeys(keyPattern, 10000); // Get up to 10k keys for count
         return static_cast<int>(keys.size());
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key count: " << e.what() << std::endl;
         return 0;
     }
 }
 
 // Async table data loading methods
-void RedisDatabase::startTableDataLoadAsync(const std::string &keyPattern, int limit, int offset) {
+void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset) {
     if (loadingTableData) {
         return;
     }
@@ -419,7 +419,7 @@ void RedisDatabase::startTableDataLoadAsync(const std::string &keyPattern, int l
             tableDataResult = getTableData(keyPattern, limit, offset);
             columnNamesResult = getColumnNames(keyPattern);
             rowCountResult = getRowCount(keyPattern);
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             std::cerr << "Error in async Redis data load: " << e.what() << std::endl;
             tableDataResult.clear();
             columnNamesResult.clear();
@@ -443,7 +443,7 @@ void RedisDatabase::checkTableDataStatusAsync() {
             tableDataFuture.get();
             hasTableDataReady = true;
             loadingTableData = false;
-        } catch (const std::exception &e) {
+        } catch (const std::exception& e) {
             std::cerr << "Error loading Redis data: " << e.what() << std::endl;
             loadingTableData = false;
             hasTableDataReady = false;
@@ -502,16 +502,16 @@ void RedisDatabase::setAttemptedConnection(bool attempted) {
     attemptedConnection = attempted;
 }
 
-const std::string &RedisDatabase::getLastConnectionError() const {
+const std::string& RedisDatabase::getLastConnectionError() const {
     return lastConnectionError;
 }
 
-void RedisDatabase::setLastConnectionError(const std::string &error) {
+void RedisDatabase::setLastConnectionError(const std::string& error) {
     lastConnectionError = error;
 }
 
 // Redis-specific methods
-std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, const int limit) const {
+std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const int limit) const {
     std::vector<RedisKey> keys;
 
     if (!isConnected()) {
@@ -519,7 +519,7 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, const i
     }
 
     try {
-        auto *reply = (redisReply *)redisCommand(context, "KEYS %s", pattern.c_str());
+        auto* reply = (redisReply*)redisCommand(context, "KEYS %s", pattern.c_str());
         if (!reply || reply->type != REDIS_REPLY_ARRAY) {
             if (reply)
                 freeReplyObject(reply);
@@ -539,14 +539,14 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string &pattern, const i
         }
 
         freeReplyObject(reply);
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis keys: " << e.what() << std::endl;
     }
 
     return keys;
 }
 
-std::string RedisDatabase::getKeyValue(const std::string &key) const {
+std::string RedisDatabase::getKeyValue(const std::string& key) const {
     if (!isConnected()) {
         return "";
     }
@@ -555,7 +555,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
         std::string type = getKeyType(key);
 
         if (type == "string") {
-            auto *reply = (redisReply *)redisCommand(context, "GET %s", key.c_str());
+            auto* reply = (redisReply*)redisCommand(context, "GET %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_STRING) {
                 std::string value = reply->str;
                 freeReplyObject(reply);
@@ -564,7 +564,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "list") {
-            auto *reply = (redisReply *)redisCommand(context, "LRANGE %s 0 4", key.c_str());
+            auto* reply = (redisReply*)redisCommand(context, "LRANGE %s 0 4", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "[";
@@ -583,7 +583,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "set") {
-            auto *reply = (redisReply *)redisCommand(context, "SMEMBERS %s", key.c_str());
+            auto* reply = (redisReply*)redisCommand(context, "SMEMBERS %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "{";
@@ -602,7 +602,7 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "hash") {
-            auto *reply = (redisReply *)redisCommand(context, "HGETALL %s", key.c_str());
+            auto* reply = (redisReply*)redisCommand(context, "HGETALL %s", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "{";
@@ -622,8 +622,8 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "zset") {
-            auto *reply =
-                (redisReply *)redisCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.c_str());
+            auto* reply =
+                (redisReply*)redisCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.c_str());
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "[";
@@ -642,20 +642,20 @@ std::string RedisDatabase::getKeyValue(const std::string &key) const {
             if (reply)
                 freeReplyObject(reply);
         }
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key value: " << e.what() << std::endl;
     }
 
     return "[Unable to retrieve value]";
 }
 
-std::string RedisDatabase::getKeyType(const std::string &key) const {
+std::string RedisDatabase::getKeyType(const std::string& key) const {
     if (!isConnected()) {
         return "unknown";
     }
 
     try {
-        auto *reply = (redisReply *)redisCommand(context, "TYPE %s", key.c_str());
+        auto* reply = (redisReply*)redisCommand(context, "TYPE %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_STATUS) {
             std::string type = reply->str;
             freeReplyObject(reply);
@@ -663,20 +663,20 @@ std::string RedisDatabase::getKeyType(const std::string &key) const {
         }
         if (reply)
             freeReplyObject(reply);
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key type: " << e.what() << std::endl;
     }
 
     return "unknown";
 }
 
-int64_t RedisDatabase::getKeyTTL(const std::string &key) const {
+int64_t RedisDatabase::getKeyTTL(const std::string& key) const {
     if (!isConnected()) {
         return -1;
     }
 
     try {
-        auto *reply = (redisReply *)redisCommand(context, "TTL %s", key.c_str());
+        auto* reply = (redisReply*)redisCommand(context, "TTL %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_INTEGER) {
             const int64_t ttl = reply->integer;
             freeReplyObject(reply);
@@ -684,7 +684,7 @@ int64_t RedisDatabase::getKeyTTL(const std::string &key) const {
         }
         if (reply)
             freeReplyObject(reply);
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key TTL: " << e.what() << std::endl;
     }
 
@@ -705,7 +705,7 @@ std::vector<std::string> RedisDatabase::getTableNames() {
     return patterns;
 }
 
-std::vector<Column> RedisDatabase::getTableColumns(const std::string &keyPattern) {
+std::vector<Column> RedisDatabase::getTableColumns(const std::string& keyPattern) {
     std::vector<Column> columns;
 
     Column keyCol;
@@ -743,7 +743,7 @@ std::vector<std::string> RedisDatabase::getViewNames() {
     return {}; // Redis doesn't have views
 }
 
-std::vector<Column> RedisDatabase::getViewColumns(const std::string &viewName) {
+std::vector<Column> RedisDatabase::getViewColumns(const std::string& viewName) {
     return {}; // Redis doesn't have views
 }
 
@@ -752,26 +752,26 @@ std::vector<std::string> RedisDatabase::getSequenceNames() {
 }
 
 // Private helper methods
-redisReply *RedisDatabase::executeRedisCommand(const std::string &command) const {
+redisReply* RedisDatabase::executeRedisCommand(const std::string& command) const {
     if (!isConnected()) {
         std::cerr << "Redis command failed: Not connected" << std::endl;
         return nullptr;
     }
 
     try {
-        auto *reply = (redisReply *)redisCommand(context, "%s", command.c_str());
+        auto* reply = (redisReply*)redisCommand(context, "%s", command.c_str());
         if (reply && reply->type == REDIS_REPLY_ERROR) {
             std::cerr << "Redis command error: " << reply->str << std::endl;
         }
         return reply;
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error executing Redis command: " << e.what() << std::endl;
         return nullptr;
     }
 }
 
-redisReply *
-RedisDatabase::executeRedisCommandParsed(const std::vector<std::string> &commandParts) const {
+redisReply*
+RedisDatabase::executeRedisCommandParsed(const std::vector<std::string>& commandParts) const {
     if (!isConnected() || commandParts.empty()) {
         std::cerr << "Redis parsed command failed: Not connected or empty command" << std::endl;
         return nullptr;
@@ -779,27 +779,27 @@ RedisDatabase::executeRedisCommandParsed(const std::vector<std::string> &command
 
     try {
         // Convert string vector to char* array for redisCommandArgv
-        std::vector<const char *> argv;
+        std::vector<const char*> argv;
         std::vector<size_t> argvlen;
 
-        for (const auto &part : commandParts) {
+        for (const auto& part : commandParts) {
             argv.push_back(part.c_str());
             argvlen.push_back(part.length());
         }
 
-        auto *reply = (redisReply *)redisCommandArgv(context, static_cast<int>(argv.size()),
-                                                     argv.data(), argvlen.data());
+        auto* reply = (redisReply*)redisCommandArgv(context, static_cast<int>(argv.size()),
+                                                    argv.data(), argvlen.data());
         if (reply && reply->type == REDIS_REPLY_ERROR) {
             std::cerr << "Redis parsed command error: " << reply->str << std::endl;
         }
         return reply;
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error executing parsed Redis command: " << e.what() << std::endl;
         return nullptr;
     }
 }
 
-std::string RedisDatabase::formatRedisReply(redisReply *reply) {
+std::string RedisDatabase::formatRedisReply(redisReply* reply) {
     if (!reply) {
         return "NULL";
     }
@@ -831,7 +831,7 @@ std::string RedisDatabase::formatRedisReply(redisReply *reply) {
     }
 }
 
-std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string &command) {
+std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string& command) {
     std::vector<std::string> parts;
     std::string current;
     bool inQuotes = false;

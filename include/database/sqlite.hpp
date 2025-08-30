@@ -19,44 +19,44 @@ public:
     void checkConnectionStatusAsync() override;
 
     // Database info
-    const std::string &getName() const override;
-    const std::string &getConnectionString() const override;
-    const std::string &getPath() const override;
-    void *getConnection() const override;
+    const std::string& getName() const override;
+    const std::string& getConnectionString() const override;
+    const std::string& getPath() const override;
+    void* getConnection() const override;
     DatabaseType getType() const override;
 
     // Table management
     void refreshTables() override;
-    const std::vector<Table> &getTables() const override;
-    std::vector<Table> &getTables() override;
+    const std::vector<Table>& getTables() const override;
+    std::vector<Table>& getTables() override;
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
 
     // View management
     void refreshViews() override;
-    const std::vector<Table> &getViews() const override;
-    std::vector<Table> &getViews() override;
+    const std::vector<Table>& getViews() const override;
+    std::vector<Table>& getViews() override;
     bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
 
     // Sequence management (not applicable for SQLite)
     void refreshSequences() override;
-    const std::vector<std::string> &getSequences() const override;
-    std::vector<std::string> &getSequences() override;
+    const std::vector<std::string>& getSequences() const override;
+    std::vector<std::string>& getSequences() override;
     bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
 
     // Query execution
-    std::string executeQuery(const std::string &query) override;
+    std::string executeQuery(const std::string& query) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string &query) override;
-    std::vector<std::vector<std::string>> getTableData(const std::string &tableName, int limit,
+    executeQueryStructured(const std::string& query) override;
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) override;
-    std::vector<std::string> getColumnNames(const std::string &tableName) override;
-    int getRowCount(const std::string &tableName) override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName) override;
 
     // Async table data loading
-    void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) override;
+    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset) override;
     bool isLoadingTableData() const override;
     void checkTableDataStatusAsync() override;
     bool hasTableDataResult() const override;
@@ -72,14 +72,14 @@ public:
     // Connection attempt tracking
     bool hasAttemptedConnection() const override;
     void setAttemptedConnection(bool attempted) override;
-    const std::string &getLastConnectionError() const override;
-    void setLastConnectionError(const std::string &error) override;
+    const std::string& getLastConnectionError() const override;
+    void setLastConnectionError(const std::string& error) override;
 
 protected:
     std::vector<std::string> getTableNames() override;
-    std::vector<Column> getTableColumns(const std::string &tableName) override;
+    std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string &viewName) override;
+    std::vector<Column> getViewColumns(const std::string& viewName) override;
     std::vector<std::string> getSequenceNames() override;
 
 private:

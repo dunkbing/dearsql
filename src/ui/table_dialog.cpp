@@ -8,8 +8,8 @@
 #include <iostream>
 #include <sstream>
 
-void TableDialog::showTableDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                  const std::string &tableName, const std::string &schemaName) {
+void TableDialog::showTableDialog(const std::shared_ptr<DatabaseInterface>& db,
+                                  const std::string& tableName, const std::string& schemaName) {
     database = db;
     targetTableName = tableName;
     targetSchemaName = schemaName;
@@ -33,8 +33,8 @@ void TableDialog::showTableDialog(const std::shared_ptr<DatabaseInterface> &db,
     // TODO: Load actual table comment from database metadata
 }
 
-void TableDialog::showCreateTableDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                        const std::string &schemaName) {
+void TableDialog::showCreateTableDialog(const std::shared_ptr<DatabaseInterface>& db,
+                                        const std::string& schemaName) {
     database = db;
     targetSchemaName = schemaName;
     dialogMode = TableDialogMode::Create;
@@ -60,7 +60,7 @@ void TableDialog::renderDialog() {
     if (!isOpen)
         return;
 
-    const char *title = (dialogMode == TableDialogMode::Create) ? "Create New Table" : "Edit Table";
+    const char* title = (dialogMode == TableDialogMode::Create) ? "Create New Table" : "Edit Table";
 
     // Always try to open the popup when dialog is active
     if (!ImGui::IsPopupOpen(title)) {
@@ -261,7 +261,7 @@ void TableDialog::renderColumnsNode() {
 
     if (columnsOpen) {
         for (int i = 0; i < tableColumns.size(); i++) {
-            const auto &column = tableColumns[i];
+            const auto& column = tableColumns[i];
 
             ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -339,7 +339,7 @@ void TableDialog::renderKeysNode() const {
         // Show primary key if any column is marked as primary key
         bool hasPrimaryKey = false;
         std::string primaryKeyColumns;
-        for (const auto &column : tableColumns) {
+        for (const auto& column : tableColumns) {
             if (column.isPrimaryKey) {
                 if (hasPrimaryKey) {
                     primaryKeyColumns += ", ";
@@ -363,7 +363,7 @@ void TableDialog::renderKeysNode() const {
 }
 
 void TableDialog::renderColumnEditor() {
-    const char *editorTitle =
+    const char* editorTitle =
         (columnEditMode == ColumnEditMode::Add) ? "Add New Column" : "Edit Column";
     ImGui::Text("%s", editorTitle);
     ImGui::Separator();
@@ -406,7 +406,7 @@ void TableDialog::renderColumnEditor() {
         const auto currentInput = std::string(columnType);
 
         // Filter types based on current input (case-insensitive)
-        for (const auto &type : commonTypes) {
+        for (const auto& type : commonTypes) {
             std::string lowerType = type;
             std::string lowerInput = currentInput;
             std::ranges::transform(lowerType, lowerType.begin(), ::tolower);
@@ -490,7 +490,7 @@ void TableDialog::renderPreviewPanel() const {
 }
 
 void TableDialog::renderButtons() {
-    const auto &colors = Application::getInstance().getCurrentColors();
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     // Save button
     ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
@@ -610,7 +610,7 @@ bool TableDialog::executeAddColumn() {
                 std::string result1 = database->executeQuery(addColumnSQL);
                 if (result1.find("ERROR") != std::string::npos ||
                     result1.find("Error") != std::string::npos) {
-                    const std::string &cleanError = result1;
+                    const std::string& cleanError = result1;
                     if (cleanError.find("already exists") != std::string::npos) {
                         errorMessage = "Column '" + std::string(columnName) +
                                        "' already exists in table '" + targetTableName + "'";
@@ -635,7 +635,7 @@ bool TableDialog::executeAddColumn() {
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
-                const std::string &cleanError = result;
+                const std::string& cleanError = result;
                 if (cleanError.find("already exists") != std::string::npos) {
                     errorMessage = "Column '" + std::string(columnName) +
                                    "' already exists in table '" + targetTableName + "'";
@@ -654,7 +654,7 @@ bool TableDialog::executeAddColumn() {
                        targetTableName + "'");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to add column: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
@@ -688,7 +688,7 @@ bool TableDialog::executeEditColumn() {
             }
 
             // Execute each statement
-            for (const auto &statement : statements) {
+            for (const auto& statement : statements) {
                 std::string result = database->executeQuery(statement);
                 if (result.find("ERROR") != std::string::npos ||
                     result.find("Error") != std::string::npos) {
@@ -716,7 +716,7 @@ bool TableDialog::executeEditColumn() {
                        targetTableName + "'");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to edit column: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
@@ -734,7 +734,7 @@ void TableDialog::resetColumnForm() {
     isUnique = false;
 }
 
-void TableDialog::populateColumnFormFromColumn(const Column &column) {
+void TableDialog::populateColumnFormFromColumn(const Column& column) {
     strncpy(columnName, column.name.c_str(), sizeof(columnName) - 1);
     strncpy(columnType, column.type.c_str(), sizeof(columnType) - 1);
     strncpy(columnComment, column.comment.c_str(), sizeof(columnComment) - 1);
@@ -747,8 +747,8 @@ void TableDialog::loadTableStructure() {
     tableColumns.clear();
 
     // Find the table in the database's table list
-    const auto &tables = database->getTables();
-    for (const auto &table : tables) {
+    const auto& tables = database->getTables();
+    for (const auto& table : tables) {
         if (table.name == targetTableName) {
             tableColumns = table.columns;
             break;
@@ -1047,7 +1047,7 @@ bool TableDialog::validateTableInput() {
 
     // Check if table has a primary key (recommended but not required)
     bool hasPrimaryKey = false;
-    for (const auto &column : tableColumns) {
+    for (const auto& column : tableColumns) {
         if (column.isPrimaryKey) {
             hasPrimaryKey = true;
             break;
@@ -1072,7 +1072,7 @@ bool TableDialog::executeCreateTable() {
         // Check if there was an error in the result
         if (result.find("ERROR") != std::string::npos ||
             result.find("Error") != std::string::npos) {
-            const std::string &cleanError = result;
+            const std::string& cleanError = result;
             if (cleanError.find("already exists") != std::string::npos) {
                 errorMessage = "Table '" + std::string(newTableName) + "' already exists";
             } else {
@@ -1117,7 +1117,7 @@ bool TableDialog::executeCreateTable() {
         LogPanel::info("Table '" + std::string(newTableName) + "' created successfully");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to create table: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
@@ -1142,7 +1142,7 @@ std::string TableDialog::generateCreateTableSQL() {
 
     // Add columns
     for (size_t i = 0; i < tableColumns.size(); ++i) {
-        const auto &column = tableColumns[i];
+        const auto& column = tableColumns[i];
         sql += "    " + column.name + " " + column.type;
 
         if (column.isNotNull) {
@@ -1161,7 +1161,7 @@ std::string TableDialog::generateCreateTableSQL() {
 
     // Add primary key constraint if any columns are marked as primary key
     std::vector<std::string> primaryKeyColumns;
-    for (const auto &column : tableColumns) {
+    for (const auto& column : tableColumns) {
         if (column.isPrimaryKey) {
             primaryKeyColumns.push_back(column.name);
         }
@@ -1190,7 +1190,7 @@ std::string TableDialog::generateCreateTableSQL() {
 
 void TableDialog::updateCurrentColumn() {
     if (selectedColumnIndex >= 0 && selectedColumnIndex < tableColumns.size()) {
-        auto &column = tableColumns[selectedColumnIndex];
+        auto& column = tableColumns[selectedColumnIndex];
         column.name = std::string(columnName);
         column.type = std::string(columnType);
         column.comment = std::string(columnComment);
@@ -1235,8 +1235,8 @@ bool TableDialog::saveTableChanges() {
 
         // Get original table structure for comparison
         std::vector<Column> originalColumns;
-        const auto &tables = database->getTables();
-        for (const auto &table : tables) {
+        const auto& tables = database->getTables();
+        for (const auto& table : tables) {
             if (table.name == targetTableName) {
                 originalColumns = table.columns;
                 break;
@@ -1244,10 +1244,10 @@ bool TableDialog::saveTableChanges() {
         }
 
         // Compare current columns with original columns and generate ALTER statements
-        for (const auto &currentColumn : tableColumns) {
+        for (const auto& currentColumn : tableColumns) {
             // Find corresponding original column
             bool foundOriginal = false;
-            for (const auto &originalColumn : originalColumns) {
+            for (const auto& originalColumn : originalColumns) {
                 if (originalColumn.name == currentColumn.name) {
                     foundOriginal = true;
                     // Check if column properties changed
@@ -1277,9 +1277,9 @@ bool TableDialog::saveTableChanges() {
         }
 
         // Check for deleted columns (columns that were in original but not in current)
-        for (const auto &originalColumn : originalColumns) {
+        for (const auto& originalColumn : originalColumns) {
             bool foundInCurrent = false;
-            for (const auto &currentColumn : tableColumns) {
+            for (const auto& currentColumn : tableColumns) {
                 if (currentColumn.name == originalColumn.name) {
                     foundInCurrent = true;
                     break;
@@ -1318,7 +1318,7 @@ bool TableDialog::saveTableChanges() {
         }
 
         // Execute all SQL statements
-        for (const auto &sql : sqlStatements) {
+        for (const auto& sql : sqlStatements) {
             LogPanel::info("Executing: " + sql);
             std::string result = database->executeQuery(sql);
 
@@ -1337,13 +1337,13 @@ bool TableDialog::saveTableChanges() {
         LogPanel::info("Table changes saved successfully");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to save table changes: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
     }
 }
-std::string TableDialog::generateAddColumnSQLForColumn(const Column &column) {
+std::string TableDialog::generateAddColumnSQLForColumn(const Column& column) {
     std::string tableName = (std::string(editTableName) != targetTableName)
                                 ? std::string(editTableName)
                                 : targetTableName;
@@ -1376,8 +1376,8 @@ std::string TableDialog::generateAddColumnSQLForColumn(const Column &column) {
     return sql;
 }
 
-std::string TableDialog::generateEditColumnSQLForColumn(const Column &column,
-                                                        const std::string &originalName) {
+std::string TableDialog::generateEditColumnSQLForColumn(const Column& column,
+                                                        const std::string& originalName) {
     std::string tableName = (std::string(editTableName) != targetTableName)
                                 ? std::string(editTableName)
                                 : targetTableName;

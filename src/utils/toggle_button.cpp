@@ -4,11 +4,11 @@
 #include "imgui_internal.h"
 #include "themes.hpp"
 
-void UIUtils::ToggleButton(const char *str_id, bool *v) {
-    const auto &colors =
+void UIUtils::ToggleButton(const char* str_id, bool* v) {
+    const auto& colors =
         Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
     const ImVec2 p = ImGui::GetCursorScreenPos();
-    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     const float height = ImGui::GetFrameHeight();
     const float width = height * 1.55f;
@@ -18,7 +18,7 @@ void UIUtils::ToggleButton(const char *str_id, bool *v) {
     if (ImGui::IsItemClicked())
         *v = !*v;
 
-    ImGuiContext &gg = *GImGui;
+    ImGuiContext& gg = *GImGui;
     if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id)) {
         if (ImGui::IsItemHovered()) {
             draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height),

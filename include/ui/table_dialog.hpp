@@ -16,12 +16,12 @@ public:
     ~TableDialog() = default;
 
     // Show dialog for editing a table
-    void showTableDialog(const std::shared_ptr<DatabaseInterface> &db, const std::string &tableName,
-                         const std::string &schemaName = "");
+    void showTableDialog(const std::shared_ptr<DatabaseInterface>& db, const std::string& tableName,
+                         const std::string& schemaName = "");
 
     // Show dialog for creating a new table
-    void showCreateTableDialog(const std::shared_ptr<DatabaseInterface> &db,
-                               const std::string &schemaName = "");
+    void showCreateTableDialog(const std::shared_ptr<DatabaseInterface>& db,
+                               const std::string& schemaName = "");
 
     // Check if dialog is currently open
     bool isDialogOpen() const {
@@ -104,9 +104,9 @@ private:
     bool executeCreateTable();
     bool saveTableChanges();
     std::string generateCreateTableSQL();
-    std::string generateAddColumnSQLForColumn(const Column &column);
-    std::string generateEditColumnSQLForColumn(const Column &column,
-                                               const std::string &originalName);
+    std::string generateAddColumnSQLForColumn(const Column& column);
+    std::string generateEditColumnSQLForColumn(const Column& column,
+                                               const std::string& originalName);
 
     // Validation and execution
     bool validateColumnInput();
@@ -115,7 +115,7 @@ private:
 
     // Helper methods
     void resetColumnForm();
-    void populateColumnFormFromColumn(const Column &column);
+    void populateColumnFormFromColumn(const Column& column);
     void loadTableStructure();
     void updatePreviewSQL();
     std::string generateAddColumnSQL();

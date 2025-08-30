@@ -5,7 +5,7 @@
 #include "database/sqlite.hpp"
 
 std::shared_ptr<DatabaseInterface>
-DatabaseFactory::createDatabase(const DatabaseConnectionInfo &info) {
+DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
     switch (info.type) {
     case DatabaseType::SQLITE:
         return std::make_shared<SQLiteDatabase>(info.name, info.path);

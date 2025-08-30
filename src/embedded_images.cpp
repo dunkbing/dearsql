@@ -1,8 +1,8 @@
 #include "embedded_images.hpp"
 #include <cstring>
 
-const EmbeddedImage *findEmbeddedImage(const char *name) {
-    const EmbeddedImage *images = getEmbeddedImages();
+const EmbeddedImage* findEmbeddedImage(const char* name) {
+    const EmbeddedImage* images = getEmbeddedImages();
     const size_t count = getEmbeddedImageCount();
 
     if (!images || !name) {

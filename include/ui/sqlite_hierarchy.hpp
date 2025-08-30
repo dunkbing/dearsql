@@ -4,5 +4,5 @@
 class SQLiteDatabase;
 
 namespace SQLiteHierarchy {
-    void renderSQLiteHierarchy(const std::shared_ptr<SQLiteDatabase> &sqliteDb);
+    void renderSQLiteHierarchy(const std::shared_ptr<SQLiteDatabase>& sqliteDb);
 } // namespace SQLiteHierarchy

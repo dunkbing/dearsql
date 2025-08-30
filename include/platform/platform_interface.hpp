@@ -6,7 +6,7 @@ class PlatformInterface {
 public:
     virtual ~PlatformInterface() = default;
 
-    virtual bool initializePlatform(GLFWwindow *window) = 0;
+    virtual bool initializePlatform(GLFWwindow* window) = 0;
     virtual bool initializeImGuiBackend() = 0;
     virtual void setupTitlebar() = 0;
     virtual float getTitlebarHeight() const = 0;

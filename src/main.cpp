@@ -1,7 +1,7 @@
 #include "application.hpp"
 
 int main() {
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
 
     if (!app.initialize()) {
         return -1;

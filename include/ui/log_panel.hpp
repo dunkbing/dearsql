@@ -20,24 +20,24 @@ public:
     ~LogPanel() = default;
 
     void render();
-    void addLog(LogLevel level, const std::string &message);
+    void addLog(LogLevel level, const std::string& message);
     void clear();
 
     // Utility functions for easy logging
-    static void debug(const std::string &message);
-    static void info(const std::string &message);
-    static void warn(const std::string &message);
-    static void error(const std::string &message);
+    static void debug(const std::string& message);
+    static void info(const std::string& message);
+    static void warn(const std::string& message);
+    static void error(const std::string& message);
 
-    static LogPanel &getInstance();
+    static LogPanel& getInstance();
 
 private:
     std::vector<LogEntry> logs_;
     bool showTimestamps_ = true;
     LogLevel filterLevel_ = LogLevel::ALL;
 
-    [[nodiscard]] static const char *getLevelString(LogLevel level);
+    [[nodiscard]] static const char* getLevelString(LogLevel level);
     [[nodiscard]] static ImVec4 getLevelColor(LogLevel level);
     [[nodiscard]] static std::string
-    formatTimestamp(const std::chrono::system_clock::time_point &timestamp);
+    formatTimestamp(const std::chrono::system_clock::time_point& timestamp);
 };

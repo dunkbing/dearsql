@@ -12,9 +12,9 @@
 
 class PostgresDatabase final : public DatabaseInterface {
 public:
-    PostgresDatabase(const std::string &name, const std::string &host, int port,
-                     const std::string &database, const std::string &username,
-                     const std::string &password, bool showAllDatabases = false);
+    PostgresDatabase(const std::string& name, const std::string& host, int port,
+                     const std::string& database, const std::string& username,
+                     const std::string& password, bool showAllDatabases = false);
     ~PostgresDatabase() override;
 
     // Connection management
@@ -26,17 +26,17 @@ public:
     void checkConnectionStatusAsync() override;
 
     // Database info
-    const std::string &getName() const override;
-    const std::string &getConnectionString() const override;
-    const std::string &getPath() const override;
-    void *getConnection() const override;
+    const std::string& getName() const override;
+    const std::string& getConnectionString() const override;
+    const std::string& getPath() const override;
+    void* getConnection() const override;
     DatabaseType getType() const override;
-    const std::string &getDatabaseName() const;
+    const std::string& getDatabaseName() const;
 
     // Table management
     void refreshTables() override;
-    const std::vector<Table> &getTables() const override;
-    std::vector<Table> &getTables() override;
+    const std::vector<Table>& getTables() const override;
+    std::vector<Table>& getTables() override;
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
     bool isLoadingTables() const override;
@@ -44,8 +44,8 @@ public:
 
     // View management
     void refreshViews() override;
-    const std::vector<Table> &getViews() const override;
-    std::vector<Table> &getViews() override;
+    const std::vector<Table>& getViews() const override;
+    std::vector<Table>& getViews() override;
     bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
     bool isLoadingViews() const override;
@@ -53,8 +53,8 @@ public:
 
     // Sequence management
     void refreshSequences() override;
-    const std::vector<std::string> &getSequences() const override;
-    std::vector<std::string> &getSequences() override;
+    const std::vector<std::string>& getSequences() const override;
+    std::vector<std::string>& getSequences() override;
     bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
     bool isLoadingSequences() const override;
@@ -62,14 +62,14 @@ public:
 
     // Schema management
     void refreshSchemas();
-    const std::vector<Schema> &getSchemas() const;
-    std::vector<Schema> &getSchemas();
+    const std::vector<Schema>& getSchemas() const;
+    std::vector<Schema>& getSchemas();
     bool areSchemasLoaded() const;
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
     void checkSchemasStatusAsync();
-    void checkSchemasStatusAsync(const std::string &dbName);
-    void startSchemasLoadAsync(const std::string &dbName);
+    void checkSchemasStatusAsync(const std::string& dbName);
+    void startSchemasLoadAsync(const std::string& dbName);
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();
@@ -82,31 +82,31 @@ public:
     }
     bool isLoadingDatabases() const;
     void checkDatabasesStatusAsync();
-    std::pair<bool, std::string> switchToDatabase(const std::string &targetDatabase);
-    void switchToDatabaseAsync(const std::string &targetDatabase);
+    std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
+    void switchToDatabaseAsync(const std::string& targetDatabase);
     bool isSwitchingDatabase() const;
     void checkDatabaseSwitchStatusAsync();
-    bool isDatabaseExpanded(const std::string &dbName) const;
-    void setDatabaseExpanded(const std::string &dbName, bool expanded_);
+    bool isDatabaseExpanded(const std::string& dbName) const;
+    void setDatabaseExpanded(const std::string& dbName, bool expanded_);
 
     // Query execution
-    std::string executeQuery(const std::string &query) override;
+    std::string executeQuery(const std::string& query) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string &query) override;
-    std::vector<std::vector<std::string>> getTableData(const std::string &tableName, int limit,
+    executeQueryStructured(const std::string& query) override;
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) override;
-    std::vector<std::string> getColumnNames(const std::string &tableName) override;
-    int getRowCount(const std::string &tableName) override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName) override;
 
     // Async table data loading
-    void startTableDataLoadAsync(const std::string &tableName, int limit, int offset) override;
-    bool isLoadingTableData(const std::string &tableName) const override;
-    void checkTableDataStatusAsync(const std::string &tableName) override;
-    bool hasTableDataResult(const std::string &tableName) const override;
-    std::vector<std::vector<std::string>> getTableDataResult(const std::string &tableName) override;
-    std::vector<std::string> getColumnNamesResult(const std::string &tableName) override;
-    int getRowCountResult(const std::string &tableName) override;
-    void clearTableDataResult(const std::string &tableName) override;
+    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset) override;
+    bool isLoadingTableData(const std::string& tableName) const override;
+    void checkTableDataStatusAsync(const std::string& tableName) override;
+    bool hasTableDataResult(const std::string& tableName) const override;
+    std::vector<std::vector<std::string>> getTableDataResult(const std::string& tableName) override;
+    std::vector<std::string> getColumnNamesResult(const std::string& tableName) override;
+    int getRowCountResult(const std::string& tableName) override;
+    void clearTableDataResult(const std::string& tableName) override;
 
     // Legacy methods for backward compatibility
     bool isLoadingTableData() const override;
@@ -124,14 +124,14 @@ public:
     // Connection attempt tracking
     bool hasAttemptedConnection() const override;
     void setAttemptedConnection(bool attempted) override;
-    const std::string &getLastConnectionError() const override;
-    void setLastConnectionError(const std::string &error) override;
+    const std::string& getLastConnectionError() const override;
+    void setLastConnectionError(const std::string& error) override;
 
 protected:
     std::vector<std::string> getTableNames() override;
-    std::vector<Column> getTableColumns(const std::string &tableName) override;
+    std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string &viewName) override;
+    std::vector<Column> getViewColumns(const std::string& viewName) override;
     std::vector<std::string> getSequenceNames() override;
 
     // Async loading helpers
@@ -143,7 +143,7 @@ protected:
     std::vector<std::string> getSequencesAsync() const;
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
-    std::vector<Schema> getSchemasForDatabaseAsync(const std::string &dbName) const;
+    std::vector<Schema> getSchemasForDatabaseAsync(const std::string& dbName) const;
     void startRefreshDatabasesAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
 
@@ -206,10 +206,10 @@ private:
 
 public:
     // Helper methods for per-database data access
-    DatabaseData &getCurrentDatabaseData();
-    const DatabaseData &getCurrentDatabaseData() const;
-    DatabaseData &getDatabaseData(const std::string &dbName);
-    const DatabaseData &getDatabaseData(const std::string &dbName) const;
+    DatabaseData& getCurrentDatabaseData();
+    const DatabaseData& getCurrentDatabaseData() const;
+    DatabaseData& getDatabaseData(const std::string& dbName);
+    const DatabaseData& getDatabaseData(const std::string& dbName) const;
 
 private:
     // Async connection
@@ -231,10 +231,10 @@ private:
     mutable std::mutex sessionMutex;
 
     // Helper methods for connection pool
-    soci::connection_pool *getConnectionPoolForDatabase(const std::string &dbName) const;
-    std::string buildConnectionString(const std::string &dbName) const;
-    void initializeConnectionPool(const std::string &dbName, const std::string &connStr);
+    soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
+    std::string buildConnectionString(const std::string& dbName) const;
+    void initializeConnectionPool(const std::string& dbName, const std::string& connStr);
 
     // Helper method for row data type conversion
-    static std::string convertRowValue(const soci::row &row, std::size_t columnIndex);
+    static std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
 };

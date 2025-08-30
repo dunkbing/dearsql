@@ -22,11 +22,11 @@ static DropColumnDialog dropColumnDialog;
 
 // Function to access the dialogs from hierarchy helpers
 namespace HierarchyHelpers {
-    TableDialog &getTableDialog() {
+    TableDialog& getTableDialog() {
         return tableDialog;
     }
 
-    DropColumnDialog &getDropColumnDialog() {
+    DropColumnDialog& getDropColumnDialog() {
         return dropColumnDialog;
     }
 } // namespace HierarchyHelpers
@@ -36,7 +36,7 @@ void DatabaseSidebar::showConnectionDialog() {
 }
 
 void DatabaseSidebar::render() {
-    auto &app = Application::getInstance();
+    auto& app = Application::getInstance();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
 
@@ -71,7 +71,7 @@ void DatabaseSidebar::render() {
     ImGui::Separator();
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
-    const auto &databases = app.getDatabases();
+    const auto& databases = app.getDatabases();
 
     if (databases.empty()) {
         // Show helpful message when no databases are connected
@@ -110,7 +110,7 @@ void DatabaseSidebar::render() {
     if (ImGui::BeginPopupModal("Confirm Delete Database", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         if (databaseToDelete < databases.size()) {
-            const auto &db = databases[databaseToDelete];
+            const auto& db = databases[databaseToDelete];
             ImGui::Text("Are you sure you want to remove this database connection?");
             ImGui::Text("Database: %s", db->getName().c_str());
             ImGui::Spacing();
@@ -124,7 +124,7 @@ void DatabaseSidebar::render() {
             if (ImGui::Button("Remove", ImVec2(100, 0))) {
                 // Remove from saved connections by finding matching connection
                 const auto savedConnections = app.getAppState()->getSavedConnections();
-                for (const auto &conn : savedConnections) {
+                for (const auto& conn : savedConnections) {
                     bool matches = false;
                     if (db->getType() == DatabaseType::POSTGRESQL && conn.type == "postgresql") {
                         matches = (conn.name == db->getName());
@@ -182,9 +182,9 @@ void DatabaseSidebar::render() {
     }
 
     if (ImGui::BeginPopupModal("Create Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        const auto &databases = app.getDatabases();
+        const auto& databases = app.getDatabases();
         if (createDatabaseForConnection < static_cast<int>(databases.size())) {
-            auto &db = databases[createDatabaseForConnection];
+            auto& db = databases[createDatabaseForConnection];
 
             ImGui::Text("Create new database on:");
             ImGui::Text("Connection: %s", db->getName().c_str());
@@ -218,7 +218,7 @@ void DatabaseSidebar::render() {
 
             ImGui::Separator();
 
-            const auto &colors = Application::getInstance().getCurrentColors();
+            const auto& colors = Application::getInstance().getCurrentColors();
 
             // Create button
             ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
@@ -254,10 +254,10 @@ void DatabaseSidebar::render() {
 
                         // Refresh database list if this is a multi-database connection
                         if (db->getType() == DatabaseType::POSTGRESQL) {
-                            auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                            auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
                             pgDb->refreshDatabaseNames();
                         } else if (db->getType() == DatabaseType::MYSQL) {
-                            auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
+                            auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
                             mysqlDb->refreshDatabaseNames();
                         }
                     }
@@ -289,9 +289,9 @@ void DatabaseSidebar::render() {
 }
 
 void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
+    auto& app = Application::getInstance();
+    const auto& databases = app.getDatabases();
+    auto& db = databases[databaseIndex];
 
     // Database node
     ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -388,7 +388,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
         } else if (db->isConnected()) {
             // Check for async loading completion for Postgres
             if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto *pgDb = dynamic_cast<PostgresDatabase *>(db.get());
+                auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
                 if (pgDb->isLoadingDatabases()) {
                     pgDb->checkDatabasesStatusAsync();
                 }
@@ -417,7 +417,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
                 const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 PostgresHierarchy::renderPostgresHierarchy(pgDb);
             } else if (db->getType() == DatabaseType::MYSQL) {
-                auto *mysqlDb = dynamic_cast<MySQLDatabase *>(db.get());
+                auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
                 // Check for async loading completion for MySQL
                 if (mysqlDb->isLoadingDatabases()) {
                     mysqlDb->checkDatabasesStatusAsync();
@@ -448,9 +448,9 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 }
 
 void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
+    auto& app = Application::getInstance();
+    const auto& databases = app.getDatabases();
+    auto& db = databases[databaseIndex];
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Refresh All")) {
@@ -516,10 +516,10 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
 }
 
 void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const size_t tableIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    const auto &table = db->getTables()[tableIndex];
+    auto& app = Application::getInstance();
+    const auto& databases = app.getDatabases();
+    auto& db = databases[databaseIndex];
+    const auto& table = db->getTables()[tableIndex];
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
@@ -533,10 +533,10 @@ void DatabaseSidebar::handleTableContextMenu(const size_t databaseIndex, const s
 }
 
 void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const size_t viewIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    const auto &view = db->getViews()[viewIndex];
+    auto& app = Application::getInstance();
+    const auto& databases = app.getDatabases();
+    auto& db = databases[databaseIndex];
+    const auto& view = db->getViews()[viewIndex];
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
@@ -551,10 +551,10 @@ void DatabaseSidebar::handleViewContextMenu(const size_t databaseIndex, const si
 
 void DatabaseSidebar::handleSequenceContextMenu(const size_t databaseIndex,
                                                 const size_t sequenceIndex) {
-    auto &app = Application::getInstance();
-    const auto &databases = app.getDatabases();
-    auto &db = databases[databaseIndex];
-    auto &sequence = db->getSequences()[sequenceIndex];
+    auto& app = Application::getInstance();
+    const auto& databases = app.getDatabases();
+    auto& db = databases[databaseIndex];
+    auto& sequence = db->getSequences()[sequenceIndex];
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Show Details")) {

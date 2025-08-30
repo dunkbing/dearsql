@@ -35,3 +35,4 @@ cmake-build-*/
 compile_commands.json
 # zed
 .cache
+.env

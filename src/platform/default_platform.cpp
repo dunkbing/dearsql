@@ -6,9 +6,9 @@
 #include "imgui_impl_opengl3.h"
 #endif
 
-DefaultPlatform::DefaultPlatform(Application *app) : app_(app), window_(nullptr) {}
+DefaultPlatform::DefaultPlatform(Application* app) : app_(app), window_(nullptr) {}
 
-bool DefaultPlatform::initializePlatform(GLFWwindow *window) {
+bool DefaultPlatform::initializePlatform(GLFWwindow* window) {
     window_ = window;
     std::cout << "Default platform initialized" << std::endl;
     return true;

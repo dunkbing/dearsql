@@ -20,10 +20,10 @@ public:
     virtual ~Tab() = default;
 
     // Common properties
-    [[nodiscard]] const std::string &getName() const {
+    [[nodiscard]] const std::string& getName() const {
         return name;
     }
-    void setName(const std::string &newName) {
+    void setName(const std::string& newName) {
         name = newName;
     }
     [[nodiscard]] TabType getType() const {
@@ -54,24 +54,24 @@ protected:
 
 class SQLEditorTab final : public Tab {
 public:
-    explicit SQLEditorTab(const std::string &name,
-                          const std::shared_ptr<DatabaseInterface> &serverDatabase = nullptr,
-                          const std::string &selectedDatabaseName = "");
+    explicit SQLEditorTab(const std::string& name,
+                          const std::shared_ptr<DatabaseInterface>& serverDatabase = nullptr,
+                          const std::string& selectedDatabaseName = "");
     ~SQLEditorTab() override;
 
     void render() override;
 
     // SQL Editor specific methods
-    [[nodiscard]] const std::string &getQuery() const {
+    [[nodiscard]] const std::string& getQuery() const {
         return sqlQuery;
     }
-    void setQuery(const std::string &query) {
+    void setQuery(const std::string& query) {
         sqlQuery = query;
     }
-    [[nodiscard]] const std::string &getResult() const {
+    [[nodiscard]] const std::string& getResult() const {
         return queryResult;
     }
-    void setResult(const std::string &result) {
+    void setResult(const std::string& result) {
         queryResult = result;
     }
     [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {
@@ -80,16 +80,16 @@ public:
     void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
         serverDatabase = std::move(db);
     }
-    [[nodiscard]] const std::string &getSelectedDatabaseName() const {
+    [[nodiscard]] const std::string& getSelectedDatabaseName() const {
         return selectedDatabaseName;
     }
-    void setSelectedDatabaseName(const std::string &dbName) {
+    void setSelectedDatabaseName(const std::string& dbName) {
         selectedDatabaseName = dbName;
     }
-    [[nodiscard]] const std::string &getSelectedSchemaName() const {
+    [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;
     }
-    void setSelectedSchemaName(const std::string &schemaName) {
+    void setSelectedSchemaName(const std::string& schemaName) {
         selectedSchemaName = schemaName;
     }
 
@@ -119,28 +119,28 @@ private:
     float totalContentHeight = 0.0f; // Store total height for consistent splitter calculation
 
     // Helper methods for async execution
-    void startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface> &targetDb,
-                                  const std::string &query);
+    void startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface>& targetDb,
+                                  const std::string& query);
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
 
     // Helper method for splitter
-    bool renderVerticalSplitter(const char *id, float *position, float minSize1,
+    bool renderVerticalSplitter(const char* id, float* position, float minSize1,
                                 float minSize2) const;
 };
 
 class TableViewerTab final : public Tab {
 public:
-    TableViewerTab(const std::string &name, std::string databasePath, std::string tableName,
+    TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
                    std::shared_ptr<DatabaseInterface> serverDatabase = nullptr);
 
     void render() override;
 
     // Table Viewer specific methods
-    [[nodiscard]] const std::string &getDatabasePath() const {
+    [[nodiscard]] const std::string& getDatabasePath() const {
         return databasePath;
     }
-    [[nodiscard]] const std::string &getTableName() const {
+    [[nodiscard]] const std::string& getTableName() const {
         return tableName;
     }
     [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {

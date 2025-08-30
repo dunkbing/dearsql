@@ -27,17 +27,17 @@ public:
     };
 
     // Callbacks for editing functionality
-    using OnCellEditCallback = std::function<void(int row, int col, const std::string &newValue)>;
+    using OnCellEditCallback = std::function<void(int row, int col, const std::string& newValue)>;
     using OnCellSelectCallback = std::function<void(int row, int col)>;
     using OnCellDoubleClickCallback = std::function<void(int row, int col)>;
 
     TableRenderer();
-    explicit TableRenderer(const Config &config);
+    explicit TableRenderer(const Config& config);
 
     // Set table data
-    void setColumns(const std::vector<std::string> &columnNames);
-    void setData(const std::vector<std::vector<std::string>> &tableData);
-    void setCellEditedStatus(const std::vector<std::vector<bool>> &editedCells);
+    void setColumns(const std::vector<std::string>& columnNames);
+    void setData(const std::vector<std::vector<std::string>>& tableData);
+    void setCellEditedStatus(const std::vector<std::vector<bool>>& editedCells);
     void setSelectedCell(int row, int col);
 
     // Set callbacks
@@ -52,7 +52,7 @@ public:
     }
 
     // Render the table
-    void render(const char *tableId = "##table");
+    void render(const char* tableId = "##table");
 
     // Get current editing state
     bool isEditing() const {

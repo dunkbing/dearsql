@@ -7,9 +7,9 @@
 #include <iostream>
 #include <sstream>
 
-void ColumnDialog::showAddColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                       const std::string &tableName,
-                                       const std::string &schemaName) {
+void ColumnDialog::showAddColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                                       const std::string& tableName,
+                                       const std::string& schemaName) {
     database = db;
     targetTableName = tableName;
     targetSchemaName = schemaName;
@@ -22,9 +22,9 @@ void ColumnDialog::showAddColumnDialog(const std::shared_ptr<DatabaseInterface> 
     errorMessage.clear();
 }
 
-void ColumnDialog::showEditColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                                        const std::string &tableName, const Column &column,
-                                        const std::string &schemaName) {
+void ColumnDialog::showEditColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                                        const std::string& tableName, const Column& column,
+                                        const std::string& schemaName) {
     database = db;
     targetTableName = tableName;
     targetSchemaName = schemaName;
@@ -42,7 +42,7 @@ void ColumnDialog::renderDialog() {
     if (!isOpen)
         return;
 
-    const char *title = (mode == ColumnDialogMode::Add) ? "Add Column" : "Edit Column";
+    const char* title = (mode == ColumnDialogMode::Add) ? "Add Column" : "Edit Column";
 
     // Always try to open the popup when dialog is active
     if (!ImGui::IsPopupOpen(title)) {
@@ -122,7 +122,7 @@ void ColumnDialog::renderFormFields() {
         const auto currentInput = std::string(columnType);
 
         // Filter types based on current input (case-insensitive)
-        for (const auto &type : commonTypes) {
+        for (const auto& type : commonTypes) {
             std::string lowerType = type;
             std::string lowerInput = currentInput;
             std::ranges::transform(lowerType, lowerType.begin(), ::tolower);
@@ -176,9 +176,9 @@ void ColumnDialog::renderFormFields() {
 }
 
 void ColumnDialog::renderButtons() {
-    const char *actionText = (mode == ColumnDialogMode::Add) ? "Add Column" : "Update Column";
+    const char* actionText = (mode == ColumnDialogMode::Add) ? "Add Column" : "Update Column";
 
-    const auto &colors = Application::getInstance().getCurrentColors();
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     // button colors
     ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
@@ -256,7 +256,7 @@ bool ColumnDialog::executeAddColumn() {
                 std::cout << "Add column result: " << result1 << std::endl;
                 if (result1.find("ERROR") != std::string::npos ||
                     result1.find("Error") != std::string::npos) {
-                    const std::string &cleanError = result1;
+                    const std::string& cleanError = result1;
                     if (cleanError.find("already exists") != std::string::npos) {
                         errorMessage = "Column '" + std::string(columnName) +
                                        "' already exists in table '" + targetTableName + "'";
@@ -282,7 +282,7 @@ bool ColumnDialog::executeAddColumn() {
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
-                const std::string &cleanError = result;
+                const std::string& cleanError = result;
                 if (cleanError.find("already exists") != std::string::npos) {
                     errorMessage = "Column '" + std::string(columnName) +
                                    "' already exists in table '" + targetTableName + "'";
@@ -301,7 +301,7 @@ bool ColumnDialog::executeAddColumn() {
                        targetTableName + "'");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to add column: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
@@ -335,7 +335,7 @@ bool ColumnDialog::executeEditColumn() {
             }
 
             // Execute each statement
-            for (const auto &statement : statements) {
+            for (const auto& statement : statements) {
                 std::string result = database->executeQuery(statement);
                 if (result.find("ERROR") != std::string::npos ||
                     result.find("Error") != std::string::npos) {
@@ -363,7 +363,7 @@ bool ColumnDialog::executeEditColumn() {
                        targetTableName + "'");
         return true;
 
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         errorMessage = "Failed to edit column: " + std::string(e.what());
         LogPanel::error(errorMessage);
         return false;
@@ -515,7 +515,7 @@ void ColumnDialog::resetForm() {
     isUnique = false;
 }
 
-void ColumnDialog::populateFormFromColumn(const Column &column) {
+void ColumnDialog::populateFormFromColumn(const Column& column) {
     strncpy(columnName, column.name.c_str(), sizeof(columnName) - 1);
     strncpy(columnType, column.type.c_str(), sizeof(columnType) - 1);
     strncpy(columnComment, column.comment.c_str(), sizeof(columnComment) - 1);

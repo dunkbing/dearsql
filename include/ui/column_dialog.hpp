@@ -13,13 +13,13 @@ public:
     ~ColumnDialog() = default;
 
     // Show dialog for adding a new column
-    void showAddColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                             const std::string &tableName, const std::string &schemaName = "");
+    void showAddColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                             const std::string& tableName, const std::string& schemaName = "");
 
     // Show dialog for editing an existing column
-    void showEditColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                              const std::string &tableName, const Column &column,
-                              const std::string &schemaName = "");
+    void showEditColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                              const std::string& tableName, const Column& column,
+                              const std::string& schemaName = "");
 
     // Check if dialog is currently open
     bool isDialogOpen() const {
@@ -72,7 +72,7 @@ private:
 
     // Helper methods
     void resetForm();
-    void populateFormFromColumn(const Column &column);
+    void populateFormFromColumn(const Column& column);
     std::string generateAddColumnSQL();
     std::string generateEditColumnSQL();
     [[nodiscard]] std::vector<std::string> getCommonDataTypes() const;

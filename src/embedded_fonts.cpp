@@ -1,8 +1,8 @@
 #include "embedded_fonts.hpp"
 #include <cstring>
 
-const EmbeddedFont *findEmbeddedFont(const char *name) {
-    const EmbeddedFont *fonts = getEmbeddedFonts();
+const EmbeddedFont* findEmbeddedFont(const char* name) {
+    const EmbeddedFont* fonts = getEmbeddedFonts();
     const size_t count = getEmbeddedFontCount();
 
     if (!fonts || !name) {

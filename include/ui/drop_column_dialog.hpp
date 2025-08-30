@@ -10,8 +10,8 @@ public:
     ~DropColumnDialog() = default;
 
     // Show confirmation dialog for dropping a column
-    void showDropColumnDialog(const std::shared_ptr<DatabaseInterface> &db,
-                              const std::string &tableName, const std::string &columnName);
+    void showDropColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
+                              const std::string& tableName, const std::string& columnName);
 
     // Check if dialog is currently open
     bool isDialogOpen() const {

@@ -27,7 +27,7 @@ static void signal_handler(int signal) {
     }
 }
 
-Application &Application::getInstance() {
+Application& Application::getInstance() {
     static Application instance;
     return instance;
 }
@@ -134,7 +134,7 @@ void Application::cleanup() {
     std::cout << "Cleaning up Dear SQL..." << std::endl;
 
     // Cleanup databases
-    for (auto &db : databases) {
+    for (auto& db : databases) {
         if (db) {
             db->disconnect();
         }
@@ -175,17 +175,17 @@ void Application::setDarkTheme(const bool dark) {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
 
-const Theme::Colors &Application::getCurrentColors() const {
+const Theme::Colors& Application::getCurrentColors() const {
     return darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
 }
 
-void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
+void Application::addDatabase(const std::shared_ptr<DatabaseInterface>& db) {
     databases.push_back(db);
 }
 
 void Application::removeDatabase(const int index) {
     if (index < databases.size()) {
-        const auto &db = databases[index];
+        const auto& db = databases[index];
         if (db) {
             db->disconnect();
         }
@@ -210,7 +210,7 @@ void Application::restorePreviousConnections() {
     LogPanel::info("Restoring " + std::to_string(savedConnections.size()) +
                    " connections for current workspace");
 
-    for (const auto &conn : savedConnections) {
+    for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
 
         if (conn.type == "postgresql") {
@@ -274,7 +274,7 @@ bool Application::initializeGLFW() {
 bool Application::initializeImGui() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     setupFonts();
@@ -305,18 +305,18 @@ bool Application::initializeImGui() const {
 }
 
 void Application::setupFonts() {
-    const ImGuiIO &io = ImGui::GetIO();
+    const ImGuiIO& io = ImGui::GetIO();
 
     // load embedded fonts first
     const size_t embeddedFontCount = getEmbeddedFontCount();
     if (embeddedFontCount > 0) {
         ImFontConfig fontConfig;
-        const EmbeddedFont *embeddedFonts = getEmbeddedFonts();
+        const EmbeddedFont* embeddedFonts = getEmbeddedFonts();
         for (size_t i = 0; i < embeddedFontCount; ++i) {
-            const EmbeddedFont &font = embeddedFonts[i];
+            const EmbeddedFont& font = embeddedFonts[i];
 
             // Choose appropriate glyph ranges based on font name
-            const ImWchar *ranges = nullptr;
+            const ImWchar* ranges = nullptr;
             std::string fontName = font.name;
 
             if (fontName.find("Cyrillic") != std::string::npos) {
@@ -330,8 +330,8 @@ void Application::setupFonts() {
             // Don't let ImGui free the embedded data
             embeddedFontConfig.FontDataOwnedByAtlas = false;
 
-            const ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF(
-                (void *)font.data, static_cast<int>(font.size), 16.0f, &embeddedFontConfig, ranges);
+            const ImFont* loadedFont = io.Fonts->AddFontFromMemoryTTF(
+                (void*)font.data, static_cast<int>(font.size), 16.0f, &embeddedFontConfig, ranges);
             if (!fontConfig.MergeMode) {
                 fontConfig.MergeMode = true;
             }
@@ -379,7 +379,7 @@ std::string Application::getCurrentWorkspaceName() const {
     }
 
     auto workspaces = appState->getWorkspaces();
-    for (const auto &workspace : workspaces) {
+    for (const auto& workspace : workspaces) {
         if (workspace.id == currentWorkspaceId) {
             return workspace.name;
         }
@@ -388,7 +388,7 @@ std::string Application::getCurrentWorkspaceName() const {
     return "Default"; // Fallback
 }
 
-int Application::createWorkspace(const std::string &name, const std::string &description) {
+int Application::createWorkspace(const std::string& name, const std::string& description) {
     if (!appState) {
         return -1;
     }
@@ -427,7 +427,7 @@ bool Application::deleteWorkspace(const int workspaceId) {
 
 void Application::refreshWorkspaceConnections() {
     // Clear current connections
-    for (auto &db : databases) {
+    for (auto& db : databases) {
         if (db) {
             db->disconnect();
         }
@@ -474,7 +474,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         ImGui::DockBuilderDockWindow("Logs", rightDockId);
         ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
-        for (const auto &tab : tabManager->getTabs()) {
+        for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
         }
     } else if (shouldUseSidebar) {
@@ -488,7 +488,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
         ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
-        for (const auto &tab : tabManager->getTabs()) {
+        for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
         }
 
@@ -504,7 +504,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         ImGui::DockBuilderDockWindow("Logs", rightDockId);
         ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
 
-        for (const auto &tab : tabManager->getTabs()) {
+        for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
         }
 
@@ -513,7 +513,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         // Single panel layout: just center
         ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), dockSpaceId);
 
-        for (const auto &tab : tabManager->getTabs()) {
+        for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockSpaceId);
         }
 
@@ -528,7 +528,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
 
 void Application::renderMainUI() {
     // DockSpace setup
-    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     // Direct show/hide sidebar and log panel without animation
     sidebarWidth = targetSidebarWidth;
@@ -565,7 +565,7 @@ void Application::renderMainUI() {
     ImGui::PopStyleVar(3);
 
     // Customize titlebar colors to match app background
-    const auto &colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
     ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.base);
@@ -667,7 +667,7 @@ void Application::renderMenuBar() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("View")) {
             if (ImGui::MenuItem("Refresh All")) {
-                for (const auto &db : databases) {
+                for (const auto& db : databases) {
                     if (db->isConnected()) {
                         db->refreshTables();
                     }

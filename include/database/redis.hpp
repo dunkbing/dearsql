@@ -26,16 +26,16 @@ public:
     void checkConnectionStatusAsync() override;
 
     // Database info
-    const std::string &getName() const override;
-    const std::string &getConnectionString() const override;
-    const std::string &getPath() const override;
-    void *getConnection() const override;
+    const std::string& getName() const override;
+    const std::string& getConnectionString() const override;
+    const std::string& getPath() const override;
+    void* getConnection() const override;
     DatabaseType getType() const override;
 
     // Redis-specific key management (adapted to table interface)
     void refreshTables() override; // Will load keys
-    const std::vector<Table> &getTables() const override;
-    std::vector<Table> &getTables() override;
+    const std::vector<Table>& getTables() const override;
+    std::vector<Table>& getTables() override;
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
     bool isLoadingTables() const override;
@@ -43,31 +43,31 @@ public:
 
     // Views not applicable for Redis
     void refreshViews() override;
-    const std::vector<Table> &getViews() const override;
-    std::vector<Table> &getViews() override;
+    const std::vector<Table>& getViews() const override;
+    std::vector<Table>& getViews() override;
     bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
 
     // Sequences not applicable for Redis
     void refreshSequences() override;
-    const std::vector<std::string> &getSequences() const override;
-    std::vector<std::string> &getSequences() override;
+    const std::vector<std::string>& getSequences() const override;
+    std::vector<std::string>& getSequences() override;
     bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
 
     // Redis command execution (adapted to query interface)
-    std::string executeQuery(const std::string &command) override;
+    std::string executeQuery(const std::string& command) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string &command) override;
+    executeQueryStructured(const std::string& command) override;
 
     // Key data viewing (adapted to table interface)
-    std::vector<std::vector<std::string>> getTableData(const std::string &keyPattern, int limit,
+    std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,
                                                        int offset) override;
-    std::vector<std::string> getColumnNames(const std::string &keyPattern) override;
-    int getRowCount(const std::string &keyPattern) override;
+    std::vector<std::string> getColumnNames(const std::string& keyPattern) override;
+    int getRowCount(const std::string& keyPattern) override;
 
     // Async key data loading
-    void startTableDataLoadAsync(const std::string &keyPattern, int limit, int offset) override;
+    void startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset) override;
     bool isLoadingTableData() const override;
     void checkTableDataStatusAsync() override;
     bool hasTableDataResult() const override;
@@ -83,20 +83,20 @@ public:
     // Connection attempt tracking
     bool hasAttemptedConnection() const override;
     void setAttemptedConnection(bool attempted) override;
-    const std::string &getLastConnectionError() const override;
-    void setLastConnectionError(const std::string &error) override;
+    const std::string& getLastConnectionError() const override;
+    void setLastConnectionError(const std::string& error) override;
 
     // Redis-specific methods
-    std::vector<RedisKey> getKeys(const std::string &pattern = "*", int limit = 1000) const;
-    std::string getKeyValue(const std::string &key) const;
-    std::string getKeyType(const std::string &key) const;
-    int64_t getKeyTTL(const std::string &key) const;
+    std::vector<RedisKey> getKeys(const std::string& pattern = "*", int limit = 1000) const;
+    std::string getKeyValue(const std::string& key) const;
+    std::string getKeyType(const std::string& key) const;
+    int64_t getKeyTTL(const std::string& key) const;
 
 protected:
     std::vector<std::string> getTableNames() override; // Will return key patterns
-    std::vector<Column> getTableColumns(const std::string &keyPattern) override;
+    std::vector<Column> getTableColumns(const std::string& keyPattern) override;
     std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string &viewName) override;
+    std::vector<Column> getViewColumns(const std::string& viewName) override;
     std::vector<std::string> getSequenceNames() override;
 
 private:
@@ -106,7 +106,7 @@ private:
     std::string password;
     std::string username;
     std::string connectionString;
-    redisContext *context = nullptr;
+    redisContext* context = nullptr;
     std::vector<Table> tables;          // Will represent key groups
     std::vector<Table> views;           // Empty for Redis
     std::vector<std::string> sequences; // Empty for Redis
@@ -135,9 +135,9 @@ private:
     std::future<void> tableDataFuture;
 
     // Helper methods
-    redisReply *executeRedisCommand(const std::string &command) const;
-    redisReply *executeRedisCommandParsed(const std::vector<std::string> &commandParts) const;
-    static std::string formatRedisReply(redisReply *reply);
-    static std::vector<std::string> parseRedisCommand(const std::string &command);
+    redisReply* executeRedisCommand(const std::string& command) const;
+    redisReply* executeRedisCommandParsed(const std::vector<std::string>& commandParts) const;
+    static std::string formatRedisReply(redisReply* reply);
+    static std::vector<std::string> parseRedisCommand(const std::string& command);
     void groupKeysByPattern();
 };

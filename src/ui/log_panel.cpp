@@ -8,8 +8,8 @@ LogPanel::LogPanel() {
     addLog(LogLevel::INFO, "Log panel initialized");
 }
 
-LogPanel &LogPanel::getInstance() {
-    static LogPanel *instance = nullptr;
+LogPanel& LogPanel::getInstance() {
+    static LogPanel* instance = nullptr;
     static std::once_flag flag;
     std::call_once(flag, []() { instance = new LogPanel(); });
     return *instance;
@@ -28,7 +28,7 @@ void LogPanel::render() {
     ImGui::SameLine();
 
     // Filter level combo
-    const char *levelNames[] = {"ALL", "DEBUG", "INFO", "WARN", "ERROR"};
+    const char* levelNames[] = {"ALL", "DEBUG", "INFO", "WARN", "ERROR"};
     int currentLevel = filterLevel_ == LogLevel::ALL ? 0 : static_cast<int>(filterLevel_) + 1;
     ImGui::SetNextItemWidth(80);
     if (ImGui::Combo("##filter", &currentLevel, levelNames, 5)) {
@@ -40,7 +40,7 @@ void LogPanel::render() {
     // Log content area
     ImGui::BeginChild("LogContent", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-    for (const auto &entry : logs_) {
+    for (const auto& entry : logs_) {
         // Apply filter (skip if filter level is higher than entry level, unless ALL is selected)
         if (filterLevel_ != LogLevel::ALL && entry.level < filterLevel_) {
             continue;
@@ -70,7 +70,7 @@ void LogPanel::render() {
     ImGui::End();
 }
 
-void LogPanel::addLog(const LogLevel level, const std::string &message) {
+void LogPanel::addLog(const LogLevel level, const std::string& message) {
     LogEntry entry;
     entry.timestamp = std::chrono::system_clock::now();
     entry.level = level;
@@ -89,7 +89,7 @@ void LogPanel::clear() {
     addLog(LogLevel::INFO, "Log cleared");
 }
 
-const char *LogPanel::getLevelString(const LogLevel level) {
+const char* LogPanel::getLevelString(const LogLevel level) {
     switch (level) {
     case LogLevel::DEBUG:
         return "DEBUG";
@@ -119,7 +119,7 @@ ImVec4 LogPanel::getLevelColor(const LogLevel level) {
     }
 }
 
-std::string LogPanel::formatTimestamp(const std::chrono::system_clock::time_point &timestamp) {
+std::string LogPanel::formatTimestamp(const std::chrono::system_clock::time_point& timestamp) {
     const auto time_t = std::chrono::system_clock::to_time_t(timestamp);
     const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
@@ -131,18 +131,18 @@ std::string LogPanel::formatTimestamp(const std::chrono::system_clock::time_poin
 }
 
 // Static utility functions
-void LogPanel::debug(const std::string &message) {
+void LogPanel::debug(const std::string& message) {
     getInstance().addLog(LogLevel::DEBUG, message);
 }
 
-void LogPanel::info(const std::string &message) {
+void LogPanel::info(const std::string& message) {
     getInstance().addLog(LogLevel::INFO, message);
 }
 
-void LogPanel::warn(const std::string &message) {
+void LogPanel::warn(const std::string& message) {
     getInstance().addLog(LogLevel::WARN, message);
 }
 
-void LogPanel::error(const std::string &message) {
+void LogPanel::error(const std::string& message) {
     getInstance().addLog(LogLevel::ERROR, message);
 }

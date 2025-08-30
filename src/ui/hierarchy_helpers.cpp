@@ -12,12 +12,12 @@
 
 namespace HierarchyHelpers {
     // Forward declarations for external dialogs
-    extern TableDialog &getTableDialog();
-    extern DropColumnDialog &getDropColumnDialog();
+    extern TableDialog& getTableDialog();
+    extern DropColumnDialog& getDropColumnDialog();
 
-    void renderTableNode(const std::shared_ptr<DatabaseInterface> &db, int tableIndex) {
-        auto &app = Application::getInstance();
-        auto &table = db->getTables()[tableIndex];
+    void renderTableNode(const std::shared_ptr<DatabaseInterface>& db, int tableIndex) {
+        auto& app = Application::getInstance();
+        auto& table = db->getTables()[tableIndex];
 
         ImGuiTreeNodeFlags tableFlags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
@@ -104,8 +104,8 @@ namespace HierarchyHelpers {
             }
 
             if (columnsOpened) {
-                for (const auto &column : table.columns) {
-                    const auto &[name, type, comment, isPrimaryKey, isNotNull] = column;
+                for (const auto& column : table.columns) {
+                    const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
@@ -166,7 +166,7 @@ namespace HierarchyHelpers {
                 // Show primary key if any column is marked as primary key
                 bool hasPrimaryKey = false;
                 std::string primaryKeyColumns;
-                for (const auto &column : table.columns) {
+                for (const auto& column : table.columns) {
                     if (column.isPrimaryKey) {
                         if (hasPrimaryKey) {
                             primaryKeyColumns += ", ";
@@ -217,9 +217,9 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderViewNode(const std::shared_ptr<DatabaseInterface> &db, const int viewIndex) {
-        const auto &app = Application::getInstance();
-        const auto &view = db->getViews()[viewIndex];
+    void renderViewNode(const std::shared_ptr<DatabaseInterface>& db, const int viewIndex) {
+        const auto& app = Application::getInstance();
+        const auto& view = db->getViews()[viewIndex];
 
         constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -240,7 +240,7 @@ namespace HierarchyHelpers {
             viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
             ICON_FA_EYE);
 
-        const auto &tabManager = app.getTabManager();
+        const auto& tabManager = app.getTabManager();
         // Double-click to open view viewer (async loading will be handled by the tab)
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             tabManager->createTableViewerTab(db, view.name);
@@ -260,7 +260,7 @@ namespace HierarchyHelpers {
         ImGui::PopID();
     }
 
-    void renderTablesSection(const std::shared_ptr<DatabaseInterface> &db) {
+    void renderTablesSection(const std::shared_ptr<DatabaseInterface>& db) {
         // Get expansion state from the current database data
         bool tablesExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
@@ -362,7 +362,7 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderViewsSection(const std::shared_ptr<DatabaseInterface> &db) {
+    void renderViewsSection(const std::shared_ptr<DatabaseInterface>& db) {
         // Get expansion state from the current database data
         bool viewsExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
@@ -444,7 +444,7 @@ namespace HierarchyHelpers {
             ImGui::TreePop();
         }
     }
-    void renderRedisHierarchy(const std::shared_ptr<DatabaseInterface> &db) {
+    void renderRedisHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
         const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         if (!redisDb) {
             return;
@@ -493,8 +493,8 @@ namespace HierarchyHelpers {
                 ImGui::Text("  No keys found");
             }
         } else {
-            const auto &tables = redisDb->getTables();
-            for (const auto &table : tables) {
+            const auto& tables = redisDb->getTables();
+            for (const auto& table : tables) {
                 constexpr ImGuiTreeNodeFlags keyGroupFlags = ImGuiTreeNodeFlags_Leaf |
                                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                              ImGuiTreeNodeFlags_FramePadding;
@@ -519,7 +519,7 @@ namespace HierarchyHelpers {
 
                 // Double-click to open Redis key viewer
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                    auto &app = Application::getInstance();
+                    auto& app = Application::getInstance();
                     app.getTabManager()->createTableViewerTab(redisDb, table.name);
                 }
 
@@ -527,7 +527,7 @@ namespace HierarchyHelpers {
                 ImGui::PushID(table.name.c_str());
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("View Keys")) {
-                        auto &app = Application::getInstance();
+                        auto& app = Application::getInstance();
                         app.getTabManager()->createTableViewerTab(redisDb, table.name);
                     }
                     if (ImGui::MenuItem("Refresh Keys")) {
@@ -560,14 +560,14 @@ namespace HierarchyHelpers {
 
         // Double-click to open Redis query editor
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            const auto &app = Application::getInstance();
+            const auto& app = Application::getInstance();
             app.getTabManager()->createSQLEditorTab("", db);
         }
 
         // Context menu for Query
         if (ImGui::BeginPopupContextItem("query_context_menu")) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                auto &app = Application::getInstance();
+                auto& app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", db);
             }
             ImGui::EndPopup();
@@ -604,12 +604,12 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedTablesSection(const std::shared_ptr<DatabaseInterface> &db,
-                                   const std::string &dbName) {
+    void renderCachedTablesSection(const std::shared_ptr<DatabaseInterface>& db,
+                                   const std::string& dbName) {
         // For PostgreSQL and MySQL, we need to cast to access cached data
         if (db->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            const auto &dbData = pgDb->getDatabaseData(dbName);
+            const auto& dbData = pgDb->getDatabaseData(dbName);
 
             ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -695,7 +695,7 @@ namespace HierarchyHelpers {
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-            auto &dbData = mysqlDb->getDatabaseData(dbName);
+            auto& dbData = mysqlDb->getDatabaseData(dbName);
 
             ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -781,12 +781,12 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedViewsSection(const std::shared_ptr<DatabaseInterface> &db,
-                                  const std::string &dbName) {
+    void renderCachedViewsSection(const std::shared_ptr<DatabaseInterface>& db,
+                                  const std::string& dbName) {
         // For PostgreSQL and MySQL, we need to cast to access cached data
         if (db->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            auto &dbData = pgDb->getDatabaseData(dbName);
+            auto& dbData = pgDb->getDatabaseData(dbName);
 
             ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -848,7 +848,7 @@ namespace HierarchyHelpers {
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-            auto &dbData = mysqlDb->getDatabaseData(dbName);
+            auto& dbData = mysqlDb->getDatabaseData(dbName);
 
             ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -911,21 +911,21 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedTableNode(const std::shared_ptr<DatabaseInterface> &db,
-                               const std::string &dbName, int tableIndex) {
-        auto &app = Application::getInstance();
+    void renderCachedTableNode(const std::shared_ptr<DatabaseInterface>& db,
+                               const std::string& dbName, int tableIndex) {
+        auto& app = Application::getInstance();
 
         // Get the cached table data
-        Table *table = nullptr;
+        Table* table = nullptr;
         if (db->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            auto &dbData = pgDb->getDatabaseData(dbName);
+            auto& dbData = pgDb->getDatabaseData(dbName);
             if (tableIndex < dbData.tables.size()) {
                 table = &dbData.tables[tableIndex];
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-            auto &dbData = mysqlDb->getDatabaseData(dbName);
+            auto& dbData = mysqlDb->getDatabaseData(dbName);
             if (tableIndex < dbData.tables.size()) {
                 table = &dbData.tables[tableIndex];
             }
@@ -1071,8 +1071,8 @@ namespace HierarchyHelpers {
             }
 
             if (columnsOpened) {
-                for (const auto &column : table->columns) {
-                    const auto &[name, type, comment, isPrimaryKey, isNotNull] = column;
+                for (const auto& column : table->columns) {
+                    const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
                     ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
@@ -1113,21 +1113,21 @@ namespace HierarchyHelpers {
         }
     }
 
-    void renderCachedViewNode(const std::shared_ptr<DatabaseInterface> &db,
-                              const std::string &dbName, int viewIndex) {
-        auto &app = Application::getInstance();
+    void renderCachedViewNode(const std::shared_ptr<DatabaseInterface>& db,
+                              const std::string& dbName, int viewIndex) {
+        auto& app = Application::getInstance();
 
         // Get the cached view data
-        const Table *view = nullptr;
+        const Table* view = nullptr;
         if (db->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            const auto &dbData = pgDb->getDatabaseData(dbName);
+            const auto& dbData = pgDb->getDatabaseData(dbName);
             if (viewIndex < dbData.views.size()) {
                 view = &dbData.views[viewIndex];
             }
         } else if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-            const auto &dbData = mysqlDb->getDatabaseData(dbName);
+            const auto& dbData = mysqlDb->getDatabaseData(dbName);
             if (viewIndex < dbData.views.size()) {
                 view = &dbData.views[viewIndex];
             }
@@ -1155,7 +1155,7 @@ namespace HierarchyHelpers {
             viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
             ICON_FA_EYE);
 
-        const auto &tabManager = app.getTabManager();
+        const auto& tabManager = app.getTabManager();
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             // Auto-switch to the correct database before opening view viewer

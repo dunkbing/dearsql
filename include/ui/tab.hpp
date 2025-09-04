@@ -200,7 +200,13 @@ private:
     // Table renderer
     std::unique_ptr<TableRenderer> tableRenderer;
 
+    // Filter functionality
+    char filterBuffer[512] = {0};
+    std::string currentFilter;
+    bool filterChanged = false;
+
     // Helper methods
     void selectCell(int row, int col);
     void handleKeyboardNavigation();
+    void applyFilter();
 };

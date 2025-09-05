@@ -83,7 +83,8 @@ public:
     virtual int getRowCount(const std::string& tableName) = 0;
 
     // Async table data loading (includes metadata + data)
-    virtual void startTableDataLoadAsync(const std::string& tableName, int limit, int offset) {}
+    virtual void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
+                                         const std::string& whereClause = "") {}
     [[nodiscard]] virtual bool isLoadingTableData(const std::string& tableName) const {
         return false;
     }

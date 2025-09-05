@@ -1074,8 +1074,8 @@ void PostgresDatabase::checkConnectionStatusAsync() {
 }
 
 // Async table data loading methods
-void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int limit,
-                                               int offset) {
+void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
+                                               const std::string& whereClause) {
     auto& state = tableDataStates[tableName];
 
     if (state.loading.load()) {
@@ -1089,7 +1089,7 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
     state.rowCount = 0;
 
     // Start async operation that loads everything using connection pool
-    state.future = std::async(std::launch::async, [this, tableName, limit, offset]() {
+    state.future = std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
         try {
             // Use connection pool instead of creating a new session
             auto* pool = getConnectionPoolForDatabase(database);
@@ -1109,9 +1109,11 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
             }
 
             // Load table data
-            const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" LIMIT " +
-                                          std::to_string(limit) + " OFFSET " +
-                                          std::to_string(offset);
+            std::string dataQuery = "SELECT * FROM \"" + tableName + "\"";
+            if (!whereClause.empty()) {
+                dataQuery += " WHERE " + whereClause;
+            }
+            dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
             {
                 soci::session sql(*pool);
@@ -1157,7 +1159,11 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
             }
 
             // Load row count
-            const std::string countQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
+            std::string countQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
+            if (!whereClause.empty()) {
+                countQuery =
+                    std::format(R"(SELECT COUNT(*) FROM "{}" WHERE {})", tableName, whereClause);
+            }
             {
                 soci::session sql(*pool);
                 sql << countQuery, soci::into(state.rowCount);

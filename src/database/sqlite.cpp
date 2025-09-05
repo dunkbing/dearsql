@@ -512,7 +512,8 @@ void SQLiteDatabase::checkConnectionStatusAsync() {
 }
 
 // Async table data loading methods
-void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset) {
+void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
+                                             const std::string& whereClause) {
     if (loadingTableData) {
         return; // Already loading
     }
@@ -524,19 +525,41 @@ void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int l
     rowCountResult = 0;
 
     // Start async operation that loads everything
-    tableDataFuture = std::async(std::launch::async, [this, tableName, limit, offset]() {
-        try {
-            tableDataResult = getTableData(tableName, limit, offset);
-            columnNamesResult = getColumnNames(tableName);
-            rowCountResult = getRowCount(tableName);
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            // Clear results on error
-            tableDataResult.clear();
-            columnNamesResult.clear();
-            rowCountResult = 0;
-        }
-    });
+    tableDataFuture =
+        std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
+            try {
+                if (!whereClause.empty()) {
+                    // For filtered queries, use executeQueryStructured
+                    std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
+                                            whereClause + " LIMIT " + std::to_string(limit) +
+                                            " OFFSET " + std::to_string(offset);
+                    auto [columns, data] = executeQueryStructured(dataQuery);
+                    tableDataResult = data;
+                    columnNamesResult = columns;
+
+                    // Get filtered count
+                    std::string countQuery =
+                        "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
+                    auto [countCols, countData] = executeQueryStructured(countQuery);
+                    if (!countData.empty() && !countData[0].empty()) {
+                        rowCountResult = std::stoi(countData[0][0]);
+                    } else {
+                        rowCountResult = 0;
+                    }
+                } else {
+                    // No filter - use existing methods
+                    tableDataResult = getTableData(tableName, limit, offset);
+                    columnNamesResult = getColumnNames(tableName);
+                    rowCountResult = getRowCount(tableName);
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error in async table data load: " << e.what() << std::endl;
+                // Clear results on error
+                tableDataResult.clear();
+                columnNamesResult.clear();
+                rowCountResult = 0;
+            }
+        });
 }
 
 bool SQLiteDatabase::isLoadingTableData() const {

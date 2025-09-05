@@ -67,7 +67,8 @@ public:
     int getRowCount(const std::string& keyPattern) override;
 
     // Async key data loading
-    void startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset) override;
+    void startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset,
+                                 const std::string& whereClause = "") override;
     bool isLoadingTableData() const override;
     void checkTableDataStatusAsync() override;
     bool hasTableDataResult() const override;

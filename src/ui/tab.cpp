@@ -1341,224 +1341,25 @@ void TableViewerTab::loadDataAsync() {
     hasLoadingError = false;
     loadingError.clear();
 
-    // If we have a filter, use custom SQL query instead of the standard table loading
-    if (!currentFilter.empty()) {
-        // Use synchronous query execution for filtered data (simpler for now)
-        try {
-            std::cout << "=== FILTER DEBUG START ===" << std::endl;
-            std::cout << "Applying filter: '" << currentFilter << "' to table: " << tableName
-                      << std::endl;
-            std::cout << "Database type: " << static_cast<int>(serverDatabase->getType())
-                      << std::endl;
-            LogPanel::debug("Applying filter: '" + currentFilter + "' to table: " + tableName);
-            LogPanel::debug("Database type: " +
-                            std::to_string(static_cast<int>(serverDatabase->getType())));
-
-            // Test basic connectivity first
-            std::cout << "Testing basic connectivity with: SELECT 1 as test_col" << std::endl;
-            auto [testCols, testData] =
-                serverDatabase->executeQueryStructured("SELECT 1 as test_col");
-            std::cout << "Basic connectivity test returned " << testCols.size() << " columns and "
-                      << testData.size() << " rows" << std::endl;
-            if (!testData.empty() && !testData[0].empty()) {
-                std::cout << "Test result value: " << testData[0][0] << std::endl;
-            }
-            LogPanel::debug("Basic connectivity test returned " + std::to_string(testCols.size()) +
-                            " columns and " + std::to_string(testData.size()) + " rows");
-
-            // Test unfiltered query to compare
-            std::string unfilteredSql;
-            if (serverDatabase->getType() == DatabaseType::SQLITE) {
-                unfilteredSql = "SELECT * FROM \"" + tableName + "\" LIMIT 5";
-            } else if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                unfilteredSql = "SELECT * FROM public.\"" + tableName + "\" LIMIT 5";
-            } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
-                unfilteredSql = "SELECT * FROM `" + tableName + "` LIMIT 5";
-            } else {
-                unfilteredSql = "SELECT * FROM " + tableName + " LIMIT 5";
-            }
-            std::cout << "Testing unfiltered query: " << unfilteredSql << std::endl;
-            auto [unfilteredCols, unfilteredData] =
-                serverDatabase->executeQueryStructured(unfilteredSql);
-            std::cout << "Unfiltered test query returned " << unfilteredCols.size()
-                      << " columns and " << unfilteredData.size() << " rows" << std::endl;
-
-            // Show column names to help with filtering
-            std::cout << "Available columns: ";
-            for (size_t i = 0; i < unfilteredCols.size(); ++i) {
-                std::cout << unfilteredCols[i];
-                if (i < unfilteredCols.size() - 1)
-                    std::cout << ", ";
-            }
-            std::cout << std::endl;
-
-            // Show some sample ID values if there's an 'id' column
-            for (size_t colIdx = 0; colIdx < unfilteredCols.size(); ++colIdx) {
-                if (unfilteredCols[colIdx] == "id" || unfilteredCols[colIdx] == "ID") {
-                    std::cout << "Sample ID values: ";
-                    for (size_t rowIdx = 0; rowIdx < unfilteredData.size(); ++rowIdx) {
-                        if (colIdx < unfilteredData[rowIdx].size()) {
-                            std::cout << unfilteredData[rowIdx][colIdx];
-                            if (rowIdx < unfilteredData.size() - 1)
-                                std::cout << ", ";
-                        }
-                    }
-                    std::cout << std::endl;
-                    break;
-                }
-            }
-            LogPanel::debug("Unfiltered test query (" + unfilteredSql + ") returned " +
-                            std::to_string(unfilteredCols.size()) + " columns and " +
-                            std::to_string(unfilteredData.size()) + " rows");
-
-            const int offset = currentPage * rowsPerPage;
-
-            // Build the filtered SQL query
-            std::string sql;
-            if (serverDatabase->getType() == DatabaseType::SQLITE) {
-                sql = "SELECT * FROM \"" + tableName + "\" WHERE " + currentFilter + " LIMIT " +
-                      std::to_string(rowsPerPage) + " OFFSET " + std::to_string(offset);
-            } else if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                // For PostgreSQL, try with public schema first, then without schema
-                sql = "SELECT * FROM public.\"" + tableName + "\" WHERE " + currentFilter +
-                      " LIMIT " + std::to_string(rowsPerPage) + " OFFSET " + std::to_string(offset);
-            } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
-                sql = "SELECT * FROM `" + tableName + "` WHERE " + currentFilter + " LIMIT " +
-                      std::to_string(rowsPerPage) + " OFFSET " + std::to_string(offset);
-            } else {
-                sql = "SELECT * FROM " + tableName + " WHERE " + currentFilter + " LIMIT " +
-                      std::to_string(rowsPerPage) + " OFFSET " + std::to_string(offset);
-            }
-
-            // Log the exact SQL being executed
-            std::cout << "Executing filtered SQL: " << sql << std::endl;
-            LogPanel::debug("Executing filtered SQL: " + sql);
-
-            // Execute the filtered query
-            auto [columns, data] = serverDatabase->executeQueryStructured(sql);
-            std::cout << "Filtered query returned " << columns.size() << " columns and "
-                      << data.size() << " rows" << std::endl;
-
-            // If PostgreSQL query failed and we used schema, try without schema
-            if (columns.empty() && data.empty() &&
-                serverDatabase->getType() == DatabaseType::POSTGRESQL &&
-                sql.find("public.") != std::string::npos) {
-                std::cout << "PostgreSQL query with schema failed, trying without schema"
-                          << std::endl;
-                LogPanel::debug("PostgreSQL query with schema failed, trying without schema");
-                sql = "SELECT * FROM \"" + tableName + "\" WHERE " + currentFilter + " LIMIT " +
-                      std::to_string(rowsPerPage) + " OFFSET " + std::to_string(offset);
-                std::cout << "Executing fallback SQL: " << sql << std::endl;
-                LogPanel::debug("Executing fallback SQL: " + sql);
-                auto [fallbackCols, fallbackData] = serverDatabase->executeQueryStructured(sql);
-                columns = fallbackCols;
-                data = fallbackData;
-                std::cout << "Fallback query returned " << columns.size() << " columns and "
-                          << data.size() << " rows" << std::endl;
-            }
-
-            LogPanel::debug("Filter query returned " + std::to_string(columns.size()) +
-                            " columns and " + std::to_string(data.size()) + " rows");
-
-            // Also get the total count for pagination
-            std::string countSql;
-            if (serverDatabase->getType() == DatabaseType::SQLITE) {
-                countSql = "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + currentFilter;
-            } else if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                // For PostgreSQL, try with public schema first
-                countSql =
-                    "SELECT COUNT(*) FROM public.\"" + tableName + "\" WHERE " + currentFilter;
-            } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
-                countSql = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + currentFilter;
-            } else {
-                countSql = "SELECT COUNT(*) FROM " + tableName + " WHERE " + currentFilter;
-            }
-
-            // Log the count SQL being executed
-            std::cout << "Executing count SQL: " << countSql << std::endl;
-            LogPanel::debug("Executing count SQL: " + countSql);
-
-            auto [countColumns, countData] = serverDatabase->executeQueryStructured(countSql);
-            std::cout << "Count query returned " << countColumns.size() << " columns and "
-                      << countData.size() << " rows" << std::endl;
-
-            // If PostgreSQL count query failed and we used schema, try without schema
-            if (countData.empty() && serverDatabase->getType() == DatabaseType::POSTGRESQL &&
-                countSql.find("public.") != std::string::npos) {
-                LogPanel::debug("PostgreSQL count query with schema failed, trying without schema");
-                countSql = "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + currentFilter;
-                LogPanel::debug("Executing fallback count SQL: " + countSql);
-                auto [fallbackCountCols, fallbackCountData] =
-                    serverDatabase->executeQueryStructured(countSql);
-                countColumns = fallbackCountCols;
-                countData = fallbackCountData;
-            }
-
-            int count = 0;
-            if (!countData.empty() && !countData[0].empty()) {
-                count = std::stoi(countData[0][0]);
-                std::cout << "Count query returned: " << count << " total matching rows"
-                          << std::endl;
-                LogPanel::debug("Count query returned: " + std::to_string(count) +
-                                " total matching rows");
-            }
-
-            // Update the UI data
-            columnNames = columns;
-            tableData = data;
-            totalRows = count;
-            originalData = tableData;
-            hasChanges = false;
-            isLoadingData = false;
-
-            std::cout << "Filter applied successfully. Found " << count << " rows, showing "
-                      << data.size() << " rows on current page" << std::endl;
-            std::cout << "=== FILTER DEBUG END ===" << std::endl;
-            LogPanel::debug("Filter applied successfully. Found " + std::to_string(count) +
-                            " rows, showing " + std::to_string(data.size()) +
-                            " rows on current page");
-
-            // Initialize edited cells tracking
-            editedCells = std::vector<std::vector<bool>>(
-                tableData.size(), std::vector<bool>(columnNames.size(), false));
-
-        } catch (const std::exception& e) {
-            std::cout << "=== FILTER ERROR ===" << std::endl;
-            std::cout << "Filter query exception: " << e.what() << std::endl;
-            std::cout << "=== FILTER ERROR END ===" << std::endl;
-            hasLoadingError = true;
-            loadingError = "Filter query failed: " + std::string(e.what());
-            isLoadingData = false;
-            // Clear data on error
-            tableData.clear();
-            columnNames.clear();
-            totalRows = 0;
-            LogPanel::error("Filter query exception: " + std::string(e.what()));
-        }
+    // Clear any previous async result
+    if (serverDatabase->getType() == DatabaseType::SQLITE) {
+        serverDatabase->clearTableDataResult();
     } else {
-        // No filter - use standard table loading
-        LogPanel::debug("Loading unfiltered data for table: " + tableName);
-
-        // Clear any previous async result
-        if (serverDatabase->getType() == DatabaseType::SQLITE) {
-            serverDatabase->clearTableDataResult();
-        } else {
-            serverDatabase->clearTableDataResult(tableName);
-        }
-
-        // Clear current data to show loading state
-        if (filterChanged) {
-            tableData.clear();
-            columnNames.clear();
-            totalRows = 0;
-            filterChanged = false;
-            LogPanel::debug("Cleared previous filtered data, starting fresh load");
-        }
-
-        // Start async data loading (includes metadata)
-        const int offset = currentPage * rowsPerPage;
-        serverDatabase->startTableDataLoadAsync(tableName, rowsPerPage, offset);
+        serverDatabase->clearTableDataResult(tableName);
     }
+
+    // Clear current data to show loading state if filter changed
+    if (filterChanged) {
+        tableData.clear();
+        columnNames.clear();
+        totalRows = 0;
+        filterChanged = false;
+        LogPanel::debug("Cleared previous filtered data, starting fresh load");
+    }
+
+    // Start async data loading with filter support
+    const int offset = currentPage * rowsPerPage;
+    serverDatabase->startTableDataLoadAsync(tableName, rowsPerPage, offset, currentFilter);
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {

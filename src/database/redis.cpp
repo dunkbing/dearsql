@@ -403,7 +403,8 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
 }
 
 // Async table data loading methods
-void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset) {
+void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset,
+                                            const std::string& whereClause) {
     if (loadingTableData) {
         return;
     }
@@ -414,18 +415,19 @@ void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int l
     columnNamesResult.clear();
     rowCountResult = 0;
 
-    tableDataFuture = std::async(std::launch::async, [this, keyPattern, limit, offset]() {
-        try {
-            tableDataResult = getTableData(keyPattern, limit, offset);
-            columnNamesResult = getColumnNames(keyPattern);
-            rowCountResult = getRowCount(keyPattern);
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async Redis data load: " << e.what() << std::endl;
-            tableDataResult.clear();
-            columnNamesResult.clear();
-            rowCountResult = 0;
-        }
-    });
+    tableDataFuture =
+        std::async(std::launch::async, [this, keyPattern, limit, offset, whereClause]() {
+            try {
+                tableDataResult = getTableData(keyPattern, limit, offset);
+                columnNamesResult = getColumnNames(keyPattern);
+                rowCountResult = getRowCount(keyPattern);
+            } catch (const std::exception& e) {
+                std::cerr << "Error in async Redis data load: " << e.what() << std::endl;
+                tableDataResult.clear();
+                columnNamesResult.clear();
+                rowCountResult = 0;
+            }
+        });
 }
 
 bool RedisDatabase::isLoadingTableData() const {

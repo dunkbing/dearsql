@@ -70,7 +70,8 @@ public:
     int getRowCount(const std::string& tableName) override;
 
     // Async table data loading
-    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset) override;
+    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
+                                 const std::string& whereClause = "") override;
     bool isLoadingTableData(const std::string& tableName) const override;
     void checkTableDataStatusAsync(const std::string& tableName) override;
     bool hasTableDataResult(const std::string& tableName) const override;

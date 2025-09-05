@@ -731,7 +731,8 @@ int MySQLDatabase::getRowCount(const std::string& tableName) {
     }
 }
 
-void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset) {
+void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
+                                            const std::string& whereClause) {
     auto& state = tableDataStates[tableName];
 
     if (state.loading.load()) {
@@ -744,7 +745,7 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
     state.columnNames.clear();
     state.rowCount = 0;
 
-    state.future = std::async(std::launch::async, [this, tableName, limit, offset]() {
+    state.future = std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
         try {
             // Use connection pool instead of creating a new session
             auto* pool = getConnectionPoolForDatabase(database);
@@ -763,9 +764,11 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
             }
 
             // Load table data
-            const std::string dataQuery = "SELECT * FROM `" + tableName + "` LIMIT " +
-                                          std::to_string(limit) + " OFFSET " +
-                                          std::to_string(offset);
+            std::string dataQuery = "SELECT * FROM `" + tableName + "`";
+            if (!whereClause.empty()) {
+                dataQuery += " WHERE " + whereClause;
+            }
+            dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
             {
                 soci::session sql(*pool);
@@ -815,7 +818,10 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
             }
 
             // Load row count
-            const std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
+            std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
+            if (!whereClause.empty()) {
+                countQuery = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + whereClause;
+            }
             {
                 soci::session sql(*pool);
                 sql << countQuery, soci::into(state.rowCount);

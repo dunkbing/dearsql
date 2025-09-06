@@ -39,6 +39,9 @@ public:
     void setData(const std::vector<std::vector<std::string>>& tableData);
     void setCellEditedStatus(const std::vector<std::vector<bool>>& editedCells);
     void setSelectedCell(int row, int col);
+    void setRowNumberOffset(int offset) {
+        rowNumberOffset = offset;
+    }
 
     // Set callbacks
     void setOnCellEdit(OnCellEditCallback callback) {
@@ -82,6 +85,7 @@ private:
     int selectedCol = -1;
     int editingRow = -1;
     int editingCol = -1;
+    int rowNumberOffset = 0;
 
     char editBuffer[1024] = {0};
 

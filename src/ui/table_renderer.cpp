@@ -63,7 +63,16 @@ void TableRenderer::render(const char* tableId) {
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         // Setup columns
         if (config.showRowNumbers) {
-            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            // Calculate width needed for row numbers
+            int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
+            std::string maxRowStr = std::to_string(maxRowNum);
+            float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
+            // Just add minimal padding for the column
+            float columnWidth = textWidth + 5.0f;       // Simplified padding
+            columnWidth = std::max(columnWidth, 15.0f); // Minimum width for header "#"
+            ImGui::TableSetupColumn(
+                "#", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize,
+                columnWidth);
         }
 
         for (const auto& colName : columns) {
@@ -79,7 +88,7 @@ void TableRenderer::render(const char* tableId) {
             // Row number column
             if (config.showRowNumbers) {
                 ImGui::TableNextColumn();
-                ImGui::Text("%d", rowIdx + 1);
+                ImGui::Text("%d", rowNumberOffset + rowIdx + 1);
             }
 
             // Data columns

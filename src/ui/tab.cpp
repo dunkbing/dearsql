@@ -912,7 +912,7 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
     TableRenderer::Config config;
     config.allowEditing = true;
     config.allowSelection = true;
-    config.showRowNumbers = false;
+    config.showRowNumbers = true; // Enable row numbers
     config.minHeight = 200.0f;
 
     tableRenderer = std::make_unique<TableRenderer>(config);
@@ -1017,6 +1017,63 @@ void TableViewerTab::render() {
         lastPage();
     }
 
+    // Page size selector
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Rows per page:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80.0f);
+
+    static const int pageSizeOptions[] = {10, 25, 50, 100, 200, 500};
+    static const char* pageSizeLabels[] = {"10", "25", "50", "100", "200", "500"};
+    int currentSizeIndex = -1;
+
+    // Find current size in options
+    for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
+        if (pageSizeOptions[i] == rowsPerPage) {
+            currentSizeIndex = i;
+            break;
+        }
+    }
+
+    // Store the string to avoid dangling pointer
+    std::string customSizeLabel;
+    const char* currentSizeLabel;
+    if (currentSizeIndex >= 0) {
+        currentSizeLabel = pageSizeLabels[currentSizeIndex];
+    } else {
+        customSizeLabel = std::to_string(rowsPerPage);
+        currentSizeLabel = customSizeLabel.c_str();
+    }
+
+    if (ImGui::BeginCombo("##pagesize", currentSizeLabel)) {
+        for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
+            const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
+            if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
+                if (pageSizeOptions[i] != rowsPerPage) {
+                    // Calculate first row index with old page size
+                    const int oldRowsPerPage = rowsPerPage;
+                    const int firstRowOnCurrentPage = currentPage * oldRowsPerPage;
+
+                    // Update to new page size
+                    rowsPerPage = pageSizeOptions[i];
+
+                    // Calculate new page to stay on approximately the same data
+                    currentPage = firstRowOnCurrentPage / rowsPerPage;
+
+                    // Reload data with new page size
+                    loadDataAsync();
+                }
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
     // Action buttons next to pagination
     ImGui::SameLine();
     ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
@@ -1085,6 +1142,7 @@ void TableViewerTab::render() {
         tableRenderer->setData(tableData);
         tableRenderer->setCellEditedStatus(editedCells);
         tableRenderer->setSelectedCell(selectedRow, selectedCol);
+        tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
 
         tableRenderer->render("TableData");
 

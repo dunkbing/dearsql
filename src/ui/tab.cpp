@@ -10,9 +10,7 @@
 #include "ui/table_renderer.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
-#include <cctype>
 #include <chrono>
-#include <cstring>
 #include <format>
 #include <future>
 #include <iostream>
@@ -934,6 +932,7 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 
     tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
 
+    initializeFilterAutoComplete();
     loadDataAsync();
 }
 
@@ -946,125 +945,27 @@ void TableViewerTab::render() {
     ImGui::Text("Table: %s", tableName.c_str());
     ImGui::Separator();
 
-    // Apply pending auto-complete from previous frame (before input field)
-    if (!pendingAutoComplete.empty()) {
-        // Build the new filter text
-        std::string currentText(filterBuffer);
-        std::string newText = currentText.substr(0, pendingAutoCompleteStart) + 
-                             pendingAutoComplete + " " +
-                             currentText.substr(pendingAutoCompleteEnd);
-        
-        // Update the buffer
-        strncpy(filterBuffer, newText.c_str(), sizeof(filterBuffer) - 1);
-        filterBuffer[sizeof(filterBuffer) - 1] = '\0';
-        
-        // Clear pending
-        pendingAutoComplete.clear();
-        pendingAutoCompleteStart = 0;
-        pendingAutoCompleteEnd = 0;
-        
-        // Request focus for the input field and cursor repositioning
-        shouldRefocusInput = true;
-        needsCursorReposition = true;
-    }
-    
     // Filter input with auto-completion
     ImGui::AlignTextToFramePadding(); // Center the label vertically with the input field
     ImGui::Text("Filter (WHERE clause):");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(400.0f);
-    
-    // Check if Enter should be consumed before the input
-    bool shouldConsumeEnter = showAutoComplete && 
-                              (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) &&
-                              selectedSuggestionIndex >= 0;
-    
-    // Handle input with auto-completion
-    bool filterInputChanged = false;
-    bool enterPressed = false;
-    
-    // Set keyboard focus if requested
-    if (shouldRefocusInput) {
-        ImGui::SetKeyboardFocusHere();
-        shouldRefocusInput = false;
-    }
-    
-    // Only process Enter in InputText if auto-complete didn't consume it
-    if (!shouldConsumeEnter) {
-        enterPressed = ImGui::InputTextWithHint("##filter", "e.g. id = 1 and name LIKE 'john%'", filterBuffer,
-                                     sizeof(filterBuffer), 
-                                     ImGuiInputTextFlags_EnterReturnsTrue | 
-                                     ImGuiInputTextFlags_CallbackEdit |
-                                     ImGuiInputTextFlags_CallbackCompletion |
-                                     ImGuiInputTextFlags_CallbackAlways,
-                                     [](ImGuiInputTextCallbackData* data) -> int {
-                                         auto* tab = static_cast<TableViewerTab*>(data->UserData);
-                                         if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
-                                             // Tab key pressed - trigger auto-completion
-                                             tab->triggerAutoComplete(data);
-                                         } else if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit) {
-                                             // Text changed - update suggestions
-                                             tab->updateAutoCompleteSuggestions(data);
-                                         } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways) {
-                                             // Handle cursor positioning after refocus
-                                             if (tab->needsCursorReposition) {
-                                                 data->CursorPos = data->BufTextLen;
-                                                 data->SelectionStart = data->SelectionEnd = data->CursorPos;
-                                                 tab->needsCursorReposition = false;
-                                             }
-                                         }
-                                         return 0;
-                                     }, this);
-    } else {
-        // Show input without Enter handling when auto-complete will consume it
-        ImGui::InputTextWithHint("##filter", "e.g. id = 1 and name LIKE 'john%'", filterBuffer,
-                                 sizeof(filterBuffer), 
-                                 ImGuiInputTextFlags_CallbackEdit |
-                                 ImGuiInputTextFlags_CallbackCompletion |
-                                 ImGuiInputTextFlags_CallbackAlways,
-                                 [](ImGuiInputTextCallbackData* data) -> int {
-                                     auto* tab = static_cast<TableViewerTab*>(data->UserData);
-                                     if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
-                                         // Tab key pressed - trigger auto-completion
-                                         tab->triggerAutoComplete(data);
-                                     } else if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit) {
-                                         // Text changed - update suggestions
-                                         tab->updateAutoCompleteSuggestions(data);
-                                     } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways) {
-                                         // Handle cursor positioning after refocus
-                                         if (tab->needsCursorReposition) {
-                                             data->CursorPos = data->BufTextLen;
-                                             data->SelectionStart = data->SelectionEnd = data->CursorPos;
-                                             tab->needsCursorReposition = false;
-                                         }
-                                     }
-                                     return 0;
-                                 }, this);
-    }
-    
-    // Show auto-complete popup if there are suggestions (must be before checking enterPressed)
-    renderAutoCompletePopup();
-    
-    // Only apply filter if Enter was pressed, no auto-complete consumed it, and no pending completion
-    if (enterPressed && !autoCompleteConsumedEnter && pendingAutoComplete.empty()) {
+
+    // Use the AutoCompleteInput component
+    if (filterAutoComplete &&
+        filterAutoComplete->render("##filter", filterBuffer, sizeof(filterBuffer))) {
         applyFilter();
-        hideAutoComplete();
     }
-    
-    // Reset the Enter consumed flag for next frame
-    if (autoCompleteConsumedEnter) {
-        autoCompleteConsumedEnter = false;
-    }
-    
+
     ImGui::SameLine();
     if (ImGui::Button("Apply Filter")) {
         applyFilter();
-        hideAutoComplete();
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear Filter")) {
         memset(filterBuffer, 0, sizeof(filterBuffer));
-        hideAutoComplete();
+        if (filterAutoComplete) {
+            filterAutoComplete->hideAutoComplete();
+        }
         if (!currentFilter.empty()) {
             LogPanel::debug("Clearing filter for table: " + tableName);
             // Clear the filter FIRST, then reload
@@ -1529,6 +1430,11 @@ void TableViewerTab::checkAsyncLoadStatus() {
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
 
+            // Update auto-complete with column names
+            if (filterAutoComplete) {
+                filterAutoComplete->addKeywords(columnNames);
+            }
+
             // Adjust selection if it's out of bounds after page change
             if (selectedRow >= 0 && selectedCol >= 0) {
                 const int maxRows = static_cast<int>(tableData.size());
@@ -1576,6 +1482,11 @@ void TableViewerTab::checkAsyncLoadStatus() {
             // Initialize edited cells tracking
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
+
+            // Update auto-complete with column names
+            if (filterAutoComplete) {
+                filterAutoComplete->addKeywords(columnNames);
+            }
 
             // Adjust selection if it's out of bounds after page change
             if (selectedRow >= 0 && selectedCol >= 0) {
@@ -1914,172 +1825,20 @@ void TableViewerTab::applyFilter() {
     loadDataAsync();
 }
 
-void TableViewerTab::updateAutoCompleteSuggestions(ImGuiInputTextCallbackData* data) {
-    std::string currentText(data->Buf, data->BufTextLen);
-    autoCompleteSuggestions.clear();
-    selectedSuggestionIndex = -1;
-    
-    // Find the word at cursor position
-    int wordStart = data->CursorPos;
-    while (wordStart > 0 && data->Buf[wordStart - 1] != ' ' && 
-           data->Buf[wordStart - 1] != '(' && data->Buf[wordStart - 1] != ',' &&
-           data->Buf[wordStart - 1] != '=' && data->Buf[wordStart - 1] != '<' &&
-           data->Buf[wordStart - 1] != '>' && data->Buf[wordStart - 1] != '!') {
-        wordStart--;
-    }
-    
-    std::string currentWord(data->Buf + wordStart, data->CursorPos - wordStart);
-    if (currentWord.empty()) {
-        showAutoComplete = false;
-        return;
-    }
-    
-    // Convert current word to lowercase for comparison
-    std::string lowerWord = currentWord;
-    std::transform(lowerWord.begin(), lowerWord.end(), lowerWord.begin(), ::tolower);
-    
-    // Add column name suggestions
-    for (const auto& col : columnNames) {
-        std::string lowerCol = col;
-        std::transform(lowerCol.begin(), lowerCol.end(), lowerCol.begin(), ::tolower);
-        if (lowerCol.find(lowerWord) == 0) {
-            autoCompleteSuggestions.push_back(col);
-        }
-    }
-    
-    // SQL keywords for filtering
-    static const std::vector<std::string> sqlKeywords = {
-        "AND", "OR", "NOT", "IN", "LIKE", "BETWEEN", "IS", "NULL",
-        "EXISTS", "ALL", "ANY", "SOME", "TRUE", "FALSE",
-        "ASC", "DESC", "LIMIT", "OFFSET"
-    };
-    
-    // SQL operators
-    static const std::vector<std::string> sqlOperators = {
-        "=", "!=", "<>", "<", "<=", ">", ">="
-    };
-    
-    // Add keyword suggestions
-    for (const auto& keyword : sqlKeywords) {
-        std::string lowerKeyword = keyword;
-        std::transform(lowerKeyword.begin(), lowerKeyword.end(), lowerKeyword.begin(), ::tolower);
-        if (lowerKeyword.find(lowerWord) == 0) {
-            autoCompleteSuggestions.push_back(keyword);
-        }
-    }
-    
-    // Sort suggestions alphabetically
-    std::sort(autoCompleteSuggestions.begin(), autoCompleteSuggestions.end());
-    
-    // Remove duplicates
-    autoCompleteSuggestions.erase(
-        std::unique(autoCompleteSuggestions.begin(), autoCompleteSuggestions.end()),
-        autoCompleteSuggestions.end()
-    );
-    
-    showAutoComplete = !autoCompleteSuggestions.empty();
-    autoCompleteWordStart = wordStart;
-    autoCompleteWordEnd = data->CursorPos;
-}
+void TableViewerTab::initializeFilterAutoComplete() {
+    AutoCompleteInput::Config config;
+    config.hint = "e.g. id = 1 and name LIKE 'john%'";
+    config.width = 400.0f;
+    config.onSubmit = [this]() { applyFilter(); };
 
-void TableViewerTab::triggerAutoComplete(ImGuiInputTextCallbackData* data) {
-    if (!showAutoComplete || autoCompleteSuggestions.empty()) {
-        // No suggestions, try to generate them
-        updateAutoCompleteSuggestions(data);
-        if (!autoCompleteSuggestions.empty()) {
-            selectedSuggestionIndex = 0;
-        }
-        return;
-    }
-    
-    // If we have suggestions and one is selected, apply it
-    if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < autoCompleteSuggestions.size()) {
-        const std::string& suggestion = autoCompleteSuggestions[selectedSuggestionIndex];
-        
-        // Delete the current partial word
-        data->DeleteChars(autoCompleteWordStart, autoCompleteWordEnd - autoCompleteWordStart);
-        
-        // Insert the suggestion
-        data->InsertChars(autoCompleteWordStart, suggestion.c_str());
-        
-        // Hide auto-complete
-        hideAutoComplete();
-    } else if (!autoCompleteSuggestions.empty()) {
-        // No selection, select the first one
-        selectedSuggestionIndex = 0;
-    }
-}
+    // Initialize with SQL keywords
+    config.keywords = {"AND", "OR",  "NOT",  "IN",   "LIKE",  "BETWEEN", "IS",   "NULL",  "EXISTS",
+                       "ALL", "ANY", "SOME", "TRUE", "FALSE", "ASC",     "DESC", "LIMIT", "OFFSET"};
 
-void TableViewerTab::renderAutoCompletePopup() {
-    if (!showAutoComplete || autoCompleteSuggestions.empty()) {
-        return;
+    // Add column names when they become available
+    if (!columnNames.empty()) {
+        config.keywords.insert(config.keywords.end(), columnNames.begin(), columnNames.end());
     }
-    
-    // Position the popup below the input field
-    ImVec2 inputPos = ImGui::GetItemRectMin();
-    ImVec2 inputSize = ImGui::GetItemRectSize();
-    ImGui::SetNextWindowPos(ImVec2(inputPos.x, inputPos.y + inputSize.y));
-    
-    // Calculate popup size
-    float maxWidth = 300.0f;
-    float itemHeight = ImGui::GetTextLineHeightWithSpacing();
-    float maxHeight = std::min(10.0f * itemHeight, autoCompleteSuggestions.size() * itemHeight);
-    
-    ImGui::SetNextWindowSize(ImVec2(maxWidth, maxHeight));
-    
-    // Create popup window
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
-                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
-                            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
-    
-    if (ImGui::Begin("##AutoComplete", nullptr, flags)) {
-        // Handle keyboard navigation
-        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-            if (selectedSuggestionIndex > 0) {
-                selectedSuggestionIndex--;
-            }
-        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-            if (selectedSuggestionIndex < static_cast<int>(autoCompleteSuggestions.size()) - 1) {
-                selectedSuggestionIndex++;
-            }
-        } else if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
-            // Handle Enter key to apply selected suggestion
-            if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < autoCompleteSuggestions.size()) {
-                pendingAutoComplete = autoCompleteSuggestions[selectedSuggestionIndex];
-                pendingAutoCompleteStart = autoCompleteWordStart;
-                pendingAutoCompleteEnd = autoCompleteWordEnd;
-                hideAutoComplete();
-                // Mark that Enter was consumed by auto-complete
-                autoCompleteConsumedEnter = true;
-            }
-        } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            hideAutoComplete();
-        }
-        
-        // Render suggestions
-        for (int i = 0; i < autoCompleteSuggestions.size(); i++) {
-            bool isSelected = (i == selectedSuggestionIndex);
-            
-            if (ImGui::Selectable(autoCompleteSuggestions[i].c_str(), isSelected)) {
-                // Store the suggestion to apply after this frame
-                pendingAutoComplete = autoCompleteSuggestions[i];
-                pendingAutoCompleteStart = autoCompleteWordStart;
-                pendingAutoCompleteEnd = autoCompleteWordEnd;
-                hideAutoComplete();
-            }
-            
-            if (isSelected) {
-                ImGui::SetItemDefaultFocus();
-                // Ensure selected item is visible
-                ImGui::SetScrollHereY();
-            }
-        }
-    }
-    ImGui::End();
-}
 
-void TableViewerTab::hideAutoComplete() {
-    showAutoComplete = false;
-    autoCompleteSuggestions.clear();
-    selectedSuggestionIndex = -1;
+    filterAutoComplete = std::make_unique<AutoCompleteInput>(config);
 }

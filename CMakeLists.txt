@@ -84,6 +84,7 @@ set(APP_SOURCES
     src/ui/tab.cpp
     src/ui/tab_manager.cpp
     src/ui/table_renderer.cpp
+    src/ui/auto_complete_input.cpp
     src/ui/hierarchy_helpers.cpp
     src/ui/sqlite_hierarchy.cpp
     src/ui/postgres_hierarchy.cpp

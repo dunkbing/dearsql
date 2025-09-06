@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TextEditor.h"
+#include "ui/auto_complete_input.hpp"
 #include "ui/table_renderer.hpp"
 #include <atomic>
 #include <future>
@@ -204,30 +205,11 @@ private:
     char filterBuffer[512] = {0};
     std::string currentFilter;
     bool filterChanged = false;
+    std::unique_ptr<AutoCompleteInput> filterAutoComplete;
 
     // Helper methods
     void selectCell(int row, int col);
     void handleKeyboardNavigation();
     void applyFilter();
-    
-    // Auto-completion state
-    bool showAutoComplete = false;
-    std::vector<std::string> autoCompleteSuggestions;
-    int selectedSuggestionIndex = -1;
-    int autoCompleteWordStart = 0;
-    int autoCompleteWordEnd = 0;
-    bool autoCompleteConsumedEnter = false;
-    bool shouldRefocusInput = false;
-    bool needsCursorReposition = false;
-    
-    // Pending auto-complete to apply next frame
-    std::string pendingAutoComplete;
-    int pendingAutoCompleteStart = 0;
-    int pendingAutoCompleteEnd = 0;
-    
-    // Auto-completion methods
-    void updateAutoCompleteSuggestions(ImGuiInputTextCallbackData* data);
-    void triggerAutoComplete(ImGuiInputTextCallbackData* data);
-    void renderAutoCompletePopup();
-    void hideAutoComplete();
+    void initializeFilterAutoComplete();
 };

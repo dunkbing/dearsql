@@ -945,11 +945,12 @@ void TableViewerTab::render() {
     ImGui::Separator();
 
     // Filter input
+    ImGui::AlignTextToFramePadding(); // Center the label vertically with the input field
     ImGui::Text("Filter (WHERE clause):");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(400.0f);
-    if (ImGui::InputText("##filter", filterBuffer, sizeof(filterBuffer),
-                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+    if (ImGui::InputTextWithHint("##filter", "e.g. id = 1 and name LIKE 'john%'", filterBuffer,
+                                 sizeof(filterBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
         applyFilter();
     }
     ImGui::SameLine();
@@ -987,36 +988,6 @@ void TableViewerTab::render() {
                            currentFilter.c_str());
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%d rows)", totalRows);
-    }
-
-    // Show available columns for reference (when not loading)
-    if (!isLoadingData && !columnNames.empty()) {
-        if (currentFilter.empty()) {
-            ImGui::SameLine();
-        }
-        if (ImGui::SmallButton("Show Columns")) {
-            ImGui::OpenPopup("ColumnList");
-        }
-
-        if (ImGui::BeginPopup("ColumnList")) {
-            ImGui::Text("Available columns:");
-            ImGui::Separator();
-            for (const auto& col : columnNames) {
-                if (ImGui::Selectable(col.c_str())) {
-                    // Copy column name to clipboard for easy use
-                    ImGui::SetClipboardText(col.c_str());
-                }
-            }
-            ImGui::Text("(Click to copy column name)");
-            ImGui::EndPopup();
-        }
-
-        // Show filter help
-        if (currentFilter.empty()) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-                               "| Filter examples: id > 100, name LIKE 'john%%'");
-        }
     }
 
     ImGui::Separator();
@@ -1749,7 +1720,6 @@ void TableViewerTab::checkSQLExecutionStatus() {
 }
 
 void TableViewerTab::applyFilter() {
-    // Get the filter text from the buffer
     std::string newFilter = std::string(filterBuffer);
 
     // Trim whitespace

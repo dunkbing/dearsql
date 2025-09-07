@@ -101,12 +101,14 @@ void TableRenderer::render(const char* tableId) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
             std::string maxRowStr = std::to_string(maxRowNum);
             float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
-            // Just add minimal padding for the column
-            float columnWidth = textWidth + 5.0f;       // Simplified padding
-            columnWidth = std::max(columnWidth, 15.0f); // Minimum width for header "#"
-            ImGui::TableSetupColumn(
-                "#", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize,
-                columnWidth);
+            // Add padding for right alignment
+            float columnWidth = textWidth + 10.0f;      // More padding for right alignment
+            columnWidth = std::max(columnWidth, 30.0f); // Minimum width
+            ImGui::TableSetupColumn("",
+                                    ImGuiTableColumnFlags_WidthFixed |
+                                        ImGuiTableColumnFlags_NoResize |
+                                        ImGuiTableColumnFlags_NoHeaderLabel,
+                                    columnWidth);
         }
 
         for (const auto& colName : columns) {
@@ -122,7 +124,23 @@ void TableRenderer::render(const char* tableId) {
             // Row number column
             if (config.showRowNumbers) {
                 ImGui::TableNextColumn();
-                ImGui::Text("%d", rowNumberOffset + rowIdx + 1);
+
+                // Right-align the row number text
+                int rowNum = rowNumberOffset + rowIdx + 1;
+                std::string rowNumStr = std::to_string(rowNum);
+                float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
+                float columnWidth = ImGui::GetColumnWidth();
+                float padding = 5.0f; // Right padding
+
+                // Calculate position for right alignment
+                float cursorX = ImGui::GetCursorPosX();
+                ImGui::SetCursorPosX(cursorX + columnWidth - textWidth - padding);
+
+                // Render with subdued color
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::Text("%d", rowNum);
+                ImGui::PopStyleColor();
             }
 
             // Data columns

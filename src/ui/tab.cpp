@@ -1,4 +1,5 @@
 #include "ui/tab.hpp"
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mysql.hpp"
@@ -1085,8 +1086,14 @@ void TableViewerTab::render() {
     ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
     ImGui::SameLine();
 
-    if (ImGui::Button("Refresh")) {
+    // Refresh button with blue color
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+    if (ImGui::Button(ICON_FA_ARROWS_ROTATE)) {
         refreshData();
+    }
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Refresh");
     }
 
     // Show loading indicator
@@ -1097,24 +1104,42 @@ void TableViewerTab::render() {
     ImGui::SameLine();
 
     if (hasChanges) {
-        if (ImGui::Button("Save")) {
+        // Save button with green color when enabled
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+        if (ImGui::Button(ICON_FA_FLOPPY_DISK)) {
             saveChanges();
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Save");
         }
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button("Save");
+        ImGui::Button(ICON_FA_FLOPPY_DISK);
         ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Save");
+        }
     }
 
     ImGui::SameLine();
     if (hasChanges) {
-        if (ImGui::Button("Cancel")) {
+        // Cancel button with red color when enabled
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        if (ImGui::Button(ICON_FA_XMARK)) {
             cancelChanges();
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Cancel");
         }
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button("Cancel");
+        ImGui::Button(ICON_FA_XMARK);
         ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Cancel");
+        }
     }
 
     if (hasChanges) {

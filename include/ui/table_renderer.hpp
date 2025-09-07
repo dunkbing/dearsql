@@ -94,6 +94,10 @@ private:
     int scrollTargetRow = -1;
     int scrollTargetCol = -1;
 
+    // Edit mode state
+    bool justEnteredEditWithChar = false;
+    int initialCursorPos = 0;
+
     // Callbacks
     OnCellEditCallback onCellEdit;
     OnCellSelectCallback onCellSelect;

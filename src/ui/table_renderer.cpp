@@ -60,6 +60,40 @@ void TableRenderer::render(const char* tableId) {
         availableHeight = config.minHeight;
     }
 
+    // Check for keyboard input to start editing when a cell is selected
+    if (config.allowEditing && selectedRow >= 0 && selectedCol >= 0 && editingRow == -1 &&
+        editingCol == -1) {
+        // Check if window is focused
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+            // Check for Enter key to enter edit mode with existing value
+            if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
+                // Enter edit mode preserving the current cell value
+                enterEditMode(selectedRow, selectedCol);
+            } else {
+                // Get the input character from ImGui
+                ImGuiIO& io = ImGui::GetIO();
+                if (io.InputQueueCharacters.Size > 0) {
+                    // A character was typed - enter edit mode
+                    ImWchar c = io.InputQueueCharacters[0];
+                    // Check if it's a printable character (not a control character)
+                    if (c >= 32 && c != 127) { // 32 is space, 127 is DEL
+                        // Enter edit mode with the typed character
+                        editingRow = selectedRow;
+                        editingCol = selectedCol;
+                        // Start with just the typed character
+                        editBuffer[0] = static_cast<char>(c);
+                        editBuffer[1] = '\0';
+                        // Set flag to position cursor after the first character
+                        justEnteredEditWithChar = true;
+                        initialCursorPos = 1;
+                        // Clear the input queue so the character doesn't get processed again
+                        io.InputQueueCharacters.Size = 0;
+                    }
+                }
+            }
+        }
+    }
+
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         // Setup columns
         if (config.showRowNumbers) {
@@ -164,10 +198,35 @@ void TableRenderer::renderCell(int row, int col) {
     if (config.allowEditing && editingRow == row && editingCol == col) {
         // Edit mode - show input field
         ImGui::SetKeyboardFocusHere();
-        if (ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
-                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+
+        // Handle cursor positioning when we just entered edit mode with a character
+        bool shouldExitEditMode = false;
+        if (justEnteredEditWithChar) {
+            // Use callback to set cursor position after the input field is created
+            shouldExitEditMode = ImGui::InputText(
+                "##edit", editBuffer, sizeof(editBuffer),
+                ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways,
+                [](ImGuiInputTextCallbackData* data) {
+                    TableRenderer* renderer = static_cast<TableRenderer*>(data->UserData);
+                    if (renderer->justEnteredEditWithChar) {
+                        // Set cursor position after the first character
+                        data->CursorPos = renderer->initialCursorPos;
+                        data->SelectionStart = renderer->initialCursorPos;
+                        data->SelectionEnd = renderer->initialCursorPos;
+                        renderer->justEnteredEditWithChar = false;
+                    }
+                    return 0;
+                },
+                this);
+        } else {
+            shouldExitEditMode = ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue);
+        }
+
+        if (shouldExitEditMode) {
             exitEditMode(true);
         }
+
         // Exit edit mode on Escape
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             exitEditMode(false);

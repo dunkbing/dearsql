@@ -35,8 +35,32 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
         inputFlags &= ~ImGuiInputTextFlags_EnterReturnsTrue;
     }
 
+    // Store the ID before creating the input to check focus later
+    ImGuiID inputID = ImGui::GetID(label);
+
     enterPressed = ImGui::InputTextWithHint(label, config.hint.c_str(), buffer, bufferSize,
                                             inputFlags, inputTextCallback, this);
+
+    // Check if this input is focused
+    const bool isFocused = ImGui::IsItemActive() || ImGui::IsItemFocused();
+
+    if (isFocused) {
+        // Draw visual emphasis for focused state
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 min = ImGui::GetItemRectMin();
+        ImVec2 max = ImGui::GetItemRectMax();
+
+        // Draw a highlighted border with glow effect
+        drawList->AddRect(min, max, IM_COL32(51, 153, 255, 255), 4.0f, 0, 2.0f);
+
+        // Outer glow (more subtle)
+        drawList->AddRect(ImVec2(min.x - 1, min.y - 1), ImVec2(max.x + 1, max.y + 1),
+                          IM_COL32(51, 153, 255, 100), 4.0f, 0, 1.0f);
+
+        // Outermost glow (very subtle)
+        drawList->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2),
+                          IM_COL32(51, 153, 255, 50), 4.0f, 0, 1.0f);
+    }
 
     // Show auto-complete popup if there are suggestions
     renderAutoCompletePopup();

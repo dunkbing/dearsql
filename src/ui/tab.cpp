@@ -947,7 +947,7 @@ void TableViewerTab::render() {
 
     // Filter input with auto-completion
     ImGui::AlignTextToFramePadding(); // Center the label vertically with the input field
-    ImGui::Text("Filter (WHERE clause):");
+    ImGui::Text("Filters:");
     ImGui::SameLine();
 
     // Use the AutoCompleteInput component
@@ -1804,8 +1804,6 @@ void TableViewerTab::applyFilter() {
     if (newFilter == currentFilter) {
         return;
     }
-
-    LogPanel::debug("Applying new filter to table " + tableName + ": '" + newFilter + "'");
 
     currentFilter = newFilter;
     filterChanged = true;

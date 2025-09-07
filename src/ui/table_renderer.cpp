@@ -126,14 +126,19 @@ void TableRenderer::render(const char* tableId) {
                         ImGui::SetScrollHereY(0.5f); // Center the row vertically
                     }
 
-                    if (!cellVisibleX) {
-                        // Smart horizontal scrolling based on column position
+                    // For horizontal scrolling, handle first column specially
+                    if (colIdx == 0) {
+                        // Always scroll to the leftmost position for the first column
+                        // Check if we're not already at the leftmost scroll position
+                        float currentScrollX = ImGui::GetScrollX();
+                        if (currentScrollX > 0.0f) {
+                            ImGui::SetScrollHereX(0.0f);
+                        }
+                    } else if (!cellVisibleX) {
+                        // For other columns, only scroll if not visible
                         float scrollRatio = 0.5f; // Default to center
 
-                        if (colIdx == 0) {
-                            // First column - scroll to left edge
-                            scrollRatio = 0.0f;
-                        } else if (colIdx == static_cast<int>(columns.size()) - 1) {
+                        if (colIdx == static_cast<int>(columns.size()) - 1) {
                             // Last column - scroll to right edge
                             scrollRatio = 1.0f;
                         }

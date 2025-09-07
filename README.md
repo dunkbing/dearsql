@@ -1,4 +1,4 @@
-# Dear SQL
+# DearSQL
 
 A simple, cross-platform database client built with Dear ImGui.
 

@@ -33,7 +33,7 @@ Application& Application::getInstance() {
 }
 
 bool Application::initialize() {
-    std::cout << "Starting Dear SQL..." << std::endl;
+    std::cout << "Starting DearSQL..." << std::endl;
 
     if (!initializeGLFW()) {
         return false;
@@ -131,7 +131,7 @@ void Application::run() const {
 }
 
 void Application::cleanup() {
-    std::cout << "Cleaning up Dear SQL..." << std::endl;
+    std::cout << "Cleaning up DearSQL..." << std::endl;
 
     // Cleanup databases
     for (auto& db : databases) {
@@ -251,7 +251,7 @@ bool Application::initializeGLFW() {
 #endif
 
 #ifdef NDEBUG
-    const auto title = "Dear SQL";
+    const auto title = "DearSQL";
 #else
     const auto title = "";
 #endif

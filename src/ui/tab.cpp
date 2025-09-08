@@ -15,6 +15,7 @@
 #include <format>
 #include <future>
 #include <iostream>
+#include <set>
 #include <utility>
 
 // Base Tab class
@@ -29,6 +30,9 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
+
+    // Populate auto-complete with table and column names
+    populateAutoCompleteKeywords();
 
     // Start loading schemas immediately for PostgreSQL databases
     if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
@@ -842,6 +846,67 @@ void SQLEditorTab::cancelQueryExecution() {
     hasStructuredResults = false;
     queryColumnNames.clear();
     queryTableData.clear();
+}
+
+void SQLEditorTab::populateAutoCompleteKeywords() {
+    if (!serverDatabase || !serverDatabase->isConnected()) {
+        return;
+    }
+
+    std::set<std::string> uniqueKeywords;
+
+    // Add table names and collect column names
+    for (const auto& table : serverDatabase->getTables()) {
+        uniqueKeywords.insert(table.name);
+
+        // Collect unique column names
+        for (const auto& column : table.columns) {
+            uniqueKeywords.insert(column.name);
+        }
+    }
+
+    // Add view names and collect column names
+    for (const auto& view : serverDatabase->getViews()) {
+        uniqueKeywords.insert(view.name);
+
+        // Collect unique column names from views
+        for (const auto& column : view.columns) {
+            uniqueKeywords.insert(column.name);
+        }
+    }
+
+    // For PostgreSQL, add schema names
+    if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+        if (pgDb) {
+            // Add schema names
+            for (const auto& schema : pgDb->getSchemas()) {
+                uniqueKeywords.insert(schema.name);
+            }
+
+            // Add database names if in multi-database mode
+            if (pgDb->shouldShowAllDatabases()) {
+                for (const auto& dbName : pgDb->getDatabaseNames()) {
+                    uniqueKeywords.insert(dbName);
+                }
+            }
+        }
+    }
+    // For MySQL, add database names
+    else if (serverDatabase->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+        if (mysqlDb && mysqlDb->shouldShowAllDatabases()) {
+            for (const auto& dbName : mysqlDb->getDatabaseNames()) {
+                uniqueKeywords.insert(dbName);
+            }
+        }
+    }
+
+    // Convert set to vector for the editor
+    std::vector<std::string> extraKeywords(uniqueKeywords.begin(), uniqueKeywords.end());
+
+    // Set the extra keywords for auto-complete
+    sqlEditor.SetExtraKeywords(extraKeywords);
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,

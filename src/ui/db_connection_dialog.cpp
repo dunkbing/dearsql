@@ -9,6 +9,7 @@
 #include <chrono>
 #include <future>
 #include <imgui.h>
+#include <iostream>
 #include <themes.hpp>
 
 void DatabaseConnectionDialog::showDialog() {

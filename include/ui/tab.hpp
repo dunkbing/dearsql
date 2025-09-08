@@ -124,6 +124,7 @@ private:
                                   const std::string& query);
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
+    void populateAutoCompleteKeywords();
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,

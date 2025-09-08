@@ -47,8 +47,7 @@ void TableRenderer::render(const char* tableId) {
         return;
     }
 
-    const auto& colors =
-        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     int colCount = static_cast<int>(columns.size());
     if (config.showRowNumbers) {
@@ -209,8 +208,7 @@ void TableRenderer::render(const char* tableId) {
 }
 
 void TableRenderer::renderCell(int row, int col) {
-    const auto& colors =
-        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {

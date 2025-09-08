@@ -938,8 +938,7 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 }
 
 void TableViewerTab::render() {
-    const auto& colors =
-        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     checkAsyncLoadStatus();
 
@@ -1711,8 +1710,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::EndDisabled();
 
             ImGui::SameLine();
-            const auto& colors =
-                Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+            const auto& colors = Application::getInstance().getCurrentColors();
             UIUtils::Spinner("##spinner", 8.0f, 2, ImGui::GetColorU32(colors.blue));
 
             ImGui::SameLine();

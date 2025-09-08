@@ -32,8 +32,7 @@ void DropColumnDialog::renderDialog() {
 
     if (ImGui::BeginPopupModal(title, &isOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
         // Warning icon and message
-        const auto& theme =
-            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+        const auto& theme = Application::getInstance().getCurrentColors();
         ImGui::PushStyleColor(ImGuiCol_Text, theme.peach); // Warning color
         ImGui::Text("⚠️ Warning: This action cannot be undone!");
         ImGui::PopStyleColor();

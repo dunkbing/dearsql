@@ -5,8 +5,7 @@
 #include "themes.hpp"
 
 void UIUtils::ToggleButton(const char* str_id, bool* v) {
-    const auto& colors =
-        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
     const ImVec2 p = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 

@@ -140,8 +140,7 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
         ImGui::Spacing();
 
         // Add visual styling for input fields using Theme colors
-        const auto& colors =
-            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+        const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
@@ -273,8 +272,7 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
         ImGui::Spacing();
 
         // Add visual styling for input fields using Theme colors
-        const auto& colors =
-            Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+        const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);

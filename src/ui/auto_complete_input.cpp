@@ -1,4 +1,5 @@
 #include "ui/auto_complete_input.hpp"
+#include "application.hpp"
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -6,6 +7,7 @@
 AutoCompleteInput::AutoCompleteInput(Config config) : config(std::move(config)) {}
 
 bool AutoCompleteInput::render(const char* label, char* buffer, const size_t bufferSize) {
+    const auto& colors = Application::getInstance().getCurrentColors();
     currentBuffer = buffer;
     currentBufferSize = bufferSize;
 
@@ -41,25 +43,20 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
     enterPressed = ImGui::InputTextWithHint(label, config.hint.c_str(), buffer, bufferSize,
                                             inputFlags, inputTextCallback, this);
 
-    // Check if this input is focused
-    const bool isFocused = ImGui::IsItemActive() || ImGui::IsItemFocused();
+    const bool isFocused = ImGui::IsItemActive();
 
     if (isFocused) {
-        // Draw visual emphasis for focused state
+        // Draw subtle visual emphasis for focused state
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 min = ImGui::GetItemRectMin();
         ImVec2 max = ImGui::GetItemRectMax();
 
-        // Draw a highlighted border with glow effect
-        drawList->AddRect(min, max, IM_COL32(51, 153, 255, 255), 4.0f, 0, 2.0f);
+        // Use theme's blue color with reduced opacity for subtle effect
+        ImU32 focusColor =
+            ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
 
-        // Outer glow (more subtle)
-        drawList->AddRect(ImVec2(min.x - 1, min.y - 1), ImVec2(max.x + 1, max.y + 1),
-                          IM_COL32(51, 153, 255, 100), 4.0f, 0, 1.0f);
-
-        // Outermost glow (very subtle)
-        drawList->AddRect(ImVec2(min.x - 2, min.y - 2), ImVec2(max.x + 2, max.y + 2),
-                          IM_COL32(51, 153, 255, 50), 4.0f, 0, 1.0f);
+        // Single subtle border highlight
+        drawList->AddRect(min, max, focusColor, 3.0f, 0, 1.5f);
     }
 
     // Show auto-complete popup if there are suggestions

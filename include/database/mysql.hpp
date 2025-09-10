@@ -207,4 +207,7 @@ private:
     soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
     std::string buildConnectionString(const std::string& dbName) const;
     void initializeConnectionPool(const std::string& dbName, const std::string& connStr);
+
+    // Helper method for session management
+    std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;
 };

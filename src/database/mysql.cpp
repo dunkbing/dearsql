@@ -217,23 +217,16 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
     std::vector<Table> result;
 
     try {
-        // Use connection pool instead of creating a new session
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            std::cerr << "Connection pool not available for table loading" << std::endl;
-            return result;
-        }
-
         if (!dbData.loadingTables.load()) {
             return result;
         }
 
-        // Get table names using the connection pool
+        // Get table names using the session
         std::vector<std::string> tableNames;
         const std::string tableNamesQuery = "SHOW TABLES";
         {
-            soci::session sql(*pool);
-            const soci::rowset tableRs = sql.prepare << tableNamesQuery;
+            const auto sql = getSession();
+            const soci::rowset tableRs = sql->prepare << tableNamesQuery;
             for (const auto& row : tableRs) {
                 if (!dbData.loadingTables.load()) {
                     return result;
@@ -256,11 +249,11 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
             table.fullName =
                 name + "." + database + "." + tableName; // MySQL: connection.database.table
 
-            // Get table columns using the connection pool
+            // Get table columns using the session
             const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
             {
-                soci::session sql(*pool);
-                const soci::rowset columnsRs = sql.prepare << columnsQuery;
+                const auto sql = getSession();
+                const soci::rowset columnsRs = sql->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
                     if (!dbData.loadingTables.load()) {
@@ -342,23 +335,16 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
     std::vector<Table> result;
 
     try {
-        // Use connection pool instead of creating a new session
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            std::cerr << "Connection pool not available for view loading" << std::endl;
-            return result;
-        }
-
         if (!dbData.loadingViews.load()) {
             return result;
         }
 
-        // Get view names using the connection pool
+        // Get view names using the session
         std::vector<std::string> viewNames;
         const std::string viewNamesQuery = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
         {
-            soci::session sql(*pool);
-            const soci::rowset viewRs = sql.prepare << viewNamesQuery;
+            const auto sql = getSession();
+            const soci::rowset viewRs = sql->prepare << viewNamesQuery;
             for (const auto& row : viewRs) {
                 if (!dbData.loadingViews.load()) {
                     return result;
@@ -381,11 +367,11 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
             view.fullName =
                 name + "." + database + "." + viewName; // MySQL: connection.database.view
 
-            // Get view columns using the connection pool (same as table columns for MySQL)
+            // Get view columns using the session (same as table columns for MySQL)
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
             {
-                soci::session sql(*pool);
-                const soci::rowset columnsRs = sql.prepare << columnsQuery;
+                const auto sql = getSession();
+                const soci::rowset columnsRs = sql->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
                     if (!dbData.loadingViews.load()) {
@@ -475,20 +461,13 @@ std::string MySQLDatabase::executeQuery(const std::string& query) {
     }
 
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return "Error: Database connection pool is not available";
-        }
-
-        soci::session sql(*pool);
-        const soci::rowset rs = (sql.prepare << query);
+        const auto sql = getSession();
+        const soci::rowset rs = (sql->prepare << query);
 
         std::ostringstream result;
         bool first_row = true;
 
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
-
+        for (auto& row : rs) {
             if (first_row) {
                 for (std::size_t i = 0; i != row.size(); ++i) {
                     if (i > 0)
@@ -530,13 +509,8 @@ MySQLDatabase::executeQueryStructured(const std::string& query) {
     }
 
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return {columnNames, data};
-        }
-
-        soci::session sql(*pool);
-        const soci::rowset rs = (sql.prepare << query);
+        const auto sql = getSession();
+        const soci::rowset rs = (sql->prepare << query);
 
         // Get column names if available
         const auto it = rs.begin();
@@ -548,16 +522,15 @@ MySQLDatabase::executeQueryStructured(const std::string& query) {
         }
 
         int rowCount = 0;
-        for (auto rowIt = rs.begin(); rowIt != rs.end(); ++rowIt) {
+        for (auto& row : rs) {
             if (rowCount >= 1000)
                 break;
 
-            const soci::row& row = *rowIt;
             std::vector<std::string> rowData;
 
             for (std::size_t i = 0; i != row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
-                    rowData.push_back("NULL");
+                    rowData.emplace_back("NULL");
                 } else {
                     rowData.push_back(row.get<std::string>(i, ""));
                 }
@@ -576,26 +549,20 @@ MySQLDatabase::executeQueryStructured(const std::string& query) {
     }
 }
 
-std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::string& tableName,
-                                                                  int limit, int offset) {
+std::vector<std::vector<std::string>>
+MySQLDatabase::getTableData(const std::string& tableName, const int limit, const int offset) {
     if (!connect().first) {
         return {};
     }
 
     std::vector<std::vector<std::string>> data;
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return data;
-        }
+        const auto sql = getSession();
+        const std::string query = "SELECT * FROM `" + tableName + "` LIMIT " +
+                                  std::to_string(limit) + " OFFSET " + std::to_string(offset);
+        const soci::rowset rs = (sql->prepare << query);
 
-        soci::session sql(*pool);
-        std::string query = "SELECT * FROM `" + tableName + "` LIMIT " + std::to_string(limit) +
-                            " OFFSET " + std::to_string(offset);
-        soci::rowset rs = (sql.prepare << query);
-
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
+        for (auto& row : rs) {
             std::vector<std::string> rowData;
 
             for (std::size_t i = 0; i != row.size(); ++i) {
@@ -603,7 +570,8 @@ std::vector<std::vector<std::string>> MySQLDatabase::getTableData(const std::str
                     rowData.emplace_back("NULL");
                     continue;
                 }
-                switch (soci::column_properties cp = row.get_properties(i); cp.get_db_type()) {
+                switch (const soci::column_properties& cp = row.get_properties(i);
+                        cp.get_db_type()) {
                 case soci::db_string:
                     rowData.emplace_back(row.get<std::string>(i));
                     break;
@@ -689,17 +657,11 @@ std::vector<std::string> MySQLDatabase::getColumnNames(const std::string& tableN
 
     std::vector<std::string> columns;
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return columns;
-        }
-
-        soci::session sql(*pool);
+        const auto sql = getSession();
         const std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
-        const soci::rowset rs = (sql.prepare << query);
+        const soci::rowset rs = (sql->prepare << query);
 
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
+        for (auto& row : rs) {
             columns.push_back(row.get<std::string>(0));
         }
     } catch (const soci::soci_error& e) {
@@ -715,15 +677,10 @@ int MySQLDatabase::getRowCount(const std::string& tableName) {
     }
 
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return 0;
-        }
-
-        soci::session sql(*pool);
+        const auto session = getSession();
         int count = 0;
         const std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
-        sql << query, soci::into(count);
+        *session << query, soci::into(count);
         return count;
     } catch (const soci::soci_error& e) {
         std::cerr << "MySQL Error getting row count: " << e.what() << std::endl;
@@ -747,15 +704,6 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
 
     state.future = std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
         try {
-            // Use connection pool instead of creating a new session
-            auto* pool = getConnectionPoolForDatabase(database);
-            if (!pool) {
-                std::cerr << "Connection pool not available for table data loading" << std::endl;
-                auto& state = tableDataStates[tableName];
-                state.loading.store(false);
-                return;
-            }
-
             // Get reference to the state for this table
             auto& state = tableDataStates[tableName];
 
@@ -771,8 +719,8 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
             dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
             {
-                soci::session sql(*pool);
-                const soci::rowset dataRs = sql.prepare << dataQuery;
+                const auto sql = getSession();
+                const soci::rowset dataRs = sql->prepare << dataQuery;
 
                 for (const auto& row : dataRs) {
                     if (!state.loading.load()) {
@@ -802,8 +750,8 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
             // Load column names
             const std::string columnQuery = "SHOW COLUMNS FROM `" + tableName + "`";
             {
-                soci::session sql(*pool);
-                const soci::rowset columnRs = sql.prepare << columnQuery;
+                const auto sql = getSession();
+                const soci::rowset columnRs = sql->prepare << columnQuery;
 
                 for (const auto& row : columnRs) {
                     if (!state.loading.load()) {
@@ -823,8 +771,8 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
                 countQuery = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + whereClause;
             }
             {
-                soci::session sql(*pool);
-                sql << countQuery, soci::into(state.rowCount);
+                const auto sql = getSession();
+                *sql << countQuery, soci::into(state.rowCount);
             }
 
             if (state.loading.load()) {
@@ -1016,14 +964,9 @@ std::vector<std::string> MySQLDatabase::getTableNames() {
 
     std::vector<std::string> tableNames;
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return tableNames;
-        }
-
-        soci::session sql(*pool);
+        const auto sql = getSession();
         const std::string query = "SHOW TABLES";
-        const soci::rowset rs = (sql.prepare << query);
+        const soci::rowset rs = (sql->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row& row = *it;
@@ -1043,14 +986,9 @@ std::vector<Column> MySQLDatabase::getTableColumns(const std::string& tableName)
 
     std::vector<Column> columns;
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return columns;
-        }
-
-        soci::session sql(*pool);
+        const auto sql = getSession();
         const std::string query = std::format("DESCRIBE `{}`", tableName);
-        const soci::rowset rs = (sql.prepare << query);
+        const soci::rowset rs = (sql->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row& row = *it;
@@ -1075,14 +1013,9 @@ std::vector<std::string> MySQLDatabase::getViewNames() {
 
     std::vector<std::string> viewNames;
     try {
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            return viewNames;
-        }
-
-        soci::session sql(*pool);
+        const auto sql = getSession();
         const std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
-        const soci::rowset rs = (sql.prepare << query);
+        const soci::rowset rs = (sql->prepare << query);
 
         for (auto it = rs.begin(); it != rs.end(); ++it) {
             const soci::row& row = *it;
@@ -1164,13 +1097,6 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
     }
 
     try {
-        // Use connection pool instead of creating a new session
-        auto* pool = getConnectionPoolForDatabase(database);
-        if (!pool) {
-            std::cerr << "Connection pool not available for database query" << std::endl;
-            return result;
-        }
-
         if (!loadingDatabases.load()) {
             return result;
         }
@@ -1178,8 +1104,8 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
         const std::string sqlQuery = "SHOW DATABASES";
 
         std::cout << "Executing async query to get database names..." << std::endl;
-        soci::session sql(*pool);
-        const soci::rowset rs = sql.prepare << sqlQuery;
+        const auto sql = getSession();
+        const soci::rowset rs = sql->prepare << sqlQuery;
 
         for (const auto& row : rs) {
             if (!loadingDatabases.load()) {
@@ -1350,4 +1276,17 @@ std::string MySQLDatabase::buildConnectionString(const std::string& dbName) cons
     }
 
     return connStr;
+}
+
+std::unique_ptr<soci::session> MySQLDatabase::getSession(const std::string& dbName) const {
+    const std::string targetDb = dbName.empty() ? database : dbName;
+    auto* pool = getConnectionPoolForDatabase(targetDb);
+    if (!pool) {
+        throw std::runtime_error("Connection pool not available for database: " + targetDb);
+    }
+    auto res = std::make_unique<soci::session>(*pool);
+    if (!res->is_connected()) {
+        res->reconnect();
+    }
+    return res;
 }

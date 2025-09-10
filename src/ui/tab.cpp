@@ -26,7 +26,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
                            const std::shared_ptr<DatabaseInterface>& serverDatabase,
                            const std::string& selectedDatabaseName)
     : Tab(name, TabType::SQL_EDITOR), serverDatabase(serverDatabase),
-      selectedDatabaseName(selectedDatabaseName), selectedSchemaName("") {
+      selectedDatabaseName(selectedDatabaseName) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
@@ -487,7 +487,7 @@ void SQLEditorTab::render() {
                                 // Create unique ID for each schema by combining database and schema
                                 // name
                                 const std::string schemaId =
-                                    schemaLabel + "##" + dbName + "_" + schemaName;
+                                    std::format("{}##{}_{}", schemaLabel, dbName, schemaName);
 
                                 if (ImGui::Selectable(schemaId.c_str(), isSelected)) {
                                     // Switch database if needed
@@ -877,7 +877,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
 
     // For PostgreSQL, add schema names
     if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+        const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
         if (pgDb) {
             // Add schema names
             for (const auto& schema : pgDb->getSchemas()) {
@@ -894,7 +894,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
     }
     // For MySQL, add database names
     else if (serverDatabase->getType() == DatabaseType::MYSQL) {
-        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+        const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
         if (mysqlDb && mysqlDb->shouldShowAllDatabases()) {
             for (const auto& dbName : mysqlDb->getDatabaseNames()) {
                 uniqueKeywords.insert(dbName);
@@ -902,10 +902,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
         }
     }
 
-    // Convert set to vector for the editor
-    std::vector<std::string> extraKeywords(uniqueKeywords.begin(), uniqueKeywords.end());
-
-    // Set the extra keywords for auto-complete
+    const std::vector extraKeywords(uniqueKeywords.begin(), uniqueKeywords.end());
     sqlEditor.SetExtraKeywords(extraKeywords);
 }
 

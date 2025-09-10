@@ -238,4 +238,7 @@ private:
 
     // Helper method for row data type conversion
     static std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
+
+    // Helper method for session management
+    std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;
 };

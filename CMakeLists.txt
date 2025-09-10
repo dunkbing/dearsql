@@ -33,6 +33,7 @@ if(APPLE)
     find_library(METAL_LIBRARY Metal REQUIRED)
     find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
+    find_library(APPKIT_LIBRARY AppKit REQUIRED)
 
     if(NOT METAL_LIBRARY)
         message(FATAL_ERROR "Metal framework not found. Make sure you're building on macOS 10.11 or later.")
@@ -42,6 +43,7 @@ if(APPLE)
     message(STATUS "Found Metal framework: ${METAL_LIBRARY}")
     message(STATUS "Found QuartzCore framework: ${QUARTZCORE_LIBRARY}")
     message(STATUS "Found Foundation framework: ${FOUNDATION_LIBRARY}")
+    message(STATUS "Found AppKit framework: ${APPKIT_LIBRARY}")
 
     # Add Metal backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
@@ -156,6 +158,7 @@ if(APPLE)
         ${METAL_LIBRARY}
         ${QUARTZCORE_LIBRARY}
         ${FOUNDATION_LIBRARY}
+        ${APPKIT_LIBRARY}
     )
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE

@@ -6,9 +6,6 @@
 #include <atomic>
 #include <future>
 #include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 
 // Forward declarations
 class DatabaseInterface;

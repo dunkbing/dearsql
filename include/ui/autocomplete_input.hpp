@@ -1,11 +1,8 @@
 #pragma once
 
 #include "imgui.h"
-#include <algorithm>
 #include <cctype>
 #include <functional>
-#include <string>
-#include <vector>
 
 class AutoCompleteInput {
 public:

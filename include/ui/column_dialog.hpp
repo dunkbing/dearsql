@@ -2,8 +2,6 @@
 
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include <memory>
-#include <string>
 
 enum class ColumnDialogMode { Add, Edit };
 

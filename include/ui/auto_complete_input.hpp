@@ -2,8 +2,6 @@
 
 #include "imgui.h"
 #include <functional>
-#include <string>
-#include <vector>
 
 class AutoCompleteInput {
 public:

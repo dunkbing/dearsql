@@ -5,8 +5,6 @@
 #include <atomic>
 #include <future>
 #include <memory>
-#include <string>
-#include <vector>
 
 enum class DialogState {
     TypeSelection,

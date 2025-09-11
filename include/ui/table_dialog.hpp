@@ -2,9 +2,6 @@
 
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include <memory>
-#include <string>
-#include <vector>
 
 enum class ColumnEditMode { None, Add, Edit };
 enum class TableDialogMode { Edit, Create };

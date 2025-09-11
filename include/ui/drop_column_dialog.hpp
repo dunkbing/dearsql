@@ -1,8 +1,6 @@
 #pragma once
 
 #include "database/db_interface.hpp"
-#include <memory>
-#include <string>
 
 class DropColumnDialog {
 public:

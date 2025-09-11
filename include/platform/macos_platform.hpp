@@ -1,7 +1,6 @@
 #pragma once
 
 #include "platform_interface.hpp"
-#include <memory>
 
 #ifdef USE_METAL_BACKEND
 // Forward declarations for Objective-C types

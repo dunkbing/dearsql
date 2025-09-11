@@ -2,8 +2,6 @@
 
 #include "imgui.h"
 #include <chrono>
-#include <mutex>
-#include <string>
 #include <vector>
 
 enum class LogLevel { ALL = -1, DEBUG = 0, INFO, WARN, ERROR };

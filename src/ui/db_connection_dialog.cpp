@@ -6,8 +6,6 @@
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
-#include <chrono>
-#include <future>
 #include <imgui.h>
 #include <iostream>
 #include <themes.hpp>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "database/db_interface.hpp"
-#include <memory>
 
 namespace HierarchyHelpers {
     void renderTableNode(const std::shared_ptr<DatabaseInterface>& db, int tableIndex);

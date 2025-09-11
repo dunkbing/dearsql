@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Dependencies
 add_subdirectory(external/json)
 add_subdirectory(external/soci)
+set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
 add_subdirectory(external/nativefiledialog-extended)
 

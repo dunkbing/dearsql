@@ -1,5 +1,7 @@
 #pragma once
 
+#include "soci/row.h"
+
 #include <string>
 #include <vector>
 
@@ -35,3 +37,6 @@ struct Schema {
     bool viewsExpanded = false;
     bool sequencesExpanded = false;
 };
+
+// Utility function for converting SOCI row values to strings
+std::string convertRowValue(const soci::row& row, std::size_t columnIndex);

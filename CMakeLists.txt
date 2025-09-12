@@ -77,6 +77,7 @@ set(APP_SOURCES
     src/database/mysql.cpp
     src/database/redis.cpp
     src/database/db_factory.cpp
+    src/database/db_utils.cpp
 
     # UI
     src/ui/db_sidebar.cpp

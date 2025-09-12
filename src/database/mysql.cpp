@@ -1,4 +1,5 @@
 #include "database/mysql.hpp"
+#include "database/db.hpp"
 #include <chrono>
 #include <iostream>
 #include <sstream>
@@ -9,8 +10,6 @@ MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, i
                              const std::string& password, bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
-    // SOCI MySQL connection string format: "host=hostname port=port dbname=database user=username
-    // password=password" Use TCP/IP connection to avoid Unix socket issues
     connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
 
     if (!username.empty()) {
@@ -566,80 +565,7 @@ MySQLDatabase::getTableData(const std::string& tableName, const int limit, const
             std::vector<std::string> rowData;
 
             for (std::size_t i = 0; i != row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                    continue;
-                }
-                switch (const soci::column_properties& cp = row.get_properties(i);
-                        cp.get_db_type()) {
-                case soci::db_string:
-                    rowData.emplace_back(row.get<std::string>(i));
-                    break;
-                case soci::db_wstring:
-                    // convert to UTF-8 string
-                    {
-                        auto ws = row.get<std::wstring>(i);
-                        std::string utf8_str(ws.begin(), ws.end());
-                        rowData.emplace_back(utf8_str);
-                    }
-                    break;
-                case soci::db_int8:
-                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
-                    break;
-                case soci::db_uint8:
-                    rowData.emplace_back(std::to_string(row.get<uint8_t>(i)));
-                    break;
-                case soci::db_int16:
-                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
-                    break;
-                case soci::db_uint16:
-                    rowData.emplace_back(std::to_string(row.get<uint16_t>(i)));
-                    break;
-                case soci::db_int32:
-                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
-                    break;
-                case soci::db_uint32:
-                    rowData.emplace_back(std::to_string(row.get<uint32_t>(i)));
-                    break;
-                case soci::db_int64:
-                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                    break;
-                case soci::db_uint64:
-                    rowData.emplace_back(std::to_string(row.get<uint64_t>(i)));
-                    break;
-                case soci::db_double:
-                    rowData.emplace_back(std::to_string(row.get<double>(i)));
-                    break;
-                case soci::db_date: {
-                    auto date = row.get<std::tm>(i);
-                    char buffer[32];
-                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-                    rowData.emplace_back(buffer);
-                } break;
-                case soci::db_blob:
-                    rowData.emplace_back("[BINARY DATA]");
-                    break;
-                case soci::db_xml:
-                    try {
-                        rowData.emplace_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast&) {
-                        rowData.emplace_back("[XML DATA]");
-                    }
-                    break;
-                default: {
-                    // Log the unknown type for debugging
-                    std::cout << "Unknown MySQL data type: " << static_cast<int>(cp.get_db_type())
-                              << " for column: " << cp.get_name() << std::endl;
-
-                    try {
-                        rowData.emplace_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast&) {
-                        rowData.emplace_back("[UNKNOWN DATA TYPE: " +
-                                             std::to_string(static_cast<int>(cp.get_db_type())) +
-                                             "]");
-                    }
-                } break;
-                }
+                rowData.emplace_back(convertRowValue(row, i));
             }
             data.push_back(rowData);
         }
@@ -702,99 +628,89 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
     state.columnNames.clear();
     state.rowCount = 0;
 
-    state.future = std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
-        try {
-            // Get reference to the state for this table
-            auto& state = tableDataStates[tableName];
+    state.future =
+        std::async(std::launch::async, [this, tableName, limit, offset, whereClause, &state]() {
+            try {
+                if (!state.loading.load()) {
+                    return;
+                }
 
-            if (!state.loading.load()) {
-                return;
-            }
+                // Load table data
+                std::string dataQuery = "SELECT * FROM `" + tableName + "`";
+                if (!whereClause.empty()) {
+                    dataQuery += " WHERE " + whereClause;
+                }
+                dataQuery +=
+                    " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
-            // Load table data
-            std::string dataQuery = "SELECT * FROM `" + tableName + "`";
-            if (!whereClause.empty()) {
-                dataQuery += " WHERE " + whereClause;
-            }
-            dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
+                {
+                    const auto sql = getSession();
+                    const soci::rowset dataRs = sql->prepare << dataQuery;
 
-            {
-                const auto sql = getSession();
-                const soci::rowset dataRs = sql->prepare << dataQuery;
-
-                for (const auto& row : dataRs) {
-                    if (!state.loading.load()) {
-                        break; // Stop if we should no longer be loading
-                    }
-
-                    std::vector<std::string> rowData;
-                    for (std::size_t i = 0; i < row.size(); ++i) {
-                        if (row.get_indicator(i) == soci::i_null) {
-                            rowData.emplace_back("NULL");
-                        } else {
-                            try {
-                                rowData.emplace_back(row.get<std::string>(i));
-                            } catch (const std::bad_cast&) {
-                                rowData.emplace_back("[BINARY DATA]");
-                            }
+                    for (const auto& row : dataRs) {
+                        if (!state.loading.load()) {
+                            break; // Stop if we should no longer be loading
                         }
+
+                        std::vector<std::string> rowData;
+                        rowData.reserve(row.size());
+                        for (std::size_t i = 0; i < row.size(); ++i) {
+                            rowData.emplace_back(convertRowValue(row, i));
+                        }
+                        state.tableData.push_back(rowData);
                     }
-                    state.tableData.push_back(rowData);
                 }
-            }
 
-            if (!state.loading.load()) {
-                return;
-            }
+                if (!state.loading.load()) {
+                    return;
+                }
 
-            // Load column names
-            const std::string columnQuery = "SHOW COLUMNS FROM `" + tableName + "`";
-            {
-                const auto sql = getSession();
-                const soci::rowset columnRs = sql->prepare << columnQuery;
+                // Load column names
+                const std::string columnQuery = "SHOW COLUMNS FROM `" + tableName + "`";
+                {
+                    const auto sql = getSession();
+                    const soci::rowset columnRs = sql->prepare << columnQuery;
 
-                for (const auto& row : columnRs) {
-                    if (!state.loading.load()) {
-                        break;
+                    for (const auto& row : columnRs) {
+                        if (!state.loading.load()) {
+                            break;
+                        }
+                        state.columnNames.push_back(row.get<std::string>(0));
                     }
-                    state.columnNames.push_back(row.get<std::string>(0));
                 }
+
+                if (!state.loading.load()) {
+                    return;
+                }
+
+                // Load row count
+                std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
+                if (!whereClause.empty()) {
+                    countQuery = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + whereClause;
+                }
+                {
+                    const auto sql = getSession();
+                    *sql << countQuery, soci::into(state.rowCount);
+                }
+
+                if (state.loading.load()) {
+                    state.ready.store(true);
+                }
+
+            } catch (const std::exception& e) {
+                std::cerr << "Error in async table data load: " << e.what() << std::endl;
+                // Clear results on error
+                state.tableData.clear();
+                state.columnNames.clear();
+                state.rowCount = 0;
             }
 
-            if (!state.loading.load()) {
-                return;
-            }
-
-            // Load row count
-            std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
-            if (!whereClause.empty()) {
-                countQuery = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + whereClause;
-            }
-            {
-                const auto sql = getSession();
-                *sql << countQuery, soci::into(state.rowCount);
-            }
-
-            if (state.loading.load()) {
-                state.ready.store(true);
-            }
-
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            // Clear results on error
-            auto& state = tableDataStates[tableName];
-            state.tableData.clear();
-            state.columnNames.clear();
-            state.rowCount = 0;
-        }
-
-        auto& state = tableDataStates[tableName];
-        state.loading.store(false);
-    });
+            state.loading.store(false);
+        });
 }
 
 bool MySQLDatabase::isLoadingTableData(const std::string& tableName) const {
-    auto it = tableDataStates.find(tableName);
+    const auto it = tableDataStates.find(tableName);
     return it != tableDataStates.end() && it->second.loading.load();
 }
 

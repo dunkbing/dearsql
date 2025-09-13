@@ -27,7 +27,8 @@ struct DiagramLink {
 
 class DiagramTab : public Tab {
 public:
-    DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database);
+    DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
+               const std::string& targetDatabaseName = "");
     ~DiagramTab() override;
 
     void render() override;
@@ -48,6 +49,7 @@ private:
 
 private:
     std::shared_ptr<DatabaseInterface> database;
+    std::string targetDatabaseName;
     ax::NodeEditor::EditorContext* editorContext = nullptr;
 
     std::vector<DiagramNode> nodes;

@@ -34,6 +34,7 @@ set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
     external/imgui-node-editor/imgui_node_editor_api.cpp
     external/imgui-node-editor/crude_json.cpp
+    external/imgui-node-editor/imgui_canvas.cpp
 )
 
 # Platform-specific backend configuration

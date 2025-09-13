@@ -1,13 +1,17 @@
 #include "ui/diagram_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 
-DiagramTab::DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database)
-    : Tab(name, TabType::DIAGRAM), database(std::move(database)) {
+DiagramTab::DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
+                       const std::string& targetDatabaseName)
+    : Tab(name, TabType::DIAGRAM), database(std::move(database)),
+      targetDatabaseName(targetDatabaseName) {
     initializeEditor();
     loadDatabaseSchema();
 }
@@ -21,7 +25,27 @@ DiagramTab::~DiagramTab() {
 void DiagramTab::initializeEditor() {
     ax::NodeEditor::Config config;
     config.SettingsFile = nullptr; // Don't save editor state to file
+    config.BeginSaveSession = nullptr;
+    config.EndSaveSession = nullptr;
+    config.SaveSettings = nullptr;
+    config.LoadSettings = nullptr;
+    config.SaveNodeSettings = nullptr;
+    config.LoadNodeSettings = nullptr;
+    config.UserPointer = nullptr;
+    config.CustomZoomLevels = ImVector<float>();
+    config.CanvasSizeMode = ax::NodeEditor::CanvasSizeMode::FitVerticalView;
+    config.DragButtonIndex = 0;
+    config.SelectButtonIndex = 0;
+    config.NavigateButtonIndex = 1;
+    config.ContextMenuButtonIndex = 1;
+    config.EnableSmoothZoom = false;
+    config.SmoothZoomPower = 1.1f;
+
     editorContext = ax::NodeEditor::CreateEditor(&config);
+
+    if (!editorContext) {
+        std::cerr << "Failed to create node editor context!" << std::endl;
+    }
 }
 
 void DiagramTab::render() {
@@ -30,8 +54,28 @@ void DiagramTab::render() {
         return;
     }
 
+    if (!editorContext) {
+        ImGui::Text("Error: Node editor context not initialized");
+        return;
+    }
+
     if (!schemaLoaded) {
         ImGui::Text("Loading database schema...");
+        // Try to load the schema again
+        loadDatabaseSchema();
+
+        // Check async loading status for PostgreSQL and MySQL
+        if (database->getType() == DatabaseType::POSTGRESQL) {
+            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+            if (pgDb) {
+                pgDb->checkTablesStatusAsync();
+            }
+        } else if (database->getType() == DatabaseType::MYSQL) {
+            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+            if (mysqlDb) {
+                mysqlDb->checkTablesStatusAsync();
+            }
+        }
         return;
     }
 
@@ -61,6 +105,11 @@ void DiagramTab::render() {
     ImGui::Separator();
 
     // Node editor
+    if (!editorContext) {
+        std::cout << "DiagramTab: Editor context is null, cannot render!" << std::endl;
+        return;
+    }
+
     ax::NodeEditor::SetCurrentEditor(editorContext);
     ax::NodeEditor::Begin("Database Diagram", ImVec2(0.0, 0.0f));
 
@@ -74,8 +123,12 @@ void DiagramTab::render() {
 
 void DiagramTab::loadDatabaseSchema() {
     if (!database || !database->isConnected()) {
+        std::cout << "DiagramTab: Database not connected" << std::endl;
         return;
     }
+
+    std::cout << "DiagramTab: Starting to load database schema for " << database->getName()
+              << std::endl;
 
     nodes.clear();
     links.clear();
@@ -84,12 +137,105 @@ void DiagramTab::loadDatabaseSchema() {
     nextLinkId = 1;
     nextPinId = 1;
 
-    // Load tables if not already loaded
-    if (!database->areTablesLoaded()) {
-        database->refreshTables();
+    // For PostgreSQL and MySQL, we need to get tables for a specific database
+    std::vector<Table> tables;
+    if (database->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+        if (pgDb) {
+            std::string dbToUse =
+                targetDatabaseName.empty() ? pgDb->getDatabaseName() : targetDatabaseName;
+            std::cout << "DiagramTab: Loading tables for PostgreSQL database: " << dbToUse
+                      << std::endl;
+
+            // For PostgreSQL, if the target database is different from current,
+            // we need to switch to it first
+            if (!targetDatabaseName.empty() && targetDatabaseName != pgDb->getDatabaseName()) {
+                std::cout << "DiagramTab: Target database " << dbToUse
+                          << " is different from current database " << pgDb->getDatabaseName()
+                          << ", tables may not be available" << std::endl;
+            }
+
+            // Get the tables for the specific database
+            auto& dbData = pgDb->getDatabaseData(dbToUse);
+            if (!dbData.tablesLoaded && !dbData.loadingTables) {
+                std::cout << "DiagramTab: Tables not loaded for " << dbToUse
+                          << ", triggering load..." << std::endl;
+                // For the target database, we need to trigger table loading
+                // This is normally done when expanding the tree, but we'll do it here too
+                if (dbToUse == pgDb->getDatabaseName()) {
+                    // If it's the current database, use the regular refresh
+                    pgDb->refreshTables();
+                } else {
+                    // For a different database, we need to switch to it first
+                    std::cout << "DiagramTab: Need to switch to database " << dbToUse
+                              << " to load tables" << std::endl;
+                    schemaLoaded = true;
+                    return;
+                }
+            }
+
+            // If tables are still loading, wait
+            if (dbData.loadingTables) {
+                std::cout << "DiagramTab: Tables are loading for " << dbToUse << "..." << std::endl;
+                schemaLoaded = false; // Keep trying
+                return;
+            }
+
+            tables = dbData.tables;
+        }
+    } else if (database->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+        if (mysqlDb) {
+            std::string dbToUse =
+                targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName;
+            std::cout << "DiagramTab: Loading tables for MySQL database: " << dbToUse << std::endl;
+
+            // For MySQL, if the target database is different from current,
+            // we need to switch to it first
+            if (!targetDatabaseName.empty() && targetDatabaseName != mysqlDb->getDatabaseName()) {
+                std::cout << "DiagramTab: Target database " << dbToUse
+                          << " is different from current database " << mysqlDb->getDatabaseName()
+                          << ", tables may not be available" << std::endl;
+            }
+
+            // Get the tables for the specific database
+            auto& dbData = mysqlDb->getDatabaseData(dbToUse);
+            if (!dbData.tablesLoaded && !dbData.loadingTables) {
+                std::cout << "DiagramTab: Tables not loaded for " << dbToUse
+                          << ", triggering load..." << std::endl;
+                // For the target database, we need to trigger table loading
+                if (dbToUse == mysqlDb->getDatabaseName()) {
+                    // If it's the current database, use the regular refresh
+                    mysqlDb->refreshTables();
+                } else {
+                    // For a different database, we need to switch to it first
+                    std::cout << "DiagramTab: Need to switch to database " << dbToUse
+                              << " to load tables" << std::endl;
+                    schemaLoaded = true;
+                    return;
+                }
+            }
+
+            // If tables are still loading, wait
+            if (dbData.loadingTables) {
+                std::cout << "DiagramTab: Tables are loading for " << dbToUse << "..." << std::endl;
+                schemaLoaded = false; // Keep trying
+                return;
+            }
+
+            tables = dbData.tables;
+        }
+    } else {
+        // For SQLite and other databases, use the standard interface
+        if (!database->areTablesLoaded()) {
+            std::cout << "DiagramTab: Tables not loaded, refreshing..." << std::endl;
+            database->refreshTables();
+        }
+        tables = database->getTables();
     }
 
-    const auto& tables = database->getTables();
+    std::cout << "DiagramTab: Found " << tables.size() << " tables" << std::endl;
+
     if (tables.empty()) {
         schemaLoaded = true;
         return;
@@ -98,6 +244,7 @@ void DiagramTab::loadDatabaseSchema() {
     // Create nodes for each table
     ImVec2 position(100, 100);
     for (const auto& table : tables) {
+        std::cout << "DiagramTab: Creating node for table: " << table.name << std::endl;
         createTableNode(table, position);
         if (autoLayout) {
             position.x += nodeSpacing;
@@ -108,14 +255,21 @@ void DiagramTab::loadDatabaseSchema() {
         }
     }
 
+    std::cout << "DiagramTab: Created " << nodes.size() << " nodes" << std::endl;
+
     // Detect and create foreign key relationships
+    std::cout << "DiagramTab: Detecting foreign keys..." << std::endl;
     detectForeignKeys();
+    std::cout << "DiagramTab: Foreign key detection completed" << std::endl;
 
     if (autoLayout) {
+        std::cout << "DiagramTab: Performing auto layout..." << std::endl;
         autoLayoutNodes();
+        std::cout << "DiagramTab: Auto layout completed" << std::endl;
     }
 
     schemaLoaded = true;
+    std::cout << "DiagramTab: Schema loaded successfully" << std::endl;
 }
 
 void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
@@ -134,7 +288,18 @@ void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
 }
 
 void DiagramTab::renderNodes() {
+    if (nodes.empty()) {
+        return;
+    }
+
     for (auto& node : nodes) {
+        // Safety check for node position
+        if (std::isnan(node.position.x) || std::isnan(node.position.y) ||
+            std::isinf(node.position.x) || std::isinf(node.position.y)) {
+            node.position = ImVec2(100, 100);
+        }
+
+        ax::NodeEditor::SetNodePosition(node.id, node.position);
         ax::NodeEditor::BeginNode(node.id);
 
         // Node header with table name
@@ -146,6 +311,11 @@ void DiagramTab::renderNodes() {
 
         // Columns
         for (const auto& column : node.columns) {
+            // Safety check for column name
+            if (column.name.empty()) {
+                continue;
+            }
+
             ImGui::BeginGroup();
 
             // Pin for potential connections
@@ -290,11 +460,21 @@ bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::str
     // Basic foreign key detection based on common naming patterns
 
     // Pattern 1: column ends with "_id" and there's a table with that name
-    if (columnName.ends_with("_id")) {
+    const std::string suffix = "_id";
+    if (columnName.length() > suffix.length() &&
+        columnName.substr(columnName.length() - suffix.length()) == suffix) {
         std::string potentialTable = columnName.substr(0, columnName.length() - 3);
+
+        // Look for plural form of table
+        if (tableToNodeId.find(potentialTable + "s") != tableToNodeId.end()) {
+            referencedTable = potentialTable + "s";
+            referencedColumn = "id";
+            return true;
+        }
+        // Look for exact match
         if (tableToNodeId.find(potentialTable) != tableToNodeId.end()) {
             referencedTable = potentialTable;
-            referencedColumn = "id"; // Assume primary key is "id"
+            referencedColumn = "id";
             return true;
         }
     }
@@ -329,7 +509,8 @@ void DiagramTab::autoLayoutNodes() {
         newPosition.x = 100 + currentColumn * spacing;
         newPosition.y = 100 + currentRow * 250;
 
-        ax::NodeEditor::SetNodePosition(node.id, newPosition);
+        // Just update the position in our node structure
+        // Don't call NodeEditor functions here as the context may not be set
         node.position = newPosition;
 
         currentColumn++;

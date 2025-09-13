@@ -62,7 +62,7 @@ namespace MySQLHierarchy {
             }
             if (ImGui::MenuItem("Show Diagram")) {
                 auto& app = Application::getInstance();
-                app.getTabManager()->createDiagramTab(mysqlDb);
+                app.getTabManager()->createDiagramTab(mysqlDb, mysqlDb->getDatabaseName());
                 std::cout << "Creating diagram for database: " << mysqlDb->getDatabaseName()
                           << std::endl;
             }
@@ -155,7 +155,7 @@ namespace MySQLHierarchy {
                 }
                 if (ImGui::MenuItem("Show Diagram")) {
                     auto& app = Application::getInstance();
-                    app.getTabManager()->createDiagramTab(mysqlDb);
+                    app.getTabManager()->createDiagramTab(mysqlDb, dbName);
                     std::cout << "Creating diagram for database: " << dbName << std::endl;
                 }
                 ImGui::EndPopup();

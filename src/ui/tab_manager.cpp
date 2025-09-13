@@ -299,14 +299,16 @@ void TabManager::renderEmptyState() {
 }
 
 std::shared_ptr<Tab>
-TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database) {
+TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
+                             const std::string& targetDatabaseName) {
     if (!database) {
         std::cout << "Cannot create diagram tab: database is null" << std::endl;
         return nullptr;
     }
 
     // Generate a unique tab name for the diagram
-    std::string baseName = "Diagram - " + database->getName();
+    std::string dbName = targetDatabaseName.empty() ? database->getName() : targetDatabaseName;
+    std::string baseName = "Diagram - " + dbName;
     std::string tabName = baseName;
     int count = 1;
     while (hasTab(tabName)) {
@@ -314,8 +316,8 @@ TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database)
         tabName = baseName + " (" + std::to_string(count) + ")";
     }
 
-    // Create the diagram tab
-    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, database);
+    // Create the diagram tab with the target database name
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, database, targetDatabaseName);
     tab->setShouldFocus(true);
     addTab(tab);
 

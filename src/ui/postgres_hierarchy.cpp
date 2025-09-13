@@ -59,7 +59,7 @@ namespace PostgresHierarchy {
             }
             if (ImGui::MenuItem("Show Diagram")) {
                 auto& app = Application::getInstance();
-                app.getTabManager()->createDiagramTab(pgDb);
+                app.getTabManager()->createDiagramTab(pgDb, pgDb->getDatabaseName());
                 LogPanel::debug("Creating diagram for database: " + pgDb->getDatabaseName());
             }
             ImGui::EndPopup();
@@ -147,7 +147,7 @@ namespace PostgresHierarchy {
                 }
                 if (ImGui::MenuItem("Show Diagram")) {
                     auto& app = Application::getInstance();
-                    app.getTabManager()->createDiagramTab(pgDb);
+                    app.getTabManager()->createDiagramTab(pgDb, dbName);
                     LogPanel::debug("Creating diagram for database: " + dbName);
                 }
                 ImGui::EndPopup();

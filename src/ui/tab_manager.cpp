@@ -3,6 +3,7 @@
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
+#include "ui/diagram_tab.hpp"
 #include <algorithm>
 #include <iostream>
 
@@ -295,6 +296,35 @@ void TabManager::renderEmptyState() {
     float textWidth = ImGui::CalcTextSize(text).x;
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) / 2);
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);
+}
+
+std::shared_ptr<Tab>
+TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database) {
+    if (!database) {
+        std::cout << "Cannot create diagram tab: database is null" << std::endl;
+        return nullptr;
+    }
+
+    // Generate a unique tab name for the diagram
+    std::string baseName = "Diagram - " + database->getName();
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        count++;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    // Create the diagram tab
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, database);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    std::cout << "Created new diagram tab for database: " << database->getName() << std::endl;
+    return tab;
 }
 
 std::string TabManager::generateSQLEditorName() const {

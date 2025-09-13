@@ -60,6 +60,12 @@ namespace MySQLHierarchy {
                 std::cout << "Creating new SQL editor for database: " << mysqlDb->getDatabaseName()
                           << std::endl;
             }
+            if (ImGui::MenuItem("Show Diagram")) {
+                auto& app = Application::getInstance();
+                app.getTabManager()->createDiagramTab(mysqlDb);
+                std::cout << "Creating diagram for database: " << mysqlDb->getDatabaseName()
+                          << std::endl;
+            }
             ImGui::EndPopup();
         }
 
@@ -146,6 +152,11 @@ namespace MySQLHierarchy {
                     auto& app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", mysqlDb, dbName);
                     std::cout << "Creating new SQL editor for database: " << dbName << std::endl;
+                }
+                if (ImGui::MenuItem("Show Diagram")) {
+                    auto& app = Application::getInstance();
+                    app.getTabManager()->createDiagramTab(mysqlDb);
+                    std::cout << "Creating diagram for database: " << dbName << std::endl;
                 }
                 ImGui::EndPopup();
             }

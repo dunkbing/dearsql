@@ -57,6 +57,11 @@ namespace PostgresHierarchy {
                 app.getTabManager()->createSQLEditorTab("", pgDb, pgDb->getDatabaseName());
                 LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
             }
+            if (ImGui::MenuItem("Show Diagram")) {
+                auto& app = Application::getInstance();
+                app.getTabManager()->createDiagramTab(pgDb);
+                LogPanel::debug("Creating diagram for database: " + pgDb->getDatabaseName());
+            }
             ImGui::EndPopup();
         }
 
@@ -139,6 +144,11 @@ namespace PostgresHierarchy {
                     auto& app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", pgDb, dbName);
                     LogPanel::debug("Creating new SQL editor for database: " + dbName);
+                }
+                if (ImGui::MenuItem("Show Diagram")) {
+                    auto& app = Application::getInstance();
+                    app.getTabManager()->createDiagramTab(pgDb);
+                    LogPanel::debug("Creating diagram for database: " + dbName);
                 }
                 ImGui::EndPopup();
             }

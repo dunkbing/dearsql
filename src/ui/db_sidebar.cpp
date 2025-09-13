@@ -494,6 +494,10 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
         if (ImGui::MenuItem("New SQL Editor")) {
             app.getTabManager()->createSQLEditorTab("", db);
         }
+        if (ImGui::MenuItem("Show Diagram")) {
+            app.getTabManager()->createDiagramTab(db);
+        }
+        ImGui::Separator();
 
         // Add "Create new database" for PostgreSQL and MySQL
         if (db->getType() == DatabaseType::POSTGRESQL || db->getType() == DatabaseType::MYSQL) {

@@ -39,6 +39,7 @@ public:
                                             const std::string& selectedDatabaseName = "");
     std::shared_ptr<Tab> createTableViewerTab(const std::shared_ptr<DatabaseInterface>& database,
                                               const std::string& tableName);
+    std::shared_ptr<Tab> createDiagramTab(const std::shared_ptr<DatabaseInterface>& database);
 
     // UI rendering
     void renderTabs();

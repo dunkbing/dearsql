@@ -10,7 +10,7 @@
 // Forward declarations
 class DatabaseInterface;
 
-enum class TabType { SQL_EDITOR, TABLE_VIEWER };
+enum class TabType { SQL_EDITOR, TABLE_VIEWER, DIAGRAM };
 
 class Tab {
 public:

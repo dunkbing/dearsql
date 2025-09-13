@@ -29,6 +29,13 @@ set(IMGUI_SOURCES
     external/ImGuiColorTextEdit/LanguageDefinitions.cpp
 )
 
+# ImGui Node Editor sources
+set(IMGUI_NODE_EDITOR_SOURCES
+    external/imgui-node-editor/imgui_node_editor.cpp
+    external/imgui-node-editor/imgui_node_editor_api.cpp
+    external/imgui-node-editor/crude_json.cpp
+)
+
 # Platform-specific backend configuration
 if(APPLE)
     # Metal backend for macOS
@@ -94,6 +101,7 @@ set(APP_SOURCES
     src/ui/sqlite_hierarchy.cpp
     src/ui/postgres_hierarchy.cpp
     src/ui/mysql_hierarchy.cpp
+    src/ui/diagram_tab.cpp
 
     # Utils
     src/utils/file_dialog.cpp
@@ -125,6 +133,7 @@ list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
+    ${IMGUI_NODE_EDITOR_SOURCES}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -132,6 +141,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui
     external/imgui/backends
     external/ImGuiColorTextEdit
+    external/imgui-node-editor
     external/json/include
     external/soci/include
     external/IconFontCppHeaders

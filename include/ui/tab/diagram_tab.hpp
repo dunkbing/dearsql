@@ -2,7 +2,7 @@
 
 #include "database/db_interface.hpp"
 #include "imgui_node_editor.h"
-#include "tab.hpp"
+#include "ui/tab/tab.hpp"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -42,7 +42,6 @@ private:
     void renderLinks();
     void handleNodeInteraction();
     void createTableNode(const Table& table, const ImVec2& position);
-    void autoLayoutNodes();
 
     // Foreign key detection methods
     void detectForeignKeys();
@@ -67,8 +66,6 @@ private:
 
     bool schemaLoaded = false;
     bool isLoadingSchema = false; // Track loading state per instance
-    bool autoLayout = true;
-    float nodeSpacing = 400.0f; // Increased default spacing
 
     // UI state
     bool showTableDetails = true;

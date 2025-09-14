@@ -94,15 +94,18 @@ set(APP_SOURCES
     src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
     src/ui/log_panel.cpp
-    src/ui/tab.cpp
-    src/ui/tab_manager.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     src/ui/hierarchy_helpers.cpp
     src/ui/sqlite_hierarchy.cpp
     src/ui/postgres_hierarchy.cpp
     src/ui/mysql_hierarchy.cpp
-    src/ui/diagram_tab.cpp
+    # Tabs
+    src/ui/tab_manager.cpp
+    src/ui/tab/tab.cpp
+    src/ui/tab/sql_editor_tab.cpp
+    src/ui/tab/table_viewer_tab.cpp
+    src/ui/tab/diagram_tab.cpp
 
     # Utils
     src/utils/file_dialog.cpp

@@ -3,7 +3,9 @@
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
-#include "ui/diagram_tab.hpp"
+#include "ui/tab/diagram_tab.hpp"
+#include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab/table_viewer_tab.hpp"
 #include <algorithm>
 #include <iostream>
 

@@ -1,4 +1,4 @@
-#include "ui/diagram_tab.hpp"
+#include "ui/tab/diagram_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/mysql.hpp"
@@ -106,16 +106,6 @@ void DiagramTab::render() {
         schemaLoaded = false;
         loadDatabaseSchema();
     }
-    ImGui::SameLine();
-    ImGui::Checkbox("Auto Layout", &autoLayout);
-    if (autoLayout) {
-        ImGui::SameLine();
-        ImGui::SliderFloat("Node Spacing", &nodeSpacing, 300.0f, 800.0f);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Adjust spacing between nodes in auto-layout");
-        }
-    }
-
     ImGui::Separator();
 
     // Options
@@ -253,21 +243,15 @@ void DiagramTab::loadDatabaseSchema() {
 
     for (const auto& table : tables) {
         createTableNode(table, position);
-        if (autoLayout) {
-            position.x += horizontalSpacing;
-            if (position.x > maxWidth) { // Wrap to next row
-                position.x = 100;
-                position.y += verticalSpacing;
-            }
+        position.x += horizontalSpacing;
+        if (position.x > maxWidth) { // Wrap to next row
+            position.x = 100;
+            position.y += verticalSpacing;
         }
     }
 
     // Detect and create foreign key relationships
     detectForeignKeys();
-
-    if (autoLayout) {
-        autoLayoutNodes();
-    }
 
     schemaLoaded = true;
 }
@@ -545,36 +529,4 @@ bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::str
 
     // More sophisticated detection would query the database for actual FK constraints
     return false;
-}
-
-void DiagramTab::autoLayoutNodes() {
-    if (nodes.empty()) {
-        return;
-    }
-
-    // Improved grid layout with better spacing
-    const float horizontalSpacing = 400.0f; // Increased spacing between columns
-    const float verticalSpacing = 350.0f;   // Increased spacing between rows
-    const int maxColumns = 4;               // Keep 4 columns max
-    const float startX = 100.0f;
-    const float startY = 100.0f;
-
-    int currentColumn = 0;
-    int currentRow = 0;
-
-    for (auto& node : nodes) {
-        ImVec2 newPosition;
-        newPosition.x = startX + currentColumn * horizontalSpacing;
-        newPosition.y = startY + currentRow * verticalSpacing;
-
-        // Update position and reset the flag so it gets applied
-        node.position = newPosition;
-        node.initialPositionSet = false; // Reset so new position is applied
-
-        currentColumn++;
-        if (currentColumn >= maxColumns) {
-            currentColumn = 0;
-            currentRow++;
-        }
-    }
 }

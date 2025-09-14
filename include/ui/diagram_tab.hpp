@@ -1,8 +1,8 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include "imgui_node_editor.h"
 #include "tab.hpp"
-#include <imgui_node_editor.h>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -13,6 +13,8 @@ struct DiagramNode {
     std::vector<Column> columns;
     ImVec2 position;
     bool isPrimaryTable = false;
+    bool initialPositionSet = false;                 // Track if initial position has been set
+    std::vector<ax::NodeEditor::PinId> columnPinIds; // Cache pin IDs for each column
 };
 
 struct DiagramLink {
@@ -56,13 +58,17 @@ private:
     std::vector<DiagramLink> links;
     std::unordered_map<std::string, ax::NodeEditor::NodeId> tableToNodeId;
 
-    int nextNodeId = 1;
-    int nextLinkId = 1;
-    int nextPinId = 1;
+    // Cache for foreign key relationships
+    std::unordered_map<std::string, std::pair<std::string, std::string>> foreignKeyCache;
+
+    int nextNodeId = 1000;
+    int nextLinkId = 10000;
+    int nextPinId = 100000;
 
     bool schemaLoaded = false;
+    bool isLoadingSchema = false; // Track loading state per instance
     bool autoLayout = true;
-    float nodeSpacing = 300.0f;
+    float nodeSpacing = 400.0f; // Increased default spacing
 
     // UI state
     bool showTableDetails = true;

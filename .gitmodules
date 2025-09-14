@@ -25,4 +25,4 @@
 	url = https://github.com/redis/hiredis.git
 [submodule "external/imgui-node-editor"]
 	path = external/imgui-node-editor
-	url = https://github.com/thedmd/imgui-node-editor.git
+	url = https://github.com/dunkbing/imgui-node-editor.git

@@ -115,90 +115,96 @@ void TableRenderer::render(const char* tableId) {
         }
         ImGui::TableHeadersRow();
 
-        // Render data rows
-        for (int rowIdx = 0; rowIdx < static_cast<int>(data.size()); rowIdx++) {
-            const auto& row = data[rowIdx];
-            ImGui::TableNextRow();
+        // Use ImGuiListClipper for efficient row rendering
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(data.size()));
 
-            // Row number column
-            if (config.showRowNumbers) {
-                ImGui::TableNextColumn();
+        while (clipper.Step()) {
+            for (int rowIdx = clipper.DisplayStart; rowIdx < clipper.DisplayEnd; rowIdx++) {
+                const auto& row = data[rowIdx];
+                ImGui::TableNextRow();
 
-                // Right-align the row number text
-                int rowNum = rowNumberOffset + rowIdx + 1;
-                std::string rowNumStr = std::to_string(rowNum);
-                float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
-                float columnWidth = ImGui::GetColumnWidth();
-                float padding = 5.0f; // Right padding
+                // Row number column
+                if (config.showRowNumbers) {
+                    ImGui::TableNextColumn();
 
-                // Calculate position for right alignment
-                float cursorX = ImGui::GetCursorPosX();
-                ImGui::SetCursorPosX(cursorX + columnWidth - textWidth - padding);
+                    // Right-align the row number text
+                    int rowNum = rowNumberOffset + rowIdx + 1;
+                    std::string rowNumStr = std::to_string(rowNum);
+                    float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
+                    float columnWidth = ImGui::GetColumnWidth();
+                    float padding = 5.0f; // Right padding
 
-                // Render with subdued color
-                ImGui::PushStyleColor(ImGuiCol_Text,
-                                      ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-                ImGui::Text("%d", rowNum);
-                ImGui::PopStyleColor();
-            }
+                    // Calculate position for right alignment
+                    float cursorX = ImGui::GetCursorPosX();
+                    ImGui::SetCursorPosX(cursorX + columnWidth - textWidth - padding);
 
-            // Data columns
-            for (int colIdx = 0;
-                 colIdx < static_cast<int>(row.size()) && colIdx < static_cast<int>(columns.size());
-                 colIdx++) {
-                ImGui::TableNextColumn();
+                    // Render with subdued color
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                                          ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                    ImGui::Text("%d", rowNum);
+                    ImGui::PopStyleColor();
+                }
 
-                renderCell(rowIdx, colIdx);
+                // Data columns
+                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) &&
+                                     colIdx < static_cast<int>(columns.size());
+                     colIdx++) {
+                    ImGui::TableNextColumn();
 
-                // Handle scrolling to target cell after rendering (so we can check visibility)
-                if (shouldScrollToCell && rowIdx == scrollTargetRow && colIdx == scrollTargetCol) {
-                    // Check if the cell is actually visible before scrolling
-                    const ImVec2 cellMin = ImGui::GetItemRectMin();
-                    const ImVec2 cellMax = ImGui::GetItemRectMax();
-                    const ImVec2 windowContentMin = ImGui::GetWindowContentRegionMin();
-                    const ImVec2 windowContentMax = ImGui::GetWindowContentRegionMax();
-                    const ImVec2 windowPos = ImGui::GetWindowPos();
+                    renderCell(rowIdx, colIdx);
 
-                    // Convert to absolute coordinates
-                    const ImVec2 contentMin =
-                        ImVec2(windowPos.x + windowContentMin.x, windowPos.y + windowContentMin.y);
-                    const ImVec2 contentMax =
-                        ImVec2(windowPos.x + windowContentMax.x, windowPos.y + windowContentMax.y);
+                    // Handle scrolling to target cell after rendering (so we can check visibility)
+                    if (shouldScrollToCell && rowIdx == scrollTargetRow &&
+                        colIdx == scrollTargetCol) {
+                        // Check if the cell is actually visible before scrolling
+                        const ImVec2 cellMin = ImGui::GetItemRectMin();
+                        const ImVec2 cellMax = ImGui::GetItemRectMax();
+                        const ImVec2 windowContentMin = ImGui::GetWindowContentRegionMin();
+                        const ImVec2 windowContentMax = ImGui::GetWindowContentRegionMax();
+                        const ImVec2 windowPos = ImGui::GetWindowPos();
 
-                    // Check if cell is visible horizontally
-                    const bool cellVisibleX =
-                        (cellMax.x > contentMin.x && cellMin.x < contentMax.x);
-                    // Check if cell is visible vertically
-                    const bool cellVisibleY =
-                        (cellMax.y > contentMin.y && cellMin.y < contentMax.y);
+                        // Convert to absolute coordinates
+                        const ImVec2 contentMin = ImVec2(windowPos.x + windowContentMin.x,
+                                                         windowPos.y + windowContentMin.y);
+                        const ImVec2 contentMax = ImVec2(windowPos.x + windowContentMax.x,
+                                                         windowPos.y + windowContentMax.y);
 
-                    // Only scroll if the cell is not fully visible
-                    if (!cellVisibleY) {
-                        ImGui::SetScrollHereY(0.5f); // Center the row vertically
-                    }
+                        // Check if cell is visible horizontally
+                        const bool cellVisibleX =
+                            (cellMax.x > contentMin.x && cellMin.x < contentMax.x);
+                        // Check if cell is visible vertically
+                        const bool cellVisibleY =
+                            (cellMax.y > contentMin.y && cellMin.y < contentMax.y);
 
-                    // For horizontal scrolling, handle first column specially
-                    if (colIdx == 0) {
-                        // Always scroll to the leftmost position for the first column
-                        // Check if we're not already at the leftmost scroll position
-                        float currentScrollX = ImGui::GetScrollX();
-                        if (currentScrollX > 0.0f) {
-                            ImGui::SetScrollHereX(0.0f);
-                        }
-                    } else if (!cellVisibleX) {
-                        // For other columns, only scroll if not visible
-                        float scrollRatio = 0.5f; // Default to center
-
-                        if (colIdx == static_cast<int>(columns.size()) - 1) {
-                            // Last column - scroll to right edge
-                            scrollRatio = 1.0f;
+                        // Only scroll if the cell is not fully visible
+                        if (!cellVisibleY) {
+                            ImGui::SetScrollHereY(0.5f); // Center the row vertically
                         }
 
-                        ImGui::SetScrollHereX(scrollRatio);
-                    }
+                        // For horizontal scrolling, handle first column specially
+                        if (colIdx == 0) {
+                            // Always scroll to the leftmost position for the first column
+                            // Check if we're not already at the leftmost scroll position
+                            float currentScrollX = ImGui::GetScrollX();
+                            if (currentScrollX > 0.0f) {
+                                ImGui::SetScrollHereX(0.0f);
+                            }
+                        } else if (!cellVisibleX) {
+                            // For other columns, only scroll if not visible
+                            float scrollRatio = 0.5f; // Default to center
 
-                    // Reset the scroll flag after checking
-                    shouldScrollToCell = false;
+                            if (colIdx == static_cast<int>(columns.size()) - 1) {
+                                // Last column - scroll to right edge
+                                scrollRatio = 1.0f;
+                            }
+
+                            ImGui::SetScrollHereX(scrollRatio);
+                        }
+
+                        // Reset the scroll flag after checking
+                        shouldScrollToCell = false;
+                    }
                 }
             }
         }

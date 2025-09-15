@@ -41,7 +41,7 @@ void DatabaseConnectionDialog::showDialog() {
 void DatabaseConnectionDialog::renderTypeSelection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Choose how to connect to a database:");
@@ -57,23 +57,30 @@ void DatabaseConnectionDialog::renderTypeSelection() {
             ImGui::Spacing();
         }
 
+        // Apply visual styling to make radio buttons more visible
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.overlay0);
+        ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+
         int selectedType = static_cast<int>(selectedDatabaseType);
         ImGui::RadioButton("SQLite File", &selectedType, static_cast<int>(DatabaseType::SQLITE));
-        ImGui::Text("   Open a local SQLite database file");
         ImGui::Spacing();
 
-        ImGui::RadioButton("PostgreSQL Server", &selectedType,
-                           static_cast<int>(DatabaseType::POSTGRESQL));
-        ImGui::Text("   Connect to a PostgreSQL server");
+        ImGui::RadioButton("PostgreSQL", &selectedType, static_cast<int>(DatabaseType::POSTGRESQL));
         ImGui::Spacing();
 
-        ImGui::RadioButton("MySQL Server", &selectedType, static_cast<int>(DatabaseType::MYSQL));
-        ImGui::Text("   Connect to a MySQL server");
+        ImGui::RadioButton("MySQL", &selectedType, static_cast<int>(DatabaseType::MYSQL));
         ImGui::Spacing();
 
-        ImGui::RadioButton("Redis Server", &selectedType, static_cast<int>(DatabaseType::REDIS));
-        ImGui::Text("   Connect to a Redis key-value store");
+        ImGui::RadioButton("Redis", &selectedType, static_cast<int>(DatabaseType::REDIS));
         ImGui::Spacing();
+
+        ImGui::PopStyleColor(5);
+        ImGui::PopStyleVar();
 
         selectedDatabaseType = static_cast<DatabaseType>(selectedType);
 
@@ -96,9 +103,9 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                     app.getAppState()->saveConnection(conn);
 
                     result = db;
+                    ImGui::CloseCurrentPopup();
+                    reset();
                 }
-                ImGui::CloseCurrentPopup();
-                reset();
                 break;
             }
             case DatabaseType::POSTGRESQL:

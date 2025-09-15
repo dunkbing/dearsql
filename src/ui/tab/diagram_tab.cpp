@@ -137,6 +137,38 @@ void DiagramTab::render() {
     ax::NodeEditor::SetCurrentEditor(nullptr);
 }
 
+std::vector<Table> DiagramTab::getTablesForDiagram() {
+    std::vector<Table> tables;
+
+    if (!database || !database->isConnected()) {
+        return tables;
+    }
+
+    // For PostgreSQL and MySQL, we need to get tables for a specific database
+    if (database->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
+        if (pgDb) {
+            std::string dbToUse =
+                targetDatabaseName.empty() ? pgDb->getDatabaseName() : targetDatabaseName;
+            auto& dbData = pgDb->getDatabaseData(dbToUse);
+            tables = dbData.tables;
+        }
+    } else if (database->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
+        if (mysqlDb) {
+            std::string dbToUse =
+                targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName;
+            auto& dbData = mysqlDb->getDatabaseData(dbToUse);
+            tables = dbData.tables;
+        }
+    } else {
+        // For SQLite and other databases, use the standard interface
+        tables = database->getTables();
+    }
+
+    return tables;
+}
+
 void DiagramTab::loadDatabaseSchema() {
     if (!database || !database->isConnected()) {
         return;
@@ -436,57 +468,119 @@ void DiagramTab::detectForeignKeys() {
     // Clear previous foreign key cache
     foreignKeyCache.clear();
 
-    // Simple foreign key detection based on naming conventions
-    // This is a basic implementation - in a real scenario, you'd query the database
-    // for actual foreign key constraints
+    // Get foreign keys from table metadata
+    std::vector<Table> tables = getTablesForDiagram();
 
+    for (const auto& table : tables) {
+        // Use the foreign keys stored in the table structure
+        for (const auto& fk : table.foreignKeys) {
+            std::string cacheKey = table.name + "." + fk.sourceColumn;
+
+            // Cache the foreign key relationship
+            foreignKeyCache[cacheKey] = {fk.targetTable, fk.targetColumn};
+
+            // Find the source node and column pin
+            auto sourceNodeIt = tableToNodeId.find(table.name);
+            if (sourceNodeIt == tableToNodeId.end())
+                continue;
+
+            // Find the target node
+            auto targetNodeIt = tableToNodeId.find(fk.targetTable);
+            if (targetNodeIt == tableToNodeId.end())
+                continue;
+
+            // Find the source column pin ID
+            ax::NodeEditor::PinId sourcePinId(0);
+            for (const auto& node : nodes) {
+                if (node.tableName == table.name) {
+                    for (size_t colIdx = 0; colIdx < node.columns.size(); ++colIdx) {
+                        if (node.columns[colIdx].name == fk.sourceColumn) {
+                            sourcePinId = node.columnPinIds[colIdx];
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Find the target column pin ID
+            ax::NodeEditor::PinId targetPinId(0);
+            for (const auto& node : nodes) {
+                if (node.tableName == fk.targetTable) {
+                    for (size_t colIdx = 0; colIdx < node.columns.size(); ++colIdx) {
+                        if (node.columns[colIdx].name == fk.targetColumn) {
+                            targetPinId = node.columnPinIds[colIdx];
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Create link if both pins are found
+            if (sourcePinId && targetPinId) {
+                DiagramLink link;
+                link.id = ax::NodeEditor::LinkId(nextLinkId++);
+                link.startPinId = sourcePinId;
+                link.endPinId = targetPinId;
+                link.fromTable = table.name;
+                link.toTable = fk.targetTable;
+                link.fromColumn = fk.sourceColumn;
+                link.toColumn = fk.targetColumn;
+
+                links.push_back(link);
+            }
+        }
+    }
+
+    // Fall back to heuristic detection if no foreign keys are defined in metadata
+    if (links.empty()) {
+        detectForeignKeysHeuristic();
+    }
+}
+
+void DiagramTab::detectForeignKeysHeuristic() {
+    // Use naming conventions as a fallback when metadata is not available
     for (const auto& node : nodes) {
         for (size_t colIdx = 0; colIdx < node.columns.size(); ++colIdx) {
             const auto& column = node.columns[colIdx];
 
-            // Create cache key
             std::string cacheKey = node.tableName + "." + column.name;
+            if (foreignKeyCache.find(cacheKey) != foreignKeyCache.end())
+                continue;
 
-            // Check if we've already processed this foreign key
-            if (foreignKeyCache.find(cacheKey) == foreignKeyCache.end()) {
-                std::string referencedTable, referencedColumn;
-                if (isForeignKeyColumn(node.tableName, column.name, referencedTable,
-                                       referencedColumn)) {
-                    // Cache the result
-                    foreignKeyCache[cacheKey] = {referencedTable, referencedColumn};
+            std::string referencedTable, referencedColumn;
+            if (isForeignKeyColumn(node.tableName, column.name, referencedTable,
+                                   referencedColumn)) {
+                foreignKeyCache[cacheKey] = {referencedTable, referencedColumn};
 
-                    // Find the referenced table node
-                    auto refTableIt = tableToNodeId.find(referencedTable);
-                    if (refTableIt != tableToNodeId.end()) {
-                        // Find the referenced node and column to get its pin ID
-                        ax::NodeEditor::PinId endPinId(0);
-                        for (const auto& targetNode : nodes) {
-                            if (targetNode.tableName == referencedTable) {
-                                // Find the referenced column index
-                                for (size_t targetColIdx = 0;
-                                     targetColIdx < targetNode.columns.size(); ++targetColIdx) {
-                                    if (targetNode.columns[targetColIdx].name == referencedColumn) {
-                                        endPinId = targetNode.columnPinIds[targetColIdx];
-                                        break;
-                                    }
+                auto refTableIt = tableToNodeId.find(referencedTable);
+                if (refTableIt != tableToNodeId.end()) {
+                    ax::NodeEditor::PinId endPinId(0);
+                    for (const auto& targetNode : nodes) {
+                        if (targetNode.tableName == referencedTable) {
+                            for (size_t targetColIdx = 0; targetColIdx < targetNode.columns.size();
+                                 ++targetColIdx) {
+                                if (targetNode.columns[targetColIdx].name == referencedColumn) {
+                                    endPinId = targetNode.columnPinIds[targetColIdx];
+                                    break;
                                 }
-                                break;
                             }
+                            break;
                         }
+                    }
 
-                        // Only create link if we found the target pin
-                        if (endPinId) {
-                            DiagramLink link;
-                            link.id = ax::NodeEditor::LinkId(nextLinkId++);
-                            link.startPinId = node.columnPinIds[colIdx]; // Use cached pin ID
-                            link.endPinId = endPinId; // Use the target column's cached pin ID
-                            link.fromTable = node.tableName;
-                            link.toTable = referencedTable;
-                            link.fromColumn = column.name;
-                            link.toColumn = referencedColumn;
+                    if (endPinId) {
+                        DiagramLink link;
+                        link.id = ax::NodeEditor::LinkId(nextLinkId++);
+                        link.startPinId = node.columnPinIds[colIdx];
+                        link.endPinId = endPinId;
+                        link.fromTable = node.tableName;
+                        link.toTable = referencedTable;
+                        link.fromColumn = column.name;
+                        link.toColumn = referencedColumn;
 
-                            links.push_back(link);
-                        }
+                        links.push_back(link);
                     }
                 }
             }

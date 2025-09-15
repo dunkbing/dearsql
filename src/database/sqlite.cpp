@@ -80,6 +80,14 @@ void SQLiteDatabase::refreshTables() {
         table.name = tableName;
         table.fullName = name + "." + tableName; // SQLite: connection.table
         table.columns = getTableColumns(tableName);
+        table.indexes = getTableIndexes(tableName);
+        table.foreignKeys = getTableForeignKeys(tableName);
+
+        // Build foreign key lookup map
+        for (const auto& fk : table.foreignKeys) {
+            table.foreignKeysByColumn[fk.sourceColumn] = fk;
+        }
+
         tables.push_back(table);
     }
     std::cout << "Finished refreshing tables. Total tables: " << tables.size() << std::endl;
@@ -386,6 +394,75 @@ std::vector<Column> SQLiteDatabase::getTableColumns(const std::string& tableName
         std::cerr << "Error getting table columns: " << e.what() << std::endl;
     }
     return columns;
+}
+
+std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName) {
+    std::vector<Index> indexes;
+
+    try {
+        // Get list of indexes for the table
+        const std::string indexListSql = std::format("PRAGMA index_list('{}');", tableName);
+        const soci::rowset indexList = session->prepare << indexListSql;
+
+        for (const auto& indexRow : indexList) {
+            Index idx;
+            idx.name = indexRow.get<std::string>(1);  // name
+            idx.isUnique = indexRow.get<int>(2) == 1; // unique
+
+            // Determine if this is a primary key index
+            if (idx.name.find("sqlite_autoindex") != std::string::npos) {
+                idx.isPrimary = true;
+            }
+
+            // Get columns for this index
+            const std::string indexInfoSql = std::format("PRAGMA index_info('{}');", idx.name);
+            const soci::rowset indexInfo = session->prepare << indexInfoSql;
+
+            for (const auto& colRow : indexInfo) {
+                std::string colName = colRow.get<std::string>(2); // name
+                idx.columns.push_back(colName);
+            }
+
+            // Default type for SQLite is BTREE
+            idx.type = "BTREE";
+
+            indexes.push_back(idx);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table indexes: " << e.what() << std::endl;
+    }
+
+    return indexes;
+}
+
+std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& tableName) {
+    std::vector<ForeignKey> foreignKeys;
+
+    try {
+        const std::string fkSql = std::format("PRAGMA foreign_key_list('{}');", tableName);
+        const soci::rowset fkList = session->prepare << fkSql;
+
+        for (const auto& fkRow : fkList) {
+            ForeignKey fk;
+            // SQLite PRAGMA foreign_key_list columns:
+            // 0: id, 1: seq, 2: table (target), 3: from, 4: to, 5: on_update, 6: on_delete, 7:
+            // match
+            fk.targetTable = fkRow.get<std::string>(2);
+            fk.sourceColumn = fkRow.get<std::string>(3);
+            fk.targetColumn = fkRow.get<std::string>(4);
+            fk.onUpdate = fkRow.get<std::string>(5);
+            fk.onDelete = fkRow.get<std::string>(6);
+
+            // Generate a name if not provided
+            fk.name = std::format("fk_{}_{}", tableName, fk.sourceColumn);
+
+            foreignKeys.push_back(fk);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table foreign keys: " << e.what() << std::endl;
+    }
+
+    return foreignKeys;
 }
 
 // View management methods

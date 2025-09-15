@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
 #include <vector>
 
 MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, int port,
@@ -266,6 +267,15 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
                     col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
                     table.columns.push_back(col);
                 }
+            }
+
+            // Load indexes and foreign keys
+            table.indexes = getTableIndexes(tableName);
+            table.foreignKeys = getTableForeignKeys(tableName);
+
+            // Build foreign key lookup map
+            for (const auto& fk : table.foreignKeys) {
+                table.foreignKeysByColumn[fk.sourceColumn] = fk;
             }
 
             result.push_back(table);
@@ -920,6 +930,94 @@ std::vector<Column> MySQLDatabase::getTableColumns(const std::string& tableName)
     }
 
     return columns;
+}
+
+std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) {
+    std::vector<Index> indexes;
+
+    if (!connect().first) {
+        return indexes;
+    }
+
+    try {
+        const auto sql = getSession();
+        const std::string query = std::format("SHOW INDEX FROM `{}`", tableName);
+        const soci::rowset rs = sql->prepare << query;
+
+        std::unordered_map<std::string, Index> indexMap;
+
+        for (const auto& row : rs) {
+            std::string indexName = row.get<std::string>(2); // Key_name
+
+            if (indexMap.find(indexName) == indexMap.end()) {
+                Index idx;
+                idx.name = indexName;
+                idx.isUnique = row.get<int>(1) == 0; // Non_unique (0 means unique)
+                idx.isPrimary = (indexName == "PRIMARY");
+                idx.type = row.get<std::string>(10); // Index_type
+                indexMap[indexName] = idx;
+            }
+
+            // Add column to the index
+            std::string colName = row.get<std::string>(4); // Column_name
+            indexMap[indexName].columns.push_back(colName);
+        }
+
+        // Convert map to vector
+        for (auto& [name, idx] : indexMap) {
+            indexes.push_back(idx);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "MySQL Error getting table indexes: " << e.what() << std::endl;
+    }
+
+    return indexes;
+}
+
+std::vector<ForeignKey> MySQLDatabase::getTableForeignKeys(const std::string& tableName) {
+    std::vector<ForeignKey> foreignKeys;
+
+    if (!connect().first) {
+        return foreignKeys;
+    }
+
+    try {
+        const auto sql = getSession();
+        const std::string query =
+            std::format("SELECT "
+                        "    kcu.CONSTRAINT_NAME, "
+                        "    kcu.COLUMN_NAME, "
+                        "    kcu.REFERENCED_TABLE_NAME, "
+                        "    kcu.REFERENCED_COLUMN_NAME, "
+                        "    rc.UPDATE_RULE, "
+                        "    rc.DELETE_RULE "
+                        "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
+                        "JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
+                        "    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME "
+                        "    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA "
+                        "WHERE kcu.TABLE_NAME = '{}' "
+                        "AND kcu.TABLE_SCHEMA = DATABASE() "
+                        "AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
+                        tableName);
+
+        const soci::rowset rs = sql->prepare << query;
+
+        for (const auto& row : rs) {
+            ForeignKey fk;
+            fk.name = row.get<std::string>(0);
+            fk.sourceColumn = row.get<std::string>(1);
+            fk.targetTable = row.get<std::string>(2);
+            fk.targetColumn = row.get<std::string>(3);
+            fk.onUpdate = row.get<std::string>(4);
+            fk.onDelete = row.get<std::string>(5);
+
+            foreignKeys.push_back(fk);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "MySQL Error getting table foreign keys: " << e.what() << std::endl;
+    }
+
+    return foreignKeys;
 }
 
 std::vector<std::string> MySQLDatabase::getViewNames() {

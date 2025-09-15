@@ -45,8 +45,10 @@ private:
 
     // Foreign key detection methods
     void detectForeignKeys();
+    void detectForeignKeysHeuristic(); // Fallback heuristic detection
     bool isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
                             std::string& referencedTable, std::string& referencedColumn);
+    std::vector<Table> getTablesForDiagram(); // Helper to get tables from database
 
 private:
     std::shared_ptr<DatabaseInterface> database;

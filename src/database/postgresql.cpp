@@ -476,6 +476,103 @@ std::vector<Column> PostgresDatabase::getTableColumns(const std::string& tableNa
     return columns;
 }
 
+std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableName) {
+    std::vector<Index> indexes;
+
+    try {
+        const auto session = getSession();
+        const std::string sqlQuery =
+            std::format("SELECT "
+                        "    i.relname as index_name, "
+                        "    ix.indisunique as is_unique, "
+                        "    ix.indisprimary as is_primary, "
+                        "    am.amname as index_type, "
+                        "    array_to_string(array_agg(a.attname ORDER BY "
+                        "array_position(ix.indkey, a.attnum)), ',') as column_names "
+                        "FROM pg_index ix "
+                        "JOIN pg_class t ON t.oid = ix.indrelid "
+                        "JOIN pg_class i ON i.oid = ix.indexrelid "
+                        "JOIN pg_am am ON i.relam = am.oid "
+                        "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) "
+                        "WHERE t.relname = '{}' "
+                        "AND t.relkind = 'r' "
+                        "GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname",
+                        tableName);
+
+        const soci::rowset rs = session->prepare << sqlQuery;
+
+        for (const auto& row : rs) {
+            Index idx;
+            idx.name = row.get<std::string>(0);
+            idx.isUnique = row.get<bool>(1);
+            idx.isPrimary = row.get<bool>(2);
+            idx.type = row.get<std::string>(3);
+
+            // Split column names
+            std::string colNames = row.get<std::string>(4);
+            std::stringstream ss(colNames);
+            std::string col;
+            while (std::getline(ss, col, ',')) {
+                idx.columns.push_back(col);
+            }
+
+            indexes.push_back(idx);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table indexes: " << e.what() << std::endl;
+    }
+
+    return indexes;
+}
+
+std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string& tableName) {
+    std::vector<ForeignKey> foreignKeys;
+
+    try {
+        const auto session = getSession();
+        const std::string sqlQuery =
+            std::format("SELECT "
+                        "    tc.constraint_name, "
+                        "    kcu.column_name as source_column, "
+                        "    ccu.table_name as target_table, "
+                        "    ccu.column_name as target_column, "
+                        "    rc.update_rule, "
+                        "    rc.delete_rule "
+                        "FROM information_schema.table_constraints tc "
+                        "JOIN information_schema.key_column_usage kcu "
+                        "    ON tc.constraint_name = kcu.constraint_name "
+                        "    AND tc.table_schema = kcu.table_schema "
+                        "JOIN information_schema.constraint_column_usage ccu "
+                        "    ON ccu.constraint_name = tc.constraint_name "
+                        "    AND ccu.table_schema = tc.table_schema "
+                        "JOIN information_schema.referential_constraints rc "
+                        "    ON rc.constraint_name = tc.constraint_name "
+                        "    AND rc.constraint_schema = tc.table_schema "
+                        "WHERE tc.constraint_type = 'FOREIGN KEY' "
+                        "AND tc.table_name = '{}' "
+                        "AND tc.table_schema = 'public'",
+                        tableName);
+
+        const soci::rowset rs = session->prepare << sqlQuery;
+
+        for (const auto& row : rs) {
+            ForeignKey fk;
+            fk.name = row.get<std::string>(0);
+            fk.sourceColumn = row.get<std::string>(1);
+            fk.targetTable = row.get<std::string>(2);
+            fk.targetColumn = row.get<std::string>(3);
+            fk.onUpdate = row.get<std::string>(4);
+            fk.onDelete = row.get<std::string>(5);
+
+            foreignKeys.push_back(fk);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table foreign keys: " << e.what() << std::endl;
+    }
+
+    return foreignKeys;
+}
+
 // View management methods
 void PostgresDatabase::refreshViews() {
     LogPanel::debug("Refreshing views for database: " + name);
@@ -739,6 +836,16 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
             table.fullName = name + "." + database + ".public." +
                              tableName;              // PostgreSQL: connection.database.schema.table
             table.columns = tableColumns[tableName]; // Will be empty if table has no columns
+
+            // Load indexes and foreign keys
+            table.indexes = getTableIndexes(tableName);
+            table.foreignKeys = getTableForeignKeys(tableName);
+
+            // Build foreign key lookup map
+            for (const auto& fk : table.foreignKeys) {
+                table.foreignKeysByColumn[fk.sourceColumn] = fk;
+            }
+
             result.push_back(table);
             LogPanel::debug("Loaded table: " + tableName + " with " +
                             std::to_string(table.columns.size()) + " columns");

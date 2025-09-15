@@ -182,8 +182,26 @@ namespace HierarchyHelpers {
                                                            ImGuiTreeNodeFlags_FramePadding;
                     std::string pkDisplay = "Primary Key (" + primaryKeyColumns + ")";
                     ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
-                } else {
-                    ImGui::Text("  No primary key");
+                }
+
+                // Show foreign keys
+                if (!table.foreignKeys.empty()) {
+                    for (const auto& fk : table.foreignKeys) {
+                        constexpr ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                               ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                               ImGuiTreeNodeFlags_FramePadding;
+                        std::string fkDisplay =
+                            std::format("Foreign Key: {} -> {}.{}", fk.sourceColumn, fk.targetTable,
+                                        fk.targetColumn);
+                        if (!fk.name.empty()) {
+                            fkDisplay = fk.name + ": " + fkDisplay;
+                        }
+                        ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
+                    }
+                }
+
+                if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                    ImGui::Text("  No keys defined");
                 }
                 ImGui::TreePop();
             }
@@ -208,8 +226,32 @@ namespace HierarchyHelpers {
                 ICON_FA_MAGNIFYING_GLASS);
 
             if (indexesOpen) {
-                // TODO: Implement index retrieval from database
-                ImGui::Text("  Index information not available");
+                if (!table.indexes.empty()) {
+                    for (const auto& index : table.indexes) {
+                        constexpr ImGuiTreeNodeFlags indexFlags =
+                            ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                            ImGuiTreeNodeFlags_FramePadding;
+                        std::string indexDisplay = index.name;
+                        if (!index.columns.empty()) {
+                            indexDisplay += " (";
+                            for (size_t i = 0; i < index.columns.size(); ++i) {
+                                if (i > 0)
+                                    indexDisplay += ", ";
+                                indexDisplay += index.columns[i];
+                            }
+                            indexDisplay += ")";
+                        }
+                        if (index.isUnique) {
+                            indexDisplay += " UNIQUE";
+                        }
+                        if (!index.type.empty() && index.type != "BTREE") {
+                            indexDisplay += " " + index.type;
+                        }
+                        ImGui::TreeNodeEx(indexDisplay.c_str(), indexFlags);
+                    }
+                } else {
+                    ImGui::Text("  No indexes defined");
+                }
                 ImGui::TreePop();
             }
 

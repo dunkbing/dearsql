@@ -79,6 +79,8 @@ public:
 protected:
     std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string& tableName) override;
+    std::vector<Index> getTableIndexes(const std::string& tableName);
+    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
     std::vector<std::string> getViewNames() override;
     std::vector<Column> getViewColumns(const std::string& viewName) override;
     std::vector<std::string> getSequenceNames() override;

@@ -90,6 +90,27 @@ void SQLiteDatabase::refreshTables() {
 
         tables.push_back(table);
     }
+
+    // Build incoming foreign key references
+    // After all tables are loaded, find which tables reference each table
+    for (auto& targetTable : tables) {
+        for (const auto& sourceTable : tables) {
+            for (const auto& fk : sourceTable.foreignKeys) {
+                if (fk.targetTable == targetTable.name) {
+                    // Create an incoming foreign key entry
+                    ForeignKey incomingFK;
+                    incomingFK.name = fk.name;
+                    incomingFK.sourceColumn = fk.sourceColumn;
+                    incomingFK.targetTable = sourceTable.name; // The table that has the FK
+                    incomingFK.targetColumn = fk.targetColumn;
+                    incomingFK.onDelete = fk.onDelete;
+                    incomingFK.onUpdate = fk.onUpdate;
+                    targetTable.incomingForeignKeys.push_back(incomingFK);
+                }
+            }
+        }
+    }
+
     std::cout << "Finished refreshing tables. Total tables: " << tables.size() << std::endl;
     tablesLoaded = true;
 }

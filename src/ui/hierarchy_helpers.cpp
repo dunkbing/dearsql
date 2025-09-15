@@ -255,6 +255,62 @@ namespace HierarchyHelpers {
                 ImGui::TreePop();
             }
 
+            // References section (tables that reference this table)
+            if (!table.incomingForeignKeys.empty()) {
+                constexpr ImGuiTreeNodeFlags referencesFlags =
+                    ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                    ImGuiTreeNodeFlags_FramePadding;
+                // Draw tree node with placeholder space for icon
+                const std::string referencesLabel = "   References"; // 3 spaces for icon
+                bool referencesOpen = ImGui::TreeNodeEx(referencesLabel.c_str(), referencesFlags);
+
+                // Draw colored icon over the placeholder space
+                const ImVec2 referencesIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+
+                ImGui::GetWindowDrawList()->AddText(
+                    referencesIconPos,
+                    ImGui::GetColorU32(ImVec4(0.6f, 0.8f, 1.0f, 1.0f)), // Light blue for References
+                    ICON_FA_ARROW_RIGHT_TO_BRACKET);
+
+                if (referencesOpen) {
+                    for (const auto& ref : table.incomingForeignKeys) {
+                        constexpr ImGuiTreeNodeFlags refFlags =
+                            ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                            ImGuiTreeNodeFlags_FramePadding;
+
+                        // Format: referencing_table.referencing_column
+                        // (targetTable contains the referencing table, sourceColumn is the column
+                        // in that table)
+                        std::string refDisplay =
+                            std::format("{}.{}",
+                                        ref.targetTable,   // The table that references this one
+                                        ref.sourceColumn); // The column in that table
+                        ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
+
+                        // Show full reference details on hover
+                        if (ImGui::IsItemHovered()) {
+                            std::string tooltip =
+                                std::format("{}.{} → {}.{}", ref.targetTable, ref.sourceColumn,
+                                            table.name, ref.targetColumn);
+                            if (!ref.name.empty()) {
+                                tooltip += std::format("\nConstraint: {}", ref.name);
+                            }
+                            if (!ref.onDelete.empty()) {
+                                tooltip += std::format("\nON DELETE: {}", ref.onDelete);
+                            }
+                            if (!ref.onUpdate.empty()) {
+                                tooltip += std::format("\nON UPDATE: {}", ref.onUpdate);
+                            }
+                            ImGui::SetTooltip("%s", tooltip.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
             ImGui::TreePop();
         }
     }

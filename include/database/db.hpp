@@ -42,6 +42,9 @@ struct Table {
     std::vector<Index> indexes;
     std::vector<ForeignKey> foreignKeys;
 
+    // Foreign keys from other tables that reference this table
+    std::vector<ForeignKey> incomingForeignKeys;
+
     // Fast lookup for foreign keys by source column
     std::unordered_map<std::string, ForeignKey> foreignKeysByColumn;
 

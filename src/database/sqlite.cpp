@@ -221,12 +221,12 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
             std::vector<std::string> rowData;
             for (std::size_t i = 0; i < row.size(); ++i) {
                 if (row.get_indicator(i) == soci::i_null) {
-                    rowData.push_back("NULL");
+                    rowData.emplace_back("NULL");
                 } else {
                     try {
                         rowData.push_back(row.get<std::string>(i));
                     } catch (const std::bad_cast&) {
-                        rowData.push_back("[BINARY DATA]");
+                        rowData.emplace_back("[BINARY DATA]");
                     }
                 }
             }
@@ -237,6 +237,7 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
         return {columnNames, data};
     } catch (const soci::soci_error& e) {
         // Return empty result on error
+        std::cerr << "executeQueryStructured error: " << e.what() << std::endl;
         return {columnNames, data};
     }
 }
@@ -380,7 +381,7 @@ std::vector<std::string> SQLiteDatabase::getTableNames() {
     std::cout << "Executing query to get table names..." << std::endl;
     try {
         const auto sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
-        soci::rowset rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto& row : rs) {
             auto tableName = row.get<std::string>(0);
@@ -403,12 +404,17 @@ std::vector<Column> SQLiteDatabase::getTableColumns(const std::string& tableName
 
         for (const auto& row : rs) {
             Column col;
-            col.name = row.get<std::string>(1);
-            col.type = row.get<std::string>(2);
-            auto notNullStr = row.get<std::string>(3);
+            col.name = convertRowValue(row, 1);
+            col.type = convertRowValue(row, 2);
+
+            // Handle notnull column (can be int or string)
+            std::string notNullStr = convertRowValue(row, 3);
             col.isNotNull = (notNullStr == "1" || notNullStr == "true");
-            auto pkStr = row.get<std::string>(5);
+
+            // Handle primary key column (can be int or string)
+            std::string pkStr = convertRowValue(row, 5);
             col.isPrimaryKey = (pkStr == "1" || pkStr == "true");
+
             columns.push_back(col);
         }
     } catch (const soci::soci_error& e) {
@@ -417,7 +423,7 @@ std::vector<Column> SQLiteDatabase::getTableColumns(const std::string& tableName
     return columns;
 }
 
-std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName) {
+std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName) const {
     std::vector<Index> indexes;
 
     try {
@@ -427,8 +433,11 @@ std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName)
 
         for (const auto& indexRow : indexList) {
             Index idx;
-            idx.name = indexRow.get<std::string>(1);  // name
-            idx.isUnique = indexRow.get<int>(2) == 1; // unique
+            idx.name = convertRowValue(indexRow, 1); // name
+
+            // Handle unique column (can be int or string)
+            std::string uniqueStr = convertRowValue(indexRow, 2);
+            idx.isUnique = (uniqueStr == "1" || uniqueStr == "true");
 
             // Determine if this is a primary key index
             if (idx.name.find("sqlite_autoindex") != std::string::npos) {
@@ -440,7 +449,7 @@ std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName)
             const soci::rowset indexInfo = session->prepare << indexInfoSql;
 
             for (const auto& colRow : indexInfo) {
-                std::string colName = colRow.get<std::string>(2); // name
+                std::string colName = convertRowValue(colRow, 2); // name
                 idx.columns.push_back(colName);
             }
 
@@ -456,7 +465,7 @@ std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName)
     return indexes;
 }
 
-std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& tableName) {
+std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& tableName) const {
     std::vector<ForeignKey> foreignKeys;
 
     try {
@@ -496,7 +505,7 @@ void SQLiteDatabase::refreshViews() {
     }
 
     views.clear();
-    std::vector<std::string> viewNames = getViewNames();
+    const std::vector<std::string> viewNames = getViewNames();
     std::cout << "Found " << viewNames.size() << " views" << std::endl;
 
     for (const auto& viewName : viewNames) {
@@ -551,11 +560,11 @@ void SQLiteDatabase::setSequencesLoaded(bool loaded) {
 
 std::vector<std::string> SQLiteDatabase::getViewNames() {
     std::vector<std::string> viewNames;
-    const char* sql = "SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name;";
+    const auto sql = "SELECT name FROM sqlite_master WHERE type = 'view' ORDER BY name;";
 
     std::cout << "Executing query to get view names..." << std::endl;
     try {
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto& row : rs) {
             auto viewName = row.get<std::string>(0);
@@ -571,17 +580,20 @@ std::vector<std::string> SQLiteDatabase::getViewNames() {
 
 std::vector<Column> SQLiteDatabase::getViewColumns(const std::string& viewName) {
     std::vector<Column> columns;
-    std::string sql = "PRAGMA table_info(" + viewName + ");";
+    const std::string sql = "PRAGMA table_info(" + viewName + ");";
 
     try {
-        soci::rowset<soci::row> rs = session->prepare << sql;
+        const soci::rowset rs = session->prepare << sql;
 
         for (const auto& row : rs) {
             Column col;
-            col.name = row.get<std::string>(1);
-            col.type = row.get<std::string>(2);
-            auto notNullStr = row.get<std::string>(3);
+            col.name = convertRowValue(row, 1);
+            col.type = convertRowValue(row, 2);
+
+            // Handle notnull column (can be int or string)
+            std::string notNullStr = convertRowValue(row, 3);
             col.isNotNull = (notNullStr == "1" || notNullStr == "true");
+
             col.isPrimaryKey = false; // Views don't have primary keys
             columns.push_back(col);
         }
@@ -628,15 +640,15 @@ void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int l
             try {
                 if (!whereClause.empty()) {
                     // For filtered queries, use executeQueryStructured
-                    std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
-                                            whereClause + " LIMIT " + std::to_string(limit) +
-                                            " OFFSET " + std::to_string(offset);
+                    const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
+                                                  whereClause + " LIMIT " + std::to_string(limit) +
+                                                  " OFFSET " + std::to_string(offset);
                     auto [columns, data] = executeQueryStructured(dataQuery);
                     tableDataResult = data;
                     columnNamesResult = columns;
 
                     // Get filtered count
-                    std::string countQuery =
+                    const std::string countQuery =
                         "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
                     auto [countCols, countData] = executeQueryStructured(countQuery);
                     if (!countData.empty() && !countData[0].empty()) {

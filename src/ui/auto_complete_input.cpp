@@ -9,12 +9,10 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
     currentBuffer = buffer;
     currentBufferSize = bufferSize;
 
-    // Apply pending auto-complete from previous frame (before input field)
     applyPendingAutoComplete();
 
     ImGui::SetNextItemWidth(config.width);
 
-    // Check if Enter should be consumed before the input
     const bool shouldConsumeEnter =
         showAutoComplete &&
         (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) &&
@@ -22,7 +20,6 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
 
     bool enterPressed = false;
 
-    // Set keyboard focus if requested
     if (shouldRefocusInput) {
         ImGui::SetKeyboardFocusHere();
         shouldRefocusInput = false;
@@ -35,9 +32,6 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
         inputFlags &= ~ImGuiInputTextFlags_EnterReturnsTrue;
     }
 
-    // Store the ID before creating the input to check focus later
-    ImGuiID inputID = ImGui::GetID(label);
-
     enterPressed = ImGui::InputTextWithHint(label, config.hint.c_str(), buffer, bufferSize,
                                             inputFlags, inputTextCallback, this);
 
@@ -46,18 +40,17 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
     if (isFocused) {
         // Draw subtle visual emphasis for focused state
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        ImVec2 min = ImGui::GetItemRectMin();
-        ImVec2 max = ImGui::GetItemRectMax();
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
 
         // Use theme's blue color with reduced opacity for subtle effect
-        ImU32 focusColor =
+        const ImU32 focusColor =
             ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
 
         // Single subtle border highlight
         drawList->AddRect(min, max, focusColor, 3.0f, 0, 1.5f);
     }
 
-    // Show auto-complete popup if there are suggestions
     renderAutoCompletePopup();
 
     // Only process Enter if not consumed by auto-complete and no pending completion
@@ -275,7 +268,7 @@ void AutoCompleteInput::renderAutoCompletePopup() {
 
         // Render suggestions
         for (int i = 0; i < autoCompleteSuggestions.size(); i++) {
-            bool isSelected = (i == selectedSuggestionIndex);
+            const bool isSelected = (i == selectedSuggestionIndex);
 
             if (ImGui::Selectable(autoCompleteSuggestions[i].c_str(), isSelected)) {
                 // Store the suggestion to apply after this frame

@@ -8,13 +8,20 @@ namespace fs = std::filesystem;
 AppState::AppState() : db(nullptr) {
     fs::path dbPath_;
 
-    if (const char* home = std::getenv("HOME")) {
+#ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+#else // Assume Unix-like
+    const char* home = std::getenv("HOME");
+#endif
+
+    if (home) {
         dbPath_ = fs::path(home) / ".dear-sql" / "app_state.db";
     } else {
         dbPath_ = fs::path("./app_state.db");
     }
 
     dbPath = dbPath_.string();
+    std::cout << dbPath << "\n";
 }
 
 AppState::~AppState() {
@@ -170,7 +177,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
-        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, 
+        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used,
                COALESCE(workspace_id, 1) as workspace_id
         FROM saved_connections
         ORDER BY last_used DESC;

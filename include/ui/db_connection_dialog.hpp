@@ -35,12 +35,16 @@ public:
     // Reset dialog state
     void reset();
 
+    // Edit an existing connection
+    void editConnection(std::shared_ptr<DatabaseInterface> db);
+
 private:
     // Dialog state
     bool isOpen = false;
     DialogState currentState = DialogState::TypeSelection;
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
+    std::shared_ptr<DatabaseInterface> editingDatabase = nullptr;
 
     // Async connection
     std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;

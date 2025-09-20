@@ -77,6 +77,23 @@ public:
     bool shouldShowAllDatabases() const {
         return showAllDatabases;
     }
+
+    // Connection detail getters
+    const std::string& getHost() const {
+        return host;
+    }
+    int getPort() const {
+        return port;
+    }
+    const std::string& getDatabase() const {
+        return database;
+    }
+    const std::string& getUsername() const {
+        return username;
+    }
+    const std::string& getPassword() const {
+        return password;
+    }
     bool areDatabasesLoaded() const {
         return databasesLoaded;
     }

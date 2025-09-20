@@ -1,6 +1,8 @@
 #pragma once
 
+#include "database/db_interface.hpp"
 #include "ui/db_connection_dialog.hpp"
+#include <memory>
 
 class DatabaseSidebar {
 public:
@@ -20,6 +22,7 @@ private:
     // Database connection dialog
     DatabaseConnectionDialog connectionDialog;
     bool shouldShowConnectionDialog = false;
+    std::shared_ptr<DatabaseInterface> databaseToEdit = nullptr;
 
     // Database deletion confirmation
     bool shouldShowDeleteConfirmation = false;

@@ -93,6 +93,20 @@ public:
     std::string getKeyType(const std::string& key) const;
     int64_t getKeyTTL(const std::string& key) const;
 
+    // Connection detail getters
+    const std::string& getHost() const {
+        return host;
+    }
+    int getPort() const {
+        return port;
+    }
+    const std::string& getUsername() const {
+        return username;
+    }
+    const std::string& getPassword() const {
+        return password;
+    }
+
 protected:
     std::vector<std::string> getTableNames() override; // Will return key patterns
     std::vector<Column> getTableColumns(const std::string& keyPattern) override;

@@ -8,33 +8,40 @@
 #include "utils/spinner.hpp"
 #include <imgui.h>
 #include <iostream>
+#include <memory>
 #include <themes.hpp>
 
 void DatabaseConnectionDialog::showDialog() {
     if (!isOpen) {
         isOpen = true;
-        currentState = DialogState::TypeSelection;
-        result = nullptr;
+        // Only set default state if not in edit mode
+        if (!editingDatabase) {
+            currentState = DialogState::TypeSelection;
+            result = nullptr;
+        }
         loadSavedConnections();
         ImGui::OpenPopup("Connect to Database");
     }
 
-    switch (currentState) {
-    case DialogState::TypeSelection:
-        renderTypeSelection();
-        break;
-    case DialogState::PostgreSQLConnection:
-        renderPostgresConnection();
-        break;
-    case DialogState::MySQLConnection:
-        renderMySQLConnection();
-        break;
-    case DialogState::RedisConnection:
-        renderRedisConnection();
-        break;
-    case DialogState::SavedConnections:
-        renderSavedConnections();
-        break;
+    // Render the dialog based on current state
+    if (isOpen) {
+        switch (currentState) {
+        case DialogState::TypeSelection:
+            renderTypeSelection();
+            break;
+        case DialogState::PostgreSQLConnection:
+            renderPostgresConnection();
+            break;
+        case DialogState::MySQLConnection:
+            renderMySQLConnection();
+            break;
+        case DialogState::RedisConnection:
+            renderRedisConnection();
+            break;
+        case DialogState::SavedConnections:
+            renderSavedConnections();
+            break;
+        }
     }
 }
 
@@ -57,7 +64,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
             ImGui::Spacing();
         }
 
-        // Apply visual styling to make radio buttons more visible
+        // radio buttons colors
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface1);
@@ -141,7 +148,11 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
     ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter Postgres connection details:");
+        if (editingDatabase) {
+            ImGui::Text("Edit Postgres connection:");
+        } else {
+            ImGui::Text("Enter Postgres connection details:");
+        }
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -177,7 +188,11 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
             ImGui::TextDisabled("(?)");
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                ImGui::Text("Password can be left empty if not required");
+                if (editingDatabase) {
+                    ImGui::Text("Leave empty to keep existing password");
+                } else {
+                    ImGui::Text("Password can be left empty if not required");
+                }
                 ImGui::EndTooltip();
             }
         } else {
@@ -223,7 +238,6 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
 
         ImGui::Separator();
 
-        // Check for async connection completion
         if (isConnecting) {
             checkAsyncConnectionStatus();
         }
@@ -239,7 +253,8 @@ void DatabaseConnectionDialog::renderPostgresConnection() {
             ImGui::SameLine();
             ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3]);
         } else {
-            if (ImGui::Button("Connect", ImVec2(100, 0))) {
+            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
+            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
                 startAsyncConnection();
             }
         }
@@ -273,7 +288,11 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
     ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter MySQL connection details:");
+        if (editingDatabase) {
+            ImGui::Text("Edit MySQL connection:");
+        } else {
+            ImGui::Text("Enter MySQL connection details:");
+        }
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -309,7 +328,11 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
             ImGui::TextDisabled("(?)");
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                ImGui::Text("Password can be left empty if not required");
+                if (editingDatabase) {
+                    ImGui::Text("Leave empty to keep existing password");
+                } else {
+                    ImGui::Text("Password can be left empty if not required");
+                }
                 ImGui::EndTooltip();
             }
         } else {
@@ -371,7 +394,8 @@ void DatabaseConnectionDialog::renderMySQLConnection() {
             ImGui::SameLine();
             ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3]);
         } else {
-            if (ImGui::Button("Connect", ImVec2(100, 0))) {
+            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
+            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
                 startAsyncConnection();
             }
         }
@@ -404,7 +428,11 @@ void DatabaseConnectionDialog::renderRedisConnection() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 
     if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter Redis connection details:");
+        if (editingDatabase) {
+            ImGui::Text("Edit Redis connection:");
+        } else {
+            ImGui::Text("Enter Redis connection details:");
+        }
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -470,7 +498,8 @@ void DatabaseConnectionDialog::renderRedisConnection() {
             UIUtils::Spinner("##connecting_spinner", 8.0f, 3,
                              ImGui::GetColorU32(ImVec4(0.0f, 0.8f, 1.0f, 1.0f)));
         } else {
-            if (ImGui::Button("Connect", ImVec2(100, 0))) {
+            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
+            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
                 startAsyncConnection();
             }
         }
@@ -511,6 +540,65 @@ void DatabaseConnectionDialog::reset() {
     errorMessage.clear();
     selectedSavedConnection = -1;
     authType = 0;
+    editingDatabase = nullptr;
+}
+
+void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface> db) {
+    if (!db) {
+        return;
+    }
+
+    // Clear previous state
+    reset();
+
+    // Fill in the connection details from the database
+    strncpy(connectionName, db->getName().c_str(), sizeof(connectionName) - 1);
+    connectionName[sizeof(connectionName) - 1] = '\0';
+
+    if (db->getType() == DatabaseType::SQLITE) {
+        selectedDatabaseType = DatabaseType::SQLITE;
+        // SQLite doesn't need a connection dialog, just show type selection
+        currentState = DialogState::TypeSelection;
+    } else if (db->getType() == DatabaseType::POSTGRESQL) {
+        selectedDatabaseType = DatabaseType::POSTGRESQL;
+        currentState = DialogState::PostgreSQLConnection;
+
+        // Get connection details from the database
+        const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+        strncpy(host, pgDb->getHost().c_str(), sizeof(host) - 1);
+        port = pgDb->getPort();
+        strncpy(database, pgDb->getDatabase().c_str(), sizeof(database) - 1);
+        strncpy(username, pgDb->getUsername().c_str(), sizeof(username) - 1);
+        strncpy(password, pgDb->getPassword().c_str(), sizeof(password) - 1);
+        showAllDatabases = pgDb->shouldShowAllDatabases();
+        authType = pgDb->getUsername().empty() ? 1 : 0;
+    } else if (db->getType() == DatabaseType::MYSQL) {
+        selectedDatabaseType = DatabaseType::MYSQL;
+        currentState = DialogState::MySQLConnection;
+
+        // Get connection details from the database
+        const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+        strncpy(host, mysqlDb->getHost().c_str(), sizeof(host) - 1);
+        port = mysqlDb->getPort();
+        strncpy(database, mysqlDb->getDatabase().c_str(), sizeof(database) - 1);
+        strncpy(username, mysqlDb->getUsername().c_str(), sizeof(username) - 1);
+        strncpy(password, mysqlDb->getPassword().c_str(), sizeof(password) - 1);
+        showAllDatabases = mysqlDb->shouldShowAllDatabases();
+        authType = mysqlDb->getUsername().empty() ? 1 : 0;
+    } else if (db->getType() == DatabaseType::REDIS) {
+        selectedDatabaseType = DatabaseType::REDIS;
+        currentState = DialogState::RedisConnection;
+
+        // Get connection details from the database
+        const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
+        strncpy(host, redisDb->getHost().c_str(), sizeof(host) - 1);
+        port = redisDb->getPort();
+        strncpy(username, redisDb->getUsername().c_str(), sizeof(username) - 1);
+        strncpy(password, redisDb->getPassword().c_str(), sizeof(password) - 1);
+        authType = (redisDb->getPassword().empty() && redisDb->getUsername().empty()) ? 1 : 0;
+    }
+
+    editingDatabase = db;
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
@@ -781,6 +869,22 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         try {
             // Try to create and connect to database based on current state
             std::shared_ptr<DatabaseInterface> db;
+
+            // In edit mode, if password is empty, we need to get the old password from saved
+            // connections
+            std::string actualPassword = std::string(password);
+            if (editingDatabase && actualPassword.empty() && authType == 0) {
+                // Try to get the saved password
+                auto& app = Application::getInstance();
+                const auto savedConnections = app.getAppState()->getSavedConnections();
+                for (const auto& conn : savedConnections) {
+                    if (conn.name == editingDatabase->getName()) {
+                        actualPassword = conn.password;
+                        break;
+                    }
+                }
+            }
+
             switch (currentState) {
             case DialogState::PostgreSQLConnection:
                 db = createPostgreSQLDatabase();
@@ -821,33 +925,88 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
         auto [db, error] = connectionFuture.get();
 
         if (db) {
-            // Save successful connection
-            SavedConnection conn;
-            conn.name = std::string(connectionName);
-            switch (currentState) {
-            case DialogState::PostgreSQLConnection:
-                conn.type = "postgresql";
-                break;
-            case DialogState::MySQLConnection:
-                conn.type = "mysql";
-                break;
-            case DialogState::RedisConnection:
-                conn.type = "redis";
-                break;
-            default:
-                break;
+            if (!editingDatabase) {
+                // Save successful connection for new connections
+                SavedConnection conn;
+                conn.name = std::string(connectionName);
+                switch (currentState) {
+                case DialogState::PostgreSQLConnection:
+                    conn.type = "postgresql";
+                    break;
+                case DialogState::MySQLConnection:
+                    conn.type = "mysql";
+                    break;
+                case DialogState::RedisConnection:
+                    conn.type = "redis";
+                    break;
+                default:
+                    break;
+                }
+                conn.host = std::string(host);
+                conn.port = port;
+                conn.database = std::string(database);
+                conn.username = std::string(username);
+                conn.password = std::string(password);
+                conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
+
+                const auto& app = Application::getInstance();
+                app.getAppState()->saveConnection(conn);
+
+                result = db;
+            } else {
+                // For edit mode, update the saved connection
+                auto& app = Application::getInstance();
+                const auto savedConnections = app.getAppState()->getSavedConnections();
+
+                // Find and update the matching saved connection
+                for (const auto& conn : savedConnections) {
+                    bool matches = false;
+                    if (editingDatabase->getType() == DatabaseType::POSTGRESQL &&
+                        conn.type == "postgresql") {
+                        matches = (conn.name == editingDatabase->getName());
+                    } else if (editingDatabase->getType() == DatabaseType::MYSQL &&
+                               conn.type == "mysql") {
+                        matches = (conn.name == editingDatabase->getName());
+                    } else if (editingDatabase->getType() == DatabaseType::REDIS &&
+                               conn.type == "redis") {
+                        matches = (conn.name == editingDatabase->getName());
+                    }
+
+                    if (matches) {
+                        // Delete old connection
+                        app.getAppState()->deleteConnection(conn.id);
+
+                        // Save updated connection
+                        SavedConnection updatedConn;
+                        updatedConn.name = std::string(connectionName);
+                        updatedConn.type = conn.type;
+                        updatedConn.host = std::string(host);
+                        updatedConn.port = port;
+                        updatedConn.database = std::string(database);
+                        updatedConn.username = std::string(username);
+                        // If password is empty, keep the old one
+                        updatedConn.password =
+                            strlen(password) > 0 ? std::string(password) : conn.password;
+                        updatedConn.workspaceId = app.getCurrentWorkspaceId();
+                        app.getAppState()->saveConnection(updatedConn);
+                        break;
+                    }
+                }
+
+                // Update the database in the application
+                auto& databases = app.getDatabases();
+                for (size_t i = 0; i < databases.size(); i++) {
+                    if (databases[i] == editingDatabase) {
+                        // Disconnect old database
+                        databases[i]->disconnect();
+                        // Replace with new database
+                        databases[i] = db;
+                        break;
+                    }
+                }
+
+                result = nullptr; // Don't return a new database in edit mode
             }
-            conn.host = std::string(host);
-            conn.port = port;
-            conn.database = std::string(database);
-            conn.username = std::string(username);
-            conn.password = std::string(password);
-            conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
-
-            const auto& app = Application::getInstance();
-            app.getAppState()->saveConnection(conn);
-
-            result = db;
             ImGui::CloseCurrentPopup();
             reset();
         } else {

@@ -48,6 +48,13 @@ void DatabaseSidebar::render() {
         shouldShowConnectionDialog = false;
     }
 
+    // Check if we should edit a connection
+    if (databaseToEdit) {
+        connectionDialog.editConnection(databaseToEdit);
+        connectionDialog.showDialog(); // Open the dialog immediately
+        databaseToEdit = nullptr;
+    }
+
     // Always render the dialog to handle multi-frame interactions
     if (connectionDialog.isDialogOpen()) {
         connectionDialog.showDialog();
@@ -505,6 +512,10 @@ void DatabaseSidebar::handleDatabaseContextMenu(size_t databaseIndex) {
                 shouldShowCreateDatabaseDialog = true;
                 createDatabaseForConnection = static_cast<int>(databaseIndex);
             }
+        }
+
+        if (ImGui::MenuItem("Edit connection")) {
+            databaseToEdit = db;
         }
 
         if (ImGui::MenuItem("Disconnect")) {

@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include <algorithm>
 #include <iostream>
+#include <set>
 
 DiagramTab::DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
                        const std::string& targetDatabaseName)
@@ -325,8 +326,21 @@ void DiagramTab::renderNodes() {
     static const ImVec4 primaryTableColor(1.0f, 0.8f, 0.2f, 1.0f);
     static const ImVec4 normalTableColor(0.8f, 0.8f, 0.8f, 1.0f);
     static const ImVec4 normalColumnColor(0.9f, 0.9f, 0.9f, 1.0f);
+    static const ImVec4 foreignKeyColor(0.4f, 0.7f, 1.0f, 1.0f);
     static const ImVec4 typeColor(0.6f, 0.6f, 0.6f, 1.0f);
     static const ImVec4 notNullColor(0.8f, 0.4f, 0.4f, 1.0f);
+
+    // Build a set of foreign key columns for quick lookup
+    std::set<std::pair<std::string, std::string>> foreignKeyColumns;
+    for (const auto& link : links) {
+        foreignKeyColumns.insert({link.fromTable, link.fromColumn});
+    }
+
+    // Also build a set of referenced columns
+    std::set<std::pair<std::string, std::string>> referencedColumns;
+    for (const auto& link : links) {
+        referencedColumns.insert({link.toTable, link.toColumn});
+    }
 
     for (size_t nodeIdx = 0; nodeIdx < nodes.size(); ++nodeIdx) {
         auto& node = nodes[nodeIdx];
@@ -355,12 +369,21 @@ void DiagramTab::renderNodes() {
                 continue;
             }
 
+            // Check if this column is a foreign key
+            bool isForeignKey = foreignKeyColumns.count({node.tableName, column.name}) > 0;
+
             // Don't push ImGui IDs - let node editor manage IDs
             ImGui::BeginGroup();
 
-            // Create pin with cached ID
+            // Create pin with cached ID - all pins are Input for simplicity
             ax::NodeEditor::BeginPin(node.columnPinIds[i], ax::NodeEditor::PinKind::Input);
-            ImGui::Text("●");
+            if (isForeignKey && showForeignKeys) {
+                ImGui::PushStyleColor(ImGuiCol_Text, foreignKeyColor);
+                ImGui::Text("●");
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::Text("●");
+            }
             ax::NodeEditor::EndPin();
 
             ImGui::SameLine();
@@ -370,6 +393,21 @@ void DiagramTab::renderNodes() {
                 ImGui::PushStyleColor(ImGuiCol_Text, primaryTableColor);
                 ImGui::Text(ICON_FA_KEY " %s", column.name.c_str());
                 ImGui::PopStyleColor();
+            } else if (isForeignKey && showForeignKeys) {
+                // Highlight foreign keys with special icon and color
+                ImGui::PushStyleColor(ImGuiCol_Text, foreignKeyColor);
+                ImGui::Text(ICON_FA_LINK " %s", column.name.c_str());
+                ImGui::PopStyleColor();
+
+                // Show tooltip with relationship info
+                if (ImGui::IsItemHovered()) {
+                    std::string cacheKey = node.tableName + "." + column.name;
+                    auto fkIt = foreignKeyCache.find(cacheKey);
+                    if (fkIt != foreignKeyCache.end()) {
+                        ImGui::SetTooltip("Foreign Key → %s.%s", fkIt->second.first.c_str(),
+                                          fkIt->second.second.c_str());
+                    }
+                }
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Text, normalColumnColor);
                 ImGui::Text("%s", column.name.c_str());
@@ -407,9 +445,35 @@ void DiagramTab::renderLinks() {
         return;
     }
 
+    // Debug: Check if we have any links
+    if (links.empty()) {
+        return;
+    }
+
+    // Use a more vibrant color and thicker line for foreign key relationships
+    static const ImVec4 foreignKeyLinkColor(0.3f, 0.6f, 1.0f, 1.0f); // Bright blue
+    static const float linkThickness = 2.5f; // Slightly thinner for cleaner look
+
     for (const auto& link : links) {
-        ax::NodeEditor::Link(link.id, link.startPinId, link.endPinId,
-                             ImVec4(0.6f, 0.8f, 1.0f, 1.0f), 2.0f);
+        ax::NodeEditor::Link(link.id, link.startPinId, link.endPinId, foreignKeyLinkColor,
+                             linkThickness);
+    }
+
+    // Check for hovered link to show tooltip
+    ax::NodeEditor::LinkId hoveredLinkId = ax::NodeEditor::GetHoveredLink();
+    if (hoveredLinkId) {
+        // Find the link details
+        auto linkIt =
+            std::find_if(links.begin(), links.end(), [hoveredLinkId](const DiagramLink& link) {
+                return link.id == hoveredLinkId;
+            });
+
+        if (linkIt != links.end() && ImGui::BeginTooltip()) {
+            ImGui::Text("%s.%s", linkIt->fromTable.c_str(), linkIt->fromColumn.c_str());
+            ImGui::Text("  ↓");
+            ImGui::Text("%s.%s", linkIt->toTable.c_str(), linkIt->toColumn.c_str());
+            ImGui::EndTooltip();
+        }
     }
 }
 

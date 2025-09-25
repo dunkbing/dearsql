@@ -126,6 +126,8 @@ void DiagramTab::render() {
 
     ax::NodeEditor::SetCurrentEditor(editorContext);
 
+    handleZoomShortcuts();
+
     // Use a unique identifier for each diagram editor instance
     std::string editorId = "Database Diagram##" + std::to_string(reinterpret_cast<uintptr_t>(this));
     ax::NodeEditor::Begin(editorId.c_str(), ImVec2(0.0, 0.0f));
@@ -136,6 +138,36 @@ void DiagramTab::render() {
 
     ax::NodeEditor::End();
     ax::NodeEditor::SetCurrentEditor(nullptr);
+}
+
+void DiagramTab::handleZoomShortcuts() {
+    auto& io = ImGui::GetIO();
+
+    const bool shortcutDown = io.KeyCtrl || io.KeySuper;
+    if (!shortcutDown) {
+        return;
+    }
+
+    if (!ax::NodeEditor::AreShortcutsEnabled()) {
+        return;
+    }
+
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        return;
+    }
+
+    float wheelAdjustment = 0.0f;
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Equal) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) {
+        wheelAdjustment += 1.0f;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Minus) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) {
+        wheelAdjustment -= 1.0f;
+    }
+
+    if (wheelAdjustment != 0.0f) {
+        io.MouseWheel += wheelAdjustment;
+    }
 }
 
 std::vector<Table> DiagramTab::getTablesForDiagram() {

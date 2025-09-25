@@ -41,6 +41,7 @@ private:
     void renderNodes();
     void renderLinks();
     void handleNodeInteraction();
+    void handleZoomShortcuts();
     void createTableNode(const Table& table, const ImVec2& position);
 
     // Foreign key detection methods

@@ -1883,4 +1883,3 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& d
     }
     return res;
 }
-

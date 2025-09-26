@@ -30,7 +30,7 @@ struct DiagramLink {
 class DiagramTab : public Tab {
 public:
     DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
-               const std::string& targetDatabaseName = "");
+               std::string targetDatabaseName = "");
     ~DiagramTab() override;
 
     void render() override;
@@ -41,7 +41,7 @@ private:
     void renderNodes();
     void renderLinks();
     void handleNodeInteraction();
-    void handleZoomShortcuts();
+    static void handleZoomShortcuts();
     void createTableNode(const Table& table, const ImVec2& position);
 
     // Foreign key detection methods
@@ -49,7 +49,8 @@ private:
     void detectForeignKeysHeuristic(); // Fallback heuristic detection
     bool isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
                             std::string& referencedTable, std::string& referencedColumn);
-    std::vector<Table> getTablesForDiagram(); // Helper to get tables from database
+    [[nodiscard]] std::vector<Table>
+    getTablesForDiagram() const; // Helper to get tables from database
 
 private:
     std::shared_ptr<DatabaseInterface> database;
@@ -58,7 +59,7 @@ private:
 
     std::vector<DiagramNode> nodes;
     std::vector<DiagramLink> links;
-    std::unordered_map<std::string, ax::NodeEditor::NodeId> tableToNodeId;
+    std::unordered_map<std::string, ax::NodeEditor::NodeId> tableToNodeIdMap;
 
     // Cache for foreign key relationships
     std::unordered_map<std::string, std::pair<std::string, std::string>> foreignKeyCache;

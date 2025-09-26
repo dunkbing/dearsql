@@ -20,7 +20,7 @@
 
 #include "embedded_fonts.hpp"
 
-static void signal_handler(int signal) {
+static void signal_handler(const int signal) {
     if (signal == SIGTERM || signal == SIGINT) {
         Application::getInstance().cleanup();
         exit(0);
@@ -74,7 +74,7 @@ bool Application::initialize() {
     }
 
     // Restore current workspace from settings
-    std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
+    const std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
     currentWorkspaceId = std::stoi(workspaceIdStr);
 
     // Restore previous connections for current workspace
@@ -452,8 +452,8 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
 
     // Check if we should use docking for sidebar and log panel
-    bool shouldUseSidebar = targetSidebarWidth > 0.01f;
-    bool shouldUseLogPanel = targetLogPanelWidth > 0.01f;
+    const bool shouldUseSidebar = targetSidebarWidth > 0.01f;
+    const bool shouldUseLogPanel = targetLogPanelWidth > 0.01f;
 
     if (shouldUseSidebar && shouldUseLogPanel) {
         // Three-panel layout: sidebar | center | log panel
@@ -631,18 +631,17 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     if (tabManager->isEmpty()) {
-        // Show empty state in a dockable workspace window when no tabs are open
-        std::string workspaceTitle = getCurrentWorkspaceName();
+        // Show empty state
+        const std::string workspaceTitle = getCurrentWorkspaceName();
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
         ImGui::Begin(workspaceTitle.c_str(), nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        tabManager->renderEmptyState();
+        TabManager::renderEmptyState();
         ImGui::End();
         ImGui::PopStyleColor(1);
     } else {
-        // Render individual dockable tab windows
         tabManager->renderTabs();
     }
 

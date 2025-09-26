@@ -294,8 +294,8 @@ void TabManager::renderEmptyState() {
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2 - 40);
 
     // Center the text
-    const char* text = "Connect to a database to get started";
-    float textWidth = ImGui::CalcTextSize(text).x;
+    constexpr auto text = "Connect to a database to get started";
+    const float textWidth = ImGui::CalcTextSize(text).x;
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - textWidth) / 2);
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);
 }
@@ -309,8 +309,9 @@ TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
     }
 
     // Generate a unique tab name for the diagram
-    std::string dbName = targetDatabaseName.empty() ? database->getName() : targetDatabaseName;
-    std::string baseName = "Diagram - " + dbName;
+    const std::string dbName =
+        targetDatabaseName.empty() ? database->getName() : targetDatabaseName;
+    const std::string baseName = "Diagram - " + dbName;
     std::string tabName = baseName;
     int count = 1;
     while (hasTab(tabName)) {

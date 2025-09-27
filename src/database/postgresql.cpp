@@ -26,13 +26,7 @@ PostgresDatabase::~PostgresDatabase() {
     loadingDatabases = false;
     switchingDatabase = false;
 
-    // Stop all table data loading operations
-    for (auto& state : tableDataStates | std::views::values) {
-        state.loading = false;
-        if (state.future.valid()) {
-            state.future.wait();
-        }
-    }
+    tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
     for (auto& dbData : databaseDataCache | std::views::values) {
@@ -840,36 +834,14 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
             // Load indexes and foreign keys
             table.indexes = getTableIndexes(tableName);
             table.foreignKeys = getTableForeignKeys(tableName);
-
-            // Build foreign key lookup map
-            for (const auto& fk : table.foreignKeys) {
-                table.foreignKeysByColumn[fk.sourceColumn] = fk;
-            }
+            buildForeignKeyLookup(table);
 
             result.push_back(table);
             LogPanel::debug("Loaded table: " + tableName + " with " +
                             std::to_string(table.columns.size()) + " columns");
         }
 
-        // Build incoming foreign key references
-        // After all tables are loaded, find which tables reference each table
-        for (auto& targetTable : result) {
-            for (const auto& sourceTable : result) {
-                for (const auto& fk : sourceTable.foreignKeys) {
-                    if (fk.targetTable == targetTable.name) {
-                        // Create an incoming foreign key entry
-                        ForeignKey incomingFK;
-                        incomingFK.name = fk.name;
-                        incomingFK.sourceColumn = fk.sourceColumn;
-                        incomingFK.targetTable = sourceTable.name; // The table that has the FK
-                        incomingFK.targetColumn = fk.targetColumn;
-                        incomingFK.onDelete = fk.onDelete;
-                        incomingFK.onUpdate = fk.onUpdate;
-                        targetTable.incomingForeignKeys.push_back(incomingFK);
-                    }
-                }
-            }
-        }
+        populateIncomingForeignKeys(result);
 
     } catch (const soci::soci_error& e) {
         std::cerr << "Error getting tables with columns: " << e.what() << std::endl;
@@ -1133,28 +1105,13 @@ void PostgresDatabase::checkConnectionStatusAsync() {
 // Async table data loading methods
 void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                                const std::string& whereClause) {
-    auto& state = tableDataStates[tableName];
-
-    if (state.loading.load()) {
-        return; // Already loading this table
-    }
-
-    state.loading = true;
-    state.ready = false;
-    state.tableData.clear();
-    state.columnNames.clear();
-    state.rowCount = 0;
-
-    // Start async operation that loads everything using connection pool
-    state.future = std::async(std::launch::async, [this, tableName, limit, offset, whereClause,
-                                                   &state]() {
+    const bool started = tableDataLoader.start(tableName, [this, tableName, limit, offset,
+                                                           whereClause](TableDataLoadState& state) {
         try {
-            // Check if we're still supposed to be loading
             if (!state.loading.load()) {
                 return;
             }
 
-            // Load table data
             std::string dataQuery = "SELECT * FROM \"" + tableName + "\"";
             if (!whereClause.empty()) {
                 dataQuery += " WHERE " + whereClause;
@@ -1167,7 +1124,7 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
 
                 for (const auto& row : dataRs) {
                     if (!state.loading.load()) {
-                        break; // Stop if we should no longer be loading
+                        break;
                     }
 
                     std::vector<std::string> rowData;
@@ -1175,7 +1132,7 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
                     for (std::size_t i = 0; i < row.size(); ++i) {
                         rowData.emplace_back(convertRowValue(row, i));
                     }
-                    state.tableData.push_back(rowData);
+                    state.tableData.push_back(std::move(rowData));
                 }
             }
 
@@ -1183,14 +1140,13 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
                 return;
             }
 
-            // Load column names
             const std::string columnQuery =
                 std::format("SELECT column_name FROM information_schema.columns "
                             "WHERE table_name = '{}' ORDER BY ordinal_position",
                             tableName);
 
-            const auto session = getSession();
-            const soci::rowset columnRs = session->prepare << columnQuery;
+            const auto columnSession = getSession();
+            const soci::rowset columnRs = columnSession->prepare << columnQuery;
             for (const auto& row : columnRs) {
                 if (!state.loading.load()) {
                     break;
@@ -1202,154 +1158,82 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
                 return;
             }
 
-            // Load row count
             std::string countQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
             if (!whereClause.empty()) {
                 countQuery =
                     std::format(R"(SELECT COUNT(*) FROM "{}" WHERE {})", tableName, whereClause);
             }
-            *session << countQuery, soci::into(state.rowCount);
+            const auto countSession = getSession();
+            *countSession << countQuery, soci::into(state.rowCount);
         } catch (const std::exception& e) {
             std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            // Clear results on error
             state.tableData.clear();
             state.columnNames.clear();
             state.rowCount = 0;
+            state.lastError = e.what();
         }
     });
+
+    if (!started) {
+        return;
+    }
 }
 
 bool PostgresDatabase::isLoadingTableData(const std::string& tableName) const {
-    const auto it = tableDataStates.find(tableName);
-    return it != tableDataStates.end() && it->second.loading.load();
+    return tableDataLoader.isLoading(tableName);
 }
 
 bool PostgresDatabase::isLoadingTableData() const {
-    // Legacy method - return true if any table is loading
-    return std::ranges::any_of(tableDataStates | std::views::values,
-                               [](const auto& state) { return state.loading.load(); });
+    return tableDataLoader.isAnyLoading();
 }
 
 void PostgresDatabase::checkTableDataStatusAsync(const std::string& tableName) {
-    const auto it = tableDataStates.find(tableName);
-    if (it == tableDataStates.end() || !it->second.loading.load()) {
-        return;
-    }
-
-    auto& state = it->second;
-    if (state.future.valid() &&
-        state.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            state.future.get(); // This will throw if there was an exception
-            state.ready = true;
-            state.loading = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error loading table data for " << tableName << ": " << e.what()
-                      << std::endl;
-            state.loading = false;
-            state.ready = false;
-            // Clear results on error
-            state.tableData.clear();
-            state.columnNames.clear();
-            state.rowCount = 0;
-        }
-    }
+    tableDataLoader.check(tableName);
 }
 
 void PostgresDatabase::checkTableDataStatusAsync() {
-    // Legacy method - check all tables
-    for (auto& [tableName, state] : tableDataStates) {
-        if (state.loading.load()) {
-            checkTableDataStatusAsync(tableName);
-        }
-    }
+    tableDataLoader.checkAll();
 }
 
 bool PostgresDatabase::hasTableDataResult(const std::string& tableName) const {
-    const auto it = tableDataStates.find(tableName);
-    return it != tableDataStates.end() && it->second.ready.load();
+    return tableDataLoader.hasResult(tableName);
 }
 
 bool PostgresDatabase::hasTableDataResult() const {
-    // Legacy method - return true if any table has results
-    return std::ranges::any_of(tableDataStates | std::views::values,
-                               [](const auto& state) { return state.ready.load(); });
+    return tableDataLoader.hasAnyResult();
 }
 
 std::vector<std::vector<std::string>>
 PostgresDatabase::getTableDataResult(const std::string& tableName) {
-    const auto it = tableDataStates.find(tableName);
-    if (it != tableDataStates.end() && it->second.ready.load()) {
-        return it->second.tableData;
-    }
-    return {};
+    return tableDataLoader.getTableData(tableName);
 }
 
 std::vector<std::vector<std::string>> PostgresDatabase::getTableDataResult() {
-    // Legacy method - return first available result
-    for (const auto& state : tableDataStates | std::views::values) {
-        if (state.ready.load()) {
-            return state.tableData;
-        }
-    }
-    return {};
+    return tableDataLoader.getFirstAvailableTableData();
 }
 
 std::vector<std::string> PostgresDatabase::getColumnNamesResult(const std::string& tableName) {
-    const auto it = tableDataStates.find(tableName);
-    if (it != tableDataStates.end() && it->second.ready.load()) {
-        return it->second.columnNames;
-    }
-    return {};
+    return tableDataLoader.getColumnNames(tableName);
 }
 
 std::vector<std::string> PostgresDatabase::getColumnNamesResult() {
-    // Legacy method - return first available result
-    for (const auto& state : tableDataStates | std::views::values) {
-        if (state.ready.load()) {
-            return state.columnNames;
-        }
-    }
-    return {};
+    return tableDataLoader.getFirstAvailableColumnNames();
 }
 
 int PostgresDatabase::getRowCountResult(const std::string& tableName) {
-    const auto it = tableDataStates.find(tableName);
-    if (it != tableDataStates.end() && it->second.ready.load()) {
-        return it->second.rowCount;
-    }
-    return 0;
+    return tableDataLoader.getRowCount(tableName);
 }
 
 int PostgresDatabase::getRowCountResult() {
-    // Legacy method - return first available result
-    for (const auto& state : tableDataStates | std::views::values) {
-        if (state.ready.load()) {
-            return state.rowCount;
-        }
-    }
-    return 0;
+    return tableDataLoader.getFirstAvailableRowCount();
 }
 
 void PostgresDatabase::clearTableDataResult(const std::string& tableName) {
-    const auto it = tableDataStates.find(tableName);
-    if (it != tableDataStates.end()) {
-        auto& state = it->second;
-        state.ready = false;
-        state.tableData.clear();
-        state.columnNames.clear();
-        state.rowCount = 0;
-    }
+    tableDataLoader.clear(tableName);
 }
 
 void PostgresDatabase::clearTableDataResult() {
-    // Legacy method - clear all results
-    for (auto& state : tableDataStates | std::views::values) {
-        state.ready = false;
-        state.tableData.clear();
-        state.columnNames.clear();
-        state.rowCount = 0;
-    }
+    tableDataLoader.clearAll();
 }
 
 // Schema management methods

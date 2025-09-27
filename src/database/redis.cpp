@@ -115,8 +115,8 @@ void RedisDatabase::disconnect() {
 
     // Reset loading states
     loadingTables = false;
-    loadingTableData = false;
-    hasTableDataReady = false;
+    tableDataLoader.cancelAllAndWait();
+    tableDataLoader.clearAll();
 
     std::cout << "Disconnected from Redis: " << connectionString << std::endl;
 }
@@ -405,87 +405,68 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
 // Async table data loading methods
 void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset,
                                             const std::string& whereClause) {
-    if (loadingTableData) {
-        return;
-    }
+    (void)whereClause; // Redis does not support SQL-style filtering yet
 
-    loadingTableData = true;
-    hasTableDataReady = false;
-    tableDataResult.clear();
-    columnNamesResult.clear();
-    rowCountResult = 0;
-
-    tableDataFuture =
-        std::async(std::launch::async, [this, keyPattern, limit, offset, whereClause]() {
+    const bool started = tableDataLoader.start(
+        keyPattern, [this, keyPattern, limit, offset](TableDataLoadState& state) {
             try {
-                tableDataResult = getTableData(keyPattern, limit, offset);
-                columnNamesResult = getColumnNames(keyPattern);
-                rowCountResult = getRowCount(keyPattern);
+                if (!state.loading.load()) {
+                    return;
+                }
+
+                auto data = getTableData(keyPattern, limit, offset);
+                if (!state.loading.load()) {
+                    return;
+                }
+                state.tableData = std::move(data);
+
+                auto columns = getColumnNames(keyPattern);
+                if (!state.loading.load()) {
+                    return;
+                }
+                state.columnNames = std::move(columns);
+
+                state.rowCount = getRowCount(keyPattern);
             } catch (const std::exception& e) {
                 std::cerr << "Error in async Redis data load: " << e.what() << std::endl;
-                tableDataResult.clear();
-                columnNamesResult.clear();
-                rowCountResult = 0;
+                state.tableData.clear();
+                state.columnNames.clear();
+                state.rowCount = 0;
+                state.lastError = e.what();
             }
         });
+
+    if (!started) {
+        return;
+    }
 }
 
 bool RedisDatabase::isLoadingTableData() const {
-    return loadingTableData;
+    return tableDataLoader.isAnyLoading();
 }
 
 void RedisDatabase::checkTableDataStatusAsync() {
-    if (!loadingTableData) {
-        return;
-    }
-
-    if (tableDataFuture.valid() &&
-        tableDataFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tableDataFuture.get();
-            hasTableDataReady = true;
-            loadingTableData = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error loading Redis data: " << e.what() << std::endl;
-            loadingTableData = false;
-            hasTableDataReady = false;
-            tableDataResult.clear();
-            columnNamesResult.clear();
-            rowCountResult = 0;
-        }
-    }
+    tableDataLoader.checkAll();
 }
 
 bool RedisDatabase::hasTableDataResult() const {
-    return hasTableDataReady;
+    return tableDataLoader.hasAnyResult();
 }
 
 std::vector<std::vector<std::string>> RedisDatabase::getTableDataResult() {
-    if (hasTableDataReady) {
-        return tableDataResult;
-    }
-    return {};
+    return tableDataLoader.getFirstAvailableTableData();
 }
 
 std::vector<std::string> RedisDatabase::getColumnNamesResult() {
-    if (hasTableDataReady) {
-        return columnNamesResult;
-    }
-    return {};
+    return tableDataLoader.getFirstAvailableColumnNames();
 }
 
 int RedisDatabase::getRowCountResult() {
-    if (hasTableDataReady) {
-        return rowCountResult;
-    }
-    return 0;
+    return tableDataLoader.getFirstAvailableRowCount();
 }
 
 void RedisDatabase::clearTableDataResult() {
-    hasTableDataReady = false;
-    tableDataResult.clear();
-    columnNamesResult.clear();
-    rowCountResult = 0;
+    tableDataLoader.clearAll();
 }
 
 bool RedisDatabase::isExpanded() const {

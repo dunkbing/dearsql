@@ -210,15 +210,7 @@ private:
     std::future<std::pair<bool, std::string>> connectionFuture;
 
     // Async table data loading - per table
-    struct TableDataLoadState {
-        std::atomic<bool> loading = false;
-        std::atomic<bool> ready = false;
-        std::vector<std::vector<std::string>> tableData;
-        std::vector<std::string> columnNames;
-        int rowCount = 0;
-        std::future<void> future;
-    };
-    std::unordered_map<std::string, TableDataLoadState> tableDataStates;
+    TableDataLoader tableDataLoader;
 
     // Thread synchronization
     mutable std::mutex sessionMutex;

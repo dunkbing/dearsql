@@ -141,13 +141,7 @@ private:
     bool loadingTables = false;
     std::future<void> tablesFuture;
 
-    // Async table data loading state
-    bool loadingTableData = false;
-    bool hasTableDataReady = false;
-    std::vector<std::vector<std::string>> tableDataResult;
-    std::vector<std::string> columnNamesResult;
-    int rowCountResult = 0;
-    std::future<void> tableDataFuture;
+    TableDataLoader tableDataLoader;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

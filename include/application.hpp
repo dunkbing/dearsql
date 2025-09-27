@@ -20,7 +20,7 @@ public:
 
     // main app life-cycle
     bool initialize();
-    void run() const;
+    void run();
     void cleanup();
 
     // Getters for managers and state
@@ -167,4 +167,7 @@ private:
 
 public:
     void renderMainUI();
+
+private:
+    [[nodiscard]] bool hasPendingAsyncWork() const;
 };

@@ -10,9 +10,11 @@
 #include "ui/log_panel.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
+#include <algorithm>
 #include <csignal>
 #include <imgui_internal.h>
 #include <iostream>
+#include <ranges>
 
 #ifdef USE_OPENGL_BACKEND
 #include "imgui_impl_opengl3.h"
@@ -31,6 +33,55 @@ Application& Application::getInstance() {
     static Application instance;
     return instance;
 }
+
+namespace {
+    constexpr double kIdleActivationDelaySeconds = 0.25; // time after last activity before idling
+    constexpr double kMinimumWaitSeconds = 1.0 / 120.0;  // keep responsive when active
+    constexpr double kMaximumWaitSeconds = 0.2;          // cap sleep to keep UI responsive
+
+    bool isImGuiUserActive() {
+        ImGuiIO& io = ImGui::GetIO();
+
+        if (ImGui::IsAnyItemActive() || ImGui::IsAnyItemFocused() || ImGui::IsAnyItemHovered()) {
+            return true;
+        }
+
+        if (ImGuiContext* ctx = ImGui::GetCurrentContext()) {
+            if (ctx->MovingWindow != nullptr || ctx->DragDropActive) {
+                return true;
+            }
+
+            if (ctx->LastActiveId != 0 && ctx->LastActiveIdTimer < 0.05f) {
+                return true;
+            }
+        }
+
+        const ImVec2 mouseDelta = io.MouseDelta;
+        if (mouseDelta.x != 0.0f || mouseDelta.y != 0.0f || io.MouseWheel != 0.0f ||
+            io.MouseWheelH != 0.0f) {
+            return true;
+        }
+
+        for (bool down : io.MouseDown) {
+            if (down) {
+                return true;
+            }
+        }
+
+        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
+            const ImGuiKeyData* keyData = ImGui::GetKeyData(static_cast<ImGuiKey>(key));
+            if (keyData != nullptr && (keyData->Down || keyData->DownDuration == 0.0f)) {
+                return true;
+            }
+        }
+
+        if (io.InputQueueCharacters.Size > 0) {
+            return true;
+        }
+
+        return false;
+    }
+} // namespace
 
 bool Application::initialize() {
     std::cout << "Starting DearSQL..." << std::endl;
@@ -100,14 +151,34 @@ bool Application::initialize() {
     return true;
 }
 
-void Application::run() const {
+void Application::run() {
 #ifdef USE_OPENGL_BACKEND
     glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
                  darkTheme ? 0.137f : 0.957f, 0.98f);
 #endif
 
+    double lastInteractionTime = glfwGetTime();
+
     while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+        const double frameStart = glfwGetTime();
+        const double timeSinceInteraction = frameStart - lastInteractionTime;
+        const bool hadAsyncWork = hasPendingAsyncWork();
+
+        double waitTimeout = 0.0;
+        // Only enter power-save mode when there has been no recent interaction and no async work
+        const bool allowIdle =
+            (timeSinceInteraction >= kIdleActivationDelaySeconds) && !hadAsyncWork;
+        if (allowIdle) {
+            const double idleTime =
+                std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
+            waitTimeout = std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
+        }
+
+        if (waitTimeout > 0.0) {
+            glfwWaitEventsTimeout(waitTimeout);
+        } else {
+            glfwPollEvents();
+        }
 
 #ifdef USE_METAL_BACKEND
         platform_->renderFrame();
@@ -127,6 +198,13 @@ void Application::run() const {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
 #endif
+
+        const bool userActive = isImGuiUserActive();
+        const bool hasAsyncWork = hasPendingAsyncWork();
+
+        if (userActive || hasAsyncWork) {
+            lastInteractionTime = glfwGetTime();
+        }
     }
 }
 
@@ -173,6 +251,40 @@ void Application::cleanup() {
 void Application::setDarkTheme(const bool dark) {
     darkTheme = dark;
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+}
+
+bool Application::hasPendingAsyncWork() const {
+    return std::ranges::any_of(databases, [](const std::shared_ptr<DatabaseInterface>& db) {
+        if (!db) {
+            return false;
+        }
+
+        if (db->isConnecting() || db->isLoadingTables() || db->isLoadingViews() ||
+            db->isLoadingSequences() || db->isLoadingTableData()) {
+            return true;
+        }
+
+        if (const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db)) {
+            if (pgDb->isLoadingSchemas() || pgDb->isLoadingDatabases() ||
+                pgDb->isLoadingSequences()) {
+                return true;
+            }
+        }
+
+        if (const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db)) {
+            if (mysqlDb->isLoadingDatabases()) {
+                return true;
+            }
+        }
+
+        if (const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db)) {
+            if (redisDb->isLoadingTables() || redisDb->isLoadingTableData()) {
+                return true;
+            }
+        }
+
+        return false;
+    });
 }
 
 const Theme::Colors& Application::getCurrentColors() const {

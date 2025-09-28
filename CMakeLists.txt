@@ -149,7 +149,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/json/include
     external/soci/include
     external/IconFontCppHeaders
-    external/stb
     external/hiredis
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include

@@ -503,7 +503,7 @@ std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableNam
             idx.type = row.get<std::string>(3);
 
             // Split column names
-            std::string colNames = row.get<std::string>(4);
+            auto colNames = row.get<std::string>(4);
             std::stringstream ss(colNames);
             std::string col;
             while (std::getline(ss, col, ',')) {
@@ -1721,8 +1721,8 @@ void PostgresDatabase::initializeConnectionPool(const std::string& dbName,
 
     for (size_t i = 0; i != poolSize; ++i) {
         connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& sql = pool->at(i);
-            sql.open(soci::postgresql, connStr);
+            soci::session& session = pool->at(i);
+            session.open(soci::postgresql, connStr);
         }));
     }
 

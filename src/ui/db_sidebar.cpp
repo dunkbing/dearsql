@@ -37,6 +37,7 @@ void DatabaseSidebar::showConnectionDialog() {
 
 void DatabaseSidebar::render() {
     auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
 
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
 
@@ -82,7 +83,7 @@ void DatabaseSidebar::render() {
 
     if (databases.empty()) {
         // Show helpful message when no databases are connected
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
         ImGui::TextWrapped("No databases connected");
         ImGui::Spacing();
         ImGui::TextWrapped("Right-click here to add a new database connection");
@@ -189,7 +190,6 @@ void DatabaseSidebar::render() {
     }
 
     if (ImGui::BeginPopupModal("Create Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        const auto& databases = app.getDatabases();
         if (createDatabaseForConnection < static_cast<int>(databases.size())) {
             auto& db = databases[createDatabaseForConnection];
 
@@ -217,15 +217,13 @@ void DatabaseSidebar::render() {
 
             static std::string errorMessage;
             if (!errorMessage.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
                 ImGui::TextWrapped("Error: %s", errorMessage.c_str());
                 ImGui::PopStyleColor();
                 ImGui::Spacing();
             }
 
             ImGui::Separator();
-
-            const auto& colors = Application::getInstance().getCurrentColors();
 
             // Create button
             ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
@@ -299,6 +297,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     auto& app = Application::getInstance();
     const auto& databases = app.getDatabases();
     auto& db = databases[databaseIndex];
+    const auto& colors = app.getCurrentColors();
 
     // Database node
     ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -335,15 +334,15 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
     ImU32 iconColor;
     if (db->getType() == DatabaseType::SQLITE) {
-        iconColor = ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Light blue
+        iconColor = ImGui::GetColorU32(colors.sky); // Light blue
     } else if (db->getType() == DatabaseType::POSTGRESQL) {
-        iconColor = ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Darker blue
+        iconColor = ImGui::GetColorU32(colors.blue); // Darker blue
     } else if (db->getType() == DatabaseType::MYSQL) {
-        iconColor = ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)); // Orange
+        iconColor = ImGui::GetColorU32(colors.peach); // Orange
     } else if (db->getType() == DatabaseType::REDIS) {
-        iconColor = ImGui::GetColorU32(ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); // Red
+        iconColor = ImGui::GetColorU32(colors.red); // Red
     } else {
-        iconColor = ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)); // Gray for unknown
+        iconColor = ImGui::GetColorU32(colors.overlay1); // Gray for unknown
     }
 
     ImGui::GetWindowDrawList()->AddText(dbIconPos, iconColor, dbIcon.c_str());
@@ -376,20 +375,20 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
 
         // Check if database is connected
         if (db->isConnecting()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Connecting...");
             ImGui::SameLine();
             UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(ImVec4(1.0f, 0.7f, 0.3f, 1.0f)));
+                             ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Click to connect");
             ImGui::PopStyleColor();
         } else if (db->hasAttemptedConnection() && !db->isConnected() &&
                    !db->getLastConnectionError().empty()) {
             // Show connection error
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
         } else if (db->isConnected()) {

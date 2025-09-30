@@ -58,7 +58,7 @@ namespace HierarchyHelpers {
             }
             if (ImGui::MenuItem("Edit Table")) {
                 // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName = "";
+                std::string schemaName;
                 if (db->getType() == DatabaseType::POSTGRESQL) {
                     schemaName = "public"; // TODO: Get actual schema from context
                 }
@@ -94,7 +94,7 @@ namespace HierarchyHelpers {
             if (ImGui::BeginPopupContextItem("columns_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
                     // For PostgreSQL, pass the schema name (default to "public" for now)
-                    std::string schemaName = "";
+                    std::string schemaName;
                     if (db->getType() == DatabaseType::POSTGRESQL) {
                         schemaName = "public"; // TODO: Get actual schema from context
                     }
@@ -127,7 +127,7 @@ namespace HierarchyHelpers {
                     if (ImGui::BeginPopupContextItem("column_context_menu")) {
                         if (ImGui::MenuItem("Edit Table")) {
                             // For PostgreSQL, pass the schema name (default to "public" for now)
-                            std::string schemaName = "";
+                            std::string schemaName;
                             if (db->getType() == DatabaseType::POSTGRESQL) {
                                 schemaName = "public"; // TODO: Get actual schema from context
                             }
@@ -194,7 +194,7 @@ namespace HierarchyHelpers {
                             std::format("Foreign Key: {} -> {}.{}", fk.sourceColumn, fk.targetTable,
                                         fk.targetColumn);
                         if (!fk.name.empty()) {
-                            fkDisplay = fk.name + ": " + fkDisplay;
+                            fkDisplay = std::format("{}: {}", fkDisplay, fk.name);
                         }
                         ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
                     }
@@ -417,7 +417,7 @@ namespace HierarchyHelpers {
         if (ImGui::BeginPopupContextItem("tables_context_menu")) {
             if (ImGui::MenuItem("Create New Table")) {
                 // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName = "";
+                std::string schemaName;
                 if (db->getType() == DatabaseType::POSTGRESQL) {
                     schemaName = "public"; // TODO: Get actual schema from context
                 }
@@ -1089,7 +1089,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(static_cast<int>(tableIndex));
+        ImGui::PushID(tableIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 // Auto-switch to the correct database before opening table viewer
@@ -1124,7 +1124,7 @@ namespace HierarchyHelpers {
             }
             if (ImGui::MenuItem("Edit Table")) {
                 // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName = "";
+                std::string schemaName;
                 if (db->getType() == DatabaseType::POSTGRESQL) {
                     schemaName = "public"; // TODO: Get actual schema from context
                 }
@@ -1159,7 +1159,7 @@ namespace HierarchyHelpers {
             if (ImGui::BeginPopupContextItem("cached_columns_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
                     // For PostgreSQL, pass the schema name (default to "public" for now)
-                    std::string schemaName = "";
+                    std::string schemaName;
                     if (db->getType() == DatabaseType::POSTGRESQL) {
                         schemaName = "public"; // TODO: Get actual schema from context
                     }

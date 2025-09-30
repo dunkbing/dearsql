@@ -188,27 +188,38 @@ private:
     std::string connectionString;
     bool showAllDatabases;
     std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
-    // Per-database data structures
-    struct DatabaseData {
+    // Per-schema data within a database
+    struct SchemaData {
         std::vector<Table> tables;
         std::vector<Table> views;
         std::vector<std::string> sequences;
-        std::vector<Schema> schemas;
         bool tablesLoaded = false;
         bool viewsLoaded = false;
         bool sequencesLoaded = false;
-        bool schemasLoaded = false;
         bool tablesExpanded = false;
         bool viewsExpanded = false;
         bool sequencesExpanded = false;
         std::atomic<bool> loadingTables = false;
         std::atomic<bool> loadingViews = false;
         std::atomic<bool> loadingSequences = false;
-        std::atomic<bool> loadingSchemas = false;
         std::future<std::vector<Table>> tablesFuture;
         std::future<std::vector<Table>> viewsFuture;
         std::future<std::vector<std::string>> sequencesFuture;
+    };
+
+    // Per-database data structures
+    struct DatabaseData {
+        std::vector<Schema> schemas;
+        bool schemasLoaded = false;
+        std::atomic<bool> loadingSchemas = false;
         std::future<std::vector<Schema>> schemasFuture;
+
+        // Schema-level data cache (key: schema name)
+        std::unordered_map<std::string, SchemaData> schemaDataCache;
+
+        // UI state for backward compatibility (used by hierarchy_helpers for non-schema views)
+        bool tablesExpanded = false;
+        bool viewsExpanded = false;
     };
 
     std::unordered_map<std::string, DatabaseData> databaseDataCache;
@@ -238,6 +249,17 @@ public:
     const DatabaseData& getCurrentDatabaseData() const;
     DatabaseData& getDatabaseData(const std::string& dbName);
     const DatabaseData& getDatabaseData(const std::string& dbName) const;
+
+    // Helper methods for per-schema data access
+    SchemaData& getSchemaData(const std::string& schemaName);
+    const SchemaData& getSchemaData(const std::string& schemaName) const;
+    SchemaData& getSchemaData(const std::string& dbName, const std::string& schemaName);
+    const SchemaData& getSchemaData(const std::string& dbName, const std::string& schemaName) const;
+
+    // Check async status for schema-level operations
+    void checkSchemaTablesStatusAsync(const std::string& schemaName);
+    void checkSchemaViewsStatusAsync(const std::string& schemaName);
+    void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 
 private:
     // Async connection

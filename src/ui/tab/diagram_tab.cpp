@@ -74,10 +74,8 @@ void DiagramTab::render() {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
             if (pgDb) {
                 pgDb->checkTablesStatusAsync();
-                // Reset loading flag if tables are loaded
-                const auto& dbData = pgDb->getDatabaseData(
-                    targetDatabaseName.empty() ? pgDb->getDatabaseName() : targetDatabaseName);
-                if (dbData.tablesLoaded || (!dbData.loadingTables && !dbData.tables.empty())) {
+                // Reset loading flag if tables are loaded (checks all schemas)
+                if (pgDb->areTablesLoaded()) {
                     isLoadingSchema = false;
                 }
             }
@@ -183,10 +181,8 @@ std::vector<Table> DiagramTab::getTablesForDiagram() const {
     if (database->getType() == DatabaseType::POSTGRESQL) {
         const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
         if (pgDb) {
-            const std::string dbToUse =
-                targetDatabaseName.empty() ? pgDb->getDatabaseName() : targetDatabaseName;
-            const auto& dbData = pgDb->getDatabaseData(dbToUse);
-            tables = dbData.tables;
+            // getTables() aggregates tables from all schemas
+            tables = pgDb->getTables();
         }
     } else if (database->getType() == DatabaseType::MYSQL) {
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
@@ -232,11 +228,9 @@ void DiagramTab::loadDatabaseSchema() {
                 // Tables may not be available for different database
             }
 
-            // Get the tables for the specific database
-            auto& dbData = pgDb->getDatabaseData(dbToUse);
-            if (!dbData.tablesLoaded && !dbData.loadingTables) {
-                // For the target database, we need to trigger table loading
-                // This is normally done when expanding the tree, but we'll do it here too
+            // Check if tables are loaded (checks all schemas)
+            if (!pgDb->areTablesLoaded() && !pgDb->isLoadingTables()) {
+                // Trigger table loading
                 if (dbToUse == pgDb->getDatabaseName()) {
                     // If it's the current database, use the regular refresh
                     pgDb->refreshTables();
@@ -248,12 +242,13 @@ void DiagramTab::loadDatabaseSchema() {
             }
 
             // If tables are still loading, wait
-            if (dbData.loadingTables) {
+            if (pgDb->isLoadingTables()) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            tables = dbData.tables;
+            // getTables() aggregates tables from all schemas
+            tables = pgDb->getTables();
         }
     } else if (database->getType() == DatabaseType::MYSQL) {
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);

@@ -10,8 +10,9 @@
 
 // Forward declarations for helper functions from DatabaseSidebar
 namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
-                                const std::string& schemaName);
+    void renderSchemaTablesSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName);
+    void renderSchemaViewsSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName);
+    void renderSchemaSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName);
 
     // Helper functions to reduce duplication
     void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
@@ -248,6 +249,166 @@ namespace PostgresHierarchy {
         }
     }
 
+    void renderSchemaTablesSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName) {
+        auto& schemaData = pgDb->getSchemaData(schemaName);
+
+        ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                        ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                        ImGuiTreeNodeFlags_FramePadding;
+
+        if (schemaData.tablesExpanded) {
+            tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
+        const std::string tablesLabel = makeTreeNodeLabel(
+            std::format("Tables ({})", schemaData.tables.size()),
+            std::format("tables_{}_{}", pgDb->getName(), schemaName));
+        const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
+
+        schemaData.tablesExpanded = tablesOpen;
+
+        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+
+        if (schemaData.loadingTables) {
+            ImGui::SameLine();
+            UIUtils::Spinner(("##tables_spinner_" + schemaName).c_str(), 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        }
+
+        // Load tables when the tree node is opened and tables haven't been loaded yet
+        if (tablesOpen && !schemaData.tablesLoaded && !schemaData.loadingTables) {
+            LogPanel::debug("Tables node expanded for schema " + schemaName + ", loading tables...");
+            pgDb->refreshTables(schemaName);
+        }
+
+        if (tablesOpen) {
+            if (schemaData.tables.empty()) {
+                if (schemaData.loadingTables) {
+                    renderLoadingState("Loading tables...", ("##loading_tables_" + schemaName).c_str());
+                } else {
+                    ImGui::Text("  No tables found");
+                }
+            } else {
+                for (size_t i = 0; i < schemaData.tables.size(); i++) {
+                    const auto& table = schemaData.tables[i];
+                    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
+                                                   ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                   ImGuiTreeNodeFlags_FramePadding;
+                    const std::string tableLabel = makeTreeNodeLabel(table.name, table.fullName);
+                    ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+                    renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+
+    void renderSchemaViewsSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName) {
+        auto& schemaData = pgDb->getSchemaData(schemaName);
+
+        ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                       ImGuiTreeNodeFlags_FramePadding;
+
+        if (schemaData.viewsExpanded) {
+            viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
+        const std::string viewsLabel = makeTreeNodeLabel(
+            std::format("Views ({})", schemaData.views.size()),
+            std::format("views_{}_{}", pgDb->getName(), schemaName));
+        const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
+
+        schemaData.viewsExpanded = viewsOpen;
+
+        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+
+        if (schemaData.loadingViews) {
+            ImGui::SameLine();
+            UIUtils::Spinner(("##views_spinner_" + schemaName).c_str(), 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        }
+
+        // Load views when the tree node is opened and views haven't been loaded yet
+        if (viewsOpen && !schemaData.viewsLoaded && !schemaData.loadingViews) {
+            LogPanel::debug("Views node expanded for schema " + schemaName + ", loading views...");
+            pgDb->refreshViews(schemaName);
+        }
+
+        if (viewsOpen) {
+            if (schemaData.views.empty()) {
+                if (schemaData.loadingViews) {
+                    renderLoadingState("Loading views...", ("##loading_views_" + schemaName).c_str());
+                } else {
+                    ImGui::Text("  No views found");
+                }
+            } else {
+                for (size_t i = 0; i < schemaData.views.size(); i++) {
+                    const auto& view = schemaData.views[i];
+                    ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                  ImGuiTreeNodeFlags_FramePadding;
+                    const std::string viewLabel = makeTreeNodeLabel(view.name, view.fullName);
+                    ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+                    renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+
+    void renderSchemaSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb, const std::string& schemaName) {
+        auto& schemaData = pgDb->getSchemaData(schemaName);
+
+        ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                           ImGuiTreeNodeFlags_FramePadding;
+
+        if (schemaData.sequencesExpanded) {
+            sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
+        const std::string sequencesLabel = makeTreeNodeLabel(
+            std::format("Sequences ({})", schemaData.sequences.size()),
+            std::format("sequences_{}_{}", pgDb->getName(), schemaName));
+        const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
+
+        schemaData.sequencesExpanded = sequencesOpen;
+
+        renderSequenceNodeIcon();
+
+        if (schemaData.loadingSequences) {
+            ImGui::SameLine();
+            UIUtils::Spinner(("##sequences_spinner_" + schemaName).c_str(), 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        }
+
+        // Load sequences when the tree node is opened and sequences haven't been loaded yet
+        if (sequencesOpen && !schemaData.sequencesLoaded && !schemaData.loadingSequences) {
+            LogPanel::debug("Sequences node expanded for schema " + schemaName + ", loading sequences...");
+            pgDb->refreshSequences(schemaName);
+        }
+
+        if (sequencesOpen) {
+            if (schemaData.sequences.empty()) {
+                if (schemaData.loadingSequences) {
+                    renderLoadingState("Loading sequences...", ("##loading_sequences_" + schemaName).c_str());
+                } else {
+                    ImGui::Text("  No sequences found");
+                }
+            } else {
+                for (size_t i = 0; i < schemaData.sequences.size(); i++) {
+                    const auto& sequence = schemaData.sequences[i];
+                    ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
+                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                      ImGuiTreeNodeFlags_FramePadding;
+                    const std::string sequenceLabel = makeTreeNodeLabel(sequence,
+                        std::format("seq_{}_{}_{}", pgDb->getName(), schemaName, sequence));
+                    ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
+                    renderSequenceNodeIcon();
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+
     void renderSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb, int schemaIndex) {
         auto& schema = pgDb->getSchemas()[schemaIndex];
 
@@ -267,10 +428,15 @@ namespace PostgresHierarchy {
         renderSchemaNodeIcon();
 
         if (schemaOpen) {
-            // Pass schema name to child rendering functions
-            HierarchyHelpers::renderTablesSection(pgDb, schema.name);
-            HierarchyHelpers::renderViewsSection(pgDb, schema.name);
-            renderSequencesSection(pgDb, schema.name);
+            // Check async loading status for this schema
+            pgDb->checkSchemaTablesStatusAsync(schema.name);
+            pgDb->checkSchemaViewsStatusAsync(schema.name);
+            pgDb->checkSchemaSequencesStatusAsync(schema.name);
+
+            // Render schema-specific sections
+            renderSchemaTablesSection(pgDb, schema.name);
+            renderSchemaViewsSection(pgDb, schema.name);
+            renderSchemaSequencesSection(pgDb, schema.name);
 
             ImGui::TreePop();
         }
@@ -308,71 +474,6 @@ namespace PostgresHierarchy {
 
 } // namespace PostgresHierarchy
 
-namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
-                                const std::string& schemaName) {
-        const bool sequencesExpanded = pgDb->getCurrentDatabaseData().sequencesExpanded;
-
-        ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                            ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                            ImGuiTreeNodeFlags_FramePadding;
-
-        // Set the default open state based on the expansion state
-        if (sequencesExpanded) {
-            sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-        }
-
-        const bool showSequencesSpinner = pgDb->isLoadingSequences();
-
-        const std::string sequencesLabel =
-            makeTreeNodeLabel(std::format("Sequences ({})", pgDb->getSequences().size()),
-                              "sequences_current_" + pgDb->getName());
-        const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
-
-        pgDb->getCurrentDatabaseData().sequencesExpanded = sequencesOpen;
-
-        renderSequenceNodeIcon();
-
-        if (showSequencesSpinner) {
-            ImGui::SameLine();
-            UIUtils::Spinner("##sequences_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-        }
-
-        // Context menu for Sequences section
-        if (ImGui::BeginPopupContextItem("sequences_context_menu")) {
-            if (ImGui::MenuItem("Refresh")) {
-                pgDb->setSequencesLoaded(false);
-                pgDb->refreshSequences(schemaName);
-            }
-            ImGui::EndPopup();
-        }
-
-        // Load sequences when the tree node is opened and sequences haven't been loaded yet
-        if (sequencesOpen && !pgDb->areSequencesLoaded() && !pgDb->isLoadingSequences()) {
-            LogPanel::debug(
-                "Sequences node expanded and sequences not loaded yet, attempting to load...");
-            pgDb->refreshSequences(schemaName);
-        }
-
-        if (sequencesOpen) {
-            if (pgDb->getSequences().empty()) {
-                if (pgDb->isLoadingSequences()) {
-                    renderLoadingState("Loading sequences...", "##loading_sequences_spinner");
-                } else if (!pgDb->areSequencesLoaded()) {
-                    ImGui::Text("  Loading...");
-                } else {
-                    ImGui::Text("  No sequences found");
-                }
-            } else {
-                for (int j = 0; j < pgDb->getSequences().size(); j++) {
-                    PostgresHierarchy::renderSequenceNode(pgDb, j);
-                }
-            }
-            ImGui::TreePop();
-        }
-    }
-} // anonymous namespace
-
 // Node rendering functions
 namespace PostgresHierarchy {
     void renderSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb,
@@ -400,86 +501,59 @@ namespace PostgresHierarchy {
         ImGui::PopID();
     }
 
-    void renderCachedSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb,
-                                  const std::string& dbName, const int sequenceIndex) {
-        const auto& dbData = pgDb->getDatabaseData(dbName);
-        const auto& sequence = dbData.sequences[sequenceIndex];
-
-        constexpr ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-
-        const std::string sequenceLabel =
-            makeTreeNodeLabel(sequence, std::format("cached_sequence_{}_{}", dbName, sequence));
-        ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
-
-        renderSequenceNodeIcon();
-
-        // Context menu
-        ImGui::PushID(sequenceIndex);
-        if (ImGui::BeginPopupContextItem(nullptr)) {
-            if (ImGui::MenuItem("Show Details")) {
-                // TODO: Show sequence details in a tab
-            }
-            ImGui::EndPopup();
-        }
-        ImGui::PopID();
-    }
-
     void renderCachedSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
                                       const std::string& dbName) {
         auto& dbData = pgDb->getDatabaseData(dbName);
+
+        // Aggregate sequences from all schemas in this database
+        std::vector<std::string> allSequences;
+        bool anyLoaded = false;
+        bool anyLoading = false;
+
+        for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
+            allSequences.insert(allSequences.end(),
+                               schemaData.sequences.begin(),
+                               schemaData.sequences.end());
+            if (schemaData.sequencesLoaded) anyLoaded = true;
+            if (schemaData.loadingSequences) anyLoading = true;
+        }
 
         ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                             ImGuiTreeNodeFlags_FramePadding;
 
-        // Set the default open state based on the expansion state
-        if (dbData.sequencesExpanded) {
-            sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-        }
-
-        const bool showSequencesSpinner = dbData.loadingSequences;
-
         const std::string sequencesLabel =
-            makeTreeNodeLabel(std::format("Sequences ({})", dbData.sequences.size()),
+            makeTreeNodeLabel(std::format("Sequences ({})", allSequences.size()),
                               "sequences_cached_pg_" + dbName);
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
-        dbData.sequencesExpanded = sequencesOpen;
-
         renderSequenceNodeIcon();
 
-        if (showSequencesSpinner) {
+        if (anyLoading) {
             ImGui::SameLine();
             UIUtils::Spinner(("##sequences_spinner_" + dbName).c_str(), 6.0f, 2,
                              ImGui::GetColorU32(ImGuiCol_Text));
         }
 
         if (sequencesOpen) {
-            if (dbData.sequences.empty()) {
-                if (dbData.loadingSequences) {
+            if (allSequences.empty()) {
+                if (anyLoading) {
                     renderLoadingState("Loading sequences...",
                                        ("##loading_sequences_spinner_" + dbName).c_str());
-                } else if (!dbData.sequencesLoaded) {
-                    // Auto-switch database and load sequences when node is expanded
-                    if (dbName != pgDb->getDatabaseName()) {
-                        if (!pgDb->isSwitchingDatabase()) {
-                            LogPanel::debug("Auto-switching to database: " + dbName +
-                                            " to load sequences");
-                            pgDb->switchToDatabaseAsync(dbName);
-                        }
-                        ImGui::Text("  Switching database...");
-                    } else {
-                        pgDb->refreshSequences();
-                    }
-                    ImGui::Text("  Loading sequences...");
+                } else if (!anyLoaded) {
+                    ImGui::Text("  Not loaded yet");
                 } else {
                     ImGui::Text("  No sequences found");
                 }
             } else {
-                for (int j = 0; j < dbData.sequences.size(); j++) {
-                    PostgresHierarchy::renderCachedSequenceNode(pgDb, dbName, j);
+                for (size_t j = 0; j < allSequences.size(); j++) {
+                    ImGuiTreeNodeFlags sequenceFlags = ImGuiTreeNodeFlags_Leaf |
+                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                      ImGuiTreeNodeFlags_FramePadding;
+                    const std::string sequenceLabel = makeTreeNodeLabel(allSequences[j],
+                        std::format("seq_cached_{}_{}", dbName, allSequences[j]));
+                    ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
+                    renderSequenceNodeIcon();
                 }
             }
             ImGui::TreePop();

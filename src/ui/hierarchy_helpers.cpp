@@ -653,7 +653,17 @@ namespace HierarchyHelpers {
         // For PostgreSQL and MySQL, we need to cast to access cached data
         if (db->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            const auto& dbData = pgDb->getDatabaseData(dbName);
+            auto& dbData = pgDb->getDatabaseData(dbName);
+
+            // Aggregate tables from all schemas
+            std::vector<Table> allTables;
+            bool anyLoading = false;
+            bool anyLoaded = false;
+            for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
+                allTables.insert(allTables.end(), schemaData.tables.begin(), schemaData.tables.end());
+                if (schemaData.loadingTables) anyLoading = true;
+                if (schemaData.tablesLoaded) anyLoaded = true;
+            }
 
             ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
@@ -665,7 +675,7 @@ namespace HierarchyHelpers {
             }
 
             const std::string tablesLabel =
-                makeTreeNodeLabel(std::format("Tables ({})", dbData.tables.size()),
+                makeTreeNodeLabel(std::format("Tables ({})", allTables.size()),
                                   std::format("tables_cached_pg_{}", dbName));
             const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
@@ -673,7 +683,7 @@ namespace HierarchyHelpers {
 
             renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
-            if (dbData.loadingTables) {
+            if (anyLoading) {
                 ImGui::SameLine();
                 UIUtils::Spinner(("##tables_spinner_" + dbName).c_str(), 6.0f, 2,
                                  ImGui::GetColorU32(ImGuiCol_Text));
@@ -702,28 +712,24 @@ namespace HierarchyHelpers {
             }
 
             if (tablesOpen) {
-                if (dbData.tables.empty()) {
-                    if (dbData.loadingTables) {
+                if (allTables.empty()) {
+                    if (anyLoading) {
                         ImGui::Text("  Loading tables...");
-                    } else if (!dbData.tablesLoaded) {
-                        // Auto-switch database and load tables when node is expanded
-                        if (dbName != pgDb->getDatabaseName()) {
-                            if (!pgDb->isSwitchingDatabase()) {
-                                LogPanel::debug("Auto-switching to database: " + dbName +
-                                                " to load tables");
-                                pgDb->switchToDatabaseAsync(dbName);
-                            }
-                            ImGui::Text("  Switching database...");
-                        } else {
-                            pgDb->refreshTables();
-                        }
-                        ImGui::Text("  Loading tables...");
+                    } else if (!anyLoaded) {
+                        ImGui::Text("  Not loaded yet");
                     } else {
                         ImGui::Text("  No tables found");
                     }
                 } else {
-                    for (int j = 0; j < dbData.tables.size(); j++) {
-                        renderCachedTableNode(db, dbName, j);
+                    for (size_t j = 0; j < allTables.size(); j++) {
+                        // Render table directly since we aggregated them
+                        const auto& table = allTables[j];
+                        ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
+                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                       ImGuiTreeNodeFlags_FramePadding;
+                        const std::string tableLabel = makeTreeNodeLabel(table.name, table.fullName);
+                        ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+                        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
                     }
                 }
                 ImGui::TreePop();
@@ -816,6 +822,16 @@ namespace HierarchyHelpers {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
             auto& dbData = pgDb->getDatabaseData(dbName);
 
+            // Aggregate views from all schemas
+            std::vector<Table> allViews;
+            bool anyLoading = false;
+            bool anyLoaded = false;
+            for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
+                allViews.insert(allViews.end(), schemaData.views.begin(), schemaData.views.end());
+                if (schemaData.loadingViews) anyLoading = true;
+                if (schemaData.viewsLoaded) anyLoaded = true;
+            }
+
             ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                             ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                             ImGuiTreeNodeFlags_FramePadding;
@@ -826,7 +842,7 @@ namespace HierarchyHelpers {
             }
 
             const std::string viewsLabel =
-                makeTreeNodeLabel(std::format("Views ({})", dbData.views.size()),
+                makeTreeNodeLabel(std::format("Views ({})", allViews.size()),
                                   std::format("views_cached_pg_{}", dbName));
             const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
@@ -834,35 +850,31 @@ namespace HierarchyHelpers {
 
             renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
-            if (dbData.loadingViews) {
+            if (anyLoading) {
                 ImGui::SameLine();
                 UIUtils::Spinner(("##views_spinner_" + dbName).c_str(), 6.0f, 2,
                                  ImGui::GetColorU32(ImGuiCol_Text));
             }
 
             if (viewsOpen) {
-                if (dbData.views.empty()) {
-                    if (dbData.loadingViews) {
+                if (allViews.empty()) {
+                    if (anyLoading) {
                         ImGui::Text("  Loading views...");
-                    } else if (!dbData.viewsLoaded) {
-                        // Auto-switch database and load views when node is expanded
-                        if (dbName != pgDb->getDatabaseName()) {
-                            if (!pgDb->isSwitchingDatabase()) {
-                                LogPanel::debug("Auto-switching to database: " + dbName +
-                                                " to load views");
-                                pgDb->switchToDatabaseAsync(dbName);
-                            }
-                            ImGui::Text("  Switching database...");
-                        } else {
-                            pgDb->refreshViews();
-                        }
-                        ImGui::Text("  Loading views...");
+                    } else if (!anyLoaded) {
+                        ImGui::Text("  Not loaded yet");
                     } else {
                         ImGui::Text("  No views found");
                     }
                 } else {
-                    for (int j = 0; j < dbData.views.size(); j++) {
-                        renderCachedViewNode(db, dbName, j);
+                    for (size_t j = 0; j < allViews.size(); j++) {
+                        // Render view directly since we aggregated them
+                        const auto& view = allViews[j];
+                        ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                      ImGuiTreeNodeFlags_FramePadding;
+                        const std::string viewLabel = makeTreeNodeLabel(view.name, view.fullName);
+                        ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+                        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
                     }
                 }
                 ImGui::TreePop();
@@ -929,15 +941,9 @@ namespace HierarchyHelpers {
                                const std::string& dbName, int tableIndex) {
         auto& app = Application::getInstance();
 
-        // Get the cached table data
+        // Get the cached table data (MySQL only - PostgreSQL renders inline)
         Table* table = nullptr;
-        if (db->getType() == DatabaseType::POSTGRESQL) {
-            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            auto& dbData = pgDb->getDatabaseData(dbName);
-            if (tableIndex < dbData.tables.size()) {
-                table = &dbData.tables[tableIndex];
-            }
-        } else if (db->getType() == DatabaseType::MYSQL) {
+        if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
             auto& dbData = mysqlDb->getDatabaseData(dbName);
             if (tableIndex < dbData.tables.size()) {
@@ -1027,13 +1033,8 @@ namespace HierarchyHelpers {
 
         // Get the cached view data
         const Table* view = nullptr;
-        if (db->getType() == DatabaseType::POSTGRESQL) {
-            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-            const auto& dbData = pgDb->getDatabaseData(dbName);
-            if (viewIndex < dbData.views.size()) {
-                view = &dbData.views[viewIndex];
-            }
-        } else if (db->getType() == DatabaseType::MYSQL) {
+        // MySQL only - PostgreSQL renders inline
+        if (db->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
             const auto& dbData = mysqlDb->getDatabaseData(dbName);
             if (viewIndex < dbData.views.size()) {

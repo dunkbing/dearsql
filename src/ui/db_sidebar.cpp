@@ -378,8 +378,7 @@ void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Connecting...");
             ImGui::SameLine();
-            UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(colors.peach));
+            UIUtils::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);

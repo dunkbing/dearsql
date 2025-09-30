@@ -75,7 +75,8 @@ namespace HierarchyHelpers {
 
         // Renders column node with context menu
         void renderColumnNode(const std::shared_ptr<DatabaseInterface>& db,
-                              const std::string& tableName, const Column& column) {
+                              const std::string& tableName, const Column& column,
+                              const std::string& schemaName = "") {
             const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
             ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -95,8 +96,8 @@ namespace HierarchyHelpers {
 
             if (ImGui::BeginPopupContextItem("column_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
-                    std::string schemaName = getSchemaName(db);
-                    getTableDialog().showTableDialog(db, tableName, schemaName);
+                    std::string schema = schemaName.empty() ? getSchemaName(db) : schemaName;
+                    getTableDialog().showTableDialog(db, tableName, schema);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Drop Column")) {
@@ -108,7 +109,8 @@ namespace HierarchyHelpers {
         }
     } // anonymous namespace
 
-    void renderTableNode(const std::shared_ptr<DatabaseInterface>& db, int tableIndex) {
+    void renderTableNode(const std::shared_ptr<DatabaseInterface>& db, int tableIndex,
+                         const std::string& schemaName) {
         auto& app = Application::getInstance();
         auto& table = db->getTables()[tableIndex];
 
@@ -138,7 +140,8 @@ namespace HierarchyHelpers {
                 app.getTabManager()->createTableViewerTab(db, table.name);
             }
             if (ImGui::MenuItem("Edit Table")) {
-                getTableDialog().showTableDialog(db, table.name, getSchemaName(db));
+                std::string schema = schemaName.empty() ? getSchemaName(db) : schemaName;
+                getTableDialog().showTableDialog(db, table.name, schema);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -160,14 +163,15 @@ namespace HierarchyHelpers {
             // Context menu for Columns section
             if (ImGui::BeginPopupContextItem("columns_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
-                    getTableDialog().showTableDialog(db, table.name, getSchemaName(db));
+                    std::string schema = schemaName.empty() ? getSchemaName(db) : schemaName;
+                    getTableDialog().showTableDialog(db, table.name, schema);
                 }
                 ImGui::EndPopup();
             }
 
             if (columnsOpened) {
                 for (const auto& column : table.columns) {
-                    renderColumnNode(db, table.name, column);
+                    renderColumnNode(db, table.name, column, schemaName);
                 }
                 ImGui::TreePop();
             }
@@ -348,7 +352,8 @@ namespace HierarchyHelpers {
         ImGui::PopID();
     }
 
-    void renderTablesSection(const std::shared_ptr<DatabaseInterface>& db) {
+    void renderTablesSection(const std::shared_ptr<DatabaseInterface>& db,
+                             const std::string& schemaName) {
         // Get expansion state from the current database data
         bool tablesExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
@@ -370,9 +375,9 @@ namespace HierarchyHelpers {
 
         const bool showTablesSpinner = db->isLoadingTables();
 
-        const std::string tablesLabel = makeTreeNodeLabel(
-            std::format("Tables ({})", db->getTables().size()),
-            std::format("tables_current_{}", db->getName()));
+        const std::string tablesLabel =
+            makeTreeNodeLabel(std::format("Tables ({})", db->getTables().size()),
+                              std::format("tables_current_{}", db->getName()));
         const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
         // Update the expansion state based on the current UI state
@@ -394,12 +399,19 @@ namespace HierarchyHelpers {
         // Context menu for Tables section
         if (ImGui::BeginPopupContextItem("tables_context_menu")) {
             if (ImGui::MenuItem("Create New Table")) {
-                getTableDialog().showCreateTableDialog(db, getSchemaName(db));
+                std::string schema = schemaName.empty() ? getSchemaName(db) : schemaName;
+                getTableDialog().showCreateTableDialog(db, schema);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Refresh")) {
                 db->setTablesLoaded(false);
-                db->refreshTables();
+                // For PostgreSQL, pass the schema name
+                if (db->getType() == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                    pgDb->refreshTables(schemaName);
+                } else {
+                    db->refreshTables();
+                }
             }
             ImGui::EndPopup();
         }
@@ -408,7 +420,13 @@ namespace HierarchyHelpers {
         if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
             LogPanel::debug(
                 "Tables node expanded and tables not loaded yet, attempting to load...");
-            db->refreshTables();
+            // For PostgreSQL, pass the schema name
+            if (db->getType() == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                pgDb->refreshTables(schemaName);
+            } else {
+                db->refreshTables();
+            }
         }
 
         if (tablesOpen) {
@@ -422,14 +440,15 @@ namespace HierarchyHelpers {
                 }
             } else {
                 for (int j = 0; j < db->getTables().size(); j++) {
-                    renderTableNode(db, j);
+                    renderTableNode(db, j, schemaName);
                 }
             }
             ImGui::TreePop();
         }
     }
 
-    void renderViewsSection(const std::shared_ptr<DatabaseInterface>& db) {
+    void renderViewsSection(const std::shared_ptr<DatabaseInterface>& db,
+                            const std::string& schemaName) {
         // Get expansion state from the current database data
         bool viewsExpanded = false;
         if (db->getType() == DatabaseType::POSTGRESQL) {
@@ -451,9 +470,9 @@ namespace HierarchyHelpers {
 
         const bool showViewsSpinner = db->isLoadingViews();
 
-        const std::string viewsLabel = makeTreeNodeLabel(
-            std::format("Views ({})", db->getViews().size()),
-            std::format("views_current_{}", db->getName()));
+        const std::string viewsLabel =
+            makeTreeNodeLabel(std::format("Views ({})", db->getViews().size()),
+                              std::format("views_current_{}", db->getName()));
         const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
         // Update the expansion state based on the current UI state
@@ -475,7 +494,13 @@ namespace HierarchyHelpers {
         // Load views when the tree node is opened and views haven't been loaded yet
         if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
             LogPanel::debug("Views node expanded and views not loaded yet, attempting to load...");
-            db->refreshViews();
+            // For PostgreSQL, pass the schema name
+            if (db->getType() == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                pgDb->refreshViews(schemaName);
+            } else {
+                db->refreshViews();
+            }
         }
 
         if (viewsOpen) {
@@ -639,9 +664,9 @@ namespace HierarchyHelpers {
                 tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string tablesLabel = makeTreeNodeLabel(
-                std::format("Tables ({})", dbData.tables.size()),
-                std::format("tables_cached_pg_{}", dbName));
+            const std::string tablesLabel =
+                makeTreeNodeLabel(std::format("Tables ({})", dbData.tables.size()),
+                                  std::format("tables_cached_pg_{}", dbName));
             const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
             pgDb->getDatabaseData(dbName).tablesExpanded = tablesOpen;
@@ -716,9 +741,9 @@ namespace HierarchyHelpers {
                 tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string tablesLabel = makeTreeNodeLabel(
-                std::format("Tables ({})", dbData.tables.size()),
-                std::format("tables_cached_mysql_{}", dbName));
+            const std::string tablesLabel =
+                makeTreeNodeLabel(std::format("Tables ({})", dbData.tables.size()),
+                                  std::format("tables_cached_mysql_{}", dbName));
             const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
             dbData.tablesExpanded = tablesOpen;
@@ -800,9 +825,9 @@ namespace HierarchyHelpers {
                 viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string viewsLabel = makeTreeNodeLabel(
-                std::format("Views ({})", dbData.views.size()),
-                std::format("views_cached_pg_{}", dbName));
+            const std::string viewsLabel =
+                makeTreeNodeLabel(std::format("Views ({})", dbData.views.size()),
+                                  std::format("views_cached_pg_{}", dbName));
             const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
             dbData.viewsExpanded = viewsOpen;
@@ -855,9 +880,9 @@ namespace HierarchyHelpers {
                 viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string viewsLabel = makeTreeNodeLabel(
-                std::format("Views ({})", dbData.views.size()),
-                std::format("views_cached_mysql_{}", dbName));
+            const std::string viewsLabel =
+                makeTreeNodeLabel(std::format("Views ({})", dbData.views.size()),
+                                  std::format("views_cached_mysql_{}", dbName));
             const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
             dbData.viewsExpanded = viewsOpen;

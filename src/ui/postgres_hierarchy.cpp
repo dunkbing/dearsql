@@ -10,7 +10,8 @@
 
 // Forward declarations for helper functions from DatabaseSidebar
 namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb);
+    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                const std::string& schemaName);
 
     // Helper functions to reduce duplication
     void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
@@ -258,19 +259,18 @@ namespace PostgresHierarchy {
             schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        const std::string schemaLabel =
-            makeTreeNodeLabel(schema.name, std::format("schema_{}_{}", pgDb->getName(), schema.name));
+        const std::string schemaLabel = makeTreeNodeLabel(
+            schema.name, std::format("schema_{}_{}", pgDb->getName(), schema.name));
         const bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
 
         schema.expanded = schemaOpen;
         renderSchemaNodeIcon();
 
         if (schemaOpen) {
-            // For now, render the old structure under each schema
-            // In the future, we'd filter tables/views/sequences by schema
-            HierarchyHelpers::renderTablesSection(pgDb);
-            HierarchyHelpers::renderViewsSection(pgDb);
-            renderSequencesSection(pgDb);
+            // Pass schema name to child rendering functions
+            HierarchyHelpers::renderTablesSection(pgDb, schema.name);
+            HierarchyHelpers::renderViewsSection(pgDb, schema.name);
+            renderSequencesSection(pgDb, schema.name);
 
             ImGui::TreePop();
         }
@@ -309,7 +309,8 @@ namespace PostgresHierarchy {
 } // namespace PostgresHierarchy
 
 namespace {
-    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb) {
+    void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
+                                const std::string& schemaName) {
         const bool sequencesExpanded = pgDb->getCurrentDatabaseData().sequencesExpanded;
 
         ImGuiTreeNodeFlags sequencesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -323,9 +324,9 @@ namespace {
 
         const bool showSequencesSpinner = pgDb->isLoadingSequences();
 
-        const std::string sequencesLabel = makeTreeNodeLabel(
-            std::format("Sequences ({})", pgDb->getSequences().size()),
-            "sequences_current_" + pgDb->getName());
+        const std::string sequencesLabel =
+            makeTreeNodeLabel(std::format("Sequences ({})", pgDb->getSequences().size()),
+                              "sequences_current_" + pgDb->getName());
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
         pgDb->getCurrentDatabaseData().sequencesExpanded = sequencesOpen;
@@ -341,7 +342,7 @@ namespace {
         if (ImGui::BeginPopupContextItem("sequences_context_menu")) {
             if (ImGui::MenuItem("Refresh")) {
                 pgDb->setSequencesLoaded(false);
-                pgDb->refreshSequences();
+                pgDb->refreshSequences(schemaName);
             }
             ImGui::EndPopup();
         }
@@ -350,7 +351,7 @@ namespace {
         if (sequencesOpen && !pgDb->areSequencesLoaded() && !pgDb->isLoadingSequences()) {
             LogPanel::debug(
                 "Sequences node expanded and sequences not loaded yet, attempting to load...");
-            pgDb->refreshSequences();
+            pgDb->refreshSequences(schemaName);
         }
 
         if (sequencesOpen) {
@@ -440,9 +441,9 @@ namespace PostgresHierarchy {
 
         const bool showSequencesSpinner = dbData.loadingSequences;
 
-        const std::string sequencesLabel = makeTreeNodeLabel(
-            std::format("Sequences ({})", dbData.sequences.size()),
-            "sequences_cached_pg_" + dbName);
+        const std::string sequencesLabel =
+            makeTreeNodeLabel(std::format("Sequences ({})", dbData.sequences.size()),
+                              "sequences_cached_pg_" + dbName);
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
         dbData.sequencesExpanded = sequencesOpen;

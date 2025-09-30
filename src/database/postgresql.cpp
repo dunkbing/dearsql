@@ -154,14 +154,18 @@ const std::string& PostgresDatabase::getDatabaseName() const {
 }
 
 void PostgresDatabase::refreshTables() {
-    LogPanel::debug("Refreshing tables for database: " + name);
+    refreshTables("public");
+}
+
+void PostgresDatabase::refreshTables(const std::string& schemaName) {
+    std::cout << ("Refreshing tables for database: " + name + " schema: " + schemaName) << "\n";
     if (!isConnected()) {
         LogPanel::warn("Not connected to database, cannot refresh tables");
         getCurrentDatabaseData().tablesLoaded = true;
         return;
     }
 
-    startRefreshTableAsync();
+    startRefreshTableAsync(schemaName);
 }
 
 const std::vector<Table>& PostgresDatabase::getTables() const {
@@ -410,14 +414,19 @@ void* PostgresDatabase::getConnection() const {
 }
 
 std::vector<std::string> PostgresDatabase::getTableNames() {
+    return getTableNames("public");
+}
+
+std::vector<std::string> PostgresDatabase::getTableNames(const std::string& schemaName) {
     std::vector<std::string> tableNames;
 
     try {
         const auto session = getSession();
-        const std::string sqlQuery =
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
+        const std::string sqlQuery = std::format(
+            "SELECT tablename FROM pg_tables WHERE schemaname = '{}' ORDER BY tablename",
+            schemaName);
 
-        LogPanel::debug("Executing query to get table names...");
+        std::cout << ("Executing query to get table names from schema: " + schemaName);
         const soci::rowset rs = session->prepare << sqlQuery;
 
         for (const auto& row : rs) {
@@ -429,7 +438,7 @@ std::vector<std::string> PostgresDatabase::getTableNames() {
         std::cerr << "Failed to execute query: " << e.what() << std::endl;
     }
 
-    LogPanel::debug("Query completed. Found " + std::to_string(tableNames.size()) + " tables.");
+    std::cout << ("Query completed. Found " + std::to_string(tableNames.size()) + " tables.");
     return tableNames;
 }
 
@@ -520,6 +529,11 @@ std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableNam
 }
 
 std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string& tableName) {
+    return getTableForeignKeys(tableName, "public");
+}
+
+std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string& tableName,
+                                                              const std::string& schemaName) {
     std::vector<ForeignKey> foreignKeys;
 
     try {
@@ -544,8 +558,8 @@ std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string&
                         "    AND rc.constraint_schema = tc.table_schema "
                         "WHERE tc.constraint_type = 'FOREIGN KEY' "
                         "AND tc.table_name = '{}' "
-                        "AND tc.table_schema = 'public'",
-                        tableName);
+                        "AND tc.table_schema = '{}'",
+                        tableName, schemaName);
 
         const soci::rowset rs = session->prepare << sqlQuery;
 
@@ -569,14 +583,18 @@ std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string&
 
 // View management methods
 void PostgresDatabase::refreshViews() {
-    LogPanel::debug("Refreshing views for database: " + name);
+    refreshViews("public");
+}
+
+void PostgresDatabase::refreshViews(const std::string& schemaName) {
+    LogPanel::debug("Refreshing views for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
         LogPanel::warn("Not connected to database, cannot refresh views");
         getCurrentDatabaseData().viewsLoaded = true;
         return;
     }
 
-    startRefreshViewAsync();
+    startRefreshViewAsync(schemaName);
 }
 
 const std::vector<Table>& PostgresDatabase::getViews() const {
@@ -597,14 +615,18 @@ void PostgresDatabase::setViewsLoaded(const bool loaded) {
 
 // Sequence management methods
 void PostgresDatabase::refreshSequences() {
-    LogPanel::debug("Refreshing sequences for database: " + name);
+    refreshSequences("public");
+}
+
+void PostgresDatabase::refreshSequences(const std::string& schemaName) {
+    LogPanel::debug("Refreshing sequences for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
         LogPanel::warn("Not connected to database, cannot refresh sequences");
         getCurrentDatabaseData().sequencesLoaded = true;
         return;
     }
 
-    startRefreshSequenceAsync();
+    startRefreshSequenceAsync(schemaName);
 }
 
 const std::vector<std::string>& PostgresDatabase::getSequences() const {
@@ -624,14 +646,18 @@ void PostgresDatabase::setSequencesLoaded(const bool loaded) {
 }
 
 std::vector<std::string> PostgresDatabase::getViewNames() {
+    return getViewNames("public");
+}
+
+std::vector<std::string> PostgresDatabase::getViewNames(const std::string& schemaName) {
     std::vector<std::string> viewNames;
 
     try {
         const auto session = getSession();
-        const std::string sqlQuery =
-            "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
+        const std::string sqlQuery = std::format(
+            "SELECT viewname FROM pg_views WHERE schemaname = '{}' ORDER BY viewname", schemaName);
 
-        std::cout << "Executing query to get view names..." << std::endl;
+        std::cout << "Executing query to get view names from schema: " << schemaName << std::endl;
         const soci::rowset rs = session->prepare << sqlQuery;
 
         for (const auto& row : rs) {
@@ -677,15 +703,20 @@ std::vector<Column> PostgresDatabase::getViewColumns(const std::string& viewName
 }
 
 std::vector<std::string> PostgresDatabase::getSequenceNames() {
+    return getSequenceNames("public");
+}
+
+std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& schemaName) {
     std::vector<std::string> sequenceNames;
 
     try {
         const auto session = getSession();
-        const std::string sqlQuery =
-            "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' ORDER "
-            "BY sequencename";
+        const std::string sqlQuery = std::format(
+            "SELECT sequencename FROM pg_sequences WHERE schemaname = '{}' ORDER BY sequencename",
+            schemaName);
 
-        std::cout << "Executing query to get sequence names..." << std::endl;
+        std::cout << "Executing query to get sequence names from schema: " << schemaName
+                  << std::endl;
         const soci::rowset rs = session->prepare << sqlQuery;
 
         for (const auto& row : rs) {
@@ -723,7 +754,7 @@ void PostgresDatabase::checkTablesStatusAsync() {
     }
 }
 
-void PostgresDatabase::startRefreshTableAsync() {
+void PostgresDatabase::startRefreshTableAsync(const std::string& schemaName) {
     auto& dbData = getCurrentDatabaseData();
     // Clear previous results
     dbData.tables.clear();
@@ -731,11 +762,11 @@ void PostgresDatabase::startRefreshTableAsync() {
     dbData.loadingTables = true;
 
     // Start async loading with std::async
-    dbData.tablesFuture =
-        std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
+    dbData.tablesFuture = std::async(
+        std::launch::async, [this, schemaName]() { return getTablesWithColumnsAsync(schemaName); });
 }
 
-std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
+std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync(const std::string& schemaName) {
     std::vector<Table> result;
     auto& dbData = getCurrentDatabaseData();
 
@@ -751,8 +782,10 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
         // Get table names using the connection pool
         std::vector<std::string> tableNames;
-        const std::string tableNamesQuery =
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename";
+        const std::string tableNamesQuery = std::format(
+            "SELECT tablename FROM pg_tables WHERE schemaname = '{}' ORDER BY tablename",
+            schemaName);
+        std::cout << "getTablesWithColumnsAsync: " << tableNamesQuery << "\n";
 
         {
             auto session = getSession();
@@ -765,8 +798,8 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
             }
         }
 
-        LogPanel::debug("Found " + std::to_string(tableNames.size()) +
-                        " tables, loading columns...");
+        std::cout << ("Found " + std::to_string(tableNames.size()) + " tables, loading columns...")
+                  << "\n";
 
         if (tableNames.empty() || !dbData.loadingTables.load()) {
             return result;
@@ -827,13 +860,13 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync() {
 
             Table table;
             table.name = tableName;
-            table.fullName = name + "." + database + ".public." +
+            table.fullName = name + "." + database + "." + schemaName + "." +
                              tableName;              // PostgreSQL: connection.database.schema.table
             table.columns = tableColumns[tableName]; // Will be empty if table has no columns
 
             // Load indexes and foreign keys
             table.indexes = getTableIndexes(tableName);
-            table.foreignKeys = getTableForeignKeys(tableName);
+            table.foreignKeys = getTableForeignKeys(tableName, schemaName);
             buildForeignKeyLookup(table);
 
             result.push_back(table);
@@ -872,7 +905,7 @@ void PostgresDatabase::checkViewsStatusAsync() {
     }
 }
 
-void PostgresDatabase::startRefreshViewAsync() {
+void PostgresDatabase::startRefreshViewAsync(const std::string& schemaName) {
     auto& dbData = getCurrentDatabaseData();
     // Clear previous results
     dbData.views.clear();
@@ -880,11 +913,11 @@ void PostgresDatabase::startRefreshViewAsync() {
     dbData.loadingViews = true;
 
     // Start async loading with std::async
-    dbData.viewsFuture =
-        std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
+    dbData.viewsFuture = std::async(
+        std::launch::async, [this, schemaName]() { return getViewsWithColumnsAsync(schemaName); });
 }
 
-std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
+std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string& schemaName) {
     std::vector<Table> result;
     auto& dbData = getCurrentDatabaseData();
 
@@ -900,8 +933,8 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
         // Get view names using the connection pool
         std::vector<std::string> viewNames;
-        const std::string viewNamesQuery =
-            "SELECT viewname FROM pg_views WHERE schemaname = 'public' ORDER BY viewname";
+        const std::string viewNamesQuery = std::format(
+            "SELECT viewname FROM pg_views WHERE schemaname = '{}' ORDER BY viewname", schemaName);
 
         {
             auto sql = getSession();
@@ -968,7 +1001,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync() {
 
             Table view;
             view.name = viewName;
-            view.fullName = name + "." + database + ".public." +
+            view.fullName = name + "." + database + "." + schemaName + "." +
                             viewName;             // PostgreSQL: connection.database.schema.view
             view.columns = viewColumns[viewName]; // Will be empty if view has no columns
             result.push_back(view);
@@ -1005,7 +1038,7 @@ void PostgresDatabase::checkSequencesStatusAsync() {
     }
 }
 
-void PostgresDatabase::startRefreshSequenceAsync() {
+void PostgresDatabase::startRefreshSequenceAsync(const std::string& schemaName) {
     auto& dbData = getCurrentDatabaseData();
     // Clear previous results
     dbData.sequences.clear();
@@ -1013,11 +1046,11 @@ void PostgresDatabase::startRefreshSequenceAsync() {
     dbData.loadingSequences = true;
 
     // Start async loading with std::async
-    dbData.sequencesFuture =
-        std::async(std::launch::async, [this]() { return getSequencesAsync(); });
+    dbData.sequencesFuture = std::async(
+        std::launch::async, [this, schemaName]() { return getSequencesAsync(schemaName); });
 }
 
-std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
+std::vector<std::string> PostgresDatabase::getSequencesAsync(const std::string& schemaName) const {
     std::vector<std::string> result;
     const auto& dbData = getCurrentDatabaseData();
 
@@ -1031,11 +1064,12 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync() const {
             return result;
         }
 
-        const std::string sqlQuery =
-            "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' "
-            "ORDER BY sequencename";
+        const std::string sqlQuery = std::format(
+            "SELECT sequencename FROM pg_sequences WHERE schemaname = '{}' ORDER BY sequencename",
+            schemaName);
 
-        std::cout << "Executing query to get sequence names..." << std::endl;
+        std::cout << "Executing query to get sequence names from schema: " << schemaName
+                  << std::endl;
         const auto session = getSession();
         const soci::rowset rs = session->prepare << sqlQuery;
 

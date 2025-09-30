@@ -35,6 +35,7 @@ public:
 
     // Table management
     void refreshTables() override;
+    void refreshTables(const std::string& schemaName);
     const std::vector<Table>& getTables() const override;
     std::vector<Table>& getTables() override;
     bool areTablesLoaded() const override;
@@ -44,6 +45,7 @@ public:
 
     // View management
     void refreshViews() override;
+    void refreshViews(const std::string& schemaName);
     const std::vector<Table>& getViews() const override;
     std::vector<Table>& getViews() override;
     bool areViewsLoaded() const override;
@@ -53,6 +55,7 @@ public:
 
     // Sequence management
     void refreshSequences() override;
+    void refreshSequences(const std::string& schemaName);
     const std::vector<std::string>& getSequences() const override;
     std::vector<std::string>& getSequences() override;
     bool areSequencesLoaded() const override;
@@ -147,20 +150,25 @@ public:
 
 protected:
     std::vector<std::string> getTableNames() override;
+    std::vector<std::string> getTableNames(const std::string& schemaName);
     std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
+    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName,
+                                                const std::string& schemaName);
     std::vector<std::string> getViewNames() override;
+    std::vector<std::string> getViewNames(const std::string& schemaName);
     std::vector<Column> getViewColumns(const std::string& viewName) override;
     std::vector<std::string> getSequenceNames() override;
+    std::vector<std::string> getSequenceNames(const std::string& schemaName);
 
     // Async loading helpers
-    void startRefreshTableAsync();
-    std::vector<Table> getTablesWithColumnsAsync();
-    void startRefreshViewAsync();
-    std::vector<Table> getViewsWithColumnsAsync();
-    void startRefreshSequenceAsync();
-    std::vector<std::string> getSequencesAsync() const;
+    void startRefreshTableAsync(const std::string& schemaName = "public");
+    std::vector<Table> getTablesWithColumnsAsync(const std::string& schemaName);
+    void startRefreshViewAsync(const std::string& schemaName = "public");
+    std::vector<Table> getViewsWithColumnsAsync(const std::string& schemaName);
+    void startRefreshSequenceAsync(const std::string& schemaName = "public");
+    std::vector<std::string> getSequencesAsync(const std::string& schemaName) const;
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
     std::vector<Schema> getSchemasForDatabaseAsync(const std::string& dbName) const;

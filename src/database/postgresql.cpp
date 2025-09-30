@@ -102,18 +102,21 @@ PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string&
     return getCurrentDatabaseData().schemaDataCache[schemaName];
 }
 
-const PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& schemaName) const {
+const PostgresDatabase::SchemaData&
+PostgresDatabase::getSchemaData(const std::string& schemaName) const {
     static const SchemaData emptyData;
     const auto& dbData = getCurrentDatabaseData();
     const auto it = dbData.schemaDataCache.find(schemaName);
     return (it != dbData.schemaDataCache.end()) ? it->second : emptyData;
 }
 
-PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& dbName, const std::string& schemaName) {
+PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& dbName,
+                                                              const std::string& schemaName) {
     return getDatabaseData(dbName).schemaDataCache[schemaName];
 }
 
-const PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& dbName, const std::string& schemaName) const {
+const PostgresDatabase::SchemaData&
+PostgresDatabase::getSchemaData(const std::string& dbName, const std::string& schemaName) const {
     static const SchemaData emptyData;
     const auto& dbData = getDatabaseData(dbName);
     const auto it = dbData.schemaDataCache.find(schemaName);
@@ -132,7 +135,8 @@ void PostgresDatabase::checkSchemaTablesStatusAsync(const std::string& schemaNam
             schemaData.tablesLoaded = true;
             schemaData.loadingTables = false;
         } catch (const std::exception& e) {
-            std::cerr << "Error in async table loading for schema " << schemaName << ": " << e.what() << std::endl;
+            std::cerr << "Error in async table loading for schema " << schemaName << ": "
+                      << e.what() << std::endl;
             schemaData.tablesLoaded = true;
             schemaData.loadingTables = false;
         }
@@ -150,7 +154,8 @@ void PostgresDatabase::checkSchemaViewsStatusAsync(const std::string& schemaName
             schemaData.viewsLoaded = true;
             schemaData.loadingViews = false;
         } catch (const std::exception& e) {
-            std::cerr << "Error in async view loading for schema " << schemaName << ": " << e.what() << std::endl;
+            std::cerr << "Error in async view loading for schema " << schemaName << ": " << e.what()
+                      << std::endl;
             schemaData.viewsLoaded = true;
             schemaData.loadingViews = false;
         }
@@ -163,12 +168,14 @@ void PostgresDatabase::checkSchemaSequencesStatusAsync(const std::string& schema
         schemaData.sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             schemaData.sequences = schemaData.sequencesFuture.get();
-            LogPanel::info("Async sequence loading completed for schema " + schemaName + ". Found " +
-                           std::to_string(schemaData.sequences.size()) + " sequences.");
+            LogPanel::info("Async sequence loading completed for schema " + schemaName +
+                           ". Found " + std::to_string(schemaData.sequences.size()) +
+                           " sequences.");
             schemaData.sequencesLoaded = true;
             schemaData.loadingSequences = false;
         } catch (const std::exception& e) {
-            std::cerr << "Error in async sequence loading for schema " << schemaName << ": " << e.what() << std::endl;
+            std::cerr << "Error in async sequence loading for schema " << schemaName << ": "
+                      << e.what() << std::endl;
             schemaData.sequencesLoaded = true;
             schemaData.loadingSequences = false;
         }
@@ -258,9 +265,8 @@ const std::vector<Table>& PostgresDatabase::getTables() const {
 
     const auto& dbData = getCurrentDatabaseData();
     for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedTables.insert(aggregatedTables.end(),
-                               schemaData.tables.begin(),
-                               schemaData.tables.end());
+        aggregatedTables.insert(aggregatedTables.end(), schemaData.tables.begin(),
+                                schemaData.tables.end());
     }
 
     return aggregatedTables;
@@ -273,9 +279,8 @@ std::vector<Table>& PostgresDatabase::getTables() {
 
     auto& dbData = getCurrentDatabaseData();
     for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedTables.insert(aggregatedTables.end(),
-                               schemaData.tables.begin(),
-                               schemaData.tables.end());
+        aggregatedTables.insert(aggregatedTables.end(), schemaData.tables.begin(),
+                                schemaData.tables.end());
     }
 
     return aggregatedTables;
@@ -720,9 +725,8 @@ const std::vector<Table>& PostgresDatabase::getViews() const {
 
     const auto& dbData = getCurrentDatabaseData();
     for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedViews.insert(aggregatedViews.end(),
-                              schemaData.views.begin(),
-                              schemaData.views.end());
+        aggregatedViews.insert(aggregatedViews.end(), schemaData.views.begin(),
+                               schemaData.views.end());
     }
 
     return aggregatedViews;
@@ -735,9 +739,8 @@ std::vector<Table>& PostgresDatabase::getViews() {
 
     auto& dbData = getCurrentDatabaseData();
     for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedViews.insert(aggregatedViews.end(),
-                              schemaData.views.begin(),
-                              schemaData.views.end());
+        aggregatedViews.insert(aggregatedViews.end(), schemaData.views.begin(),
+                               schemaData.views.end());
     }
 
     return aggregatedViews;
@@ -785,9 +788,8 @@ const std::vector<std::string>& PostgresDatabase::getSequences() const {
 
     const auto& dbData = getCurrentDatabaseData();
     for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedSequences.insert(aggregatedSequences.end(),
-                                  schemaData.sequences.begin(),
-                                  schemaData.sequences.end());
+        aggregatedSequences.insert(aggregatedSequences.end(), schemaData.sequences.begin(),
+                                   schemaData.sequences.end());
     }
 
     return aggregatedSequences;
@@ -800,9 +802,8 @@ std::vector<std::string>& PostgresDatabase::getSequences() {
 
     auto& dbData = getCurrentDatabaseData();
     for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        aggregatedSequences.insert(aggregatedSequences.end(),
-                                  schemaData.sequences.begin(),
-                                  schemaData.sequences.end());
+        aggregatedSequences.insert(aggregatedSequences.end(), schemaData.sequences.begin(),
+                                   schemaData.sequences.end());
     }
 
     return aggregatedSequences;

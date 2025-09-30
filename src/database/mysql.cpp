@@ -1098,12 +1098,6 @@ void MySQLDatabase::checkDatabaseSwitchStatusAsync() {
                 std::cout << "Async database switch completed successfully to: "
                           << targetDatabaseName << std::endl;
                 // The database and connection state are already updated by switchToDatabase
-
-                // Auto-start loading tables if not already loaded
-                if (!areTablesLoaded() && !isLoadingTables()) {
-                    std::cout << "Auto-starting table loading after database switch" << std::endl;
-                    refreshTables();
-                }
             } else {
                 std::cout << "Async database switch failed to: " << targetDatabaseName << " - "
                           << error << std::endl;

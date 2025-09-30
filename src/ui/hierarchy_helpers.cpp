@@ -1,5 +1,6 @@
 #include "ui/hierarchy_helpers.hpp"
 #include "IconsFontAwesome6.h"
+#include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
@@ -15,25 +16,34 @@ namespace HierarchyHelpers {
     extern TableDialog& getTableDialog();
     extern DropColumnDialog& getDropColumnDialog();
 
+    // Shared helper functions (public for use by MySQL/PostgreSQL hierarchy files)
+    void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(color), icon);
+    }
+
+    std::string makeTreeNodeLabel(const std::string& text, const std::string& id) {
+        if (id.empty()) {
+            return std::format("   {}", text);
+        }
+        return std::format("   {}###{}", text, id);
+    }
+
+    void renderLoadingState(const char* message, const char* spinnerId) {
+        ImGui::Text("  %s", message);
+        ImGui::SameLine();
+        UIUtils::Spinner(spinnerId, 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
+
+    void renderDatabaseNodeIcon() {
+        renderTreeNodeIcon(ICON_FK_DATABASE, ImVec4(0.6f, 0.7f, 0.9f, 1.0f));
+    }
+
     // Helper functions to reduce code duplication
     namespace {
-        // Renders an icon at the tree node position
-        void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
-            const auto iconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-            ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(color), icon);
-        }
-
-        // Creates a tree node label with icon spacing and unique ID
-        std::string makeTreeNodeLabel(const std::string& text, const std::string& id = "") {
-            if (id.empty()) {
-                return std::format("   {}", text);
-            }
-            return std::format("   {}###{}", text, id);
-        }
-
         // Attempts to switch database if needed (returns true if successful or not needed)
         bool ensureDatabaseSwitch(const std::shared_ptr<DatabaseInterface>& db,
                                   const std::string& targetDbName) {
@@ -61,16 +71,44 @@ namespace HierarchyHelpers {
             return true;
         }
 
+        bool ensureDatabaseActiveForAction(const std::shared_ptr<DatabaseInterface>& db,
+                                           const std::string& targetDbName) {
+            if (targetDbName.empty()) {
+                return true;
+            }
+
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                if (!pgDb) {
+                    return false;
+                }
+
+                if (targetDbName != pgDb->getDatabaseName()) {
+                    if (!pgDb->isSwitchingDatabase()) {
+                        LogPanel::debug("Auto-switching to database: " + targetDbName +
+                                        " before opening object");
+                        pgDb->switchToDatabaseAsync(targetDbName);
+                    }
+                    return false;
+                }
+
+                if (pgDb->isSwitchingDatabase()) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (db->getType() == DatabaseType::MYSQL) {
+                return ensureDatabaseSwitch(db, targetDbName);
+            }
+
+            return true;
+        }
+
         // Gets schema name for PostgreSQL (returns empty for other DB types)
         std::string getSchemaName(const std::shared_ptr<DatabaseInterface>& db) {
             return (db->getType() == DatabaseType::POSTGRESQL) ? "public" : "";
-        }
-
-        // Renders loading state with spinner
-        void renderLoadingState(const char* message, const char* spinnerId) {
-            ImGui::Text("  %s", message);
-            ImGui::SameLine();
-            UIUtils::Spinner(spinnerId, 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         }
 
         // Renders column node with context menu
@@ -373,8 +411,6 @@ namespace HierarchyHelpers {
             tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        const bool showTablesSpinner = db->isLoadingTables();
-
         const std::string tablesLabel =
             makeTreeNodeLabel(std::format("Tables ({})", db->getTables().size()),
                               std::format("tables_current_{}", db->getName()));
@@ -391,7 +427,8 @@ namespace HierarchyHelpers {
 
         renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
-        if (showTablesSpinner) {
+        // Only show spinner if currently loading (check after TreeNode creation)
+        if (db->isLoadingTables()) {
             ImGui::SameLine();
             UIUtils::Spinner("##tables_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         }
@@ -468,8 +505,6 @@ namespace HierarchyHelpers {
             viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        const bool showViewsSpinner = db->isLoadingViews();
-
         const std::string viewsLabel =
             makeTreeNodeLabel(std::format("Views ({})", db->getViews().size()),
                               std::format("views_current_{}", db->getName()));
@@ -486,7 +521,8 @@ namespace HierarchyHelpers {
 
         renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
-        if (showViewsSpinner) {
+        // Only show spinner if currently loading (check after TreeNode creation)
+        if (db->isLoadingViews()) {
             ImGui::SameLine();
             UIUtils::Spinner("##views_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         }
@@ -520,6 +556,103 @@ namespace HierarchyHelpers {
             ImGui::TreePop();
         }
     }
+    void renderTableLeafItem(const std::shared_ptr<DatabaseInterface>& db, Table& table,
+                             const std::string& schemaName, const std::string& databaseName) {
+        ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
+                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                        ImGuiTreeNodeFlags_FramePadding;
+
+        std::string identifier = table.fullName;
+        if (identifier.empty()) {
+            identifier = std::format("{}_{}_{}", db->getName(), schemaName, table.name);
+        }
+
+        const std::string tableLabel = makeTreeNodeLabel(table.name, identifier);
+        ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+
+        auto openTable = [&]() {
+            if (!ensureDatabaseActiveForAction(db, databaseName)) {
+                return;
+            }
+            Application::getInstance().getTabManager()->createTableViewerTab(db, table.name);
+        };
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            openTable();
+        }
+
+        const std::string contextId = std::format("table_ctx_{}", identifier);
+        ImGui::PushID(contextId.c_str());
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                openTable();
+            }
+
+            bool allowEdit = db->getType() != DatabaseType::REDIS;
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                allowEdit = allowEdit && pgDb &&
+                            (databaseName.empty() || databaseName == pgDb->getDatabaseName()) &&
+                            !pgDb->isSwitchingDatabase();
+            }
+
+            if (allowEdit && ImGui::MenuItem("Edit Table")) {
+                std::string schema = schemaName.empty() ? getSchemaName(db) : schemaName;
+                getTableDialog().showTableDialog(db, table.name, schema);
+            }
+
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show table structure in a dedicated tab
+            }
+
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
+
+    void renderViewLeafItem(const std::shared_ptr<DatabaseInterface>& db, Table& view,
+                            const std::string& schemaName, const std::string& databaseName) {
+        (void)schemaName;
+
+        ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                       ImGuiTreeNodeFlags_FramePadding;
+
+        std::string identifier = view.fullName;
+        if (identifier.empty()) {
+            identifier = std::format("{}_{}_{}", db->getName(), schemaName, view.name);
+        }
+
+        const std::string viewLabel = makeTreeNodeLabel(view.name, identifier);
+        ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+
+        auto openView = [&]() {
+            if (!ensureDatabaseActiveForAction(db, databaseName)) {
+                return;
+            }
+            Application::getInstance().getTabManager()->createTableViewerTab(db, view.name);
+        };
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            openView();
+        }
+
+        const std::string contextId = std::format("view_ctx_{}", identifier);
+        ImGui::PushID(contextId.c_str());
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                openView();
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show view structure in a dedicated tab
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
+
     void renderRedisHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
         const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         if (!redisDb) {
@@ -660,9 +793,12 @@ namespace HierarchyHelpers {
             bool anyLoading = false;
             bool anyLoaded = false;
             for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-                allTables.insert(allTables.end(), schemaData.tables.begin(), schemaData.tables.end());
-                if (schemaData.loadingTables) anyLoading = true;
-                if (schemaData.tablesLoaded) anyLoaded = true;
+                allTables.insert(allTables.end(), schemaData.tables.begin(),
+                                 schemaData.tables.end());
+                if (schemaData.loadingTables)
+                    anyLoading = true;
+                if (schemaData.tablesLoaded)
+                    anyLoaded = true;
             }
 
             ImGuiTreeNodeFlags tablesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -725,9 +861,10 @@ namespace HierarchyHelpers {
                         // Render table directly since we aggregated them
                         const auto& table = allTables[j];
                         ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
-                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                       ImGuiTreeNodeFlags_FramePadding;
-                        const std::string tableLabel = makeTreeNodeLabel(table.name, table.fullName);
+                                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                        ImGuiTreeNodeFlags_FramePadding;
+                        const std::string tableLabel =
+                            makeTreeNodeLabel(table.name, table.fullName);
                         ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
                         renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
                     }
@@ -828,8 +965,10 @@ namespace HierarchyHelpers {
             bool anyLoaded = false;
             for (const auto& [schemaName, schemaData] : dbData.schemaDataCache) {
                 allViews.insert(allViews.end(), schemaData.views.begin(), schemaData.views.end());
-                if (schemaData.loadingViews) anyLoading = true;
-                if (schemaData.viewsLoaded) anyLoaded = true;
+                if (schemaData.loadingViews)
+                    anyLoading = true;
+                if (schemaData.viewsLoaded)
+                    anyLoaded = true;
             }
 
             ImGuiTreeNodeFlags viewsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
@@ -870,8 +1009,8 @@ namespace HierarchyHelpers {
                         // Render view directly since we aggregated them
                         const auto& view = allViews[j];
                         ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
-                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                      ImGuiTreeNodeFlags_FramePadding;
+                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                       ImGuiTreeNodeFlags_FramePadding;
                         const std::string viewLabel = makeTreeNodeLabel(view.name, view.fullName);
                         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
                         renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));

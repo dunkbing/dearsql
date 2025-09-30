@@ -650,8 +650,8 @@ bool TableDialog::executeAddColumn() {
         database->setTablesLoaded(false);
         database->refreshTables();
 
-        LogPanel::info("Column '" + std::string(columnName) + "' added successfully to table '" +
-                       targetTableName + "'");
+        std::cout << ("Column '" + std::string(columnName) + "' added successfully to table '" +
+                      targetTableName + "'");
         return true;
 
     } catch (const std::exception& e) {

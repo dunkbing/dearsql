@@ -11,14 +11,10 @@ namespace PostgresHierarchy {
     void renderSchemasSection(const std::shared_ptr<PostgresDatabase>& pgDb);
     void renderCachedSchemasSection(const std::shared_ptr<PostgresDatabase>& pgDb,
                                     const std::string& dbName);
-    void renderCachedSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb,
-                                      const std::string& dbName);
     void renderSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb, int schemaIndex);
     void renderCachedSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb,
                                 const std::string& dbName, int schemaIndex);
     void renderTableNode(const std::shared_ptr<PostgresDatabase>& pgDb, int tableIndex);
     void renderViewNode(const std::shared_ptr<PostgresDatabase>& pgDb, int viewIndex);
     void renderSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb, int sequenceIndex);
-    void renderCachedSequenceNode(const std::shared_ptr<PostgresDatabase>& pgDb,
-                                  const std::string& dbName, int sequenceIndex);
 } // namespace PostgresHierarchy

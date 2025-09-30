@@ -11,6 +11,40 @@
 // Forward declarations for helper functions from DatabaseSidebar
 namespace {
     void renderSequencesSection(const std::shared_ptr<PostgresDatabase>& pgDb);
+
+    // Helper functions to reduce duplication
+    void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(color), icon);
+    }
+
+    std::string makeTreeNodeLabel(const std::string& text, const std::string& id = "") {
+        if (id.empty()) {
+            return std::format("   {}", text);
+        }
+        return std::format("   {}###{}", text, id);
+    }
+
+    void renderLoadingState(const char* message, const char* spinnerId) {
+        ImGui::Text("  %s", message);
+        ImGui::SameLine();
+        UIUtils::Spinner(spinnerId, 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
+
+    void renderDatabaseNodeIcon() {
+        renderTreeNodeIcon(ICON_FK_DATABASE, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+    }
+
+    void renderSchemaNodeIcon() {
+        renderTreeNodeIcon(ICON_FA_FOLDER, ImVec4(0.7f, 0.5f, 0.9f, 1.0f));
+    }
+
+    void renderSequenceNodeIcon() {
+        renderTreeNodeIcon(ICON_FA_LIST_OL, ImVec4(0.8f, 0.3f, 0.8f, 1.0f));
+    }
 } // namespace
 
 namespace PostgresHierarchy {
@@ -30,25 +64,14 @@ namespace PostgresHierarchy {
                                                    ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                    ImGuiTreeNodeFlags_FramePadding;
 
-        // Draw database node with placeholder space for icon
         std::string dbName = pgDb->getDatabaseName();
-        // Add schema count if schemas are loaded
         if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
             dbName = std::format("{} ({} schemas)", dbName, pgDb->getSchemas().size());
         }
-        const std::string dbNodeLabel = std::format(
-            "   {}###db_single_{}", dbName, dbName); // 3 spaces for icon, unique ID per database
+        const std::string dbNodeLabel = makeTreeNodeLabel(dbName, "db_single_" + dbName);
         const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto dbNodeIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            dbNodeIconPos, ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
-            ICON_FK_DATABASE);
+        renderDatabaseNodeIcon();
 
         // Context menu for database node
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
@@ -99,10 +122,7 @@ namespace PostgresHierarchy {
 
         // Show loading indicator if databases are being loaded
         if (pgDb->isLoadingDatabases() && databases.empty()) {
-            ImGui::Text("  Loading databases...");
-            ImGui::SameLine();
-            UIUtils::Spinner("##loading_databases_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(ImGuiCol_Text));
+            renderLoadingState("Loading databases...", "##loading_databases_spinner");
             return;
         }
 
@@ -123,20 +143,10 @@ namespace PostgresHierarchy {
                 ImGui::SetNextItemOpen(true);
             }
 
-            // Draw database node with placeholder space for icon
-            const std::string dbNodeLabel = std::format("   {}###db_{}", dbName, dbName);
+            const std::string dbNodeLabel = makeTreeNodeLabel(dbName, "db_" + dbName);
             const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
-            // Draw colored icon over the placeholder space
-            const auto dbNodeIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                dbNodeIconPos,
-                ImGui::GetColorU32(ImVec4(0.2f, 0.6f, 0.9f, 1.0f)), // Blue for database
-                ICON_FK_DATABASE);
+            renderDatabaseNodeIcon();
 
             // Context menu for database node
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
@@ -195,17 +205,9 @@ namespace PostgresHierarchy {
     void renderSchemasSection(const std::shared_ptr<PostgresDatabase>& pgDb) {
         if (pgDb->getSchemas().empty()) {
             if (pgDb->isSwitchingDatabase()) {
-                // Show connecting indicator when switching databases
-                ImGui::Text("  Connecting...");
-                ImGui::SameLine();
-                UIUtils::Spinner("##connecting_spinner", 6.0f, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
+                renderLoadingState("Connecting...", "##connecting_spinner");
             } else if (pgDb->isLoadingSchemas()) {
-                // Show loading indicator with spinner
-                ImGui::Text("  Loading schemas...");
-                ImGui::SameLine();
-                UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
+                renderLoadingState("Loading schemas...", "##loading_schemas_spinner");
             } else if (!pgDb->areSchemasLoaded()) {
                 ImGui::Text("  Loading...");
             } else {
@@ -225,26 +227,15 @@ namespace PostgresHierarchy {
 
         if (dbData.schemas.empty()) {
             if (dbData.loadingSchemas) {
-                // Show loading indicator with spinner
-                ImGui::Text("  Loading schemas...");
-                ImGui::SameLine();
-                UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
+                renderLoadingState("Loading schemas...", "##loading_schemas_spinner");
             } else if (!dbData.schemasLoaded) {
                 // Start parallel schema loading for this database
                 if (dbName != pgDb->getDatabaseName()) {
                     pgDb->startSchemasLoadAsync(dbName);
-                    ImGui::Text("  Loading schemas...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
                 } else {
                     pgDb->refreshSchemas();
-                    ImGui::Text("  Loading schemas...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
                 }
+                renderLoadingState("Loading schemas...", "##loading_schemas_spinner");
             } else {
                 ImGui::Text("  No schemas found");
             }
@@ -263,29 +254,16 @@ namespace PostgresHierarchy {
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                          ImGuiTreeNodeFlags_FramePadding;
 
-        // Set the default open state based on the schema's expanded state
         if (schema.expanded) {
             schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Draw schema node with placeholder space for icon
         const std::string schemaLabel =
-            std::format("   {}###schema_{}_{}", schema.name, pgDb->getName(),
-                        schema.name); // 3 spaces for icon with unique ID
+            makeTreeNodeLabel(schema.name, std::format("schema_{}_{}", pgDb->getName(), schema.name));
         const bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
 
-        // Update the schema's expanded state based on the current UI state
         schema.expanded = schemaOpen;
-
-        // Draw colored icon over the placeholder space
-        const ImVec2 schemaIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            schemaIconPos, ImGui::GetColorU32(ImVec4(0.7f, 0.5f, 0.9f, 1.0f)), // Purple for schema
-            ICON_FA_FOLDER);
+        renderSchemaNodeIcon();
 
         if (schemaOpen) {
             // For now, render the old structure under each schema
@@ -307,29 +285,16 @@ namespace PostgresHierarchy {
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                          ImGuiTreeNodeFlags_FramePadding;
 
-        // Set the default open state based on the schema's expanded state
         if (schema.expanded) {
             schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Draw schema node with placeholder space for icon
         const std::string schemaLabel =
-            std::format("   {}###cached_schema_{}_{}", schema.name, dbName,
-                        schema.name); // 3 spaces for icon with unique ID
+            makeTreeNodeLabel(schema.name, std::format("cached_schema_{}_{}", dbName, schema.name));
         bool schemaOpen = ImGui::TreeNodeEx(schemaLabel.c_str(), schemaFlags);
 
-        // Update the schema's expanded state based on the current UI state
         schema.expanded = schemaOpen;
-
-        // Draw colored icon over the placeholder space
-        const ImVec2 schemaIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            schemaIconPos, ImGui::GetColorU32(ImVec4(0.7f, 0.5f, 0.9f, 1.0f)), // Purple for schema
-            ICON_FA_FOLDER);
+        renderSchemaNodeIcon();
 
         if (schemaOpen) {
             // Show cached tables/views/sequences for this database
@@ -358,27 +323,15 @@ namespace {
 
         const bool showSequencesSpinner = pgDb->isLoadingSequences();
 
-        // Draw tree node with placeholder space for icon
-        const std::string sequencesLabel =
-            std::format("   Sequences ({})###sequences_current_{}", pgDb->getSequences().size(),
-                        pgDb->getName()); // 3 spaces for icon, unique ID per database
+        const std::string sequencesLabel = makeTreeNodeLabel(
+            std::format("Sequences ({})", pgDb->getSequences().size()),
+            "sequences_current_" + pgDb->getName());
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
-        // Update the expansion state based on the current UI state
         pgDb->getCurrentDatabaseData().sequencesExpanded = sequencesOpen;
 
-        // Draw colored icon over the placeholder space
-        const auto sequencesSectionIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        renderSequenceNodeIcon();
 
-        ImGui::GetWindowDrawList()->AddText(
-            sequencesSectionIconPos,
-            ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for Sequences section
-            ICON_FA_LIST_OL);
-
-        // Show spinner next to Sequences node if loading
         if (showSequencesSpinner) {
             ImGui::SameLine();
             UIUtils::Spinner("##sequences_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
@@ -403,11 +356,7 @@ namespace {
         if (sequencesOpen) {
             if (pgDb->getSequences().empty()) {
                 if (pgDb->isLoadingSequences()) {
-                    // Show loading indicator with spinner
-                    ImGui::Text("  Loading sequences...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_sequences_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    renderLoadingState("Loading sequences...", "##loading_sequences_spinner");
                 } else if (!pgDb->areSequencesLoaded()) {
                     ImGui::Text("  Loading...");
                 } else {
@@ -433,22 +382,11 @@ namespace PostgresHierarchy {
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
 
-        // Draw tree node with placeholder space for icon
         const std::string sequenceLabel =
-            std::format("   {}###sequence_{}_{}", sequence, pgDb->getName(),
-                        sequence); // 3 spaces for icon with unique ID
+            makeTreeNodeLabel(sequence, std::format("sequence_{}_{}", pgDb->getName(), sequence));
         ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto sequenceIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            sequenceIconPos,
-            ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for sequences
-            ICON_FA_LIST_OL);
+        renderSequenceNodeIcon();
 
         // Context menu
         ImGui::PushID(sequenceIndex);
@@ -470,22 +408,11 @@ namespace PostgresHierarchy {
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
 
-        // Draw tree node with placeholder space for icon
         const std::string sequenceLabel =
-            std::format("   {}###cached_sequence_{}_{}", sequence, dbName,
-                        sequence); // 3 spaces for icon with unique ID
+            makeTreeNodeLabel(sequence, std::format("cached_sequence_{}_{}", dbName, sequence));
         ImGui::TreeNodeEx(sequenceLabel.c_str(), sequenceFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto sequenceIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            sequenceIconPos,
-            ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for sequences
-            ICON_FA_LIST_OL);
+        renderSequenceNodeIcon();
 
         // Context menu
         ImGui::PushID(sequenceIndex);
@@ -511,30 +438,17 @@ namespace PostgresHierarchy {
             sequencesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Show loading indicator next to Sequences node if loading
         const bool showSequencesSpinner = dbData.loadingSequences;
 
-        // Draw tree node with placeholder space for icon
-        const std::string sequencesLabel =
-            std::format("   Sequences ({})###sequences_cached_pg_{}", dbData.sequences.size(),
-                        dbName); // 3 spaces for icon, unique ID per database
+        const std::string sequencesLabel = makeTreeNodeLabel(
+            std::format("Sequences ({})", dbData.sequences.size()),
+            "sequences_cached_pg_" + dbName);
         const bool sequencesOpen = ImGui::TreeNodeEx(sequencesLabel.c_str(), sequencesFlags);
 
-        // Update the expansion state based on the current UI state
         dbData.sequencesExpanded = sequencesOpen;
 
-        // Draw colored icon over the placeholder space
-        const auto sequencesSectionIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        renderSequenceNodeIcon();
 
-        ImGui::GetWindowDrawList()->AddText(
-            sequencesSectionIconPos,
-            ImGui::GetColorU32(ImVec4(0.8f, 0.3f, 0.8f, 1.0f)), // Purple for Sequences section
-            ICON_FA_LIST_OL);
-
-        // Show spinner next to Sequences node if loading
         if (showSequencesSpinner) {
             ImGui::SameLine();
             UIUtils::Spinner(("##sequences_spinner_" + dbName).c_str(), 6.0f, 2,
@@ -544,11 +458,8 @@ namespace PostgresHierarchy {
         if (sequencesOpen) {
             if (dbData.sequences.empty()) {
                 if (dbData.loadingSequences) {
-                    // Show loading indicator with spinner
-                    ImGui::Text("  Loading sequences...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner(("##loading_sequences_spinner_" + dbName).c_str(), 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    renderLoadingState("Loading sequences...",
+                                       ("##loading_sequences_spinner_" + dbName).c_str());
                 } else if (!dbData.sequencesLoaded) {
                     // Auto-switch database and load sequences when node is expanded
                     if (dbName != pgDb->getDatabaseName()) {

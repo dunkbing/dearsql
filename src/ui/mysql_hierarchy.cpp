@@ -7,6 +7,34 @@
 #include "utils/spinner.hpp"
 #include <iostream>
 
+namespace {
+    // Helper functions to reduce duplication
+    void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(color), icon);
+    }
+
+    std::string makeTreeNodeLabel(const std::string& text, const std::string& id = "") {
+        if (id.empty()) {
+            return std::format("   {}", text);
+        }
+        return std::format("   {}###{}", text, id);
+    }
+
+    void renderLoadingState(const char* message, const char* spinnerId) {
+        ImGui::Text("  %s", message);
+        ImGui::SameLine();
+        UIUtils::Spinner(spinnerId, 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    }
+
+    void renderDatabaseNodeIcon() {
+        renderTreeNodeIcon(ICON_FK_DATABASE, ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+    }
+} // namespace
+
 namespace MySQLHierarchy {
     void renderMySQLHierarchy(const std::shared_ptr<MySQLDatabase>& mysqlDb) {
         if (mysqlDb->shouldShowAllDatabases()) {
@@ -32,25 +60,14 @@ namespace MySQLHierarchy {
             ImGui::SetNextItemOpen(true);
         }
 
-        // Draw database node with placeholder space for icon
         std::string dbName = actualDbName;
-        // Add table count if tables are loaded
         if (mysqlDb->areTablesLoaded() && !mysqlDb->getTables().empty()) {
             dbName = std::format("{} ({} tables)", dbName, mysqlDb->getTables().size());
         }
-        const std::string dbNodeLabel = std::format("   {}###db_single_{}", dbName, actualDbName);
+        const std::string dbNodeLabel = makeTreeNodeLabel(dbName, "db_single_" + actualDbName);
         const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto dbNodeIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            dbNodeIconPos,
-            ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // Orange for MySQL database
-            ICON_FK_DATABASE);
+        renderDatabaseNodeIcon();
 
         // Context menu for database node
         if (ImGui::BeginPopupContextItem("db_context_menu")) {
@@ -107,10 +124,7 @@ namespace MySQLHierarchy {
 
         // Show loading indicator if databases are being loaded
         if (mysqlDb->isLoadingDatabases() && databases.empty()) {
-            ImGui::Text("  Loading databases...");
-            ImGui::SameLine();
-            UIUtils::Spinner("##loading_databases_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(ImGuiCol_Text));
+            renderLoadingState("Loading databases...", "##loading_databases_spinner");
             return;
         }
 
@@ -131,20 +145,10 @@ namespace MySQLHierarchy {
                 ImGui::SetNextItemOpen(true);
             }
 
-            // Draw database node with placeholder space for icon
-            const std::string dbNodeLabel = std::format("   {}###db_{}", dbName, dbName);
+            const std::string dbNodeLabel = makeTreeNodeLabel(dbName, "db_" + dbName);
             const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
-            // Draw colored icon over the placeholder space
-            const auto dbNodeIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                dbNodeIconPos,
-                ImGui::GetColorU32(ImVec4(1.0f, 0.6f, 0.2f, 1.0f)), // Orange for MySQL database
-                ICON_FK_DATABASE);
+            renderDatabaseNodeIcon();
 
             // Context menu for database node
             if (ImGui::BeginPopupContextItem(("db_context_menu_" + dbName).c_str())) {
@@ -178,11 +182,7 @@ namespace MySQLHierarchy {
 
                 // Show tables and views for this database (cached or load if needed)
                 if (mysqlDb->isSwitchingDatabase()) {
-                    // Show switching indicator
-                    ImGui::Text("  Switching to database...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##switching_db_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    renderLoadingState("Switching to database...", "##switching_db_spinner");
                 } else if (dbName == mysqlDb->getDatabaseName()) {
                     // Load tables only when first expanded and not already loaded
                     if (!mysqlDb->areTablesLoaded() && !mysqlDb->isLoadingTables()) {

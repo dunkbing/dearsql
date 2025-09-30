@@ -15,6 +15,99 @@ namespace HierarchyHelpers {
     extern TableDialog& getTableDialog();
     extern DropColumnDialog& getDropColumnDialog();
 
+    // Helper functions to reduce code duplication
+    namespace {
+        // Renders an icon at the tree node position
+        void renderTreeNodeIcon(const char* icon, const ImVec4& color) {
+            const auto iconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(color), icon);
+        }
+
+        // Creates a tree node label with icon spacing and unique ID
+        std::string makeTreeNodeLabel(const std::string& text, const std::string& id = "") {
+            if (id.empty()) {
+                return std::format("   {}", text);
+            }
+            return std::format("   {}###{}", text, id);
+        }
+
+        // Attempts to switch database if needed (returns true if successful or not needed)
+        bool ensureDatabaseSwitch(const std::shared_ptr<DatabaseInterface>& db,
+                                  const std::string& targetDbName) {
+            if (db->getType() == DatabaseType::POSTGRESQL) {
+                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
+                if (pgDb && targetDbName != pgDb->getDatabaseName()) {
+                    LogPanel::debug("Auto-switching to database: " + targetDbName);
+                    auto [success, error] = pgDb->switchToDatabase(targetDbName);
+                    if (!success) {
+                        LogPanel::error("Failed to switch database: " + error);
+                        return false;
+                    }
+                }
+            } else if (db->getType() == DatabaseType::MYSQL) {
+                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
+                if (mysqlDb && targetDbName != mysqlDb->getDatabaseName()) {
+                    LogPanel::debug("Auto-switching to database: " + targetDbName);
+                    auto [success, error] = mysqlDb->switchToDatabase(targetDbName);
+                    if (!success) {
+                        LogPanel::error("Failed to switch database: " + error);
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // Gets schema name for PostgreSQL (returns empty for other DB types)
+        std::string getSchemaName(const std::shared_ptr<DatabaseInterface>& db) {
+            return (db->getType() == DatabaseType::POSTGRESQL) ? "public" : "";
+        }
+
+        // Renders loading state with spinner
+        void renderLoadingState(const char* message, const char* spinnerId) {
+            ImGui::Text("  %s", message);
+            ImGui::SameLine();
+            UIUtils::Spinner(spinnerId, 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        }
+
+        // Renders column node with context menu
+        void renderColumnNode(const std::shared_ptr<DatabaseInterface>& db,
+                              const std::string& tableName, const Column& column) {
+            const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
+            ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
+
+            std::string columnDisplay = std::format("{} ({})", name, type);
+            if (isPrimaryKey) {
+                columnDisplay += ", PK";
+            }
+            if (isNotNull) {
+                columnDisplay += ", NOT NULL";
+            }
+            columnDisplay += ")";
+
+            ImGui::PushID(name.c_str());
+            ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
+
+            if (ImGui::BeginPopupContextItem("column_context_menu")) {
+                if (ImGui::MenuItem("Edit Table")) {
+                    std::string schemaName = getSchemaName(db);
+                    getTableDialog().showTableDialog(db, tableName, schemaName);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Drop Column")) {
+                    getDropColumnDialog().showDropColumnDialog(db, tableName, name);
+                }
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+        }
+    } // anonymous namespace
+
     void renderTableNode(const std::shared_ptr<DatabaseInterface>& db, int tableIndex) {
         auto& app = Application::getInstance();
         auto& table = db->getTables()[tableIndex];
@@ -22,28 +115,16 @@ namespace HierarchyHelpers {
         ImGuiTreeNodeFlags tableFlags =
             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
-        // Set the default open state based on the table's expanded state
         if (table.expanded) {
             tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Draw tree node with placeholder space for icon
-        const std::string tableLabel = std::format("   {}###table_{}_{}", table.name, db->getName(),
-                                                   table.name); // 3 spaces for icon with unique ID
+        const std::string tableLabel =
+            makeTreeNodeLabel(table.name, std::format("table_{}_{}", db->getName(), table.name));
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
-
-        // Update the table's expanded state based on the current UI state
         table.expanded = tableOpened;
 
-        // Draw colored icon over the placeholder space
-        const auto tableIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            tableIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for tables
-            ICON_FA_TABLE);
+        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
         // Double-click to open table viewer (async loading will be handled by the tab)
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -57,12 +138,7 @@ namespace HierarchyHelpers {
                 app.getTabManager()->createTableViewerTab(db, table.name);
             }
             if (ImGui::MenuItem("Edit Table")) {
-                // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName;
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    schemaName = "public"; // TODO: Get actual schema from context
-                }
-                getTableDialog().showTableDialog(db, table.name, schemaName);
+                getTableDialog().showTableDialog(db, table.name, getSchemaName(db));
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -76,70 +152,22 @@ namespace HierarchyHelpers {
             constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                         ImGuiTreeNodeFlags_FramePadding;
-            // Draw tree node with placeholder space for icon
-            const std::string columnsLabel = "   Columns"; // 3 spaces for icon
+            const std::string columnsLabel = makeTreeNodeLabel("Columns");
             const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
 
-            // Draw colored icon over the placeholder space
-            const auto columnsIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                columnsIconPos, ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green
-                ICON_FA_TABLE_COLUMNS);
+            renderTreeNodeIcon(ICON_FA_TABLE_COLUMNS, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
 
             // Context menu for Columns section
             if (ImGui::BeginPopupContextItem("columns_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
-                    // For PostgreSQL, pass the schema name (default to "public" for now)
-                    std::string schemaName;
-                    if (db->getType() == DatabaseType::POSTGRESQL) {
-                        schemaName = "public"; // TODO: Get actual schema from context
-                    }
-                    getTableDialog().showTableDialog(db, table.name, schemaName);
+                    getTableDialog().showTableDialog(db, table.name, getSchemaName(db));
                 }
                 ImGui::EndPopup();
             }
 
             if (columnsOpened) {
                 for (const auto& column : table.columns) {
-                    const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
-                    ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-
-                    // Build column display string with type and constraints
-                    std::string columnDisplay = std::format("{} ({})", name, type);
-                    if (isPrimaryKey) {
-                        columnDisplay += ", PK";
-                    }
-                    if (isNotNull) {
-                        columnDisplay += ", NOT NULL";
-                    }
-                    columnDisplay += ")";
-
-                    ImGui::PushID(name.c_str());
-                    ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
-
-                    // Context menu for individual column
-                    if (ImGui::BeginPopupContextItem("column_context_menu")) {
-                        if (ImGui::MenuItem("Edit Table")) {
-                            // For PostgreSQL, pass the schema name (default to "public" for now)
-                            std::string schemaName;
-                            if (db->getType() == DatabaseType::POSTGRESQL) {
-                                schemaName = "public"; // TODO: Get actual schema from context
-                            }
-                            getTableDialog().showTableDialog(db, table.name, schemaName);
-                        }
-                        ImGui::Separator();
-                        if (ImGui::MenuItem("Drop Column")) {
-                            getDropColumnDialog().showDropColumnDialog(db, table.name, name);
-                        }
-                        ImGui::EndPopup();
-                    }
-                    ImGui::PopID();
+                    renderColumnNode(db, table.name, column);
                 }
                 ImGui::TreePop();
             }
@@ -148,19 +176,10 @@ namespace HierarchyHelpers {
             constexpr ImGuiTreeNodeFlags keysFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                      ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                      ImGuiTreeNodeFlags_FramePadding;
-            // Draw tree node with placeholder space for icon
-            const std::string keysLabel = "   Keys"; // 3 spaces for icon
+            const std::string keysLabel = makeTreeNodeLabel("Keys");
             bool keysOpen = ImGui::TreeNodeEx(keysLabel.c_str(), keysFlags);
 
-            // Draw colored icon over the placeholder space
-            const auto keysIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                keysIconPos, ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Keys
-                ICON_FA_KEY);
+            renderTreeNodeIcon(ICON_FA_KEY, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
 
             if (keysOpen) {
                 // Show primary key if any column is marked as primary key
@@ -210,20 +229,10 @@ namespace HierarchyHelpers {
             constexpr ImGuiTreeNodeFlags indexesFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                         ImGuiTreeNodeFlags_FramePadding;
-            // Draw tree node with placeholder space for icon
-            const std::string indexesLabel = "   Indexes"; // 3 spaces for icon
+            const std::string indexesLabel = makeTreeNodeLabel("Indexes");
             bool indexesOpen = ImGui::TreeNodeEx(indexesLabel.c_str(), indexesFlags);
 
-            // Draw colored icon over the placeholder space
-            const ImVec2 indexesIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                indexesIconPos,
-                ImGui::GetColorU32(ImVec4(0.7f, 0.7f, 0.9f, 1.0f)), // Light purple for Indexes
-                ICON_FA_MAGNIFYING_GLASS);
+            renderTreeNodeIcon(ICON_FA_MAGNIFYING_GLASS, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
 
             if (indexesOpen) {
                 if (!table.indexes.empty()) {
@@ -260,20 +269,10 @@ namespace HierarchyHelpers {
                 constexpr ImGuiTreeNodeFlags referencesFlags =
                     ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                     ImGuiTreeNodeFlags_FramePadding;
-                // Draw tree node with placeholder space for icon
-                const std::string referencesLabel = "   References"; // 3 spaces for icon
+                const std::string referencesLabel = makeTreeNodeLabel("References");
                 bool referencesOpen = ImGui::TreeNodeEx(referencesLabel.c_str(), referencesFlags);
 
-                // Draw colored icon over the placeholder space
-                const ImVec2 referencesIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-                ImGui::GetWindowDrawList()->AddText(
-                    referencesIconPos,
-                    ImGui::GetColorU32(ImVec4(0.6f, 0.8f, 1.0f, 1.0f)), // Light blue for References
-                    ICON_FA_ARROW_RIGHT_TO_BRACKET);
+                renderTreeNodeIcon(ICON_FA_ARROW_RIGHT_TO_BRACKET, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
 
                 if (referencesOpen) {
                     for (const auto& ref : table.incomingForeignKeys) {
@@ -323,20 +322,11 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                  ImGuiTreeNodeFlags_FramePadding;
 
-        // Draw tree node with placeholder space for icon
-        const std::string viewLabel = std::format("   {}###view_{}_{}", view.name, db->getName(),
-                                                  view.name); // 3 spaces for icon with unique ID
+        const std::string viewLabel =
+            makeTreeNodeLabel(view.name, std::format("view_{}_{}", db->getName(), view.name));
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto viewIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
-            ICON_FA_EYE);
+        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
         const auto& tabManager = app.getTabManager();
         // Double-click to open view viewer (async loading will be handled by the tab)
@@ -378,13 +368,11 @@ namespace HierarchyHelpers {
             tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Show loading indicator next to Tables node if loading
         const bool showTablesSpinner = db->isLoadingTables();
 
-        // Draw tree node with placeholder space for icon
-        const std::string tablesLabel =
-            std::format("   Tables ({})###tables_current_{}", db->getTables().size(),
-                        db->getName()); // 3 spaces for icon, unique ID per database
+        const std::string tablesLabel = makeTreeNodeLabel(
+            std::format("Tables ({})", db->getTables().size()),
+            std::format("tables_current_{}", db->getName()));
         const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
         // Update the expansion state based on the current UI state
@@ -396,18 +384,8 @@ namespace HierarchyHelpers {
             mysqlDb->getCurrentDatabaseData().tablesExpanded = tablesOpen;
         }
 
-        // Draw colored icon over the placeholder space
-        const auto tablesSectionIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
-        ImGui::GetWindowDrawList()->AddText(
-            tablesSectionIconPos,
-            ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for Tables section
-            ICON_FA_TABLE);
-
-        // Show spinner next to Tables node if loading
         if (showTablesSpinner) {
             ImGui::SameLine();
             UIUtils::Spinner("##tables_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
@@ -416,12 +394,7 @@ namespace HierarchyHelpers {
         // Context menu for Tables section
         if (ImGui::BeginPopupContextItem("tables_context_menu")) {
             if (ImGui::MenuItem("Create New Table")) {
-                // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName;
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    schemaName = "public"; // TODO: Get actual schema from context
-                }
-                getTableDialog().showCreateTableDialog(db, schemaName);
+                getTableDialog().showCreateTableDialog(db, getSchemaName(db));
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Refresh")) {
@@ -441,11 +414,7 @@ namespace HierarchyHelpers {
         if (tablesOpen) {
             if (db->getTables().empty()) {
                 if (db->isLoadingTables()) {
-                    // Show loading indicator with spinner
-                    ImGui::Text("  Loading tables...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_tables_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    renderLoadingState("Loading tables...", "##loading_tables_spinner");
                 } else if (!db->areTablesLoaded()) {
                     ImGui::Text("  Loading...");
                 } else {
@@ -480,13 +449,11 @@ namespace HierarchyHelpers {
             viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Show loading indicator next to Views node if loading
         const bool showViewsSpinner = db->isLoadingViews();
 
-        // Draw tree node with placeholder space for icon
-        const std::string viewsLabel =
-            std::format("   Views ({})###views_current_{}", db->getViews().size(),
-                        db->getName()); // 3 spaces for icon, unique ID per database
+        const std::string viewsLabel = makeTreeNodeLabel(
+            std::format("Views ({})", db->getViews().size()),
+            std::format("views_current_{}", db->getName()));
         const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
         // Update the expansion state based on the current UI state
@@ -498,18 +465,8 @@ namespace HierarchyHelpers {
             mysqlDb->getCurrentDatabaseData().viewsExpanded = viewsOpen;
         }
 
-        // Draw colored icon over the placeholder space
-        const auto viewsSectionIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
-        ImGui::GetWindowDrawList()->AddText(
-            viewsSectionIconPos,
-            ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for Views section
-            ICON_FA_EYE);
-
-        // Show spinner next to Views node if loading
         if (showViewsSpinner) {
             ImGui::SameLine();
             UIUtils::Spinner("##views_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
@@ -524,11 +481,7 @@ namespace HierarchyHelpers {
         if (viewsOpen) {
             if (db->getViews().empty()) {
                 if (db->isLoadingViews()) {
-                    // Show loading indicator with spinner
-                    ImGui::Text("  Loading views...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_views_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    renderLoadingState("Loading views...", "##loading_views_spinner");
                 } else if (!db->areViewsLoaded()) {
                     ImGui::Text("  Loading...");
                 } else {
@@ -576,10 +529,7 @@ namespace HierarchyHelpers {
 
         // Show loading indicator if loading
         if (redisDb->isLoadingTables()) {
-            ImGui::Text("  Loading keys...");
-            ImGui::SameLine();
-            UIUtils::Spinner("##loading_redis_keys_spinner", 6.0f, 2,
-                             ImGui::GetColorU32(ImGuiCol_Text));
+            renderLoadingState("Loading keys...", "##loading_redis_keys_spinner");
             return;
         }
 
@@ -597,23 +547,11 @@ namespace HierarchyHelpers {
                                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                              ImGuiTreeNodeFlags_FramePadding;
 
-                // Draw tree node with placeholder space for icon
-                // Display user-friendly name but use the actual pattern for functionality
                 const std::string displayName = (table.name == "*") ? "All Keys" : table.name;
-                const std::string keyGroupLabel =
-                    std::format("   {}", displayName); // 3 spaces for icon
+                const std::string keyGroupLabel = makeTreeNodeLabel(displayName);
                 ImGui::TreeNodeEx(keyGroupLabel.c_str(), keyGroupFlags);
 
-                // Draw colored icon over the placeholder space
-                const ImVec2 keyGroupIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-                ImGui::GetWindowDrawList()->AddText(
-                    keyGroupIconPos,
-                    ImGui::GetColorU32(ImVec4(1.0f, 0.8f, 0.2f, 1.0f)), // Gold for Redis keys
-                    ICON_FA_KEY);
+                renderTreeNodeIcon(ICON_FA_KEY, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
 
                 // Double-click to open Redis key viewer
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -642,19 +580,10 @@ namespace HierarchyHelpers {
                                                   ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                   ImGuiTreeNodeFlags_FramePadding;
 
-        const std::string queryLabel = "   Query"; // 3 spaces for icon
+        const std::string queryLabel = makeTreeNodeLabel("Query");
         ImGui::TreeNodeEx(queryLabel.c_str(), queryFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto queryIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            queryIconPos,
-            ImGui::GetColorU32(ImVec4(0.4f, 0.8f, 1.0f, 1.0f)), // Light blue for query
-            ICON_FA_TERMINAL);
+        renderTreeNodeIcon(ICON_FA_TERMINAL, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
 
         // Double-click to open Redis query editor
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -676,18 +605,10 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                  ImGuiTreeNodeFlags_FramePadding;
 
-        const std::string infoLabel = "   Server Info###redis_info"; // 3 spaces for icon
+        const std::string infoLabel = makeTreeNodeLabel("Server Info", "redis_info");
         const bool infoOpen = ImGui::TreeNodeEx(infoLabel.c_str(), infoFlags);
 
-        // Draw colored icon over the placeholder space
-        const auto infoIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            infoIconPos, ImGui::GetColorU32(ImVec4(0.4f, 0.8f, 1.0f, 1.0f)), // Light blue for info
-            ICON_FA_CIRCLE_INFO);
+        renderTreeNodeIcon(ICON_FA_CIRCLE_INFO, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
 
         if (infoOpen) {
             ImGui::Text("  Host: %s", redisDb->getConnectionString().c_str());
@@ -718,21 +639,14 @@ namespace HierarchyHelpers {
                 tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string tablesLabel =
-                std::format("   Tables ({})###tables_cached_pg_{}", dbData.tables.size(), dbName);
+            const std::string tablesLabel = makeTreeNodeLabel(
+                std::format("Tables ({})", dbData.tables.size()),
+                std::format("tables_cached_pg_{}", dbName));
             const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
-            // Update the expansion state based on the current UI state
             pgDb->getDatabaseData(dbName).tablesExpanded = tablesOpen;
 
-            const auto tablesSectionIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(tablesSectionIconPos,
-                                                ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
-                                                ICON_FA_TABLE);
+            renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
             if (dbData.loadingTables) {
                 ImGui::SameLine();
@@ -743,9 +657,7 @@ namespace HierarchyHelpers {
             // Context menu for cached Tables section (PostgreSQL)
             if (ImGui::BeginPopupContextItem(("cached_tables_context_menu_pg_" + dbName).c_str())) {
                 if (ImGui::MenuItem("Create New Table")) {
-                    // For PostgreSQL, pass the schema name (default to "public" for now)
-                    std::string schemaName = "public"; // TODO: Get actual schema from context
-                    getTableDialog().showCreateTableDialog(db, schemaName);
+                    getTableDialog().showCreateTableDialog(db, getSchemaName(db));
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Refresh")) {
@@ -804,21 +716,14 @@ namespace HierarchyHelpers {
                 tablesFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string tablesLabel = std::format("   Tables ({})###tables_cached_mysql_{}",
-                                                        dbData.tables.size(), dbName);
+            const std::string tablesLabel = makeTreeNodeLabel(
+                std::format("Tables ({})", dbData.tables.size()),
+                std::format("tables_cached_mysql_{}", dbName));
             const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), tablesFlags);
 
-            // Update the expansion state based on the current UI state
             dbData.tablesExpanded = tablesOpen;
 
-            const auto tablesSectionIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(tablesSectionIconPos,
-                                                ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)),
-                                                ICON_FA_TABLE);
+            renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
             if (dbData.loadingTables) {
                 ImGui::SameLine();
@@ -895,21 +800,14 @@ namespace HierarchyHelpers {
                 viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string viewsLabel =
-                std::format("   Views ({})###views_cached_pg_{}", dbData.views.size(), dbName);
+            const std::string viewsLabel = makeTreeNodeLabel(
+                std::format("Views ({})", dbData.views.size()),
+                std::format("views_cached_pg_{}", dbName));
             const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
-            // Update the expansion state based on the current UI state
             dbData.viewsExpanded = viewsOpen;
 
-            const auto viewsSectionIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(viewsSectionIconPos,
-                                                ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
-                                                ICON_FA_EYE);
+            renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
             if (dbData.loadingViews) {
                 ImGui::SameLine();
@@ -957,21 +855,14 @@ namespace HierarchyHelpers {
                 viewsFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
 
-            const std::string viewsLabel =
-                std::format("   Views ({})###views_cached_mysql_{}", dbData.views.size(), dbName);
+            const std::string viewsLabel = makeTreeNodeLabel(
+                std::format("Views ({})", dbData.views.size()),
+                std::format("views_cached_mysql_{}", dbName));
             const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), viewsFlags);
 
-            // Update the expansion state based on the current UI state
             dbData.viewsExpanded = viewsOpen;
 
-            const auto viewsSectionIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(viewsSectionIconPos,
-                                                ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)),
-                                                ICON_FA_EYE);
+            renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
             if (dbData.loadingViews) {
                 ImGui::SameLine();
@@ -1040,50 +931,18 @@ namespace HierarchyHelpers {
             tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        // Draw tree node with placeholder space for icon
         const std::string tableLabel =
-            std::format("   {}###cached_table_{}_{}", table->name, dbName,
-                        table->name); // 3 spaces for icon with unique ID
+            makeTreeNodeLabel(table->name, std::format("cached_table_{}_{}", dbName, table->name));
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
 
-        // Update the table's expanded state based on the current UI state
         table->expanded = tableOpened;
 
-        // Draw colored icon over the placeholder space
-        const ImVec2 tableIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            tableIconPos, ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f)), // Green for tables
-            ICON_FA_TABLE);
+        renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            // Auto-switch to the correct database before opening table viewer
-            if (db->getType() == DatabaseType::POSTGRESQL) {
-                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                if (pgDb && dbName != pgDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                    " to view table: " + table->name);
-                    auto [success, error] = pgDb->switchToDatabase(dbName);
-                    if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
-                        return;
-                    }
-                }
-            } else if (db->getType() == DatabaseType::MYSQL) {
-                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                    " to view table: " + table->name);
-                    auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                    if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
-                        return;
-                    }
-                }
+            if (!ensureDatabaseSwitch(db, dbName)) {
+                return;
             }
             app.getTabManager()->createTableViewerTab(db, table->name);
         }
@@ -1092,43 +951,15 @@ namespace HierarchyHelpers {
         ImGui::PushID(tableIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                // Auto-switch to the correct database before opening table viewer
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                    if (pgDb && dbName != pgDb->getDatabaseName()) {
-                        LogPanel::debug("Auto-switching to database: " + dbName +
-                                        " to view table: " + table->name);
-                        auto [success, error] = pgDb->switchToDatabase(dbName);
-                        if (!success) {
-                            LogPanel::error("Failed to switch database: " + error);
-                            ImGui::EndPopup();
-                            ImGui::PopID();
-                            return;
-                        }
-                    }
-                } else if (db->getType() == DatabaseType::MYSQL) {
-                    const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                    if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                        LogPanel::debug("Auto-switching to database: " + dbName +
-                                        " to view table: " + table->name);
-                        auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                        if (!success) {
-                            LogPanel::error("Failed to switch database: " + error);
-                            ImGui::EndPopup();
-                            ImGui::PopID();
-                            return;
-                        }
-                    }
+                if (!ensureDatabaseSwitch(db, dbName)) {
+                    ImGui::EndPopup();
+                    ImGui::PopID();
+                    return;
                 }
                 app.getTabManager()->createTableViewerTab(db, table->name);
             }
             if (ImGui::MenuItem("Edit Table")) {
-                // For PostgreSQL, pass the schema name (default to "public" for now)
-                std::string schemaName;
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    schemaName = "public"; // TODO: Get actual schema from context
-                }
-                getTableDialog().showTableDialog(db, table->name, schemaName);
+                getTableDialog().showTableDialog(db, table->name, getSchemaName(db));
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -1142,68 +973,22 @@ namespace HierarchyHelpers {
             constexpr ImGuiTreeNodeFlags columnsFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                         ImGuiTreeNodeFlags_FramePadding;
-            const std::string columnsLabel = "   Columns"; // 3 spaces for icon
+            const std::string columnsLabel = makeTreeNodeLabel("Columns");
             const bool columnsOpened = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
 
-            const auto columnsIconPos =
-                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                       ImGui::GetItemRectMin().y +
-                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-            ImGui::GetWindowDrawList()->AddText(
-                columnsIconPos,
-                ImGui::GetColorU32(ImVec4(0.5f, 0.9f, 0.5f, 1.0f)), // Light green for Columns
-                ICON_FA_TABLE_COLUMNS);
+            renderTreeNodeIcon(ICON_FA_TABLE_COLUMNS, ImVec4(0.5f, 0.9f, 0.5f, 1.0f));
 
             // Context menu for Columns section
             if (ImGui::BeginPopupContextItem("cached_columns_context_menu")) {
                 if (ImGui::MenuItem("Edit Table")) {
-                    // For PostgreSQL, pass the schema name (default to "public" for now)
-                    std::string schemaName;
-                    if (db->getType() == DatabaseType::POSTGRESQL) {
-                        schemaName = "public"; // TODO: Get actual schema from context
-                    }
-                    getTableDialog().showTableDialog(db, table->name, schemaName);
+                    getTableDialog().showTableDialog(db, table->name, getSchemaName(db));
                 }
                 ImGui::EndPopup();
             }
 
             if (columnsOpened) {
                 for (const auto& column : table->columns) {
-                    const auto& [name, type, comment, isPrimaryKey, isNotNull] = column;
-                    ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-
-                    std::string columnDisplay = std::format("{} ({})", name, type);
-                    if (isPrimaryKey) {
-                        columnDisplay += ", PK";
-                    }
-                    if (isNotNull) {
-                        columnDisplay += ", NOT NULL";
-                    }
-                    columnDisplay += ")";
-
-                    ImGui::PushID(name.c_str());
-                    ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
-
-                    // Context menu for individual column
-                    if (ImGui::BeginPopupContextItem("cached_column_context_menu")) {
-                        if (ImGui::MenuItem("Edit Table")) {
-                            // For PostgreSQL, pass the schema name (default to "public" for now)
-                            std::string schemaName = "";
-                            if (db->getType() == DatabaseType::POSTGRESQL) {
-                                schemaName = "public"; // TODO: Get actual schema from context
-                            }
-                            getTableDialog().showTableDialog(db, table->name, schemaName);
-                        }
-                        ImGui::Separator();
-                        if (ImGui::MenuItem("Drop Column")) {
-                            getDropColumnDialog().showDropColumnDialog(db, table->name, name);
-                        }
-                        ImGui::EndPopup();
-                    }
-                    ImGui::PopID();
+                    renderColumnNode(db, table->name, column);
                 }
                 ImGui::TreePop();
             }
@@ -1238,47 +1023,17 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                  ImGuiTreeNodeFlags_FramePadding;
 
-        // Draw tree node with placeholder space for icon
-        const std::string viewLabel = std::format("   {}###cached_view_{}_{}", view->name, dbName,
-                                                  view->name); // 3 spaces for icon with unique ID
+        const std::string viewLabel =
+            makeTreeNodeLabel(view->name, std::format("cached_view_{}_{}", dbName, view->name));
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
-        // Draw colored icon over the placeholder space
-        const ImVec2 viewIconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-        ImGui::GetWindowDrawList()->AddText(
-            viewIconPos, ImGui::GetColorU32(ImVec4(0.9f, 0.6f, 0.2f, 1.0f)), // Orange for views
-            ICON_FA_EYE);
+        renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
         const auto& tabManager = app.getTabManager();
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            // Auto-switch to the correct database before opening view viewer
-            if (db->getType() == DatabaseType::POSTGRESQL) {
-                const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                if (pgDb && dbName != pgDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                    " to view: " + view->name);
-                    auto [success, error] = pgDb->switchToDatabase(dbName);
-                    if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
-                        return;
-                    }
-                }
-            } else if (db->getType() == DatabaseType::MYSQL) {
-                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + dbName +
-                                    " to view: " + view->name);
-                    auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                    if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
-                        return;
-                    }
-                }
+            if (!ensureDatabaseSwitch(db, dbName)) {
+                return;
             }
             tabManager->createTableViewerTab(db, view->name);
         }
@@ -1287,33 +1042,10 @@ namespace HierarchyHelpers {
         ImGui::PushID(viewIndex);
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                // Auto-switch to the correct database before opening view viewer
-                if (db->getType() == DatabaseType::POSTGRESQL) {
-                    const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-                    if (pgDb && dbName != pgDb->getDatabaseName()) {
-                        LogPanel::debug("Auto-switching to database: " + dbName +
-                                        " to view: " + view->name);
-                        auto [success, error] = pgDb->switchToDatabase(dbName);
-                        if (!success) {
-                            LogPanel::error("Failed to switch database: " + error);
-                            ImGui::EndPopup();
-                            ImGui::PopID();
-                            return;
-                        }
-                    }
-                } else if (db->getType() == DatabaseType::MYSQL) {
-                    const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                    if (mysqlDb && dbName != mysqlDb->getDatabaseName()) {
-                        LogPanel::debug("Auto-switching to database: " + dbName +
-                                        " to view: " + view->name);
-                        auto [success, error] = mysqlDb->switchToDatabase(dbName);
-                        if (!success) {
-                            LogPanel::error("Failed to switch database: " + error);
-                            ImGui::EndPopup();
-                            ImGui::PopID();
-                            return;
-                        }
-                    }
+                if (!ensureDatabaseSwitch(db, dbName)) {
+                    ImGui::EndPopup();
+                    ImGui::PopID();
+                    return;
                 }
                 tabManager->createTableViewerTab(db, view->name);
             }

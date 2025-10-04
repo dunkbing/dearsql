@@ -40,6 +40,12 @@ public:
     [[nodiscard]] virtual void* getConnection() const = 0;
     [[nodiscard]] virtual DatabaseType getType() const = 0;
 
+    // Saved connection ID (for app state persistence)
+    virtual void setSavedConnectionId(int id) {}
+    [[nodiscard]] virtual int getSavedConnectionId() const {
+        return -1;
+    }
+
     // Table management
     virtual void refreshTables() = 0;
     [[nodiscard]] virtual const std::vector<Table>& getTables() const = 0;

@@ -14,7 +14,6 @@
 #include <csignal>
 #include <imgui_internal.h>
 #include <iostream>
-#include <ranges>
 
 #ifdef USE_OPENGL_BACKEND
 #include "imgui_impl_opengl3.h"
@@ -327,10 +326,14 @@ void Application::restorePreviousConnections() {
 
         if (conn.type == "postgresql") {
             db = std::make_shared<PostgresDatabase>(conn.name, conn.host, conn.port, conn.database,
-                                                    conn.username, conn.password, true);
+                                                    conn.username, conn.password,
+                                                    conn.showAllDatabases);
         } else if (conn.type == "mysql") {
-            db = std::make_shared<MySQLDatabase>(conn.name, conn.host, conn.port, conn.database,
-                                                 conn.username, conn.password);
+            // Use 'mysql' as default database if none specified (needed for connection)
+            std::string dbName = conn.database.empty() ? "mysql" : conn.database;
+            db = std::make_shared<MySQLDatabase>(conn.name, conn.host, conn.port, dbName,
+                                                 conn.username, conn.password,
+                                                 conn.showAllDatabases);
         } else if (conn.type == "sqlite") {
             db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
         } else if (conn.type == "redis") {
@@ -339,6 +342,8 @@ void Application::restorePreviousConnections() {
         }
 
         if (db) {
+            // Store the saved connection ID in the database instance
+            db->setSavedConnectionId(conn.id);
             LogPanel::debug("Added connection (will connect when expanded): " + conn.name);
             databases.push_back(db);
         }

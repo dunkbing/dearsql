@@ -122,6 +122,12 @@ public:
     const std::string& getPassword() const {
         return password;
     }
+    void setSavedConnectionId(int id) override {
+        savedConnectionId = id;
+    }
+    [[nodiscard]] int getSavedConnectionId() const override {
+        return savedConnectionId;
+    }
 
     bool areDatabasesLoaded() const {
         return databasesLoaded;
@@ -161,6 +167,7 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
+    int savedConnectionId = -1;
     std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
     // Per-database data structures
     struct DatabaseData {

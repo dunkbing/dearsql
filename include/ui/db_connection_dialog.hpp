@@ -3,8 +3,10 @@
 #include "app_state.hpp"
 #include "database/db_interface.hpp"
 #include <atomic>
+#include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 
 enum class DialogState {
     TypeSelection,
@@ -45,6 +47,7 @@ private:
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
     std::shared_ptr<DatabaseInterface> editingDatabase = nullptr;
+    int editingConnectionId = -1;
 
     // Async connection
     std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;
@@ -71,16 +74,23 @@ private:
 
     // Dialog rendering functions
     void renderTypeSelection();
-    void renderPostgresConnection();
-    void renderMySQLConnection();
+    void renderSqlConnectionDialog(DatabaseType type);
     void renderRedisConnection();
     void renderSavedConnections();
     void loadSavedConnections();
 
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
-    std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
-    std::shared_ptr<DatabaseInterface> createMySQLDatabase();
+    std::shared_ptr<DatabaseInterface>
+    createPostgreSQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
+    std::shared_ptr<DatabaseInterface>
+    createMySQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
+    std::shared_ptr<DatabaseInterface>
+    createSqlDatabase(const std::string& defaultDatabase,
+                      const std::optional<std::string>& passwordOverride,
+                      const std::function<std::shared_ptr<DatabaseInterface>(
+                          const std::string&, const std::string&, int, const std::string&,
+                          const std::string&, const std::string&, bool)>& factory);
     std::shared_ptr<DatabaseInterface> createRedisDatabase();
 
     // Async connection helpers

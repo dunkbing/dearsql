@@ -86,6 +86,12 @@ public:
     void setAttemptedConnection(bool attempted) override;
     const std::string& getLastConnectionError() const override;
     void setLastConnectionError(const std::string& error) override;
+    void setSavedConnectionId(int id) override {
+        savedConnectionId = id;
+    }
+    [[nodiscard]] int getSavedConnectionId() const override {
+        return savedConnectionId;
+    }
 
     // Redis-specific methods
     std::vector<RedisKey> getKeys(const std::string& pattern = "*", int limit = 1000) const;
@@ -132,6 +138,7 @@ private:
     bool sequencesLoaded = false;
     bool attemptedConnection = false;
     std::string lastConnectionError;
+    int savedConnectionId = -1;
 
     // Async connection state
     bool connecting = false;

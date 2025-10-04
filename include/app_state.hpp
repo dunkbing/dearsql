@@ -15,7 +15,8 @@ struct SavedConnection {
     std::string password;
     std::string path; // sqlite files
     std::string lastUsed;
-    int workspaceId = 1; // Associated workspace ID, defaults to 1 (default workspace)
+    int workspaceId = 1; // default workspace
+    bool showAllDatabases = false;
 };
 
 struct Workspace {
@@ -36,6 +37,7 @@ public:
 
     // Connection history management
     bool saveConnection(const SavedConnection& connection) const;
+    bool updateConnection(const SavedConnection& connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
     bool deleteConnection(int connectionId) const;
     bool updateLastUsed(int connectionId) const;

@@ -11,6 +11,8 @@ MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, i
                              const std::string& password, bool showAllDatabases)
     : name(name), host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
+    std::cout << "DEBUG: Creating MySQLDatabase with database = '" << database
+              << "', showAllDatabases = " << showAllDatabases << std::endl;
     connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
 
     if (!username.empty()) {
@@ -89,11 +91,16 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         initializeConnectionPool(database, connectionString);
         connected = true;
 
-        // Start loading databases immediately if showAllDatabases is enabled
-        if (showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
-            std::cout << "Starting async database loading after connection..." << std::endl;
-            refreshDatabaseNames();
+        // Verify the pool was created successfully
+        auto* pool = getConnectionPoolForDatabase(database);
+        if (!pool) {
+            std::cerr << "ERROR: Connection pool was not created for database: " << database
+                      << std::endl;
+            connected = false;
+            return {false, "Failed to create connection pool"};
         }
+        std::cout << "DEBUG: Connection pool created successfully for database: " << database
+                  << std::endl;
 
         return {true, ""};
     } catch (const soci::soci_error& e) {
@@ -147,11 +154,20 @@ void MySQLDatabase::checkConnectionStatusAsync() {
         auto result = connectionFuture.get();
         setAttemptedConnection(true);
         if (result.first) {
+            std::cout << "DEBUG: Async connection completed successfully. showAllDatabases = "
+                      << showAllDatabases << ", databasesLoaded = " << databasesLoaded
+                      << ", loadingDatabases = " << loadingDatabases.load() << std::endl;
             // Start loading databases if showAllDatabases is enabled and not already loading
             if (showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
                 std::cout << "Starting async database loading after async connection..."
                           << std::endl;
                 refreshDatabaseNames();
+            } else {
+                std::cout << "DEBUG: NOT loading databases. Reason: "
+                          << (showAllDatabases ? "" : "showAllDatabases is false, ")
+                          << (databasesLoaded ? "databasesLoaded is true, " : "")
+                          << (loadingDatabases.load() ? "loadingDatabases is true" : "")
+                          << std::endl;
             }
         } else {
             setLastConnectionError(result.second);
@@ -1004,10 +1020,20 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
             return result;
         }
 
+        // Check if we have a valid connection pool before trying to query
+        if (!isConnected()) {
+            std::cerr << "Cannot load databases: not connected" << std::endl;
+            return result;
+        }
+
+        std::cout << "DEBUG: isConnected() = true, attempting to get session for database: "
+                  << database << std::endl;
+
         const std::string sqlQuery = "SHOW DATABASES";
 
         std::cout << "Executing async query to get database names..." << std::endl;
         const auto sql = getSession();
+        std::cout << "DEBUG: Session obtained successfully" << std::endl;
         const soci::rowset rs = sql->prepare << sqlQuery;
 
         for (const auto& row : rs) {

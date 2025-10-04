@@ -58,7 +58,9 @@ bool AppState::createTables() {
             path TEXT,
             salt TEXT,
             last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            workspace_id INTEGER DEFAULT 1,
+            show_all_databases INTEGER DEFAULT 0
         );
     )";
 
@@ -83,27 +85,31 @@ bool AppState::createTables() {
     bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) &&
                    executeSQL(createWorkspacesTable);
 
-    // Check if workspace_id column exists, add it if it doesn't
-    const std::string checkColumnSql = R"(
-        SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name='workspace_id';
-    )";
+    auto ensureColumnExists = [this](std::string columnName, std::string alterSql) {
+        const std::string checkSql =
+            "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name='" +
+            columnName + "';";
 
-    sqlite3_stmt* stmt;
-    int rc = sqlite3_prepare_v2(db, checkColumnSql.c_str(), -1, &stmt, nullptr);
-    if (rc == SQLITE_OK) {
-        bool columnExists = false;
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            columnExists = sqlite3_column_int(stmt, 0) > 0;
-        }
-        sqlite3_finalize(stmt);
+        sqlite3_stmt* stmt;
+        int rc = sqlite3_prepare_v2(db, checkSql.c_str(), -1, &stmt, nullptr);
+        if (rc == SQLITE_OK) {
+            bool columnExists = false;
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                columnExists = sqlite3_column_int(stmt, 0) > 0;
+            }
+            sqlite3_finalize(stmt);
 
-        if (!columnExists) {
-            const std::string addWorkspaceIdColumn = R"(
-                ALTER TABLE saved_connections ADD COLUMN workspace_id INTEGER DEFAULT 1;
-            )";
-            executeSQL(addWorkspaceIdColumn);
+            if (!columnExists) {
+                executeSQL(alterSql);
+            }
         }
-    }
+    };
+
+    ensureColumnExists("workspace_id",
+                       "ALTER TABLE saved_connections ADD COLUMN workspace_id INTEGER DEFAULT 1;");
+    ensureColumnExists(
+        "show_all_databases",
+        "ALTER TABLE saved_connections ADD COLUMN show_all_databases INTEGER DEFAULT 0;");
 
     // Ensure default workspace exists
     if (success) {
@@ -129,8 +135,9 @@ bool AppState::executeSQL(const std::string& sql) const {
 bool AppState::saveConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections
-        (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?);
+        (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
+         show_all_databases)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?);
     )";
 
     sqlite3_stmt* stmt;
@@ -161,6 +168,7 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
         stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
         -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 10, connection.workspaceId);
+    sqlite3_bind_int(stmt, 11, connection.showAllDatabases ? 1 : 0);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -173,12 +181,65 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
     return true;
 }
 
+bool AppState::updateConnection(const SavedConnection& connection) const {
+    const std::string sql = R"(
+        UPDATE saved_connections
+        SET name = ?, type = ?, host = ?, port = ?, database_name = ?,
+            username = ?, password = ?, path = ?, salt = ?, last_used = CURRENT_TIMESTAMP,
+            workspace_id = ?, show_all_databases = ?
+        WHERE id = ?;
+    )";
+    std::cout << "update_connection " << sql << "\n";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare update statement: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    // Encrypt sensitive data
+    std::string salt = CryptoUtils::generateSalt();
+    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+    std::string encryptedUsername =
+        connection.username.empty() ? "" : CryptoUtils::encrypt(connection.username, encryptionKey);
+    std::string encryptedPassword =
+        connection.password.empty() ? "" : CryptoUtils::encrypt(connection.password, encryptionKey);
+
+    sqlite3_bind_text(stmt, 1, connection.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, connection.type.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 3, connection.host.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 4, connection.port);
+    sqlite3_bind_text(stmt, 5, connection.database.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 8, connection.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(
+        stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
+        -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 10, connection.workspaceId);
+    sqlite3_bind_int(stmt, 11, connection.showAllDatabases ? 1 : 0);
+    sqlite3_bind_int(stmt, 12, connection.id);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to update connection: " << sqlite3_errmsg(db) << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 std::vector<SavedConnection> AppState::getSavedConnections() const {
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used,
-               COALESCE(workspace_id, 1) as workspace_id
+               COALESCE(workspace_id, 1) as workspace_id,
+               COALESCE(show_all_databases, 0) as show_all_databases
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -259,6 +320,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
+        conn.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
 
         connections.push_back(conn);
     }
@@ -475,7 +537,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
-        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id
+        SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
+               COALESCE(show_all_databases, 0) as show_all_databases
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;
@@ -552,6 +615,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
+        conn.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
 
         connections.push_back(conn);
     }

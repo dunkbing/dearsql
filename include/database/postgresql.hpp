@@ -1,6 +1,6 @@
 #pragma once
 
-#include "db_interface.hpp"
+#include "base_database.hpp"
 #include <atomic>
 #include <future>
 #include <mutex>
@@ -10,20 +10,16 @@
 #include <soci/soci.h>
 #include <unordered_map>
 
-class PostgresDatabase final : public DatabaseInterface {
+class PostgresDatabase final : public BaseDatabaseImpl {
 public:
     PostgresDatabase(const std::string& name, const std::string& host, int port,
                      const std::string& database, const std::string& username,
                      const std::string& password, bool showAllDatabases = false);
     ~PostgresDatabase() override;
 
-    // Connection management
+    // Connection management (BaseDatabaseImpl handles common async)
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
-    bool isConnected() const override;
-    bool isConnecting() const override;
-    void startConnectionAsync() override;
-    void checkConnectionStatusAsync() override;
 
     // Database info
     const std::string& getName() const override;
@@ -33,35 +29,13 @@ public:
     DatabaseType getType() const override;
     const std::string& getDatabaseName() const;
 
-    // Table management
+    // Schema management (BaseDatabaseImpl provides base getters/setters)
     void refreshTables() override;
     void refreshTables(const std::string& schemaName);
-    const std::vector<Table>& getTables() const override;
-    std::vector<Table>& getTables() override;
-    bool areTablesLoaded() const override;
-    void setTablesLoaded(bool loaded) override;
-    bool isLoadingTables() const override;
-    void checkTablesStatusAsync() override;
-
-    // View management
     void refreshViews() override;
     void refreshViews(const std::string& schemaName);
-    const std::vector<Table>& getViews() const override;
-    std::vector<Table>& getViews() override;
-    bool areViewsLoaded() const override;
-    void setViewsLoaded(bool loaded) override;
-    bool isLoadingViews() const override;
-    void checkViewsStatusAsync() override;
-
-    // Sequence management
     void refreshSequences() override;
     void refreshSequences(const std::string& schemaName);
-    const std::vector<std::string>& getSequences() const override;
-    std::vector<std::string>& getSequences() override;
-    bool areSequencesLoaded() const override;
-    void setSequencesLoaded(bool loaded) override;
-    bool isLoadingSequences() const override;
-    void checkSequencesStatusAsync() override;
 
     // Schema management
     void refreshSchemas();
@@ -73,6 +47,9 @@ public:
     void checkSchemasStatusAsync();
     void checkSchemasStatusAsync(const std::string& dbName);
     void startSchemasLoadAsync(const std::string& dbName);
+    void checkTablesStatusAsync() override;
+    void checkViewsStatusAsync() override;
+    void checkSequencesStatusAsync() override;
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();
@@ -97,12 +74,6 @@ public:
     const std::string& getPassword() const {
         return password;
     }
-    void setSavedConnectionId(int id) override {
-        savedConnectionId = id;
-    }
-    [[nodiscard]] int getSavedConnectionId() const override {
-        return savedConnectionId;
-    }
     bool areDatabasesLoaded() const {
         return databasesLoaded;
     }
@@ -124,35 +95,9 @@ public:
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName) override;
 
-    // Async table data loading
+    // Async table data loading (BaseDatabaseImpl provides implementation)
     void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                  const std::string& whereClause = "") override;
-    bool isLoadingTableData(const std::string& tableName) const override;
-    void checkTableDataStatusAsync(const std::string& tableName) override;
-    bool hasTableDataResult(const std::string& tableName) const override;
-    std::vector<std::vector<std::string>> getTableDataResult(const std::string& tableName) override;
-    std::vector<std::string> getColumnNamesResult(const std::string& tableName) override;
-    int getRowCountResult(const std::string& tableName) override;
-    void clearTableDataResult(const std::string& tableName) override;
-
-    // Legacy methods for backward compatibility
-    bool isLoadingTableData() const override;
-    void checkTableDataStatusAsync() override;
-    bool hasTableDataResult() const override;
-    std::vector<std::vector<std::string>> getTableDataResult() override;
-    std::vector<std::string> getColumnNamesResult() override;
-    int getRowCountResult() override;
-    void clearTableDataResult() override;
-
-    // UI state
-    bool isExpanded() const override;
-    void setExpanded(bool expanded) override;
-
-    // Connection attempt tracking
-    bool hasAttemptedConnection() const override;
-    void setAttemptedConnection(bool attempted) override;
-    const std::string& getLastConnectionError() const override;
-    void setLastConnectionError(const std::string& error) override;
 
 protected:
     std::vector<std::string> getTableNames() override;
@@ -185,7 +130,7 @@ protected:
     std::vector<std::string> getSchemaNames() const;
 
 private:
-    std::string name;
+    // PostgreSQL-specific connection details (base class handles common state)
     std::string host;
     int port;
     std::string database;
@@ -193,7 +138,6 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
-    int savedConnectionId = -1;
     std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
     // Per-schema data within a database
     struct SchemaData {
@@ -232,11 +176,7 @@ private:
     std::unordered_map<std::string, DatabaseData> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
-    bool connected = false;
-    bool expanded = false;
     bool databasesLoaded = false;
-    bool attemptedConnection = false;
-    std::string lastConnectionError;
 
     // Async database loading
     std::atomic<bool> loadingDatabases = false;
@@ -269,12 +209,6 @@ public:
     void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 
 private:
-    // Async connection
-    std::atomic<bool> connecting = false;
-    std::future<std::pair<bool, std::string>> connectionFuture;
-
-    // Async table data loading - per table
-    TableDataLoader tableDataLoader;
 
     // Thread synchronization
     mutable std::mutex sessionMutex;

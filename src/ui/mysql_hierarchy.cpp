@@ -111,14 +111,20 @@ namespace MySQLHierarchy {
                                              ImGuiTreeNodeFlags_FramePadding;
 
             // Keep the node expanded if it was previously expanded
-            if (mysqlDb->isDatabaseExpanded(dbName)) {
+            const bool shouldBeExpanded = mysqlDb->isDatabaseExpanded(dbName);
+            if (shouldBeExpanded) {
                 dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                // Also explicitly set the next item to be open to prevent collapse
-                ImGui::SetNextItemOpen(true);
             }
 
             const std::string dbNodeLabel =
                 HierarchyHelpers::makeTreeNodeLabel(dbName, "db_" + dbName);
+
+            // Force the node open every frame if it should be expanded
+            // This prevents ImGui from collapsing it when content changes (e.g., tables loading)
+            if (shouldBeExpanded) {
+                ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+            }
+
             const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
             renderMySQLDatabaseIcon();
@@ -139,17 +145,15 @@ namespace MySQLHierarchy {
             }
 
             if (dbNodeOpen) {
-                // Track that this database is expanded
-                if (!mysqlDb->isDatabaseExpanded(dbName)) {
-                    mysqlDb->setDatabaseExpanded(dbName, true);
+                // Track that this database is expanded (do this immediately)
+                mysqlDb->setDatabaseExpanded(dbName, true);
 
-                    // Only switch database if we're not already connected to it
-                    if (dbName != mysqlDb->getDatabaseName()) {
-                        if (!mysqlDb->isSwitchingDatabase()) {
-                            std::cout << "Starting async switch to database: " << dbName
-                                      << std::endl;
-                            mysqlDb->switchToDatabaseAsync(dbName);
-                        }
+                // Only switch database if we're not already connected to it
+                if (dbName != mysqlDb->getDatabaseName()) {
+                    if (!mysqlDb->isSwitchingDatabase()) {
+                        std::cout << "Starting async switch to database: " << dbName
+                                  << std::endl;
+                        mysqlDb->switchToDatabaseAsync(dbName);
                     }
                 }
 

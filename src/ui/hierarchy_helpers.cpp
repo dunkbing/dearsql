@@ -11,6 +11,10 @@
 #include "ui/table_dialog.hpp"
 #include "utils/spinner.hpp"
 
+namespace {
+    constexpr const char* TREE_LABEL_PREFIX = "   ";
+}
+
 namespace HierarchyHelpers {
     // Forward declarations for external dialogs
     extern TableDialog& getTableDialog();
@@ -26,10 +30,12 @@ namespace HierarchyHelpers {
     }
 
     std::string makeTreeNodeLabel(const std::string& text, const std::string& id) {
+        // `id` must remain stable across frames; otherwise ImGui treats the node as brand new and
+        // collapses it when the display text changes (e.g., when async data updates the label).
         if (id.empty()) {
-            return std::format("   {}", text);
+            return std::format("{}{}", TREE_LABEL_PREFIX, text);
         }
-        return std::format("   {}###{}", text, id);
+        return std::format("{}{}###{}", TREE_LABEL_PREFIX, text, id);
     }
 
     void renderLoadingState(const char* message, const char* spinnerId) {

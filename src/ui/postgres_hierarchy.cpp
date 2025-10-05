@@ -36,16 +36,25 @@ namespace PostgresHierarchy {
 
     void renderSingleDatabaseHierarchy(const std::shared_ptr<PostgresDatabase>& pgDb) {
         // First show the connected database as a child node
-        constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                                   ImGuiTreeNodeFlags_FramePadding;
+        ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                         ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                         ImGuiTreeNodeFlags_FramePadding;
 
-        std::string dbName = pgDb->getDatabaseName();
+        const std::string actualDbName = pgDb->getDatabaseName();
+
+        // Keep the node expanded if it was previously expanded
+        if (pgDb->isDatabaseExpanded(actualDbName)) {
+            dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        }
+
+        std::string dbDisplayName = actualDbName;
         if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
-            dbName = std::format("{} ({} schemas)", dbName, pgDb->getSchemas().size());
+            dbDisplayName =
+                std::format("{} ({} schemas)", actualDbName, pgDb->getSchemas().size());
         }
         const std::string dbNodeLabel =
-            HierarchyHelpers::makeTreeNodeLabel(dbName, "db_single_" + dbName);
+            HierarchyHelpers::makeTreeNodeLabel(dbDisplayName, "db_single_" + actualDbName);
         const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
         renderPostgresDatabaseIcon();
@@ -66,6 +75,9 @@ namespace PostgresHierarchy {
         }
 
         if (dbNodeOpen) {
+            if (!pgDb->isDatabaseExpanded(actualDbName)) {
+                pgDb->setDatabaseExpanded(actualDbName, true);
+            }
             // Load schemas when database node is opened
             if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
                 LogPanel::debug(
@@ -77,6 +89,8 @@ namespace PostgresHierarchy {
             renderSchemasSection(pgDb);
 
             ImGui::TreePop();
+        } else if (pgDb->isDatabaseExpanded(actualDbName)) {
+            pgDb->setDatabaseExpanded(actualDbName, false);
         }
     }
 
@@ -115,15 +129,31 @@ namespace PostgresHierarchy {
                                              ImGuiTreeNodeFlags_FramePadding;
 
             // Keep the node expanded if it was previously expanded
-            if (pgDb->isDatabaseExpanded(dbName)) {
+            const bool shouldBeExpanded = pgDb->isDatabaseExpanded(dbName);
+            const auto& dbData = pgDb->getDatabaseData(dbName);
+
+            LogPanel::debug(std::format("DB {} - shouldExpand={}, loadingSchemas={}, schemasLoaded={}, schemasSize={}",
+                dbName, shouldBeExpanded, dbData.loadingSchemas.load(), dbData.schemasLoaded, dbData.schemas.size()));
+
+            if (shouldBeExpanded) {
                 dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-                // Also explicitly set the next item to be open to prevent collapse
-                ImGui::SetNextItemOpen(true);
             }
 
             const std::string dbNodeLabel =
                 HierarchyHelpers::makeTreeNodeLabel(dbName, "db_" + dbName);
+
+            // Force the node open every frame if it should be expanded
+            // This prevents ImGui from collapsing it when content changes (e.g., schemas loading)
+            if (shouldBeExpanded) {
+                ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+            }
+
             const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
+
+            LogPanel::debug(std::format("DB {} - dbNodeOpen={}", dbName, dbNodeOpen));
+
+            // Detect if user clicked to toggle this node
+            const bool wasClicked = ImGui::IsItemClicked();
 
             renderPostgresDatabaseIcon();
 
@@ -143,16 +173,14 @@ namespace PostgresHierarchy {
             }
 
             if (dbNodeOpen) {
-                // Track that this database is expanded
-                if (!pgDb->isDatabaseExpanded(dbName)) {
-                    pgDb->setDatabaseExpanded(dbName, true);
+                // Track that this database is expanded (do this immediately)
+                pgDb->setDatabaseExpanded(dbName, true);
 
-                    // Only switch database if we're not already connected to it
-                    if (dbName != pgDb->getDatabaseName()) {
-                        if (!pgDb->isSwitchingDatabase()) {
-                            LogPanel::debug("Starting async switch to database: " + dbName);
-                            pgDb->switchToDatabaseAsync(dbName);
-                        }
+                // Only switch database if we're not already connected to it
+                if (dbName != pgDb->getDatabaseName()) {
+                    if (!pgDb->isSwitchingDatabase()) {
+                        LogPanel::debug("Starting async switch to database: " + dbName);
+                        pgDb->switchToDatabaseAsync(dbName);
                     }
                 }
 
@@ -173,10 +201,13 @@ namespace PostgresHierarchy {
 
                 ImGui::TreePop();
             } else {
-                // Node is collapsed, mark as not expanded
-                if (pgDb->isDatabaseExpanded(dbName)) {
+                // Node is reported as closed
+                // Only clear expanded state if user actually clicked to collapse it
+                if (wasClicked && pgDb->isDatabaseExpanded(dbName)) {
+                    LogPanel::debug("Database node " + dbName + " collapsed by user click");
                     pgDb->setDatabaseExpanded(dbName, false);
                 }
+                // Otherwise, trust SetNextItemOpen to reopen it next frame
             }
         }
     }
@@ -457,6 +488,8 @@ namespace PostgresHierarchy {
 
         if (schema.expanded) {
             schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            // Force the schema to stay open every frame if it should be expanded
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         }
 
         const std::string schemaLabel = HierarchyHelpers::makeTreeNodeLabel(
@@ -492,6 +525,8 @@ namespace PostgresHierarchy {
 
         if (schema.expanded) {
             schemaFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+            // Force the schema to stay open every frame if it should be expanded
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         }
 
         const std::string schemaLabel = HierarchyHelpers::makeTreeNodeLabel(

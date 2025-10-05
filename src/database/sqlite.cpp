@@ -1,14 +1,14 @@
 #include "database/sqlite.hpp"
-#include <chrono>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <typeinfo>
 #include <utility>
 
-SQLiteDatabase::SQLiteDatabase(std::string name, std::string path)
-    : name(std::move(name)), path(std::move(path)) {}
+SQLiteDatabase::SQLiteDatabase(std::string name_, std::string path)
+    : path(std::move(path)) {
+    name = std::move(name_);
+}
 
 SQLiteDatabase::~SQLiteDatabase() {
     SQLiteDatabase::disconnect();
@@ -19,18 +19,14 @@ std::pair<bool, std::string> SQLiteDatabase::connect() {
         return {true, ""};
     }
 
-    attemptedConnection = true;
-
     try {
         session = std::make_unique<soci::session>(soci::sqlite3, path);
         std::cout << "Successfully connected to database: " << path << std::endl;
         connected = true;
-        lastConnectionError.clear();
         return {true, ""};
     } catch (const soci::soci_error& e) {
         std::string error = e.what();
         std::cerr << "Can't open database: " << error << std::endl;
-        lastConnectionError = error;
         return {false, error};
     }
 }
@@ -42,9 +38,6 @@ void SQLiteDatabase::disconnect() {
     connected = false;
 }
 
-bool SQLiteDatabase::isConnected() const {
-    return connected;
-}
 
 const std::string& SQLiteDatabase::getName() const {
     return name;
@@ -93,21 +86,6 @@ void SQLiteDatabase::refreshTables() {
     tablesLoaded = true;
 }
 
-const std::vector<Table>& SQLiteDatabase::getTables() const {
-    return tables;
-}
-
-std::vector<Table>& SQLiteDatabase::getTables() {
-    return tables;
-}
-
-bool SQLiteDatabase::areTablesLoaded() const {
-    return tablesLoaded;
-}
-
-void SQLiteDatabase::setTablesLoaded(bool loaded) {
-    tablesLoaded = loaded;
-}
 
 std::string SQLiteDatabase::executeQuery(const std::string& query) {
     if (!isConnected()) {
@@ -325,29 +303,6 @@ int SQLiteDatabase::getRowCount(const std::string& tableName) {
     }
 }
 
-bool SQLiteDatabase::isExpanded() const {
-    return expanded;
-}
-
-void SQLiteDatabase::setExpanded(bool exp) {
-    expanded = exp;
-}
-
-bool SQLiteDatabase::hasAttemptedConnection() const {
-    return attemptedConnection;
-}
-
-void SQLiteDatabase::setAttemptedConnection(bool attempted) {
-    attemptedConnection = attempted;
-}
-
-const std::string& SQLiteDatabase::getLastConnectionError() const {
-    return lastConnectionError;
-}
-
-void SQLiteDatabase::setLastConnectionError(const std::string& error) {
-    lastConnectionError = error;
-}
 
 void* SQLiteDatabase::getConnection() const {
     return session.get();
@@ -498,21 +453,6 @@ void SQLiteDatabase::refreshViews() {
     viewsLoaded = true;
 }
 
-const std::vector<Table>& SQLiteDatabase::getViews() const {
-    return views;
-}
-
-std::vector<Table>& SQLiteDatabase::getViews() {
-    return views;
-}
-
-bool SQLiteDatabase::areViewsLoaded() const {
-    return viewsLoaded;
-}
-
-void SQLiteDatabase::setViewsLoaded(bool loaded) {
-    viewsLoaded = loaded;
-}
 
 // Sequence management methods (not applicable for SQLite)
 void SQLiteDatabase::refreshSequences() {
@@ -520,21 +460,6 @@ void SQLiteDatabase::refreshSequences() {
     sequencesLoaded = true; // No sequences in SQLite
 }
 
-const std::vector<std::string>& SQLiteDatabase::getSequences() const {
-    return sequences;
-}
-
-std::vector<std::string>& SQLiteDatabase::getSequences() {
-    return sequences;
-}
-
-bool SQLiteDatabase::areSequencesLoaded() const {
-    return sequencesLoaded;
-}
-
-void SQLiteDatabase::setSequencesLoaded(bool loaded) {
-    sequencesLoaded = loaded;
-}
 
 std::vector<std::string> SQLiteDatabase::getViewNames() {
     std::vector<std::string> viewNames;
@@ -585,126 +510,42 @@ std::vector<std::string> SQLiteDatabase::getSequenceNames() {
     return {}; // SQLite doesn't have sequences
 }
 
-bool SQLiteDatabase::isConnecting() const {
-    return false; // SQLite connections are synchronous and fast
-}
-
-void SQLiteDatabase::startConnectionAsync() {
-    // For SQLite, just call the synchronous connect method
-    // since file-based connections are typically fast
-    connect();
-}
-
-void SQLiteDatabase::checkConnectionStatusAsync() {
-    // No-op for SQLite since connection is synchronous
-}
-
-// Async table data loading methods
+// Async table data loading (delegates to TableDataLoader in base class)
 void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                              const std::string& whereClause) {
-    if (loadingTableData) {
-        return; // Already loading
-    }
-
-    loadingTableData = true;
-    hasTableDataReady = false;
-    tableDataResult.clear();
-    columnNamesResult.clear();
-    rowCountResult = 0;
-
-    // Start async operation that loads everything
-    tableDataFuture =
-        std::async(std::launch::async, [this, tableName, limit, offset, whereClause]() {
-            try {
-                if (!whereClause.empty()) {
-                    // For filtered queries, use executeQueryStructured
-                    const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
-                                                  whereClause + " LIMIT " + std::to_string(limit) +
-                                                  " OFFSET " + std::to_string(offset);
-                    auto [columns, data] = executeQueryStructured(dataQuery);
-                    tableDataResult = data;
-                    columnNamesResult = columns;
-
-                    // Get filtered count
-                    const std::string countQuery =
-                        "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
-                    auto [countCols, countData] = executeQueryStructured(countQuery);
-                    if (!countData.empty() && !countData[0].empty()) {
-                        rowCountResult = std::stoi(countData[0][0]);
-                    } else {
-                        rowCountResult = 0;
-                    }
-                } else {
-                    // No filter - use existing methods
-                    tableDataResult = getTableData(tableName, limit, offset);
-                    columnNamesResult = getColumnNames(tableName);
-                    rowCountResult = getRowCount(tableName);
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Error in async table data load: " << e.what() << std::endl;
-                // Clear results on error
-                tableDataResult.clear();
-                columnNamesResult.clear();
-                rowCountResult = 0;
-            }
-        });
-}
-
-bool SQLiteDatabase::isLoadingTableData() const {
-    return loadingTableData;
-}
-
-void SQLiteDatabase::checkTableDataStatusAsync() {
-    if (!loadingTableData) {
-        return;
-    }
-
-    if (tableDataFuture.valid() &&
-        tableDataFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    tableDataLoader.start(tableName, [this, tableName, limit, offset, whereClause](TableDataLoadState& state) {
         try {
-            tableDataFuture.get(); // This will throw if there was an exception
-            hasTableDataReady = true;
-            loadingTableData = false;
+            if (!whereClause.empty()) {
+                // For filtered queries, use executeQueryStructured
+                const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
+                                              whereClause + " LIMIT " + std::to_string(limit) +
+                                              " OFFSET " + std::to_string(offset);
+                auto [columns, data] = executeQueryStructured(dataQuery);
+                state.tableData = std::move(data);
+                state.columnNames = std::move(columns);
+
+                // Get filtered count
+                const std::string countQuery =
+                    "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
+                auto [countCols, countData] = executeQueryStructured(countQuery);
+                if (!countData.empty() && !countData[0].empty()) {
+                    state.rowCount = std::stoi(countData[0][0]);
+                } else {
+                    state.rowCount = 0;
+                }
+            } else {
+                // No filter - use existing methods
+                state.tableData = getTableData(tableName, limit, offset);
+                state.columnNames = getColumnNames(tableName);
+                state.rowCount = getRowCount(tableName);
+            }
+            state.ready = true;
         } catch (const std::exception& e) {
-            std::cerr << "Error loading table data: " << e.what() << std::endl;
-            loadingTableData = false;
-            hasTableDataReady = false;
-            // Clear results on error
-            tableDataResult.clear();
-            columnNamesResult.clear();
-            rowCountResult = 0;
+            std::cerr << "Error in async table data load: " << e.what() << std::endl;
+            state.lastError = e.what();
+            state.tableData.clear();
+            state.columnNames.clear();
+            state.rowCount = 0;
         }
-    }
-}
-
-bool SQLiteDatabase::hasTableDataResult() const {
-    return hasTableDataReady;
-}
-
-std::vector<std::vector<std::string>> SQLiteDatabase::getTableDataResult() {
-    if (hasTableDataReady) {
-        return tableDataResult;
-    }
-    return {};
-}
-
-std::vector<std::string> SQLiteDatabase::getColumnNamesResult() {
-    if (hasTableDataReady) {
-        return columnNamesResult;
-    }
-    return {};
-}
-
-int SQLiteDatabase::getRowCountResult() {
-    if (hasTableDataReady) {
-        return rowCountResult;
-    }
-    return 0;
-}
-
-void SQLiteDatabase::clearTableDataResult() {
-    hasTableDataReady = false;
-    tableDataResult.clear();
-    columnNamesResult.clear();
-    rowCountResult = 0;
+    });
 }

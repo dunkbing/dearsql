@@ -9,8 +9,9 @@
 MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, int port,
                              const std::string& database, const std::string& username,
                              const std::string& password, bool showAllDatabases)
-    : name(name), host(host), port(port), database(database), username(username),
+    : host(host), port(port), database(database), username(username),
       password(password), showAllDatabases(showAllDatabases) {
+    this->name = name;
     std::cout << "DEBUG: Creating MySQLDatabase with database = '" << database
               << "', showAllDatabases = " << showAllDatabases << std::endl;
     connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
@@ -26,7 +27,6 @@ MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, i
 
 MySQLDatabase::~MySQLDatabase() {
     // Stop all async operations before cleaning up
-    connecting = false;
     loadingDatabases = false;
     switchingDatabase = false;
 
@@ -46,9 +46,6 @@ MySQLDatabase::~MySQLDatabase() {
         }
     }
 
-    if (connectionFuture.valid()) {
-        connectionFuture.wait();
-    }
     if (databasesFuture.valid()) {
         databasesFuture.wait();
     }
@@ -127,53 +124,7 @@ void MySQLDatabase::disconnect() {
     // Don't clear per-database cache on disconnect
 }
 
-bool MySQLDatabase::isConnected() const {
-    return connected && getConnectionPoolForDatabase(database) != nullptr;
-}
 
-bool MySQLDatabase::isConnecting() const {
-    return connecting.load();
-}
-
-void MySQLDatabase::startConnectionAsync() {
-    if (connecting.load()) {
-        return;
-    }
-
-    connecting.store(true);
-    connectionFuture = std::async(std::launch::async, [this]() {
-        auto result = connect();
-        connecting.store(false);
-        return result;
-    });
-}
-
-void MySQLDatabase::checkConnectionStatusAsync() {
-    if (connectionFuture.valid() &&
-        connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        auto result = connectionFuture.get();
-        setAttemptedConnection(true);
-        if (result.first) {
-            std::cout << "DEBUG: Async connection completed successfully. showAllDatabases = "
-                      << showAllDatabases << ", databasesLoaded = " << databasesLoaded
-                      << ", loadingDatabases = " << loadingDatabases.load() << std::endl;
-            // Start loading databases if showAllDatabases is enabled and not already loading
-            if (showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
-                std::cout << "Starting async database loading after async connection..."
-                          << std::endl;
-                refreshDatabaseNames();
-            } else {
-                std::cout << "DEBUG: NOT loading databases. Reason: "
-                          << (showAllDatabases ? "" : "showAllDatabases is false, ")
-                          << (databasesLoaded ? "databasesLoaded is true, " : "")
-                          << (loadingDatabases.load() ? "loadingDatabases is true" : "")
-                          << std::endl;
-            }
-        } else {
-            setLastConnectionError(result.second);
-        }
-    }
-}
 
 const std::string& MySQLDatabase::getName() const {
     return name;
@@ -305,25 +256,6 @@ void MySQLDatabase::checkTablesStatusAsync() {
     }
 }
 
-const std::vector<Table>& MySQLDatabase::getTables() const {
-    return getCurrentDatabaseData().tables;
-}
-
-std::vector<Table>& MySQLDatabase::getTables() {
-    return getCurrentDatabaseData().tables;
-}
-
-bool MySQLDatabase::areTablesLoaded() const {
-    return getCurrentDatabaseData().tablesLoaded;
-}
-
-void MySQLDatabase::setTablesLoaded(bool loaded) {
-    getCurrentDatabaseData().tablesLoaded = loaded;
-}
-
-bool MySQLDatabase::isLoadingTables() const {
-    return getCurrentDatabaseData().loadingTables.load();
-}
 
 void MySQLDatabase::refreshViews() {
     if (isLoadingViews()) {
@@ -423,50 +355,12 @@ void MySQLDatabase::checkViewsStatusAsync() {
     }
 }
 
-const std::vector<Table>& MySQLDatabase::getViews() const {
-    return getCurrentDatabaseData().views;
-}
-
-std::vector<Table>& MySQLDatabase::getViews() {
-    return getCurrentDatabaseData().views;
-}
-
-bool MySQLDatabase::areViewsLoaded() const {
-    return getCurrentDatabaseData().viewsLoaded;
-}
-
-void MySQLDatabase::setViewsLoaded(bool loaded) {
-    getCurrentDatabaseData().viewsLoaded = loaded;
-}
-
-bool MySQLDatabase::isLoadingViews() const {
-    return getCurrentDatabaseData().loadingViews.load();
-}
 
 void MySQLDatabase::refreshSequences() {
     getCurrentDatabaseData().sequences.clear();
     getCurrentDatabaseData().sequencesLoaded = true;
 }
 
-const std::vector<std::string>& MySQLDatabase::getSequences() const {
-    return getCurrentDatabaseData().sequences;
-}
-
-std::vector<std::string>& MySQLDatabase::getSequences() {
-    return getCurrentDatabaseData().sequences;
-}
-
-bool MySQLDatabase::areSequencesLoaded() const {
-    return getCurrentDatabaseData().sequencesLoaded;
-}
-
-void MySQLDatabase::setSequencesLoaded(bool loaded) {
-    getCurrentDatabaseData().sequencesLoaded = loaded;
-}
-
-bool MySQLDatabase::isLoadingSequences() const {
-    return false;
-}
 
 void MySQLDatabase::checkSequencesStatusAsync() {
     // No-op for MySQL
@@ -707,86 +601,7 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
     }
 }
 
-bool MySQLDatabase::isLoadingTableData(const std::string& tableName) const {
-    return tableDataLoader.isLoading(tableName);
-}
 
-bool MySQLDatabase::isLoadingTableData() const {
-    return tableDataLoader.isAnyLoading();
-}
-
-void MySQLDatabase::checkTableDataStatusAsync(const std::string& tableName) {
-    tableDataLoader.check(tableName);
-}
-
-void MySQLDatabase::checkTableDataStatusAsync() {
-    tableDataLoader.checkAll();
-}
-
-bool MySQLDatabase::hasTableDataResult(const std::string& tableName) const {
-    return tableDataLoader.hasResult(tableName);
-}
-
-bool MySQLDatabase::hasTableDataResult() const {
-    return tableDataLoader.hasAnyResult();
-}
-
-std::vector<std::vector<std::string>>
-MySQLDatabase::getTableDataResult(const std::string& tableName) {
-    return tableDataLoader.getTableData(tableName);
-}
-
-std::vector<std::vector<std::string>> MySQLDatabase::getTableDataResult() {
-    return tableDataLoader.getFirstAvailableTableData();
-}
-
-std::vector<std::string> MySQLDatabase::getColumnNamesResult(const std::string& tableName) {
-    return tableDataLoader.getColumnNames(tableName);
-}
-
-std::vector<std::string> MySQLDatabase::getColumnNamesResult() {
-    return tableDataLoader.getFirstAvailableColumnNames();
-}
-
-int MySQLDatabase::getRowCountResult(const std::string& tableName) {
-    return tableDataLoader.getRowCount(tableName);
-}
-
-int MySQLDatabase::getRowCountResult() {
-    return tableDataLoader.getFirstAvailableRowCount();
-}
-
-void MySQLDatabase::clearTableDataResult(const std::string& tableName) {
-    tableDataLoader.clear(tableName);
-}
-
-void MySQLDatabase::clearTableDataResult() {
-    tableDataLoader.clearAll();
-}
-
-bool MySQLDatabase::isExpanded() const {
-    return expanded;
-}
-
-void MySQLDatabase::setExpanded(bool expanded) {
-    this->expanded = expanded;
-}
-
-bool MySQLDatabase::hasAttemptedConnection() const {
-    return attemptedConnection;
-}
-
-void MySQLDatabase::setAttemptedConnection(bool attempted) {
-    attemptedConnection = attempted;
-}
-
-const std::string& MySQLDatabase::getLastConnectionError() const {
-    return lastConnectionError;
-}
-
-void MySQLDatabase::setLastConnectionError(const std::string& error) {
-    lastConnectionError = error;
-}
 
 std::vector<std::string> MySQLDatabase::getTableNames() {
     if (!connect().first) {
@@ -1085,13 +900,13 @@ std::pair<bool, std::string> MySQLDatabase::switchToDatabase(const std::string& 
         std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
                   << std::endl;
         connected = false;
-        lastConnectionError = e.what();
+        setLastConnectionError(e.what());
         return {false, e.what()};
     } catch (const std::exception& e) {
         std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
                   << std::endl;
         connected = false;
-        lastConnectionError = e.what();
+        setLastConnectionError(e.what());
         return {false, e.what()};
     }
 }
@@ -1127,12 +942,12 @@ void MySQLDatabase::checkDatabaseSwitchStatusAsync() {
             } else {
                 std::cout << "Async database switch failed to: " << targetDatabaseName << " - "
                           << error << std::endl;
-                lastConnectionError = error;
+                setLastConnectionError(error);
             }
         } catch (const std::exception& e) {
             std::cerr << "Error in async database switch: " << e.what() << std::endl;
             switchingDatabase = false;
-            lastConnectionError = e.what();
+            setLastConnectionError(e.what());
         }
     }
 }

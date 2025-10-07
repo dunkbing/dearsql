@@ -209,7 +209,6 @@ public:
     void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 
 private:
-
     // Thread synchronization
     mutable std::mutex sessionMutex;
 

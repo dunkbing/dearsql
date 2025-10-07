@@ -1,6 +1,6 @@
 #include "database/postgresql.hpp"
 #include "database/db.hpp"
-#include "ui/log_panel.hpp"
+#include "utils/logger.hpp"
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -12,8 +12,8 @@
 PostgresDatabase::PostgresDatabase(const std::string& name, const std::string& host, const int port,
                                    const std::string& database, const std::string& username,
                                    const std::string& password, const bool showAllDatabases)
-    : host(host), port(port), database(database), username(username),
-      password(password), showAllDatabases(showAllDatabases) {
+    : host(host), port(port), database(database), username(username), password(password),
+      showAllDatabases(showAllDatabases) {
     this->name = name;
     connectionString = buildConnectionString(database);
     if (database.empty()) {
@@ -127,8 +127,8 @@ void PostgresDatabase::checkSchemaTablesStatusAsync(const std::string& schemaNam
         schemaData.tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             schemaData.tables = schemaData.tablesFuture.get();
-            LogPanel::info("Async table loading completed for schema " + schemaName + ". Found " +
-                           std::to_string(schemaData.tables.size()) + " tables.");
+            Logger::info("Async table loading completed for schema " + schemaName + ". Found " +
+                         std::to_string(schemaData.tables.size()) + " tables.");
             schemaData.tablesLoaded = true;
             schemaData.loadingTables = false;
         } catch (const std::exception& e) {
@@ -146,8 +146,8 @@ void PostgresDatabase::checkSchemaViewsStatusAsync(const std::string& schemaName
         schemaData.viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             schemaData.views = schemaData.viewsFuture.get();
-            LogPanel::info("Async view loading completed for schema " + schemaName + ". Found " +
-                           std::to_string(schemaData.views.size()) + " views.");
+            Logger::info("Async view loading completed for schema " + schemaName + ". Found " +
+                         std::to_string(schemaData.views.size()) + " views.");
             schemaData.viewsLoaded = true;
             schemaData.loadingViews = false;
         } catch (const std::exception& e) {
@@ -165,9 +165,8 @@ void PostgresDatabase::checkSchemaSequencesStatusAsync(const std::string& schema
         schemaData.sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             schemaData.sequences = schemaData.sequencesFuture.get();
-            LogPanel::info("Async sequence loading completed for schema " + schemaName +
-                           ". Found " + std::to_string(schemaData.sequences.size()) +
-                           " sequences.");
+            Logger::info("Async sequence loading completed for schema " + schemaName + ". Found " +
+                         std::to_string(schemaData.sequences.size()) + " sequences.");
             schemaData.sequencesLoaded = true;
             schemaData.loadingSequences = false;
         } catch (const std::exception& e) {
@@ -189,13 +188,13 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 
     try {
         initializeConnectionPool(database, connectionString);
-        LogPanel::info("Successfully connected to PostgreSQL database: " + database);
+        Logger::info("Successfully connected to PostgreSQL database: " + database);
         connected = true;
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
         if (showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
-            LogPanel::debug("Starting async database loading after connection...");
+            Logger::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
@@ -215,7 +214,6 @@ void PostgresDatabase::disconnect() {
     connectionPools.clear();
     connected = false;
 }
-
 
 const std::string& PostgresDatabase::getName() const {
     return name;
@@ -244,14 +242,13 @@ void PostgresDatabase::refreshTables() {
 void PostgresDatabase::refreshTables(const std::string& schemaName) {
     std::cout << ("Refreshing tables for database: " + name + " schema: " + schemaName) << "\n";
     if (!isConnected()) {
-        LogPanel::warn("Not connected to database, cannot refresh tables");
+        Logger::warn("Not connected to database, cannot refresh tables");
         getSchemaData(schemaName).tablesLoaded = true;
         return;
     }
 
     startRefreshTableAsync(schemaName);
 }
-
 
 std::string PostgresDatabase::executeQuery(const std::string& query) {
     if (!isConnected()) {
@@ -365,7 +362,7 @@ PostgresDatabase::executeQueryStructured(const std::string& query) {
 
         return {columnNames, data};
     } catch (const soci::soci_error& e) {
-        LogPanel::error("[soci] Postgres Error: " + std::string(e.what()));
+        Logger::error("[soci] Postgres Error: " + std::string(e.what()));
         return {columnNames, data};
     }
 }
@@ -454,7 +451,6 @@ int PostgresDatabase::getRowCount(const std::string& tableName) {
     }
 }
 
-
 void* PostgresDatabase::getConnection() const {
     return getConnectionPoolForDatabase(database);
 }
@@ -477,7 +473,7 @@ std::vector<std::string> PostgresDatabase::getTableNames(const std::string& sche
 
         for (const auto& row : rs) {
             auto tableName = row.get<std::string>(0);
-            LogPanel::debug("Found table: " + tableName);
+            Logger::debug("Found table: " + tableName);
             tableNames.push_back(tableName);
         }
     } catch (const soci::soci_error& e) {
@@ -633,9 +629,9 @@ void PostgresDatabase::refreshViews() {
 }
 
 void PostgresDatabase::refreshViews(const std::string& schemaName) {
-    LogPanel::debug("Refreshing views for database: " + name + " schema: " + schemaName);
+    Logger::debug("Refreshing views for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
-        LogPanel::warn("Not connected to database, cannot refresh views");
+        Logger::warn("Not connected to database, cannot refresh views");
         getSchemaData(schemaName).viewsLoaded = true;
         return;
     }
@@ -643,23 +639,21 @@ void PostgresDatabase::refreshViews(const std::string& schemaName) {
     startRefreshViewAsync(schemaName);
 }
 
-
 // Sequence management methods
 void PostgresDatabase::refreshSequences() {
     refreshSequences("public");
 }
 
 void PostgresDatabase::refreshSequences(const std::string& schemaName) {
-    LogPanel::debug("Refreshing sequences for database: " + name + " schema: " + schemaName);
+    Logger::debug("Refreshing sequences for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
-        LogPanel::warn("Not connected to database, cannot refresh sequences");
+        Logger::warn("Not connected to database, cannot refresh sequences");
         getSchemaData(schemaName).sequencesLoaded = true;
         return;
     }
 
     startRefreshSequenceAsync(schemaName);
 }
-
 
 std::vector<std::string> PostgresDatabase::getViewNames() {
     return getViewNames("public");
@@ -747,7 +741,6 @@ std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& s
     std::cout << "Query completed. Found " << sequenceNames.size() << " sequences." << std::endl;
     return sequenceNames;
 }
-
 
 void PostgresDatabase::checkTablesStatusAsync() {
     // Check all schemas for table loading completion
@@ -873,8 +866,8 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync(const std::string
             buildForeignKeyLookup(table);
 
             result.push_back(table);
-            LogPanel::debug("Loaded table: " + tableName + " with " +
-                            std::to_string(table.columns.size()) + " columns");
+            Logger::debug("Loaded table: " + tableName + " with " +
+                          std::to_string(table.columns.size()) + " columns");
         }
 
         populateIncomingForeignKeys(result);
@@ -885,7 +878,6 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync(const std::string
 
     return result;
 }
-
 
 void PostgresDatabase::checkViewsStatusAsync() {
     // Check all schemas for view loading completion
@@ -937,7 +929,7 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string&
             }
         }
 
-        LogPanel::debug("Found " + std::to_string(viewNames.size()) + " views, loading columns...");
+        Logger::debug("Found " + std::to_string(viewNames.size()) + " views, loading columns...");
 
         if (viewNames.empty() || !schemaData.loadingViews.load()) {
             return result;
@@ -995,8 +987,8 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string&
                             viewName;             // PostgreSQL: connection.database.schema.view
             view.columns = viewColumns[viewName]; // Will be empty if view has no columns
             result.push_back(view);
-            LogPanel::debug("Loaded view: " + viewName + " with " +
-                            std::to_string(view.columns.size()) + " columns");
+            Logger::debug("Loaded view: " + viewName + " with " +
+                          std::to_string(view.columns.size()) + " columns");
         }
 
     } catch (const soci::soci_error& e) {
@@ -1005,7 +997,6 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string&
 
     return result;
 }
-
 
 void PostgresDatabase::checkSequencesStatusAsync() {
     // Check all schemas for sequence loading completion
@@ -1066,7 +1057,6 @@ std::vector<std::string> PostgresDatabase::getSequencesAsync(const std::string& 
     std::cout << "Query completed. Found " << result.size() << " sequences." << std::endl;
     return result;
 }
-
 
 // Async table data loading methods
 void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
@@ -1145,7 +1135,6 @@ void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int
     }
 }
 
-
 // Schema management methods
 void PostgresDatabase::refreshSchemas() {
     std::cout << "Refreshing schemas for database: " << name << std::endl;
@@ -1191,7 +1180,7 @@ void PostgresDatabase::checkSchemasStatusAsync(const std::string& dbName) {
         schemaFutureIt->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             dbData.schemas = schemaFutureIt->second.get();
-            LogPanel::info(std::format(
+            Logger::info(std::format(
                 "Async parallel schema loading completed for database {}. Found {} schemas", dbName,
                 dbData.schemas.size()));
             dbData.schemasLoaded = true;
@@ -1212,7 +1201,7 @@ void PostgresDatabase::checkSchemasStatusAsync(const std::string& dbName) {
         dbData.schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             dbData.schemas = dbData.schemasFuture.get();
-            LogPanel::info(
+            Logger::info(
                 std::format("Async schema loading completed for database {}. Found {} schemas",
                             dbName, dbData.schemas.size()));
             dbData.schemasLoaded = true;
@@ -1256,7 +1245,7 @@ void PostgresDatabase::startSchemasLoadAsync(const std::string& dbName) {
     databaseSchemaFutures[dbName] = std::async(
         std::launch::async, [this, dbName]() { return getSchemasForDatabaseAsync(dbName); });
 
-    LogPanel::debug("Started parallel schema loading for database: " + dbName);
+    Logger::debug("Started parallel schema loading for database: " + dbName);
 }
 
 std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::string& dbName) const {
@@ -1302,8 +1291,8 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
             }
         }
 
-        LogPanel::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
-                        dbName);
+        Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
+                      dbName);
 
         if (schemaNames.empty() || !dbData.loadingSchemas.load()) {
             return result;
@@ -1506,7 +1495,7 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
         std::cerr << "Failed to execute async database query: " << e.what() << std::endl;
     }
 
-    LogPanel::info(std::format("Async query completed. Found: {} databases", result.size()));
+    Logger::info(std::format("Async query completed. Found: {} databases", result.size()));
     return result;
 }
 
@@ -1523,7 +1512,7 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
         database = targetDatabase;
         connectionString = targetConnectionString;
         connected = true;
-        LogPanel::debug("Reusing existing connection pool to database: " + targetDatabase);
+        Logger::debug("Reusing existing connection pool to database: " + targetDatabase);
         return {true, ""};
     }
 
@@ -1535,7 +1524,7 @@ std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::strin
         database = targetDatabase;
         connectionString = targetConnectionString;
         connected = true;
-        LogPanel::info("Created new connection pool to database: " + targetDatabase);
+        Logger::info("Created new connection pool to database: " + targetDatabase);
         return {true, ""};
     } catch (const soci::soci_error& e) {
         std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
@@ -1571,19 +1560,19 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
             switchingDatabase = false;
 
             if (success) {
-                LogPanel::info("Async database switch completed successfully to: " +
-                               targetDatabaseName);
+                Logger::info("Async database switch completed successfully to: " +
+                             targetDatabaseName);
 
                 // Auto-start loading schemas for the switched database if not already loaded
                 const auto& targetDbData = getDatabaseData(targetDatabaseName);
                 if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
-                    LogPanel::debug("Auto-starting schema loading after database switch to: " +
-                                    targetDatabaseName);
+                    Logger::debug("Auto-starting schema loading after database switch to: " +
+                                  targetDatabaseName);
                     refreshSchemas();
                 }
             } else {
-                LogPanel::error("Async database switch failed to: " + targetDatabaseName + " - " +
-                                error);
+                Logger::error("Async database switch failed to: " + targetDatabaseName + " - " +
+                              error);
                 setLastConnectionError(error);
             }
         } catch (const std::exception& e) {

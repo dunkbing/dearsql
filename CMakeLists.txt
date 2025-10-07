@@ -11,6 +11,9 @@ add_subdirectory(external/soci)
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
 add_subdirectory(external/nativefiledialog-extended)
+add_subdirectory(external/googletest)
+
+enable_testing()
 
 # Find system packages
 find_package(glfw3 3.3 REQUIRED)
@@ -93,7 +96,6 @@ set(APP_SOURCES
     src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
-    src/ui/log_panel.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     src/ui/hierarchy_helpers.cpp
@@ -112,6 +114,7 @@ set(APP_SOURCES
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp
+    src/utils/logger.cpp
 )
 
 # Add application.cpp and platform-specific files
@@ -200,3 +203,30 @@ if(APPLE)
     )
     target_sources(${PROJECT_NAME} PRIVATE assets/AppIcon.icns)
 endif()
+
+add_executable(database_tests
+    tests/database/sqlite_database_test.cpp
+    tests/database/postgres_database_test.cpp
+    tests/database/mysql_database_test.cpp
+    src/database/sqlite.cpp
+    src/database/postgresql.cpp
+    src/database/mysql.cpp
+    src/database/db_utils.cpp
+    src/utils/logger.cpp
+)
+
+target_include_directories(database_tests PRIVATE
+    include
+    external/soci/include
+    tests/database
+)
+
+target_link_libraries(database_tests PRIVATE
+    gtest_main
+    soci_sqlite3
+    soci_postgresql
+    soci_mysql
+    PostgreSQL::PostgreSQL
+)
+
+add_test(NAME database_tests COMMAND database_tests)

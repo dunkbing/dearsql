@@ -14,7 +14,6 @@ public:
     void setupTitlebar() override;
     float getTitlebarHeight() const override;
     void onSidebarToggleClicked() override;
-    void onLogPanelToggleClicked() override;
     void cleanup() override;
     void renderFrame() override;
     void shutdownImGui() override;

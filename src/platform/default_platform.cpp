@@ -35,11 +35,6 @@ void DefaultPlatform::onSidebarToggleClicked() {
     app_->setSidebarVisible(!app_->isSidebarVisible());
 }
 
-void DefaultPlatform::onLogPanelToggleClicked() {
-    // This would typically be handled through UI menus on non-macOS platforms
-    app_->setLogPanelVisible(!app_->isLogPanelVisible());
-}
-
 void DefaultPlatform::cleanup() {
     // No-op for default platform
 }

@@ -5,8 +5,7 @@
 #include <typeinfo>
 #include <utility>
 
-SQLiteDatabase::SQLiteDatabase(std::string name_, std::string path)
-    : path(std::move(path)) {
+SQLiteDatabase::SQLiteDatabase(std::string name_, std::string path) : path(std::move(path)) {
     name = std::move(name_);
 }
 
@@ -37,7 +36,6 @@ void SQLiteDatabase::disconnect() {
     }
     connected = false;
 }
-
 
 const std::string& SQLiteDatabase::getName() const {
     return name;
@@ -85,7 +83,6 @@ void SQLiteDatabase::refreshTables() {
     std::cout << "Finished refreshing tables. Total tables: " << tables.size() << std::endl;
     tablesLoaded = true;
 }
-
 
 std::string SQLiteDatabase::executeQuery(const std::string& query) {
     if (!isConnected()) {
@@ -303,7 +300,6 @@ int SQLiteDatabase::getRowCount(const std::string& tableName) {
     }
 }
 
-
 void* SQLiteDatabase::getConnection() const {
     return session.get();
 }
@@ -453,13 +449,11 @@ void SQLiteDatabase::refreshViews() {
     viewsLoaded = true;
 }
 
-
 // Sequence management methods (not applicable for SQLite)
 void SQLiteDatabase::refreshSequences() {
     sequences.clear();
     sequencesLoaded = true; // No sequences in SQLite
 }
-
 
 std::vector<std::string> SQLiteDatabase::getViewNames() {
     std::vector<std::string> viewNames;
@@ -513,39 +507,40 @@ std::vector<std::string> SQLiteDatabase::getSequenceNames() {
 // Async table data loading (delegates to TableDataLoader in base class)
 void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                              const std::string& whereClause) {
-    tableDataLoader.start(tableName, [this, tableName, limit, offset, whereClause](TableDataLoadState& state) {
-        try {
-            if (!whereClause.empty()) {
-                // For filtered queries, use executeQueryStructured
-                const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
-                                              whereClause + " LIMIT " + std::to_string(limit) +
-                                              " OFFSET " + std::to_string(offset);
-                auto [columns, data] = executeQueryStructured(dataQuery);
-                state.tableData = std::move(data);
-                state.columnNames = std::move(columns);
+    tableDataLoader.start(
+        tableName, [this, tableName, limit, offset, whereClause](TableDataLoadState& state) {
+            try {
+                if (!whereClause.empty()) {
+                    // For filtered queries, use executeQueryStructured
+                    const std::string dataQuery = "SELECT * FROM \"" + tableName + "\" WHERE " +
+                                                  whereClause + " LIMIT " + std::to_string(limit) +
+                                                  " OFFSET " + std::to_string(offset);
+                    auto [columns, data] = executeQueryStructured(dataQuery);
+                    state.tableData = std::move(data);
+                    state.columnNames = std::move(columns);
 
-                // Get filtered count
-                const std::string countQuery =
-                    "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
-                auto [countCols, countData] = executeQueryStructured(countQuery);
-                if (!countData.empty() && !countData[0].empty()) {
-                    state.rowCount = std::stoi(countData[0][0]);
+                    // Get filtered count
+                    const std::string countQuery =
+                        "SELECT COUNT(*) FROM \"" + tableName + "\" WHERE " + whereClause;
+                    auto [countCols, countData] = executeQueryStructured(countQuery);
+                    if (!countData.empty() && !countData[0].empty()) {
+                        state.rowCount = std::stoi(countData[0][0]);
+                    } else {
+                        state.rowCount = 0;
+                    }
                 } else {
-                    state.rowCount = 0;
+                    // No filter - use existing methods
+                    state.tableData = getTableData(tableName, limit, offset);
+                    state.columnNames = getColumnNames(tableName);
+                    state.rowCount = getRowCount(tableName);
                 }
-            } else {
-                // No filter - use existing methods
-                state.tableData = getTableData(tableName, limit, offset);
-                state.columnNames = getColumnNames(tableName);
-                state.rowCount = getRowCount(tableName);
+                state.ready = true;
+            } catch (const std::exception& e) {
+                std::cerr << "Error in async table data load: " << e.what() << std::endl;
+                state.lastError = e.what();
+                state.tableData.clear();
+                state.columnNames.clear();
+                state.rowCount = 0;
             }
-            state.ready = true;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            state.lastError = e.what();
-            state.tableData.clear();
-            state.columnNames.clear();
-            state.rowCount = 0;
-        }
-    });
+        });
 }

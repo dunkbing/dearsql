@@ -4,7 +4,7 @@
 #include "database/db_interface.hpp"
 #include "imgui.h"
 #include "themes.hpp"
-#include "ui/log_panel.hpp"
+#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
@@ -77,7 +77,7 @@ void TableViewerTab::render() {
             filterAutoComplete->hideAutoComplete();
         }
         if (!currentFilter.empty()) {
-            LogPanel::debug("Clearing filter for table: " + tableName);
+            Logger::debug("Clearing filter for table: " + tableName);
             // Clear the filter FIRST, then reload
             currentFilter.clear();
             filterChanged = true;
@@ -523,7 +523,7 @@ void TableViewerTab::loadDataAsync() {
         columnNames.clear();
         totalRows = 0;
         filterChanged = false;
-        LogPanel::debug("Cleared previous filtered data, starting fresh load");
+        Logger::debug("Cleared previous filtered data, starting fresh load");
     }
 
     // Start async data loading with filter support
@@ -556,9 +556,9 @@ void TableViewerTab::checkAsyncLoadStatus() {
             hasChanges = false;
             isLoadingData = false;
 
-            LogPanel::debug("Async unfiltered data load completed for table " + tableName +
-                            ". Found " + std::to_string(totalRows) + " total rows, showing " +
-                            std::to_string(tableData.size()) + " rows on current page");
+            Logger::debug("Async unfiltered data load completed for table " + tableName +
+                          ". Found " + std::to_string(totalRows) + " total rows, showing " +
+                          std::to_string(tableData.size()) + " rows on current page");
 
             // Initialize edited cells tracking
             editedCells = std::vector<std::vector<bool>>(
@@ -595,7 +595,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
             isLoadingData = false;
             hasLoadingError = true;
             loadingError = "Failed to load table data";
-            LogPanel::error("Async table data loading failed for table: " + tableName);
+            Logger::error("Async table data loading failed for table: " + tableName);
         }
     } else {
         serverDatabase->checkTableDataStatusAsync(tableName);
@@ -609,9 +609,9 @@ void TableViewerTab::checkAsyncLoadStatus() {
             hasChanges = false;
             isLoadingData = false;
 
-            LogPanel::debug("Async unfiltered data load completed for table " + tableName +
-                            ". Found " + std::to_string(totalRows) + " total rows, showing " +
-                            std::to_string(tableData.size()) + " rows on current page");
+            Logger::debug("Async unfiltered data load completed for table " + tableName +
+                          ". Found " + std::to_string(totalRows) + " total rows, showing " +
+                          std::to_string(tableData.size()) + " rows on current page");
 
             // Initialize edited cells tracking
             editedCells = std::vector<std::vector<bool>>(
@@ -648,7 +648,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
             isLoadingData = false;
             hasLoadingError = true;
             loadingError = "Failed to load table data";
-            LogPanel::error("Async table data loading failed for table: " + tableName);
+            Logger::error("Async table data loading failed for table: " + tableName);
         }
     }
 }

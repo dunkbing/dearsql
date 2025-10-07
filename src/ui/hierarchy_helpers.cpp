@@ -7,9 +7,10 @@
 #include "database/redis.hpp"
 #include "imgui.h"
 #include "ui/drop_column_dialog.hpp"
-#include "ui/log_panel.hpp"
 #include "ui/table_dialog.hpp"
+#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
+#include <format>
 
 namespace {
     constexpr const char* TREE_LABEL_PREFIX = "   ";
@@ -38,6 +39,10 @@ namespace HierarchyHelpers {
         return std::format("{}{}###{}", TREE_LABEL_PREFIX, text, id);
     }
 
+    std::string makeTreeNodeLabel(const std::string& text, const void* objectPtr) {
+        return makeTreeNodeLabel(text, std::format("ptr_{:p}", objectPtr));
+    }
+
     void renderLoadingState(const char* message, const char* spinnerId) {
         ImGui::Text("  %s", message);
         ImGui::SameLine();
@@ -56,20 +61,20 @@ namespace HierarchyHelpers {
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 if (pgDb && targetDbName != pgDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + targetDbName);
+                    Logger::debug("Auto-switching to database: " + targetDbName);
                     auto [success, error] = pgDb->switchToDatabase(targetDbName);
                     if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
+                        Logger::error("Failed to switch database: " + error);
                         return false;
                     }
                 }
             } else if (db->getType() == DatabaseType::MYSQL) {
                 const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
                 if (mysqlDb && targetDbName != mysqlDb->getDatabaseName()) {
-                    LogPanel::debug("Auto-switching to database: " + targetDbName);
+                    Logger::debug("Auto-switching to database: " + targetDbName);
                     auto [success, error] = mysqlDb->switchToDatabase(targetDbName);
                     if (!success) {
-                        LogPanel::error("Failed to switch database: " + error);
+                        Logger::error("Failed to switch database: " + error);
                         return false;
                     }
                 }
@@ -91,8 +96,8 @@ namespace HierarchyHelpers {
 
                 if (targetDbName != pgDb->getDatabaseName()) {
                     if (!pgDb->isSwitchingDatabase()) {
-                        LogPanel::debug("Auto-switching to database: " + targetDbName +
-                                        " before opening object");
+                        Logger::debug("Auto-switching to database: " + targetDbName +
+                                      " before opening object");
                         pgDb->switchToDatabaseAsync(targetDbName);
                     }
                     return false;
@@ -135,7 +140,7 @@ namespace HierarchyHelpers {
             }
             columnDisplay += ")";
 
-            ImGui::PushID(name.c_str());
+            ImGui::PushID(static_cast<const void*>(&column));
             ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
 
             if (ImGui::BeginPopupContextItem("column_context_menu")) {
@@ -165,8 +170,7 @@ namespace HierarchyHelpers {
             tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        const std::string tableLabel =
-            makeTreeNodeLabel(table.name, std::format("table_{}_{}", db->getName(), table.name));
+        const std::string tableLabel = makeTreeNodeLabel(table.name, &table);
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
         table.expanded = tableOpened;
 
@@ -178,7 +182,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(tableIndex);
+        ImGui::PushID(static_cast<const void*>(&table));
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(db, table.name);
@@ -370,8 +374,7 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                  ImGuiTreeNodeFlags_FramePadding;
 
-        const std::string viewLabel =
-            makeTreeNodeLabel(view.name, std::format("view_{}_{}", db->getName(), view.name));
+        const std::string viewLabel = makeTreeNodeLabel(view.name, &view);
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
         renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
@@ -383,7 +386,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(viewIndex);
+        ImGui::PushID(static_cast<const void*>(&view));
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 tabManager->createTableViewerTab(db, view.name);
@@ -461,8 +464,7 @@ namespace HierarchyHelpers {
 
         // Load tables when the tree node is opened and tables haven't been loaded yet
         if (tablesOpen && !db->areTablesLoaded() && !db->isLoadingTables()) {
-            LogPanel::debug(
-                "Tables node expanded and tables not loaded yet, attempting to load...");
+            Logger::debug("Tables node expanded and tables not loaded yet, attempting to load...");
             // For PostgreSQL, pass the schema name
             if (db->getType() == DatabaseType::POSTGRESQL && !schemaName.empty()) {
                 auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
@@ -535,7 +537,7 @@ namespace HierarchyHelpers {
 
         // Load views when the tree node is opened and views haven't been loaded yet
         if (viewsOpen && !db->areViewsLoaded() && !db->isLoadingViews()) {
-            LogPanel::debug("Views node expanded and views not loaded yet, attempting to load...");
+            Logger::debug("Views node expanded and views not loaded yet, attempting to load...");
             // For PostgreSQL, pass the schema name
             if (db->getType() == DatabaseType::POSTGRESQL && !schemaName.empty()) {
                 auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
@@ -568,12 +570,7 @@ namespace HierarchyHelpers {
                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                         ImGuiTreeNodeFlags_FramePadding;
 
-        std::string identifier = table.fullName;
-        if (identifier.empty()) {
-            identifier = std::format("{}_{}_{}", db->getName(), schemaName, table.name);
-        }
-
-        const std::string tableLabel = makeTreeNodeLabel(table.name, identifier);
+        const std::string tableLabel = makeTreeNodeLabel(table.name, &table);
         ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
         renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
 
@@ -588,7 +585,8 @@ namespace HierarchyHelpers {
             openTable();
         }
 
-        const std::string contextId = std::format("table_ctx_{}", identifier);
+        const std::string contextId =
+            std::format("table_ctx_{:p}", static_cast<const void*>(&table));
         ImGui::PushID(contextId.c_str());
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
@@ -625,12 +623,7 @@ namespace HierarchyHelpers {
                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                        ImGuiTreeNodeFlags_FramePadding;
 
-        std::string identifier = view.fullName;
-        if (identifier.empty()) {
-            identifier = std::format("{}_{}_{}", db->getName(), schemaName, view.name);
-        }
-
-        const std::string viewLabel = makeTreeNodeLabel(view.name, identifier);
+        const std::string viewLabel = makeTreeNodeLabel(view.name, &view);
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
         renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
 
@@ -645,7 +638,7 @@ namespace HierarchyHelpers {
             openView();
         }
 
-        const std::string contextId = std::format("view_ctx_{}", identifier);
+        const std::string contextId = std::format("view_ctx_{:p}", static_cast<const void*>(&view));
         ImGui::PushID(contextId.c_str());
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
@@ -712,7 +705,7 @@ namespace HierarchyHelpers {
                                                              ImGuiTreeNodeFlags_FramePadding;
 
                 const std::string displayName = (table.name == "*") ? "All Keys" : table.name;
-                const std::string keyGroupLabel = makeTreeNodeLabel(displayName);
+                const std::string keyGroupLabel = makeTreeNodeLabel(displayName, &table);
                 ImGui::TreeNodeEx(keyGroupLabel.c_str(), keyGroupFlags);
 
                 renderTreeNodeIcon(ICON_FA_KEY, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
@@ -724,7 +717,7 @@ namespace HierarchyHelpers {
                 }
 
                 // Context menu
-                ImGui::PushID(table.name.c_str());
+                ImGui::PushID(static_cast<const void*>(&table));
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("View Keys")) {
                         auto& app = Application::getInstance();
@@ -841,8 +834,8 @@ namespace HierarchyHelpers {
                     // Auto-switch to the correct database before refreshing
                     if (dbName != pgDb->getDatabaseName()) {
                         if (!pgDb->isSwitchingDatabase()) {
-                            LogPanel::debug("Auto-switching to database: " + dbName +
-                                            " to refresh tables");
+                            Logger::debug("Auto-switching to database: " + dbName +
+                                          " to refresh tables");
                             pgDb->switchToDatabaseAsync(dbName);
                         }
                     } else {
@@ -869,8 +862,7 @@ namespace HierarchyHelpers {
                         ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                         ImGuiTreeNodeFlags_FramePadding;
-                        const std::string tableLabel =
-                            makeTreeNodeLabel(table.name, table.fullName);
+                        const std::string tableLabel = makeTreeNodeLabel(table.name, &table);
                         ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
                         renderTreeNodeIcon(ICON_FA_TABLE, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
                     }
@@ -916,8 +908,8 @@ namespace HierarchyHelpers {
                     // Auto-switch to the correct database before refreshing
                     if (dbName != mysqlDb->getDatabaseName()) {
                         if (!mysqlDb->isSwitchingDatabase()) {
-                            LogPanel::debug("Auto-switching to database: " + dbName +
-                                            " to refresh tables");
+                            Logger::debug("Auto-switching to database: " + dbName +
+                                          " to refresh tables");
                             mysqlDb->switchToDatabaseAsync(dbName);
                         }
                     } else {
@@ -936,8 +928,8 @@ namespace HierarchyHelpers {
                         // Auto-switch database and load tables when node is expanded
                         if (dbName != mysqlDb->getDatabaseName()) {
                             if (!mysqlDb->isSwitchingDatabase()) {
-                                LogPanel::debug("Auto-switching to database: " + dbName +
-                                                " to load tables");
+                                Logger::debug("Auto-switching to database: " + dbName +
+                                              " to load tables");
                                 mysqlDb->switchToDatabaseAsync(dbName);
                             }
                             ImGui::Text("  Switching database...");
@@ -1060,8 +1052,8 @@ namespace HierarchyHelpers {
                         // Auto-switch database and load views when node is expanded
                         if (dbName != mysqlDb->getDatabaseName()) {
                             if (!mysqlDb->isSwitchingDatabase()) {
-                                LogPanel::debug("Auto-switching to database: " + dbName +
-                                                " to load views");
+                                Logger::debug("Auto-switching to database: " + dbName +
+                                              " to load views");
                                 mysqlDb->switchToDatabaseAsync(dbName);
                             }
                             ImGui::Text("  Switching database...");
@@ -1107,8 +1099,7 @@ namespace HierarchyHelpers {
             tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
         }
 
-        const std::string tableLabel =
-            makeTreeNodeLabel(table->name, std::format("cached_table_{}_{}", dbName, table->name));
+        const std::string tableLabel = makeTreeNodeLabel(table->name, table);
         const bool tableOpened = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
 
         table->expanded = tableOpened;
@@ -1124,7 +1115,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(tableIndex);
+        ImGui::PushID(static_cast<const void*>(table));
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 if (!ensureDatabaseSwitch(db, dbName)) {
@@ -1194,8 +1185,7 @@ namespace HierarchyHelpers {
                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                  ImGuiTreeNodeFlags_FramePadding;
 
-        const std::string viewLabel =
-            makeTreeNodeLabel(view->name, std::format("cached_view_{}_{}", dbName, view->name));
+        const std::string viewLabel = makeTreeNodeLabel(view->name, view);
         ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
         renderTreeNodeIcon(ICON_FA_EYE, ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
@@ -1210,7 +1200,7 @@ namespace HierarchyHelpers {
         }
 
         // Context menu
-        ImGui::PushID(viewIndex);
+        ImGui::PushID(static_cast<const void*>(view));
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 if (!ensureDatabaseSwitch(db, dbName)) {

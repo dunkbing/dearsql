@@ -1,15 +1,14 @@
 #pragma once
 
 #include <atomic>
-#include <future>
 #include <functional>
+#include <future>
 
 /**
  * Generic helper for managing async operations with futures.
  * Reduces boilerplate for async patterns used across database implementations.
  */
-template <typename ResultType>
-class AsyncOperation {
+template <typename ResultType> class AsyncOperation {
 public:
     using Task = std::function<ResultType()>;
     using Callback = std::function<void(ResultType)>;
@@ -43,7 +42,8 @@ public:
             return false;
         }
 
-        if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        if (future.valid() &&
+            future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             running = false;
             if (callback) {
                 callback(future.get());
@@ -86,8 +86,7 @@ private:
 /**
  * Specialization for void operations.
  */
-template <>
-class AsyncOperation<void> {
+template <> class AsyncOperation<void> {
 public:
     using Task = std::function<void()>;
     using Callback = std::function<void()>;
@@ -113,7 +112,8 @@ public:
             return false;
         }
 
-        if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        if (future.valid() &&
+            future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             running = false;
             future.get(); // Consume any exceptions
             if (callback) {

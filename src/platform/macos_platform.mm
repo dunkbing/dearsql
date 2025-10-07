@@ -22,14 +22,11 @@
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar {
-    return @[ @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier, @"LogPanelToggle" ];
+    return @[ @"SidebarToggle", NSToolbarFlexibleSpaceItemIdentifier, @"WorkspaceSelector" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar {
-    return @[
-        @"SidebarToggle", @"WorkspaceSelector", @"LogPanelToggle",
-        NSToolbarFlexibleSpaceItemIdentifier
-    ];
+    return @[ @"SidebarToggle", @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem*)toolbar:(NSToolbar*)toolbar
@@ -68,24 +65,6 @@
 
         item.view = self.workspaceDropdown;
         return item;
-    } else if ([itemIdentifier isEqualToString:@"LogPanelToggle"]) {
-        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
-        item.label = @"";
-        item.paletteLabel = @"Toggle Log Panel";
-        item.toolTip = @"Show/Hide Log Panel";
-
-        NSButton* button = [[NSButton alloc] init];
-        [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.right"
-                                   accessibilityDescription:@"Toggle Log Panel"]];
-        [button setButtonType:NSButtonTypeMomentaryPushIn];
-        [button setBezelStyle:NSBezelStyleTexturedRounded];
-        [button setTarget:self];
-        [button setAction:@selector(logPanelToggleClicked:)];
-        [button setBordered:NO];
-        [button sizeToFit];
-
-        item.view = button;
-        return item;
     }
     return nil;
 }
@@ -110,16 +89,6 @@
         }
     } @catch (NSException* exception) {
         NSLog(@"Exception in sidebarToggleClicked: %@", exception);
-    }
-}
-
-- (void)logPanelToggleClicked:(id)sender {
-    @try {
-        if (self.app) {
-            self.app->onLogPanelToggleClicked();
-        }
-    } @catch (NSException* exception) {
-        NSLog(@"Exception in logPanelToggleClicked: %@", exception);
     }
 }
 
@@ -378,15 +347,6 @@ void MacOSPlatform::onSidebarToggleClicked() {
         app_->setSidebarVisible(!app_->isSidebarVisible());
     } catch (const std::exception& e) {
         std::cerr << "Exception in onSidebarToggleClicked: " << e.what() << std::endl;
-    }
-}
-
-void MacOSPlatform::onLogPanelToggleClicked() {
-    std::cout << "Log panel toggle clicked" << std::endl;
-    try {
-        app_->setLogPanelVisible(!app_->isLogPanelVisible());
-    } catch (const std::exception& e) {
-        std::cerr << "Exception in onLogPanelToggleClicked: " << e.what() << std::endl;
     }
 }
 

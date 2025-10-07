@@ -57,9 +57,7 @@ public:
 
     // Async connection with automatic error handling
     void startConnectionAsync() override {
-        connectionOp.start([this]() {
-            return this->connect();
-        });
+        connectionOp.start([this]() { return this->connect(); });
     }
 
     void checkConnectionStatusAsync() override {
@@ -132,7 +130,8 @@ public:
     bool hasTableDataResult(const std::string& tableName) const override {
         return tableDataLoader.hasResult(tableName);
     }
-    std::vector<std::vector<std::string>> getTableDataResult(const std::string& tableName) override {
+    std::vector<std::vector<std::string>>
+    getTableDataResult(const std::string& tableName) override {
         return tableDataLoader.getTableData(tableName);
     }
     std::vector<std::string> getColumnNamesResult(const std::string& tableName) override {

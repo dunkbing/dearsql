@@ -13,11 +13,8 @@ public:
     void showConnectionDialog();
 
 private:
-    void renderDatabaseNode(size_t databaseIndex);
-    void handleDatabaseContextMenu(size_t databaseIndex);
-    void handleTableContextMenu(size_t databaseIndex, size_t tableIndex);
-    static void handleViewContextMenu(size_t databaseIndex, size_t viewIndex);
-    static void handleSequenceContextMenu(size_t databaseIndex, size_t sequenceIndex);
+    void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
+    void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
 
     // Database connection dialog
     DatabaseConnectionDialog connectionDialog;
@@ -26,9 +23,9 @@ private:
 
     // Database deletion confirmation
     bool shouldShowDeleteConfirmation = false;
-    int databaseToDelete = 0;
+    std::shared_ptr<DatabaseInterface> databasePendingDeletion = nullptr;
 
     // Database creation dialog
     bool shouldShowCreateDatabaseDialog = false;
-    int createDatabaseForConnection = 0;
+    std::shared_ptr<DatabaseInterface> createDatabaseTarget = nullptr;
 };

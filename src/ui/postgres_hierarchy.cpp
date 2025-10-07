@@ -5,7 +5,7 @@
 #include "database/postgresql.hpp"
 #include "imgui.h"
 #include "ui/hierarchy_helpers.hpp"
-#include "ui/log_panel.hpp"
+#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 
 namespace {
@@ -50,8 +50,7 @@ namespace PostgresHierarchy {
 
         std::string dbDisplayName = actualDbName;
         if (pgDb->areSchemasLoaded() && !pgDb->getSchemas().empty()) {
-            dbDisplayName =
-                std::format("{} ({} schemas)", actualDbName, pgDb->getSchemas().size());
+            dbDisplayName = std::format("{} ({} schemas)", actualDbName, pgDb->getSchemas().size());
         }
         const std::string dbNodeLabel =
             HierarchyHelpers::makeTreeNodeLabel(dbDisplayName, "db_single_" + actualDbName);
@@ -64,12 +63,12 @@ namespace PostgresHierarchy {
             if (ImGui::MenuItem("New SQL Editor")) {
                 auto& app = Application::getInstance();
                 app.getTabManager()->createSQLEditorTab("", pgDb, pgDb->getDatabaseName());
-                LogPanel::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
+                Logger::debug("Creating new SQL editor for database: " + pgDb->getDatabaseName());
             }
             if (ImGui::MenuItem("Show Diagram")) {
                 auto& app = Application::getInstance();
                 app.getTabManager()->createDiagramTab(pgDb, pgDb->getDatabaseName());
-                LogPanel::debug("Creating diagram for database: " + pgDb->getDatabaseName());
+                Logger::debug("Creating diagram for database: " + pgDb->getDatabaseName());
             }
             ImGui::EndPopup();
         }
@@ -80,7 +79,7 @@ namespace PostgresHierarchy {
             }
             // Load schemas when database node is opened
             if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-                LogPanel::debug(
+                Logger::debug(
                     "Database node expanded and schemas not loaded yet, attempting to load...");
                 pgDb->refreshSchemas();
             }
@@ -132,9 +131,6 @@ namespace PostgresHierarchy {
             const bool shouldBeExpanded = pgDb->isDatabaseExpanded(dbName);
             const auto& dbData = pgDb->getDatabaseData(dbName);
 
-            LogPanel::debug(std::format("DB {} - shouldExpand={}, loadingSchemas={}, schemasLoaded={}, schemasSize={}",
-                dbName, shouldBeExpanded, dbData.loadingSchemas.load(), dbData.schemasLoaded, dbData.schemas.size()));
-
             if (shouldBeExpanded) {
                 dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;
             }
@@ -150,8 +146,6 @@ namespace PostgresHierarchy {
 
             const bool dbNodeOpen = ImGui::TreeNodeEx(dbNodeLabel.c_str(), dbNodeFlags);
 
-            LogPanel::debug(std::format("DB {} - dbNodeOpen={}", dbName, dbNodeOpen));
-
             // Detect if user clicked to toggle this node
             const bool wasClicked = ImGui::IsItemClicked();
 
@@ -162,12 +156,12 @@ namespace PostgresHierarchy {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     auto& app = Application::getInstance();
                     app.getTabManager()->createSQLEditorTab("", pgDb, dbName);
-                    LogPanel::debug("Creating new SQL editor for database: " + dbName);
+                    Logger::debug("Creating new SQL editor for database: " + dbName);
                 }
                 if (ImGui::MenuItem("Show Diagram")) {
                     auto& app = Application::getInstance();
                     app.getTabManager()->createDiagramTab(pgDb, dbName);
-                    LogPanel::debug("Creating diagram for database: " + dbName);
+                    Logger::debug("Creating diagram for database: " + dbName);
                 }
                 ImGui::EndPopup();
             }
@@ -179,7 +173,7 @@ namespace PostgresHierarchy {
                 // Only switch database if we're not already connected to it
                 if (dbName != pgDb->getDatabaseName()) {
                     if (!pgDb->isSwitchingDatabase()) {
-                        LogPanel::debug("Starting async switch to database: " + dbName);
+                        Logger::debug("Starting async switch to database: " + dbName);
                         pgDb->switchToDatabaseAsync(dbName);
                     }
                 }
@@ -188,8 +182,8 @@ namespace PostgresHierarchy {
                 if (dbName == pgDb->getDatabaseName()) {
                     // Load schemas only when first expanded and not already loaded
                     if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-                        LogPanel::debug("Database " + dbName +
-                                        " expanded for first time, loading schemas...");
+                        Logger::debug("Database " + dbName +
+                                      " expanded for first time, loading schemas...");
                         pgDb->refreshSchemas();
                     }
                     // Show schemas for currently connected database
@@ -204,7 +198,7 @@ namespace PostgresHierarchy {
                 // Node is reported as closed
                 // Only clear expanded state if user actually clicked to collapse it
                 if (wasClicked && pgDb->isDatabaseExpanded(dbName)) {
-                    LogPanel::debug("Database node " + dbName + " collapsed by user click");
+                    Logger::debug("Database node " + dbName + " collapsed by user click");
                     pgDb->setDatabaseExpanded(dbName, false);
                 }
                 // Otherwise, trust SetNextItemOpen to reopen it next frame
@@ -302,8 +296,7 @@ namespace PostgresHierarchy {
 
         const bool canLoadTables = targetsCurrentDatabase && !schemaName.empty();
         if (tablesOpen && canLoadTables && !schemaData.tablesLoaded && !schemaData.loadingTables) {
-            LogPanel::debug("Tables node expanded for schema " + schemaName +
-                            ", loading tables...");
+            Logger::debug("Tables node expanded for schema " + schemaName + ", loading tables...");
             pgDb->refreshTables(schemaName);
         }
 
@@ -376,7 +369,7 @@ namespace PostgresHierarchy {
 
         const bool canLoadViews = targetsCurrentDatabase && !schemaName.empty();
         if (viewsOpen && canLoadViews && !schemaData.viewsLoaded && !schemaData.loadingViews) {
-            LogPanel::debug("Views node expanded for schema " + schemaName + ", loading views...");
+            Logger::debug("Views node expanded for schema " + schemaName + ", loading views...");
             pgDb->refreshViews(schemaName);
         }
 
@@ -442,8 +435,8 @@ namespace PostgresHierarchy {
         const bool canLoadSequences = targetsCurrentDatabase && !schemaName.empty();
         if (sequencesOpen && canLoadSequences && !schemaData.sequencesLoaded &&
             !schemaData.loadingSequences) {
-            LogPanel::debug("Sequences node expanded for schema " + schemaName +
-                            ", loading sequences...");
+            Logger::debug("Sequences node expanded for schema " + schemaName +
+                          ", loading sequences...");
             pgDb->refreshSequences(schemaName);
         }
 

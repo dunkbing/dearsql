@@ -7,13 +7,16 @@
 #include "platform/default_platform.hpp"
 #include "platform/macos_platform.hpp"
 #include "themes.hpp"
-#include "ui/log_panel.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/logger.hpp"
 #include "utils/toggle_button.hpp"
 #include <algorithm>
 #include <csignal>
+#include <format>
 #include <imgui_internal.h>
 #include <iostream>
+#include <limits>
+#include <ranges>
 
 #ifdef USE_OPENGL_BACKEND
 #include "imgui_impl_opengl3.h"
@@ -290,26 +293,49 @@ const Theme::Colors& Application::getCurrentColors() const {
     return darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
 }
 
+std::shared_ptr<DatabaseInterface> Application::getSelectedDatabase() const {
+    return selectedDatabase.lock();
+}
+
+void Application::setSelectedDatabase(const std::shared_ptr<DatabaseInterface>& db) {
+    selectedDatabase = db;
+}
+
+void Application::clearSelectedDatabase() {
+    selectedDatabase.reset();
+}
+
 void Application::addDatabase(const std::shared_ptr<DatabaseInterface>& db) {
     databases.push_back(db);
 }
 
-void Application::removeDatabase(const int index) {
-    if (index < databases.size()) {
-        const auto& db = databases[index];
-        if (db) {
-            db->disconnect();
-        }
-        databases.erase(databases.begin() + index);
-
-        // Update selection if needed
-        if (selectedDatabase == static_cast<int>(index)) {
-            selectedDatabase = -1;
-            selectedTable = -1;
-        } else if (selectedDatabase > static_cast<int>(index)) {
-            selectedDatabase--;
-        }
+void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
+    if (!db) {
+        return;
     }
+
+    const auto it = std::ranges::find(databases, db);
+    if (it == databases.end()) {
+        return;
+    }
+
+    if (*it) {
+        (*it)->disconnect();
+    }
+
+    databases.erase(it);
+
+    if (auto selected = selectedDatabase.lock(); selected && selected == db) {
+        selectedDatabase.reset();
+    }
+}
+
+std::size_t Application::findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const {
+    const auto it = std::ranges::find(databases, db);
+    if (it == databases.end()) {
+        return std::numeric_limits<std::size_t>::max();
+    }
+    return static_cast<std::size_t>(std::distance(databases.begin(), it));
 }
 
 void Application::restorePreviousConnections() {
@@ -318,8 +344,8 @@ void Application::restorePreviousConnections() {
     }
 
     const auto savedConnections = appState->getConnectionsForWorkspace(currentWorkspaceId);
-    LogPanel::info("Restoring " + std::to_string(savedConnections.size()) +
-                   " connections for current workspace");
+    Logger::info(
+        std::format("Restoring {} connections for current workspace", savedConnections.size()));
 
     for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
@@ -344,7 +370,8 @@ void Application::restorePreviousConnections() {
         if (db) {
             // Store the saved connection ID in the database instance
             db->setSavedConnectionId(conn.id);
-            LogPanel::debug("Added connection (will connect when expanded): " + conn.name);
+            Logger::debug(
+                std::format("Added connection (will connect when expanded): {}", conn.name));
             databases.push_back(db);
         }
     }
@@ -555,8 +582,7 @@ void Application::refreshWorkspaceConnections() {
     restorePreviousConnections();
 
     // Reset UI state
-    selectedDatabase = -1;
-    selectedTable = -1;
+    clearSelectedDatabase();
     resetDockingLayout();
 }
 
@@ -568,33 +594,10 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
 
-    // Check if we should use docking for sidebar and log panel
+    // Check if we should use docking for sidebar
     const bool shouldUseSidebar = targetSidebarWidth > 0.01f;
-    const bool shouldUseLogPanel = targetLogPanelWidth > 0.01f;
 
-    if (shouldUseSidebar && shouldUseLogPanel) {
-        // Three-panel layout: sidebar | center | log panel
-        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
-                                    &centerDockId);
-        ImGui::DockBuilderSplitNode(centerDockId, ImGuiDir_Right,
-                                    logPanelWidth / (1.0f - sidebarWidth), &rightDockId,
-                                    &centerDockId);
-
-        // Configure dock nodes
-        ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-
-        // Dock windows
-        ImGui::DockBuilderDockWindow("Databases", leftDockId);
-        ImGui::DockBuilderDockWindow("Logs", rightDockId);
-        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
-
-        for (const auto& tab : tabManager->getTabs()) {
-            ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
-        }
-    } else if (shouldUseSidebar) {
+    if (shouldUseSidebar) {
         // Two-panel layout: sidebar | center
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &centerDockId);
@@ -610,22 +613,6 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         }
 
         rightDockId = 0;
-    } else if (shouldUseLogPanel) {
-        // Two-panel layout: center | log panel
-        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Right, logPanelWidth, &rightDockId,
-                                    &centerDockId);
-
-        ImGui::DockBuilderGetNode(rightDockId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
-
-        ImGui::DockBuilderDockWindow("Logs", rightDockId);
-        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
-
-        for (const auto& tab : tabManager->getTabs()) {
-            ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
-        }
-
-        leftDockId = 0;
     } else {
         // Single panel layout: just center
         ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), dockSpaceId);
@@ -647,23 +634,18 @@ void Application::renderMainUI() {
     // DockSpace setup
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    // Direct show/hide sidebar and log panel without animation
+    // Direct show/hide sidebar without animation
     sidebarWidth = targetSidebarWidth;
-    logPanelWidth = targetLogPanelWidth;
 
-    // Always use docking when sidebar or log panel is visible for proper resizing
-    const bool shouldUseDocking = targetSidebarWidth > 0.01f || targetLogPanelWidth > 0.01f;
+    // Always use docking when sidebar is visible for proper resizing
+    const bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
-    // Rebuild layout when sidebar or log panel visibility changes
+    // Rebuild layout when sidebar visibility changes
     static bool lastSidebarVisible = false;
-    static bool lastLogPanelVisible = false;
     const bool currentSidebarVisible = targetSidebarWidth > 0.01f;
-    const bool currentLogPanelVisible = targetLogPanelWidth > 0.01f;
-    if (lastSidebarVisible != currentSidebarVisible ||
-        lastLogPanelVisible != currentLogPanelVisible) {
+    if (lastSidebarVisible != currentSidebarVisible) {
         dockingLayoutInitialized = false;
         lastSidebarVisible = currentSidebarVisible;
-        lastLogPanelVisible = currentLogPanelVisible;
     }
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(viewport->Size);
@@ -706,7 +688,6 @@ void Application::renderMainUI() {
 
     // Database sidebar rendering
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
-    const bool shouldShowLogPanel = logPanelWidth > 0.01f;
 
     if (shouldShowSidebar) {
         ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
@@ -718,23 +699,6 @@ void Application::renderMainUI() {
         ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
 
         databaseSidebar->render();
-        ImGui::End();
-
-        ImGui::PopStyleVar(1);
-        ImGui::PopStyleColor(3);
-    }
-
-    // Log panel rendering
-    if (shouldShowLogPanel) {
-        ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
-        ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
-        ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
-
-        ImGui::SetNextWindowSizeConstraints(ImVec2(200, -1), ImVec2(600, -1));
-        ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-
-        LogPanel::getInstance().render();
         ImGui::End();
 
         ImGui::PopStyleVar(1);
@@ -811,12 +775,6 @@ void Application::renderMenuBar() {
 void Application::onSidebarToggleClicked() const {
     if (platform_) {
         platform_->onSidebarToggleClicked();
-    }
-}
-
-void Application::onLogPanelToggleClicked() const {
-    if (platform_) {
-        platform_->onLogPanelToggleClicked();
     }
 }
 

@@ -2,7 +2,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
-#include "ui/log_panel.hpp"
+#include "utils/logger.hpp"
 
 void DropColumnDialog::showDropColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
                                             const std::string& tableName,
@@ -103,7 +103,7 @@ bool DropColumnDialog::executeDropColumn() {
             return false;
         }
 
-        LogPanel::info("Executing: " + sql);
+        Logger::info("Executing: " + sql);
 
         const std::string result = database->executeQuery(sql);
 
@@ -122,7 +122,7 @@ bool DropColumnDialog::executeDropColumn() {
 
     } catch (const std::exception& e) {
         errorMessage = "Failed to drop column: " + std::string(e.what());
-        LogPanel::error(errorMessage);
+        Logger::error(errorMessage);
         return false;
     }
 }

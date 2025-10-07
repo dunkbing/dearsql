@@ -7,6 +7,7 @@ namespace HierarchyHelpers {
     // Shared helper functions
     void renderTreeNodeIcon(const char* icon, const ImVec4& color);
     std::string makeTreeNodeLabel(const std::string& text, const std::string& id = "");
+    std::string makeTreeNodeLabel(const std::string& text, const void* objectPtr);
     void renderLoadingState(const char* message, const char* spinnerId);
     void renderDatabaseNodeIcon();
 

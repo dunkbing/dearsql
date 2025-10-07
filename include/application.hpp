@@ -45,18 +45,9 @@ public:
     [[nodiscard]] const Theme::Colors& getCurrentColors() const;
 
     // Selection state
-    [[nodiscard]] int getSelectedDatabase() const {
-        return selectedDatabase;
-    }
-    void setSelectedDatabase(const int index) {
-        selectedDatabase = index;
-    }
-    [[nodiscard]] int getSelectedTable() const {
-        return selectedTable;
-    }
-    void setSelectedTable(const int index) {
-        selectedTable = index;
-    }
+    [[nodiscard]] std::shared_ptr<DatabaseInterface> getSelectedDatabase() const;
+    void setSelectedDatabase(const std::shared_ptr<DatabaseInterface>& db);
+    void clearSelectedDatabase();
 
     // UI state
     [[nodiscard]] bool isDockingLayoutInitialized() const {
@@ -77,8 +68,9 @@ public:
         return databases;
     }
     void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
-    void removeDatabase(int index);
+    void removeDatabase(const std::shared_ptr<DatabaseInterface>& db);
     void restorePreviousConnections();
+    [[nodiscard]] std::size_t findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const;
 
     // Window reference
     [[nodiscard]] GLFWwindow* getWindow() const {
@@ -96,17 +88,6 @@ public:
         }
     }
 
-    // Log panel visibility
-    [[nodiscard]] bool isLogPanelVisible() const {
-        return logPanelVisible;
-    }
-    void setLogPanelVisible(const bool visible) {
-        if (logPanelVisible != visible) {
-            logPanelVisible = visible;
-            targetLogPanelWidth = visible ? 0.25f : 0.0f;
-        }
-    }
-
     // Workspace management
     [[nodiscard]] int getCurrentWorkspaceId() const {
         return currentWorkspaceId;
@@ -121,7 +102,6 @@ public:
     // Platform-specific methods
 #ifdef USE_METAL_BACKEND
     void onSidebarToggleClicked() const;
-    void onLogPanelToggleClicked() const;
     [[nodiscard]] float getTitlebarHeight() const;
     void updateWorkspaceDropdown() const;
 #endif
@@ -141,17 +121,13 @@ private:
     // Application state
     bool darkTheme = true;
     bool sidebarVisible = true;
-    bool logPanelVisible = false;
     float sidebarWidth = 0.25f;
     float targetSidebarWidth = 0.25f;
-    float logPanelWidth = 0.0f;
-    float targetLogPanelWidth = 0.0f;
     float animationSpeed = 12.0f;
     ImGuiID leftDockId = 0;
     ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;
-    int selectedDatabase = -1;
-    int selectedTable = -1;
+    std::weak_ptr<DatabaseInterface> selectedDatabase;
     bool dockingLayoutInitialized = false;
 
     // Data

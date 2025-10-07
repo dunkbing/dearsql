@@ -151,8 +151,7 @@ namespace MySQLHierarchy {
                 // Only switch database if we're not already connected to it
                 if (dbName != mysqlDb->getDatabaseName()) {
                     if (!mysqlDb->isSwitchingDatabase()) {
-                        std::cout << "Starting async switch to database: " << dbName
-                                  << std::endl;
+                        std::cout << "Starting async switch to database: " << dbName << std::endl;
                         mysqlDb->switchToDatabaseAsync(dbName);
                     }
                 }

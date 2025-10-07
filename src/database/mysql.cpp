@@ -9,8 +9,8 @@
 MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, int port,
                              const std::string& database, const std::string& username,
                              const std::string& password, bool showAllDatabases)
-    : host(host), port(port), database(database), username(username),
-      password(password), showAllDatabases(showAllDatabases) {
+    : host(host), port(port), database(database), username(username), password(password),
+      showAllDatabases(showAllDatabases) {
     this->name = name;
     std::cout << "DEBUG: Creating MySQLDatabase with database = '" << database
               << "', showAllDatabases = " << showAllDatabases << std::endl;
@@ -123,8 +123,6 @@ void MySQLDatabase::disconnect() {
     connected = false;
     // Don't clear per-database cache on disconnect
 }
-
-
 
 const std::string& MySQLDatabase::getName() const {
     return name;
@@ -256,7 +254,6 @@ void MySQLDatabase::checkTablesStatusAsync() {
     }
 }
 
-
 void MySQLDatabase::refreshViews() {
     if (isLoadingViews()) {
         return;
@@ -355,12 +352,10 @@ void MySQLDatabase::checkViewsStatusAsync() {
     }
 }
 
-
 void MySQLDatabase::refreshSequences() {
     getCurrentDatabaseData().sequences.clear();
     getCurrentDatabaseData().sequencesLoaded = true;
 }
-
 
 void MySQLDatabase::checkSequencesStatusAsync() {
     // No-op for MySQL
@@ -600,8 +595,6 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
         return;
     }
 }
-
-
 
 std::vector<std::string> MySQLDatabase::getTableNames() {
     if (!connect().first) {

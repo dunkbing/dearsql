@@ -3,7 +3,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
-#include "ui/log_panel.hpp"
+#include "utils/logger.hpp"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -596,7 +596,7 @@ bool TableDialog::validateColumnInput() {
 bool TableDialog::executeAddColumn() {
     try {
         std::string sql = generateAddColumnSQL();
-        LogPanel::info("Executing: " + sql);
+        Logger::info("Executing: " + sql);
 
         // For PostgreSQL with comments, we need to execute multiple statements
         if (database->getType() == DatabaseType::POSTGRESQL && strlen(columnComment) > 0) {
@@ -625,7 +625,7 @@ bool TableDialog::executeAddColumn() {
                 if (result2.find("ERROR") != std::string::npos ||
                     result2.find("Error") != std::string::npos) {
                     // Column was added but comment failed - log warning but don't fail
-                    LogPanel::warn("Column added but comment failed: " + result2);
+                    Logger::warn("Column added but comment failed: " + result2);
                 }
             }
         } else {
@@ -656,7 +656,7 @@ bool TableDialog::executeAddColumn() {
 
     } catch (const std::exception& e) {
         errorMessage = "Failed to add column: " + std::string(e.what());
-        LogPanel::error(errorMessage);
+        Logger::error(errorMessage);
         return false;
     }
 }
@@ -668,7 +668,7 @@ bool TableDialog::executeEditColumn() {
             return false; // Error message already set in generateEditColumnSQL
         }
 
-        LogPanel::info("Executing: " + sql);
+        Logger::info("Executing: " + sql);
 
         // For PostgreSQL, we need to execute multiple statements
         if (database->getType() == DatabaseType::POSTGRESQL) {
@@ -712,13 +712,13 @@ bool TableDialog::executeEditColumn() {
         database->setTablesLoaded(false);
         database->refreshTables();
 
-        LogPanel::info("Column '" + originalColumnName + "' updated successfully in table '" +
-                       targetTableName + "'");
+        Logger::info("Column '" + originalColumnName + "' updated successfully in table '" +
+                     targetTableName + "'");
         return true;
 
     } catch (const std::exception& e) {
         errorMessage = "Failed to edit column: " + std::string(e.what());
-        LogPanel::error(errorMessage);
+        Logger::error(errorMessage);
         return false;
     }
 }
@@ -1056,7 +1056,7 @@ bool TableDialog::validateTableInput() {
 
     if (!hasPrimaryKey) {
         // This is just a warning, not an error
-        LogPanel::warn("Table '" + std::string(newTableName) + "' does not have a primary key");
+        Logger::warn("Table '" + std::string(newTableName) + "' does not have a primary key");
     }
 
     return true;
@@ -1065,7 +1065,7 @@ bool TableDialog::validateTableInput() {
 bool TableDialog::executeCreateTable() {
     try {
         std::string sql = generateCreateTableSQL();
-        LogPanel::info("Executing: " + sql);
+        Logger::info("Executing: " + sql);
 
         std::string result = database->executeQuery(sql);
 
@@ -1105,7 +1105,7 @@ bool TableDialog::executeCreateTable() {
                 if (commentResult.find("ERROR") != std::string::npos ||
                     commentResult.find("Error") != std::string::npos) {
                     // Table was created but comment failed - log warning but don't fail
-                    LogPanel::warn("Table created but comment failed: " + commentResult);
+                    Logger::warn("Table created but comment failed: " + commentResult);
                 }
             }
         }
@@ -1114,12 +1114,12 @@ bool TableDialog::executeCreateTable() {
         database->setTablesLoaded(false);
         database->refreshTables();
 
-        LogPanel::info("Table '" + std::string(newTableName) + "' created successfully");
+        Logger::info("Table '" + std::string(newTableName) + "' created successfully");
         return true;
 
     } catch (const std::exception& e) {
         errorMessage = "Failed to create table: " + std::string(e.what());
-        LogPanel::error(errorMessage);
+        Logger::error(errorMessage);
         return false;
     }
 }
@@ -1306,8 +1306,8 @@ bool TableDialog::saveTableChanges() {
                     dropSQL = "ALTER TABLE " + tableName + " DROP COLUMN " + originalColumn.name;
                 } else if (database->getType() == DatabaseType::SQLITE) {
                     // SQLite doesn't support DROP COLUMN directly
-                    LogPanel::warn("SQLite doesn't support DROP COLUMN. Column '" +
-                                   originalColumn.name + "' will remain in the table.");
+                    Logger::warn("SQLite doesn't support DROP COLUMN. Column '" +
+                                 originalColumn.name + "' will remain in the table.");
                     continue;
                 }
 
@@ -1319,13 +1319,13 @@ bool TableDialog::saveTableChanges() {
 
         // Execute all SQL statements
         for (const auto& sql : sqlStatements) {
-            LogPanel::info("Executing: " + sql);
+            Logger::info("Executing: " + sql);
             std::string result = database->executeQuery(sql);
 
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
                 errorMessage = std::format("Failed to execute: {}", sql);
-                LogPanel::error(errorMessage);
+                Logger::error(errorMessage);
                 return false;
             }
         }
@@ -1334,12 +1334,12 @@ bool TableDialog::saveTableChanges() {
         database->setTablesLoaded(false);
         database->refreshTables();
 
-        LogPanel::info("Table changes saved successfully");
+        Logger::info("Table changes saved successfully");
         return true;
 
     } catch (const std::exception& e) {
         errorMessage = "Failed to save table changes: " + std::string(e.what());
-        LogPanel::error(errorMessage);
+        Logger::error(errorMessage);
         return false;
     }
 }
@@ -1443,11 +1443,11 @@ std::string TableDialog::generateEditColumnSQLForColumn(const Column& column,
 
     case DatabaseType::SQLITE:
         // SQLite doesn't support ALTER COLUMN directly
-        LogPanel::warn("SQLite doesn't support column modification for column: " + column.name);
+        Logger::warn("SQLite doesn't support column modification for column: " + column.name);
         return "";
 
     default:
-        LogPanel::warn("Column editing not supported for this database type");
+        Logger::warn("Column editing not supported for this database type");
         return "";
     }
 

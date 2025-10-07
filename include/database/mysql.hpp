@@ -152,7 +152,6 @@ public:
     const DatabaseData& getDatabaseData(const std::string& dbName) const;
 
 private:
-
     // Thread synchronization
     mutable std::mutex sessionMutex;
 

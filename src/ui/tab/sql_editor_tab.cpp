@@ -4,8 +4,8 @@
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
-#include "ui/log_panel.hpp"
 #include "ui/table_renderer.hpp"
+#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
@@ -46,13 +46,12 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
                     if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
                         // Load schemas for target database with high priority
                         if (targetDb != pgDb->getDatabaseName()) {
-                            LogPanel::debug(
-                                "Starting priority schema loading for target database: " +
-                                targetDb);
+                            Logger::debug("Starting priority schema loading for target database: " +
+                                          targetDb);
                             pgDb->startSchemasLoadAsync(targetDb);
                         } else if (!pgDb->isLoadingSchemas()) {
-                            LogPanel::debug("Starting schema loading for current database: " +
-                                            targetDb);
+                            Logger::debug("Starting schema loading for current database: " +
+                                          targetDb);
                             pgDb->refreshSchemas();
                         }
                     }
@@ -193,11 +192,8 @@ void SQLEditorTab::render() {
                     }
                 } else {
                     // Fall back to selected database if no server database set
-                    const int selectedDb = app.getSelectedDatabase();
-                    const auto& databases = app.getDatabases();
-                    if (selectedDb >= 0 && selectedDb < static_cast<int>(databases.size())) {
-                        targetDb = databases[selectedDb];
-                        // Update the server database reference
+                    if (auto selectedDb = app.getSelectedDatabase()) {
+                        targetDb = selectedDb;
                         serverDatabase = targetDb;
                     }
                 }
@@ -596,7 +592,7 @@ void SQLEditorTab::render() {
                                 for (const auto& schema : dbData.schemas) {
                                     if (schema.name == "public") {
                                         selectedSchemaName = schema.name;
-                                        LogPanel::debug(
+                                        Logger::debug(
                                             "Auto-selected 'public' schema from target database: " +
                                             targetDb);
                                         break;
@@ -604,9 +600,9 @@ void SQLEditorTab::render() {
                                 }
                                 if (selectedSchemaName.empty() && !dbData.schemas.empty()) {
                                     selectedSchemaName = dbData.schemas[0].name;
-                                    LogPanel::debug("Auto-selected first schema '" +
-                                                    selectedSchemaName +
-                                                    "' from target database: " + targetDb);
+                                    Logger::debug("Auto-selected first schema '" +
+                                                  selectedSchemaName +
+                                                  "' from target database: " + targetDb);
                                 }
                             }
                         }
@@ -619,7 +615,7 @@ void SQLEditorTab::render() {
                             for (const auto& schema : pgDb->getSchemas()) {
                                 if (schema.name == "public") {
                                     selectedSchemaName = schema.name;
-                                    LogPanel::debug(
+                                    Logger::debug(
                                         "Auto-selected 'public' schema from current database: " +
                                         pgDb->getDatabaseName());
                                     break;
@@ -627,7 +623,7 @@ void SQLEditorTab::render() {
                             }
                             if (selectedSchemaName.empty() && !pgDb->getSchemas().empty()) {
                                 selectedSchemaName = pgDb->getSchemas()[0].name;
-                                LogPanel::debug(
+                                Logger::debug(
                                     "Auto-selected first schema '" + selectedSchemaName +
                                     "' from current database: " + pgDb->getDatabaseName());
                             }

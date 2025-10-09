@@ -2,6 +2,7 @@
 #include "database/db.hpp"
 #include "utils/logger.hpp"
 #include <chrono>
+#include <format>
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
@@ -13,8 +14,9 @@ MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, i
     : host(host), port(port), database(database), username(username), password(password),
       showAllDatabases(showAllDatabases) {
     this->name = name;
-    std::cout << "DEBUG: Creating MySQLDatabase with database = '" << database
-              << "', showAllDatabases = " << showAllDatabases << std::endl;
+    Logger::debug(
+        std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
+                    database, showAllDatabases));
     connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
 
     if (!username.empty()) {

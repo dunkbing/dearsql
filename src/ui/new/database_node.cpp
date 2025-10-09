@@ -8,7 +8,6 @@
 #include <ranges>
 
 namespace NewHierarchy {
-
     void renderRootDatabaseNode(const std::shared_ptr<DatabaseInterface>& dbInterface) {
         if (!dbInterface) {
             return;
@@ -55,31 +54,25 @@ namespace NewHierarchy {
                 return;
             }
 
-            if (mysqlDb->shouldShowAllDatabases()) {
-                // Multi-database mode
-                if (!mysqlDb->areDatabasesLoaded() && !mysqlDb->isLoadingDatabases()) {
-                    mysqlDb->refreshDatabaseNames();
-                }
+            // Multi-database mode
+            if (!mysqlDb->areDatabasesLoaded() && !mysqlDb->isLoadingDatabases()) {
+                mysqlDb->refreshDatabaseNames();
+            }
 
-                if (mysqlDb->isLoadingDatabases()) {
-                    mysqlDb->checkDatabasesStatusAsync();
-                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading databases...");
-                    ImGui::SameLine();
-                    UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(colors.peach));
-                    ImGui::PopStyleColor();
-                } else if (mysqlDb->areDatabasesLoaded()) {
-                    // TODO: Render MySQL databases using nested structs
-                    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-                    ImGui::Text("  Multi-database rendering not yet implemented");
-                    ImGui::PopStyleColor();
-                }
-            } else {
-                // TODO: Single database mode rendering using nested structs
-                ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-                ImGui::Text("  Single database rendering not yet implemented");
+            if (mysqlDb->isLoadingDatabases()) {
+                mysqlDb->checkDatabasesStatusAsync();
+                ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                ImGui::Text("  Loading databases...");
+                ImGui::SameLine();
+                UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2,
+                                 ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
+            } else if (mysqlDb->areDatabasesLoaded()) {
+                const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
+                for (const auto& dbData : databases) {
+                    renderMySQLDatabaseNode(mysqlDb,
+                                            const_cast<MySQLDatabase::DatabaseData*>(&dbData));
+                }
             }
         }
     }
@@ -113,7 +106,7 @@ namespace NewHierarchy {
             ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                    ImGui::GetItemRectMin().y +
                        (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-        ImU32 iconColor = ImGui::GetColorU32(colors.blue);
+        const ImU32 iconColor = ImGui::GetColorU32(colors.blue);
         ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
 
         // Handle expand/collapse
@@ -295,7 +288,139 @@ namespace NewHierarchy {
     }
 
     void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabase::DatabaseData* dbData) {
-        // TODO: Implement MySQL database node rendering using nested DatabaseData
+        if (!mysqlDb || !dbData) {
+            return;
+        }
+
+        auto& app = Application::getInstance();
+        const auto& colors = app.getCurrentColors();
+
+        // Create unique ID for this database node
+        const std::string nodeId =
+            std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
+
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                   ImGuiTreeNodeFlags_FramePadding;
+
+        // Display database name with icon
+        const std::string icon = ICON_FK_DATABASE;
+        const std::string label = std::format("   {}###{}", dbData->name, nodeId);
+
+        const bool isOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+
+        // Draw icon
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        const ImU32 iconColor = ImGui::GetColorU32(colors.blue);
+        ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
+
+        // Handle expand/collapse
+        if (ImGui::IsItemToggledOpen()) {
+            dbData->expanded = isOpen;
+        }
+
+        if (isOpen) {
+            // MySQL: render tables and views directly (no schema layer)
+
+            // Render Tables section
+            {
+                const std::string tablesNodeId = std::format("tables_{}_{:p}", dbData->name,
+                                                             static_cast<void*>(&dbData->tables));
+                const std::string tablesLabel = std::format("   Tables###{}", tablesNodeId);
+
+                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), flags);
+
+                // Draw tables icon
+                const std::string tablesIcon = ICON_FK_TABLE;
+                const auto tablesIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+                ImU32 tablesIconColor = ImGui::GetColorU32(colors.green);
+                ImGui::GetWindowDrawList()->AddText(tablesIconPos, tablesIconColor,
+                                                    tablesIcon.c_str());
+
+                if (tablesOpen) {
+                    if (!dbData->tablesLoaded && !dbData->loadingTables) {
+                        Logger::debug(
+                            std::format("Need to load tables for database: {}", dbData->name));
+                        // TODO: Trigger table loading for this database
+                    }
+
+                    if (dbData->loadingTables) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading tables...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_tables", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (dbData->tablesLoaded) {
+                        if (dbData->tables.empty()) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                            ImGui::Text("  No tables");
+                            ImGui::PopStyleColor();
+                        } else {
+                            for (auto& table : dbData->tables) {
+                                ImGui::Text("    %s", table.name.c_str());
+                            }
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Render Views section
+            {
+                const std::string viewsNodeId =
+                    std::format("views_{}_{:p}", dbData->name, static_cast<void*>(&dbData->views));
+                const std::string viewsLabel = std::format("   Views###{}", viewsNodeId);
+
+                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), flags);
+
+                // Draw views icon
+                const std::string viewsIcon = ICON_FK_EYE;
+                const auto viewsIconPos =
+                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                           ImGui::GetItemRectMin().y +
+                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+                ImU32 viewsIconColor = ImGui::GetColorU32(colors.teal);
+                ImGui::GetWindowDrawList()->AddText(viewsIconPos, viewsIconColor,
+                                                    viewsIcon.c_str());
+
+                if (viewsOpen) {
+                    if (!dbData->viewsLoaded && !dbData->loadingViews) {
+                        Logger::debug(
+                            std::format("Need to load views for database: {}", dbData->name));
+                        // TODO: Trigger view loading for this database
+                    }
+
+                    if (dbData->loadingViews) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading views...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_views", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (dbData->viewsLoaded) {
+                        if (dbData->views.empty()) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                            ImGui::Text("  No views");
+                            ImGui::PopStyleColor();
+                        } else {
+                            for (auto& view : dbData->views) {
+                                ImGui::Text("    %s", view.name.c_str());
+                            }
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::TreePop();
+        }
     }
 
     void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabase::DatabaseData* dbData) {

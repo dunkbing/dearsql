@@ -1506,13 +1506,14 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
             return result;
         }
 
-        std::string sqlQuery = std::format("SELECT datname FROM pg_database WHERE datistemplate = "
-                                           "false AND datname = {} ORDER BY datname",
-                                           database);
-        if (showAllDatabases) {
-            sqlQuery =
-                "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname";
+        std::vector<std::string> conditions = {sql::eq("datistemplate", "false")};
+        if (!showAllDatabases) {
+            conditions.push_back(sql::eq("datname", "'" + database + "'"));
         }
+
+        const std::string whereClause = sql::and_(conditions);
+        const std::string sqlQuery =
+            std::format("SELECT datname FROM pg_database WHERE {} ORDER BY datname", whereClause);
 
         std::cout << "Executing async query to get database names..." << std::endl;
         const auto session = getSession();

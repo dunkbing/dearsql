@@ -75,8 +75,14 @@ std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
 void buildForeignKeyLookup(Table& table);
 void populateIncomingForeignKeys(std::vector<Table>& tables);
 
-// Build query condition string from vector of conditions and operator (AND/OR)
-std::string buildCondition(const std::vector<std::string>& conditions, const std::string& op);
+// Query builder functions (Drizzle-like API)
+namespace sql {
+    std::string and_(const std::vector<std::string>& conditions);
+    std::string or_(const std::vector<std::string>& conditions);
+    std::string eq(const std::string& column, const std::string& value);
+    std::string like(const std::string& column, const std::string& pattern);
+    std::string ilike(const std::string& column, const std::string& pattern);
+} // namespace sql
 
 struct TableDataLoadState {
     std::atomic<bool> loading{false};

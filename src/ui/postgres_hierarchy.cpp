@@ -100,10 +100,9 @@ namespace PostgresHierarchy {
         }
 
         // Check schema loading status for all expanded databases
-        const std::vector<std::string> databases = pgDb->getDatabaseNames();
-        for (const auto& dbName : databases) {
+        const auto& databases = pgDb->getDatabaseDataMap();
+        for (const auto& [dbName, dbData] : databases) {
             if (pgDb->isDatabaseExpanded(dbName)) {
-                const auto& dbData = pgDb->getDatabaseData(dbName);
                 if (dbData.loadingSchemas) {
                     pgDb->checkSchemasStatusAsync(dbName);
                 }
@@ -122,14 +121,13 @@ namespace PostgresHierarchy {
             return;
         }
 
-        for (const auto& dbName : databases) {
+        for (const auto& [dbName, dbData] : databases) {
             ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                              ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                              ImGuiTreeNodeFlags_FramePadding;
 
             // Keep the node expanded if it was previously expanded
             const bool shouldBeExpanded = pgDb->isDatabaseExpanded(dbName);
-            const auto& dbData = pgDb->getDatabaseData(dbName);
 
             if (shouldBeExpanded) {
                 dbNodeFlags |= ImGuiTreeNodeFlags_DefaultOpen;

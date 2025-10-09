@@ -4,7 +4,7 @@
 #include "imgui.h"
 #include "platform/platform_interface.hpp"
 #include "themes.hpp"
-#include "ui/db_sidebar.hpp"
+#include "ui/new/db_sidebar_new.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <GLFW/glfw3.h>
@@ -27,7 +27,7 @@ public:
     [[nodiscard]] TabManager* getTabManager() const {
         return tabManager.get();
     }
-    [[nodiscard]] DatabaseSidebar* getDatabaseSidebar() const {
+    [[nodiscard]] DatabaseSidebarNew* getDatabaseSidebar() const {
         return databaseSidebar.get();
     }
     [[nodiscard]] FileDialog* getFileDialog() const {
@@ -113,7 +113,7 @@ private:
     // Core components
     GLFWwindow* window = nullptr;
     std::unique_ptr<TabManager> tabManager;
-    std::unique_ptr<DatabaseSidebar> databaseSidebar;
+    std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
     std::unique_ptr<PlatformInterface> platform_;

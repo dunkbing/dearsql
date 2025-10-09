@@ -1,43 +1,50 @@
-#include "ui/db_sidebar.hpp"
+#include "ui/new/db_sidebar_new.hpp"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/drop_column_dialog.hpp"
-#include "ui/hierarchy_helpers.hpp"
-#include "ui/mysql_hierarchy.hpp"
-#include "ui/postgres_hierarchy.hpp"
-#include "ui/sqlite_hierarchy.hpp"
+#include "ui/new/database_node.hpp"
 #include "ui/tab_manager.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <format>
-#include <limits>
 
 // Static dialog instances
-static TableDialog tableDialog;
-static DropColumnDialog dropColumnDialog;
+static TableDialog tableDialogNew;
+static DropColumnDialog dropColumnDialogNew;
 
-// Function to access the dialogs from hierarchy helpers
-namespace HierarchyHelpers {
-    TableDialog& getTableDialog() {
-        return tableDialog;
-    }
-
-    DropColumnDialog& getDropColumnDialog() {
-        return dropColumnDialog;
-    }
-} // namespace HierarchyHelpers
-
-void DatabaseSidebar::showConnectionDialog() {
+void DatabaseSidebarNew::showConnectionDialog() {
     shouldShowConnectionDialog = true;
 }
 
-void DatabaseSidebar::render() {
+void DatabaseSidebarNew::renderEmpty() {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::TextWrapped("No databases connected");
+    ImGui::Spacing();
+    ImGui::TextWrapped("Right-click here to add a new database connection");
+    ImGui::PopStyleColor();
+
+    // Show context menu for adding database when area is right-clicked
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        ImGui::OpenPopup("AddDatabasePopup");
+    }
+
+    if (ImGui::BeginPopup("AddDatabasePopup")) {
+        if (ImGui::MenuItem("Add Database Connection")) {
+            Logger::info("Opening database connection dialog");
+            showConnectionDialog();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -86,29 +93,10 @@ void DatabaseSidebar::render() {
 
     if (databases.empty()) {
         // Show helpful message when no databases are connected
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-        ImGui::TextWrapped("No databases connected");
-        ImGui::Spacing();
-        ImGui::TextWrapped("Right-click here to add a new database connection");
-        ImGui::PopStyleColor();
-
-        // Show context menu for adding database when area is right-clicked
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            ImGui::OpenPopup("AddDatabasePopup");
-        }
-
-        if (ImGui::BeginPopup("AddDatabasePopup")) {
-            if (ImGui::MenuItem("Add Database Connection")) {
-                Logger::info("Opening database connection dialog");
-                showConnectionDialog();
-            }
-            ImGui::EndPopup();
-        }
+        renderEmpty();
     } else {
         for (const auto& db : databases) {
-            if (db) {
-                renderDatabaseNode(db);
-            }
+            renderDatabaseNode(db);
         }
     }
 
@@ -124,60 +112,31 @@ void DatabaseSidebar::render() {
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         const auto db = databasePendingDeletion;
         if (db) {
-            const auto index = app.findDatabaseIndex(db);
-            if (index == std::numeric_limits<std::size_t>::max()) {
-                ImGui::Text("This database connection is no longer available.");
-            } else {
-                ImGui::Text("Are you sure you want to remove this database connection?");
-                ImGui::Text("Database: %s", db->getName().c_str());
-                ImGui::Spacing();
-                ImGui::Text("This will:");
-                ImGui::BulletText("Remove the database from the current session");
-                ImGui::BulletText("Delete the saved connection (if any)");
-                ImGui::BulletText("Close any open tabs for this database");
-                ImGui::Spacing();
-                ImGui::Separator();
+            ImGui::Text("Are you sure you want to remove this database connection?");
+            ImGui::Text("Database: %s", db->getName().c_str());
+            ImGui::Spacing();
+            ImGui::Text("This will:");
+            ImGui::BulletText("Remove the database from the current session");
+            ImGui::BulletText("Delete the saved connection (if any)");
+            ImGui::BulletText("Close any open tabs for this database");
+            ImGui::Spacing();
+            ImGui::Separator();
 
-                if (ImGui::Button("Remove", ImVec2(100, 0))) {
-                    const auto savedConnections = app.getAppState()->getSavedConnections();
-                    for (const auto& conn : savedConnections) {
-                        bool matches = false;
-                        switch (db->getType()) {
-                        case DatabaseType::POSTGRESQL:
-                            matches = (conn.type == "postgresql" && conn.name == db->getName());
-                            break;
-                        case DatabaseType::MYSQL:
-                            matches = (conn.type == "mysql" && conn.name == db->getName());
-                            break;
-                        case DatabaseType::SQLITE:
-                            matches = (conn.type == "sqlite" && conn.name == db->getName());
-                            break;
-                        case DatabaseType::REDIS:
-                            matches = (conn.type == "redis" && conn.name == db->getName());
-                            break;
-                        default:
-                            break;
-                        }
+            if (ImGui::Button("Remove", ImVec2(100, 0))) {
+                const auto savedConnections = app.getAppState()->getSavedConnections();
 
-                        if (matches) {
-                            if (app.getAppState()->deleteConnection(conn.id)) {
-                                Logger::info(
-                                    std::format("Removed saved connection: {}", conn.name));
-                            }
-                            break;
-                        }
-                    }
-
-                    Logger::info(std::format("Database removed: {}", db->getName()));
-                    app.removeDatabase(db);
-                    databasePendingDeletion.reset();
-                    ImGui::CloseCurrentPopup();
+                if (app.getAppState()->deleteConnection(db->getSavedConnectionId())) {
+                    Logger::info(std::format("Removed saved connection: {}", db->getName()));
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-                    databasePendingDeletion.reset();
-                    ImGui::CloseCurrentPopup();
-                }
+                Logger::info(std::format("Database removed: {}", db->getName()));
+                app.removeDatabase(db);
+                databasePendingDeletion.reset();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                databasePendingDeletion.reset();
+                ImGui::CloseCurrentPopup();
             }
         } else {
             ImGui::Text("No database selected for removal.");
@@ -186,25 +145,23 @@ void DatabaseSidebar::render() {
     }
 
     // Render table dialog if open
-    if (tableDialog.isDialogOpen()) {
-        tableDialog.renderDialog();
+    if (tableDialogNew.isDialogOpen()) {
+        tableDialogNew.renderDialog();
     }
 
     // Handle table dialog completion
-    if (tableDialog.hasResult()) {
-        tableDialog.clearResult();
-        // Table structure will be refreshed automatically by the dialog
+    if (tableDialogNew.hasResult()) {
+        tableDialogNew.clearResult();
     }
 
     // Render drop column dialog if open
-    if (dropColumnDialog.isDialogOpen()) {
-        dropColumnDialog.renderDialog();
+    if (dropColumnDialogNew.isDialogOpen()) {
+        dropColumnDialogNew.renderDialog();
     }
 
     // Handle drop column dialog completion
-    if (dropColumnDialog.hasResult()) {
-        dropColumnDialog.clearResult();
-        // Table structure will be refreshed automatically by the dialog
+    if (dropColumnDialogNew.hasResult()) {
+        dropColumnDialogNew.clearResult();
     }
 
     // Handle create database dialog
@@ -320,7 +277,7 @@ void DatabaseSidebar::render() {
     ImGui::End();
 }
 
-void DatabaseSidebar::renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db) {
+void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
         return;
     }
@@ -420,58 +377,14 @@ void DatabaseSidebar::renderDatabaseNode(const std::shared_ptr<DatabaseInterface
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
         } else if (db->isConnected()) {
-            if (db->getType() == DatabaseType::POSTGRESQL) {
-                auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
-                if (pgDb->isLoadingDatabases()) {
-                    pgDb->checkDatabasesStatusAsync();
-                }
-                if (pgDb->isSwitchingDatabase()) {
-                    pgDb->checkDatabaseSwitchStatusAsync();
-                }
-                if (pgDb->isLoadingSchemas()) {
-                    pgDb->checkSchemasStatusAsync();
-                }
-            }
-
-            if (db->isLoadingTables()) {
-                db->checkTablesStatusAsync();
-            }
-            if (db->isLoadingViews()) {
-                db->checkViewsStatusAsync();
-            }
-            if (db->isLoadingSequences()) {
-                db->checkSequencesStatusAsync();
-            }
-
-            if (db->getType() == DatabaseType::SQLITE) {
-                SQLiteHierarchy::renderSQLiteHierarchy(
-                    std::dynamic_pointer_cast<SQLiteDatabase>(db));
-            } else if (db->getType() == DatabaseType::POSTGRESQL) {
-                PostgresHierarchy::renderPostgresHierarchy(
-                    std::dynamic_pointer_cast<PostgresDatabase>(db));
-            } else if (db->getType() == DatabaseType::MYSQL) {
-                const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-                if (mysqlDb && mysqlDb->isLoadingDatabases()) {
-                    mysqlDb->checkDatabasesStatusAsync();
-                }
-                if (mysqlDb && mysqlDb->isSwitchingDatabase()) {
-                    mysqlDb->checkDatabaseSwitchStatusAsync();
-                }
-                if (mysqlDb) {
-                    MySQLHierarchy::renderMySQLHierarchy(mysqlDb);
-                }
-            } else if (db->getType() == DatabaseType::REDIS) {
-                if (db->isLoadingTableData()) {
-                    db->checkTableDataStatusAsync();
-                }
-                HierarchyHelpers::renderRedisHierarchy(db);
-            }
+            // Use the new refactored hierarchy rendering
+            NewHierarchy::renderRootDatabaseNode(db);
         }
         ImGui::TreePop();
     }
 }
 
-void DatabaseSidebar::handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db) {
+void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
         return;
     }

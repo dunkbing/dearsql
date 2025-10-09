@@ -31,7 +31,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
         if (pgDb) {
             if (pgDb->shouldShowAllDatabases()) {
                 // Start loading database list if not already loaded (needed for combo)
-                if (!pgDb->isLoadingDatabases() && pgDb->getDatabaseNames().empty()) {
+                if (!pgDb->isLoadingDatabases() && pgDb->getDatabases().empty()) {
                     pgDb->refreshDatabaseNames();
                 }
 
@@ -266,7 +266,7 @@ void SQLEditorTab::render() {
         if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
             auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
             if (pgDb && pgDb->shouldShowAllDatabases()) {
-                availableDatabases = pgDb->getDatabaseNames();
+                availableDatabases = pgDb->getDatabases();
 
                 // Only check if target database schemas are loading (not all databases)
                 std::string targetDb =
@@ -873,7 +873,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
 
             // Add database names if in multi-database mode
             if (pgDb->shouldShowAllDatabases()) {
-                for (const auto& dbName : pgDb->getDatabaseNames()) {
+                for (const auto& dbName : pgDb->getDatabases()) {
                     uniqueKeywords.insert(dbName);
                 }
             }

@@ -36,7 +36,6 @@ public:
     // Database info
     [[nodiscard]] virtual const std::string& getName() const = 0;
     [[nodiscard]] virtual const std::string& getConnectionString() const = 0;
-    [[nodiscard]] virtual const std::string& getPath() const = 0;
     [[nodiscard]] virtual void* getConnection() const = 0;
     [[nodiscard]] virtual DatabaseType getType() const = 0;
 

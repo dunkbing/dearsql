@@ -75,6 +75,9 @@ std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
 void buildForeignKeyLookup(Table& table);
 void populateIncomingForeignKeys(std::vector<Table>& tables);
 
+// Build query condition string from vector of conditions and operator (AND/OR)
+std::string buildCondition(const std::vector<std::string>& conditions, const std::string& op);
+
 struct TableDataLoadState {
     std::atomic<bool> loading{false};
     std::atomic<bool> ready{false};

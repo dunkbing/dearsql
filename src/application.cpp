@@ -16,7 +16,6 @@
 #include <imgui_internal.h>
 #include <iostream>
 #include <limits>
-#include <ranges>
 
 #ifdef USE_OPENGL_BACKEND
 #include "imgui_impl_opengl3.h"
@@ -116,7 +115,7 @@ bool Application::initialize() {
 
     // Create managers
     tabManager = std::make_unique<TabManager>();
-    databaseSidebar = std::make_unique<DatabaseSidebar>();
+    databaseSidebar = std::make_unique<DatabaseSidebarNew>();
     fileDialog = std::make_unique<FileDialog>();
 
     // Initialize app state

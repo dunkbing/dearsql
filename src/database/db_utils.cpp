@@ -1,9 +1,11 @@
 #include "database/db.hpp"
 #include <chrono>
 #include <soci/soci.h>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 std::string convertRowValue(const soci::row& row, const std::size_t columnIndex) {
     if (row.get_indicator(columnIndex) == soci::i_null) {
@@ -283,4 +285,19 @@ void TableDataLoader::cancelAllAndWait() {
             state.future.wait();
         }
     }
+}
+
+std::string buildCondition(const std::vector<std::string>& conditions, const std::string& op) {
+    if (conditions.empty()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    for (size_t i = 0; i < conditions.size(); ++i) {
+        if (i > 0) {
+            oss << " " << op << " ";
+        }
+        oss << "(" << conditions[i] << ")";
+    }
+    return oss.str();
 }

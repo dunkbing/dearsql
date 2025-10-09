@@ -102,6 +102,9 @@ set(APP_SOURCES
     src/ui/sqlite_hierarchy.cpp
     src/ui/postgres_hierarchy.cpp
     src/ui/mysql_hierarchy.cpp
+    # New refactored hierarchy system
+    src/ui/new/database_node.cpp
+    src/ui/new/db_sidebar_new.cpp
     # Tabs
     src/ui/tab_manager.cpp
     src/ui/tab/tab.cpp

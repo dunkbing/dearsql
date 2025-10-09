@@ -16,7 +16,7 @@ public:
     // Database info
     const std::string& getName() const override;
     const std::string& getConnectionString() const override;
-    const std::string& getPath() const override;
+    const std::string& getPath() const;
     void* getConnection() const override;
     DatabaseType getType() const override;
 
@@ -37,6 +37,47 @@ public:
     // Async table data loading (BaseDatabaseImpl provides implementation)
     void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                  const std::string& whereClause = "") override;
+
+    // Per-file data structure (made public for hierarchy rendering)
+public:
+    /**
+     * @brief Database-level data for SQLite
+     *
+     * SQLite hierarchy: File → Tables/Views/Sequences
+     * SQLite is a single-file database, so there's no "databases" layer.
+     * This struct holds the contents of the single .db file.
+     */
+    struct DatabaseData {
+        std::string name; // File name/path
+
+        // SQLite: Direct Tables/Views/Sequences (no database or schema layers)
+        std::vector<Table> tables;
+        std::vector<Table> views;
+        std::vector<std::string> sequences; // SQLite has sqlite_sequence
+
+        // Loading state flags
+        bool tablesLoaded = false;
+        bool viewsLoaded = false;
+        bool sequencesLoaded = false;
+        std::atomic<bool> loadingTables = false;
+        std::atomic<bool> loadingViews = false;
+        std::atomic<bool> loadingSequences = false;
+
+        // Async futures
+        std::future<std::vector<Table>> tablesFuture;
+        std::future<std::vector<Table>> viewsFuture;
+        std::future<std::vector<std::string>> sequencesFuture;
+
+        // UI expansion state
+        bool tablesExpanded = false;
+        bool viewsExpanded = false;
+        bool sequencesExpanded = false;
+
+        // Error tracking
+        std::string lastTablesError;
+        std::string lastViewsError;
+        std::string lastSequencesError;
+    };
 
 protected:
     std::vector<std::string> getTableNames() override;

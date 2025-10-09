@@ -28,7 +28,6 @@ public:
     // Database info
     const std::string& getName() const override;
     const std::string& getConnectionString() const override;
-    const std::string& getPath() const override;
     void* getConnection() const override;
     DatabaseType getType() const override;
 

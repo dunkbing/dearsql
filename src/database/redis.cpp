@@ -164,10 +164,6 @@ const std::string& RedisDatabase::getConnectionString() const {
     return connectionString;
 }
 
-const std::string& RedisDatabase::getPath() const {
-    return connectionString;
-}
-
 void* RedisDatabase::getConnection() const {
     return context;
 }

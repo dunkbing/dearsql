@@ -24,7 +24,6 @@ public:
     // Database info
     const std::string& getName() const override;
     const std::string& getConnectionString() const override;
-    const std::string& getPath() const override;
     void* getConnection() const override;
     DatabaseType getType() const override;
     const std::string& getDatabaseName() const;
@@ -86,6 +85,48 @@ public:
     bool isDatabaseExpanded(const std::string& dbName) const;
     void setDatabaseExpanded(const std::string& dbName, bool expanded);
 
+    // Per-database data structures (made public for hierarchy rendering)
+public:
+    /**
+     * @brief Per-database data for MySQL
+     *
+     * MySQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Tables/Views
+     * Each DatabaseData represents one database within the MySQL server.
+     * Note: MySQL doesn't have schemas, so tables/views are directly under database.
+     */
+    struct DatabaseData {
+        std::string name;
+
+        // Connection pool (one per database)
+        std::unique_ptr<soci::connection_pool> connectionPool;
+
+        // MySQL: Database → Tables/Views (no schema layer)
+        std::vector<Table> tables;
+        std::vector<Table> views;
+        std::vector<std::string> sequences; // Empty for MySQL (for API compatibility)
+
+        // Loading state flags
+        bool tablesLoaded = false;
+        bool viewsLoaded = false;
+        bool sequencesLoaded = false; // For API compatibility
+        std::atomic<bool> loadingTables = false;
+        std::atomic<bool> loadingViews = false;
+
+        // Async futures
+        std::future<std::vector<Table>> tablesFuture;
+        std::future<std::vector<Table>> viewsFuture;
+
+        // UI expansion state
+        bool expanded = false;
+        bool tablesExpanded = false;
+        bool viewsExpanded = false;
+        bool sequencesExpanded = false; // For API compatibility
+
+        // Error tracking
+        std::string lastTablesError;
+        std::string lastViewsError;
+    };
+
 protected:
     std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string& tableName) override;
@@ -100,7 +141,6 @@ protected:
     std::vector<Table> getTablesWithColumnsAsync();
     void startRefreshViewAsync();
     std::vector<Table> getViewsWithColumnsAsync();
-    void startRefreshDatabasesAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
 
 private:
@@ -112,23 +152,7 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
-    std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
-    // Per-database data structures
-    struct DatabaseData {
-        std::vector<Table> tables;
-        std::vector<Table> views;
-        std::vector<std::string> sequences; // Empty for MySQL
-        bool tablesLoaded = false;
-        bool viewsLoaded = false;
-        bool sequencesLoaded = false;
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-        bool sequencesExpanded = false;
-        std::atomic<bool> loadingTables = false;
-        std::atomic<bool> loadingViews = false;
-        std::future<std::vector<Table>> tablesFuture;
-        std::future<std::vector<Table>> viewsFuture;
-    };
+    // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
     std::unordered_map<std::string, DatabaseData> databaseDataCache;
     std::vector<std::string> availableDatabases;
@@ -150,6 +174,14 @@ public:
     const DatabaseData& getCurrentDatabaseData() const;
     DatabaseData& getDatabaseData(const std::string& dbName);
     const DatabaseData& getDatabaseData(const std::string& dbName) const;
+
+    // Accessor for database data map (used by new hierarchy)
+    std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() {
+        return databaseDataCache;
+    }
+    const std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() const {
+        return databaseDataCache;
+    }
 
 private:
     // Thread synchronization

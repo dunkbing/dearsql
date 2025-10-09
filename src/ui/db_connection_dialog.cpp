@@ -97,7 +97,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
             switch (selectedDatabaseType) {
             case DatabaseType::SQLITE: {
                 // SQLite - directly open file dialog
-                const auto db = createSQLiteDatabase();
+                const auto db = std::dynamic_pointer_cast<SQLiteDatabase>(createSQLiteDatabase());
                 if (db) {
                     // Save SQLite connection to app state
                     SavedConnection conn;

@@ -24,7 +24,6 @@ public:
     // Database info
     const std::string& getName() const override;
     const std::string& getConnectionString() const override;
-    const std::string& getPath() const override;
     void* getConnection() const override;
     DatabaseType getType() const override;
     const std::string& getDatabaseName() const;
@@ -52,7 +51,8 @@ public:
     void checkSequencesStatusAsync() override;
 
     // Database list methods
-    std::vector<std::string> getDatabaseNames();
+    [[deprecated("Use getDatabaseDataMap() instead")]]
+    std::vector<std::string> getDatabases();
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
         return showAllDatabases;
@@ -85,6 +85,72 @@ public:
     void checkDatabaseSwitchStatusAsync();
     bool isDatabaseExpanded(const std::string& dbName) const;
     void setDatabaseExpanded(const std::string& dbName, bool expanded_);
+
+    // Per-database data structures (made public for hierarchy rendering)
+public:
+    /**
+     * @brief Per-schema data for PostgreSQL
+     *
+     * PostgreSQL hierarchy: Database → Schema → Tables/Views/Sequences
+     * Each SchemaData represents one schema (e.g., "public", "analytics")
+     */
+    struct SchemaData {
+        std::string name;
+
+        // Schema contents (only tables, views, sequences for now)
+        std::vector<Table> tables;
+        std::vector<Table> views;
+        std::vector<std::string> sequences;
+
+        // Loading state flags
+        bool tablesLoaded = false;
+        bool viewsLoaded = false;
+        bool sequencesLoaded = false;
+        std::atomic<bool> loadingTables = false;
+        std::atomic<bool> loadingViews = false;
+        std::atomic<bool> loadingSequences = false;
+
+        // Async futures
+        std::future<std::vector<Table>> tablesFuture;
+        std::future<std::vector<Table>> viewsFuture;
+        std::future<std::vector<std::string>> sequencesFuture;
+
+        // UI expansion state
+        bool tablesExpanded = false;
+        bool viewsExpanded = false;
+        bool sequencesExpanded = false;
+
+        // Error tracking
+        std::string lastTablesError;
+        std::string lastViewsError;
+        std::string lastSequencesError;
+    };
+
+    /**
+     * @brief Per-database data for PostgreSQL
+     *
+     * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
+     * Each DatabaseData represents one database within the PostgreSQL server.
+     */
+    struct DatabaseData {
+        std::string name;
+
+        // Connection pool (one per database)
+        std::unique_ptr<soci::connection_pool> connectionPool;
+
+        // PostgreSQL: Database → Schemas → Tables/Views/Sequences
+        std::vector<Schema> schemas; // List of schema names (for legacy compatibility)
+        std::unordered_map<std::string, SchemaData> schemaDataCache; // Schema name → data
+        bool schemasLoaded = false;
+        std::atomic<bool> loadingSchemas = false;
+        std::future<std::vector<Schema>> schemasFuture;
+        std::string lastSchemasError;
+
+        // UI expansion state
+        bool expanded = false;
+        bool tablesExpanded = false; // For backward compatibility
+        bool viewsExpanded = false;  // For backward compatibility
+    };
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -123,7 +189,6 @@ protected:
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
     std::vector<Schema> getSchemasForDatabaseAsync(const std::string& dbName) const;
-    void startRefreshDatabasesAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
 
     // Schema helper methods
@@ -138,40 +203,7 @@ private:
     std::string password;
     std::string connectionString;
     bool showAllDatabases;
-    std::unordered_map<std::string, std::unique_ptr<soci::connection_pool>> connectionPools;
-    // Per-schema data within a database
-    struct SchemaData {
-        std::vector<Table> tables;
-        std::vector<Table> views;
-        std::vector<std::string> sequences;
-        bool tablesLoaded = false;
-        bool viewsLoaded = false;
-        bool sequencesLoaded = false;
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-        bool sequencesExpanded = false;
-        std::atomic<bool> loadingTables = false;
-        std::atomic<bool> loadingViews = false;
-        std::atomic<bool> loadingSequences = false;
-        std::future<std::vector<Table>> tablesFuture;
-        std::future<std::vector<Table>> viewsFuture;
-        std::future<std::vector<std::string>> sequencesFuture;
-    };
-
-    // Per-database data structures
-    struct DatabaseData {
-        std::vector<Schema> schemas;
-        bool schemasLoaded = false;
-        std::atomic<bool> loadingSchemas = false;
-        std::future<std::vector<Schema>> schemasFuture;
-
-        // Schema-level data cache (key: schema name)
-        std::unordered_map<std::string, SchemaData> schemaDataCache;
-
-        // UI state for backward compatibility (used by hierarchy_helpers for non-schema views)
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-    };
+    // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
     std::unordered_map<std::string, DatabaseData> databaseDataCache;
     std::vector<std::string> availableDatabases;
@@ -196,6 +228,11 @@ public:
     const DatabaseData& getCurrentDatabaseData() const;
     DatabaseData& getDatabaseData(const std::string& dbName);
     const DatabaseData& getDatabaseData(const std::string& dbName) const;
+
+    // Accessor for database data map (used by new hierarchy)
+    const std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() const {
+        return databaseDataCache;
+    }
 
     // Helper methods for per-schema data access
     SchemaData& getSchemaData(const std::string& schemaName);

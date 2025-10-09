@@ -92,16 +92,16 @@ set(APP_SOURCES
     src/database/db_utils.cpp
 
     # UI
-    src/ui/db_sidebar.cpp
     src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
-    src/ui/hierarchy_helpers.cpp
-    src/ui/sqlite_hierarchy.cpp
-    src/ui/postgres_hierarchy.cpp
-    src/ui/mysql_hierarchy.cpp
+    # src/ui/db_sidebar.cpp
+    # src/ui/hierarchy_helpers.cpp
+    # src/ui/sqlite_hierarchy.cpp
+    # src/ui/postgres_hierarchy.cpp
+    # src/ui/mysql_hierarchy.cpp
     # New refactored hierarchy system
     src/ui/new/database_node.cpp
     src/ui/new/db_sidebar_new.cpp

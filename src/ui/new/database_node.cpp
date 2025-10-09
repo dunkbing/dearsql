@@ -122,11 +122,11 @@ namespace NewHierarchy {
         if (isOpen) {
             // PostgreSQL: render schemas
             if (!dbData->schemasLoaded && !dbData->loadingSchemas) {
-                pgDb->startSchemasLoadAsync(dbData->name);
+                dbData->startSchemasLoadAsync();
             }
 
             if (dbData->loadingSchemas) {
-                pgDb->checkSchemasStatusAsync(dbData->name);
+                dbData->checkSchemasStatusAsync();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading schemas...");
                 ImGui::SameLine();

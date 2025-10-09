@@ -48,7 +48,8 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
                         if (targetDb != pgDb->getDatabaseName()) {
                             Logger::debug("Starting priority schema loading for target database: " +
                                           targetDb);
-                            pgDb->startSchemasLoadAsync(targetDb);
+                            // TODO: use pgData later
+                            // pgDb->startSchemasLoadAsync(targetDb);
                         } else if (!pgDb->isLoadingSchemas()) {
                             Logger::debug("Starting schema loading for current database: " +
                                           targetDb);
@@ -349,7 +350,8 @@ void SQLEditorTab::render() {
                         // Check schema loading status for all databases
                         if (pgDb->shouldShowAllDatabases()) {
                             for (const auto& dbName : availableDatabases) {
-                                pgDb->checkSchemasStatusAsync(dbName);
+                                // TODO: use pgData later
+                                // pgDb->checkSchemasStatusAsync(dbName);
                             }
 
                             // Prioritize target database first, then load others on-demand
@@ -367,7 +369,8 @@ void SQLEditorTab::render() {
                                             pgDb->refreshSchemas();
                                         }
                                     } else {
-                                        pgDb->startSchemasLoadAsync(targetDb);
+                                        // TODO: use pgData later
+                                        // pgDb->startSchemasLoadAsync(targetDb);
                                     }
                                 }
                             }
@@ -377,13 +380,15 @@ void SQLEditorTab::render() {
                                 if (dbName != targetDb) {
                                     const auto& dbData = pgDb->getDatabaseData(dbName);
                                     if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
-                                        pgDb->startSchemasLoadAsync(dbName);
+                                        // TODO: use pgData later
+                                        // pgDb->startSchemasLoadAsync(dbName);
                                     }
                                 }
                             }
                         } else {
                             // For single database mode, just check current database schema status
-                            pgDb->checkSchemasStatusAsync();
+                            // TODO: use pgData later
+                            // pgDb->checkSchemasStatusAsync();
                         }
                     }
                 }
@@ -461,7 +466,8 @@ void SQLEditorTab::render() {
                                 } else if (!dbData.loadingSchemas) {
                                     // Start loading schemas for this database using parallel
                                     // loading
-                                    pgDb->startSchemasLoadAsync(dbName);
+                                    // TODO: use pgData later
+                                    // pgDb->startSchemasLoadAsync(dbName);
                                 }
                             }
 
@@ -537,7 +543,8 @@ void SQLEditorTab::render() {
                             const auto& dbData = pgDb->getDatabaseData(targetDb);
                             if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
                                 if (targetDb != pgDb->getDatabaseName()) {
-                                    pgDb->startSchemasLoadAsync(targetDb);
+                                    // TODO: use pgData later
+                                    // pgDb->startSchemasLoadAsync(targetDb);
                                 } else if (!pgDb->isLoadingSchemas()) {
                                     pgDb->refreshSchemas();
                                 }
@@ -562,14 +569,17 @@ void SQLEditorTab::render() {
                     std::string targetDb = selectedDatabaseName.empty() ? pgDb->getDatabaseName()
                                                                         : selectedDatabaseName;
                     if (!targetDb.empty()) {
-                        pgDb->checkSchemasStatusAsync(targetDb);
+                        // TODO: use pgData later
+                        // pgDb->checkSchemasStatusAsync(targetDb);
                     }
                     if (targetDb != pgDb->getDatabaseName()) {
-                        pgDb->checkSchemasStatusAsync(pgDb->getDatabaseName());
+                        // TODO: use pgData later
+                        // pgDb->checkSchemasStatusAsync(pgDb->getDatabaseName());
                     }
                 } else {
                     // For single database mode, just check current database schema status
-                    pgDb->checkSchemasStatusAsync();
+                    // TODO: use pgData later
+                    // pgDb->checkSchemasStatusAsync();
                 }
 
                 // Auto-select default schema when target database schemas finish loading

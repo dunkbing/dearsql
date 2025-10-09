@@ -11,81 +11,6 @@
 #include <unordered_map>
 
 class PostgresDatabase final : public BaseDatabaseImpl {
-public:
-    PostgresDatabase(const std::string& name, const std::string& host, int port,
-                     const std::string& database, const std::string& username,
-                     const std::string& password, bool showAllDatabases = false);
-    ~PostgresDatabase() override;
-
-    // Connection management (BaseDatabaseImpl handles common async)
-    std::pair<bool, std::string> connect() override;
-    void disconnect() override;
-
-    // Database info
-    const std::string& getName() const override;
-    const std::string& getConnectionString() const override;
-    void* getConnection() const override;
-    DatabaseType getType() const override;
-    const std::string& getDatabaseName() const;
-
-    // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshTables() override;
-    void refreshTables(const std::string& schemaName);
-    void refreshViews() override;
-    void refreshViews(const std::string& schemaName);
-    void refreshSequences() override;
-    void refreshSequences(const std::string& schemaName);
-
-    // Schema management
-    void refreshSchemas();
-    const std::vector<Schema>& getSchemas() const;
-    std::vector<Schema>& getSchemas();
-    bool areSchemasLoaded() const;
-    void setSchemasLoaded(bool loaded);
-    bool isLoadingSchemas() const;
-    void checkSchemasStatusAsync();
-    void checkSchemasStatusAsync(const std::string& dbName);
-    void startSchemasLoadAsync(const std::string& dbName);
-    void checkTablesStatusAsync() override;
-    void checkViewsStatusAsync() override;
-    void checkSequencesStatusAsync() override;
-
-    // Database list methods
-    [[deprecated("Use getDatabaseDataMap() instead")]]
-    std::vector<std::string> getDatabases();
-    void refreshDatabaseNames();
-    bool shouldShowAllDatabases() const {
-        return showAllDatabases;
-    }
-
-    // Connection detail getters
-    const std::string& getHost() const {
-        return host;
-    }
-    int getPort() const {
-        return port;
-    }
-    const std::string& getDatabase() const {
-        return database;
-    }
-    const std::string& getUsername() const {
-        return username;
-    }
-    const std::string& getPassword() const {
-        return password;
-    }
-    bool areDatabasesLoaded() const {
-        return databasesLoaded;
-    }
-    bool isLoadingDatabases() const;
-    void checkDatabasesStatusAsync();
-    std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
-    void switchToDatabaseAsync(const std::string& targetDatabase);
-    bool isSwitchingDatabase() const;
-    void checkDatabaseSwitchStatusAsync();
-    bool isDatabaseExpanded(const std::string& dbName) const;
-    void setDatabaseExpanded(const std::string& dbName, bool expanded_);
-
     // Per-database data structures (made public for hierarchy rendering)
 public:
     /**
@@ -133,6 +58,8 @@ public:
      * Each DatabaseData represents one database within the PostgreSQL server.
      */
     struct DatabaseData {
+        PostgresDatabase* parentDb = nullptr;
+
         std::string name;
 
         // Connection pool (one per database)
@@ -150,7 +77,87 @@ public:
         bool expanded = false;
         bool tablesExpanded = false; // For backward compatibility
         bool viewsExpanded = false;  // For backward compatibility
+
+        // Methods
+        void startSchemasLoadAsync();
+        void checkSchemasStatusAsync();
+        std::vector<Schema> getSchemasForDatabaseAsync();
+        std::unique_ptr<soci::session> getSession() const;
+        void initializeConnectionPool(const std::string& connStr);
     };
+
+public:
+    PostgresDatabase(const std::string& name, const std::string& host, int port,
+                     const std::string& database, const std::string& username,
+                     const std::string& password, bool showAllDatabases = false);
+    ~PostgresDatabase() override;
+
+    // Connection management (BaseDatabaseImpl handles common async)
+    std::pair<bool, std::string> connect() override;
+    void disconnect() override;
+
+    // Database info
+    const std::string& getName() const override;
+    const std::string& getConnectionString() const override;
+    void* getConnection() const override;
+    DatabaseType getType() const override;
+    const std::string& getDatabaseName() const;
+
+    // Schema management (BaseDatabaseImpl provides base getters/setters)
+    void refreshTables() override;
+    void refreshTables(const std::string& schemaName);
+    void refreshViews() override;
+    void refreshViews(const std::string& schemaName);
+    void refreshSequences() override;
+    void refreshSequences(const std::string& schemaName);
+
+    // Schema management
+    void refreshSchemas();
+    const std::vector<Schema>& getSchemas() const;
+    std::vector<Schema>& getSchemas();
+    bool areSchemasLoaded() const;
+    void setSchemasLoaded(bool loaded);
+    bool isLoadingSchemas() const;
+    // void checkSchemasStatusAsync();
+    void checkTablesStatusAsync() override;
+    void checkViewsStatusAsync() override;
+    void checkSequencesStatusAsync() override;
+
+    // Database list methods
+    [[deprecated("Use getDatabaseDataMap() instead")]]
+    std::vector<std::string> getDatabases();
+    void refreshDatabaseNames();
+    bool shouldShowAllDatabases() const {
+        return showAllDatabases;
+    }
+
+    // Connection detail getters
+    const std::string& getHost() const {
+        return host;
+    }
+    int getPort() const {
+        return port;
+    }
+    const std::string& getDatabase() const {
+        return database;
+    }
+    const std::string& getUsername() const {
+        return username;
+    }
+    const std::string& getPassword() const {
+        return password;
+    }
+    bool areDatabasesLoaded() const {
+        return databasesLoaded;
+    }
+    bool isLoadingDatabases() const;
+    void checkDatabasesStatusAsync();
+    std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
+    void switchToDatabaseAsync(const std::string& targetDatabase);
+    bool isSwitchingDatabase() const;
+    void checkDatabaseSwitchStatusAsync();
+    bool isDatabaseExpanded(const std::string& dbName) const;
+    void setDatabaseExpanded(const std::string& dbName, bool expanded_);
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -188,7 +195,6 @@ protected:
     std::vector<std::string> getSequencesAsync(const std::string& schemaName) const;
     void startRefreshSchemaAsync();
     std::vector<Schema> getSchemasAsync() const;
-    std::vector<Schema> getSchemasForDatabaseAsync(const std::string& dbName) const;
     std::vector<std::string> getDatabaseNamesAsync() const;
 
     // Schema helper methods
@@ -218,9 +224,6 @@ private:
     std::atomic<bool> switchingDatabase = false;
     std::string targetDatabaseName;
     std::future<std::pair<bool, std::string>> databaseSwitchFuture;
-
-    // Per-database schema loading (for parallel loading without switching)
-    std::unordered_map<std::string, std::future<std::vector<Schema>>> databaseSchemaFutures;
 
 public:
     // Helper methods for per-database data access

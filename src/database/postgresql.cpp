@@ -64,9 +64,9 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     // Wait for all per-database schema futures to complete
-    for (auto& future : databaseSchemaFutures | std::views::values) {
-        if (future.valid()) {
-            future.wait();
+    for (auto& dbData : databaseDataCache | std::views::values) {
+        if (dbData.schemasFuture.valid()) {
+            dbData.schemasFuture.wait();
         }
     }
 
@@ -90,6 +90,7 @@ PostgresDatabase::DatabaseData& PostgresDatabase::getDatabaseData(const std::str
         // Create new DatabaseData with the name set
         auto& newData = databaseDataCache[dbName];
         newData.name = dbName;
+        newData.parentDb = this;
         return newData;
     }
     return it->second;
@@ -1178,50 +1179,26 @@ bool PostgresDatabase::isLoadingSchemas() const {
     return getCurrentDatabaseData().loadingSchemas;
 }
 
-void PostgresDatabase::checkSchemasStatusAsync() {
-    checkSchemasStatusAsync(database);
-}
+// void PostgresDatabase::checkSchemasStatusAsync() {
+//     checkSchemasStatusAsync(database);
+// }
 
-void PostgresDatabase::checkSchemasStatusAsync(const std::string& dbName) {
-    auto& dbData = getDatabaseData(dbName);
-
-    // Check the per-database schema future first (for parallel loading)
-    auto schemaFutureIt = databaseSchemaFutures.find(dbName);
-    if (schemaFutureIt != databaseSchemaFutures.end() && schemaFutureIt->second.valid() &&
-        schemaFutureIt->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+void PostgresDatabase::DatabaseData::checkSchemasStatusAsync() {
+    // Check the schema future in DatabaseData
+    if (schemasFuture.valid() &&
+        schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            dbData.schemas = schemaFutureIt->second.get();
-            Logger::info(std::format(
-                "Async parallel schema loading completed for database {}. Found {} schemas", dbName,
-                dbData.schemas.size()));
-            dbData.schemasLoaded = true;
-            dbData.loadingSchemas = false;
-            databaseSchemaFutures.erase(schemaFutureIt); // Clean up completed future
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async parallel schema loading for database " << dbName << ": "
-                      << e.what() << std::endl;
-            dbData.schemasLoaded = true;
-            dbData.loadingSchemas = false;
-            databaseSchemaFutures.erase(schemaFutureIt);
-        }
-        return;
-    }
-
-    // Fall back to the regular schema future (for current database)
-    if (dbData.schemasFuture.valid() &&
-        dbData.schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            dbData.schemas = dbData.schemasFuture.get();
+            schemas = schemasFuture.get();
             Logger::info(
                 std::format("Async schema loading completed for database {}. Found {} schemas",
-                            dbName, dbData.schemas.size()));
-            dbData.schemasLoaded = true;
-            dbData.loadingSchemas = false;
+                            name, schemas.size()));
+            schemasLoaded = true;
+            loadingSchemas = false;
         } catch (const std::exception& e) {
-            std::cerr << "Error in async schema loading for database " << dbName << ": " << e.what()
+            std::cerr << "Error in async schema loading for database " << name << ": " << e.what()
                       << std::endl;
-            dbData.schemasLoaded = true;
-            dbData.loadingSchemas = false;
+            schemasLoaded = true;
+            loadingSchemas = false;
         }
     }
 }
@@ -1237,48 +1214,42 @@ void PostgresDatabase::startRefreshSchemaAsync() {
     dbData.schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
 }
 
-void PostgresDatabase::startSchemasLoadAsync(const std::string& dbName) {
-    auto& dbData = getDatabaseData(dbName);
+void PostgresDatabase::DatabaseData::startSchemasLoadAsync() {
+    Logger::debug("startSchemasLoadAsync for database: " + name);
+    if (!parentDb) {
+        return;
+    }
 
     // Don't start if already loading or loaded
-    if (dbData.loadingSchemas.load() || dbData.schemasLoaded) {
+    if (loadingSchemas.load() || schemasLoaded) {
         return;
     }
 
-    // Check if we already have a future running for this database
-    if (databaseSchemaFutures.contains(dbName)) {
-        return;
-    }
+    loadingSchemas = true;
 
-    dbData.loadingSchemas = true;
-
-    // Start async loading with a separate session for this database
-    databaseSchemaFutures[dbName] = std::async(
-        std::launch::async, [this, dbName]() { return getSchemasForDatabaseAsync(dbName); });
-
-    Logger::debug("Started parallel schema loading for database: " + dbName);
+    // Start async loading using the database's own schemasFuture
+    schemasFuture =
+        std::async(std::launch::async, [this]() { return getSchemasForDatabaseAsync(); });
 }
 
-std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::string& dbName) const {
+std::vector<Schema> PostgresDatabase::DatabaseData::getSchemasForDatabaseAsync() {
     std::vector<Schema> result;
-    auto& dbData = getDatabaseData(dbName);
 
     // Check if we're still supposed to be loading
-    if (!dbData.loadingSchemas.load()) {
+    if (!loadingSchemas.load()) {
         return result;
     }
 
     try {
         // Ensure we have a connection pool for the specific database
-        const auto* pool = getConnectionPoolForDatabase(dbName);
+        const auto& pool = connectionPool;
         if (!pool) {
             // If no pool exists for this database, create one temporarily
-            const std::string dbConnectionString = buildConnectionString(dbName);
-            const_cast<PostgresDatabase*>(this)->initializeConnectionPool(dbName,
-                                                                          dbConnectionString);
+            const std::string dbConnectionString = parentDb->buildConnectionString(name);
+            initializeConnectionPool(dbConnectionString);
         }
 
-        if (!dbData.loadingSchemas.load()) {
+        if (!loadingSchemas.load()) {
             return result;
         }
 
@@ -1292,10 +1263,10 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
             "ORDER BY schema_name";
 
         {
-            const auto session = getSession(dbName);
+            const auto session = getSession();
             const soci::rowset rs = session->prepare << sqlQuery;
             for (const auto& row : rs) {
-                if (!dbData.loadingSchemas.load()) {
+                if (!loadingSchemas.load()) {
                     return result;
                 }
                 schemaNames.push_back(row.get<std::string>(0));
@@ -1303,14 +1274,14 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
         }
 
         Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
-                      dbName);
+                      name);
 
-        if (schemaNames.empty() || !dbData.loadingSchemas.load()) {
+        if (schemaNames.empty() || !loadingSchemas.load()) {
             return result;
         }
 
         for (const auto& schemaName : schemaNames) {
-            if (!dbData.loadingSchemas.load()) {
+            if (!loadingSchemas.load()) {
                 break;
             }
 
@@ -1320,8 +1291,7 @@ std::vector<Schema> PostgresDatabase::getSchemasForDatabaseAsync(const std::stri
             result.push_back(schema);
         }
     } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting schemas for database " << dbName << ": " << e.what()
-                  << std::endl;
+        std::cerr << "Error getting schemas for database " << name << ": " << e.what() << std::endl;
     }
 
     return result;
@@ -1480,6 +1450,7 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
                     // Create new DatabaseData with the name set
                     auto& newData = databaseDataCache[dbName];
                     newData.name = dbName;
+                    newData.parentDb = this;
                 }
             }
 
@@ -1679,6 +1650,35 @@ void PostgresDatabase::initializeConnectionPool(const std::string& dbName,
     dbData.connectionPool = std::move(pool);
 }
 
+void PostgresDatabase::DatabaseData::initializeConnectionPool(const std::string& connStr) {
+    Logger::debug(std::format("initializeConnectionPool {}", connStr));
+    if (connectionPool) {
+        return;
+    }
+
+    constexpr size_t poolSize = 3;
+    auto pool = std::make_unique<soci::connection_pool>(poolSize);
+
+    // Initialize connections in parallel for faster startup
+    std::vector<std::future<void>> connectionFutures;
+    connectionFutures.reserve(poolSize);
+
+    for (size_t i = 0; i != poolSize; ++i) {
+        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
+            soci::session& session = pool->at(i);
+            session.open(soci::postgresql, connStr);
+        }));
+    }
+
+    // Wait for all connections to complete
+    for (auto& future : connectionFutures) {
+        future.wait();
+    }
+
+    // Store in DatabaseData
+    connectionPool = std::move(pool);
+}
+
 std::string PostgresDatabase::buildConnectionString(const std::string& dbName) const {
     std::stringstream ss;
     ss << "host=" << host << " port=" << port;
@@ -1707,6 +1707,17 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& d
         throw std::runtime_error("Connection pool not available for database: " + targetDb);
     }
     auto res = std::make_unique<soci::session>(*pool);
+    if (!res->is_connected()) {
+        res->reconnect();
+    }
+    return res;
+}
+
+std::unique_ptr<soci::session> PostgresDatabase::DatabaseData::getSession() const {
+    if (!connectionPool) {
+        throw std::runtime_error("Connection pool not available for database: " + name);
+    }
+    auto res = std::make_unique<soci::session>(*connectionPool);
     if (!res->is_connected()) {
         res->reconnect();
     }

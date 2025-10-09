@@ -12,9 +12,7 @@
 
 class MySQLDatabase final : public BaseDatabaseImpl {
 public:
-    MySQLDatabase(const std::string& name, const std::string& host, int port,
-                  const std::string& database, const std::string& username,
-                  const std::string& password, bool showAllDatabases = false);
+    MySQLDatabase(const DatabaseConnectionInfo& connInfo);
     ~MySQLDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles common async)
@@ -56,21 +54,11 @@ public:
         return showAllDatabases;
     }
 
-    // Connection detail getters
-    const std::string& getHost() const {
-        return host;
-    }
-    int getPort() const {
-        return port;
+    const DatabaseConnectionInfo& getConnectionInfo() const {
+        return connectionInfo;
     }
     const std::string& getDatabase() const {
         return database;
-    }
-    const std::string& getUsername() const {
-        return username;
-    }
-    const std::string& getPassword() const {
-        return password;
     }
 
     bool areDatabasesLoaded() const {
@@ -145,11 +133,8 @@ protected:
 
 private:
     // MySQL-specific connection details (base class handles common state)
-    std::string host;
-    int port;
+    DatabaseConnectionInfo connectionInfo;
     std::string database;
-    std::string username;
-    std::string password;
     std::string connectionString;
     bool showAllDatabases;
     // Note: connectionPools removed - now stored in DatabaseData::connectionPool

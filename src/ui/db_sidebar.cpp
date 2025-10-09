@@ -144,16 +144,20 @@ void DatabaseSidebar::render() {
                         bool matches = false;
                         switch (db->getType()) {
                         case DatabaseType::POSTGRESQL:
-                            matches = (conn.type == "postgresql" && conn.name == db->getName());
+                            matches = (conn.connectionInfo.type == DatabaseType::POSTGRESQL &&
+                                       conn.connectionInfo.name == db->getName());
                             break;
                         case DatabaseType::MYSQL:
-                            matches = (conn.type == "mysql" && conn.name == db->getName());
+                            matches = (conn.connectionInfo.type == DatabaseType::MYSQL &&
+                                       conn.connectionInfo.name == db->getName());
                             break;
                         case DatabaseType::SQLITE:
-                            matches = (conn.type == "sqlite" && conn.name == db->getName());
+                            matches = (conn.connectionInfo.type == DatabaseType::SQLITE &&
+                                       conn.connectionInfo.name == db->getName());
                             break;
                         case DatabaseType::REDIS:
-                            matches = (conn.type == "redis" && conn.name == db->getName());
+                            matches = (conn.connectionInfo.type == DatabaseType::REDIS &&
+                                       conn.connectionInfo.name == db->getName());
                             break;
                         default:
                             break;
@@ -161,8 +165,8 @@ void DatabaseSidebar::render() {
 
                         if (matches) {
                             if (app.getAppState()->deleteConnection(conn.id)) {
-                                Logger::info(
-                                    std::format("Removed saved connection: {}", conn.name));
+                                Logger::info(std::format("Removed saved connection: {}",
+                                                         conn.connectionInfo.name));
                             }
                             break;
                         }

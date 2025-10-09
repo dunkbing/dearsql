@@ -8,24 +8,14 @@
 #include <unordered_map>
 #include <vector>
 
-MySQLDatabase::MySQLDatabase(const std::string& name, const std::string& host, int port,
-                             const std::string& database, const std::string& username,
-                             const std::string& password, bool showAllDatabases)
-    : host(host), port(port), database(database), username(username), password(password),
-      showAllDatabases(showAllDatabases) {
-    this->name = name;
+MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
+    : connectionInfo(connInfo), database(connInfo.database),
+      showAllDatabases(connInfo.type == DatabaseType::MYSQL) {
+    this->name = connInfo.name;
     Logger::debug(
         std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
                     database, showAllDatabases));
-    connectionString = "host=" + host + " port=" + std::to_string(port) + " dbname=" + database;
-
-    if (!username.empty()) {
-        connectionString += " user=" + username;
-    }
-
-    if (!password.empty()) {
-        connectionString += " password=" + password;
-    }
+    connectionString = buildConnectionString(database);
 }
 
 MySQLDatabase::~MySQLDatabase() {
@@ -1027,14 +1017,15 @@ void MySQLDatabase::initializeConnectionPool(const std::string& dbName,
 }
 
 std::string MySQLDatabase::buildConnectionString(const std::string& dbName) const {
-    std::string connStr = "host=" + host + " port=" + std::to_string(port) + " dbname=" + dbName;
+    std::string connStr = "host=" + connectionInfo.host +
+                          " port=" + std::to_string(connectionInfo.port) + " dbname=" + dbName;
 
-    if (!username.empty()) {
-        connStr += " user=" + username;
+    if (!connectionInfo.username.empty()) {
+        connStr += " user=" + connectionInfo.username;
     }
 
-    if (!password.empty()) {
-        connStr += " password=" + password;
+    if (!connectionInfo.password.empty()) {
+        connStr += " password=" + connectionInfo.password;
     }
 
     return connStr;

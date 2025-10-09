@@ -146,6 +146,10 @@ protected:
     virtual std::vector<std::string> getSequenceNames() = 0;
 };
 
+// Helper functions to convert between DatabaseType enum and strings
+std::string databaseTypeToString(DatabaseType type);
+DatabaseType stringToDatabaseType(const std::string& typeStr);
+
 // Factory for creating database instances
 class DatabaseFactory {
 public:

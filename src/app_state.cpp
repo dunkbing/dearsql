@@ -152,18 +152,39 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
     std::string salt = CryptoUtils::generateSalt();
     std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
     std::string encryptedUsername =
-        connection.username.empty() ? "" : CryptoUtils::encrypt(connection.username, encryptionKey);
+        connection.connectionInfo.username.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.username, encryptionKey);
     std::string encryptedPassword =
-        connection.password.empty() ? "" : CryptoUtils::encrypt(connection.password, encryptionKey);
+        connection.connectionInfo.password.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
 
-    sqlite3_bind_text(stmt, 1, connection.name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, connection.type.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, connection.host.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, connection.port);
-    sqlite3_bind_text(stmt, 5, connection.database.c_str(), -1, SQLITE_STATIC);
+    // Convert DatabaseType to string
+    std::string typeStr;
+    switch (connection.connectionInfo.type) {
+    case DatabaseType::SQLITE:
+        typeStr = "sqlite";
+        break;
+    case DatabaseType::POSTGRESQL:
+        typeStr = "postgresql";
+        break;
+    case DatabaseType::MYSQL:
+        typeStr = "mysql";
+        break;
+    case DatabaseType::REDIS:
+        typeStr = "redis";
+        break;
+    }
+
+    sqlite3_bind_text(stmt, 1, connection.connectionInfo.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, typeStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, connection.connectionInfo.host.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 4, connection.connectionInfo.port);
+    sqlite3_bind_text(stmt, 5, connection.connectionInfo.database.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 8, connection.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 8, connection.connectionInfo.path.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(
         stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
         -1, SQLITE_TRANSIENT);
@@ -203,18 +224,39 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     std::string salt = CryptoUtils::generateSalt();
     std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
     std::string encryptedUsername =
-        connection.username.empty() ? "" : CryptoUtils::encrypt(connection.username, encryptionKey);
+        connection.connectionInfo.username.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.username, encryptionKey);
     std::string encryptedPassword =
-        connection.password.empty() ? "" : CryptoUtils::encrypt(connection.password, encryptionKey);
+        connection.connectionInfo.password.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
 
-    sqlite3_bind_text(stmt, 1, connection.name.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, connection.type.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 3, connection.host.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 4, connection.port);
-    sqlite3_bind_text(stmt, 5, connection.database.c_str(), -1, SQLITE_STATIC);
+    // Convert DatabaseType to string
+    std::string typeStr;
+    switch (connection.connectionInfo.type) {
+    case DatabaseType::SQLITE:
+        typeStr = "sqlite";
+        break;
+    case DatabaseType::POSTGRESQL:
+        typeStr = "postgresql";
+        break;
+    case DatabaseType::MYSQL:
+        typeStr = "mysql";
+        break;
+    case DatabaseType::REDIS:
+        typeStr = "redis";
+        break;
+    }
+
+    sqlite3_bind_text(stmt, 1, connection.connectionInfo.name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, typeStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, connection.connectionInfo.host.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 4, connection.connectionInfo.port);
+    sqlite3_bind_text(stmt, 5, connection.connectionInfo.database.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 8, connection.path.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 8, connection.connectionInfo.path.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(
         stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
         -1, SQLITE_TRANSIENT);
@@ -255,16 +297,27 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         SavedConnection conn;
         conn.id = sqlite3_column_int(stmt, 0);
-        conn.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        conn.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        conn.connectionInfo.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+        // Convert type string to DatabaseType
+        const char* typeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        if (strcmp(typeStr, "sqlite") == 0) {
+            conn.connectionInfo.type = DatabaseType::SQLITE;
+        } else if (strcmp(typeStr, "postgresql") == 0) {
+            conn.connectionInfo.type = DatabaseType::POSTGRESQL;
+        } else if (strcmp(typeStr, "mysql") == 0) {
+            conn.connectionInfo.type = DatabaseType::MYSQL;
+        } else if (strcmp(typeStr, "redis") == 0) {
+            conn.connectionInfo.type = DatabaseType::REDIS;
+        }
 
         const auto host = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        conn.host = host ? host : "";
+        conn.connectionInfo.host = host ? host : "";
 
-        conn.port = sqlite3_column_int(stmt, 4);
+        conn.connectionInfo.port = sqlite3_column_int(stmt, 4);
 
         const auto database = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-        conn.database = database ? database : "";
+        conn.connectionInfo.database = database ? database : "";
 
         // Decrypt sensitive data
         const auto* encryptedUsername = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
@@ -280,41 +333,43 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 // Decrypt username
                 if (encryptedUsername && strlen(encryptedUsername) > 0) {
                     try {
-                        conn.username = CryptoUtils::decrypt(encryptedUsername, encryptionKey);
+                        conn.connectionInfo.username =
+                            CryptoUtils::decrypt(encryptedUsername, encryptionKey);
                     } catch (const std::exception& e) {
-                        std::cerr << "Failed to decrypt username for connection " << conn.name
-                                  << ": " << e.what() << std::endl;
-                        conn.username = "";
+                        std::cerr << "Failed to decrypt username for connection "
+                                  << conn.connectionInfo.name << ": " << e.what() << std::endl;
+                        conn.connectionInfo.username = "";
                     }
                 } else {
-                    conn.username = "";
+                    conn.connectionInfo.username = "";
                 }
 
                 // Decrypt password
                 if (encryptedPassword && strlen(encryptedPassword) > 0) {
                     try {
-                        conn.password = CryptoUtils::decrypt(encryptedPassword, encryptionKey);
+                        conn.connectionInfo.password =
+                            CryptoUtils::decrypt(encryptedPassword, encryptionKey);
                     } catch (const std::exception& e) {
-                        std::cerr << "Failed to decrypt password for connection " << conn.name
-                                  << ": " << e.what() << std::endl;
-                        conn.password = "";
+                        std::cerr << "Failed to decrypt password for connection "
+                                  << conn.connectionInfo.name << ": " << e.what() << std::endl;
+                        conn.connectionInfo.password = "";
                     }
                 } else {
-                    conn.password = "";
+                    conn.connectionInfo.password = "";
                 }
             } else {
-                conn.username = encryptedUsername ? encryptedUsername : "";
-                conn.password = encryptedPassword ? encryptedPassword : "";
+                conn.connectionInfo.username = encryptedUsername ? encryptedUsername : "";
+                conn.connectionInfo.password = encryptedPassword ? encryptedPassword : "";
             }
         } catch (const std::exception& e) {
-            std::cerr << "Failed to process credentials for connection " << conn.name << ": "
-                      << e.what() << std::endl;
-            conn.username = "";
-            conn.password = "";
+            std::cerr << "Failed to process credentials for connection " << conn.connectionInfo.name
+                      << ": " << e.what() << std::endl;
+            conn.connectionInfo.username = "";
+            conn.connectionInfo.password = "";
         }
 
         const auto* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-        conn.path = path ? path : "";
+        conn.connectionInfo.path = path ? path : "";
 
         const auto* lastUsed = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";
@@ -558,16 +613,27 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         SavedConnection conn;
         conn.id = sqlite3_column_int(stmt, 0);
-        conn.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        conn.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        conn.connectionInfo.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+        // Convert type string to DatabaseType
+        const char* typeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        if (strcmp(typeStr, "sqlite") == 0) {
+            conn.connectionInfo.type = DatabaseType::SQLITE;
+        } else if (strcmp(typeStr, "postgresql") == 0) {
+            conn.connectionInfo.type = DatabaseType::POSTGRESQL;
+        } else if (strcmp(typeStr, "mysql") == 0) {
+            conn.connectionInfo.type = DatabaseType::MYSQL;
+        } else if (strcmp(typeStr, "redis") == 0) {
+            conn.connectionInfo.type = DatabaseType::REDIS;
+        }
 
         const auto host = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        conn.host = host ? host : "";
+        conn.connectionInfo.host = host ? host : "";
 
-        conn.port = sqlite3_column_int(stmt, 4);
+        conn.connectionInfo.port = sqlite3_column_int(stmt, 4);
 
         const auto database = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-        conn.database = database ? database : "";
+        conn.connectionInfo.database = database ? database : "";
 
         // Decrypt sensitive data (similar to getSavedConnections)
         const auto* encryptedUsername = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
@@ -582,34 +648,36 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
 
                 if (encryptedUsername && strlen(encryptedUsername) > 0) {
                     try {
-                        conn.username = CryptoUtils::decrypt(encryptedUsername, encryptionKey);
+                        conn.connectionInfo.username =
+                            CryptoUtils::decrypt(encryptedUsername, encryptionKey);
                     } catch (const std::exception& e) {
-                        conn.username = "";
+                        conn.connectionInfo.username = "";
                     }
                 } else {
-                    conn.username = "";
+                    conn.connectionInfo.username = "";
                 }
 
                 if (encryptedPassword && strlen(encryptedPassword) > 0) {
                     try {
-                        conn.password = CryptoUtils::decrypt(encryptedPassword, encryptionKey);
+                        conn.connectionInfo.password =
+                            CryptoUtils::decrypt(encryptedPassword, encryptionKey);
                     } catch (const std::exception& e) {
-                        conn.password = "";
+                        conn.connectionInfo.password = "";
                     }
                 } else {
-                    conn.password = "";
+                    conn.connectionInfo.password = "";
                 }
             } else {
-                conn.username = encryptedUsername ? encryptedUsername : "";
-                conn.password = encryptedPassword ? encryptedPassword : "";
+                conn.connectionInfo.username = encryptedUsername ? encryptedUsername : "";
+                conn.connectionInfo.password = encryptedPassword ? encryptedPassword : "";
             }
         } catch (const std::exception& e) {
-            conn.username = "";
-            conn.password = "";
+            conn.connectionInfo.username = "";
+            conn.connectionInfo.password = "";
         }
 
         const auto* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-        conn.path = path ? path : "";
+        conn.connectionInfo.path = path ? path : "";
 
         const auto* lastUsed = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
         conn.lastUsed = lastUsed ? lastUsed : "";

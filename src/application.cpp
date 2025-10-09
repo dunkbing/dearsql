@@ -349,28 +349,29 @@ void Application::restorePreviousConnections() {
     for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
 
-        if (conn.type == "postgresql") {
-            db = std::make_shared<PostgresDatabase>(conn.name, conn.host, conn.port, conn.database,
-                                                    conn.username, conn.password,
-                                                    conn.showAllDatabases);
-        } else if (conn.type == "mysql") {
+        if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
+            db = std::make_shared<PostgresDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
             // Use 'mysql' as default database if none specified (needed for connection)
-            std::string dbName = conn.database.empty() ? "mysql" : conn.database;
-            db = std::make_shared<MySQLDatabase>(conn.name, conn.host, conn.port, dbName,
-                                                 conn.username, conn.password,
-                                                 conn.showAllDatabases);
-        } else if (conn.type == "sqlite") {
-            db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
-        } else if (conn.type == "redis") {
-            db = std::make_shared<RedisDatabase>(conn.name, conn.host, conn.port, conn.password,
-                                                 conn.username);
+            DatabaseConnectionInfo info = conn.connectionInfo;
+            if (info.database.empty()) {
+                info.database = "mysql";
+            }
+            db = std::make_shared<MySQLDatabase>(info);
+        } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
+            db = std::make_shared<SQLiteDatabase>(conn.connectionInfo.name,
+                                                  conn.connectionInfo.path);
+        } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
+            db = std::make_shared<RedisDatabase>(
+                conn.connectionInfo.name, conn.connectionInfo.host, conn.connectionInfo.port,
+                conn.connectionInfo.password, conn.connectionInfo.username);
         }
 
         if (db) {
             // Store the saved connection ID in the database instance
             db->setSavedConnectionId(conn.id);
-            Logger::debug(
-                std::format("Added connection (will connect when expanded): {}", conn.name));
+            Logger::debug(std::format("Added connection (will connect when expanded): {}",
+                                      conn.connectionInfo.name));
             databases.push_back(db);
         }
     }

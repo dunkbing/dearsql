@@ -101,9 +101,9 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 if (db) {
                     // Save SQLite connection to app state
                     SavedConnection conn;
-                    conn.name = db->getName();
-                    conn.type = "sqlite";
-                    conn.path = db->getPath();
+                    conn.connectionInfo.name = db->getName();
+                    conn.connectionInfo.type = DatabaseType::SQLITE;
+                    conn.connectionInfo.path = db->getPath();
                     conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
                     const auto& app = Application::getInstance();
@@ -432,26 +432,28 @@ void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface>
 
         // Get connection details from the database
         const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
-        strncpy(host, pgDb->getHost().c_str(), sizeof(host) - 1);
-        port = pgDb->getPort();
+        const auto& connInfo = pgDb->getConnectionInfo();
+        strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
+        port = connInfo.port;
         strncpy(database, pgDb->getDatabase().c_str(), sizeof(database) - 1);
-        strncpy(username, pgDb->getUsername().c_str(), sizeof(username) - 1);
-        strncpy(password, pgDb->getPassword().c_str(), sizeof(password) - 1);
+        strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
+        strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = pgDb->shouldShowAllDatabases();
-        authType = pgDb->getUsername().empty() ? 1 : 0;
+        authType = connInfo.username.empty() ? 1 : 0;
     } else if (db->getType() == DatabaseType::MYSQL) {
         selectedDatabaseType = DatabaseType::MYSQL;
         currentState = DialogState::MySQLConnection;
 
         // Get connection details from the database
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
-        strncpy(host, mysqlDb->getHost().c_str(), sizeof(host) - 1);
-        port = mysqlDb->getPort();
+        const auto& connInfo = mysqlDb->getConnectionInfo();
+        strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
+        port = connInfo.port;
         strncpy(database, mysqlDb->getDatabase().c_str(), sizeof(database) - 1);
-        strncpy(username, mysqlDb->getUsername().c_str(), sizeof(username) - 1);
-        strncpy(password, mysqlDb->getPassword().c_str(), sizeof(password) - 1);
+        strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
+        strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = mysqlDb->shouldShowAllDatabases();
-        authType = mysqlDb->getUsername().empty() ? 1 : 0;
+        authType = connInfo.username.empty() ? 1 : 0;
     } else if (db->getType() == DatabaseType::REDIS) {
         selectedDatabaseType = DatabaseType::REDIS;
         currentState = DialogState::RedisConnection;
@@ -500,26 +502,40 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase(
     const std::optional<std::string>& passwordOverride) {
-    return createSqlDatabase(
-        "postgres", passwordOverride,
-        [](const std::string& name, const std::string& hostValue, int portValue,
-           const std::string& databaseValue, const std::string& usernameValue,
-           const std::string& passwordValue, bool showAll) {
-            return std::make_shared<PostgresDatabase>(name, hostValue, portValue, databaseValue,
-                                                      usernameValue, passwordValue, showAll);
-        });
+    return createSqlDatabase("postgres", passwordOverride,
+                             [](const std::string& name, const std::string& hostValue,
+                                int portValue, const std::string& databaseValue,
+                                const std::string& usernameValue, const std::string& passwordValue,
+                                bool showAll) {
+                                 DatabaseConnectionInfo info;
+                                 info.type = DatabaseType::POSTGRESQL;
+                                 info.name = name;
+                                 info.host = hostValue;
+                                 info.port = portValue;
+                                 info.database = databaseValue;
+                                 info.username = usernameValue;
+                                 info.password = passwordValue;
+                                 return std::make_shared<PostgresDatabase>(info);
+                             });
 }
 
 std::shared_ptr<DatabaseInterface>
 DatabaseConnectionDialog::createMySQLDatabase(const std::optional<std::string>& passwordOverride) {
-    return createSqlDatabase(
-        "mysql", passwordOverride,
-        [](const std::string& name, const std::string& hostValue, int portValue,
-           const std::string& databaseValue, const std::string& usernameValue,
-           const std::string& passwordValue, bool showAll) {
-            return std::make_shared<MySQLDatabase>(name, hostValue, portValue, databaseValue,
-                                                   usernameValue, passwordValue, showAll);
-        });
+    return createSqlDatabase("mysql", passwordOverride,
+                             [](const std::string& name, const std::string& hostValue,
+                                int portValue, const std::string& databaseValue,
+                                const std::string& usernameValue, const std::string& passwordValue,
+                                bool showAll) {
+                                 DatabaseConnectionInfo info;
+                                 info.type = DatabaseType::MYSQL;
+                                 info.name = name;
+                                 info.host = hostValue;
+                                 info.port = portValue;
+                                 info.database = databaseValue;
+                                 info.username = usernameValue;
+                                 info.password = passwordValue;
+                                 return std::make_shared<MySQLDatabase>(info);
+                             });
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase() {
@@ -565,33 +581,40 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 const auto& conn = savedConnections[i];
 
                 bool isSelected = (selectedSavedConnection == static_cast<int>(i));
-                if (ImGui::Selectable((conn.name + " (" + conn.type + ")").c_str(), &isSelected)) {
+                if (ImGui::Selectable((conn.connectionInfo.name + " (" +
+                                       databaseTypeToString(conn.connectionInfo.type) + ")")
+                                          .c_str(),
+                                      &isSelected)) {
                     selectedSavedConnection = static_cast<int>(i);
                 }
 
                 if (isSelected && ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();
-                    if (conn.type == "postgresql") {
-                        ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
-                        ImGui::Text("Database: %s", conn.database.c_str());
-                        ImGui::Text("Username: %s", conn.username.c_str());
-                    } else if (conn.type == "mysql") {
-                        ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
-                        ImGui::Text("Database: %s", conn.database.c_str());
-                        ImGui::Text("Username: %s", conn.username.c_str());
-                    } else if (conn.type == "redis") {
-                        ImGui::Text("Host: %s:%d", conn.host.c_str(), conn.port);
-                        if (conn.password.empty()) {
+                    if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
+                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
+                                    conn.connectionInfo.port);
+                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
+                        ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
+                    } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
+                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
+                                    conn.connectionInfo.port);
+                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
+                        ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
+                    } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
+                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
+                                    conn.connectionInfo.port);
+                        if (conn.connectionInfo.password.empty()) {
                             ImGui::Text("Auth: None");
                         } else {
-                            ImGui::Text("Auth: %s", conn.username.empty() ? "Password only"
-                                                                          : "Username & Password");
-                            if (!conn.username.empty()) {
-                                ImGui::Text("Username: %s", conn.username.c_str());
+                            ImGui::Text("Auth: %s", conn.connectionInfo.username.empty()
+                                                        ? "Password only"
+                                                        : "Username & Password");
+                            if (!conn.connectionInfo.username.empty()) {
+                                ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
                             }
                         }
                     } else {
-                        ImGui::Text("Path: %s", conn.path.c_str());
+                        ImGui::Text("Path: %s", conn.connectionInfo.path.c_str());
                     }
                     ImGui::Text("Last used: %s", conn.lastUsed.c_str());
                     ImGui::EndTooltip();
@@ -605,14 +628,15 @@ void DatabaseConnectionDialog::renderSavedConnections() {
         if (ImGui::Button("Connect", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
             const auto& conn = savedConnections[selectedSavedConnection];
 
-            if (conn.type == "postgresql") {
+            if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
                 // Fill in the PostgreSQL fields and connect
-                strncpy(connectionName, conn.name.c_str(), sizeof(connectionName) - 1);
-                strncpy(host, conn.host.c_str(), sizeof(host) - 1);
-                port = conn.port;
-                strncpy(database, conn.database.c_str(), sizeof(database) - 1);
-                strncpy(username, conn.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
+                strncpy(connectionName, conn.connectionInfo.name.c_str(),
+                        sizeof(connectionName) - 1);
+                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
+                port = conn.connectionInfo.port;
+                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
+                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
+                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
                 showAllDatabases = conn.showAllDatabases;
 
                 const auto db = createPostgreSQLDatabase();
@@ -631,14 +655,15 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         errorMessage = "Failed to connect: " + error;
                     }
                 }
-            } else if (conn.type == "mysql") {
+            } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
                 // Fill in the MySQL fields and connect
-                strncpy(connectionName, conn.name.c_str(), sizeof(connectionName) - 1);
-                strncpy(host, conn.host.c_str(), sizeof(host) - 1);
-                port = conn.port;
-                strncpy(database, conn.database.c_str(), sizeof(database) - 1);
-                strncpy(username, conn.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
+                strncpy(connectionName, conn.connectionInfo.name.c_str(),
+                        sizeof(connectionName) - 1);
+                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
+                port = conn.connectionInfo.port;
+                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
+                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
+                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
                 showAllDatabases = conn.showAllDatabases;
 
                 auto db = createMySQLDatabase();
@@ -657,14 +682,15 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         errorMessage = "Failed to connect: " + error;
                     }
                 }
-            } else if (conn.type == "redis") {
+            } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
                 // Fill in the Redis fields and connect
-                strncpy(connectionName, conn.name.c_str(), sizeof(connectionName) - 1);
-                strncpy(host, conn.host.c_str(), sizeof(host) - 1);
-                port = conn.port;
-                authType = conn.password.empty() ? 1 : 0;
-                strncpy(username, conn.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.password.c_str(), sizeof(password) - 1);
+                strncpy(connectionName, conn.connectionInfo.name.c_str(),
+                        sizeof(connectionName) - 1);
+                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
+                port = conn.connectionInfo.port;
+                authType = conn.connectionInfo.password.empty() ? 1 : 0;
+                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
+                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
 
                 const auto db = createRedisDatabase();
                 if (db) {
@@ -678,9 +704,10 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                         errorMessage = error;
                     }
                 }
-            } else if (conn.type == "sqlite") {
+            } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
                 // Create SQLite database from saved path
-                const auto db = std::make_shared<SQLiteDatabase>(conn.name, conn.path);
+                const auto db = std::make_shared<SQLiteDatabase>(conn.connectionInfo.name,
+                                                                 conn.connectionInfo.path);
                 if (db) {
                     db->setSavedConnectionId(conn.id);
                     auto [success, error] = db->connect();
@@ -758,7 +785,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                     const auto savedConnections = app.getAppState()->getSavedConnections();
                     for (const auto& conn : savedConnections) {
                         if (conn.id == editingConnectionId) {
-                            providedPassword = conn.password;
+                            providedPassword = conn.connectionInfo.password;
                             break;
                         }
                     }
@@ -812,25 +839,25 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             if (!editingDatabase) {
                 // Save successful connection for new connections
                 SavedConnection conn;
-                conn.name = std::string(connectionName);
+                conn.connectionInfo.name = std::string(connectionName);
                 switch (currentState) {
                 case DialogState::PostgreSQLConnection:
-                    conn.type = "postgresql";
+                    conn.connectionInfo.type = DatabaseType::POSTGRESQL;
                     break;
                 case DialogState::MySQLConnection:
-                    conn.type = "mysql";
+                    conn.connectionInfo.type = DatabaseType::MYSQL;
                     break;
                 case DialogState::RedisConnection:
-                    conn.type = "redis";
+                    conn.connectionInfo.type = DatabaseType::REDIS;
                     break;
                 default:
                     break;
                 }
-                conn.host = std::string(host);
-                conn.port = port;
-                conn.database = std::string(database);
-                conn.username = std::string(username);
-                conn.password = std::string(password);
+                conn.connectionInfo.host = std::string(host);
+                conn.connectionInfo.port = port;
+                conn.connectionInfo.database = std::string(database);
+                conn.connectionInfo.username = std::string(username);
+                conn.connectionInfo.password = std::string(password);
                 conn.showAllDatabases = showAllDatabases;
                 conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
@@ -838,18 +865,25 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                 if (app.getAppState()->saveConnection(conn)) {
                     const auto savedList = app.getAppState()->getSavedConnections();
                     for (const auto& saved : savedList) {
-                        if (saved.workspaceId != conn.workspaceId || saved.type != conn.type ||
-                            saved.name != conn.name) {
+                        if (saved.workspaceId != conn.workspaceId ||
+                            saved.connectionInfo.type != conn.connectionInfo.type ||
+                            saved.connectionInfo.name != conn.connectionInfo.name) {
                             continue;
                         }
                         const bool matches =
-                            (saved.type == "sqlite" && saved.path == conn.path) ||
-                            (saved.type == "postgresql" && saved.host == conn.host &&
-                             saved.port == conn.port && saved.database == conn.database) ||
-                            (saved.type == "mysql" && saved.host == conn.host &&
-                             saved.port == conn.port && saved.database == conn.database) ||
-                            (saved.type == "redis" && saved.host == conn.host &&
-                             saved.port == conn.port);
+                            (saved.connectionInfo.type == DatabaseType::SQLITE &&
+                             saved.connectionInfo.path == conn.connectionInfo.path) ||
+                            (saved.connectionInfo.type == DatabaseType::POSTGRESQL &&
+                             saved.connectionInfo.host == conn.connectionInfo.host &&
+                             saved.connectionInfo.port == conn.connectionInfo.port &&
+                             saved.connectionInfo.database == conn.connectionInfo.database) ||
+                            (saved.connectionInfo.type == DatabaseType::MYSQL &&
+                             saved.connectionInfo.host == conn.connectionInfo.host &&
+                             saved.connectionInfo.port == conn.connectionInfo.port &&
+                             saved.connectionInfo.database == conn.connectionInfo.database) ||
+                            (saved.connectionInfo.type == DatabaseType::REDIS &&
+                             saved.connectionInfo.host == conn.connectionInfo.host &&
+                             saved.connectionInfo.port == conn.connectionInfo.port);
 
                         if (matches) {
                             db->setSavedConnectionId(saved.id);
@@ -869,7 +903,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                     std::string oldPassword;
                     for (const auto& conn : savedConnections) {
                         if (conn.id == editingConnectionId) {
-                            oldPassword = conn.password;
+                            oldPassword = conn.connectionInfo.password;
                             break;
                         }
                     }
@@ -877,26 +911,26 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                     // Update the connection
                     SavedConnection updatedConn;
                     updatedConn.id = editingConnectionId;
-                    updatedConn.name = std::string(connectionName);
+                    updatedConn.connectionInfo.name = std::string(connectionName);
                     switch (currentState) {
                     case DialogState::PostgreSQLConnection:
-                        updatedConn.type = "postgresql";
+                        updatedConn.connectionInfo.type = DatabaseType::POSTGRESQL;
                         break;
                     case DialogState::MySQLConnection:
-                        updatedConn.type = "mysql";
+                        updatedConn.connectionInfo.type = DatabaseType::MYSQL;
                         break;
                     case DialogState::RedisConnection:
-                        updatedConn.type = "redis";
+                        updatedConn.connectionInfo.type = DatabaseType::REDIS;
                         break;
                     default:
                         break;
                     }
-                    updatedConn.host = std::string(host);
-                    updatedConn.port = port;
-                    updatedConn.database = std::string(database);
-                    updatedConn.username = std::string(username);
+                    updatedConn.connectionInfo.host = std::string(host);
+                    updatedConn.connectionInfo.port = port;
+                    updatedConn.connectionInfo.database = std::string(database);
+                    updatedConn.connectionInfo.username = std::string(username);
                     // If password is empty, keep the old one
-                    updatedConn.password =
+                    updatedConn.connectionInfo.password =
                         strlen(password) > 0 ? std::string(password) : oldPassword;
                     updatedConn.showAllDatabases = showAllDatabases;
                     updatedConn.workspaceId = app.getCurrentWorkspaceId();

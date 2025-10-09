@@ -10,12 +10,10 @@
 #include <unordered_map>
 #include <vector>
 
-PostgresDatabase::PostgresDatabase(const std::string& name, const std::string& host, const int port,
-                                   const std::string& database, const std::string& username,
-                                   const std::string& password, const bool showAllDatabases)
-    : host(host), port(port), database(database), username(username), password(password),
-      showAllDatabases(showAllDatabases) {
-    this->name = name;
+PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
+    : connectionInfo(connInfo), database(connInfo.database),
+      showAllDatabases(connInfo.type == DatabaseType::POSTGRESQL) {
+    this->name = connInfo.name;
     connectionString = buildConnectionString(database);
     if (database.empty()) {
         this->database = "postgres";
@@ -1681,7 +1679,7 @@ void PostgresDatabase::DatabaseData::initializeConnectionPool(const std::string&
 
 std::string PostgresDatabase::buildConnectionString(const std::string& dbName) const {
     std::stringstream ss;
-    ss << "host=" << host << " port=" << port;
+    ss << "host=" << connectionInfo.host << " port=" << connectionInfo.port;
 
     if (!dbName.empty()) {
         ss << " dbname=" << dbName;
@@ -1689,12 +1687,12 @@ std::string PostgresDatabase::buildConnectionString(const std::string& dbName) c
         ss << " dbname=" << "postgres";
     }
 
-    if (!username.empty()) {
-        ss << " user=" << username;
+    if (!connectionInfo.username.empty()) {
+        ss << " user=" << connectionInfo.username;
     }
 
-    if (!password.empty()) {
-        ss << " password=" << password;
+    if (!connectionInfo.password.empty()) {
+        ss << " password=" << connectionInfo.password;
     }
 
     return ss.str();

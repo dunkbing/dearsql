@@ -1,19 +1,13 @@
 #pragma once
 
+#include "database/db_interface.hpp"
 #include <sqlite3.h>
 #include <string>
 #include <vector>
 
 struct SavedConnection {
     int id;
-    std::string name;
-    std::string type; // "sqlite" or "postgresql"
-    std::string host;
-    int port;
-    std::string database;
-    std::string username;
-    std::string password;
-    std::string path; // sqlite files
+    DatabaseConnectionInfo connectionInfo;
     std::string lastUsed;
     int workspaceId = 1; // default workspace
     bool showAllDatabases = false;

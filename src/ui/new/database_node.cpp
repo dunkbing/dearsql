@@ -8,6 +8,28 @@
 #include <ranges>
 
 namespace NewHierarchy {
+    namespace {
+        // helper function to render a tree node with icon
+        bool
+        renderTreeNodeWithIcon(const std::string& label, const std::string& nodeId,
+                               const std::string& icon, ImU32 iconColor,
+                               ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                          ImGuiTreeNodeFlags_FramePadding) {
+            const std::string fullLabel = std::format("   {}###{}", label, nodeId);
+            const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
+
+            // Draw icon
+            const auto iconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
+
+            return isOpen;
+        }
+    } // namespace
+
     void renderRootDatabaseNode(const std::shared_ptr<DatabaseInterface>& dbInterface) {
         if (!dbInterface) {
             return;
@@ -22,7 +44,7 @@ namespace NewHierarchy {
         if (dbType == DatabaseType::SQLITE) {
             // SQLite: direct tables/views rendering (no multi-database support)
             // TODO: Implement SQLite hierarchy
-            ImGui::Text("SQLite rendering (legacy for now)");
+            ImGui::Text("SQLite rendering");
         } else if (dbType == DatabaseType::POSTGRESQL) {
             auto* pgDb = dynamic_cast<PostgresDatabase*>(dbInterface.get());
             if (!pgDb) {
@@ -87,27 +109,10 @@ namespace NewHierarchy {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
-        // Create unique ID for this database node
         const std::string nodeId =
             std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                   ImGuiTreeNodeFlags_FramePadding;
-
-        // Display database name with icon
-        const std::string icon = ICON_FK_DATABASE;
-        const std::string label = std::format("   {}###{}", dbData->name, nodeId);
-
-        const bool isOpen = ImGui::TreeNodeEx(label.c_str(), flags);
-
-        // Draw icon
-        const auto iconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-        const ImU32 iconColor = ImGui::GetColorU32(colors.blue);
-        ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
+        const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
+                                                   ImGui::GetColorU32(colors.blue));
 
         // Handle expand/collapse
         if (ImGui::IsItemToggledOpen()) {
@@ -149,42 +154,16 @@ namespace NewHierarchy {
 
         const std::string nodeId =
             std::format("schema_{}_{:p}", schemaData->name, static_cast<void*>(schemaData));
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                   ImGuiTreeNodeFlags_FramePadding;
-
-        const std::string icon = ICON_FK_FOLDER;
-        const std::string label = std::format("   {}###{}", schemaData->name, nodeId);
-
-        const bool isOpen = ImGui::TreeNodeEx(label.c_str(), flags);
-
-        // Draw icon
-        const auto iconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-        ImU32 iconColor = ImGui::GetColorU32(colors.yellow);
-        ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
+        const bool isOpen = renderTreeNodeWithIcon(schemaData->name, nodeId, ICON_FK_FOLDER,
+                                                   ImGui::GetColorU32(colors.yellow));
 
         if (isOpen) {
             // Render Tables section
             {
                 const std::string tablesNodeId = std::format(
                     "tables_{}_{:p}", schemaData->name, static_cast<void*>(&schemaData->tables));
-                const std::string tablesLabel = std::format("   Tables###{}", tablesNodeId);
-
-                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), flags);
-
-                // Draw tables icon
-                const std::string tablesIcon = ICON_FK_TABLE;
-                const auto tablesIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-                ImU32 tablesIconColor = ImGui::GetColorU32(colors.green);
-                ImGui::GetWindowDrawList()->AddText(tablesIconPos, tablesIconColor,
-                                                    tablesIcon.c_str());
+                const bool tablesOpen = renderTreeNodeWithIcon(
+                    "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
                 if (tablesOpen) {
                     if (!schemaData->tablesLoaded && !schemaData->loadingTables) {
@@ -219,19 +198,8 @@ namespace NewHierarchy {
             {
                 const std::string viewsNodeId = std::format("views_{}_{:p}", schemaData->name,
                                                             static_cast<void*>(&schemaData->views));
-                const std::string viewsLabel = std::format("   Views###{}", viewsNodeId);
-
-                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), flags);
-
-                // Draw views icon
-                const std::string viewsIcon = ICON_FK_EYE;
-                const auto viewsIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-                ImU32 viewsIconColor = ImGui::GetColorU32(colors.teal);
-                ImGui::GetWindowDrawList()->AddText(viewsIconPos, viewsIconColor,
-                                                    viewsIcon.c_str());
+                const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
+                                                              ImGui::GetColorU32(colors.teal));
 
                 if (viewsOpen) {
                     if (schemaData->viewsLoaded) {
@@ -254,18 +222,9 @@ namespace NewHierarchy {
                 const std::string seqNodeId =
                     std::format("sequences_{}_{:p}", schemaData->name,
                                 static_cast<void*>(&schemaData->sequences));
-                const std::string seqLabel = std::format("   Sequences###{}", seqNodeId);
-
-                const bool seqOpen = ImGui::TreeNodeEx(seqLabel.c_str(), flags);
-
-                // Draw sequences icon
-                const std::string seqIcon = ICON_FK_SORT_NUMERIC_ASC;
-                const auto seqIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-                ImU32 seqIconColor = ImGui::GetColorU32(colors.mauve);
-                ImGui::GetWindowDrawList()->AddText(seqIconPos, seqIconColor, seqIcon.c_str());
+                const bool seqOpen =
+                    renderTreeNodeWithIcon("Sequences", seqNodeId, ICON_FK_SORT_NUMERIC_ASC,
+                                           ImGui::GetColorU32(colors.mauve));
 
                 if (seqOpen) {
                     if (schemaData->sequencesLoaded) {
@@ -295,27 +254,10 @@ namespace NewHierarchy {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
-        // Create unique ID for this database node
         const std::string nodeId =
             std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                   ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                   ImGuiTreeNodeFlags_FramePadding;
-
-        // Display database name with icon
-        const std::string icon = ICON_FK_DATABASE;
-        const std::string label = std::format("   {}###{}", dbData->name, nodeId);
-
-        const bool isOpen = ImGui::TreeNodeEx(label.c_str(), flags);
-
-        // Draw icon
-        const auto iconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-        const ImU32 iconColor = ImGui::GetColorU32(colors.blue);
-        ImGui::GetWindowDrawList()->AddText(iconPos, iconColor, icon.c_str());
+        const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
+                                                   ImGui::GetColorU32(colors.blue));
 
         // Handle expand/collapse
         if (ImGui::IsItemToggledOpen()) {
@@ -329,19 +271,8 @@ namespace NewHierarchy {
             {
                 const std::string tablesNodeId = std::format("tables_{}_{:p}", dbData->name,
                                                              static_cast<void*>(&dbData->tables));
-                const std::string tablesLabel = std::format("   Tables###{}", tablesNodeId);
-
-                const bool tablesOpen = ImGui::TreeNodeEx(tablesLabel.c_str(), flags);
-
-                // Draw tables icon
-                const std::string tablesIcon = ICON_FK_TABLE;
-                const auto tablesIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-                ImU32 tablesIconColor = ImGui::GetColorU32(colors.green);
-                ImGui::GetWindowDrawList()->AddText(tablesIconPos, tablesIconColor,
-                                                    tablesIcon.c_str());
+                const bool tablesOpen = renderTreeNodeWithIcon(
+                    "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
                 if (tablesOpen) {
                     if (!dbData->tablesLoaded && !dbData->loadingTables) {
@@ -376,19 +307,8 @@ namespace NewHierarchy {
             {
                 const std::string viewsNodeId =
                     std::format("views_{}_{:p}", dbData->name, static_cast<void*>(&dbData->views));
-                const std::string viewsLabel = std::format("   Views###{}", viewsNodeId);
-
-                const bool viewsOpen = ImGui::TreeNodeEx(viewsLabel.c_str(), flags);
-
-                // Draw views icon
-                const std::string viewsIcon = ICON_FK_EYE;
-                const auto viewsIconPos =
-                    ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                           ImGui::GetItemRectMin().y +
-                               (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-                ImU32 viewsIconColor = ImGui::GetColorU32(colors.teal);
-                ImGui::GetWindowDrawList()->AddText(viewsIconPos, viewsIconColor,
-                                                    viewsIcon.c_str());
+                const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
+                                                              ImGui::GetColorU32(colors.teal));
 
                 if (viewsOpen) {
                     if (!dbData->viewsLoaded && !dbData->loadingViews) {

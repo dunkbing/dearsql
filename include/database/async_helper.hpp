@@ -15,11 +15,11 @@ public:
 
     AsyncOperation() = default;
 
-    // Non-copyable, movable
+    // Non-copyable, non-movable (due to std::atomic)
     AsyncOperation(const AsyncOperation&) = delete;
     AsyncOperation& operator=(const AsyncOperation&) = delete;
-    AsyncOperation(AsyncOperation&&) = default;
-    AsyncOperation& operator=(AsyncOperation&&) = default;
+    AsyncOperation(AsyncOperation&&) = delete;
+    AsyncOperation& operator=(AsyncOperation&&) = delete;
 
     /**
      * Start an async operation. Returns false if already running.
@@ -95,8 +95,8 @@ public:
 
     AsyncOperation(const AsyncOperation&) = delete;
     AsyncOperation& operator=(const AsyncOperation&) = delete;
-    AsyncOperation(AsyncOperation&&) = default;
-    AsyncOperation& operator=(AsyncOperation&&) = default;
+    AsyncOperation(AsyncOperation&&) = delete;
+    AsyncOperation& operator=(AsyncOperation&&) = delete;
 
     bool start(Task task) {
         if (isRunning()) {

@@ -26,16 +26,18 @@ MySQLDatabase::~MySQLDatabase() {
     tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
-    for (auto& [dbName, dbData] : databaseDataCache) {
-        dbData.loadingTables = false;
-        dbData.loadingViews = false;
+    for (auto& [_, dbDataPtr] : databaseDataCache) {
+        if (dbDataPtr) {
+            dbDataPtr->loadingTables = false;
+            dbDataPtr->loadingViews = false;
 
-        // Wait for all futures to complete
-        if (dbData.tablesFuture.valid()) {
-            dbData.tablesFuture.wait();
-        }
-        if (dbData.viewsFuture.valid()) {
-            dbData.viewsFuture.wait();
+            // Wait for all futures to complete
+            if (dbDataPtr->tablesFuture.valid()) {
+                dbDataPtr->tablesFuture.wait();
+            }
+            if (dbDataPtr->viewsFuture.valid()) {
+                dbDataPtr->viewsFuture.wait();
+            }
         }
     }
 
@@ -50,31 +52,39 @@ MySQLDatabase::~MySQLDatabase() {
 }
 
 // Helper methods for per-database data access
-MySQLDatabase::DatabaseData& MySQLDatabase::getCurrentDatabaseData() {
-    return databaseDataCache[database];
-}
-
-const MySQLDatabase::DatabaseData& MySQLDatabase::getCurrentDatabaseData() const {
-    static const DatabaseData emptyData;
+MySQLDatabase::DatabaseData* MySQLDatabase::getCurrentDatabaseData() {
     auto it = databaseDataCache.find(database);
-    return (it != databaseDataCache.end()) ? it->second : emptyData;
+    if (it == databaseDataCache.end()) {
+        auto newData = std::make_unique<DatabaseData>();
+        newData->name = database;
+        auto* ptr = newData.get();
+        databaseDataCache[database] = std::move(newData);
+        return ptr;
+    }
+    return it->second.get();
 }
 
-MySQLDatabase::DatabaseData& MySQLDatabase::getDatabaseData(const std::string& dbName) {
+const MySQLDatabase::DatabaseData* MySQLDatabase::getCurrentDatabaseData() const {
+    const auto it = databaseDataCache.find(database);
+    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
+}
+
+MySQLDatabase::DatabaseData* MySQLDatabase::getDatabaseData(const std::string& dbName) {
     auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
         // Create new DatabaseData with the name set
-        auto& newData = databaseDataCache[dbName];
-        newData.name = dbName;
-        return newData;
+        auto newData = std::make_unique<DatabaseData>();
+        newData->name = dbName;
+        auto* ptr = newData.get();
+        databaseDataCache[dbName] = std::move(newData);
+        return ptr;
     }
-    return it->second;
+    return it->second.get();
 }
 
-const MySQLDatabase::DatabaseData& MySQLDatabase::getDatabaseData(const std::string& dbName) const {
-    static const DatabaseData emptyData;
-    auto it = databaseDataCache.find(dbName);
-    return (it != databaseDataCache.end()) ? it->second : emptyData;
+const MySQLDatabase::DatabaseData* MySQLDatabase::getDatabaseData(const std::string& dbName) const {
+    const auto it = databaseDataCache.find(dbName);
+    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
@@ -104,9 +114,9 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         connected = false;
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
-        auto it = databaseDataCache.find(database);
-        if (it != databaseDataCache.end()) {
-            it->second.connectionPool.reset();
+        auto* dbData = getDatabaseData(database);
+        if (dbData) {
+            dbData->connectionPool.reset();
         }
         std::string error = "MySQL connection failed: " + std::string(e.what());
         setLastConnectionError(error);
@@ -115,9 +125,9 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         connected = false;
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
-        auto it = databaseDataCache.find(database);
-        if (it != databaseDataCache.end()) {
-            it->second.connectionPool.reset();
+        auto* dbData = getDatabaseData(database);
+        if (dbData) {
+            dbData->connectionPool.reset();
         }
         std::string error = "MySQL connection failed: " + std::string(e.what());
         setLastConnectionError(error);
@@ -128,8 +138,10 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
 void MySQLDatabase::disconnect() {
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
-    for (auto& [dbName, dbData] : databaseDataCache) {
-        dbData.connectionPool.reset();
+    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+        if (dbDataPtr) {
+            dbDataPtr->connectionPool.reset();
+        }
     }
     connected = false;
 }
@@ -162,26 +174,29 @@ void MySQLDatabase::refreshTables() {
 }
 
 void MySQLDatabase::startRefreshTableAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (dbData.loadingTables.load()) {
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
+    if (dbData->loadingTables.load()) {
         return;
     }
 
-    dbData.loadingTables.store(true);
-    dbData.tablesFuture =
+    dbData->loadingTables.store(true);
+    dbData->tablesFuture =
         std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
 }
 
 std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (!dbData.loadingTables.load()) {
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData || !dbData->loadingTables.load()) {
         return {};
     }
 
     std::vector<Table> result;
 
     try {
-        if (!dbData.loadingTables.load()) {
+        if (!dbData->loadingTables.load()) {
             return result;
         }
 
@@ -192,19 +207,19 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
             const auto sql = getSession();
             const soci::rowset tableRs = sql->prepare << tableNamesQuery;
             for (const auto& row : tableRs) {
-                if (!dbData.loadingTables.load()) {
+                if (!dbData->loadingTables.load()) {
                     return result;
                 }
                 tableNames.push_back(row.get<std::string>(0));
             }
         }
 
-        if (!dbData.loadingTables.load()) {
+        if (!dbData->loadingTables.load()) {
             return result;
         }
 
         for (const auto& tableName : tableNames) {
-            if (!dbData.loadingTables.load()) {
+            if (!dbData->loadingTables.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -220,7 +235,7 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
                 const soci::rowset columnsRs = sql->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
-                    if (!dbData.loadingTables.load()) {
+                    if (!dbData->loadingTables.load()) {
                         break;
                     }
 
@@ -250,12 +265,15 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
 }
 
 void MySQLDatabase::checkTablesStatusAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (dbData.tablesFuture.valid() &&
-        dbData.tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        dbData.tables = dbData.tablesFuture.get();
-        dbData.tablesLoaded = true;
-        dbData.loadingTables.store(false);
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
+    if (dbData->tablesFuture.valid() &&
+        dbData->tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        dbData->tables = dbData->tablesFuture.get();
+        dbData->tablesLoaded = true;
+        dbData->loadingTables.store(false);
     }
 }
 
@@ -267,26 +285,29 @@ void MySQLDatabase::refreshViews() {
 }
 
 void MySQLDatabase::startRefreshViewAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (dbData.loadingViews.load()) {
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
+    if (dbData->loadingViews.load()) {
         return;
     }
 
-    dbData.loadingViews.store(true);
-    dbData.viewsFuture =
+    dbData->loadingViews.store(true);
+    dbData->viewsFuture =
         std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
 }
 
 std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (!dbData.loadingViews.load()) {
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData || !dbData->loadingViews.load()) {
         return {};
     }
 
     std::vector<Table> result;
 
     try {
-        if (!dbData.loadingViews.load()) {
+        if (!dbData->loadingViews.load()) {
             return result;
         }
 
@@ -297,19 +318,19 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
             const auto sql = getSession();
             const soci::rowset viewRs = sql->prepare << viewNamesQuery;
             for (const auto& row : viewRs) {
-                if (!dbData.loadingViews.load()) {
+                if (!dbData->loadingViews.load()) {
                     return result;
                 }
                 viewNames.push_back(row.get<std::string>(0));
             }
         }
 
-        if (!dbData.loadingViews.load()) {
+        if (!dbData->loadingViews.load()) {
             return result;
         }
 
         for (const auto& viewName : viewNames) {
-            if (!dbData.loadingViews.load()) {
+            if (!dbData->loadingViews.load()) {
                 break; // Stop processing if we should no longer be loading
             }
 
@@ -325,7 +346,7 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
                 const soci::rowset columnsRs = sql->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
-                    if (!dbData.loadingViews.load()) {
+                    if (!dbData->loadingViews.load()) {
                         break;
                     }
 
@@ -348,18 +369,25 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
 }
 
 void MySQLDatabase::checkViewsStatusAsync() {
-    auto& dbData = getCurrentDatabaseData();
-    if (dbData.viewsFuture.valid() &&
-        dbData.viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        dbData.views = dbData.viewsFuture.get();
-        dbData.viewsLoaded = true;
-        dbData.loadingViews.store(false);
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
+    if (dbData->viewsFuture.valid() &&
+        dbData->viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        dbData->views = dbData->viewsFuture.get();
+        dbData->viewsLoaded = true;
+        dbData->loadingViews.store(false);
     }
 }
 
 void MySQLDatabase::refreshSequences() {
-    getCurrentDatabaseData().sequences.clear();
-    getCurrentDatabaseData().sequencesLoaded = true;
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
+    dbData->sequences.clear();
+    dbData->sequencesLoaded = true;
 }
 
 void MySQLDatabase::checkSequencesStatusAsync() {
@@ -809,12 +837,8 @@ void MySQLDatabase::checkDatabasesStatusAsync() {
 
             // Populate databaseDataCache with all available databases
             for (const auto& dbName : availableDatabases) {
-                auto it = databaseDataCache.find(dbName);
-                if (it == databaseDataCache.end()) {
-                    // Create new DatabaseData with the name set
-                    auto& newData = databaseDataCache[dbName];
-                    newData.name = dbName;
-                }
+                // Use getDatabaseData which creates if not exists
+                getDatabaseData(dbName);
             }
 
             databasesLoaded = true;
@@ -974,9 +998,9 @@ MySQLDatabase::getConnectionPoolForDatabase(const std::string& dbName) const {
     std::lock_guard lock(sessionMutex);
 
     // Use nested DatabaseData structure
-    auto it = databaseDataCache.find(dbName);
-    if (it != databaseDataCache.end() && it->second.connectionPool) {
-        return it->second.connectionPool.get();
+    const auto* dbData = getDatabaseData(dbName);
+    if (dbData && dbData->connectionPool) {
+        return dbData->connectionPool.get();
     }
     return nullptr;
 }
@@ -986,10 +1010,12 @@ void MySQLDatabase::initializeConnectionPool(const std::string& dbName,
     std::lock_guard lock(sessionMutex);
 
     // Get or create DatabaseData for this database
-    auto& dbData = getDatabaseData(dbName);
+    auto* dbData = getDatabaseData(dbName);
+    if (!dbData)
+        return;
 
     // Don't recreate if pool already exists
-    if (dbData.connectionPool) {
+    if (dbData->connectionPool) {
         return;
     }
 
@@ -1013,7 +1039,7 @@ void MySQLDatabase::initializeConnectionPool(const std::string& dbName,
     }
 
     // Store in DatabaseData
-    dbData.connectionPool = std::move(pool);
+    dbData->connectionPool = std::move(pool);
 }
 
 std::string MySQLDatabase::buildConnectionString(const std::string& dbName) const {

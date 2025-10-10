@@ -507,8 +507,11 @@ namespace PostgresHierarchy {
 
     void renderCachedSchemaNode(const std::shared_ptr<PostgresDatabase>& pgDb,
                                 const std::string& dbName, int schemaIndex) {
-        auto& dbData = pgDb->getDatabaseData(dbName);
-        auto& schema = dbData.schemas[schemaIndex];
+        auto* dbData = pgDb->getDatabaseData(dbName);
+        if (!dbData || schemaIndex >= dbData->schemas.size() || !dbData->schemas[schemaIndex])
+            return;
+
+        auto& schema = *dbData->schemas[schemaIndex];
 
         ImGuiTreeNodeFlags schemaFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                          ImGuiTreeNodeFlags_OpenOnDoubleClick |

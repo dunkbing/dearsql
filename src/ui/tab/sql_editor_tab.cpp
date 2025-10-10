@@ -42,8 +42,8 @@ SQLEditorTab::SQLEditorTab(const std::string& name,
                 }
 
                 if (!targetDb.empty()) {
-                    const auto& dbData = pgDb->getDatabaseData(targetDb);
-                    if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
+                    const auto* dbData = pgDb->getDatabaseData(targetDb);
+                    if (dbData && !dbData->schemasLoaded && !dbData->loadingSchemas) {
                         // Load schemas for target database with high priority
                         if (targetDb != pgDb->getDatabaseName()) {
                             Logger::debug("Starting priority schema loading for target database: " +
@@ -273,14 +273,14 @@ void SQLEditorTab::render() {
                 std::string targetDb =
                     selectedDatabaseName.empty() ? pgDb->getDatabaseName() : selectedDatabaseName;
                 if (!targetDb.empty()) {
-                    const auto& dbData = pgDb->getDatabaseData(targetDb);
-                    if (dbData.loadingSchemas) {
+                    const auto* dbData = pgDb->getDatabaseData(targetDb);
+                    if (dbData && dbData->loadingSchemas) {
                         isLoadingAnySchemas = true;
                     }
 
                     // Check if we need schemas for the target database
-                    if (selectedSchemaName.empty() && !dbData.schemasLoaded &&
-                        !dbData.loadingSchemas) {
+                    if (dbData && selectedSchemaName.empty() && !dbData->schemasLoaded &&
+                        !dbData->loadingSchemas) {
                         needsSchemasForTargetDb = true;
                     }
                 }
@@ -362,8 +362,9 @@ void SQLEditorTab::render() {
 
                             // Ensure target database schemas are loaded first
                             if (!targetDb.empty()) {
-                                const auto& targetDbData = pgDb->getDatabaseData(targetDb);
-                                if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
+                                const auto* targetDbData = pgDb->getDatabaseData(targetDb);
+                                if (targetDbData && !targetDbData->schemasLoaded &&
+                                    !targetDbData->loadingSchemas) {
                                     if (targetDb == pgDb->getDatabaseName()) {
                                         if (!pgDb->isLoadingSchemas()) {
                                             pgDb->refreshSchemas();
@@ -378,8 +379,9 @@ void SQLEditorTab::render() {
                             // Load other databases' schemas on-demand (only when combo is opened)
                             for (const auto& dbName : availableDatabases) {
                                 if (dbName != targetDb) {
-                                    const auto& dbData = pgDb->getDatabaseData(dbName);
-                                    if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
+                                    const auto* dbData = pgDb->getDatabaseData(dbName);
+                                    if (dbData && !dbData->schemasLoaded &&
+                                        !dbData->loadingSchemas) {
                                         // TODO: use pgData later
                                         // pgDb->startSchemasLoadAsync(dbName);
                                     }
@@ -449,8 +451,10 @@ void SQLEditorTab::render() {
                             if (dbName == pgDb->getDatabaseName()) {
                                 // Current database - get schemas if loaded
                                 if (pgDb->areSchemasLoaded()) {
-                                    for (const auto& schema : pgDb->getSchemas()) {
-                                        schemas.push_back(schema.name);
+                                    for (const auto& schemaPtr : pgDb->getSchemas()) {
+                                        if (schemaPtr) {
+                                            schemas.push_back(schemaPtr->name);
+                                        }
                                     }
                                 } else if (!pgDb->isLoadingSchemas()) {
                                     // Start loading schemas if not already loading
@@ -458,12 +462,14 @@ void SQLEditorTab::render() {
                                 }
                             } else {
                                 // Other databases - get cached schemas or load them
-                                const auto& dbData = pgDb->getDatabaseData(dbName);
-                                if (dbData.schemasLoaded) {
-                                    for (const auto& schema : dbData.schemas) {
-                                        schemas.push_back(schema.name);
+                                const auto* dbData = pgDb->getDatabaseData(dbName);
+                                if (dbData && dbData->schemasLoaded) {
+                                    for (const auto& schemaPtr : dbData->schemas) {
+                                        if (schemaPtr) {
+                                            schemas.push_back(schemaPtr->name);
+                                        }
                                     }
-                                } else if (!dbData.loadingSchemas) {
+                                } else if (dbData && !dbData->loadingSchemas) {
                                     // Start loading schemas for this database using parallel
                                     // loading
                                     // TODO: use pgData later
@@ -504,12 +510,12 @@ void SQLEditorTab::render() {
                                 ImGui::Text("  Loading schemas...");
                                 ImGui::Unindent(16.0f);
                             } else if (dbName != pgDb->getDatabaseName()) {
-                                const auto& dbData = pgDb->getDatabaseData(dbName);
-                                if (dbData.loadingSchemas) {
+                                const auto* dbData = pgDb->getDatabaseData(dbName);
+                                if (dbData && dbData->loadingSchemas) {
                                     ImGui::Indent(16.0f);
                                     ImGui::Text("  Loading schemas...");
                                     ImGui::Unindent(16.0f);
-                                } else if (!dbData.schemasLoaded && schemas.empty()) {
+                                } else if (dbData && !dbData->schemasLoaded && schemas.empty()) {
                                     ImGui::Indent(16.0f);
                                     ImGui::Text("  Click to load schemas...");
                                     ImGui::Unindent(16.0f);
@@ -540,8 +546,8 @@ void SQLEditorTab::render() {
                                                    ? pgDb->getDatabaseName()
                                                    : selectedDatabaseName;
                         if (!targetDb.empty()) {
-                            const auto& dbData = pgDb->getDatabaseData(targetDb);
-                            if (!dbData.schemasLoaded && !dbData.loadingSchemas) {
+                            const auto* dbData = pgDb->getDatabaseData(targetDb);
+                            if (dbData && !dbData->schemasLoaded && !dbData->loadingSchemas) {
                                 if (targetDb != pgDb->getDatabaseName()) {
                                     // TODO: use pgData later
                                     // pgDb->startSchemasLoadAsync(targetDb);
@@ -592,24 +598,25 @@ void SQLEditorTab::render() {
                     if (pgDb->shouldShowAllDatabases()) {
                         // Multi-database mode: prioritize the target database
                         if (!targetDb.empty()) {
-                            const auto& dbData = pgDb->getDatabaseData(targetDb);
+                            const auto* dbData = pgDb->getDatabaseData(targetDb);
                             // Only auto-select if target database schemas are loaded and not
                             // loading
-                            if (dbData.schemasLoaded && !dbData.loadingSchemas &&
-                                !dbData.schemas.empty()) {
+                            if (dbData && dbData->schemasLoaded && !dbData->loadingSchemas &&
+                                !dbData->schemas.empty()) {
                                 selectedDatabaseName = targetDb;
                                 // Select "public" schema if available, otherwise first schema
-                                for (const auto& schema : dbData.schemas) {
-                                    if (schema.name == "public") {
-                                        selectedSchemaName = schema.name;
+                                for (const auto& schemaPtr : dbData->schemas) {
+                                    if (schemaPtr && schemaPtr->name == "public") {
+                                        selectedSchemaName = schemaPtr->name;
                                         Logger::debug(
                                             "Auto-selected 'public' schema from target database: " +
                                             targetDb);
                                         break;
                                     }
                                 }
-                                if (selectedSchemaName.empty() && !dbData.schemas.empty()) {
-                                    selectedSchemaName = dbData.schemas[0].name;
+                                if (selectedSchemaName.empty() && !dbData->schemas.empty() &&
+                                    dbData->schemas[0]) {
+                                    selectedSchemaName = dbData->schemas[0]->name;
                                     Logger::debug("Auto-selected first schema '" +
                                                   selectedSchemaName +
                                                   "' from target database: " + targetDb);
@@ -622,17 +629,18 @@ void SQLEditorTab::render() {
                             !pgDb->getSchemas().empty()) {
                             selectedDatabaseName = pgDb->getDatabaseName();
                             // Select "public" schema if available, otherwise first schema
-                            for (const auto& schema : pgDb->getSchemas()) {
-                                if (schema.name == "public") {
-                                    selectedSchemaName = schema.name;
+                            for (const auto& schemaPtr : pgDb->getSchemas()) {
+                                if (schemaPtr && schemaPtr->name == "public") {
+                                    selectedSchemaName = schemaPtr->name;
                                     Logger::debug(
                                         "Auto-selected 'public' schema from current database: " +
                                         pgDb->getDatabaseName());
                                     break;
                                 }
                             }
-                            if (selectedSchemaName.empty() && !pgDb->getSchemas().empty()) {
-                                selectedSchemaName = pgDb->getSchemas()[0].name;
+                            if (selectedSchemaName.empty() && !pgDb->getSchemas().empty() &&
+                                pgDb->getSchemas()[0]) {
+                                selectedSchemaName = pgDb->getSchemas()[0]->name;
                                 Logger::debug(
                                     "Auto-selected first schema '" + selectedSchemaName +
                                     "' from current database: " + pgDb->getDatabaseName());
@@ -877,8 +885,10 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
         const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
         if (pgDb) {
             // Add schema names
-            for (const auto& schema : pgDb->getSchemas()) {
-                uniqueKeywords.insert(schema.name);
+            for (const auto& schemaPtr : pgDb->getSchemas()) {
+                if (schemaPtr) {
+                    uniqueKeywords.insert(schemaPtr->name);
+                }
             }
 
             // Add database names if in multi-database mode

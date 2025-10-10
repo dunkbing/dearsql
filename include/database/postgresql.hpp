@@ -1,6 +1,8 @@
 #pragma once
 
 #include "base_database.hpp"
+#include "postgres/postgres_database_node.hpp"
+#include "postgres/postgres_schema_node.hpp"
 #include <atomic>
 #include <future>
 #include <mutex>
@@ -11,80 +13,10 @@
 #include <unordered_map>
 
 class PostgresDatabase final : public BaseDatabaseImpl {
-    // Per-database data structures (made public for hierarchy rendering)
+    // Type aliases for backward compatibility
 public:
-    /**
-     * @brief Per-schema data for PostgreSQL
-     *
-     * PostgreSQL hierarchy: Database → Schema → Tables/Views/Sequences
-     * Each SchemaData represents one schema (e.g., "public", "analytics")
-     */
-    struct SchemaData {
-        std::string name;
-
-        // Schema contents (only tables, views, sequences for now)
-        std::vector<Table> tables;
-        std::vector<Table> views;
-        std::vector<std::string> sequences;
-
-        // Loading state flags
-        bool tablesLoaded = false;
-        bool viewsLoaded = false;
-        bool sequencesLoaded = false;
-        std::atomic<bool> loadingTables = false;
-        std::atomic<bool> loadingViews = false;
-        std::atomic<bool> loadingSequences = false;
-
-        // Async futures
-        std::future<std::vector<Table>> tablesFuture;
-        std::future<std::vector<Table>> viewsFuture;
-        std::future<std::vector<std::string>> sequencesFuture;
-
-        // UI expansion state
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-        bool sequencesExpanded = false;
-
-        // Error tracking
-        std::string lastTablesError;
-        std::string lastViewsError;
-        std::string lastSequencesError;
-    };
-
-    /**
-     * @brief Per-database data for PostgreSQL
-     *
-     * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
-     * Each DatabaseData represents one database within the PostgreSQL server.
-     */
-    struct DatabaseData {
-        PostgresDatabase* parentDb = nullptr;
-
-        std::string name;
-
-        // Connection pool (one per database)
-        std::unique_ptr<soci::connection_pool> connectionPool;
-
-        // PostgreSQL: Database → Schemas → Tables/Views/Sequences
-        std::vector<Schema> schemas; // List of schema names (for legacy compatibility)
-        std::unordered_map<std::string, SchemaData> schemaDataCache; // Schema name → data
-        bool schemasLoaded = false;
-        std::atomic<bool> loadingSchemas = false;
-        std::future<std::vector<Schema>> schemasFuture;
-        std::string lastSchemasError;
-
-        // UI expansion state
-        bool expanded = false;
-        bool tablesExpanded = false; // For backward compatibility
-        bool viewsExpanded = false;  // For backward compatibility
-
-        // Methods
-        void startSchemasLoadAsync();
-        void checkSchemasStatusAsync();
-        std::vector<Schema> getSchemasForDatabaseAsync();
-        std::unique_ptr<soci::session> getSession() const;
-        void initializeConnectionPool(const std::string& connStr);
-    };
+    using SchemaData = PostgresSchemaNode;
+    using DatabaseData = PostgresDatabaseNode;
 
 public:
     PostgresDatabase(const DatabaseConnectionInfo& connInfo);
@@ -111,8 +43,8 @@ public:
 
     // Schema management
     void refreshSchemas();
-    const std::vector<Schema>& getSchemas() const;
-    std::vector<Schema>& getSchemas();
+    const std::vector<std::unique_ptr<SchemaData>>& getSchemas() const;
+    std::vector<std::unique_ptr<SchemaData>>& getSchemas();
     bool areSchemasLoaded() const;
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
@@ -183,7 +115,7 @@ protected:
     void startRefreshSequenceAsync(const std::string& schemaName = "public");
     std::vector<std::string> getSequencesAsync(const std::string& schemaName) const;
     void startRefreshSchemaAsync();
-    std::vector<Schema> getSchemasAsync() const;
+    std::vector<std::unique_ptr<SchemaData>> getSchemasAsync() const;
     std::vector<std::string> getDatabaseNamesAsync() const;
 
     // Schema helper methods
@@ -195,9 +127,8 @@ private:
     std::string database;
     std::string connectionString;
     bool showAllDatabases;
-    // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
-    std::unordered_map<std::string, DatabaseData> databaseDataCache;
+    std::unordered_map<std::string, std::unique_ptr<DatabaseData>> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
@@ -213,13 +144,14 @@ private:
 
 public:
     // Helper methods for per-database data access
-    DatabaseData& getCurrentDatabaseData();
-    const DatabaseData& getCurrentDatabaseData() const;
-    DatabaseData& getDatabaseData(const std::string& dbName);
-    const DatabaseData& getDatabaseData(const std::string& dbName) const;
+    DatabaseData* getCurrentDatabaseData();
+    const DatabaseData* getCurrentDatabaseData() const;
+    DatabaseData* getDatabaseData(const std::string& dbName);
+    const DatabaseData* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
-    const std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() const {
+    const std::unordered_map<std::string, std::unique_ptr<DatabaseData>>&
+    getDatabaseDataMap() const {
         return databaseDataCache;
     }
 
@@ -234,13 +166,15 @@ public:
     void checkSchemaViewsStatusAsync(const std::string& schemaName);
     void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 
+    // Public helper for building connection strings (used by PostgresDatabaseNode)
+    std::string buildConnectionString(const std::string& dbName) const;
+
 private:
     // Thread synchronization
     mutable std::mutex sessionMutex;
 
     // Helper methods for connection pool
     soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
-    std::string buildConnectionString(const std::string& dbName) const;
     void initializeConnectionPool(const std::string& dbName, const std::string& connStr);
 
     // Helper method for session management

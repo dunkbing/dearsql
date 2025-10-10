@@ -139,7 +139,7 @@ private:
     bool showAllDatabases;
     // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
-    std::unordered_map<std::string, DatabaseData> databaseDataCache;
+    std::unordered_map<std::string, std::unique_ptr<DatabaseData>> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
@@ -155,16 +155,17 @@ private:
 
 public:
     // Helper methods for per-database data access
-    DatabaseData& getCurrentDatabaseData();
-    const DatabaseData& getCurrentDatabaseData() const;
-    DatabaseData& getDatabaseData(const std::string& dbName);
-    const DatabaseData& getDatabaseData(const std::string& dbName) const;
+    DatabaseData* getCurrentDatabaseData();
+    const DatabaseData* getCurrentDatabaseData() const;
+    DatabaseData* getDatabaseData(const std::string& dbName);
+    const DatabaseData* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
-    std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() {
+    std::unordered_map<std::string, std::unique_ptr<DatabaseData>>& getDatabaseDataMap() {
         return databaseDataCache;
     }
-    const std::unordered_map<std::string, DatabaseData>& getDatabaseDataMap() const {
+    const std::unordered_map<std::string, std::unique_ptr<DatabaseData>>&
+    getDatabaseDataMap() const {
         return databaseDataCache;
     }
 

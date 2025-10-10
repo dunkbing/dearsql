@@ -28,23 +28,26 @@ PostgresDatabase::~PostgresDatabase() {
     tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
-    for (auto& dbData : databaseDataCache | std::views::values) {
+    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+        if (!dbDataPtr)
+            continue;
+        auto& dbData = *dbDataPtr;
         dbData.loadingSchemas = false;
 
         // Wait for all schema-level futures to complete
-        for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-            schemaData.loadingTables = false;
-            schemaData.loadingViews = false;
-            schemaData.loadingSequences = false;
+        for (auto& schema : dbData.schemas) {
+            schema->loadingTables = false;
+            schema->loadingViews = false;
+            schema->loadingSequences = false;
 
-            if (schemaData.tablesFuture.valid()) {
-                schemaData.tablesFuture.wait();
+            if (schema->tablesFuture.valid()) {
+                schema->tablesFuture.wait();
             }
-            if (schemaData.viewsFuture.valid()) {
-                schemaData.viewsFuture.wait();
+            if (schema->viewsFuture.valid()) {
+                schema->viewsFuture.wait();
             }
-            if (schemaData.sequencesFuture.valid()) {
-                schemaData.sequencesFuture.wait();
+            if (schema->sequencesFuture.valid()) {
+                schema->sequencesFuture.wait();
             }
         }
 
@@ -62,7 +65,10 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     // Wait for all per-database schema futures to complete
-    for (auto& dbData : databaseDataCache | std::views::values) {
+    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+        if (!dbDataPtr)
+            continue;
+        auto& dbData = *dbDataPtr;
         if (dbData.schemasFuture.valid()) {
             dbData.schemasFuture.wait();
         }
@@ -72,59 +78,82 @@ PostgresDatabase::~PostgresDatabase() {
 }
 
 // Helper methods for per-database data access
-PostgresDatabase::DatabaseData& PostgresDatabase::getCurrentDatabaseData() {
-    return databaseDataCache[database];
+PostgresDatabase::DatabaseData* PostgresDatabase::getCurrentDatabaseData() {
+    auto it = databaseDataCache.find(database);
+    if (it == databaseDataCache.end()) {
+        auto newData = std::make_unique<DatabaseData>();
+        newData->name = database;
+        newData->parentDb = this;
+        auto* ptr = newData.get();
+        databaseDataCache[database] = std::move(newData);
+        return ptr;
+    }
+    return it->second.get();
 }
 
-const PostgresDatabase::DatabaseData& PostgresDatabase::getCurrentDatabaseData() const {
-    static const DatabaseData emptyData;
+const PostgresDatabase::DatabaseData* PostgresDatabase::getCurrentDatabaseData() const {
     const auto it = databaseDataCache.find(database);
-    return (it != databaseDataCache.end()) ? it->second : emptyData;
+    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
-PostgresDatabase::DatabaseData& PostgresDatabase::getDatabaseData(const std::string& dbName) {
+PostgresDatabase::DatabaseData* PostgresDatabase::getDatabaseData(const std::string& dbName) {
     auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
         // Create new DatabaseData with the name set
-        auto& newData = databaseDataCache[dbName];
-        newData.name = dbName;
-        newData.parentDb = this;
-        return newData;
+        auto newData = std::make_unique<DatabaseData>();
+        newData->name = dbName;
+        newData->parentDb = this;
+        auto* ptr = newData.get();
+        databaseDataCache[dbName] = std::move(newData);
+        return ptr;
     }
-    return it->second;
+    return it->second.get();
 }
 
-const PostgresDatabase::DatabaseData&
+const PostgresDatabase::DatabaseData*
 PostgresDatabase::getDatabaseData(const std::string& dbName) const {
-    static const DatabaseData emptyData;
     const auto it = databaseDataCache.find(dbName);
-    return (it != databaseDataCache.end()) ? it->second : emptyData;
+    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
 // Helper methods for per-schema data access
 PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& schemaName) {
-    return getCurrentDatabaseData().schemaDataCache[schemaName];
+    auto* dbData = getCurrentDatabaseData();
+    auto& ptr = dbData->schemaDataCache[schemaName];
+    if (!ptr) {
+        ptr = std::make_unique<SchemaData>();
+    }
+    return *ptr;
 }
 
 const PostgresDatabase::SchemaData&
 PostgresDatabase::getSchemaData(const std::string& schemaName) const {
     static const SchemaData emptyData;
-    const auto& dbData = getCurrentDatabaseData();
-    const auto it = dbData.schemaDataCache.find(schemaName);
-    return (it != dbData.schemaDataCache.end()) ? it->second : emptyData;
+    const auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return emptyData;
+    const auto it = dbData->schemaDataCache.find(schemaName);
+    return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
 PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& dbName,
                                                               const std::string& schemaName) {
-    return getDatabaseData(dbName).schemaDataCache[schemaName];
+    auto* dbData = getDatabaseData(dbName);
+    auto& ptr = dbData->schemaDataCache[schemaName];
+    if (!ptr) {
+        ptr = std::make_unique<SchemaData>();
+    }
+    return *ptr;
 }
 
 const PostgresDatabase::SchemaData&
 PostgresDatabase::getSchemaData(const std::string& dbName, const std::string& schemaName) const {
     static const SchemaData emptyData;
-    const auto& dbData = getDatabaseData(dbName);
-    const auto it = dbData.schemaDataCache.find(schemaName);
-    return (it != dbData.schemaDataCache.end()) ? it->second : emptyData;
+    const auto* dbData = getDatabaseData(dbName);
+    if (!dbData)
+        return emptyData;
+    const auto it = dbData->schemaDataCache.find(schemaName);
+    return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
 // Check async status for schema-level operations
@@ -211,8 +240,8 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
         auto it = databaseDataCache.find(database);
-        if (it != databaseDataCache.end()) {
-            it->second.connectionPool.reset();
+        if (it != databaseDataCache.end() && it->second) {
+            it->second->connectionPool.reset();
         }
         connected = false;
         setLastConnectionError(e.what());
@@ -223,8 +252,10 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 void PostgresDatabase::disconnect() {
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
-    for (auto& [dbName, dbData] : databaseDataCache) {
-        dbData.connectionPool.reset();
+    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+        if (dbDataPtr) {
+            dbDataPtr->connectionPool.reset();
+        }
     }
     connected = false;
 }
@@ -754,9 +785,11 @@ std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& s
 
 void PostgresDatabase::checkTablesStatusAsync() {
     // Check all schemas for table loading completion
-    auto& dbData = getCurrentDatabaseData();
-    for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        checkSchemaTablesStatusAsync(schemaName);
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+    for (auto& schema : dbData->schemas) {
+        checkSchemaTablesStatusAsync(schema->name);
     }
 }
 
@@ -891,9 +924,11 @@ std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync(const std::string
 
 void PostgresDatabase::checkViewsStatusAsync() {
     // Check all schemas for view loading completion
-    auto& dbData = getCurrentDatabaseData();
-    for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        checkSchemaViewsStatusAsync(schemaName);
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+    for (auto& schema : dbData->schemas) {
+        checkSchemaViewsStatusAsync(schema->name);
     }
 }
 
@@ -1010,9 +1045,11 @@ std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string&
 
 void PostgresDatabase::checkSequencesStatusAsync() {
     // Check all schemas for sequence loading completion
-    auto& dbData = getCurrentDatabaseData();
-    for (auto& [schemaName, schemaData] : dbData.schemaDataCache) {
-        checkSchemaSequencesStatusAsync(schemaName);
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+    for (auto& schema : dbData->schemas) {
+        checkSchemaSequencesStatusAsync(schema->name);
     }
 }
 
@@ -1150,104 +1187,78 @@ void PostgresDatabase::refreshSchemas() {
     std::cout << "Refreshing schemas for database: " << name << std::endl;
     if (!isConnected()) {
         std::cout << "Not connected to database, cannot refresh schemas" << std::endl;
-        getCurrentDatabaseData().schemasLoaded = true;
+        auto* dbData = getCurrentDatabaseData();
+        if (dbData) {
+            dbData->schemasLoaded = true;
+        }
         return;
     }
 
     startRefreshSchemaAsync();
 }
 
-const std::vector<Schema>& PostgresDatabase::getSchemas() const {
-    return getCurrentDatabaseData().schemas;
+const std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>&
+PostgresDatabase::getSchemas() const {
+    const auto* dbData = getCurrentDatabaseData();
+    static const std::vector<std::unique_ptr<SchemaData>> emptySchemas;
+    return dbData ? dbData->schemas : emptySchemas;
 }
 
-std::vector<Schema>& PostgresDatabase::getSchemas() {
-    return getCurrentDatabaseData().schemas;
+std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>& PostgresDatabase::getSchemas() {
+    auto* dbData = getCurrentDatabaseData();
+    static std::vector<std::unique_ptr<SchemaData>> emptySchemas;
+    return dbData ? dbData->schemas : emptySchemas;
 }
 
 bool PostgresDatabase::areSchemasLoaded() const {
-    return getCurrentDatabaseData().schemasLoaded;
+    const auto* dbData = getCurrentDatabaseData();
+    return dbData ? dbData->schemasLoaded : false;
 }
 
 void PostgresDatabase::setSchemasLoaded(const bool loaded) {
-    getCurrentDatabaseData().schemasLoaded = loaded;
+    auto* dbData = getCurrentDatabaseData();
+    if (dbData) {
+        dbData->schemasLoaded = loaded;
+    }
 }
 
 bool PostgresDatabase::isLoadingSchemas() const {
-    return getCurrentDatabaseData().loadingSchemas;
+    const auto* dbData = getCurrentDatabaseData();
+    return dbData ? dbData->loadingSchemas.load() : false;
 }
 
 // void PostgresDatabase::checkSchemasStatusAsync() {
 //     checkSchemasStatusAsync(database);
 // }
 
-void PostgresDatabase::DatabaseData::checkSchemasStatusAsync() {
-    // Check the schema future in DatabaseData
-    if (schemasFuture.valid() &&
-        schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            schemas = schemasFuture.get();
-            Logger::info(
-                std::format("Async schema loading completed for database {}. Found {} schemas",
-                            name, schemas.size()));
-            schemasLoaded = true;
-            loadingSchemas = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async schema loading for database " << name << ": " << e.what()
-                      << std::endl;
-            schemasLoaded = true;
-            loadingSchemas = false;
-        }
-    }
-}
-
 void PostgresDatabase::startRefreshSchemaAsync() {
-    auto& dbData = getCurrentDatabaseData();
+    auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return;
+
     // Clear previous results
-    dbData.schemas.clear();
-    dbData.schemasLoaded = false;
-    dbData.loadingSchemas = true;
+    dbData->schemas.clear();
+    dbData->schemasLoaded = false;
+    dbData->loadingSchemas = true;
 
     // Start async loading with std::async
-    dbData.schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
+    dbData->schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
 }
 
-void PostgresDatabase::DatabaseData::startSchemasLoadAsync() {
-    Logger::debug("startSchemasLoadAsync for database: " + name);
-    if (!parentDb) {
-        return;
-    }
-
-    // Don't start if already loading or loaded
-    if (loadingSchemas.load() || schemasLoaded) {
-        return;
-    }
-
-    loadingSchemas = true;
-
-    // Start async loading using the database's own schemasFuture
-    schemasFuture =
-        std::async(std::launch::async, [this]() { return getSchemasForDatabaseAsync(); });
-}
-
-std::vector<Schema> PostgresDatabase::DatabaseData::getSchemasForDatabaseAsync() {
-    std::vector<Schema> result;
+std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>
+PostgresDatabase::getSchemasAsync() const {
+    std::vector<std::unique_ptr<SchemaData>> result;
+    const auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return result;
 
     // Check if we're still supposed to be loading
-    if (!loadingSchemas.load()) {
+    if (!dbData->loadingSchemas.load()) {
         return result;
     }
 
     try {
-        // Ensure we have a connection pool for the specific database
-        const auto& pool = connectionPool;
-        if (!pool) {
-            // If no pool exists for this database, create one temporarily
-            const std::string dbConnectionString = parentDb->buildConnectionString(name);
-            initializeConnectionPool(dbConnectionString);
-        }
-
-        if (!loadingSchemas.load()) {
+        if (!dbData->loadingSchemas.load()) {
             return result;
         }
 
@@ -1264,65 +1275,7 @@ std::vector<Schema> PostgresDatabase::DatabaseData::getSchemasForDatabaseAsync()
             const auto session = getSession();
             const soci::rowset rs = session->prepare << sqlQuery;
             for (const auto& row : rs) {
-                if (!loadingSchemas.load()) {
-                    return result;
-                }
-                schemaNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
-                      name);
-
-        if (schemaNames.empty() || !loadingSchemas.load()) {
-            return result;
-        }
-
-        for (const auto& schemaName : schemaNames) {
-            if (!loadingSchemas.load()) {
-                break;
-            }
-
-            Schema schema;
-            schema.name = schemaName;
-
-            result.push_back(schema);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting schemas for database " << name << ": " << e.what() << std::endl;
-    }
-
-    return result;
-}
-
-std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
-    std::vector<Schema> result;
-    const auto& dbData = getCurrentDatabaseData();
-
-    // Check if we're still supposed to be loading
-    if (!dbData.loadingSchemas.load()) {
-        return result;
-    }
-
-    try {
-        if (!dbData.loadingSchemas.load()) {
-            return result;
-        }
-
-        // Get schema names using the connection pool
-        std::vector<std::string> schemaNames;
-        const std::string sqlQuery =
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
-            "AND schema_name NOT LIKE 'pg_temp_%' "
-            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
-            "ORDER BY schema_name";
-
-        {
-            const auto session = getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
-            for (const auto& row : rs) {
-                if (!dbData.loadingSchemas.load()) {
+                if (!dbData->loadingSchemas.load()) {
                     return result;
                 }
                 schemaNames.push_back(row.get<std::string>(0));
@@ -1331,19 +1284,19 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
 
         std::cout << "Found " << schemaNames.size() << " schemas, loading objects..." << std::endl;
 
-        if (schemaNames.empty() || !dbData.loadingSchemas.load()) {
+        if (schemaNames.empty() || !dbData->loadingSchemas.load()) {
             return result;
         }
 
         for (const auto& schemaName : schemaNames) {
-            if (!dbData.loadingSchemas.load()) {
+            if (!dbData->loadingSchemas.load()) {
                 break;
             }
 
-            Schema schema;
-            schema.name = schemaName;
+            auto schema = std::make_unique<SchemaData>();
+            schema->name = schemaName;
 
-            result.push_back(schema);
+            result.push_back(std::move(schema));
             std::cout << "Loaded schema: " << schemaName << std::endl;
         }
     } catch (const soci::soci_error& e) {
@@ -1355,10 +1308,12 @@ std::vector<Schema> PostgresDatabase::getSchemasAsync() const {
 
 std::vector<std::string> PostgresDatabase::getSchemaNames() const {
     std::vector<std::string> schemaNames;
-    const auto& dbData = getCurrentDatabaseData();
+    const auto* dbData = getCurrentDatabaseData();
+    if (!dbData)
+        return schemaNames;
 
     try {
-        if (!dbData.loadingSchemas.load()) {
+        if (!dbData->loadingSchemas.load()) {
             return schemaNames;
         }
 
@@ -1374,7 +1329,7 @@ std::vector<std::string> PostgresDatabase::getSchemaNames() const {
         const soci::rowset rs = session->prepare << sqlQuery;
 
         for (const auto& row : rs) {
-            if (!dbData.loadingSchemas.load()) {
+            if (!dbData->loadingSchemas.load()) {
                 break;
             }
 
@@ -1446,9 +1401,10 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
                 auto it = databaseDataCache.find(dbName);
                 if (it == databaseDataCache.end()) {
                     // Create new DatabaseData with the name set
-                    auto& newData = databaseDataCache[dbName];
-                    newData.name = dbName;
-                    newData.parentDb = this;
+                    auto newData = std::make_unique<DatabaseData>();
+                    newData->name = dbName;
+                    newData->parentDb = this;
+                    databaseDataCache[dbName] = std::move(newData);
                 }
             }
 
@@ -1570,8 +1526,8 @@ void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
                              targetDatabaseName);
 
                 // Auto-start loading schemas for the switched database if not already loaded
-                const auto& targetDbData = getDatabaseData(targetDatabaseName);
-                if (!targetDbData.schemasLoaded && !targetDbData.loadingSchemas) {
+                const auto* targetDbData = getDatabaseData(targetDatabaseName);
+                if (targetDbData && !targetDbData->schemasLoaded && !targetDbData->loadingSchemas) {
                     Logger::debug("Auto-starting schema loading after database switch to: " +
                                   targetDatabaseName);
                     refreshSchemas();
@@ -1607,8 +1563,8 @@ PostgresDatabase::getConnectionPoolForDatabase(const std::string& dbName) const 
 
     // Use nested DatabaseData structure
     auto it = databaseDataCache.find(dbName);
-    if (it != databaseDataCache.end() && it->second.connectionPool) {
-        return it->second.connectionPool.get();
+    if (it != databaseDataCache.end() && it->second && it->second->connectionPool) {
+        return it->second->connectionPool.get();
     }
     return nullptr;
 }
@@ -1617,11 +1573,13 @@ void PostgresDatabase::initializeConnectionPool(const std::string& dbName,
                                                 const std::string& connStr) {
     std::lock_guard lock(sessionMutex);
 
-    // Get or create DatabaseData for this database
-    auto& dbData = getDatabaseData(dbName);
+    // Get or create PostgresDatabaseNode for this database
+    auto* dbData = getDatabaseData(dbName);
+    if (!dbData)
+        return;
 
     // Don't recreate if pool already exists
-    if (dbData.connectionPool) {
+    if (dbData->connectionPool) {
         return;
     }
 
@@ -1644,37 +1602,8 @@ void PostgresDatabase::initializeConnectionPool(const std::string& dbName,
         future.wait();
     }
 
-    // Store in DatabaseData
-    dbData.connectionPool = std::move(pool);
-}
-
-void PostgresDatabase::DatabaseData::initializeConnectionPool(const std::string& connStr) {
-    Logger::debug(std::format("initializeConnectionPool {}", connStr));
-    if (connectionPool) {
-        return;
-    }
-
-    constexpr size_t poolSize = 3;
-    auto pool = std::make_unique<soci::connection_pool>(poolSize);
-
-    // Initialize connections in parallel for faster startup
-    std::vector<std::future<void>> connectionFutures;
-    connectionFutures.reserve(poolSize);
-
-    for (size_t i = 0; i != poolSize; ++i) {
-        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& session = pool->at(i);
-            session.open(soci::postgresql, connStr);
-        }));
-    }
-
-    // Wait for all connections to complete
-    for (auto& future : connectionFutures) {
-        future.wait();
-    }
-
-    // Store in DatabaseData
-    connectionPool = std::move(pool);
+    // Store in PostgresDatabaseNode
+    dbData->connectionPool = std::move(pool);
 }
 
 std::string PostgresDatabase::buildConnectionString(const std::string& dbName) const {
@@ -1705,17 +1634,6 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& d
         throw std::runtime_error("Connection pool not available for database: " + targetDb);
     }
     auto res = std::make_unique<soci::session>(*pool);
-    if (!res->is_connected()) {
-        res->reconnect();
-    }
-    return res;
-}
-
-std::unique_ptr<soci::session> PostgresDatabase::DatabaseData::getSession() const {
-    if (!connectionPool) {
-        throw std::runtime_error("Connection pool not available for database: " + name);
-    }
-    auto res = std::make_unique<soci::session>(*connectionPool);
     if (!res->is_connected()) {
         res->reconnect();
     }

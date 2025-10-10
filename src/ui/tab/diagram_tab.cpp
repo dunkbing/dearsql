@@ -84,9 +84,10 @@ void DiagramTab::render() {
             if (mysqlDb) {
                 mysqlDb->checkTablesStatusAsync();
                 // Reset loading flag if tables are loaded
-                const auto& dbData = mysqlDb->getDatabaseData(
+                const auto* dbData = mysqlDb->getDatabaseData(
                     targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName);
-                if (dbData.tablesLoaded || (!dbData.loadingTables && !dbData.tables.empty())) {
+                if (dbData &&
+                    (dbData->tablesLoaded || (!dbData->loadingTables && !dbData->tables.empty()))) {
                     isLoadingSchema = false;
                 }
             }
@@ -189,8 +190,10 @@ std::vector<Table> DiagramTab::getTablesForDiagram() const {
         if (mysqlDb) {
             const std::string dbToUse =
                 targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName;
-            const auto& dbData = mysqlDb->getDatabaseData(dbToUse);
-            tables = dbData.tables;
+            const auto* dbData = mysqlDb->getDatabaseData(dbToUse);
+            if (dbData) {
+                tables = dbData->tables;
+            }
         }
     } else {
         // For SQLite and other databases, use the standard interface
@@ -263,8 +266,8 @@ void DiagramTab::loadDatabaseSchema() {
             }
 
             // Get the tables for the specific database
-            const auto& dbData = mysqlDb->getDatabaseData(dbToUse);
-            if (!dbData.tablesLoaded && !dbData.loadingTables) {
+            const auto* dbData = mysqlDb->getDatabaseData(dbToUse);
+            if (dbData && !dbData->tablesLoaded && !dbData->loadingTables) {
                 // For the target database, we need to trigger table loading
                 if (dbToUse == mysqlDb->getDatabaseName()) {
                     // If it's the current database, use the regular refresh
@@ -277,12 +280,14 @@ void DiagramTab::loadDatabaseSchema() {
             }
 
             // If tables are still loading, wait
-            if (dbData.loadingTables) {
+            if (dbData && dbData->loadingTables) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            tables = dbData.tables;
+            if (dbData) {
+                tables = dbData->tables;
+            }
         }
     } else {
         // For SQLite and other databases, use the standard interface

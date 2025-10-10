@@ -65,9 +65,10 @@ namespace NewHierarchy {
                 ImGui::PopStyleColor();
             } else if (pgDb->areDatabasesLoaded()) {
                 const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
-                for (const auto& dbData : databases) {
-                    renderPostgresDatabaseNode(
-                        pgDb, const_cast<PostgresDatabase::DatabaseData*>(&dbData));
+                for (const auto& dbDataPtr : databases) {
+                    if (dbDataPtr) {
+                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get());
+                    }
                 }
             }
         } else if (dbType == DatabaseType::MYSQL) {
@@ -91,9 +92,10 @@ namespace NewHierarchy {
                 ImGui::PopStyleColor();
             } else if (mysqlDb->areDatabasesLoaded()) {
                 const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
-                for (const auto& dbData : databases) {
-                    renderMySQLDatabaseNode(mysqlDb,
-                                            const_cast<MySQLDatabase::DatabaseData*>(&dbData));
+                for (const auto& dbDataPtr : databases) {
+                    if (dbDataPtr) {
+                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get());
+                    }
                 }
             }
         }
@@ -134,8 +136,8 @@ namespace NewHierarchy {
                 ImGui::PopStyleColor();
             } else if (dbData->schemasLoaded) {
                 // Render each schema
-                for (auto& [schemaName, schemaData] : dbData->schemaDataCache) {
-                    renderPostgresSchemaNode(pgDb, dbData, &schemaData);
+                for (auto& schema : dbData->schemas) {
+                    renderPostgresSchemaNode(pgDb, dbData, schema.get());
                 }
             }
 

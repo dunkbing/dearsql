@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 
+// Forward declaration
+class PostgresDatabaseNode;
+
 /**
  * @brief Per-schema data for PostgreSQL
  *
@@ -14,6 +17,7 @@
  */
 class PostgresSchemaNode {
 public:
+    PostgresDatabaseNode* parentDbNode = nullptr;
     std::string name;
 
     // Schema contents (only tables, views, sequences for now)
@@ -43,4 +47,9 @@ public:
     std::string lastTablesError;
     std::string lastViewsError;
     std::string lastSequencesError;
+
+    // Methods
+    void startTablesLoadAsync();
+    void checkTablesStatusAsync();
+    std::vector<Table> getTablesWithColumnsAsync();
 };

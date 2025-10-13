@@ -58,4 +58,24 @@ namespace NewHierarchy {
      */
     void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabase::DatabaseData* dbData);
 
+    /**
+     * @brief Render a table node with expandable structure (columns, keys, indexes)
+     *
+     * @param table The table to render
+     * @param schemaName The schema name (for PostgreSQL)
+     * @param databaseName The database name (for multi-database scenarios)
+     */
+    void renderTableNode(Table& table, const std::string& schemaName = "",
+                         const std::string& databaseName = "");
+
+    /**
+     * @brief Render a view node as a leaf item
+     *
+     * @param view The view to render
+     * @param schemaName The schema name (for PostgreSQL)
+     * @param databaseName The database name (for multi-database scenarios)
+     */
+    void renderViewNode(Table& view, const std::string& schemaName = "",
+                        const std::string& databaseName = "");
+
 } // namespace NewHierarchy

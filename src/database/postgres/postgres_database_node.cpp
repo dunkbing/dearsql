@@ -102,6 +102,7 @@ PostgresDatabaseNode::getSchemasForDatabaseAsync() {
 
             auto schema = std::make_unique<PostgresSchemaNode>();
             schema->name = schemaName;
+            schema->parentDbNode = this;
 
             result.push_back(std::move(schema));
         }

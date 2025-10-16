@@ -103,8 +103,7 @@ namespace NewHierarchy {
     }
 
     // Database-specific rendering implementations
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb,
-                                    PostgresDatabase::DatabaseData* dbData) {
+    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData) {
         if (!pgDb || !dbData) {
             return;
         }
@@ -146,8 +145,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabase::DatabaseData* dbData,
-                                  PostgresDatabase::SchemaData* schemaData) {
+    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
+                                  PostgresSchemaNode* schemaData) {
         if (!pgDb || !dbData || !schemaData) {
             return;
         }
@@ -202,7 +201,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& table : schemaData->tables) {
-                                renderTableNode(table, schemaData->name, dbData->name);
+                                renderTableNode(table, schemaData, dbData->name, schemaData->name);
                             }
                         }
                     }
@@ -225,7 +224,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& view : schemaData->views) {
-                                renderViewNode(view, schemaData->name, dbData->name);
+                                renderViewNode(view, schemaData, dbData->name, schemaData->name);
                             }
                         }
                     }
@@ -363,8 +362,8 @@ namespace NewHierarchy {
         // TODO: Implement SQLite database node rendering using nested DatabaseData
     }
 
-    void renderTableNode(Table& table, const std::string& schemaName,
-                         const std::string& databaseName) {
+    void renderTableNode(Table& table, PostgresSchemaNode* schemaData,
+                         const std::string& databaseName, const std::string& schemaName) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -384,13 +383,15 @@ namespace NewHierarchy {
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            // app.getTabManager()->createTableViewerTab(db, table.name);
+            app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
+                                                      schemaName);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                // app.getTabManager()->createTableViewerTab(db, table.name);
+                app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
+                                                          schemaName);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -558,8 +559,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderViewNode(Table& view, const std::string& schemaName,
-                        const std::string& databaseName) {
+    void renderViewNode(Table& view, PostgresSchemaNode* schemaData,
+                        const std::string& databaseName, const std::string& schemaName) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -581,13 +582,17 @@ namespace NewHierarchy {
 
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            // app.getTabManager()->createTableViewerTab(db, view.name);
+            auto& app = Application::getInstance();
+            app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
+                                                      schemaName);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                // app.getTabManager()->createTableViewerTab(db, view.name);
+                auto& app = Application::getInstance();
+                app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
+                                                          schemaName);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

@@ -78,10 +78,10 @@ PostgresDatabase::~PostgresDatabase() {
 }
 
 // Helper methods for per-database data access
-PostgresDatabase::DatabaseData* PostgresDatabase::getCurrentDatabaseData() {
+PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() {
     auto it = databaseDataCache.find(database);
     if (it == databaseDataCache.end()) {
-        auto newData = std::make_unique<DatabaseData>();
+        auto newData = std::make_unique<PostgresDatabaseNode>();
         newData->name = database;
         newData->parentDb = this;
         auto* ptr = newData.get();
@@ -91,16 +91,16 @@ PostgresDatabase::DatabaseData* PostgresDatabase::getCurrentDatabaseData() {
     return it->second.get();
 }
 
-const PostgresDatabase::DatabaseData* PostgresDatabase::getCurrentDatabaseData() const {
+const PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() const {
     const auto it = databaseDataCache.find(database);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
-PostgresDatabase::DatabaseData* PostgresDatabase::getDatabaseData(const std::string& dbName) {
+PostgresDatabaseNode* PostgresDatabase::getDatabaseData(const std::string& dbName) {
     auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
         // Create new DatabaseData with the name set
-        auto newData = std::make_unique<DatabaseData>();
+        auto newData = std::make_unique<PostgresDatabaseNode>();
         newData->name = dbName;
         newData->parentDb = this;
         auto* ptr = newData.get();
@@ -110,25 +110,23 @@ PostgresDatabase::DatabaseData* PostgresDatabase::getDatabaseData(const std::str
     return it->second.get();
 }
 
-const PostgresDatabase::DatabaseData*
-PostgresDatabase::getDatabaseData(const std::string& dbName) const {
+const PostgresDatabaseNode* PostgresDatabase::getDatabaseData(const std::string& dbName) const {
     const auto it = databaseDataCache.find(dbName);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
 // Helper methods for per-schema data access
-PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& schemaName) {
+PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& schemaName) {
     auto* dbData = getCurrentDatabaseData();
     auto& ptr = dbData->schemaDataCache[schemaName];
     if (!ptr) {
-        ptr = std::make_unique<SchemaData>();
+        ptr = std::make_unique<PostgresSchemaNode>();
     }
     return *ptr;
 }
 
-const PostgresDatabase::SchemaData&
-PostgresDatabase::getSchemaData(const std::string& schemaName) const {
-    static const SchemaData emptyData;
+const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& schemaName) const {
+    static const PostgresSchemaNode emptyData;
     const auto* dbData = getCurrentDatabaseData();
     if (!dbData)
         return emptyData;
@@ -136,19 +134,19 @@ PostgresDatabase::getSchemaData(const std::string& schemaName) const {
     return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
-PostgresDatabase::SchemaData& PostgresDatabase::getSchemaData(const std::string& dbName,
-                                                              const std::string& schemaName) {
+PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbName,
+                                                    const std::string& schemaName) {
     auto* dbData = getDatabaseData(dbName);
     auto& ptr = dbData->schemaDataCache[schemaName];
     if (!ptr) {
-        ptr = std::make_unique<SchemaData>();
+        ptr = std::make_unique<PostgresSchemaNode>();
     }
     return *ptr;
 }
 
-const PostgresDatabase::SchemaData&
-PostgresDatabase::getSchemaData(const std::string& dbName, const std::string& schemaName) const {
-    static const SchemaData emptyData;
+const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbName,
+                                                          const std::string& schemaName) const {
+    static const PostgresSchemaNode emptyData;
     const auto* dbData = getDatabaseData(dbName);
     if (!dbData)
         return emptyData;
@@ -1197,16 +1195,15 @@ void PostgresDatabase::refreshSchemas() {
     startRefreshSchemaAsync();
 }
 
-const std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>&
-PostgresDatabase::getSchemas() const {
+const std::vector<std::unique_ptr<PostgresSchemaNode>>& PostgresDatabase::getSchemas() const {
     const auto* dbData = getCurrentDatabaseData();
-    static const std::vector<std::unique_ptr<SchemaData>> emptySchemas;
+    static const std::vector<std::unique_ptr<PostgresSchemaNode>> emptySchemas;
     return dbData ? dbData->schemas : emptySchemas;
 }
 
-std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>& PostgresDatabase::getSchemas() {
+std::vector<std::unique_ptr<PostgresSchemaNode>>& PostgresDatabase::getSchemas() {
     auto* dbData = getCurrentDatabaseData();
-    static std::vector<std::unique_ptr<SchemaData>> emptySchemas;
+    static std::vector<std::unique_ptr<PostgresSchemaNode>> emptySchemas;
     return dbData ? dbData->schemas : emptySchemas;
 }
 
@@ -1245,9 +1242,8 @@ void PostgresDatabase::startRefreshSchemaAsync() {
     dbData->schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
 }
 
-std::vector<std::unique_ptr<PostgresDatabase::SchemaData>>
-PostgresDatabase::getSchemasAsync() const {
-    std::vector<std::unique_ptr<SchemaData>> result;
+std::vector<std::unique_ptr<PostgresSchemaNode>> PostgresDatabase::getSchemasAsync() const {
+    std::vector<std::unique_ptr<PostgresSchemaNode>> result;
     const auto* dbData = getCurrentDatabaseData();
     if (!dbData)
         return result;
@@ -1293,7 +1289,7 @@ PostgresDatabase::getSchemasAsync() const {
                 break;
             }
 
-            auto schema = std::make_unique<SchemaData>();
+            auto schema = std::make_unique<PostgresSchemaNode>();
             schema->name = schemaName;
 
             result.push_back(std::move(schema));
@@ -1401,7 +1397,7 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
                 auto it = databaseDataCache.find(dbName);
                 if (it == databaseDataCache.end()) {
                     // Create new DatabaseData with the name set
-                    auto newData = std::make_unique<DatabaseData>();
+                    auto newData = std::make_unique<PostgresDatabaseNode>();
                     newData->name = dbName;
                     newData->parentDb = this;
                     databaseDataCache[dbName] = std::move(newData);

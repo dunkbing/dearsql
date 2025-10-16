@@ -5,6 +5,7 @@
 #include <vector>
 
 class DatabaseInterface;
+class PostgresSchemaNode;
 
 class TabManager {
 public:
@@ -19,8 +20,6 @@ public:
 
     // Tab queries
     std::shared_ptr<Tab> findTab(const std::string& name) const;
-    std::shared_ptr<Tab> findTableTab(const std::shared_ptr<DatabaseInterface>& database,
-                                      const std::string& tableName) const;
     bool hasTab(const std::string& name) const;
     bool isEmpty() const {
         return tabs.empty();
@@ -37,8 +36,10 @@ public:
     std::shared_ptr<Tab> createSQLEditorTab(const std::string& name,
                                             const std::shared_ptr<DatabaseInterface>& database,
                                             const std::string& selectedDatabaseName = "");
-    std::shared_ptr<Tab> createTableViewerTab(const std::shared_ptr<DatabaseInterface>& database,
-                                              const std::string& tableName);
+    std::shared_ptr<Tab> createTableViewerTab(PostgresSchemaNode* schemaNode,
+                                              const std::string& tableName,
+                                              const std::string& databaseName,
+                                              const std::string& schemaName);
     std::shared_ptr<Tab> createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
                                           const std::string& targetDatabaseName = "");
 

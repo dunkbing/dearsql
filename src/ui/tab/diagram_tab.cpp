@@ -529,8 +529,9 @@ void DiagramTab::handleNodeInteraction() {
 
             // Handle double-click to open table viewer
             if (ImGui::IsMouseDoubleClicked(0)) {
-                const auto& app = Application::getInstance();
-                app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
+                // TODO: Update to use PostgresSchemaNode for PostgreSQL databases
+                // const auto& app = Application::getInstance();
+                // app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
             }
         }
     }
@@ -545,8 +546,9 @@ void DiagramTab::handleNodeInteraction() {
             ImGui::Text("Table: %s", nodeIt->tableName.c_str());
             ImGui::Separator();
             if (ImGui::MenuItem("View Data")) {
-                const auto& app = Application::getInstance();
-                app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
+                // TODO: Update to use PostgresSchemaNode for PostgreSQL databases
+                // const auto& app = Application::getInstance();
+                // app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
             }
             if (ImGui::MenuItem("New SQL Editor")) {
                 const auto& app = Application::getInstance();

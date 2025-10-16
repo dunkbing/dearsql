@@ -52,4 +52,12 @@ public:
     void startTablesLoadAsync();
     void checkTablesStatusAsync();
     std::vector<Table> getTablesWithColumnsAsync();
+
+    // Query execution methods for TableViewerTab
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset,
+                                                       const std::string& whereClause = "");
+    std::vector<std::string> getColumnNames(const std::string& tableName);
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "");
+    std::string executeQuery(const std::string& query);
 };

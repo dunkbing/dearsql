@@ -30,7 +30,7 @@ namespace NewHierarchy {
      * @param pgDb The PostgreSQL database instance
      * @param dbData The database data containing schemas
      */
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabase::DatabaseData* dbData);
+    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData);
 
     /**
      * @brief Render a PostgreSQL schema node with tables/views/sequences
@@ -39,8 +39,8 @@ namespace NewHierarchy {
      * @param dbData The parent database data
      * @param schemaData The schema data to render
      */
-    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabase::DatabaseData* dbData,
-                                  PostgresDatabase::SchemaData* schemaData);
+    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
+                                  PostgresSchemaNode* schemaData);
 
     /**
      * @brief Render a MySQL database node with its tables/views
@@ -62,20 +62,22 @@ namespace NewHierarchy {
      * @brief Render a table node with expandable structure (columns, keys, indexes)
      *
      * @param table The table to render
-     * @param schemaName The schema name (for PostgreSQL)
+     * @param schemaNode The schema node for PostgreSQL (for creating tabs)
      * @param databaseName The database name (for multi-database scenarios)
+     * @param schemaName The schema name (for PostgreSQL)
      */
-    void renderTableNode(Table& table, const std::string& schemaName = "",
-                         const std::string& databaseName = "");
+    void renderTableNode(Table& table, PostgresSchemaNode* schemaNode,
+                         const std::string& databaseName, const std::string& schemaName);
 
     /**
      * @brief Render a view node as a leaf item
      *
      * @param view The view to render
-     * @param schemaName The schema name (for PostgreSQL)
+     * @param schemaNode The schema node for PostgreSQL (for creating tabs)
      * @param databaseName The database name (for multi-database scenarios)
+     * @param schemaName The schema name (for PostgreSQL)
      */
-    void renderViewNode(Table& view, const std::string& schemaName = "",
-                        const std::string& databaseName = "");
+    void renderViewNode(Table& view, PostgresSchemaNode* schemaNode,
+                        const std::string& databaseName, const std::string& schemaName);
 
 } // namespace NewHierarchy

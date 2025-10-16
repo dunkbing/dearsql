@@ -1,4 +1,5 @@
 #include "database/postgres/postgres_schema_node.hpp"
+#include "database/db.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
 #include <chrono>
@@ -152,4 +153,99 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
     }
 
     return result;
+}
+
+std::vector<std::vector<std::string>>
+PostgresSchemaNode::getTableData(const std::string& tableName, int limit, int offset,
+                                 const std::string& whereClause) {
+    std::vector<std::vector<std::string>> result;
+
+    if (!parentDbNode) {
+        return result;
+    }
+
+    try {
+        std::string query = std::format("SELECT * FROM \"{}\".\"{}\"", name, tableName);
+        if (!whereClause.empty()) {
+            query += " WHERE " + whereClause;
+        }
+        query += std::format(" LIMIT {} OFFSET {}", limit, offset);
+
+        auto session = parentDbNode->getSession();
+        soci::rowset<soci::row> rs = session->prepare << query;
+
+        for (const auto& row : rs) {
+            std::vector<std::string> rowData;
+            rowData.reserve(row.size());
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                rowData.push_back(convertRowValue(row, i));
+            }
+            result.push_back(rowData);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table data: " << e.what() << std::endl;
+    }
+
+    return result;
+}
+
+std::vector<std::string> PostgresSchemaNode::getColumnNames(const std::string& tableName) {
+    std::vector<std::string> result;
+
+    if (!parentDbNode) {
+        return result;
+    }
+
+    try {
+        const std::string query = std::format(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = '{}' AND "
+            "table_name = '{}' ORDER BY ordinal_position",
+            name, tableName);
+
+        auto session = parentDbNode->getSession();
+        soci::rowset<std::string> rs = session->prepare << query;
+
+        for (const auto& columnName : rs) {
+            result.push_back(columnName);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting column names: " << e.what() << std::endl;
+    }
+
+    return result;
+}
+
+int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
+    if (!parentDbNode) {
+        return 0;
+    }
+
+    try {
+        std::string query = std::format("SELECT COUNT(*) FROM \"{}\".\"{}\"", name, tableName);
+        if (!whereClause.empty()) {
+            query += " WHERE " + whereClause;
+        }
+
+        auto session = parentDbNode->getSession();
+        int count = 0;
+        *session << query, soci::into(count);
+        return count;
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting row count: " << e.what() << std::endl;
+        return 0;
+    }
+}
+
+std::string PostgresSchemaNode::executeQuery(const std::string& query) {
+    if (!parentDbNode) {
+        return "Error: No database connection";
+    }
+
+    try {
+        auto session = parentDbNode->getSession();
+        *session << query;
+        return "Query executed successfully";
+    } catch (const soci::soci_error& e) {
+        return "Error: " + std::string(e.what());
+    }
 }

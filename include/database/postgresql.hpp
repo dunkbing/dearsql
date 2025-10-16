@@ -13,11 +13,6 @@
 #include <unordered_map>
 
 class PostgresDatabase final : public BaseDatabaseImpl {
-    // Type aliases for backward compatibility
-public:
-    using SchemaData = PostgresSchemaNode;
-    using DatabaseData = PostgresDatabaseNode;
-
 public:
     PostgresDatabase(const DatabaseConnectionInfo& connInfo);
     ~PostgresDatabase() override;
@@ -43,8 +38,8 @@ public:
 
     // Schema management
     void refreshSchemas();
-    const std::vector<std::unique_ptr<SchemaData>>& getSchemas() const;
-    std::vector<std::unique_ptr<SchemaData>>& getSchemas();
+    const std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas() const;
+    std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas();
     bool areSchemasLoaded() const;
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
@@ -115,7 +110,7 @@ protected:
     void startRefreshSequenceAsync(const std::string& schemaName = "public");
     std::vector<std::string> getSequencesAsync(const std::string& schemaName) const;
     void startRefreshSchemaAsync();
-    std::vector<std::unique_ptr<SchemaData>> getSchemasAsync() const;
+    std::vector<std::unique_ptr<PostgresSchemaNode>> getSchemasAsync() const;
     std::vector<std::string> getDatabaseNamesAsync() const;
 
     // Schema helper methods
@@ -128,7 +123,7 @@ private:
     std::string connectionString;
     bool showAllDatabases;
 
-    std::unordered_map<std::string, std::unique_ptr<DatabaseData>> databaseDataCache;
+    std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
@@ -144,22 +139,23 @@ private:
 
 public:
     // Helper methods for per-database data access
-    DatabaseData* getCurrentDatabaseData();
-    const DatabaseData* getCurrentDatabaseData() const;
-    DatabaseData* getDatabaseData(const std::string& dbName);
-    const DatabaseData* getDatabaseData(const std::string& dbName) const;
+    PostgresDatabaseNode* getCurrentDatabaseData();
+    const PostgresDatabaseNode* getCurrentDatabaseData() const;
+    PostgresDatabaseNode* getDatabaseData(const std::string& dbName);
+    const PostgresDatabaseNode* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
-    const std::unordered_map<std::string, std::unique_ptr<DatabaseData>>&
+    const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
     getDatabaseDataMap() const {
         return databaseDataCache;
     }
 
     // Helper methods for per-schema data access
-    SchemaData& getSchemaData(const std::string& schemaName);
-    const SchemaData& getSchemaData(const std::string& schemaName) const;
-    SchemaData& getSchemaData(const std::string& dbName, const std::string& schemaName);
-    const SchemaData& getSchemaData(const std::string& dbName, const std::string& schemaName) const;
+    PostgresSchemaNode& getSchemaData(const std::string& schemaName);
+    const PostgresSchemaNode& getSchemaData(const std::string& schemaName) const;
+    PostgresSchemaNode& getSchemaData(const std::string& dbName, const std::string& schemaName);
+    const PostgresSchemaNode& getSchemaData(const std::string& dbName,
+                                            const std::string& schemaName) const;
 
     // Check async status for schema-level operations
     void checkSchemaTablesStatusAsync(const std::string& schemaName);

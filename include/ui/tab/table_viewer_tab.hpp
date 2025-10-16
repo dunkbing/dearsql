@@ -9,12 +9,12 @@
 #include <vector>
 
 // Forward declarations
-class DatabaseInterface;
+class PostgresSchemaNode;
 
 class TableViewerTab final : public Tab {
 public:
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
-                   std::shared_ptr<DatabaseInterface> serverDatabase = nullptr);
+                   PostgresSchemaNode* schemaNode = nullptr);
 
     void render() override;
 
@@ -25,11 +25,11 @@ public:
     [[nodiscard]] const std::string& getTableName() const {
         return tableName;
     }
-    [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {
-        return serverDatabase;
+    [[nodiscard]] PostgresSchemaNode* getSchemaNode() const {
+        return schemaNode;
     }
-    void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
-        serverDatabase = std::move(db);
+    void setSchemaNode(PostgresSchemaNode* node) {
+        schemaNode = node;
     }
     void loadData();
     void loadDataAsync();
@@ -51,7 +51,7 @@ public:
 private:
     std::string databasePath;
     std::string tableName;
-    std::shared_ptr<DatabaseInterface> serverDatabase;
+    PostgresSchemaNode* schemaNode;
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;

@@ -1,7 +1,7 @@
 #include "ui/tab/table_viewer_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
-#include "database/db_interface.hpp"
+#include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
@@ -14,10 +14,9 @@
 #include <utility>
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName,
-                               std::shared_ptr<DatabaseInterface> serverDatabase)
+                               std::string tableName, PostgresSchemaNode* schemaNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), serverDatabase(std::move(serverDatabase)) {
+      tableName(std::move(tableName)), schemaNode(schemaNode) {
 
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
@@ -311,16 +310,16 @@ void TableViewerTab::render() {
 }
 
 void TableViewerTab::loadData() {
-    if (!serverDatabase || !serverDatabase->isConnected()) {
+    if (!schemaNode) {
         return;
     }
 
-    totalRows = serverDatabase->getRowCount(tableName);
-    columnNames = serverDatabase->getColumnNames(tableName);
+    totalRows = schemaNode->getRowCount(tableName, currentFilter);
+    columnNames = schemaNode->getColumnNames(tableName);
 
     // Get data with pagination
     const int offset = currentPage * rowsPerPage;
-    tableData = serverDatabase->getTableData(tableName, rowsPerPage, offset);
+    tableData = schemaNode->getTableData(tableName, rowsPerPage, offset, currentFilter);
 
     // Store original data for change tracking
     originalData = tableData;
@@ -500,22 +499,17 @@ void TableViewerTab::handleKeyboardNavigation() {
 }
 
 void TableViewerTab::loadDataAsync() {
-    if (!serverDatabase || !serverDatabase->isConnected()) {
+    if (!schemaNode) {
         hasLoadingError = true;
-        loadingError = "Database not found or not connected";
+        loadingError = "Schema node not found";
         return;
     }
 
+    // For now, load synchronously since we simplified to PostgresSchemaNode
+    // TODO: Add async loading support to PostgresSchemaNode if needed
     isLoadingData = true;
     hasLoadingError = false;
     loadingError.clear();
-
-    // Clear any previous async result
-    if (serverDatabase->getType() == DatabaseType::SQLITE) {
-        serverDatabase->clearTableDataResult();
-    } else {
-        serverDatabase->clearTableDataResult(tableName);
-    }
 
     // Clear current data to show loading state if filter changed
     if (filterChanged) {
@@ -526,142 +520,29 @@ void TableViewerTab::loadDataAsync() {
         Logger::debug("Cleared previous filtered data, starting fresh load");
     }
 
-    // Start async data loading with filter support
-    const int offset = currentPage * rowsPerPage;
-    serverDatabase->startTableDataLoadAsync(tableName, rowsPerPage, offset, currentFilter);
+    try {
+        loadData();
+        isLoadingData = false;
+    } catch (const std::exception& e) {
+        hasLoadingError = true;
+        loadingError = e.what();
+        isLoadingData = false;
+    }
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {
-    if (!isLoadingData) {
-        return;
-    }
-
-    if (!serverDatabase || !serverDatabase->isConnected()) {
-        isLoadingData = false;
-        hasLoadingError = true;
-        loadingError = "Database not found or not connected";
-        return;
-    }
-
-    // Always check the async status first
-    if (serverDatabase->getType() == DatabaseType::SQLITE) {
-        serverDatabase->checkTableDataStatusAsync();
-
-        if (serverDatabase->hasTableDataResult()) {
-            // Load completed - get all data including metadata
-            tableData = serverDatabase->getTableDataResult();
-            columnNames = serverDatabase->getColumnNamesResult();
-            totalRows = serverDatabase->getRowCountResult();
-            originalData = tableData;
-            hasChanges = false;
-            isLoadingData = false;
-
-            Logger::debug("Async unfiltered data load completed for table " + tableName +
-                          ". Found " + std::to_string(totalRows) + " total rows, showing " +
-                          std::to_string(tableData.size()) + " rows on current page");
-
-            // Initialize edited cells tracking
-            editedCells = std::vector<std::vector<bool>>(
-                tableData.size(), std::vector<bool>(columnNames.size(), false));
-
-            // Update auto-complete with column names
-            if (filterAutoComplete) {
-                filterAutoComplete->addKeywords(columnNames);
-            }
-
-            // Adjust selection if it's out of bounds after page change
-            if (selectedRow >= 0 && selectedCol >= 0) {
-                const int maxRows = static_cast<int>(tableData.size());
-                const int maxCols = static_cast<int>(columnNames.size());
-
-                // Clamp selection to valid bounds
-                if (selectedRow >= maxRows) {
-                    selectedRow = std::max(0, maxRows - 1);
-                }
-                if (selectedCol >= maxCols) {
-                    selectedCol = std::max(0, maxCols - 1);
-                }
-
-                // Scroll to the selected cell after page change
-                if (tableRenderer && selectedRow >= 0 && selectedCol >= 0) {
-                    tableRenderer->scrollToCell(selectedRow, selectedCol);
-                }
-            }
-
-            // Clear the result to free memory
-            serverDatabase->clearTableDataResult();
-        } else if (!serverDatabase->isLoadingTableData()) {
-            // Loading stopped but no result - probably an error
-            isLoadingData = false;
-            hasLoadingError = true;
-            loadingError = "Failed to load table data";
-            Logger::error("Async table data loading failed for table: " + tableName);
-        }
-    } else {
-        serverDatabase->checkTableDataStatusAsync(tableName);
-
-        if (serverDatabase->hasTableDataResult(tableName)) {
-            // Load completed - get all data including metadata
-            tableData = serverDatabase->getTableDataResult(tableName);
-            columnNames = serverDatabase->getColumnNamesResult(tableName);
-            totalRows = serverDatabase->getRowCountResult(tableName);
-            originalData = tableData;
-            hasChanges = false;
-            isLoadingData = false;
-
-            Logger::debug("Async unfiltered data load completed for table " + tableName +
-                          ". Found " + std::to_string(totalRows) + " total rows, showing " +
-                          std::to_string(tableData.size()) + " rows on current page");
-
-            // Initialize edited cells tracking
-            editedCells = std::vector<std::vector<bool>>(
-                tableData.size(), std::vector<bool>(columnNames.size(), false));
-
-            // Update auto-complete with column names
-            if (filterAutoComplete) {
-                filterAutoComplete->addKeywords(columnNames);
-            }
-
-            // Adjust selection if it's out of bounds after page change
-            if (selectedRow >= 0 && selectedCol >= 0) {
-                const int maxRows = static_cast<int>(tableData.size());
-                const int maxCols = static_cast<int>(columnNames.size());
-
-                // Clamp selection to valid bounds
-                if (selectedRow >= maxRows) {
-                    selectedRow = std::max(0, maxRows - 1);
-                }
-                if (selectedCol >= maxCols) {
-                    selectedCol = std::max(0, maxCols - 1);
-                }
-
-                // Scroll to the selected cell after page change
-                if (tableRenderer && selectedRow >= 0 && selectedCol >= 0) {
-                    tableRenderer->scrollToCell(selectedRow, selectedCol);
-                }
-            }
-
-            // Clear the result to free memory
-            serverDatabase->clearTableDataResult(tableName);
-        } else if (!serverDatabase->isLoadingTableData(tableName)) {
-            // Loading stopped but no result - probably an error
-            isLoadingData = false;
-            hasLoadingError = true;
-            loadingError = "Failed to load table data";
-            Logger::error("Async table data loading failed for table: " + tableName);
-        }
-    }
+    // Since we're loading synchronously now, this is a no-op
+    // Data is already loaded in loadDataAsync()
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     std::vector<std::string> pkColumns;
-    if (!serverDatabase || !serverDatabase->isConnected()) {
+    if (!schemaNode) {
         return pkColumns;
     }
 
-    // Find table columns
-    const auto& tables = serverDatabase->getTables();
-    for (const auto& table : tables) {
+    // Find table columns in schema
+    for (const auto& table : schemaNode->tables) {
         if (table.name == tableName) {
             for (const auto& column : table.columns) {
                 if (column.isPrimaryKey) {
@@ -678,15 +559,15 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::vector<std::string> sqlStatements;
 
-    if (!serverDatabase || !serverDatabase->isConnected()) {
+    if (!schemaNode) {
         return sqlStatements;
     }
 
-    const bool isSQLite = (serverDatabase->getType() == DatabaseType::SQLITE);
+    // PostgreSQL-specific (no longer supporting SQLite)
     const std::vector<std::string> pkColumns = getPrimaryKeyColumns();
 
     std::cout << "Generating UPDATE SQL for table: " << tableName << std::endl;
-    std::cout << "Database type: " << (isSQLite ? "SQLite" : "Postgres") << std::endl;
+    std::cout << "Database type: Postgres" << std::endl;
     std::cout << "Primary key columns: ";
     for (const auto& pk : pkColumns) {
         std::cout << pk << " ";
@@ -703,13 +584,8 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
             const std::string& columnName = columnNames[colIdx];
             const std::string& newValue = tableData[rowIdx][colIdx];
 
-            // Build UPDATE statement
-            std::string sql;
-            if (isSQLite) {
-                sql = std::format("UPDATE {} SET {} = ", tableName, columnName);
-            } else {
-                sql = std::format(R"(UPDATE "{}" SET "{}" = )", tableName, columnName);
-            }
+            // Build UPDATE statement (PostgreSQL format)
+            std::string sql = std::format(R"(UPDATE "{}" SET "{}" = )", tableName, columnName);
 
             // Add quoted value
             if (newValue == "NULL") {
@@ -731,24 +607,7 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
                         const int pkColIdx =
                             static_cast<int>(std::distance(columnNames.begin(), pkColIt));
                         const std::string& pkValue = originalData[rowIdx][pkColIdx];
-
-                        if (isSQLite) {
-                            whereConditions.push_back(std::format("{} = '{}'", pkCol, pkValue));
-                        } else {
-                            whereConditions.push_back(std::format("\"{}\" = '{}'", pkCol, pkValue));
-                        }
-                    }
-                }
-            } else if (isSQLite) {
-                // For SQLite without primary key, use all columns as condition to identify the row
-                for (int condColIdx = 0; condColIdx < columnNames.size(); condColIdx++) {
-                    const std::string& condValue = originalData[rowIdx][condColIdx];
-                    if (condValue == "NULL") {
-                        whereConditions.push_back(
-                            std::format("{} IS NULL", columnNames[condColIdx]));
-                    } else {
-                        whereConditions.push_back(
-                            std::format("{} = '{}'", columnNames[condColIdx], condValue));
+                        whereConditions.push_back(std::format("\"{}\" = '{}'", pkCol, pkValue));
                     }
                 }
             } else {
@@ -827,21 +686,21 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::Text("Executing...");
         } else {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
-                if (serverDatabase && serverDatabase->isConnected()) {
+                if (schemaNode) {
                     executingSQL = true;
 
-                    // Copy SQL statements and database pointer for async execution
+                    // Copy SQL statements and schema node pointer for async execution
                     auto sqlStatements = pendingUpdateSQL;
 
                     sqlExecutionFuture = std::async(
                         std::launch::async,
-                        [db = serverDatabase, sqlStatements]() -> std::pair<bool, std::string> {
+                        [schema = schemaNode, sqlStatements]() -> std::pair<bool, std::string> {
                             bool allSuccess = true;
                             std::string errorMessage;
 
                             for (const auto& sql : sqlStatements) {
                                 std::cout << "Executing SQL: " << sql << std::endl;
-                                const std::string result = db->executeQuery(sql);
+                                const std::string result = schema->executeQuery(sql);
                                 std::cout << "SQL Result: " << result << std::endl;
 
                                 if (result.find("Error:") == 0) {
@@ -860,7 +719,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
                             return {allSuccess, errorMessage};
                         });
                 } else {
-                    std::cerr << "Database not found or not connected" << std::endl;
+                    std::cerr << "Schema node not found" << std::endl;
                 }
             }
         }

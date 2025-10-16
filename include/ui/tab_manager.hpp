@@ -6,6 +6,8 @@
 
 class DatabaseInterface;
 class PostgresSchemaNode;
+class MySQLDatabaseNode;
+class MySQLDatabase;
 
 class TabManager {
 public:
@@ -40,6 +42,8 @@ public:
                                               const std::string& tableName,
                                               const std::string& databaseName,
                                               const std::string& schemaName);
+    std::shared_ptr<Tab> createTableViewerTab(MySQLDatabaseNode* dbNode,
+                                              const std::string& tableName, MySQLDatabase* mysqlDb);
     std::shared_ptr<Tab> createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
                                           const std::string& targetDatabaseName = "");
 

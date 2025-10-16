@@ -6,15 +6,21 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 // Forward declarations
 class PostgresSchemaNode;
+class MySQLDatabaseNode;
 
 class TableViewerTab final : public Tab {
 public:
+    using DatabaseNode = std::variant<PostgresSchemaNode*, MySQLDatabaseNode*>;
+
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
-                   PostgresSchemaNode* schemaNode = nullptr);
+                   PostgresSchemaNode* schemaNode);
+    TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
+                   MySQLDatabaseNode* mysqlNode);
 
     void render() override;
 
@@ -25,11 +31,8 @@ public:
     [[nodiscard]] const std::string& getTableName() const {
         return tableName;
     }
-    [[nodiscard]] PostgresSchemaNode* getSchemaNode() const {
-        return schemaNode;
-    }
-    void setSchemaNode(PostgresSchemaNode* node) {
-        schemaNode = node;
+    [[nodiscard]] const DatabaseNode& getDatabaseNode() const {
+        return databaseNode;
     }
     void loadData();
     void loadDataAsync();
@@ -51,7 +54,7 @@ public:
 private:
     std::string databasePath;
     std::string tableName;
-    PostgresSchemaNode* schemaNode;
+    DatabaseNode databaseNode;
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;

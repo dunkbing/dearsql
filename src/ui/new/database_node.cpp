@@ -3,7 +3,6 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "imgui.h"
-#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 #include <ranges>
@@ -261,7 +260,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabase::DatabaseData* dbData) {
+    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData) {
         if (!mysqlDb || !dbData) {
             return;
         }
@@ -291,12 +290,11 @@ namespace NewHierarchy {
 
                 if (tablesOpen) {
                     if (!dbData->tablesLoaded && !dbData->loadingTables) {
-                        Logger::debug(
-                            std::format("Need to load tables for database: {}", dbData->name));
-                        // TODO: Trigger table loading for this database
+                        dbData->startTablesLoadAsync();
                     }
 
                     if (dbData->loadingTables) {
+                        dbData->checkTablesStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading tables...");
                         ImGui::SameLine();
@@ -310,7 +308,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& table : dbData->tables) {
-                                ImGui::Text("    %s", table.name.c_str());
+                                renderMySQLTableNode(table, dbData, mysqlDb);
                             }
                         }
                     }
@@ -327,12 +325,11 @@ namespace NewHierarchy {
 
                 if (viewsOpen) {
                     if (!dbData->viewsLoaded && !dbData->loadingViews) {
-                        Logger::debug(
-                            std::format("Need to load views for database: {}", dbData->name));
-                        // TODO: Trigger view loading for this database
+                        dbData->startViewsLoadAsync();
                     }
 
                     if (dbData->loadingViews) {
+                        dbData->checkViewsStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading views...");
                         ImGui::SameLine();
@@ -346,7 +343,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& view : dbData->views) {
-                                ImGui::Text("    %s", view.name.c_str());
+                                renderMySQLViewNode(view, dbData, mysqlDb);
                             }
                         }
                     }
@@ -593,6 +590,81 @@ namespace NewHierarchy {
                 auto& app = Application::getInstance();
                 app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
                                                           schemaName);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show view structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb) {
+        auto& app = Application::getInstance();
+        const auto& colors = app.getCurrentColors();
+
+        ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
+                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                        ImGuiTreeNodeFlags_FramePadding;
+
+        const std::string tableNodeId =
+            std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
+        const std::string tableLabel = std::format("   {}###{}", table.name, tableNodeId);
+        ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+
+        // Draw icon
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.green),
+                                            ICON_FK_TABLE);
+
+        // Double-click to open table viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            app.getTabManager()->createTableViewerTab(dbData, table.name, mysqlDb);
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                app.getTabManager()->createTableViewerTab(dbData, table.name, mysqlDb);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show table structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb) {
+        auto& app = Application::getInstance();
+        const auto& colors = app.getCurrentColors();
+
+        ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                       ImGuiTreeNodeFlags_FramePadding;
+
+        const std::string viewNodeId =
+            std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+        const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
+        ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+
+        // Draw icon
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.teal), ICON_FK_EYE);
+
+        // Double-click to open view viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            app.getTabManager()->createTableViewerTab(dbData, view.name, mysqlDb);
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                app.getTabManager()->createTableViewerTab(dbData, view.name, mysqlDb);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

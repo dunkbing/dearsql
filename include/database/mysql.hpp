@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base_database.hpp"
+#include "mysql/mysql_database_node.hpp"
 #include <atomic>
 #include <future>
 #include <mutex>
@@ -73,48 +74,6 @@ public:
     bool isDatabaseExpanded(const std::string& dbName) const;
     void setDatabaseExpanded(const std::string& dbName, bool expanded);
 
-    // Per-database data structures (made public for hierarchy rendering)
-public:
-    /**
-     * @brief Per-database data for MySQL
-     *
-     * MySQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Tables/Views
-     * Each DatabaseData represents one database within the MySQL server.
-     * Note: MySQL doesn't have schemas, so tables/views are directly under database.
-     */
-    struct DatabaseData {
-        std::string name;
-
-        // Connection pool (one per database)
-        std::unique_ptr<soci::connection_pool> connectionPool;
-
-        // MySQL: Database → Tables/Views (no schema layer)
-        std::vector<Table> tables;
-        std::vector<Table> views;
-        std::vector<std::string> sequences; // Empty for MySQL (for API compatibility)
-
-        // Loading state flags
-        bool tablesLoaded = false;
-        bool viewsLoaded = false;
-        bool sequencesLoaded = false; // For API compatibility
-        std::atomic<bool> loadingTables = false;
-        std::atomic<bool> loadingViews = false;
-
-        // Async futures
-        std::future<std::vector<Table>> tablesFuture;
-        std::future<std::vector<Table>> viewsFuture;
-
-        // UI expansion state
-        bool expanded = false;
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-        bool sequencesExpanded = false; // For API compatibility
-
-        // Error tracking
-        std::string lastTablesError;
-        std::string lastViewsError;
-    };
-
 protected:
     std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string& tableName) override;
@@ -139,7 +98,7 @@ private:
     bool showAllDatabases;
     // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
-    std::unordered_map<std::string, std::unique_ptr<DatabaseData>> databaseDataCache;
+    std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>> databaseDataCache;
     std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
@@ -155,19 +114,22 @@ private:
 
 public:
     // Helper methods for per-database data access
-    DatabaseData* getCurrentDatabaseData();
-    const DatabaseData* getCurrentDatabaseData() const;
-    DatabaseData* getDatabaseData(const std::string& dbName);
-    const DatabaseData* getDatabaseData(const std::string& dbName) const;
+    MySQLDatabaseNode* getCurrentDatabaseData();
+    const MySQLDatabaseNode* getCurrentDatabaseData() const;
+    MySQLDatabaseNode* getDatabaseData(const std::string& dbName);
+    const MySQLDatabaseNode* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
-    std::unordered_map<std::string, std::unique_ptr<DatabaseData>>& getDatabaseDataMap() {
+    std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>& getDatabaseDataMap() {
         return databaseDataCache;
     }
-    const std::unordered_map<std::string, std::unique_ptr<DatabaseData>>&
+    const std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
     getDatabaseDataMap() const {
         return databaseDataCache;
     }
+
+    // Public helper for building connection strings (used by MySQLDatabaseNode)
+    std::string buildConnectionString(const std::string& dbName) const;
 
 private:
     // Thread synchronization
@@ -175,7 +137,6 @@ private:
 
     // Helper methods for connection pool
     soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
-    std::string buildConnectionString(const std::string& dbName) const;
     void initializeConnectionPool(const std::string& dbName, const std::string& connStr);
 
     // Helper method for session management

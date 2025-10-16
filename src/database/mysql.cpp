@@ -52,11 +52,12 @@ MySQLDatabase::~MySQLDatabase() {
 }
 
 // Helper methods for per-database data access
-MySQLDatabase::DatabaseData* MySQLDatabase::getCurrentDatabaseData() {
+MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() {
     auto it = databaseDataCache.find(database);
     if (it == databaseDataCache.end()) {
-        auto newData = std::make_unique<DatabaseData>();
+        auto newData = std::make_unique<MySQLDatabaseNode>();
         newData->name = database;
+        newData->parentDb = this;
         auto* ptr = newData.get();
         databaseDataCache[database] = std::move(newData);
         return ptr;
@@ -64,17 +65,18 @@ MySQLDatabase::DatabaseData* MySQLDatabase::getCurrentDatabaseData() {
     return it->second.get();
 }
 
-const MySQLDatabase::DatabaseData* MySQLDatabase::getCurrentDatabaseData() const {
+const MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() const {
     const auto it = databaseDataCache.find(database);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
-MySQLDatabase::DatabaseData* MySQLDatabase::getDatabaseData(const std::string& dbName) {
+MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
     auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
-        // Create new DatabaseData with the name set
-        auto newData = std::make_unique<DatabaseData>();
+        // Create new MySQLDatabaseNode with the name set
+        auto newData = std::make_unique<MySQLDatabaseNode>();
         newData->name = dbName;
+        newData->parentDb = this;
         auto* ptr = newData.get();
         databaseDataCache[dbName] = std::move(newData);
         return ptr;
@@ -82,7 +84,7 @@ MySQLDatabase::DatabaseData* MySQLDatabase::getDatabaseData(const std::string& d
     return it->second.get();
 }
 
-const MySQLDatabase::DatabaseData* MySQLDatabase::getDatabaseData(const std::string& dbName) const {
+const MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) const {
     const auto it = databaseDataCache.find(dbName);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }

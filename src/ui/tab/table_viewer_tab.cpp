@@ -1,6 +1,7 @@
 #include "ui/tab/table_viewer_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -16,7 +17,40 @@
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
                                std::string tableName, PostgresSchemaNode* schemaNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), schemaNode(schemaNode) {
+      tableName(std::move(tableName)), databaseNode(schemaNode) {
+
+    // Initialize table renderer with editable configuration
+    TableRenderer::Config config;
+    config.allowEditing = true;
+    config.allowSelection = true;
+    config.showRowNumbers = true; // Enable row numbers
+    config.minHeight = 200.0f;
+
+    tableRenderer = std::make_unique<TableRenderer>(config);
+
+    // Set up callbacks
+    tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
+        if (newValue != tableData[row][col]) {
+            tableData[row][col] = newValue;
+            hasChanges = true;
+
+            // Mark cell as edited
+            if (row < editedCells.size() && col < editedCells[row].size()) {
+                editedCells[row][col] = true;
+            }
+        }
+    });
+
+    tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
+
+    initializeFilterAutoComplete();
+    loadDataAsync();
+}
+
+TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
+                               std::string tableName, MySQLDatabaseNode* mysqlNode)
+    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
+      tableName(std::move(tableName)), databaseNode(mysqlNode) {
 
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
@@ -310,24 +344,28 @@ void TableViewerTab::render() {
 }
 
 void TableViewerTab::loadData() {
-    if (!schemaNode) {
-        return;
-    }
+    std::visit(
+        [this](auto* node) {
+            if (!node) {
+                return;
+            }
 
-    totalRows = schemaNode->getRowCount(tableName, currentFilter);
-    columnNames = schemaNode->getColumnNames(tableName);
+            totalRows = node->getRowCount(tableName, currentFilter);
+            columnNames = node->getColumnNames(tableName);
 
-    // Get data with pagination
-    const int offset = currentPage * rowsPerPage;
-    tableData = schemaNode->getTableData(tableName, rowsPerPage, offset, currentFilter);
+            // Get data with pagination
+            const int offset = currentPage * rowsPerPage;
+            tableData = node->getTableData(tableName, rowsPerPage, offset, currentFilter);
 
-    // Store original data for change tracking
-    originalData = tableData;
-    hasChanges = false;
+            // Store original data for change tracking
+            originalData = tableData;
+            hasChanges = false;
 
-    // Initialize edited cells tracking
-    editedCells = std::vector<std::vector<bool>>(tableData.size(),
-                                                 std::vector<bool>(columnNames.size(), false));
+            // Initialize edited cells tracking
+            editedCells = std::vector<std::vector<bool>>(
+                tableData.size(), std::vector<bool>(columnNames.size(), false));
+        },
+        databaseNode);
 }
 
 void TableViewerTab::nextPage() {
@@ -499,14 +537,14 @@ void TableViewerTab::handleKeyboardNavigation() {
 }
 
 void TableViewerTab::loadDataAsync() {
-    if (!schemaNode) {
+    const bool hasNode = std::visit([](auto* node) { return node != nullptr; }, databaseNode);
+
+    if (!hasNode) {
         hasLoadingError = true;
-        loadingError = "Schema node not found";
+        loadingError = "Database node not found";
         return;
     }
 
-    // For now, load synchronously since we simplified to PostgresSchemaNode
-    // TODO: Add async loading support to PostgresSchemaNode if needed
     isLoadingData = true;
     hasLoadingError = false;
     loadingError.clear();
@@ -537,21 +575,26 @@ void TableViewerTab::checkAsyncLoadStatus() {
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     std::vector<std::string> pkColumns;
-    if (!schemaNode) {
-        return pkColumns;
-    }
 
-    // Find table columns in schema
-    for (const auto& table : schemaNode->tables) {
-        if (table.name == tableName) {
-            for (const auto& column : table.columns) {
-                if (column.isPrimaryKey) {
-                    pkColumns.push_back(column.name);
+    std::visit(
+        [this, &pkColumns](auto* node) {
+            if (!node) {
+                return;
+            }
+
+            // Find table columns in node
+            for (const auto& table : node->tables) {
+                if (table.name == tableName) {
+                    for (const auto& column : table.columns) {
+                        if (column.isPrimaryKey) {
+                            pkColumns.push_back(column.name);
+                        }
+                    }
+                    break;
                 }
             }
-            break;
-        }
-    }
+        },
+        databaseNode);
 
     return pkColumns;
 }
@@ -559,15 +602,15 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::vector<std::string> sqlStatements;
 
-    if (!schemaNode) {
+    const bool hasNode = std::visit([](auto* node) { return node != nullptr; }, databaseNode);
+
+    if (!hasNode) {
         return sqlStatements;
     }
 
-    // PostgreSQL-specific (no longer supporting SQLite)
     const std::vector<std::string> pkColumns = getPrimaryKeyColumns();
 
     std::cout << "Generating UPDATE SQL for table: " << tableName << std::endl;
-    std::cout << "Database type: Postgres" << std::endl;
     std::cout << "Primary key columns: ";
     for (const auto& pk : pkColumns) {
         std::cout << pk << " ";
@@ -686,41 +729,48 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::Text("Executing...");
         } else {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
-                if (schemaNode) {
-                    executingSQL = true;
+                executingSQL = true;
 
-                    // Copy SQL statements and schema node pointer for async execution
-                    auto sqlStatements = pendingUpdateSQL;
+                // Copy SQL statements and database node for async execution
+                auto sqlStatements = pendingUpdateSQL;
 
-                    sqlExecutionFuture = std::async(
-                        std::launch::async,
-                        [schema = schemaNode, sqlStatements]() -> std::pair<bool, std::string> {
-                            bool allSuccess = true;
-                            std::string errorMessage;
+                sqlExecutionFuture = std::async(
+                    std::launch::async,
+                    [node = databaseNode, sqlStatements]() -> std::pair<bool, std::string> {
+                        bool allSuccess = true;
+                        std::string errorMessage;
 
-                            for (const auto& sql : sqlStatements) {
-                                std::cout << "Executing SQL: " << sql << std::endl;
-                                const std::string result = schema->executeQuery(sql);
-                                std::cout << "SQL Result: " << result << std::endl;
-
-                                if (result.find("Error:") == 0) {
+                        std::visit(
+                            [&allSuccess, &errorMessage, &sqlStatements](auto* dbNode) {
+                                if (!dbNode) {
                                     allSuccess = false;
-                                    errorMessage = result;
-                                    std::cerr << "SQL execution failed: " << result << std::endl;
-                                    break;
+                                    errorMessage = "Database node not found";
+                                    return;
                                 }
-                            }
 
-                            if (allSuccess) {
-                                std::cout << "All SQL statements executed successfully"
-                                          << std::endl;
-                            }
+                                for (const auto& sql : sqlStatements) {
+                                    std::cout << "Executing SQL: " << sql << std::endl;
+                                    const std::string result = dbNode->executeQuery(sql);
+                                    std::cout << "SQL Result: " << result << std::endl;
 
-                            return {allSuccess, errorMessage};
-                        });
-                } else {
-                    std::cerr << "Schema node not found" << std::endl;
-                }
+                                    if (result.find("Error:") == 0) {
+                                        allSuccess = false;
+                                        errorMessage = result;
+                                        std::cerr << "SQL execution failed: " << result
+                                                  << std::endl;
+                                        return;
+                                    }
+                                }
+
+                                if (allSuccess) {
+                                    std::cout << "All SQL statements executed successfully"
+                                              << std::endl;
+                                }
+                            },
+                            node);
+
+                        return {allSuccess, errorMessage};
+                    });
             }
         }
 

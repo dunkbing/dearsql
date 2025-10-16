@@ -48,7 +48,7 @@ namespace NewHierarchy {
      * @param mysqlDb The MySQL database instance
      * @param dbData The database data containing tables/views
      */
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabase::DatabaseData* dbData);
+    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData);
 
     /**
      * @brief Render a SQLite database node with its tables/views/sequences
@@ -79,5 +79,23 @@ namespace NewHierarchy {
      */
     void renderViewNode(Table& view, PostgresSchemaNode* schemaNode,
                         const std::string& databaseName, const std::string& schemaName);
+
+    /**
+     * @brief Render a MySQL table node as a leaf item with double-click and context menu
+     *
+     * @param table The table to render
+     * @param dbData The database data node
+     * @param mysqlDb The MySQL database instance
+     */
+    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb);
+
+    /**
+     * @brief Render a MySQL view node as a leaf item with double-click and context menu
+     *
+     * @param view The view to render
+     * @param dbData The database data node
+     * @param mysqlDb The MySQL database instance
+     */
+    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb);
 
 } // namespace NewHierarchy

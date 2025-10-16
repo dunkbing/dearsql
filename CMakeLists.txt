@@ -89,6 +89,7 @@ set(APP_SOURCES
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
     src/database/mysql.cpp
+    src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp

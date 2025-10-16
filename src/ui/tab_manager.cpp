@@ -1,6 +1,7 @@
 #include "ui/tab_manager.hpp"
 #include "application.hpp"
 #include "database/mysql.hpp"
+#include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
@@ -144,6 +145,50 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(PostgresSchemaNode* schema
 
     std::cout << "Created new tab for table: " << tableName << " with fullName: " << tableFullName
               << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createTableViewerTab(MySQLDatabaseNode* dbNode,
+                                                      const std::string& tableName,
+                                                      MySQLDatabase* mysqlDb) {
+    if (!dbNode || !mysqlDb) {
+        std::cout << "Cannot create table viewer tab: database node or MySQL instance is null"
+                  << std::endl;
+        return nullptr;
+    }
+
+    // Build the full table path for identification (MySQL: connection.database.table)
+    const std::string tableFullName = mysqlDb->getName() + "." + dbNode->name + "." + tableName;
+
+    // Check if tab already exists
+    for (auto& tab : tabs) {
+        if (tab->getType() == TabType::TABLE_VIEWER) {
+            const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
+            if (tableTab && tableTab->getDatabasePath() == tableFullName) {
+                // Tab already exists, mark it to be focused
+                tableTab->setShouldFocus(true);
+                std::cout << "Table " << tableName << " is already open, focusing existing tab"
+                          << " " << tableFullName << " " << tableTab->getDatabasePath()
+                          << std::endl;
+                return tab;
+            }
+        }
+    }
+
+    // Create user-friendly tab name
+    std::string tabName = tableName + " (" + dbNode->name + ")";
+
+    // Create new tab
+    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, dbNode);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    std::cout << "Created new tab for MySQL table: " << tableName
+              << " with fullName: " << tableFullName << std::endl;
     return tab;
 }
 

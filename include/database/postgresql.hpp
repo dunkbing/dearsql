@@ -43,8 +43,6 @@ public:
     bool areSchemasLoaded() const;
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
-    // void checkSchemasStatusAsync();
-    void checkTablesStatusAsync() override;
     void checkViewsStatusAsync() override;
     void checkSequencesStatusAsync() override;
 
@@ -72,8 +70,6 @@ public:
     void switchToDatabaseAsync(const std::string& targetDatabase);
     bool isSwitchingDatabase() const;
     void checkDatabaseSwitchStatusAsync();
-    bool isDatabaseExpanded(const std::string& dbName) const;
-    void setDatabaseExpanded(const std::string& dbName, bool expanded_);
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -89,7 +85,6 @@ public:
                                  const std::string& whereClause = "") override;
 
 protected:
-    std::vector<std::string> getTableNames() override;
     std::vector<std::string> getTableNames(const std::string& schemaName);
     std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName);
@@ -158,7 +153,6 @@ public:
                                             const std::string& schemaName) const;
 
     // Check async status for schema-level operations
-    void checkSchemaTablesStatusAsync(const std::string& schemaName);
     void checkSchemaViewsStatusAsync(const std::string& schemaName);
     void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 

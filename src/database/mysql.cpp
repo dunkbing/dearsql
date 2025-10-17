@@ -266,18 +266,18 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
     return result;
 }
 
-void MySQLDatabase::checkTablesStatusAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
+// void MySQLDatabase::checkTablesStatusAsync() {
+//     auto* dbData = getCurrentDatabaseData();
+//     if (!dbData)
+//         return;
 
-    if (dbData->tablesFuture.valid() &&
-        dbData->tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        dbData->tables = dbData->tablesFuture.get();
-        dbData->tablesLoaded = true;
-        dbData->loadingTables.store(false);
-    }
-}
+//     if (dbData->tablesFuture.valid() &&
+//         dbData->tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+//         dbData->tables = dbData->tablesFuture.get();
+//         dbData->tablesLoaded = true;
+//         dbData->loadingTables.store(false);
+//     }
+// }
 
 void MySQLDatabase::refreshViews() {
     if (isLoadingViews()) {
@@ -631,28 +631,6 @@ void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int li
     }
 }
 
-std::vector<std::string> MySQLDatabase::getTableNames() {
-    if (!connect().first) {
-        return {};
-    }
-
-    std::vector<std::string> tableNames;
-    try {
-        const auto sql = getSession();
-        const std::string query = "SHOW TABLES";
-        const soci::rowset rs = (sql->prepare << query);
-
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
-            tableNames.push_back(row.get<std::string>(0));
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting table names: " << e.what() << std::endl;
-    }
-
-    return tableNames;
-}
-
 std::vector<Column> MySQLDatabase::getTableColumns(const std::string& tableName) {
     if (!connect().first) {
         return {};
@@ -980,18 +958,6 @@ void MySQLDatabase::checkDatabaseSwitchStatusAsync() {
             switchingDatabase = false;
             setLastConnectionError(e.what());
         }
-    }
-}
-
-bool MySQLDatabase::isDatabaseExpanded(const std::string& dbName) const {
-    return expandedDatabases.find(dbName) != expandedDatabases.end();
-}
-
-void MySQLDatabase::setDatabaseExpanded(const std::string& dbName, bool expanded) {
-    if (expanded) {
-        expandedDatabases.insert(dbName);
-    } else {
-        expandedDatabases.erase(dbName);
     }
 }
 

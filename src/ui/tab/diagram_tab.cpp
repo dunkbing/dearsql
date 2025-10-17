@@ -73,7 +73,7 @@ void DiagramTab::render() {
         if (database->getType() == DatabaseType::POSTGRESQL) {
             const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
             if (pgDb) {
-                pgDb->checkTablesStatusAsync();
+                // pgDb->checkTablesStatusAsync();
                 // Reset loading flag if tables are loaded (checks all schemas)
                 if (pgDb->areTablesLoaded()) {
                     isLoadingSchema = false;
@@ -82,7 +82,7 @@ void DiagramTab::render() {
         } else if (database->getType() == DatabaseType::MYSQL) {
             const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
             if (mysqlDb) {
-                mysqlDb->checkTablesStatusAsync();
+                // mysqlDb->checkTablesStatusAsync();
                 // Reset loading flag if tables are loaded
                 const auto* dbData = mysqlDb->getDatabaseData(
                     targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName);

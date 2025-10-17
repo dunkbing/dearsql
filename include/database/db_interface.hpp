@@ -54,7 +54,7 @@ public:
     [[nodiscard]] virtual bool isLoadingTables() const {
         return false;
     }
-    virtual void checkTablesStatusAsync() {}
+    // virtual void checkTablesStatusAsync() {}
 
     // View management
     virtual void refreshViews() = 0;
@@ -139,7 +139,6 @@ public:
 
 protected:
     // Helper methods to be implemented by subclasses
-    virtual std::vector<std::string> getTableNames() = 0;
     virtual std::vector<Column> getTableColumns(const std::string& tableName) = 0;
     virtual std::vector<std::string> getViewNames() = 0;
     virtual std::vector<Column> getViewColumns(const std::string& viewName) = 0;

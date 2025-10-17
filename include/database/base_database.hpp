@@ -195,12 +195,12 @@ protected:
     TableDataLoader tableDataLoader;
 
     // Helper method for checking async schema loading
-    void checkTablesStatusAsync() override {
-        tablesOp.check([this](std::vector<Table> result) {
-            tables = std::move(result);
-            tablesLoaded = true;
-        });
-    }
+    // void checkTablesStatusAsync() override {
+    //     tablesOp.check([this](std::vector<Table> result) {
+    //         tables = std::move(result);
+    //         tablesLoaded = true;
+    //     });
+    // }
 
     void checkViewsStatusAsync() override {
         viewsOp.check([this](std::vector<Table> result) {

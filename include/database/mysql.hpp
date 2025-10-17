@@ -31,7 +31,6 @@ public:
     void refreshTables() override;
     void refreshViews() override;
     void refreshSequences() override;
-    void checkTablesStatusAsync() override;
     void checkViewsStatusAsync() override;
     void checkSequencesStatusAsync() override;
 
@@ -71,11 +70,8 @@ public:
     void switchToDatabaseAsync(const std::string& targetDatabase);
     bool isSwitchingDatabase() const;
     void checkDatabaseSwitchStatusAsync();
-    bool isDatabaseExpanded(const std::string& dbName) const;
-    void setDatabaseExpanded(const std::string& dbName, bool expanded);
 
 protected:
-    std::vector<std::string> getTableNames() override;
     std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);

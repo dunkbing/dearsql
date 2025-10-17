@@ -80,7 +80,7 @@ public:
     };
 
 protected:
-    std::vector<std::string> getTableNames() override;
+    std::vector<std::string> getTableNames();
     std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName) const;
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;

@@ -38,7 +38,7 @@ public:
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
     bool isLoadingTables() const override;
-    void checkTablesStatusAsync() override;
+    void checkTablesStatusAsync();
 
     // Views not applicable for Redis
     void refreshViews() override;
@@ -113,7 +113,7 @@ public:
     }
 
 protected:
-    std::vector<std::string> getTableNames() override; // Will return key patterns
+    std::vector<std::string> getTableNames(); // Will return key patterns
     std::vector<Column> getTableColumns(const std::string& keyPattern) override;
     std::vector<std::string> getViewNames() override;
     std::vector<Column> getViewColumns(const std::string& viewName) override;

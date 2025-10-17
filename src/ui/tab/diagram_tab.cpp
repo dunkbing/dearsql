@@ -552,7 +552,7 @@ void DiagramTab::handleNodeInteraction() {
             }
             if (ImGui::MenuItem("New SQL Editor")) {
                 const auto& app = Application::getInstance();
-                app.getTabManager()->createSQLEditorTab("", database);
+                // app.getTabManager()->createSQLEditorTab("", database);
             }
         }
     }

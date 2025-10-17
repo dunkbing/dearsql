@@ -789,6 +789,15 @@ std::vector<std::string> MySQLDatabase::getDatabaseNames() {
     return availableDatabases; // Return current state (may be empty if still loading)
 }
 
+std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
+MySQLDatabase::getDatabaseDataMap() {
+    // Auto-load databases if not loaded and not currently loading
+    if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
+        refreshDatabaseNames();
+    }
+    return databaseDataCache;
+}
+
 void MySQLDatabase::refreshDatabaseNames() {
     if (loadingDatabases.load()) {
         return; // Already loading

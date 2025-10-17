@@ -140,10 +140,9 @@ public:
     const PostgresDatabaseNode* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
+    // Auto-loads databases if not loaded and not currently loading
     const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
-    getDatabaseDataMap() const {
-        return databaseDataCache;
-    }
+    getDatabaseDataMap();
 
     // Helper methods for per-schema data access
     PostgresSchemaNode& getSchemaData(const std::string& schemaName);

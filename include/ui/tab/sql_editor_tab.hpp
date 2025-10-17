@@ -7,16 +7,24 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 // Forward declarations
 class DatabaseInterface;
+class PostgresDatabaseNode;
+class MySQLDatabaseNode;
 
 class SQLEditorTab final : public Tab {
 public:
-    explicit SQLEditorTab(const std::string& name,
-                          const std::shared_ptr<DatabaseInterface>& serverDatabase = nullptr,
-                          const std::string& selectedDatabaseName = "");
+    using DatabaseNode = std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*>;
+
+    // Constructor for specific database node
+    explicit SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode,
+                          const std::shared_ptr<DatabaseInterface>& serverDatabase);
+    explicit SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode,
+                          const std::shared_ptr<DatabaseInterface>& serverDatabase);
+
     ~SQLEditorTab() override;
 
     void render() override;
@@ -52,11 +60,15 @@ public:
     void setSelectedSchemaName(const std::string& schemaName) {
         selectedSchemaName = schemaName;
     }
+    [[nodiscard]] const DatabaseNode& getDatabaseNode() const {
+        return databaseNode;
+    }
 
 private:
     std::string sqlQuery;
     std::string queryResult;
     std::shared_ptr<DatabaseInterface> serverDatabase; // Server connection (Postgres/MySQL)
+    DatabaseNode databaseNode;                         // Specific database node (new API)
     std::string selectedDatabaseName;                  // Selected database within the server
     std::string selectedSchemaName;                    // Selected schema within the database
     TextEditor sqlEditor;
@@ -84,6 +96,12 @@ private:
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
     void populateAutoCompleteKeywords();
+
+    // Render component helper methods
+    void renderConnectionInfo();
+    void renderToolbar();
+    void renderDatabaseSchemaSelector();
+    void renderQueryResults();
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,

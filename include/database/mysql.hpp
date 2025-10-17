@@ -116,9 +116,8 @@ public:
     const MySQLDatabaseNode* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
-    std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>& getDatabaseDataMap() {
-        return databaseDataCache;
-    }
+    // Auto-loads databases if not loaded and not currently loading
+    std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>& getDatabaseDataMap();
     const std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
     getDatabaseDataMap() const {
         return databaseDataCache;

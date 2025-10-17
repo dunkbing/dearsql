@@ -1339,7 +1339,15 @@ std::vector<std::string> PostgresDatabase::getDatabases() {
         databases.push_back(k);
     }
     return databases;
-    ;
+}
+
+const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
+PostgresDatabase::getDatabaseDataMap() {
+    // Auto-load databases if not loaded and not currently loading
+    if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
+        refreshDatabaseNames();
+    }
+    return databaseDataCache;
 }
 
 void PostgresDatabase::refreshDatabaseNames() {

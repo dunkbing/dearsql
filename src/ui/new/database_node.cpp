@@ -67,7 +67,7 @@ namespace NewHierarchy {
                 const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get());
+                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get(), dbInterface);
                     }
                 }
             }
@@ -94,7 +94,7 @@ namespace NewHierarchy {
                 const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get());
+                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get(), dbInterface);
                     }
                 }
             }
@@ -102,7 +102,8 @@ namespace NewHierarchy {
     }
 
     // Database-specific rendering implementations
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData) {
+    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
+                                    const std::shared_ptr<DatabaseInterface>& dbInterface) {
         if (!pgDb || !dbData) {
             return;
         }
@@ -122,6 +123,9 @@ namespace NewHierarchy {
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("New SQL Editor")) {
+                app.getTabManager()->createSQLEditorTab("", dbData, dbInterface);
+            }
             if (ImGui::MenuItem("Refresh")) {
                 dbData->startSchemasLoadAsync(true);
             }
@@ -316,7 +320,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData) {
+    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData,
+                                 const std::shared_ptr<DatabaseInterface>& dbInterface) {
         if (!mysqlDb || !dbData) {
             return;
         }
@@ -332,6 +337,14 @@ namespace NewHierarchy {
         // Handle expand/collapse
         if (ImGui::IsItemToggledOpen()) {
             dbData->expanded = isOpen;
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("New SQL Editor")) {
+                app.getTabManager()->createSQLEditorTab("", dbData, dbInterface);
+            }
+            ImGui::EndPopup();
         }
 
         if (isOpen) {

@@ -6,6 +6,7 @@
 
 class DatabaseInterface;
 class PostgresSchemaNode;
+class PostgresDatabaseNode;
 class MySQLDatabaseNode;
 class MySQLDatabase;
 
@@ -35,9 +36,14 @@ public:
     }
 
     // Tab creation helpers
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name,
-                                            const std::shared_ptr<DatabaseInterface>& database,
-                                            const std::string& selectedDatabaseName = "");
+    // New API for specific database nodes
+    std::shared_ptr<Tab>
+    createSQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode,
+                       const std::shared_ptr<DatabaseInterface>& serverDatabase);
+    std::shared_ptr<Tab>
+    createSQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode,
+                       const std::shared_ptr<DatabaseInterface>& serverDatabase);
+
     std::shared_ptr<Tab> createTableViewerTab(PostgresSchemaNode* schemaNode,
                                               const std::string& tableName,
                                               const std::string& databaseName,

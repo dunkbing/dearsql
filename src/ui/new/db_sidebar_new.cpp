@@ -427,9 +427,6 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             db->setLastConnectionError("");
             db->startConnectionAsync();
         }
-        if (ImGui::MenuItem("New SQL Editor")) {
-            app.getTabManager()->createSQLEditorTab("", db);
-        }
         if (ImGui::MenuItem("Show Diagram")) {
             app.getTabManager()->createDiagramTab(db);
         }

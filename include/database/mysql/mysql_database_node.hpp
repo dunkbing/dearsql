@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/db.hpp"
+#include "database/table_data_provider.hpp"
 #include <atomic>
 #include <future>
 #include <memory>
@@ -18,7 +19,7 @@ class MySQLDatabase;
  * Each MySQLDatabaseNode represents one database within the MySQL server.
  * Note: MySQL doesn't have schemas, so tables/views are directly under database.
  */
-class MySQLDatabaseNode {
+class MySQLDatabaseNode : public ITableDataProvider {
 public:
     MySQLDatabase* parentDb = nullptr;
 
@@ -65,11 +66,17 @@ public:
     std::unique_ptr<soci::session> getSession() const;
     void initializeConnectionPool(const std::string& connStr);
 
-    // Table data operations (for table viewer)
-    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset,
-                                                       const std::string& whereClause = "");
-    std::vector<std::string> getColumnNames(const std::string& tableName);
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "");
-    std::string executeQuery(const std::string& query);
+    // Table data operations (for table viewer - ITableDataProvider interface)
+    std::vector<std::vector<std::string>>
+    getTableData(const std::string& tableName, int limit, int offset,
+                 const std::string& whereClause = "") override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::string executeQuery(const std::string& query) override;
+    const std::vector<Table>& getTables() const override {
+        return tables;
+    }
+    const std::vector<Table>& getViews() const override {
+        return views;
+    }
 };

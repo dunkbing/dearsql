@@ -216,7 +216,19 @@ namespace NewHierarchy {
                                                               ImGui::GetColorU32(colors.teal));
 
                 if (viewsOpen) {
-                    if (schemaData->viewsLoaded) {
+                    if (!schemaData->viewsLoaded && !schemaData->loadingViews) {
+                        schemaData->startViewsLoadAsync();
+                    }
+
+                    if (schemaData->loadingViews) {
+                        schemaData->checkViewsStatusAsync();
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading views...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_views", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (schemaData->viewsLoaded) {
                         if (schemaData->views.empty()) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                             ImGui::Text("  No views");
@@ -241,7 +253,19 @@ namespace NewHierarchy {
                                            ImGui::GetColorU32(colors.mauve));
 
                 if (seqOpen) {
-                    if (schemaData->sequencesLoaded) {
+                    if (!schemaData->sequencesLoaded && !schemaData->loadingSequences) {
+                        schemaData->startSequencesLoadAsync();
+                    }
+
+                    if (schemaData->loadingSequences) {
+                        schemaData->checkSequencesStatusAsync();
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading sequences...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_sequences", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (schemaData->sequencesLoaded) {
                         if (schemaData->sequences.empty()) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                             ImGui::Text("  No sequences");

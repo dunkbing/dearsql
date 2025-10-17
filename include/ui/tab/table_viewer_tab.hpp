@@ -1,12 +1,12 @@
 #pragma once
 
+#include "database/table_data_provider.hpp"
 #include "ui/auto_complete_input.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
 #include <future>
 #include <memory>
 #include <string>
-#include <variant>
 #include <vector>
 
 // Forward declarations
@@ -15,8 +15,6 @@ class MySQLDatabaseNode;
 
 class TableViewerTab final : public Tab {
 public:
-    using DatabaseNode = std::variant<PostgresSchemaNode*, MySQLDatabaseNode*>;
-
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
                    PostgresSchemaNode* schemaNode);
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
@@ -31,10 +29,9 @@ public:
     [[nodiscard]] const std::string& getTableName() const {
         return tableName;
     }
-    [[nodiscard]] const DatabaseNode& getDatabaseNode() const {
+    [[nodiscard]] ITableDataProvider* getDatabaseNode() const {
         return databaseNode;
     }
-    void loadData();
     void loadDataAsync();
     void checkAsyncLoadStatus();
     void nextPage();
@@ -54,7 +51,7 @@ public:
 private:
     std::string databasePath;
     std::string tableName;
-    DatabaseNode databaseNode;
+    ITableDataProvider* databaseNode;
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;
@@ -67,6 +64,7 @@ private:
     bool isLoadingData = false;
     bool hasLoadingError = false;
     std::string loadingError;
+    std::future<void> dataLoadFuture;
 
     // Edit state
     int selectedRow = -1;

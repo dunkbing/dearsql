@@ -343,31 +343,6 @@ void TableViewerTab::render() {
     showSaveConfirmationDialog();
 }
 
-void TableViewerTab::loadData() {
-    std::visit(
-        [this](auto* node) {
-            if (!node) {
-                return;
-            }
-
-            totalRows = node->getRowCount(tableName, currentFilter);
-            columnNames = node->getColumnNames(tableName);
-
-            // Get data with pagination
-            const int offset = currentPage * rowsPerPage;
-            tableData = node->getTableData(tableName, rowsPerPage, offset, currentFilter);
-
-            // Store original data for change tracking
-            originalData = tableData;
-            hasChanges = false;
-
-            // Initialize edited cells tracking
-            editedCells = std::vector<std::vector<bool>>(
-                tableData.size(), std::vector<bool>(columnNames.size(), false));
-        },
-        databaseNode);
-}
-
 void TableViewerTab::nextPage() {
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
     if (currentPage < totalPages - 1 && !isLoadingData) {
@@ -537,9 +512,7 @@ void TableViewerTab::handleKeyboardNavigation() {
 }
 
 void TableViewerTab::loadDataAsync() {
-    const bool hasNode = std::visit([](auto* node) { return node != nullptr; }, databaseNode);
-
-    if (!hasNode) {
+    if (!databaseNode) {
         hasLoadingError = true;
         loadingError = "Database node not found";
         return;
@@ -558,43 +531,69 @@ void TableViewerTab::loadDataAsync() {
         Logger::debug("Cleared previous filtered data, starting fresh load");
     }
 
-    try {
-        loadData();
-        isLoadingData = false;
-    } catch (const std::exception& e) {
-        hasLoadingError = true;
-        loadingError = e.what();
-        isLoadingData = false;
-    }
+    // Launch async loading
+    dataLoadFuture = std::async(std::launch::async, [this]() {
+        try {
+            totalRows = databaseNode->getRowCount(tableName, currentFilter);
+            columnNames = databaseNode->getColumnNames(tableName);
+
+            // Get data with pagination
+            const int offset = currentPage * rowsPerPage;
+            tableData = databaseNode->getTableData(tableName, rowsPerPage, offset, currentFilter);
+
+            // Store original data for change tracking
+            originalData = tableData;
+            hasChanges = false;
+
+            // Initialize edited cells tracking
+            editedCells = std::vector<std::vector<bool>>(
+                tableData.size(), std::vector<bool>(columnNames.size(), false));
+        } catch (const std::exception& e) {
+            hasLoadingError = true;
+            loadingError = e.what();
+        }
+    });
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {
-    // Since we're loading synchronously now, this is a no-op
-    // Data is already loaded in loadDataAsync()
+    if (dataLoadFuture.valid() &&
+        dataLoadFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        dataLoadFuture.get(); // Wait for completion and handle any exceptions
+        isLoadingData = false;
+    }
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     std::vector<std::string> pkColumns;
 
-    std::visit(
-        [this, &pkColumns](auto* node) {
-            if (!node) {
-                return;
-            }
+    if (!databaseNode) {
+        return pkColumns;
+    }
 
-            // Find table columns in node
-            for (const auto& table : node->tables) {
-                if (table.name == tableName) {
-                    for (const auto& column : table.columns) {
-                        if (column.isPrimaryKey) {
-                            pkColumns.push_back(column.name);
-                        }
-                    }
-                    break;
+    // Find table columns in node (check both tables and views)
+    for (const auto& table : databaseNode->getTables()) {
+        if (table.name == tableName) {
+            for (const auto& column : table.columns) {
+                if (column.isPrimaryKey) {
+                    pkColumns.push_back(column.name);
                 }
             }
-        },
-        databaseNode);
+            return pkColumns;
+        }
+    }
+
+    // Check views as well
+    for (const auto& view : databaseNode->getViews()) {
+        if (view.name == tableName) {
+            // Views typically don't have primary keys, but we check anyway
+            for (const auto& column : view.columns) {
+                if (column.isPrimaryKey) {
+                    pkColumns.push_back(column.name);
+                }
+            }
+            return pkColumns;
+        }
+    }
 
     return pkColumns;
 }
@@ -602,9 +601,7 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::vector<std::string> sqlStatements;
 
-    const bool hasNode = std::visit([](auto* node) { return node != nullptr; }, databaseNode);
-
-    if (!hasNode) {
+    if (!databaseNode) {
         return sqlStatements;
     }
 
@@ -733,41 +730,35 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
                 // Copy SQL statements and database node for async execution
                 auto sqlStatements = pendingUpdateSQL;
+                auto* node = databaseNode;
 
                 sqlExecutionFuture = std::async(
-                    std::launch::async,
-                    [node = databaseNode, sqlStatements]() -> std::pair<bool, std::string> {
+                    std::launch::async, [node, sqlStatements]() -> std::pair<bool, std::string> {
                         bool allSuccess = true;
                         std::string errorMessage;
 
-                        std::visit(
-                            [&allSuccess, &errorMessage, &sqlStatements](auto* dbNode) {
-                                if (!dbNode) {
-                                    allSuccess = false;
-                                    errorMessage = "Database node not found";
-                                    return;
-                                }
+                        if (!node) {
+                            allSuccess = false;
+                            errorMessage = "Database node not found";
+                            return {allSuccess, errorMessage};
+                        }
 
-                                for (const auto& sql : sqlStatements) {
-                                    std::cout << "Executing SQL: " << sql << std::endl;
-                                    const std::string result = dbNode->executeQuery(sql);
-                                    std::cout << "SQL Result: " << result << std::endl;
+                        for (const auto& sql : sqlStatements) {
+                            std::cout << "Executing SQL: " << sql << std::endl;
+                            const std::string result = node->executeQuery(sql);
+                            std::cout << "SQL Result: " << result << std::endl;
 
-                                    if (result.find("Error:") == 0) {
-                                        allSuccess = false;
-                                        errorMessage = result;
-                                        std::cerr << "SQL execution failed: " << result
-                                                  << std::endl;
-                                        return;
-                                    }
-                                }
+                            if (result.find("Error:") == 0) {
+                                allSuccess = false;
+                                errorMessage = result;
+                                std::cerr << "SQL execution failed: " << result << std::endl;
+                                return {allSuccess, errorMessage};
+                            }
+                        }
 
-                                if (allSuccess) {
-                                    std::cout << "All SQL statements executed successfully"
-                                              << std::endl;
-                                }
-                            },
-                            node);
+                        if (allSuccess) {
+                            std::cout << "All SQL statements executed successfully" << std::endl;
+                        }
 
                         return {allSuccess, errorMessage};
                     });

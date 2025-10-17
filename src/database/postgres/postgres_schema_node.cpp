@@ -28,14 +28,27 @@ void PostgresSchemaNode::checkTablesStatusAsync() {
     }
 }
 
-void PostgresSchemaNode::startTablesLoadAsync() {
-    Logger::debug("startTablesLoadAsync for schema: " + name);
+void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
+    Logger::debug("startTablesLoadAsync for schema: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingTables.load() || tablesLoaded) {
+    // Don't start if already loading
+    if (loadingTables.load()) {
+        return;
+    }
+
+    // If force refresh, clear existing tables and reset state
+    if (forceRefresh) {
+        tables.clear();
+        tablesLoaded = false;
+        lastTablesError.clear();
+    }
+
+    // Don't start if already loaded (unless force refresh)
+    if (!forceRefresh && tablesLoaded) {
         return;
     }
 
@@ -174,14 +187,27 @@ void PostgresSchemaNode::checkViewsStatusAsync() {
     }
 }
 
-void PostgresSchemaNode::startViewsLoadAsync() {
-    Logger::debug("startViewsLoadAsync for schema: " + name);
+void PostgresSchemaNode::startViewsLoadAsync(bool forceRefresh) {
+    Logger::debug("startViewsLoadAsync for schema: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingViews.load() || viewsLoaded) {
+    // Don't start if already loading
+    if (loadingViews.load()) {
+        return;
+    }
+
+    // If force refresh, clear existing views and reset state
+    if (forceRefresh) {
+        views.clear();
+        viewsLoaded = false;
+        lastViewsError.clear();
+    }
+
+    // Don't start if already loaded (unless force refresh)
+    if (!forceRefresh && viewsLoaded) {
         return;
     }
 
@@ -313,14 +339,27 @@ void PostgresSchemaNode::checkSequencesStatusAsync() {
     }
 }
 
-void PostgresSchemaNode::startSequencesLoadAsync() {
-    Logger::debug("startSequencesLoadAsync for schema: " + name);
+void PostgresSchemaNode::startSequencesLoadAsync(bool forceRefresh) {
+    Logger::debug("startSequencesLoadAsync for schema: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingSequences.load() || sequencesLoaded) {
+    // Don't start if already loading
+    if (loadingSequences.load()) {
+        return;
+    }
+
+    // If force refresh, clear existing sequences and reset state
+    if (forceRefresh) {
+        sequences.clear();
+        sequencesLoaded = false;
+        lastSequencesError.clear();
+    }
+
+    // Don't start if already loaded (unless force refresh)
+    if (!forceRefresh && sequencesLoaded) {
         return;
     }
 

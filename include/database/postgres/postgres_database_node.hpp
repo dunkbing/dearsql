@@ -42,7 +42,7 @@ public:
     bool viewsExpanded = false;  // For backward compatibility
 
     // Methods
-    void startSchemasLoadAsync();
+    void startSchemasLoadAsync(bool forceRefresh = false);
     void checkSchemasStatusAsync();
     std::vector<std::unique_ptr<PostgresSchemaNode>> getSchemasForDatabaseAsync();
     std::unique_ptr<soci::session> getSession() const;

@@ -50,15 +50,15 @@ public:
     std::string lastSequencesError;
 
     // Methods
-    void startTablesLoadAsync();
+    void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
     std::vector<Table> getTablesWithColumnsAsync();
 
-    void startViewsLoadAsync();
+    void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();
     std::vector<Table> getViewsWithColumnsAsync();
 
-    void startSequencesLoadAsync();
+    void startSequencesLoadAsync(bool forceRefresh = false);
     void checkSequencesStatusAsync();
     std::vector<std::string> getSequencesAsync();
 

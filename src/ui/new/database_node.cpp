@@ -120,6 +120,14 @@ namespace NewHierarchy {
             dbData->expanded = isOpen;
         }
 
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("Refresh")) {
+                dbData->startSchemasLoadAsync(true);
+            }
+            ImGui::EndPopup();
+        }
+
         if (isOpen) {
             // PostgreSQL: render schemas
             if (!dbData->schemasLoaded && !dbData->loadingSchemas) {
@@ -180,6 +188,14 @@ namespace NewHierarchy {
                 const bool tablesOpen = renderTreeNodeWithIcon(
                     "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
+                // Context menu for Tables node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        schemaData->startTablesLoadAsync(true); // Force refresh
+                    }
+                    ImGui::EndPopup();
+                }
+
                 if (tablesOpen) {
                     if (!schemaData->tablesLoaded && !schemaData->loadingTables) {
                         schemaData->startTablesLoadAsync();
@@ -214,6 +230,14 @@ namespace NewHierarchy {
                                                             static_cast<void*>(&schemaData->views));
                 const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
                                                               ImGui::GetColorU32(colors.teal));
+
+                // Context menu for Views node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        schemaData->startViewsLoadAsync(true); // Force refresh
+                    }
+                    ImGui::EndPopup();
+                }
 
                 if (viewsOpen) {
                     if (!schemaData->viewsLoaded && !schemaData->loadingViews) {
@@ -251,6 +275,14 @@ namespace NewHierarchy {
                 const bool seqOpen =
                     renderTreeNodeWithIcon("Sequences", seqNodeId, ICON_FK_SORT_NUMERIC_ASC,
                                            ImGui::GetColorU32(colors.mauve));
+
+                // Context menu for Sequences node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        schemaData->startSequencesLoadAsync(true); // Force refresh
+                    }
+                    ImGui::EndPopup();
+                }
 
                 if (seqOpen) {
                     if (!schemaData->sequencesLoaded && !schemaData->loadingSequences) {

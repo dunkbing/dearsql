@@ -28,14 +28,27 @@ void PostgresDatabaseNode::checkSchemasStatusAsync() {
     }
 }
 
-void PostgresDatabaseNode::startSchemasLoadAsync() {
-    Logger::debug("startSchemasLoadAsync for database: " + name);
+void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh) {
+    Logger::debug("startSchemasLoadAsync for database: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
     if (!parentDb) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingSchemas.load() || schemasLoaded) {
+    // Don't start if already loading
+    if (loadingSchemas.load()) {
+        return;
+    }
+
+    // If force refresh, clear existing schemas and reset state
+    if (forceRefresh) {
+        schemas.clear();
+        schemasLoaded = false;
+        lastSchemasError.clear();
+    }
+
+    // Don't start if already loaded (unless force refresh)
+    if (!forceRefresh && schemasLoaded) {
         return;
     }
 

@@ -1,5 +1,4 @@
 #include "ui/tab/sql_editor_tab.hpp"
-#include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mysql.hpp"
 #include "database/mysql/mysql_database_node.hpp"
@@ -7,19 +6,18 @@
 #include "database/postgresql.hpp"
 #include "imgui.h"
 #include "ui/table_renderer.hpp"
-#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
 #include <future>
 #include <set>
+#include <variant>
 
 // Constructor for PostgreSQL database node
 SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode,
                            const std::shared_ptr<DatabaseInterface>& serverDatabase)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), serverDatabase(serverDatabase),
-      selectedDatabaseName(dbNode ? dbNode->name : "") {
+    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), serverDatabase(serverDatabase) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
@@ -36,8 +34,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode
 // Constructor for MySQL database node
 SQLEditorTab::SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode,
                            const std::shared_ptr<DatabaseInterface>& serverDatabase)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), serverDatabase(serverDatabase),
-      selectedDatabaseName(dbNode ? dbNode->name : "") {
+    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), serverDatabase(serverDatabase) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
@@ -54,22 +51,44 @@ SQLEditorTab::~SQLEditorTab() {
 }
 
 void SQLEditorTab::render() {
-    auto& app = Application::getInstance();
-
-    // Check async query execution status
     checkQueryExecutionStatus();
 
-    // Show database connection info if available
+    renderConnectionInfo();
+
+    totalContentHeight = ImGui::GetContentRegionAvail().y;
+    const float editorHeight = totalContentHeight * splitterPosition;
+    const float resultsHeight =
+        totalContentHeight * (1.0f - splitterPosition) - 6.0f; // 6px hover area for splitter
+
+    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
+                          ImGuiWindowFlags_NoScrollbar)) {
+        sqlEditor.Render("##SQL", true, ImVec2(-1, -1), true);
+        sqlQuery = sqlEditor.GetText();
+    }
+    ImGui::EndChild();
+
+    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
+
+    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
+                          ImGuiWindowFlags_NoScrollbar)) {
+        renderToolbar();
+        renderDatabaseSchemaSelector();
+        renderQueryResults();
+    }
+    ImGui::EndChild();
+}
+
+void SQLEditorTab::renderConnectionInfo() {
     if (serverDatabase) {
-        if (!selectedDatabaseName.empty()) {
+        auto pg = std::get<PostgresDatabaseNode*>(databaseNode);
+        if (pg) {
             if (!selectedSchemaName.empty() &&
                 serverDatabase->getType() == DatabaseType::POSTGRESQL) {
                 ImGui::Text("Server: %s | Database: %s | Schema: %s",
-                            serverDatabase->getName().c_str(), selectedDatabaseName.c_str(),
-                            selectedSchemaName.c_str());
+                            serverDatabase->getName().c_str(), pg->name.c_str(), pg->name.c_str());
             } else {
                 ImGui::Text("Server: %s | Database: %s", serverDatabase->getName().c_str(),
-                            selectedDatabaseName.c_str());
+                            pg->name.c_str());
             }
         } else {
             ImGui::Text("Server: %s (No database selected)", serverDatabase->getName().c_str());
@@ -78,627 +97,313 @@ void SQLEditorTab::render() {
         ImGui::Text("SQL Editor (No server connection)");
     }
     ImGui::Separator();
+}
 
-    // Calculate heights for splitter layout - store total height for splitter reference
-    totalContentHeight = ImGui::GetContentRegionAvail().y;
-    const float editorHeight = totalContentHeight * splitterPosition;
-    const float resultsHeight =
-        totalContentHeight * (1.0f - splitterPosition) - 6.0f; // 6px hover area for splitter
+void SQLEditorTab::renderToolbar() {
+    if (isExecutingQuery) {
+        ImGui::BeginDisabled();
+        ImGui::Button("Executing...");
+        ImGui::EndDisabled();
 
-    // SQL Editor section
-    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
-                          ImGuiWindowFlags_NoScrollbar)) {
-        sqlEditor.Render("##SQL", true, ImVec2(-1, -1), true);
-        sqlQuery = sqlEditor.GetText();
+        ImGui::SameLine();
+        UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+
+        ImGui::SameLine();
+        ImGui::Text("Running query...");
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            cancelQueryExecution();
+        }
+    } else {
+        if (ImGui::Button("Execute Query")) {
+            startQueryExecutionAsync(sqlQuery);
+        }
     }
-    ImGui::EndChild();
 
-    // Render splitter
-    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        sqlEditor.SetText("");
+        sqlQuery.clear();
+        hasStructuredResults = false;
+        queryColumnNames.clear();
+        queryTableData.clear();
+        queryError.clear();
+    }
+}
 
-    // Results section
-    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
-                          ImGuiWindowFlags_NoScrollbar)) {
-        // Buttons row
-        if (isExecutingQuery) {
-            ImGui::BeginDisabled();
-            ImGui::Button("Executing...");
-            ImGui::EndDisabled();
+void SQLEditorTab::renderDatabaseSchemaSelector() {
+    ImGui::SameLine();
+    if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+        ImGui::Text("Database:");
+    } else {
+        ImGui::Text("Schema:");
+    }
+    ImGui::SameLine();
 
-            ImGui::SameLine();
-            UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    std::string currentSelection;
+    if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+        auto mysql = std::get<MySQLDatabaseNode*>(databaseNode);
+        currentSelection = mysql->name.empty() ? "None" : mysql->name;
+    } else if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+        auto pg = std::get<PostgresDatabaseNode*>(databaseNode);
+        currentSelection =
+            selectedSchemaName.empty() ? "None" : (pg->name + "." + selectedSchemaName);
+    }
+    std::vector<DatabaseNode> availableDatabases;
+    bool isLoadingAnySchemas = false;
+    bool needsSchemasForTargetDb = false;
 
-            ImGui::SameLine();
-            ImGui::Text("Running query...");
+    if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+        const auto& databaseDataMap = pgDb->getDatabaseDataMap();
+        for (const auto& [dbName, db] : databaseDataMap) {
+            availableDatabases.push_back(db.get());
+        }
 
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
-                cancelQueryExecution();
+        auto pg = std::get<PostgresDatabaseNode*>(databaseNode);
+        std::string targetDb = pg->name.empty() ? pgDb->getDatabaseName() : pg->name;
+        if (!targetDb.empty()) {
+            const auto* dbData = pgDb->getDatabaseData(targetDb);
+            if (dbData && dbData->loadingSchemas) {
+                isLoadingAnySchemas = true;
             }
-        } else {
-            if (ImGui::Button("Execute Query")) {
-                std::shared_ptr<DatabaseInterface> targetDb = nullptr;
 
-                if (serverDatabase) {
-                    targetDb = serverDatabase;
+            if (dbData && selectedSchemaName.empty() && !dbData->schemasLoaded &&
+                !dbData->loadingSchemas) {
+                needsSchemasForTargetDb = true;
+            }
+        }
 
-                    // For Postgres and MySQL, ensure we're connected to the right database
-                    if (!selectedDatabaseName.empty()) {
-                        if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-                            if (pgDb && pgDb->getDatabaseName() != selectedDatabaseName) {
-                                // Need to switch database first
-                                auto [success, error] =
-                                    pgDb->switchToDatabase(selectedDatabaseName);
-                                if (!success) {
-                                    queryResult = "Error switching to database '" +
-                                                  selectedDatabaseName + "': " + error;
-                                    queryError = queryResult;
-                                    hasStructuredResults = false;
-                                    queryColumnNames.clear();
-                                    queryTableData.clear();
-                                    targetDb = nullptr;
+        if (pgDb->isLoadingSchemas() && targetDb == pgDb->getDatabaseName()) {
+            isLoadingAnySchemas = true;
+        }
+
+        if (pgDb->isLoadingDatabases()) {
+            isLoadingAnySchemas = true;
+        }
+    } else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+        auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+        const auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
+        for (const auto& [dbName, db] : databaseDataMap) {
+            availableDatabases.push_back(db.get());
+        }
+
+        if (mysqlDb->isLoadingDatabases()) {
+            isLoadingAnySchemas = true;
+        }
+    }
+
+    ImGui::SetNextItemWidth(200.0f);
+
+    if (isLoadingAnySchemas || needsSchemasForTargetDb) {
+        ImGui::BeginDisabled();
+        std::string loadingText =
+            (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL)
+                ? "Loading databases..."
+                : "Loading schemas...";
+        if (ImGui::BeginCombo("##schema_combo", loadingText.c_str())) {
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        UIUtils::Spinner("##schema_loading_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+    } else {
+        if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
+            if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                auto pg = std::get<PostgresDatabaseNode*>(databaseNode);
+                if (pgDb->shouldShowAllDatabases()) {
+                    const auto& databaseDataMap = pgDb->getDatabaseDataMap();
+                    for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
+                        if (dbDataPtr) {
+                            dbDataPtr->checkSchemasStatusAsync();
+                        }
+                    }
+
+                    std::string targetDb = pg->name;
+                    if (targetDb.empty()) {
+                        targetDb = pgDb->getDatabaseName();
+                    }
+                    if (std::holds_alternative<std::monostate>(databaseNode)) {
+                    }
+
+                    if (!targetDb.empty()) {
+                        auto* targetDbData = pgDb->getDatabaseData(targetDb);
+                        if (targetDbData && !targetDbData->schemasLoaded &&
+                            !targetDbData->loadingSchemas) {
+                            if (targetDb == pgDb->getDatabaseName()) {
+                                if (!pgDb->isLoadingSchemas()) {
+                                    pgDb->refreshSchemas();
                                 }
+                            } else {
+                                targetDbData->startSchemasLoadAsync();
                             }
-                        } else if (serverDatabase->getType() == DatabaseType::MYSQL) {
-                            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
-                            if (mysqlDb && mysqlDb->getDatabaseName() != selectedDatabaseName) {
-                                // Need to switch database first
-                                auto [success, error] =
-                                    mysqlDb->switchToDatabase(selectedDatabaseName);
-                                if (!success) {
-                                    queryResult = "Error switching to database '" +
-                                                  selectedDatabaseName + "': " + error;
-                                    queryError = queryResult;
-                                    hasStructuredResults = false;
-                                    queryColumnNames.clear();
-                                    queryTableData.clear();
-                                    targetDb = nullptr;
-                                }
+                        }
+                    }
+
+                    for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
+                        if (dbName != targetDb && dbDataPtr) {
+                            if (!dbDataPtr->schemasLoaded && !dbDataPtr->loadingSchemas) {
+                                dbDataPtr->startSchemasLoadAsync();
                             }
                         }
                     }
                 } else {
-                    // Fall back to selected database if no server database set
-                    if (auto selectedDb = app.getSelectedDatabase()) {
-                        targetDb = selectedDb;
-                        serverDatabase = targetDb;
-                    }
-                }
-
-                if (targetDb) {
-                    startQueryExecutionAsync(targetDb, sqlQuery);
-                } else {
-                    queryResult =
-                        "Error: No database selected. Please select a server and database.";
-                    queryError = queryResult;
-                    hasStructuredResults = false;
-                    queryColumnNames.clear();
-                    queryTableData.clear();
+                    // Single database mode, schemas handled via refreshSchemas()
                 }
             }
-        }
 
-        ImGui::SameLine();
-        if (ImGui::Button("Clear")) {
-            sqlEditor.SetText("");
-            sqlQuery.clear();
-            hasStructuredResults = false;
-            queryColumnNames.clear();
-            queryTableData.clear();
-            queryError.clear();
-        }
-
-        // Show schema helper when schema is selected
-        if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL &&
-            !selectedSchemaName.empty()) {
-            ImGui::SameLine();
-            if (ImGui::Button("Add SET search_path")) {
-                std::string searchPathCmd =
-                    "SET search_path TO \"" + selectedSchemaName + "\", public;\n";
-                std::string currentText = sqlEditor.GetText();
-                if (!currentText.empty() && !currentText.ends_with('\n')) {
-                    searchPathCmd += "\n";
+            if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+                if (ImGui::Selectable("None",
+                                      std::holds_alternative<std::monostate>(databaseNode))) {
+                    databaseNode.emplace<std::monostate>();
                 }
-                sqlEditor.SetText(searchPathCmd + currentText);
-                sqlQuery = sqlEditor.GetText();
+            } else {
+                if (ImGui::Selectable("None", selectedSchemaName.empty())) {
+                    databaseNode.emplace<std::monostate>();
+                    selectedSchemaName.clear();
+                }
             }
 
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Add SET search_path command to use the selected schema");
-            }
-        }
-
-        // Database and Schema selection dropdown
-        ImGui::SameLine();
-        if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-            ImGui::Text("Database:");
-        } else {
-            ImGui::Text("Schema:");
-        }
-        ImGui::SameLine();
-
-        std::string currentSelection;
-        if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-            currentSelection = selectedDatabaseName.empty() ? "None" : selectedDatabaseName;
-        } else {
-            currentSelection = selectedSchemaName.empty()
-                                   ? "None"
-                                   : (selectedDatabaseName + "." + selectedSchemaName);
-        }
-        std::vector<std::string> availableDatabases;
-        bool isLoadingAnySchemas = false;
-        bool needsSchemasForTargetDb = false;
-
-        // Get available databases from the server
-        if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-            if (pgDb && pgDb->shouldShowAllDatabases()) {
-                // Use getDatabaseDataMap to get both names and db objects
-                const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-                for (const auto& [dbName, _] : databaseDataMap) {
-                    availableDatabases.push_back(dbName);
-                }
-
-                // Only check if target database schemas are loading (not all databases)
-                std::string targetDb =
-                    selectedDatabaseName.empty() ? pgDb->getDatabaseName() : selectedDatabaseName;
-                if (!targetDb.empty()) {
-                    const auto* dbData = pgDb->getDatabaseData(targetDb);
-                    if (dbData && dbData->loadingSchemas) {
-                        isLoadingAnySchemas = true;
+            if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
+                auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
+                auto pg = std::get<MySQLDatabaseNode*>(databaseNode);
+                if (mysqlDb) {
+                    if (mysqlDb->isLoadingDatabases()) {
+                        mysqlDb->checkDatabasesStatusAsync();
                     }
 
-                    // Check if we need schemas for the target database
-                    if (dbData && selectedSchemaName.empty() && !dbData->schemasLoaded &&
-                        !dbData->loadingSchemas) {
-                        needsSchemasForTargetDb = true;
-                    }
-                }
-
-                // Also check if we're actively loading the current database schemas
-                if (pgDb->isLoadingSchemas() && targetDb == pgDb->getDatabaseName()) {
-                    isLoadingAnySchemas = true;
-                }
-
-                // Also check if databases themselves are still loading
-                if (pgDb->isLoadingDatabases()) {
-                    isLoadingAnySchemas = true;
-                }
-            } else if (pgDb) {
-                // Single database mode - just show the connected database
-                availableDatabases.push_back(pgDb->getDatabaseName());
-                isLoadingAnySchemas = pgDb->isLoadingSchemas();
-
-                // Check if we need schemas for single database mode
-                if (selectedSchemaName.empty() && !pgDb->areSchemasLoaded() &&
-                    !pgDb->isLoadingSchemas()) {
-                    needsSchemasForTargetDb = true;
-                }
-            }
-        } else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
-            if (mysqlDb && mysqlDb->shouldShowAllDatabases()) {
-                availableDatabases = mysqlDb->getDatabaseNames();
-
-                // Check if databases are still loading
-                if (mysqlDb->isLoadingDatabases()) {
-                    isLoadingAnySchemas = true;
-                }
-            } else if (mysqlDb) {
-                // Single database mode - just show the connected database
-                availableDatabases.push_back(mysqlDb->getDatabaseName());
-            }
-        }
-
-        ImGui::SetNextItemWidth(200.0f);
-
-        // Show loading spinner and disable combo if still loading or need to start loading
-        if (isLoadingAnySchemas || needsSchemasForTargetDb) {
-            ImGui::BeginDisabled();
-            std::string loadingText =
-                (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL)
-                    ? "Loading databases..."
-                    : "Loading schemas...";
-            if (ImGui::BeginCombo("##schema_combo", loadingText.c_str())) {
-                ImGui::EndCombo();
-            }
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            UIUtils::Spinner("##schema_loading_spinner", 8.0f, 2,
-                             ImGui::GetColorU32(ImGuiCol_Text));
-        } else {
-            if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
-                // When combo is opened, prioritize target database and load others on-demand
-                if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-                    if (pgDb) {
-                        // Check schema loading status for all databases
-                        if (pgDb->shouldShowAllDatabases()) {
-                            const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-                            for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
-                                if (dbDataPtr) {
-                                    dbDataPtr->checkSchemasStatusAsync();
-                                }
-                            }
-
-                            // Prioritize target database first, then load others on-demand
-                            std::string targetDb = selectedDatabaseName;
-                            if (targetDb.empty()) {
-                                targetDb = pgDb->getDatabaseName();
-                            }
-
-                            // Ensure target database schemas are loaded first
-                            if (!targetDb.empty()) {
-                                auto* targetDbData = pgDb->getDatabaseData(targetDb);
-                                if (targetDbData && !targetDbData->schemasLoaded &&
-                                    !targetDbData->loadingSchemas) {
-                                    if (targetDb == pgDb->getDatabaseName()) {
-                                        if (!pgDb->isLoadingSchemas()) {
-                                            pgDb->refreshSchemas();
-                                        }
-                                    } else {
-                                        targetDbData->startSchemasLoadAsync();
-                                    }
-                                }
-                            }
-
-                            // Load other databases' schemas on-demand (only when combo is opened)
-                            for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
-                                if (dbName != targetDb && dbDataPtr) {
-                                    if (!dbDataPtr->schemasLoaded && !dbDataPtr->loadingSchemas) {
-                                        dbDataPtr->startSchemasLoadAsync();
-                                    }
-                                }
-                            }
-                        } else {
-                            // For single database mode, schemas are loaded via refreshSchemas()
-                            // No need to check status here
+                    for (const auto& dbName : availableDatabases) {
+                        auto db = std::get<MySQLDatabaseNode*>(dbName);
+                        const bool isSelected = (pg->name == db->name);
+                        if (ImGui::Selectable(db->name.c_str(), isSelected)) {
+                            databaseNode = dbName;
+                            selectedSchemaName.clear();
+                        }
+                        if (isSelected) {
+                            ImGui::SetItemDefaultFocus();
                         }
                     }
-                }
-                // Option to clear selection
-                if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-                    if (ImGui::Selectable("None", selectedDatabaseName.empty())) {
-                        selectedDatabaseName.clear();
-                    }
-                } else {
-                    if (ImGui::Selectable("None", selectedSchemaName.empty())) {
-                        selectedDatabaseName.clear();
-                        selectedSchemaName.clear();
-                    }
-                }
 
-                // For MySQL - show flat database list
-                if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-                    auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
-                    if (mysqlDb) {
-                        // Check async database loading status
-                        if (mysqlDb->isLoadingDatabases()) {
-                            mysqlDb->checkDatabasesStatusAsync();
+                    if (mysqlDb->isLoadingDatabases()) {
+                        ImGui::Text("  Loading databases...");
+                    }
+                }
+            } else if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
+                auto pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
+                if (pgDb) {
+                    for (const auto& dbName : availableDatabases) {
+                        auto db = std::get<PostgresDatabaseNode*>(dbName);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+                        ImGui::Text("%s", db->name.c_str());
+                        ImGui::PopStyleColor();
+
+                        std::vector<std::string> schemas;
+
+                        if (db->schemasLoaded) {
+                            for (const auto& schemaPtr : db->schemas) {
+                                if (schemaPtr) {
+                                    schemas.push_back(schemaPtr->name);
+                                }
+                            }
+                        } else if (!db->loadingSchemas) {
+                            db->startSchemasLoadAsync();
                         }
 
-                        for (const auto& dbName : availableDatabases) {
-                            const bool isSelected = (selectedDatabaseName == dbName);
-                            if (ImGui::Selectable(dbName.c_str(), isSelected)) {
-                                // Switch database if needed
-                                if (mysqlDb->getDatabaseName() != dbName) {
-                                    mysqlDb->switchToDatabaseAsync(dbName);
-                                }
-                                selectedDatabaseName = dbName;
-                                selectedSchemaName.clear(); // Clear schema for MySQL
+                        for (const auto& schemaName : schemas) {
+                            ImGui::Indent(16.0f);
+                            const bool isSelected =
+                                (pgNode->name == db->name && selectedSchemaName == schemaName);
+                            const std::string schemaLabel = "  " + schemaName;
+                            const std::string schemaId =
+                                std::format("{}##{}_{}", schemaLabel, db->name, schemaName);
+
+                            if (ImGui::Selectable(schemaId.c_str(), isSelected)) {
+                                databaseNode = dbName;
+                                selectedSchemaName = schemaName;
                             }
                             if (isSelected) {
                                 ImGui::SetItemDefaultFocus();
                             }
+                            ImGui::Unindent(16.0f);
                         }
 
-                        // Show loading indicator if databases are being loaded
-                        if (mysqlDb->isLoadingDatabases()) {
-                            ImGui::Text("  Loading databases...");
-                        }
-                    }
-                }
-                // For PostgreSQL only - show hierarchical database/schema structure
-                else if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-                    auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-                    if (pgDb) {
-                        for (const auto& dbName : availableDatabases) {
-                            // Show database name as a non-selectable label
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-                            ImGui::Text("%s", dbName.c_str());
-                            ImGui::PopStyleColor();
-
-                            // Get schemas for this database
-                            std::vector<std::string> schemas;
-                            if (dbName == pgDb->getDatabaseName()) {
-                                // Current database - get schemas if loaded
-                                if (pgDb->areSchemasLoaded()) {
-                                    for (const auto& schemaPtr : pgDb->getSchemas()) {
-                                        if (schemaPtr) {
-                                            schemas.push_back(schemaPtr->name);
-                                        }
-                                    }
-                                } else if (!pgDb->isLoadingSchemas()) {
-                                    // Start loading schemas if not already loading
-                                    pgDb->refreshSchemas();
-                                }
-                            } else {
-                                // Other databases - get cached schemas or load them
-                                auto* dbData = pgDb->getDatabaseData(dbName);
-                                if (dbData && dbData->schemasLoaded) {
-                                    for (const auto& schemaPtr : dbData->schemas) {
-                                        if (schemaPtr) {
-                                            schemas.push_back(schemaPtr->name);
-                                        }
-                                    }
-                                } else if (dbData && !dbData->loadingSchemas) {
-                                    // Start loading schemas for this database using parallel
-                                    // loading
-                                    dbData->startSchemasLoadAsync();
-                                }
-                            }
-
-                            // Show schemas indented under the database
-                            for (const auto& schemaName : schemas) {
-                                ImGui::Indent(16.0f);
-                                const bool isSelected = (selectedDatabaseName == dbName &&
-                                                         selectedSchemaName == schemaName);
-                                const std::string schemaLabel = "  " + schemaName;
-                                // Create unique ID for each schema by combining database and schema
-                                // name
-                                const std::string schemaId =
-                                    std::format("{}##{}_{}", schemaLabel, dbName, schemaName);
-
-                                if (ImGui::Selectable(schemaId.c_str(), isSelected)) {
-                                    // Switch database if needed
-                                    if (pgDb->getDatabaseName() != dbName) {
-                                        pgDb->switchToDatabaseAsync(dbName);
-                                        // Clear schema when switching databases
-                                        selectedSchemaName.clear();
-                                    }
-                                    selectedDatabaseName = dbName;
-                                    selectedSchemaName = schemaName;
-                                }
-                                if (isSelected) {
-                                    ImGui::SetItemDefaultFocus();
-                                }
-                                ImGui::Unindent(16.0f);
-                            }
-
-                            // Show loading indicator if schemas are being loaded
-                            if (dbName == pgDb->getDatabaseName() && pgDb->isLoadingSchemas()) {
+                        if (db->name == pgNode->name && db->loadingSchemas) {
+                            ImGui::Indent(16.0f);
+                            ImGui::Text("  Loading schemas...");
+                            ImGui::Unindent(16.0f);
+                        } else if (db->name != pgNode->name) {
+                            if (db->loadingSchemas) {
                                 ImGui::Indent(16.0f);
                                 ImGui::Text("  Loading schemas...");
                                 ImGui::Unindent(16.0f);
-                            } else if (dbName != pgDb->getDatabaseName()) {
-                                const auto* dbData = pgDb->getDatabaseData(dbName);
-                                if (dbData && dbData->loadingSchemas) {
-                                    ImGui::Indent(16.0f);
-                                    ImGui::Text("  Loading schemas...");
-                                    ImGui::Unindent(16.0f);
-                                } else if (dbData && !dbData->schemasLoaded && schemas.empty()) {
-                                    ImGui::Indent(16.0f);
-                                    ImGui::Text("  Click to load schemas...");
-                                    ImGui::Unindent(16.0f);
-                                }
+                            } else if (!db->schemasLoaded && schemas.empty()) {
+                                ImGui::Indent(16.0f);
+                                ImGui::Text("  Click to load schemas...");
+                                ImGui::Unindent(16.0f);
                             }
-
-                            ImGui::Separator();
                         }
                     }
                 }
-                ImGui::EndCombo();
             }
+
+            ImGui::EndCombo();
         }
+    }
 
-        // Always check async operations status to update UI when loading completes
-        if (serverDatabase && serverDatabase->getType() == DatabaseType::POSTGRESQL) {
-            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(serverDatabase);
-            if (pgDb) {
-                // Check database switch status
-                if (pgDb->isSwitchingDatabase()) {
-                    pgDb->checkDatabaseSwitchStatusAsync();
-                }
+    ImGui::Separator();
+}
 
-                // Start loading schemas if needed for target database only
-                if (needsSchemasForTargetDb) {
-                    if (pgDb->shouldShowAllDatabases()) {
-                        std::string targetDb = selectedDatabaseName.empty()
-                                                   ? pgDb->getDatabaseName()
-                                                   : selectedDatabaseName;
-                        if (!targetDb.empty()) {
-                            auto* dbData = pgDb->getDatabaseData(targetDb);
-                            if (dbData && !dbData->schemasLoaded && !dbData->loadingSchemas) {
-                                if (targetDb != pgDb->getDatabaseName()) {
-                                    dbData->startSchemasLoadAsync();
-                                } else if (!pgDb->isLoadingSchemas()) {
-                                    pgDb->refreshSchemas();
-                                }
-                            }
-                        }
-                    } else {
-                        // Single database mode
-                        if (!pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas()) {
-                            pgDb->refreshSchemas();
-                        }
-                    }
-                }
-
-                // Check async status for essential operations only
-                if (pgDb->shouldShowAllDatabases()) {
-                    // Check database loading status (needed for combo to show database list)
-                    if (pgDb->isLoadingDatabases()) {
-                        pgDb->checkDatabasesStatusAsync();
-                    }
-
-                    // Only check schema status for target database and current database
-                    std::string targetDb = selectedDatabaseName.empty() ? pgDb->getDatabaseName()
-                                                                        : selectedDatabaseName;
-                    if (!targetDb.empty()) {
-                        auto* dbData = pgDb->getDatabaseData(targetDb);
-                        if (dbData) {
-                            dbData->checkSchemasStatusAsync();
-                        }
-                    }
-                    if (targetDb != pgDb->getDatabaseName()) {
-                        auto* currentDbData = pgDb->getDatabaseData(pgDb->getDatabaseName());
-                        if (currentDbData) {
-                            currentDbData->checkSchemasStatusAsync();
-                        }
-                    }
-                } else {
-                    // For single database mode, schemas are managed via refreshSchemas()
-                    // No separate status check needed
-                }
-
-                // Auto-select default schema when target database schemas finish loading
-                if (selectedSchemaName.empty()) {
-                    std::string targetDb = selectedDatabaseName; // From constructor
-                    if (targetDb.empty()) {
-                        targetDb = pgDb->getDatabaseName(); // Fallback to current database
-                    }
-
-                    if (pgDb->shouldShowAllDatabases()) {
-                        // Multi-database mode: prioritize the target database
-                        if (!targetDb.empty()) {
-                            const auto* dbData = pgDb->getDatabaseData(targetDb);
-                            // Only auto-select if target database schemas are loaded and not
-                            // loading
-                            if (dbData && dbData->schemasLoaded && !dbData->loadingSchemas &&
-                                !dbData->schemas.empty()) {
-                                selectedDatabaseName = targetDb;
-                                // Select "public" schema if available, otherwise first schema
-                                for (const auto& schemaPtr : dbData->schemas) {
-                                    if (schemaPtr && schemaPtr->name == "public") {
-                                        selectedSchemaName = schemaPtr->name;
-                                        Logger::debug(
-                                            "Auto-selected 'public' schema from target database: " +
-                                            targetDb);
-                                        break;
-                                    }
-                                }
-                                if (selectedSchemaName.empty() && !dbData->schemas.empty() &&
-                                    dbData->schemas[0]) {
-                                    selectedSchemaName = dbData->schemas[0]->name;
-                                    Logger::debug("Auto-selected first schema '" +
-                                                  selectedSchemaName +
-                                                  "' from target database: " + targetDb);
-                                }
-                            }
-                        }
-                    } else {
-                        // Single database mode: select current database
-                        if (pgDb->areSchemasLoaded() && !pgDb->isLoadingSchemas() &&
-                            !pgDb->getSchemas().empty()) {
-                            selectedDatabaseName = pgDb->getDatabaseName();
-                            // Select "public" schema if available, otherwise first schema
-                            for (const auto& schemaPtr : pgDb->getSchemas()) {
-                                if (schemaPtr && schemaPtr->name == "public") {
-                                    selectedSchemaName = schemaPtr->name;
-                                    Logger::debug(
-                                        "Auto-selected 'public' schema from current database: " +
-                                        pgDb->getDatabaseName());
-                                    break;
-                                }
-                            }
-                            if (selectedSchemaName.empty() && !pgDb->getSchemas().empty() &&
-                                pgDb->getSchemas()[0]) {
-                                selectedSchemaName = pgDb->getSchemas()[0]->name;
-                                Logger::debug(
-                                    "Auto-selected first schema '" + selectedSchemaName +
-                                    "' from current database: " + pgDb->getDatabaseName());
-                            }
-                        }
-                    }
-                }
-            }
-        } else if (serverDatabase && serverDatabase->getType() == DatabaseType::MYSQL) {
-            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(serverDatabase);
-            if (mysqlDb) {
-                // Check database switch status
-                if (mysqlDb->isSwitchingDatabase()) {
-                    mysqlDb->checkDatabaseSwitchStatusAsync();
-                }
-
-                // Check database loading status if needed
-                if (mysqlDb->shouldShowAllDatabases()) {
-                    if (mysqlDb->isLoadingDatabases()) {
-                        mysqlDb->checkDatabasesStatusAsync();
-                    }
-                }
-
-                // Auto-select current database if no database is selected
-                if (selectedDatabaseName.empty()) {
-                    selectedDatabaseName = mysqlDb->getDatabaseName();
-                }
-            }
-        }
-
-        ImGui::Separator();
-
-        // Results display
-        if (!queryError.empty()) {
-            // Show error message
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
-        } else if (hasStructuredResults && !queryColumnNames.empty()) {
-            // Show results in table format using TableRenderer
-            if (queryTableData.empty()) {
-                // Show column headers even if no data
-                ImGui::Text("No rows returned.");
-                if (lastQueryDuration.count() > 0) {
-                    ImGui::SameLine();
-                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
-                }
-            } else {
-                // Show row count and execution time on the same line at the top
-                ImGui::Text("Rows: %zu", queryTableData.size());
-                if (queryTableData.size() >= 1000) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
-                }
-                if (lastQueryDuration.count() > 0) {
-                    ImGui::SameLine();
-                    ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
-                }
-
-                // Calculate available height for the table within the results child window
-                float tableAvailableHeight =
-                    ImGui::GetContentRegionAvail().y -
-                    20.0f; // Reserve 20px for padding since row count is now above
-                tableAvailableHeight =
-                    std::max(tableAvailableHeight, 50.0f); // Ensure minimum height of 50px
-
-                // Configure table renderer for query results
-                TableRenderer::Config config;
-                config.allowEditing = false;
-                config.allowSelection = true;
-                config.showRowNumbers = false;
-                config.minHeight = tableAvailableHeight;
-
-                TableRenderer tableRenderer(config);
-                tableRenderer.setColumns(queryColumnNames);
-                tableRenderer.setData(queryTableData);
-
-                tableRenderer.render("QueryResults");
-            }
-        } else if (hasStructuredResults && queryColumnNames.empty()) {
-            // Query executed successfully but no results (e.g., INSERT, UPDATE, DELETE)
-            ImGui::Text("Query executed successfully.");
+void SQLEditorTab::renderQueryResults() {
+    if (!queryError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
+    } else if (hasStructuredResults && !queryColumnNames.empty()) {
+        if (queryTableData.empty()) {
+            ImGui::Text("No rows returned.");
             if (lastQueryDuration.count() > 0) {
                 ImGui::SameLine();
                 ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
             }
         } else {
-            // Fallback to text display or show empty state
-            ImGui::Text("No results to display. Execute a query to see results here.");
+            ImGui::Text("Rows: %zu", queryTableData.size());
+            if (queryTableData.size() >= 1000) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
+            }
+            if (lastQueryDuration.count() > 0) {
+                ImGui::SameLine();
+                ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+            }
+
+            float tableAvailableHeight = ImGui::GetContentRegionAvail().y - 20.0f;
+            tableAvailableHeight = std::max(tableAvailableHeight, 50.0f);
+
+            TableRenderer::Config config;
+            config.allowEditing = false;
+            config.allowSelection = true;
+            config.showRowNumbers = false;
+            config.minHeight = tableAvailableHeight;
+
+            TableRenderer tableRenderer(config);
+            tableRenderer.setColumns(queryColumnNames);
+            tableRenderer.setData(queryTableData);
+
+            tableRenderer.render("QueryResults");
         }
+    } else if (hasStructuredResults && queryColumnNames.empty()) {
+        ImGui::Text("Query executed successfully.");
+        if (lastQueryDuration.count() > 0) {
+            ImGui::SameLine();
+            ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+        }
+    } else {
+        ImGui::Text("No results to display. Execute a query to see results here.");
     }
-    ImGui::EndChild(); // End SQLResults child window
 }
 
-void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface>& targetDb,
-                                            const std::string& query) {
+void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     if (isExecutingQuery) {
         return; // Already executing
     }
@@ -712,22 +417,13 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
     lastQueryDuration = std::chrono::milliseconds{0};
 
     // start async query execution
-    queryExecutionFuture = std::async(std::launch::async, [this, targetDb, query]() {
+    queryExecutionFuture = std::async(std::launch::async, [this, query]() {
         try {
             if (shouldCancelQuery) {
                 return;
             }
-
-            // Connect to database if not already connected
-            if (!targetDb->isConnected()) {
-                auto [success, error] = targetDb->connect();
-                if (!success) {
-                    if (!shouldCancelQuery) {
-                        queryResult = "Connection failed: " + error;
-                        queryError = queryResult;
-                    }
-                    return;
-                }
+            if (serverDatabase->getType() == DatabaseType::POSTGRESQL) {
+                auto db = std::get<PostgresDatabaseNode*>(databaseNode);
             }
 
             // Check for cancellation before executing query
@@ -740,39 +436,39 @@ void SQLEditorTab::startQueryExecutionAsync(const std::shared_ptr<DatabaseInterf
 
             // For Redis, also get the text result to check for errors
             std::string textResult;
-            if (targetDb->getType() == DatabaseType::REDIS) {
-                textResult = targetDb->executeQuery(query);
-            }
+            // if (targetDb->getType() == DatabaseType::REDIS) {
+            //     textResult = targetDb->executeQuery(query);
+            // }
 
-            // Get structured results for table display
-            auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
+            // // Get structured results for table display
+            // auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
 
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            lastQueryDuration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+            // const auto endTime = std::chrono::high_resolution_clock::now();
+            // lastQueryDuration =
+            //     std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
-            // Check for cancellation before setting results
-            if (shouldCancelQuery) {
-                return;
-            }
+            // // Check for cancellation before setting results
+            // if (shouldCancelQuery) {
+            //     return;
+            // }
 
-            // For Redis, check if the text result contains an error
-            if (targetDb->getType() == DatabaseType::REDIS && textResult.find("Error:") == 0) {
-                queryResult = textResult;
-                queryError = textResult;
-                hasStructuredResults = false;
-                queryColumnNames.clear();
-                queryTableData.clear();
-                return;
-            }
+            // // For Redis, check if the text result contains an error
+            // if (targetDb->getType() == DatabaseType::REDIS && textResult.find("Error:") == 0) {
+            //     queryResult = textResult;
+            //     queryError = textResult;
+            //     hasStructuredResults = false;
+            //     queryColumnNames.clear();
+            //     queryTableData.clear();
+            //     return;
+            // }
 
-            queryColumnNames = columnNames;
-            queryTableData = tableData;
-            hasStructuredResults = true;
+            // queryColumnNames = columnNames;
+            // queryTableData = tableData;
+            // hasStructuredResults = true;
 
-            // Clear any previous error
-            queryError.clear();
-            queryResult.clear();
+            // // Clear any previous error
+            // queryError.clear();
+            // queryResult.clear();
         } catch (const std::exception& e) {
             queryResult = "Error executing query: " + std::string(e.what());
             queryError = queryResult;

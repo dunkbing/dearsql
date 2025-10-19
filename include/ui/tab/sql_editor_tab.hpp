@@ -4,6 +4,7 @@
 #include "ui/tab/tab.hpp"
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <future>
 #include <memory>
 #include <string>
@@ -48,12 +49,6 @@ public:
     void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
         serverDatabase = std::move(db);
     }
-    [[nodiscard]] const std::string& getSelectedDatabaseName() const {
-        return selectedDatabaseName;
-    }
-    void setSelectedDatabaseName(const std::string& dbName) {
-        selectedDatabaseName = dbName;
-    }
     [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;
     }
@@ -69,8 +64,8 @@ private:
     std::string queryResult;
     std::shared_ptr<DatabaseInterface> serverDatabase; // Server connection (Postgres/MySQL)
     DatabaseNode databaseNode;                         // Specific database node (new API)
-    std::string selectedDatabaseName;                  // Selected database within the server
-    std::string selectedSchemaName;                    // Selected schema within the database
+    // std::string selectedDatabaseName;                  // Selected database within the server
+    std::string selectedSchemaName; // Selected schema within the database
     TextEditor sqlEditor;
 
     // Structured query results for table display
@@ -91,8 +86,7 @@ private:
     float totalContentHeight = 0.0f; // Store total height for consistent splitter calculation
 
     // Helper methods for async execution
-    void startQueryExecutionAsync(const std::shared_ptr<DatabaseInterface>& targetDb,
-                                  const std::string& query);
+    void startQueryExecutionAsync(const std::string& query);
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
     void populateAutoCompleteKeywords();

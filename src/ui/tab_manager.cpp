@@ -46,9 +46,8 @@ bool TabManager::hasTab(const std::string& name) const {
     return findTab(name) != nullptr;
 }
 
-std::shared_ptr<Tab>
-TabManager::createSQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode,
-                               const std::shared_ptr<DatabaseInterface>& serverDatabase) {
+std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
+                                                    PostgresDatabaseNode* dbNode) {
     if (!dbNode) {
         return nullptr;
     }
@@ -68,7 +67,7 @@ TabManager::createSQLEditorTab(const std::string& name, PostgresDatabaseNode* db
         tabName = name;
     }
 
-    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode, serverDatabase);
+    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -79,9 +78,8 @@ TabManager::createSQLEditorTab(const std::string& name, PostgresDatabaseNode* db
     return tab;
 }
 
-std::shared_ptr<Tab>
-TabManager::createSQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode,
-                               const std::shared_ptr<DatabaseInterface>& serverDatabase) {
+std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
+                                                    MySQLDatabaseNode* dbNode) {
     if (!dbNode) {
         return nullptr;
     }
@@ -101,7 +99,7 @@ TabManager::createSQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNod
         tabName = name;
     }
 
-    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode, serverDatabase);
+    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode);
     tab->setShouldFocus(true);
     addTab(tab);
 

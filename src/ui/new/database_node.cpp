@@ -124,7 +124,7 @@ namespace NewHierarchy {
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                app.getTabManager()->createSQLEditorTab("", dbData, dbInterface);
+                app.getTabManager()->createSQLEditorTab("", dbData);
             }
             if (ImGui::MenuItem("Refresh")) {
                 dbData->startSchemasLoadAsync(true);
@@ -342,7 +342,7 @@ namespace NewHierarchy {
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                app.getTabManager()->createSQLEditorTab("", dbData, dbInterface);
+                app.getTabManager()->createSQLEditorTab("", dbData);
             }
             ImGui::EndPopup();
         }

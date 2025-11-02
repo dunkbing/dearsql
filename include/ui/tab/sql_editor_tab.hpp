@@ -6,7 +6,6 @@
 #include <chrono>
 #include <cstddef>
 #include <future>
-#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
@@ -21,10 +20,8 @@ public:
     using DatabaseNode = std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*>;
 
     // Constructor for specific database node
-    explicit SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode,
-                          const std::shared_ptr<DatabaseInterface>& serverDatabase);
-    explicit SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode,
-                          const std::shared_ptr<DatabaseInterface>& serverDatabase);
+    explicit SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode);
+    explicit SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode);
 
     ~SQLEditorTab() override;
 
@@ -43,12 +40,6 @@ public:
     void setResult(const std::string& result) {
         queryResult = result;
     }
-    [[nodiscard]] std::shared_ptr<DatabaseInterface> getServerDatabase() const {
-        return serverDatabase;
-    }
-    void setServerDatabase(std::shared_ptr<DatabaseInterface> db) {
-        serverDatabase = std::move(db);
-    }
     [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;
     }
@@ -62,9 +53,7 @@ public:
 private:
     std::string sqlQuery;
     std::string queryResult;
-    std::shared_ptr<DatabaseInterface> serverDatabase; // Server connection (Postgres/MySQL)
-    DatabaseNode databaseNode;                         // Specific database node (new API)
-    // std::string selectedDatabaseName;                  // Selected database within the server
+    DatabaseNode databaseNode;      // Specific database node (Postgres/MySQL)
     std::string selectedSchemaName; // Selected schema within the database
     TextEditor sqlEditor;
 
@@ -95,6 +84,10 @@ private:
     void renderConnectionInfo();
     void renderToolbar();
     void renderDatabaseSchemaSelector();
+    void renderSchemaSelectorForDisconnected();
+    void renderLoadingSchemaCombo();
+    void renderMySQLDatabaseSelector();
+    void renderPostgresSchemaSelector();
     void renderQueryResults();
 
     // Helper method for splitter

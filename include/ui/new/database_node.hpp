@@ -31,8 +31,7 @@ namespace NewHierarchy {
      * @param dbData The database data containing schemas
      * @param dbInterface The shared database interface for tab creation
      */
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
-                                    const std::shared_ptr<DatabaseInterface>& dbInterface);
+    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData);
 
     /**
      * @brief Render a PostgreSQL schema node with tables/views/sequences
@@ -51,8 +50,7 @@ namespace NewHierarchy {
      * @param dbData The database data containing tables/views
      * @param dbInterface The shared database interface for tab creation
      */
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData,
-                                 const std::shared_ptr<DatabaseInterface>& dbInterface);
+    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData);
 
     /**
      * @brief Render a SQLite database node with its tables/views/sequences

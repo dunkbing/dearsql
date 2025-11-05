@@ -67,7 +67,7 @@ namespace NewHierarchy {
                 const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get(), dbInterface);
+                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get());
                     }
                 }
             }
@@ -94,7 +94,7 @@ namespace NewHierarchy {
                 const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get(), dbInterface);
+                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get());
                     }
                 }
             }
@@ -102,8 +102,7 @@ namespace NewHierarchy {
     }
 
     // Database-specific rendering implementations
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
-                                    const std::shared_ptr<DatabaseInterface>& dbInterface) {
+    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData) {
         if (!pgDb || !dbData) {
             return;
         }
@@ -167,17 +166,6 @@ namespace NewHierarchy {
 
         // Get the shared_ptr for the database
         const auto& databases = app.getDatabases();
-        std::shared_ptr<DatabaseInterface> dbInterface;
-        for (const auto& db : databases) {
-            if (db.get() == static_cast<DatabaseInterface*>(pgDb)) {
-                dbInterface = db;
-                break;
-            }
-        }
-
-        if (!dbInterface) {
-            return;
-        }
 
         const std::string nodeId =
             std::format("schema_{}_{:p}", schemaData->name, static_cast<void*>(schemaData));
@@ -320,8 +308,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData,
-                                 const std::shared_ptr<DatabaseInterface>& dbInterface) {
+    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData) {
         if (!mysqlDb || !dbData) {
             return;
         }

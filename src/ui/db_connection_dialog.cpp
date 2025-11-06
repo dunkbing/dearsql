@@ -515,6 +515,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDat
                                  info.database = databaseValue;
                                  info.username = usernameValue;
                                  info.password = passwordValue;
+                                 info.showAllDatabases = showAll;
                                  return std::make_shared<PostgresDatabase>(info);
                              });
 }
@@ -534,6 +535,7 @@ DatabaseConnectionDialog::createMySQLDatabase(const std::optional<std::string>& 
                                  info.database = databaseValue;
                                  info.username = usernameValue;
                                  info.password = passwordValue;
+                                 info.showAllDatabases = showAll;
                                  return std::make_shared<MySQLDatabase>(info);
                              });
 }
@@ -771,6 +773,66 @@ void DatabaseConnectionDialog::startAsyncConnection() {
     errorMessage.clear();
     isConnecting = true;
 
+    // If in edit mode, update the saved connection immediately
+    if (editingDatabase && editingConnectionId != -1) {
+        auto& app = Application::getInstance();
+
+        // Get the old connection to preserve password if needed
+        const auto savedConnections = app.getAppState()->getSavedConnections();
+        std::string oldPassword;
+        for (const auto& conn : savedConnections) {
+            if (conn.id == editingConnectionId) {
+                oldPassword = conn.connectionInfo.password;
+                break;
+            }
+        }
+
+        // Build updated connection info
+        DatabaseConnectionInfo updatedInfo;
+        updatedInfo.name = std::string(connectionName);
+        switch (currentState) {
+        case DialogState::PostgreSQLConnection:
+            updatedInfo.type = DatabaseType::POSTGRESQL;
+            break;
+        case DialogState::MySQLConnection:
+            updatedInfo.type = DatabaseType::MYSQL;
+            break;
+        case DialogState::RedisConnection:
+            updatedInfo.type = DatabaseType::REDIS;
+            break;
+        default:
+            break;
+        }
+        updatedInfo.host = std::string(host);
+        updatedInfo.port = port;
+        updatedInfo.database = std::string(database);
+        updatedInfo.username = std::string(username);
+        // If password is empty, keep the old one
+        updatedInfo.password = strlen(password) > 0 ? std::string(password) : oldPassword;
+        updatedInfo.showAllDatabases = showAllDatabases;
+
+        // Update the database object with new connection info
+        if (editingDatabase->getType() == DatabaseType::POSTGRESQL) {
+            auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(editingDatabase);
+            if (pgDb) {
+                pgDb->setConnectionInfo(updatedInfo);
+            }
+        } else if (editingDatabase->getType() == DatabaseType::MYSQL) {
+            auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(editingDatabase);
+            if (mysqlDb) {
+                mysqlDb->setConnectionInfo(updatedInfo);
+            }
+        }
+
+        // Update the saved connection in database
+        SavedConnection updatedConn;
+        updatedConn.id = editingConnectionId;
+        updatedConn.connectionInfo = updatedInfo;
+        updatedConn.showAllDatabases = showAllDatabases;
+        updatedConn.workspaceId = app.getCurrentWorkspaceId();
+        app.getAppState()->updateConnection(updatedConn);
+    }
+
     // Start connection using std::async
     connectionFuture = std::async(std::launch::async, [this]() {
         try {
@@ -899,48 +961,9 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
 
             result = db;
         } else {
-            // For edit mode, update the saved connection
+            // For edit mode, update connection was already saved in startAsyncConnection()
+            // Just need to update the database object and replace in application
             auto& app = Application::getInstance();
-
-            if (editingConnectionId != -1) {
-                // Get the old connection to preserve password if needed
-                const auto savedConnections = app.getAppState()->getSavedConnections();
-                std::string oldPassword;
-                for (const auto& conn : savedConnections) {
-                    if (conn.id == editingConnectionId) {
-                        oldPassword = conn.connectionInfo.password;
-                        break;
-                    }
-                }
-
-                // Update the connection
-                SavedConnection updatedConn;
-                updatedConn.id = editingConnectionId;
-                updatedConn.connectionInfo.name = std::string(connectionName);
-                switch (currentState) {
-                case DialogState::PostgreSQLConnection:
-                    updatedConn.connectionInfo.type = DatabaseType::POSTGRESQL;
-                    break;
-                case DialogState::MySQLConnection:
-                    updatedConn.connectionInfo.type = DatabaseType::MYSQL;
-                    break;
-                case DialogState::RedisConnection:
-                    updatedConn.connectionInfo.type = DatabaseType::REDIS;
-                    break;
-                default:
-                    break;
-                }
-                updatedConn.connectionInfo.host = std::string(host);
-                updatedConn.connectionInfo.port = port;
-                updatedConn.connectionInfo.database = std::string(database);
-                updatedConn.connectionInfo.username = std::string(username);
-                // If password is empty, keep the old one
-                updatedConn.connectionInfo.password =
-                    strlen(password) > 0 ? std::string(password) : oldPassword;
-                updatedConn.showAllDatabases = showAllDatabases;
-                updatedConn.workspaceId = app.getCurrentWorkspaceId();
-                app.getAppState()->updateConnection(updatedConn);
-            }
 
             if (editingConnectionId != -1) {
                 db->setSavedConnectionId(editingConnectionId);

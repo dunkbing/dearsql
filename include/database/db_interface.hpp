@@ -17,6 +17,7 @@ struct DatabaseConnectionInfo {
     std::string database;
     std::string username;
     std::string password;
+    bool showAllDatabases = false;
 };
 
 class DatabaseInterface {

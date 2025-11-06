@@ -9,12 +9,11 @@
 #include <vector>
 
 MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
-    : connectionInfo(connInfo), database(connInfo.database),
-      showAllDatabases(connInfo.type == DatabaseType::MYSQL) {
+    : connectionInfo(connInfo), database(connInfo.database) {
     this->name = connInfo.name;
     Logger::debug(
         std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
-                    database, showAllDatabases));
+                    database, connInfo.showAllDatabases));
     connectionString = buildConnectionString(database);
 }
 
@@ -49,6 +48,13 @@ MySQLDatabase::~MySQLDatabase() {
     }
 
     disconnect();
+}
+
+void MySQLDatabase::setConnectionInfo(const DatabaseConnectionInfo& info) {
+    connectionInfo = info;
+    database = info.database;
+    name = info.name;
+    connectionString = buildConnectionString(database);
 }
 
 // Helper methods for per-database data access

@@ -51,13 +51,14 @@ public:
     std::vector<std::string> getDatabases();
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
-        return showAllDatabases;
+        return connectionInfo.showAllDatabases;
     }
 
-    // Connection info getter
+    // Connection info getter/setter
     const DatabaseConnectionInfo& getConnectionInfo() const {
         return connectionInfo;
     }
+    void setConnectionInfo(const DatabaseConnectionInfo& info);
     const std::string& getDatabase() const {
         return database;
     }
@@ -116,7 +117,6 @@ private:
     DatabaseConnectionInfo connectionInfo;
     std::string database;
     std::string connectionString;
-    bool showAllDatabases;
 
     std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
     std::vector<std::string> availableDatabases;

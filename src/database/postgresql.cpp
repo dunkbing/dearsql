@@ -11,8 +11,7 @@
 #include <vector>
 
 PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
-    : connectionInfo(connInfo), database(connInfo.database),
-      showAllDatabases(connInfo.type == DatabaseType::POSTGRESQL) {
+    : connectionInfo(connInfo), database(connInfo.database) {
     this->name = connInfo.name;
     connectionString = buildConnectionString(database);
     if (database.empty()) {
@@ -75,6 +74,16 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     PostgresDatabase::disconnect();
+}
+
+void PostgresDatabase::setConnectionInfo(const DatabaseConnectionInfo& info) {
+    connectionInfo = info;
+    database = info.database;
+    name = info.name;
+    connectionString = buildConnectionString(database);
+    if (database.empty()) {
+        database = "postgres";
+    }
 }
 
 // Helper methods for per-database data access
@@ -207,7 +216,7 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
-        if (showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
+        if (connectionInfo.showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
             Logger::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
@@ -1412,7 +1421,7 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
         }
 
         std::vector<std::string> conditions = {sql::eq("datistemplate", "false")};
-        if (!showAllDatabases) {
+        if (!connectionInfo.showAllDatabases) {
             conditions.push_back(sql::eq("datname", "'" + database + "'"));
         }
 

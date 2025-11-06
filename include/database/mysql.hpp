@@ -51,12 +51,13 @@ public:
     std::vector<std::string> getDatabaseNames();
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
-        return showAllDatabases;
+        return connectionInfo.showAllDatabases;
     }
 
     const DatabaseConnectionInfo& getConnectionInfo() const {
         return connectionInfo;
     }
+    void setConnectionInfo(const DatabaseConnectionInfo& info);
     const std::string& getDatabase() const {
         return database;
     }
@@ -91,8 +92,6 @@ private:
     DatabaseConnectionInfo connectionInfo;
     std::string database;
     std::string connectionString;
-    bool showAllDatabases;
-    // Note: connectionPools removed - now stored in DatabaseData::connectionPool
 
     std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>> databaseDataCache;
     std::vector<std::string> availableDatabases;

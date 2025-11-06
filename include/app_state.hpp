@@ -29,7 +29,7 @@ public:
     bool initialize();
 
     // Connection history management
-    bool saveConnection(const SavedConnection& connection) const;
+    int saveConnection(const SavedConnection& connection) const;
     bool updateConnection(const SavedConnection& connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
     bool deleteConnection(int connectionId) const;

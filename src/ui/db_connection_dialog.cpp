@@ -107,7 +107,10 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                     conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
                     const auto& app = Application::getInstance();
-                    app.getAppState()->saveConnection(conn);
+                    int newConnectionId = app.getAppState()->saveConnection(conn);
+                    if (newConnectionId != -1) {
+                        db->setConnectionId(newConnectionId);
+                    }
 
                     result = db;
                     ImGui::CloseCurrentPopup();
@@ -928,40 +931,13 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
             const auto& app = Application::getInstance();
-            if (app.getAppState()->saveConnection(conn)) {
-                const auto savedList = app.getAppState()->getSavedConnections();
-                for (const auto& saved : savedList) {
-                    if (saved.workspaceId != conn.workspaceId ||
-                        saved.connectionInfo.type != conn.connectionInfo.type ||
-                        saved.connectionInfo.name != conn.connectionInfo.name) {
-                        continue;
-                    }
-                    const bool matches =
-                        (saved.connectionInfo.type == DatabaseType::SQLITE &&
-                         saved.connectionInfo.path == conn.connectionInfo.path) ||
-                        (saved.connectionInfo.type == DatabaseType::POSTGRESQL &&
-                         saved.connectionInfo.host == conn.connectionInfo.host &&
-                         saved.connectionInfo.port == conn.connectionInfo.port &&
-                         saved.connectionInfo.database == conn.connectionInfo.database) ||
-                        (saved.connectionInfo.type == DatabaseType::MYSQL &&
-                         saved.connectionInfo.host == conn.connectionInfo.host &&
-                         saved.connectionInfo.port == conn.connectionInfo.port &&
-                         saved.connectionInfo.database == conn.connectionInfo.database) ||
-                        (saved.connectionInfo.type == DatabaseType::REDIS &&
-                         saved.connectionInfo.host == conn.connectionInfo.host &&
-                         saved.connectionInfo.port == conn.connectionInfo.port);
-
-                    if (matches) {
-                        db->setConnectionId(saved.id);
-                        break;
-                    }
-                }
+            int newConnectionId = app.getAppState()->saveConnection(conn);
+            if (newConnectionId != -1) {
+                db->setConnectionId(newConnectionId);
             }
 
             result = db;
         } else {
-            // For edit mode, update connection was already saved in startAsyncConnection()
-            // Just need to update the database object and replace in application
             auto& app = Application::getInstance();
 
             if (editingConnectionId != -1) {

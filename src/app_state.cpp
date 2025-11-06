@@ -132,7 +132,7 @@ bool AppState::executeSQL(const std::string& sql) const {
     return true;
 }
 
-bool AppState::saveConnection(const SavedConnection& connection) const {
+int AppState::saveConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
@@ -145,7 +145,7 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
 
     if (rc != SQLITE_OK) {
         std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
-        return false;
+        return -1;
     }
 
     // Encrypt sensitive data
@@ -196,10 +196,10 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
 
     if (rc != SQLITE_DONE) {
         std::cerr << "Failed to save connection: " << sqlite3_errmsg(db) << std::endl;
-        return false;
+        return -1;
     }
 
-    return true;
+    return static_cast<int>(sqlite3_last_insert_rowid(db));
 }
 
 bool AppState::updateConnection(const SavedConnection& connection) const {

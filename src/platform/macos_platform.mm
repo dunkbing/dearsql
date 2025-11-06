@@ -22,34 +22,17 @@
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar {
-    return @[ @"SidebarToggle", NSToolbarFlexibleSpaceItemIdentifier, @"WorkspaceSelector" ];
+    return @[ NSToolbarFlexibleSpaceItemIdentifier, @"WorkspaceSelector" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar {
-    return @[ @"SidebarToggle", @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem*)toolbar:(NSToolbar*)toolbar
         itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
     willBeInsertedIntoToolbar:(BOOL)flag {
-    if ([itemIdentifier isEqualToString:@"SidebarToggle"]) {
-        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
-        item.label = @"";
-        item.paletteLabel = @"Toggle Sidebar";
-        item.toolTip = @"Show/Hide Sidebar";
-
-        NSButton* button = [[NSButton alloc] init];
-        [button setImage:[NSImage imageWithSystemSymbolName:@"sidebar.left"
-                                   accessibilityDescription:@"Toggle Sidebar"]];
-        [button setButtonType:NSButtonTypeMomentaryPushIn];
-        [button setBezelStyle:NSBezelStyleRounded];
-        [button setTarget:self];
-        [button setAction:@selector(sidebarToggleClicked:)];
-        [button sizeToFit];
-
-        item.view = button;
-        return item;
-    } else if ([itemIdentifier isEqualToString:@"WorkspaceSelector"]) {
+    if ([itemIdentifier isEqualToString:@"WorkspaceSelector"]) {
         NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
         item.label = @"Workspace";
         item.paletteLabel = @"Workspace Selector";

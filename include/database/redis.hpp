@@ -85,10 +85,10 @@ public:
     void setAttemptedConnection(bool attempted) override;
     const std::string& getLastConnectionError() const override;
     void setLastConnectionError(const std::string& error) override;
-    void setSavedConnectionId(int id) override {
+    void setConnectionId(int id) override {
         savedConnectionId = id;
     }
-    [[nodiscard]] int getSavedConnectionId() const override {
+    [[nodiscard]] int getConnectionId() const override {
         return savedConnectionId;
     }
 

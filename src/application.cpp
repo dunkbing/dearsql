@@ -369,7 +369,7 @@ void Application::restorePreviousConnections() {
 
         if (db) {
             // Store the saved connection ID in the database instance
-            db->setSavedConnectionId(conn.id);
+            db->setConnectionId(conn.id);
             Logger::debug(std::format("Added connection (will connect when expanded): {}",
                                       conn.connectionInfo.name));
             databases.push_back(db);

@@ -10,7 +10,6 @@ struct SavedConnection {
     DatabaseConnectionInfo connectionInfo;
     std::string lastUsed;
     int workspaceId = 1; // default workspace
-    bool showAllDatabases = false;
 };
 
 struct Workspace {

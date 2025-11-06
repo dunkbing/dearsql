@@ -420,7 +420,7 @@ void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface>
     strncpy(connectionName, db->getName().c_str(), sizeof(connectionName) - 1);
     connectionName[sizeof(connectionName) - 1] = '\0';
 
-    editingConnectionId = db->getSavedConnectionId();
+    editingConnectionId = db->getConnectionId();
 
     if (db->getType() == DatabaseType::SQLITE) {
         selectedDatabaseType = DatabaseType::SQLITE;
@@ -438,7 +438,7 @@ void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface>
         strncpy(database, pgDb->getDatabase().c_str(), sizeof(database) - 1);
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
-        showAllDatabases = pgDb->shouldShowAllDatabases();
+        showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
     } else if (db->getType() == DatabaseType::MYSQL) {
         selectedDatabaseType = DatabaseType::MYSQL;
@@ -452,7 +452,7 @@ void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface>
         strncpy(database, mysqlDb->getDatabase().c_str(), sizeof(database) - 1);
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
-        showAllDatabases = mysqlDb->shouldShowAllDatabases();
+        showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
     } else if (db->getType() == DatabaseType::REDIS) {
         selectedDatabaseType = DatabaseType::REDIS;
@@ -639,11 +639,11 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
                 strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
                 strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-                showAllDatabases = conn.showAllDatabases;
+                showAllDatabases = conn.connectionInfo.showAllDatabases;
 
                 const auto db = createPostgreSQLDatabase();
                 if (db) {
-                    db->setSavedConnectionId(conn.id);
+                    db->setConnectionId(conn.id);
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
@@ -666,11 +666,11 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
                 strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
                 strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-                showAllDatabases = conn.showAllDatabases;
+                showAllDatabases = conn.connectionInfo.showAllDatabases;
 
                 auto db = createMySQLDatabase();
                 if (db) {
-                    db->setSavedConnectionId(conn.id);
+                    db->setConnectionId(conn.id);
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
@@ -696,7 +696,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
 
                 const auto db = createRedisDatabase();
                 if (db) {
-                    db->setSavedConnectionId(conn.id);
+                    db->setConnectionId(conn.id);
                     auto [success, error] = db->connect();
                     if (success) {
                         result = db;
@@ -711,7 +711,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 const auto db = std::make_shared<SQLiteDatabase>(conn.connectionInfo.name,
                                                                  conn.connectionInfo.path);
                 if (db) {
-                    db->setSavedConnectionId(conn.id);
+                    db->setConnectionId(conn.id);
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
@@ -828,7 +828,6 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         SavedConnection updatedConn;
         updatedConn.id = editingConnectionId;
         updatedConn.connectionInfo = updatedInfo;
-        updatedConn.showAllDatabases = showAllDatabases;
         updatedConn.workspaceId = app.getCurrentWorkspaceId();
         app.getAppState()->updateConnection(updatedConn);
     }
@@ -925,7 +924,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             conn.connectionInfo.database = std::string(database);
             conn.connectionInfo.username = std::string(username);
             conn.connectionInfo.password = std::string(password);
-            conn.showAllDatabases = showAllDatabases;
+            conn.connectionInfo.showAllDatabases = showAllDatabases;
             conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
             const auto& app = Application::getInstance();
@@ -953,7 +952,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                          saved.connectionInfo.port == conn.connectionInfo.port);
 
                     if (matches) {
-                        db->setSavedConnectionId(saved.id);
+                        db->setConnectionId(saved.id);
                         break;
                     }
                 }
@@ -966,7 +965,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             auto& app = Application::getInstance();
 
             if (editingConnectionId != -1) {
-                db->setSavedConnectionId(editingConnectionId);
+                db->setConnectionId(editingConnectionId);
             }
 
             // Update the database in the application

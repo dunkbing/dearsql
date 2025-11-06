@@ -189,7 +189,7 @@ bool AppState::saveConnection(const SavedConnection& connection) const {
         stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
         -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 10, connection.workspaceId);
-    sqlite3_bind_int(stmt, 11, connection.showAllDatabases ? 1 : 0);
+    sqlite3_bind_int(stmt, 11, connection.connectionInfo.showAllDatabases ? 1 : 0);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -210,7 +210,6 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             workspace_id = ?, show_all_databases = ?
         WHERE id = ?;
     )";
-    std::cout << "update_connection " << sql << "\n";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
@@ -260,8 +259,8 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(
         stmt, 9, CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end())).c_str(),
         -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 11, connection.connectionInfo.showAllDatabases ? 1 : 0);
     sqlite3_bind_int(stmt, 10, connection.workspaceId);
-    sqlite3_bind_int(stmt, 11, connection.showAllDatabases ? 1 : 0);
     sqlite3_bind_int(stmt, 12, connection.id);
 
     rc = sqlite3_step(stmt);
@@ -375,7 +374,7 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
-        conn.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
+        conn.connectionInfo.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
 
         connections.push_back(conn);
     }
@@ -593,7 +592,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
 
     const std::string sql = R"(
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
-               COALESCE(show_all_databases, 0) as show_all_databases
+               show_all_databases
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;
@@ -683,7 +682,7 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
         conn.lastUsed = lastUsed ? lastUsed : "";
 
         conn.workspaceId = sqlite3_column_int(stmt, 11);
-        conn.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
+        conn.connectionInfo.showAllDatabases = sqlite3_column_int(stmt, 12) != 0;
 
         connections.push_back(conn);
     }

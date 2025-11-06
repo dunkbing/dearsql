@@ -41,8 +41,8 @@ public:
     [[nodiscard]] virtual DatabaseType getType() const = 0;
 
     // Saved connection ID (for app state persistence)
-    virtual void setSavedConnectionId(int id) {}
-    [[nodiscard]] virtual int getSavedConnectionId() const {
+    virtual void setConnectionId(int id) {}
+    [[nodiscard]] virtual int getConnectionId() const {
         return -1;
     }
 

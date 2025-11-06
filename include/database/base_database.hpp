@@ -39,10 +39,10 @@ public:
         uiState.lastConnectionError = error;
     }
 
-    void setSavedConnectionId(int id) override {
+    void setConnectionId(int id) override {
         uiState.savedConnectionId = id;
     }
-    int getSavedConnectionId() const override {
+    int getConnectionId() const override {
         return uiState.savedConnectionId;
     }
 

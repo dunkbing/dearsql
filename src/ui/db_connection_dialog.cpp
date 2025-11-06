@@ -835,131 +835,132 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
         connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         auto [db, error] = connectionFuture.get();
 
-        if (db) {
-            if (!editingDatabase) {
-                // Save successful connection for new connections
-                SavedConnection conn;
-                conn.connectionInfo.name = std::string(connectionName);
+        if (!db) {
+            isConnecting = false;
+            errorMessage = error;
+            return;
+        }
+
+        if (!editingDatabase) {
+            // Save successful connection for new connections
+            SavedConnection conn;
+            conn.connectionInfo.name = std::string(connectionName);
+            switch (currentState) {
+            case DialogState::PostgreSQLConnection:
+                conn.connectionInfo.type = DatabaseType::POSTGRESQL;
+                break;
+            case DialogState::MySQLConnection:
+                conn.connectionInfo.type = DatabaseType::MYSQL;
+                break;
+            case DialogState::RedisConnection:
+                conn.connectionInfo.type = DatabaseType::REDIS;
+                break;
+            default:
+                break;
+            }
+            conn.connectionInfo.host = std::string(host);
+            conn.connectionInfo.port = port;
+            conn.connectionInfo.database = std::string(database);
+            conn.connectionInfo.username = std::string(username);
+            conn.connectionInfo.password = std::string(password);
+            conn.showAllDatabases = showAllDatabases;
+            conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
+
+            const auto& app = Application::getInstance();
+            if (app.getAppState()->saveConnection(conn)) {
+                const auto savedList = app.getAppState()->getSavedConnections();
+                for (const auto& saved : savedList) {
+                    if (saved.workspaceId != conn.workspaceId ||
+                        saved.connectionInfo.type != conn.connectionInfo.type ||
+                        saved.connectionInfo.name != conn.connectionInfo.name) {
+                        continue;
+                    }
+                    const bool matches =
+                        (saved.connectionInfo.type == DatabaseType::SQLITE &&
+                         saved.connectionInfo.path == conn.connectionInfo.path) ||
+                        (saved.connectionInfo.type == DatabaseType::POSTGRESQL &&
+                         saved.connectionInfo.host == conn.connectionInfo.host &&
+                         saved.connectionInfo.port == conn.connectionInfo.port &&
+                         saved.connectionInfo.database == conn.connectionInfo.database) ||
+                        (saved.connectionInfo.type == DatabaseType::MYSQL &&
+                         saved.connectionInfo.host == conn.connectionInfo.host &&
+                         saved.connectionInfo.port == conn.connectionInfo.port &&
+                         saved.connectionInfo.database == conn.connectionInfo.database) ||
+                        (saved.connectionInfo.type == DatabaseType::REDIS &&
+                         saved.connectionInfo.host == conn.connectionInfo.host &&
+                         saved.connectionInfo.port == conn.connectionInfo.port);
+
+                    if (matches) {
+                        db->setSavedConnectionId(saved.id);
+                        break;
+                    }
+                }
+            }
+
+            result = db;
+        } else {
+            // For edit mode, update the saved connection
+            auto& app = Application::getInstance();
+
+            if (editingConnectionId != -1) {
+                // Get the old connection to preserve password if needed
+                const auto savedConnections = app.getAppState()->getSavedConnections();
+                std::string oldPassword;
+                for (const auto& conn : savedConnections) {
+                    if (conn.id == editingConnectionId) {
+                        oldPassword = conn.connectionInfo.password;
+                        break;
+                    }
+                }
+
+                // Update the connection
+                SavedConnection updatedConn;
+                updatedConn.id = editingConnectionId;
+                updatedConn.connectionInfo.name = std::string(connectionName);
                 switch (currentState) {
                 case DialogState::PostgreSQLConnection:
-                    conn.connectionInfo.type = DatabaseType::POSTGRESQL;
+                    updatedConn.connectionInfo.type = DatabaseType::POSTGRESQL;
                     break;
                 case DialogState::MySQLConnection:
-                    conn.connectionInfo.type = DatabaseType::MYSQL;
+                    updatedConn.connectionInfo.type = DatabaseType::MYSQL;
                     break;
                 case DialogState::RedisConnection:
-                    conn.connectionInfo.type = DatabaseType::REDIS;
+                    updatedConn.connectionInfo.type = DatabaseType::REDIS;
                     break;
                 default:
                     break;
                 }
-                conn.connectionInfo.host = std::string(host);
-                conn.connectionInfo.port = port;
-                conn.connectionInfo.database = std::string(database);
-                conn.connectionInfo.username = std::string(username);
-                conn.connectionInfo.password = std::string(password);
-                conn.showAllDatabases = showAllDatabases;
-                conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
-
-                const auto& app = Application::getInstance();
-                if (app.getAppState()->saveConnection(conn)) {
-                    const auto savedList = app.getAppState()->getSavedConnections();
-                    for (const auto& saved : savedList) {
-                        if (saved.workspaceId != conn.workspaceId ||
-                            saved.connectionInfo.type != conn.connectionInfo.type ||
-                            saved.connectionInfo.name != conn.connectionInfo.name) {
-                            continue;
-                        }
-                        const bool matches =
-                            (saved.connectionInfo.type == DatabaseType::SQLITE &&
-                             saved.connectionInfo.path == conn.connectionInfo.path) ||
-                            (saved.connectionInfo.type == DatabaseType::POSTGRESQL &&
-                             saved.connectionInfo.host == conn.connectionInfo.host &&
-                             saved.connectionInfo.port == conn.connectionInfo.port &&
-                             saved.connectionInfo.database == conn.connectionInfo.database) ||
-                            (saved.connectionInfo.type == DatabaseType::MYSQL &&
-                             saved.connectionInfo.host == conn.connectionInfo.host &&
-                             saved.connectionInfo.port == conn.connectionInfo.port &&
-                             saved.connectionInfo.database == conn.connectionInfo.database) ||
-                            (saved.connectionInfo.type == DatabaseType::REDIS &&
-                             saved.connectionInfo.host == conn.connectionInfo.host &&
-                             saved.connectionInfo.port == conn.connectionInfo.port);
-
-                        if (matches) {
-                            db->setSavedConnectionId(saved.id);
-                            break;
-                        }
-                    }
-                }
-
-                result = db;
-            } else {
-                // For edit mode, update the saved connection
-                auto& app = Application::getInstance();
-
-                if (editingConnectionId != -1) {
-                    // Get the old connection to preserve password if needed
-                    const auto savedConnections = app.getAppState()->getSavedConnections();
-                    std::string oldPassword;
-                    for (const auto& conn : savedConnections) {
-                        if (conn.id == editingConnectionId) {
-                            oldPassword = conn.connectionInfo.password;
-                            break;
-                        }
-                    }
-
-                    // Update the connection
-                    SavedConnection updatedConn;
-                    updatedConn.id = editingConnectionId;
-                    updatedConn.connectionInfo.name = std::string(connectionName);
-                    switch (currentState) {
-                    case DialogState::PostgreSQLConnection:
-                        updatedConn.connectionInfo.type = DatabaseType::POSTGRESQL;
-                        break;
-                    case DialogState::MySQLConnection:
-                        updatedConn.connectionInfo.type = DatabaseType::MYSQL;
-                        break;
-                    case DialogState::RedisConnection:
-                        updatedConn.connectionInfo.type = DatabaseType::REDIS;
-                        break;
-                    default:
-                        break;
-                    }
-                    updatedConn.connectionInfo.host = std::string(host);
-                    updatedConn.connectionInfo.port = port;
-                    updatedConn.connectionInfo.database = std::string(database);
-                    updatedConn.connectionInfo.username = std::string(username);
-                    // If password is empty, keep the old one
-                    updatedConn.connectionInfo.password =
-                        strlen(password) > 0 ? std::string(password) : oldPassword;
-                    updatedConn.showAllDatabases = showAllDatabases;
-                    updatedConn.workspaceId = app.getCurrentWorkspaceId();
-                    app.getAppState()->updateConnection(updatedConn);
-                }
-
-                if (editingConnectionId != -1) {
-                    db->setSavedConnectionId(editingConnectionId);
-                }
-
-                // Update the database in the application
-                auto& databases = app.getDatabases();
-                for (size_t i = 0; i < databases.size(); i++) {
-                    if (databases[i] == editingDatabase) {
-                        // Disconnect old database
-                        databases[i]->disconnect();
-                        // Replace with new database
-                        databases[i] = db;
-                        break;
-                    }
-                }
-
-                result = nullptr; // Don't return a new database in edit mode
+                updatedConn.connectionInfo.host = std::string(host);
+                updatedConn.connectionInfo.port = port;
+                updatedConn.connectionInfo.database = std::string(database);
+                updatedConn.connectionInfo.username = std::string(username);
+                // If password is empty, keep the old one
+                updatedConn.connectionInfo.password =
+                    strlen(password) > 0 ? std::string(password) : oldPassword;
+                updatedConn.showAllDatabases = showAllDatabases;
+                updatedConn.workspaceId = app.getCurrentWorkspaceId();
+                app.getAppState()->updateConnection(updatedConn);
             }
-            ImGui::CloseCurrentPopup();
-            reset();
-        } else {
-            isConnecting = false;
-            errorMessage = error;
+
+            if (editingConnectionId != -1) {
+                db->setSavedConnectionId(editingConnectionId);
+            }
+
+            // Update the database in the application
+            auto& databases = app.getDatabases();
+            for (size_t i = 0; i < databases.size(); i++) {
+                if (databases[i] == editingDatabase) {
+                    // Disconnect old database
+                    databases[i]->disconnect();
+                    // Replace with new database
+                    databases[i] = db;
+                    break;
+                }
+            }
+
+            result = nullptr; // Don't return a new database in edit mode
         }
+        ImGui::CloseCurrentPopup();
+        reset();
     }
 }

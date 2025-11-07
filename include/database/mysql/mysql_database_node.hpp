@@ -79,4 +79,7 @@ public:
     const std::vector<Table>& getViews() const override {
         return views;
     }
+
+    // query execution with comprehensive result
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
 };

@@ -165,3 +165,74 @@ void PostgresDatabaseNode::initializeConnectionPool(const std::string& connStr) 
     // Store in PostgresDatabaseNode
     connectionPool = std::move(pool);
 }
+
+QueryResult PostgresDatabaseNode::executeQueryWithResult(const std::string& query,
+                                                         const int rowLimit) {
+    QueryResult result;
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
+    try {
+        const auto session = getSession();
+        if (!session) {
+            result.success = false;
+            result.errorMessage = "Failed to get database session";
+            return result;
+        }
+
+        const soci::rowset rs = session->prepare << query;
+
+        // get column names if available
+        const auto it = rs.begin();
+        if (it != rs.end()) {
+            const soci::row& firstRow = *it;
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                result.columnNames.push_back(firstRow.get_properties(i).get_name());
+            }
+        }
+
+        // fetch rows (up to rowLimit)
+        int rowCount = 0;
+        for (const auto& row : rs) {
+            if (rowCount >= rowLimit) {
+                break;
+            }
+
+            std::vector<std::string> rowData;
+            rowData.reserve(row.size());
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                rowData.push_back(convertRowValue(row, i));
+            }
+            result.tableData.push_back(rowData);
+            rowCount++;
+        }
+
+        // set message based on result
+        if (!result.columnNames.empty()) {
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+        } else {
+            result.message = "Query executed successfully";
+        }
+
+        result.success = true;
+    } catch (const soci::soci_error& e) {
+        result.success = false;
+        result.errorMessage = "Database error: " + std::string(e.what());
+        result.columnNames.clear();
+        result.tableData.clear();
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errorMessage = "Error executing query: " + std::string(e.what());
+        result.columnNames.clear();
+        result.tableData.clear();
+    }
+
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    return result;
+}

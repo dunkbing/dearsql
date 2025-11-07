@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/db.hpp"
 #include "postgres_schema_node.hpp"
 #include <atomic>
 #include <future>
@@ -47,4 +48,7 @@ public:
     std::vector<std::unique_ptr<PostgresSchemaNode>> getSchemasForDatabaseAsync();
     std::unique_ptr<soci::session> getSession() const;
     void initializeConnectionPool(const std::string& connStr);
+
+    // query execution with comprehensive result
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
 };

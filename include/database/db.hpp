@@ -68,6 +68,33 @@ struct Schema {
     bool sequencesExpanded = false;
 };
 
+/**
+ * @brief Result of a SQL query execution
+ *
+ * encapsulates all possible outcomes of executing a SQL query:
+ * - SELECT queries: columnNames + tableData
+ * - INSERT/UPDATE/DELETE queries: affectedRows + message
+ * - DDL queries: message
+ * - Errors: success=false + errorMessage
+ */
+struct QueryResult {
+    bool success = true;
+    std::string errorMessage;
+
+    // for SELECT queries
+    std::vector<std::string> columnNames;
+    std::vector<std::vector<std::string>> tableData;
+
+    // for INSERT/UPDATE/DELETE queries
+    int affectedRows = 0;
+
+    // general info/message
+    std::string message;
+
+    // execution time in milliseconds
+    long long executionTimeMs = 0;
+};
+
 // Utility function for converting SOCI row values to strings
 std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
 

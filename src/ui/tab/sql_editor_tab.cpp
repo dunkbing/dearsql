@@ -1,4 +1,5 @@
 #include "ui/tab/sql_editor_tab.hpp"
+#include "database/db.hpp"
 #include "database/mysql.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
@@ -447,57 +448,49 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
 
     // start async query execution
     queryExecutionFuture = std::async(std::launch::async, [this, query]() {
-        try {
-            if (shouldCancelQuery) {
-                return;
+        if (shouldCancelQuery) {
+            return;
+        }
+
+        QueryResult result;
+
+        // execute query based on database type
+        if (auto pgNode = std::get<PostgresDatabaseNode*>(databaseNode)) {
+            if (pgNode) {
+                result = pgNode->executeQueryWithResult(query);
+            } else {
+                result.success = false;
+                result.errorMessage = "No database selected";
             }
-
-            // Check for cancellation before executing query
-            if (shouldCancelQuery) {
-                return;
+        } else if (auto mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode)) {
+            if (mysqlNode) {
+                result = mysqlNode->executeQueryWithResult(query);
+            } else {
+                result.success = false;
+                result.errorMessage = "No database selected";
             }
+        } else {
+            result.success = false;
+            result.errorMessage = "No database selected";
+        }
 
-            // Time the query execution
-            const auto startTime = std::chrono::high_resolution_clock::now();
+        // check for cancellation before setting results
+        if (shouldCancelQuery) {
+            return;
+        }
 
-            // For Redis, also get the text result to check for errors
-            std::string textResult;
-            // if (targetDb->getType() == DatabaseType::REDIS) {
-            //     textResult = targetDb->executeQuery(query);
-            // }
+        // update UI state with results
+        lastQueryDuration = std::chrono::milliseconds{result.executionTimeMs};
 
-            // // Get structured results for table display
-            // auto [columnNames, tableData] = targetDb->executeQueryStructured(query);
-
-            // const auto endTime = std::chrono::high_resolution_clock::now();
-            // lastQueryDuration =
-            //     std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-            // // Check for cancellation before setting results
-            // if (shouldCancelQuery) {
-            //     return;
-            // }
-
-            // // For Redis, check if the text result contains an error
-            // if (targetDb->getType() == DatabaseType::REDIS && textResult.find("Error:") == 0) {
-            //     queryResult = textResult;
-            //     queryError = textResult;
-            //     hasStructuredResults = false;
-            //     queryColumnNames.clear();
-            //     queryTableData.clear();
-            //     return;
-            // }
-
-            // queryColumnNames = columnNames;
-            // queryTableData = tableData;
-            // hasStructuredResults = true;
-
-            // // Clear any previous error
-            // queryError.clear();
-            // queryResult.clear();
-        } catch (const std::exception& e) {
-            queryResult = "Error executing query: " + std::string(e.what());
-            queryError = queryResult;
+        if (result.success) {
+            queryColumnNames = result.columnNames;
+            queryTableData = result.tableData;
+            hasStructuredResults = true;
+            queryError.clear();
+            queryResult.clear();
+        } else {
+            queryResult = result.errorMessage;
+            queryError = result.errorMessage;
             hasStructuredResults = false;
             queryColumnNames.clear();
             queryTableData.clear();

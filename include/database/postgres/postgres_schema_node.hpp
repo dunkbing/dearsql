@@ -1,7 +1,6 @@
 #pragma once
 
 #include "database/db.hpp"
-#include "database/table_data_provider.hpp"
 #include <atomic>
 #include <future>
 #include <string>
@@ -16,7 +15,7 @@ class PostgresDatabaseNode;
  * PostgreSQL hierarchy: Database → Schema → Tables/Views/Sequences
  * Each PostgresSchemaNode represents one schema (e.g., "public", "analytics")
  */
-class PostgresSchemaNode : public ITableDataProvider {
+class PostgresSchemaNode {
 public:
     PostgresDatabaseNode* parentDbNode = nullptr;
     std::string name;
@@ -61,18 +60,4 @@ public:
     void startSequencesLoadAsync(bool forceRefresh = false);
     void checkSequencesStatusAsync();
     std::vector<std::string> getSequencesAsync();
-
-    // Query execution methods for TableViewerTab (ITableDataProvider interface)
-    std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "") override;
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
-    std::string executeQuery(const std::string& query) override;
-    const std::vector<Table>& getTables() const override {
-        return tables;
-    }
-    const std::vector<Table>& getViews() const override {
-        return views;
-    }
 };

@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/mysql/mysql_database_node.hpp"
+#include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -17,7 +18,7 @@
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
                                std::string tableName, PostgresSchemaNode* schemaNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), databaseNode(schemaNode) {
+      tableName(schemaNode->name + "." + tableName), databaseNode(schemaNode->parentDbNode) {
 
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
@@ -571,8 +572,10 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     }
 
     // Find table columns in node (check both tables and views)
+    // For PostgreSQL, tableName may be schema-qualified (schema.table)
     for (const auto& table : databaseNode->getTables()) {
-        if (table.name == tableName) {
+        bool matches = (table.name == tableName) || (table.fullName.ends_with("." + tableName));
+        if (matches) {
             for (const auto& column : table.columns) {
                 if (column.isPrimaryKey) {
                     pkColumns.push_back(column.name);
@@ -584,7 +587,8 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
 
     // Check views as well
     for (const auto& view : databaseNode->getViews()) {
-        if (view.name == tableName) {
+        bool matches = (view.name == tableName) || (view.fullName.ends_with("." + tableName));
+        if (matches) {
             // Views typically don't have primary keys, but we check anyway
             for (const auto& column : view.columns) {
                 if (column.isPrimaryKey) {
@@ -624,8 +628,19 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
             const std::string& columnName = columnNames[colIdx];
             const std::string& newValue = tableData[rowIdx][colIdx];
 
-            // Build UPDATE statement (PostgreSQL format)
-            std::string sql = std::format(R"(UPDATE "{}" SET "{}" = )", tableName, columnName);
+            // Build UPDATE statement
+            // For PostgreSQL, tableName may be schema-qualified (schema.table)
+            std::string tableRef;
+            if (const auto dotPos = tableName.find('.'); dotPos != std::string::npos) {
+                // schema.table format - quote both parts
+                const std::string schemaName = tableName.substr(0, dotPos);
+                const std::string tableNameOnly = tableName.substr(dotPos + 1);
+                tableRef = std::format(R"("{}"."{}")", schemaName, tableNameOnly);
+            } else {
+                // simple table name
+                tableRef = std::format(R"("{}")", tableName);
+            }
+            std::string sql = std::format(R"(UPDATE {} SET "{}" = )", tableRef, columnName);
 
             // Add quoted value
             if (newValue == "NULL") {

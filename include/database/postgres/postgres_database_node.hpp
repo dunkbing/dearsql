@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/db.hpp"
+#include "database/table_data_provider.hpp"
 #include "postgres_schema_node.hpp"
 #include <atomic>
 #include <future>
@@ -19,7 +20,7 @@ class PostgresDatabase;
  * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
  * Each PostgresDatabaseNode represents one database within the PostgreSQL server.
  */
-class PostgresDatabaseNode {
+class PostgresDatabaseNode : public ITableDataProvider {
 public:
     PostgresDatabase* parentDb = nullptr;
 
@@ -51,4 +52,35 @@ public:
 
     // query execution with comprehensive result
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
+
+    // database operations (schema-aware)
+    std::vector<std::vector<std::string>> getTableData(const std::string& schemaName,
+                                                       const std::string& tableName, int limit,
+                                                       int offset,
+                                                       const std::string& whereClause = "");
+    std::vector<std::string> getColumnNames(const std::string& schemaName,
+                                            const std::string& tableName);
+    int getRowCount(const std::string& schemaName, const std::string& tableName,
+                    const std::string& whereClause = "");
+
+    // ITableDataProvider interface implementation
+    // tableName format: "schema.table" or just "table" (uses public schema)
+    std::vector<std::vector<std::string>>
+    getTableData(const std::string& tableName, int limit, int offset,
+                 const std::string& whereClause = "") override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::string executeQuery(const std::string& query) override;
+    const std::vector<Table>& getTables() const override;
+    const std::vector<Table>& getViews() const override;
+
+private:
+    // helper to parse "schema.table" format
+    std::pair<std::string, std::string> parseSchemaTable(const std::string& qualifiedName) const;
+
+    // cached aggregated tables/views across all schemas
+    mutable std::vector<Table> allTables;
+    mutable std::vector<Table> allViews;
+    mutable bool allTablesCached = false;
+    mutable bool allViewsCached = false;
 };

@@ -236,3 +236,140 @@ QueryResult PostgresDatabaseNode::executeQueryWithResult(const std::string& quer
 
     return result;
 }
+
+std::vector<std::vector<std::string>>
+PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::string& tableName,
+                                   int limit, int offset, const std::string& whereClause) {
+    std::vector<std::vector<std::string>> result;
+
+    try {
+        std::string query = std::format("SELECT * FROM \"{}\".\"{}\"", schemaName, tableName);
+        if (!whereClause.empty()) {
+            query += " WHERE " + whereClause;
+        }
+        query += std::format(" LIMIT {} OFFSET {}", limit, offset);
+
+        auto session = getSession();
+        soci::rowset<soci::row> rs = session->prepare << query;
+
+        for (const auto& row : rs) {
+            std::vector<std::string> rowData;
+            rowData.reserve(row.size());
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                rowData.push_back(convertRowValue(row, i));
+            }
+            result.push_back(rowData);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting table data: " << e.what() << std::endl;
+    }
+
+    return result;
+}
+
+std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string& schemaName,
+                                                              const std::string& tableName) {
+    std::vector<std::string> result;
+
+    try {
+        const std::string query = std::format(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = '{}' AND "
+            "table_name = '{}' ORDER BY ordinal_position",
+            schemaName, tableName);
+
+        auto session = getSession();
+        soci::rowset<std::string> rs = session->prepare << query;
+
+        for (const auto& columnName : rs) {
+            result.push_back(columnName);
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting column names: " << e.what() << std::endl;
+    }
+
+    return result;
+}
+
+int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::string& tableName,
+                                      const std::string& whereClause) {
+    try {
+        std::string query =
+            std::format("SELECT COUNT(*) FROM \"{}\".\"{}\"", schemaName, tableName);
+        if (!whereClause.empty()) {
+            query += " WHERE " + whereClause;
+        }
+
+        auto session = getSession();
+        int count = 0;
+        *session << query, soci::into(count);
+        return count;
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting row count: " << e.what() << std::endl;
+        return 0;
+    }
+}
+
+std::pair<std::string, std::string>
+PostgresDatabaseNode::parseSchemaTable(const std::string& qualifiedName) const {
+    const auto dotPos = qualifiedName.find('.');
+    if (dotPos != std::string::npos) {
+        return {qualifiedName.substr(0, dotPos), qualifiedName.substr(dotPos + 1)};
+    }
+    // default to public schema if not qualified
+    return {"public", qualifiedName};
+}
+
+// ITableDataProvider interface implementations
+std::vector<std::vector<std::string>>
+PostgresDatabaseNode::getTableData(const std::string& tableName, int limit, int offset,
+                                   const std::string& whereClause) {
+    const auto [schemaName, tableNameOnly] = parseSchemaTable(tableName);
+    return getTableData(schemaName, tableNameOnly, limit, offset, whereClause);
+}
+
+std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string& tableName) {
+    const auto [schemaName, tableNameOnly] = parseSchemaTable(tableName);
+    return getColumnNames(schemaName, tableNameOnly);
+}
+
+int PostgresDatabaseNode::getRowCount(const std::string& tableName,
+                                      const std::string& whereClause) {
+    const auto [schemaName, tableNameOnly] = parseSchemaTable(tableName);
+    return getRowCount(schemaName, tableNameOnly, whereClause);
+}
+
+std::string PostgresDatabaseNode::executeQuery(const std::string& query) {
+    try {
+        auto session = getSession();
+        *session << query;
+        return "Query executed successfully";
+    } catch (const soci::soci_error& e) {
+        return "Error: " + std::string(e.what());
+    }
+}
+
+const std::vector<Table>& PostgresDatabaseNode::getTables() const {
+    if (!allTablesCached) {
+        allTables.clear();
+        for (const auto& schema : schemas) {
+            if (schema->tablesLoaded) {
+                allTables.insert(allTables.end(), schema->tables.begin(), schema->tables.end());
+            }
+        }
+        allTablesCached = true;
+    }
+    return allTables;
+}
+
+const std::vector<Table>& PostgresDatabaseNode::getViews() const {
+    if (!allViewsCached) {
+        allViews.clear();
+        for (const auto& schema : schemas) {
+            if (schema->viewsLoaded) {
+                allViews.insert(allViews.end(), schema->views.begin(), schema->views.end());
+            }
+        }
+        allViewsCached = true;
+    }
+    return allViews;
+}

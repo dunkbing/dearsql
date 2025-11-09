@@ -408,3 +408,33 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
 
     return result;
 }
+
+std::vector<std::vector<std::string>>
+PostgresSchemaNode::getTableData(const std::string& tableName, int limit, int offset,
+                                 const std::string& whereClause) {
+    if (!parentDbNode) {
+        return {};
+    }
+    return parentDbNode->getTableData(name, tableName, limit, offset, whereClause);
+}
+
+std::vector<std::string> PostgresSchemaNode::getColumnNames(const std::string& tableName) {
+    if (!parentDbNode) {
+        return {};
+    }
+    return parentDbNode->getColumnNames(name, tableName);
+}
+
+int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
+    if (!parentDbNode) {
+        return 0;
+    }
+    return parentDbNode->getRowCount(name, tableName, whereClause);
+}
+
+std::string PostgresSchemaNode::executeQuery(const std::string& query) {
+    if (!parentDbNode) {
+        return "Error: No database connection";
+    }
+    return parentDbNode->executeQueryWithResult(query, 1000).errorMessage;
+}

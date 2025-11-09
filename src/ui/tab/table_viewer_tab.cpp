@@ -2,7 +2,6 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -17,8 +16,8 @@
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
                                std::string tableName, PostgresSchemaNode* schemaNode)
-    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(schemaNode->name + "." + tableName), databaseNode(schemaNode->parentDbNode) {
+    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)), tableName(tableName),
+      databaseNode(schemaNode) {
 
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;

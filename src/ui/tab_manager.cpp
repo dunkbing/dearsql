@@ -156,16 +156,16 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(PostgresSchemaNode* schema
 }
 
 std::shared_ptr<Tab> TabManager::createTableViewerTab(MySQLDatabaseNode* dbNode,
-                                                      const std::string& tableName,
-                                                      MySQLDatabase* mysqlDb) {
-    if (!dbNode || !mysqlDb) {
+                                                      const std::string& tableName) {
+    if (!dbNode) {
         std::cout << "Cannot create table viewer tab: database node or MySQL instance is null"
                   << std::endl;
         return nullptr;
     }
 
     // Build the full table path for identification (MySQL: connection.database.table)
-    const std::string tableFullName = mysqlDb->getName() + "." + dbNode->name + "." + tableName;
+    const std::string tableFullName =
+        dbNode->parentDb->getName() + "." + dbNode->name + "." + tableName;
 
     // Check if tab already exists
     for (auto& tab : tabs) {

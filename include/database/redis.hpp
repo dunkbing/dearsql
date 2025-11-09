@@ -3,6 +3,10 @@
 #include "db_interface.hpp"
 #include <future>
 #include <hiredis.h>
+#include <memory>
+
+// Forward declaration
+class RedisNode;
 
 struct RedisKey {
     std::string name;
@@ -112,6 +116,9 @@ public:
         return password;
     }
 
+    // Node access
+    std::shared_ptr<RedisNode> getRedisNode() const;
+
 protected:
     std::vector<std::string> getTableNames(); // Will return key patterns
     std::vector<Column> getTableColumns(const std::string& keyPattern) override;
@@ -148,6 +155,9 @@ private:
     std::future<void> tablesFuture;
 
     TableDataLoader tableDataLoader;
+
+    // Redis node (represents the connection)
+    std::shared_ptr<RedisNode> redisNode;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

@@ -2,6 +2,11 @@
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
+#include "database/db_interface.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
+#include "database/redis.hpp"
+#include "database/redis/redis_node.hpp"
 #include "database/sqlite/sqlite_database_node.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
@@ -161,7 +166,7 @@ namespace NewHierarchy {
                 const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderPostgresDatabaseNode(pgDb, dbDataPtr.get());
+                        renderPostgresDatabaseNode(dbDataPtr.get());
                     }
                 }
             }
@@ -188,7 +193,89 @@ namespace NewHierarchy {
                 const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
                 for (const auto& dbDataPtr : databases) {
                     if (dbDataPtr) {
-                        renderMySQLDatabaseNode(mysqlDb, dbDataPtr.get());
+                        renderMySQLDatabaseNode(dbDataPtr.get());
+                    }
+                }
+            }
+        } else if (dbType == DatabaseType::REDIS) {
+            auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(dbInterface);
+            if (!redisDb) {
+                return;
+            }
+
+            auto redisNode = redisDb->getRedisNode();
+            if (!redisNode) {
+                return;
+            }
+
+            // Show connection status
+            if (!redisDb->isConnected()) {
+                if (redisDb->isConnecting()) {
+                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f),
+                                       ICON_FA_SPINNER " Connecting...");
+                } else if (redisDb->hasAttemptedConnection()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                                       ICON_FA_CIRCLE_EXCLAMATION " Connection failed");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", redisDb->getLastConnectionError().c_str());
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                                       ICON_FA_DATABASE " Not connected");
+                }
+                return;
+            }
+
+            // Show Redis connection info
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), ICON_FA_DATABASE " Connected");
+
+            // Load keys if not loaded yet
+            if (!redisNode->keysLoaded && !redisNode->loadingKeys.load()) {
+                redisNode->startKeysLoadAsync();
+            }
+
+            // Check async status
+            if (redisNode->loadingKeys.load()) {
+                redisNode->checkKeysStatusAsync();
+            }
+
+            // Show loading indicator if loading
+            if (redisNode->loadingKeys.load()) {
+                ImGui::SameLine();
+                ImGui::Text("Loading keys...");
+                return;
+            }
+
+            // Show key groups directly (no nested Keys section)
+            const auto& keyGroups = redisNode->getKeyGroups();
+            if (keyGroups.empty()) {
+                if (!redisNode->keysLoaded) {
+                    ImGui::Text("  Loading...");
+                } else {
+                    ImGui::Text("  No keys found");
+                }
+            } else {
+                for (const auto& keyGroup : keyGroups) {
+                    constexpr ImGuiTreeNodeFlags keyGroupFlags =
+                        ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                        ImGuiTreeNodeFlags_FramePadding;
+
+                    const std::string displayName =
+                        (keyGroup.name == "*") ? "All Keys" : keyGroup.name;
+                    const std::string keyGroupId = std::format("redis_key_{}_{:p}", displayName,
+                                                               static_cast<const void*>(&keyGroup));
+
+                    ImGui::TreeNodeEx(keyGroupId.c_str(), keyGroupFlags, "%s", displayName.c_str());
+                    ImGui::SameLine(0.0f, 4.0f);
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), ICON_FA_KEY);
+
+                    // Context menu
+                    if (ImGui::BeginPopupContextItem()) {
+                        if (ImGui::MenuItem("Refresh Keys")) {
+                            redisNode->keysLoaded = false;
+                            redisNode->startKeysLoadAsync();
+                        }
+                        ImGui::EndPopup();
                     }
                 }
             }
@@ -196,8 +283,8 @@ namespace NewHierarchy {
     }
 
     // Database-specific rendering implementations
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData) {
-        if (!pgDb || !dbData) {
+    void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData) {
+        if (!dbData) {
             return;
         }
 
@@ -241,7 +328,7 @@ namespace NewHierarchy {
             } else if (dbData->schemasLoaded) {
                 // Render each schema
                 for (auto& schema : dbData->schemas) {
-                    renderPostgresSchemaNode(pgDb, dbData, schema.get());
+                    renderPostgresSchemaNode(dbData, schema.get());
                 }
             }
 
@@ -249,9 +336,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
-                                  PostgresSchemaNode* schemaData) {
-        if (!pgDb || !dbData || !schemaData) {
+    void renderPostgresSchemaNode(PostgresDatabaseNode* dbData, PostgresSchemaNode* schemaData) {
+        if (!dbData || !schemaData) {
             return;
         }
 
@@ -410,8 +496,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData) {
-        if (!mysqlDb || !dbData) {
+    void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
+        if (!dbData) {
             return;
         }
 
@@ -469,7 +555,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& table : dbData->tables) {
-                                renderMySQLTableNode(table, dbData, mysqlDb);
+                                renderMySQLTableNode(table, dbData);
                             }
                         }
                     }
@@ -504,7 +590,7 @@ namespace NewHierarchy {
                             ImGui::PopStyleColor();
                         } else {
                             for (auto& view : dbData->views) {
-                                renderMySQLViewNode(view, dbData, mysqlDb);
+                                renderMySQLViewNode(view, dbData);
                             }
                         }
                     }
@@ -759,7 +845,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb) {
+    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -782,13 +868,13 @@ namespace NewHierarchy {
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(dbData, table.name, mysqlDb);
+            app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(dbData, table.name, mysqlDb);
+                app.getTabManager()->createTableViewerTab(dbData, table.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -797,7 +883,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb) {
+    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -819,13 +905,13 @@ namespace NewHierarchy {
 
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(dbData, view.name, mysqlDb);
+            app.getTabManager()->createTableViewerTab(dbData, view.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(dbData, view.name, mysqlDb);
+                app.getTabManager()->createTableViewerTab(dbData, view.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

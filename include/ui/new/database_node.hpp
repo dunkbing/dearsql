@@ -1,8 +1,8 @@
 #pragma once
 
 #include "database/db_interface.hpp"
-#include "database/mysql.hpp"
-#include "database/postgresql.hpp"
+#include "database/mysql/mysql_database_node.hpp"
+#include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include <memory>
 
@@ -34,7 +34,7 @@ namespace NewHierarchy {
      * @param dbData The database data containing schemas
      * @param dbInterface The shared database interface for tab creation
      */
-    void renderPostgresDatabaseNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData);
+    void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);
 
     /**
      * @brief Render a PostgreSQL schema node with tables/views/sequences
@@ -43,8 +43,7 @@ namespace NewHierarchy {
      * @param dbData The parent database data
      * @param schemaData The schema data to render
      */
-    void renderPostgresSchemaNode(PostgresDatabase* pgDb, PostgresDatabaseNode* dbData,
-                                  PostgresSchemaNode* schemaData);
+    void renderPostgresSchemaNode(PostgresDatabaseNode* dbData, PostgresSchemaNode* schemaData);
 
     /**
      * @brief Render a MySQL database node with its tables/views
@@ -53,7 +52,7 @@ namespace NewHierarchy {
      * @param dbData The database data containing tables/views
      * @param dbInterface The shared database interface for tab creation
      */
-    void renderMySQLDatabaseNode(MySQLDatabase* mysqlDb, MySQLDatabaseNode* dbData);
+    void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
 
     /**
      * @brief Render a SQLite database node with its tables/views/sequences
@@ -92,7 +91,7 @@ namespace NewHierarchy {
      * @param dbData The database data node
      * @param mysqlDb The MySQL database instance
      */
-    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb);
+    void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
 
     /**
      * @brief Render a MySQL view node as a leaf item with double-click and context menu
@@ -101,7 +100,7 @@ namespace NewHierarchy {
      * @param dbData The database data node
      * @param mysqlDb The MySQL database instance
      */
-    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb);
+    void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
 
     /**
      * @brief Render a SQLite table node with expandable structure (columns, keys, indexes)

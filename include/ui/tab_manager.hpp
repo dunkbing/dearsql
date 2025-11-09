@@ -46,7 +46,7 @@ public:
                                               const std::string& databaseName,
                                               const std::string& schemaName);
     std::shared_ptr<Tab> createTableViewerTab(MySQLDatabaseNode* dbNode,
-                                              const std::string& tableName, MySQLDatabase* mysqlDb);
+                                              const std::string& tableName);
     std::shared_ptr<Tab> createTableViewerTab(SQLiteDatabaseNode* dbNode,
                                               const std::string& tableName);
 

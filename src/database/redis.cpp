@@ -1,4 +1,5 @@
 #include "database/redis.hpp"
+#include "database/redis/redis_node.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -10,6 +11,11 @@ RedisDatabase::RedisDatabase(std::string name, std::string host, int port, std::
     : name(std::move(name)), host(std::move(host)), port(port), password(std::move(password)),
       username(std::move(username)) {
     connectionString = std::format("redis://{}:{}", this->host, this->port);
+
+    // Create Redis node
+    redisNode = std::make_shared<RedisNode>();
+    redisNode->parentDb = this;
+    redisNode->name = this->name;
 }
 
 RedisDatabase::~RedisDatabase() {
@@ -846,6 +852,10 @@ std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string& com
     }
 
     return parts;
+}
+
+std::shared_ptr<RedisNode> RedisDatabase::getRedisNode() const {
+    return redisNode;
 }
 
 void RedisDatabase::groupKeysByPattern() {

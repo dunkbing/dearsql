@@ -1,3 +1,4 @@
+// deprecated
 #include "ui/mysql_hierarchy.hpp"
 #include "IconsForkAwesome.h"
 #include "application.hpp"

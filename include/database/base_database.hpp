@@ -17,14 +17,6 @@ class BaseDatabaseImpl : public DatabaseInterface {
 public:
     ~BaseDatabaseImpl() override = default;
 
-    // UI state management (common to all DBs)
-    bool isExpanded() const override {
-        return uiState.expanded;
-    }
-    void setExpanded(bool expanded) override {
-        uiState.expanded = expanded;
-    }
-
     bool hasAttemptedConnection() const override {
         return uiState.attemptedConnection;
     }
@@ -82,17 +74,11 @@ public:
     bool isLoadingTables() const override {
         return tablesOp.isRunning();
     }
-    const std::vector<Table>& getTables() const override {
-        return tables;
-    }
     std::vector<Table>& getTables() override {
         return tables;
     }
 
     // Schema loading state (views)
-    bool areViewsLoaded() const override {
-        return viewsLoaded;
-    }
     void setViewsLoaded(bool loaded) override {
         viewsLoaded = loaded;
     }
@@ -107,9 +93,6 @@ public:
     }
 
     // Schema loading state (sequences)
-    bool areSequencesLoaded() const override {
-        return sequencesLoaded;
-    }
     void setSequencesLoaded(bool loaded) override {
         sequencesLoaded = loaded;
     }
@@ -121,53 +104,6 @@ public:
     }
     std::vector<std::string>& getSequences() override {
         return sequences;
-    }
-
-    // Async table data loading (using existing TableDataLoader)
-    bool isLoadingTableData(const std::string& tableName) const override {
-        return tableDataLoader.isLoading(tableName);
-    }
-    bool hasTableDataResult(const std::string& tableName) const override {
-        return tableDataLoader.hasResult(tableName);
-    }
-    std::vector<std::vector<std::string>>
-    getTableDataResult(const std::string& tableName) override {
-        return tableDataLoader.getTableData(tableName);
-    }
-    std::vector<std::string> getColumnNamesResult(const std::string& tableName) override {
-        return tableDataLoader.getColumnNames(tableName);
-    }
-    int getRowCountResult(const std::string& tableName) override {
-        return tableDataLoader.getRowCount(tableName);
-    }
-    void clearTableDataResult(const std::string& tableName) override {
-        tableDataLoader.clear(tableName);
-    }
-
-    // Legacy single-table methods (backward compatibility)
-    bool isLoadingTableData() const override {
-        return tableDataLoader.isAnyLoading();
-    }
-    bool hasTableDataResult() const override {
-        return tableDataLoader.hasAnyResult();
-    }
-    std::vector<std::vector<std::string>> getTableDataResult() override {
-        return tableDataLoader.getFirstAvailableTableData();
-    }
-    std::vector<std::string> getColumnNamesResult() override {
-        return tableDataLoader.getFirstAvailableColumnNames();
-    }
-    int getRowCountResult() override {
-        return tableDataLoader.getFirstAvailableRowCount();
-    }
-    void clearTableDataResult() override {
-        tableDataLoader.clearAll();
-    }
-    void checkTableDataStatusAsync(const std::string& tableName) override {
-        tableDataLoader.check(tableName);
-    }
-    void checkTableDataStatusAsync() override {
-        tableDataLoader.checkAll();
     }
 
 protected:
@@ -193,26 +129,4 @@ protected:
 
     // Table data loader (already a good abstraction)
     TableDataLoader tableDataLoader;
-
-    // Helper method for checking async schema loading
-    // void checkTablesStatusAsync() override {
-    //     tablesOp.check([this](std::vector<Table> result) {
-    //         tables = std::move(result);
-    //         tablesLoaded = true;
-    //     });
-    // }
-
-    void checkViewsStatusAsync() override {
-        viewsOp.check([this](std::vector<Table> result) {
-            views = std::move(result);
-            viewsLoaded = true;
-        });
-    }
-
-    void checkSequencesStatusAsync() override {
-        sequencesOp.check([this](std::vector<std::string> result) {
-            sequences = std::move(result);
-            sequencesLoaded = true;
-        });
-    }
 };

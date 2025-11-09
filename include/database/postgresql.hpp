@@ -43,8 +43,6 @@ public:
     bool areSchemasLoaded() const;
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
-    void checkViewsStatusAsync() override;
-    void checkSequencesStatusAsync() override;
 
     // Database list methods
     [[deprecated("Use getDatabaseDataMap() instead")]]
@@ -70,7 +68,6 @@ public:
     std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
     void switchToDatabaseAsync(const std::string& targetDatabase);
     bool isSwitchingDatabase() const;
-    void checkDatabaseSwitchStatusAsync();
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -79,38 +76,18 @@ public:
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName) override;
-
-    // Async table data loading (BaseDatabaseImpl provides implementation)
-    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
-                                 const std::string& whereClause = "") override;
 
 protected:
-    std::vector<std::string> getTableNames(const std::string& schemaName);
-    std::vector<Column> getTableColumns(const std::string& tableName) override;
+    // std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName,
                                                 const std::string& schemaName);
-    std::vector<std::string> getViewNames() override;
     std::vector<std::string> getViewNames(const std::string& schemaName);
-    std::vector<Column> getViewColumns(const std::string& viewName) override;
-    std::vector<std::string> getSequenceNames() override;
     std::vector<std::string> getSequenceNames(const std::string& schemaName);
 
     // Async loading helpers
-    void startRefreshTableAsync(const std::string& schemaName = "public");
-    std::vector<Table> getTablesWithColumnsAsync(const std::string& schemaName);
-    void startRefreshViewAsync(const std::string& schemaName = "public");
-    std::vector<Table> getViewsWithColumnsAsync(const std::string& schemaName);
-    void startRefreshSequenceAsync(const std::string& schemaName = "public");
-    std::vector<std::string> getSequencesAsync(const std::string& schemaName) const;
-    void startRefreshSchemaAsync();
-    std::vector<std::unique_ptr<PostgresSchemaNode>> getSchemasAsync() const;
     std::vector<std::string> getDatabaseNamesAsync() const;
-
-    // Schema helper methods
-    std::vector<std::string> getSchemaNames() const;
 
 private:
     // PostgreSQL-specific connection details (base class handles common state)
@@ -150,10 +127,6 @@ public:
     PostgresSchemaNode& getSchemaData(const std::string& dbName, const std::string& schemaName);
     const PostgresSchemaNode& getSchemaData(const std::string& dbName,
                                             const std::string& schemaName) const;
-
-    // Check async status for schema-level operations
-    void checkSchemaViewsStatusAsync(const std::string& schemaName);
-    void checkSchemaSequencesStatusAsync(const std::string& schemaName);
 
     // Public helper for building connection strings (used by PostgresDatabaseNode)
     std::string buildConnectionString(const std::string& dbName) const;

@@ -1,3 +1,4 @@
+// deprecated
 #include "ui/postgres_hierarchy.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"

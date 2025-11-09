@@ -9,7 +9,8 @@ class PostgresSchemaNode;
 class PostgresDatabaseNode;
 class MySQLDatabaseNode;
 class MySQLDatabase;
-class SQLiteDatabaseNode;
+class SQLiteDatabase;
+class ITableDataProvider;
 
 class TabManager {
 public:
@@ -47,8 +48,7 @@ public:
                                               const std::string& schemaName);
     std::shared_ptr<Tab> createTableViewerTab(MySQLDatabaseNode* dbNode,
                                               const std::string& tableName);
-    std::shared_ptr<Tab> createTableViewerTab(SQLiteDatabaseNode* dbNode,
-                                              const std::string& tableName);
+    std::shared_ptr<Tab> createTableViewerTab(SQLiteDatabase* dbNode, const std::string& tableName);
 
     std::shared_ptr<Tab> createDiagramTab(PostgresSchemaNode* schemaNode);
     std::shared_ptr<Tab> createDiagramTab(MySQLDatabaseNode* dbNode);

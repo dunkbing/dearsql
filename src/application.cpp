@@ -261,7 +261,7 @@ bool Application::hasPendingAsyncWork() const {
         }
 
         if (db->isConnecting() || db->isLoadingTables() || db->isLoadingViews() ||
-            db->isLoadingSequences() || db->isLoadingTableData()) {
+            db->isLoadingSequences()) {
             return true;
         }
 
@@ -279,7 +279,7 @@ bool Application::hasPendingAsyncWork() const {
         }
 
         if (const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db)) {
-            if (redisDb->isLoadingTables() || redisDb->isLoadingTableData()) {
+            if (redisDb->isLoadingTables()) {
                 return true;
             }
         }

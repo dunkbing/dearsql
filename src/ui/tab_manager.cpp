@@ -4,7 +4,7 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
-#include "database/sqlite/sqlite_database_node.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -199,15 +199,15 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(MySQLDatabaseNode* dbNode,
     return tab;
 }
 
-std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabaseNode* dbNode,
+std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabase* db,
                                                       const std::string& tableName) {
-    if (!dbNode) {
-        std::cout << "Cannot create table viewer tab: database node is null" << std::endl;
+    if (!db) {
+        std::cout << "Cannot create table viewer tab: database is null" << std::endl;
         return nullptr;
     }
 
     // Build the full table path for identification (connection.table)
-    const std::string tableFullName = dbNode->name + "." + tableName;
+    const std::string tableFullName = db->getName() + "." + tableName;
 
     // Check if tab already exists
     for (auto& tab : tabs) {
@@ -225,10 +225,10 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabaseNode* dbNode
     }
 
     // Create user-friendly tab name
-    std::string tabName = tableName + " (" + dbNode->name + ")";
+    std::string tabName = tableName + " (" + db->getName() + ")";
 
     // Create new tab
-    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, dbNode);
+    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, db);
     tab->setShouldFocus(true);
     addTab(tab);
 

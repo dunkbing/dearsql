@@ -12,7 +12,7 @@
 // Forward declarations
 class PostgresSchemaNode;
 class MySQLDatabaseNode;
-class SQLiteDatabaseNode;
+class SQLiteDatabase;
 class DatabaseInterface;
 
 class TableViewerTab final : public Tab {
@@ -22,7 +22,7 @@ public:
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
                    MySQLDatabaseNode* mysqlNode);
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
-                   SQLiteDatabaseNode* dbNode);
+                   SQLiteDatabase* db);
 
     void render() override;
 

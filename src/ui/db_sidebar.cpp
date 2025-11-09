@@ -1,3 +1,4 @@
+// deprecated
 #include "ui/db_sidebar.hpp"
 #include "IconsForkAwesome.h"
 #include "application.hpp"

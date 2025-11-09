@@ -363,19 +363,6 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
     return result;
 }
 
-void MySQLDatabase::checkViewsStatusAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-
-    if (dbData->viewsFuture.valid() &&
-        dbData->viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        dbData->views = dbData->viewsFuture.get();
-        dbData->viewsLoaded = true;
-        dbData->loadingViews.store(false);
-    }
-}
-
 void MySQLDatabase::refreshSequences() {
     auto* dbData = getCurrentDatabaseData();
     if (!dbData)
@@ -383,10 +370,6 @@ void MySQLDatabase::refreshSequences() {
 
     dbData->sequences.clear();
     dbData->sequencesLoaded = true;
-}
-
-void MySQLDatabase::checkSequencesStatusAsync() {
-    // No-op for MySQL
 }
 
 std::string MySQLDatabase::executeQuery(const std::string& query) {
@@ -532,125 +515,6 @@ std::vector<std::string> MySQLDatabase::getColumnNames(const std::string& tableN
     return columns;
 }
 
-int MySQLDatabase::getRowCount(const std::string& tableName) {
-    if (!connect().first) {
-        return 0;
-    }
-
-    try {
-        const auto session = getSession();
-        int count = 0;
-        const std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
-        *session << query, soci::into(count);
-        return count;
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting row count: " << e.what() << std::endl;
-        return 0;
-    }
-}
-
-void MySQLDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
-                                            const std::string& whereClause) {
-    const bool started = tableDataLoader.start(tableName, [this, tableName, limit, offset,
-                                                           whereClause](TableDataLoadState& state) {
-        try {
-            if (!state.loading.load()) {
-                return;
-            }
-
-            std::string dataQuery = "SELECT * FROM `" + tableName + "`";
-            if (!whereClause.empty()) {
-                dataQuery += " WHERE " + whereClause;
-            }
-            dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
-
-            {
-                const auto sql = getSession();
-                const soci::rowset dataRs = sql->prepare << dataQuery;
-
-                for (const auto& row : dataRs) {
-                    if (!state.loading.load()) {
-                        break;
-                    }
-
-                    std::vector<std::string> rowData;
-                    rowData.reserve(row.size());
-                    for (std::size_t i = 0; i < row.size(); ++i) {
-                        rowData.emplace_back(convertRowValue(row, i));
-                    }
-                    state.tableData.push_back(std::move(rowData));
-                }
-            }
-
-            if (!state.loading.load()) {
-                return;
-            }
-
-            const std::string columnQuery = "SHOW COLUMNS FROM `" + tableName + "`";
-            {
-                const auto sql = getSession();
-                const soci::rowset columnRs = sql->prepare << columnQuery;
-
-                for (const auto& row : columnRs) {
-                    if (!state.loading.load()) {
-                        break;
-                    }
-                    state.columnNames.push_back(row.get<std::string>(0));
-                }
-            }
-
-            if (!state.loading.load()) {
-                return;
-            }
-
-            std::string countQuery = "SELECT COUNT(*) FROM `" + tableName + "`";
-            if (!whereClause.empty()) {
-                countQuery = "SELECT COUNT(*) FROM `" + tableName + "` WHERE " + whereClause;
-            }
-            const auto sql = getSession();
-            *sql << countQuery, soci::into(state.rowCount);
-
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            state.tableData.clear();
-            state.columnNames.clear();
-            state.rowCount = 0;
-            state.lastError = e.what();
-        }
-    });
-
-    if (!started) {
-        return;
-    }
-}
-
-std::vector<Column> MySQLDatabase::getTableColumns(const std::string& tableName) {
-    if (!connect().first) {
-        return {};
-    }
-
-    std::vector<Column> columns;
-    try {
-        const auto sql = getSession();
-        const std::string query = std::format("DESCRIBE `{}`", tableName);
-        const soci::rowset rs = (sql->prepare << query);
-
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
-            Column col;
-            col.name = row.get<std::string>(0);                  // Field
-            col.type = row.get<std::string>(1);                  // Type
-            col.isNotNull = row.get<std::string>(2) == "NO";     // Null
-            col.isPrimaryKey = row.get<std::string>(3) == "PRI"; // Key
-            columns.push_back(col);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting table columns: " << e.what() << std::endl;
-    }
-
-    return columns;
-}
-
 std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) {
     std::vector<Index> indexes;
 
@@ -737,36 +601,6 @@ std::vector<ForeignKey> MySQLDatabase::getTableForeignKeys(const std::string& ta
     }
 
     return foreignKeys;
-}
-
-std::vector<std::string> MySQLDatabase::getViewNames() {
-    if (!connect().first) {
-        return {};
-    }
-
-    std::vector<std::string> viewNames;
-    try {
-        const auto sql = getSession();
-        const std::string query = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
-        const soci::rowset rs = (sql->prepare << query);
-
-        for (auto it = rs.begin(); it != rs.end(); ++it) {
-            const soci::row& row = *it;
-            viewNames.push_back(row.get<std::string>(0));
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting view names: " << e.what() << std::endl;
-    }
-
-    return viewNames;
-}
-
-std::vector<Column> MySQLDatabase::getViewColumns(const std::string& viewName) {
-    return getTableColumns(viewName);
-}
-
-std::vector<std::string> MySQLDatabase::getSequenceNames() {
-    return {};
 }
 
 std::vector<std::string> MySQLDatabase::getDatabaseNames() {
@@ -937,30 +771,6 @@ void MySQLDatabase::switchToDatabaseAsync(const std::string& targetDatabase) {
 
 bool MySQLDatabase::isSwitchingDatabase() const {
     return switchingDatabase.load();
-}
-
-void MySQLDatabase::checkDatabaseSwitchStatusAsync() {
-    if (databaseSwitchFuture.valid() &&
-        databaseSwitchFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            auto [success, error] = databaseSwitchFuture.get();
-            switchingDatabase = false;
-
-            if (success) {
-                std::cout << "Async database switch completed successfully to: "
-                          << targetDatabaseName << std::endl;
-                // The database and connection state are already updated by switchToDatabase
-            } else {
-                std::cout << "Async database switch failed to: " << targetDatabaseName << " - "
-                          << error << std::endl;
-                setLastConnectionError(error);
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async database switch: " << e.what() << std::endl;
-            switchingDatabase = false;
-            setLastConnectionError(e.what());
-        }
-    }
 }
 
 soci::connection_pool*

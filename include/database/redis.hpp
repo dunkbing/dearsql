@@ -1,12 +1,9 @@
 #pragma once
 
 #include "db_interface.hpp"
+#include <atomic>
 #include <future>
 #include <hiredis.h>
-#include <memory>
-
-// Forward declaration
-class RedisNode;
 
 struct RedisKey {
     std::string name;
@@ -37,7 +34,7 @@ public:
 
     // Redis-specific key management (adapted to table interface)
     void refreshTables() override; // Will load keys
-    const std::vector<Table>& getTables() const override;
+    const std::vector<Table>& getTables() const;
     std::vector<Table>& getTables() override;
     bool areTablesLoaded() const override;
     void setTablesLoaded(bool loaded) override;
@@ -48,14 +45,12 @@ public:
     void refreshViews() override;
     const std::vector<Table>& getViews() const override;
     std::vector<Table>& getViews() override;
-    bool areViewsLoaded() const override;
     void setViewsLoaded(bool loaded) override;
 
     // Sequences not applicable for Redis
     void refreshSequences() override;
     const std::vector<std::string>& getSequences() const override;
     std::vector<std::string>& getSequences() override;
-    bool areSequencesLoaded() const override;
     void setSequencesLoaded(bool loaded) override;
 
     // Redis command execution (adapted to query interface)
@@ -67,22 +62,7 @@ public:
     std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,
                                                        int offset) override;
     std::vector<std::string> getColumnNames(const std::string& keyPattern) override;
-    int getRowCount(const std::string& keyPattern) override;
-
-    // Async key data loading
-    void startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset,
-                                 const std::string& whereClause = "") override;
-    bool isLoadingTableData() const override;
-    void checkTableDataStatusAsync() override;
-    bool hasTableDataResult() const override;
-    std::vector<std::vector<std::string>> getTableDataResult() override;
-    std::vector<std::string> getColumnNamesResult() override;
-    int getRowCountResult() override;
-    void clearTableDataResult() override;
-
-    // UI state
-    bool isExpanded() const override;
-    void setExpanded(bool expanded) override;
+    int getRowCount(const std::string& keyPattern);
 
     // Connection attempt tracking
     bool hasAttemptedConnection() const override;
@@ -116,15 +96,24 @@ public:
         return password;
     }
 
-    // Node access
-    std::shared_ptr<RedisNode> getRedisNode() const;
+    // Async key loading (combines RedisNode functionality)
+    void startKeysLoadAsync(bool forceRefresh = false);
+    void checkKeysStatusAsync();
+    std::vector<Table> getKeysAsync();
+
+    // Key groups access
+    const std::vector<Table>& getKeyGroups() const {
+        return tables;
+    }
+
+    // Loading state (public like SQLite)
+    std::atomic<bool> loadingKeys = false;
+    bool keysLoaded = false;
+    std::string lastKeysError;
 
 protected:
     std::vector<std::string> getTableNames(); // Will return key patterns
-    std::vector<Column> getTableColumns(const std::string& keyPattern) override;
-    std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string& viewName) override;
-    std::vector<std::string> getSequenceNames() override;
+    // std::vector<Column> getTableColumns(const std::string& keyPattern) override;
 
 private:
     std::string name;
@@ -150,14 +139,10 @@ private:
     bool connecting = false;
     std::future<std::pair<bool, std::string>> connectionFuture;
 
-    // Async table loading state
-    bool loadingTables = false;
-    std::future<void> tablesFuture;
+    // Async key loading future
+    std::future<std::vector<Table>> keysFuture;
 
     TableDataLoader tableDataLoader;
-
-    // Redis node (represents the connection)
-    std::shared_ptr<RedisNode> redisNode;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

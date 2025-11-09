@@ -1,5 +1,4 @@
 #include "database/redis.hpp"
-#include "database/redis/redis_node.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -11,11 +10,6 @@ RedisDatabase::RedisDatabase(std::string name, std::string host, int port, std::
     : name(std::move(name)), host(std::move(host)), port(port), password(std::move(password)),
       username(std::move(username)) {
     connectionString = std::format("redis://{}:{}", this->host, this->port);
-
-    // Create Redis node
-    redisNode = std::make_shared<RedisNode>();
-    redisNode->parentDb = this;
-    redisNode->name = this->name;
 }
 
 RedisDatabase::~RedisDatabase() {
@@ -120,7 +114,7 @@ void RedisDatabase::disconnect() {
     connecting = false;
 
     // Reset loading states
-    loadingTables = false;
+    loadingKeys = false;
     tableDataLoader.cancelAllAndWait();
     tableDataLoader.clearAll();
 
@@ -190,22 +184,11 @@ void RedisDatabase::refreshTables() {
 }
 
 bool RedisDatabase::isLoadingTables() const {
-    return loadingTables;
+    return loadingKeys.load();
 }
 
 void RedisDatabase::checkTablesStatusAsync() {
-    if (tablesFuture.valid() &&
-        tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tablesFuture.get();
-            loadingTables = false;
-            tablesLoaded = true;
-        } catch (const std::exception& e) {
-            std::cerr << "Error loading Redis keys: " << e.what() << std::endl;
-            loadingTables = false;
-            tablesLoaded = true;
-        }
-    }
+    checkKeysStatusAsync();
 }
 
 const std::vector<Table>& RedisDatabase::getTables() const {
@@ -238,10 +221,6 @@ std::vector<Table>& RedisDatabase::getViews() {
     return views;
 }
 
-bool RedisDatabase::areViewsLoaded() const {
-    return viewsLoaded;
-}
-
 void RedisDatabase::setViewsLoaded(bool loaded) {
     viewsLoaded = loaded;
 }
@@ -258,10 +237,6 @@ const std::vector<std::string>& RedisDatabase::getSequences() const {
 
 std::vector<std::string>& RedisDatabase::getSequences() {
     return sequences;
-}
-
-bool RedisDatabase::areSequencesLoaded() const {
-    return sequencesLoaded;
 }
 
 void RedisDatabase::setSequencesLoaded(const bool loaded) {
@@ -402,81 +377,6 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
         std::cerr << "Error getting Redis key count: " << e.what() << std::endl;
         return 0;
     }
-}
-
-// Async table data loading methods
-void RedisDatabase::startTableDataLoadAsync(const std::string& keyPattern, int limit, int offset,
-                                            const std::string& whereClause) {
-    (void)whereClause; // Redis does not support SQL-style filtering yet
-
-    const bool started = tableDataLoader.start(
-        keyPattern, [this, keyPattern, limit, offset](TableDataLoadState& state) {
-            try {
-                if (!state.loading.load()) {
-                    return;
-                }
-
-                auto data = getTableData(keyPattern, limit, offset);
-                if (!state.loading.load()) {
-                    return;
-                }
-                state.tableData = std::move(data);
-
-                auto columns = getColumnNames(keyPattern);
-                if (!state.loading.load()) {
-                    return;
-                }
-                state.columnNames = std::move(columns);
-
-                state.rowCount = getRowCount(keyPattern);
-            } catch (const std::exception& e) {
-                std::cerr << "Error in async Redis data load: " << e.what() << std::endl;
-                state.tableData.clear();
-                state.columnNames.clear();
-                state.rowCount = 0;
-                state.lastError = e.what();
-            }
-        });
-
-    if (!started) {
-        return;
-    }
-}
-
-bool RedisDatabase::isLoadingTableData() const {
-    return tableDataLoader.isAnyLoading();
-}
-
-void RedisDatabase::checkTableDataStatusAsync() {
-    tableDataLoader.checkAll();
-}
-
-bool RedisDatabase::hasTableDataResult() const {
-    return tableDataLoader.hasAnyResult();
-}
-
-std::vector<std::vector<std::string>> RedisDatabase::getTableDataResult() {
-    return tableDataLoader.getFirstAvailableTableData();
-}
-
-std::vector<std::string> RedisDatabase::getColumnNamesResult() {
-    return tableDataLoader.getFirstAvailableColumnNames();
-}
-
-int RedisDatabase::getRowCountResult() {
-    return tableDataLoader.getFirstAvailableRowCount();
-}
-
-void RedisDatabase::clearTableDataResult() {
-    tableDataLoader.clearAll();
-}
-
-bool RedisDatabase::isExpanded() const {
-    return expanded;
-}
-
-void RedisDatabase::setExpanded(bool exp) {
-    expanded = exp;
 }
 
 bool RedisDatabase::hasAttemptedConnection() const {
@@ -690,52 +590,6 @@ std::vector<std::string> RedisDatabase::getTableNames() {
     return patterns;
 }
 
-std::vector<Column> RedisDatabase::getTableColumns(const std::string& keyPattern) {
-    std::vector<Column> columns;
-
-    Column keyCol;
-    keyCol.name = "Key";
-    keyCol.type = "string";
-    keyCol.isNotNull = true;
-    keyCol.isPrimaryKey = true;
-    columns.push_back(keyCol);
-
-    Column typeCol;
-    typeCol.name = "Type";
-    typeCol.type = "string";
-    typeCol.isNotNull = true;
-    typeCol.isPrimaryKey = false;
-    columns.push_back(typeCol);
-
-    Column valueCol;
-    valueCol.name = "Value";
-    valueCol.type = "string";
-    valueCol.isNotNull = false;
-    valueCol.isPrimaryKey = false;
-    columns.push_back(valueCol);
-
-    Column ttlCol;
-    ttlCol.name = "TTL";
-    ttlCol.type = "integer";
-    ttlCol.isNotNull = false;
-    ttlCol.isPrimaryKey = false;
-    columns.push_back(ttlCol);
-
-    return columns;
-}
-
-std::vector<std::string> RedisDatabase::getViewNames() {
-    return {}; // Redis doesn't have views
-}
-
-std::vector<Column> RedisDatabase::getViewColumns(const std::string& viewName) {
-    return {}; // Redis doesn't have views
-}
-
-std::vector<std::string> RedisDatabase::getSequenceNames() {
-    return {}; // Redis doesn't have sequences
-}
-
 // Private helper methods
 redisReply* RedisDatabase::executeRedisCommand(const std::string& command) const {
     if (!isConnected()) {
@@ -854,10 +708,6 @@ std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string& com
     return parts;
 }
 
-std::shared_ptr<RedisNode> RedisDatabase::getRedisNode() const {
-    return redisNode;
-}
-
 void RedisDatabase::groupKeysByPattern() {
     if (!isConnected()) {
         return;
@@ -868,6 +718,66 @@ void RedisDatabase::groupKeysByPattern() {
     Table allKeys;
     allKeys.name = "*";
     allKeys.fullName = name + ".*";
-    allKeys.columns = getTableColumns("*");
+    // allKeys.columns = getTableColumns("*");
     tables.push_back(allKeys);
+}
+
+// Async key loading methods (merged from RedisNode)
+void RedisDatabase::startKeysLoadAsync(bool forceRefresh) {
+    if (loadingKeys.load()) {
+        return; // already loading
+    }
+
+    if (forceRefresh) {
+        tables.clear();
+        keysLoaded = false;
+        lastKeysError.clear();
+    }
+
+    if (!forceRefresh && keysLoaded) {
+        return;
+    }
+
+    loadingKeys = true;
+    keysFuture = std::async(std::launch::async, [this]() { return getKeysAsync(); });
+}
+
+void RedisDatabase::checkKeysStatusAsync() {
+    if (keysFuture.valid() &&
+        keysFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            tables = keysFuture.get();
+            std::cout << std::format("Key loading completed. Found {} key groups", tables.size())
+                      << std::endl;
+            keysLoaded = true;
+            loadingKeys = false;
+        } catch (const std::exception& e) {
+            std::cerr << std::format("Error in key loading: {}", e.what()) << std::endl;
+            lastKeysError = e.what();
+            keysLoaded = true;
+            loadingKeys = false;
+        }
+    }
+}
+
+std::vector<Table> RedisDatabase::getKeysAsync() {
+    std::vector<Table> result;
+
+    try {
+        if (!isConnected()) {
+            std::cerr << "Database not connected" << std::endl;
+            return result;
+        }
+
+        // Group keys by pattern
+        groupKeysByPattern();
+        result = tables;
+
+        std::cout << "Finished loading keys. Total key groups: " << std::to_string(result.size())
+                  << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << std::format("Error loading keys: {}", e.what()) << std::endl;
+    }
+
+    return result;
 }

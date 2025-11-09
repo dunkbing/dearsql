@@ -1,14 +1,14 @@
 #pragma once
 
 #include "base_database.hpp"
+#include "table_data_provider.hpp"
+#include <atomic>
+#include <future>
 #include <memory>
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-// Forward declaration
-class SQLiteDatabaseNode;
-
-class SQLiteDatabase final : public BaseDatabaseImpl {
+class SQLiteDatabase final : public BaseDatabaseImpl, public ITableDataProvider {
 public:
     SQLiteDatabase(std::string name, std::string path);
     ~SQLiteDatabase() override;
@@ -29,39 +29,69 @@ public:
     void refreshViews() override;
     void refreshSequences() override;
 
+    // Async table/view/sequence loading
+    void startTablesLoadAsync(bool forceRefresh = false);
+    void checkTablesStatusAsync();
+    std::vector<Table> getTablesAsync();
+
+    void startViewsLoadAsync(bool forceRefresh = false);
+    void checkViewsStatusAsync();
+    std::vector<Table> getViewsAsync();
+
+    void startSequencesLoadAsync(bool forceRefresh = false);
+    void checkSequencesStatusAsync();
+    std::vector<std::string> getSequencesAsync();
+
     // Query execution
     std::string executeQuery(const std::string& query) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
     executeQueryStructured(const std::string& query) override;
+
+    // DatabaseInterface implementation (without whereClause)
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName) override;
 
-    // Async table data loading (BaseDatabaseImpl provides implementation)
-    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
-                                 const std::string& whereClause = "") override;
+    // ITableDataProvider implementation (with whereClause)
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset,
+                                                       const std::string& whereClause) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    const std::vector<Table>& getTables() const override {
+        return tables;
+    }
+    const std::vector<Table>& getViews() const override {
+        return views;
+    }
 
-    // Database node access
-    std::shared_ptr<SQLiteDatabaseNode> getDatabaseNode() const;
+    // query execution with comprehensive result
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
 
-    // Session access for node (returns raw pointer since SQLite has single session)
+    // Session access (returns raw pointer since SQLite has single session)
     soci::session* getSession() const;
+
+    // Loading state
+    std::atomic<bool> loadingTables = false;
+    std::atomic<bool> loadingViews = false;
+    std::atomic<bool> loadingSequences = false;
+
+    // Error tracking
+    std::string lastTablesError;
+    std::string lastViewsError;
+    std::string lastSequencesError;
 
 protected:
     std::vector<std::string> getTableNames();
-    std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName) const;
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;
-    std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string& viewName) override;
-    std::vector<std::string> getSequenceNames() override;
 
 private:
     // SQLite-specific state (base class handles common state)
     std::string path;
     std::unique_ptr<soci::session> session;
 
-    // Database node (represents the single file)
-    std::shared_ptr<SQLiteDatabaseNode> databaseNode;
+    // Async futures
+    std::future<std::vector<Table>> tablesFuture;
+    std::future<std::vector<Table>> viewsFuture;
+    std::future<std::vector<std::string>> sequencesFuture;
 };

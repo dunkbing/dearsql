@@ -31,8 +31,6 @@ public:
     void refreshTables() override;
     void refreshViews() override;
     void refreshSequences() override;
-    void checkViewsStatusAsync() override;
-    void checkSequencesStatusAsync() override;
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -41,11 +39,6 @@ public:
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName) override;
-
-    // Async table data loading (BaseDatabaseImpl provides implementation)
-    void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
-                                 const std::string& whereClause = "") override;
 
     // Database list methods
     std::vector<std::string> getDatabaseNames();
@@ -70,15 +63,11 @@ public:
     std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
     void switchToDatabaseAsync(const std::string& targetDatabase);
     bool isSwitchingDatabase() const;
-    void checkDatabaseSwitchStatusAsync();
 
 protected:
-    std::vector<Column> getTableColumns(const std::string& tableName) override;
+    // std::vector<Column> getTableColumns(const std::string& tableName) override;
     std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
-    std::vector<std::string> getViewNames() override;
-    std::vector<Column> getViewColumns(const std::string& viewName) override;
-    std::vector<std::string> getSequenceNames() override;
 
     // Async loading helpers
     void startRefreshTableAsync();

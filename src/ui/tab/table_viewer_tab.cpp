@@ -3,7 +3,7 @@
 #include "application.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
-#include "database/sqlite/sqlite_database_node.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
@@ -34,9 +34,9 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 }
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName, SQLiteDatabaseNode* dbNode)
+                               std::string tableName, SQLiteDatabase* db)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), databaseNode(dbNode) {
+      tableName(std::move(tableName)), databaseNode(db) {
     initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();

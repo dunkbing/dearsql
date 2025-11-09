@@ -163,44 +163,6 @@ const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbN
     return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
-void PostgresDatabase::checkSchemaViewsStatusAsync(const std::string& schemaName) {
-    auto& schemaData = getSchemaData(schemaName);
-    if (schemaData.viewsFuture.valid() &&
-        schemaData.viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            schemaData.views = schemaData.viewsFuture.get();
-            Logger::info("Async view loading completed for schema " + schemaName + ". Found " +
-                         std::to_string(schemaData.views.size()) + " views.");
-            schemaData.viewsLoaded = true;
-            schemaData.loadingViews = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async view loading for schema " << schemaName << ": " << e.what()
-                      << std::endl;
-            schemaData.viewsLoaded = true;
-            schemaData.loadingViews = false;
-        }
-    }
-}
-
-void PostgresDatabase::checkSchemaSequencesStatusAsync(const std::string& schemaName) {
-    auto& schemaData = getSchemaData(schemaName);
-    if (schemaData.sequencesFuture.valid() &&
-        schemaData.sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            schemaData.sequences = schemaData.sequencesFuture.get();
-            Logger::info("Async sequence loading completed for schema " + schemaName + ". Found " +
-                         std::to_string(schemaData.sequences.size()) + " sequences.");
-            schemaData.sequencesLoaded = true;
-            schemaData.loadingSequences = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async sequence loading for schema " << schemaName << ": "
-                      << e.what() << std::endl;
-            schemaData.sequencesLoaded = true;
-            schemaData.loadingSequences = false;
-        }
-    }
-}
-
 std::pair<bool, std::string> PostgresDatabase::connect() {
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
@@ -271,11 +233,13 @@ void PostgresDatabase::refreshTables(const std::string& schemaName) {
     std::cout << ("Refreshing tables for database: " + name + " schema: " + schemaName) << "\n";
     if (!isConnected()) {
         Logger::warn("Not connected to database, cannot refresh tables");
-        getSchemaData(schemaName).tablesLoaded = true;
+        auto& schemaData = getSchemaData(schemaName);
+        schemaData.tablesLoaded = true;
         return;
     }
 
-    startRefreshTableAsync(schemaName);
+    auto& schemaData = getSchemaData(schemaName);
+    schemaData.startTablesLoadAsync();
 }
 
 std::string PostgresDatabase::executeQuery(const std::string& query) {
@@ -458,92 +422,46 @@ std::vector<std::string> PostgresDatabase::getColumnNames(const std::string& tab
     return columnNames;
 }
 
-int PostgresDatabase::getRowCount(const std::string& tableName) {
-    if (!isConnected()) {
-        auto [success, error] = connect();
-        if (!success) {
-            std::cerr << "Failed to connect: " << error << std::endl;
-            return 0;
-        }
-    }
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
-        int count = 0;
-        *session << sqlQuery, soci::into(count);
-        return count;
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting row count: " << e.what() << std::endl;
-        return 0;
-    }
-}
-
 void* PostgresDatabase::getConnection() const {
     return getConnectionPoolForDatabase(database);
 }
 
-std::vector<std::string> PostgresDatabase::getTableNames(const std::string& schemaName) {
-    std::vector<std::string> tableNames;
+// std::vector<Column> PostgresDatabase::getTableColumns(const std::string& tableName) {
+//     std::vector<Column> columns;
 
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery = std::format(
-            "SELECT tablename FROM pg_tables WHERE schemaname = '{}' ORDER BY tablename",
-            schemaName);
+//     try {
+//         const auto session = getSession();
+//         const std::string sqlQuery =
+//             "SELECT c.column_name, c.data_type, c.is_nullable, "
+//             "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
+//             "as is_primary_key "
+//             "FROM information_schema.columns c "
+//             "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
+//             "kcu.column_name AND c.table_name = kcu.table_name "
+//             "LEFT JOIN information_schema.table_constraints tc ON "
+//             "kcu.constraint_name = tc.constraint_name "
+//             "WHERE c.table_name = '" +
+//             tableName +
+//             "' "
+//             "ORDER BY c.ordinal_position";
 
-        std::cout << ("Executing query to get table names from schema: " + schemaName);
-        const soci::rowset rs = session->prepare << sqlQuery;
+//         const soci::rowset rs = session->prepare << sqlQuery;
 
-        for (const auto& row : rs) {
-            auto tableName = row.get<std::string>(0);
-            Logger::debug("Found table: " + tableName);
-            tableNames.push_back(tableName);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Failed to execute query: " << e.what() << std::endl;
-    }
+//         for (const auto& row : rs) {
+//             Column col;
+//             col.name = row.get<std::string>(0);
+//             col.type = row.get<std::string>(1);
+//             col.isNotNull = row.get<std::string>(2) == "NO";
+//             auto isPkStr = row.get<std::string>(3);
+//             col.isPrimaryKey = (isPkStr == "true");
+//             columns.push_back(col);
+//         }
+//     } catch (const soci::soci_error& e) {
+//         std::cerr << "Error getting table columns: " << e.what() << std::endl;
+//     }
 
-    std::cout << ("Query completed. Found " + std::to_string(tableNames.size()) + " tables.");
-    return tableNames;
-}
-
-std::vector<Column> PostgresDatabase::getTableColumns(const std::string& tableName) {
-    std::vector<Column> columns;
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery =
-            "SELECT c.column_name, c.data_type, c.is_nullable, "
-            "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
-            "as is_primary_key "
-            "FROM information_schema.columns c "
-            "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
-            "kcu.column_name AND c.table_name = kcu.table_name "
-            "LEFT JOIN information_schema.table_constraints tc ON "
-            "kcu.constraint_name = tc.constraint_name "
-            "WHERE c.table_name = '" +
-            tableName +
-            "' "
-            "ORDER BY c.ordinal_position";
-
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            Column col;
-            col.name = row.get<std::string>(0);
-            col.type = row.get<std::string>(1);
-            col.isNotNull = row.get<std::string>(2) == "NO";
-            auto isPkStr = row.get<std::string>(3);
-            col.isPrimaryKey = (isPkStr == "true");
-            columns.push_back(col);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting table columns: " << e.what() << std::endl;
-    }
-
-    return columns;
-}
+//     return columns;
+// }
 
 std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableName) {
     std::vector<Index> indexes;
@@ -656,11 +574,13 @@ void PostgresDatabase::refreshViews(const std::string& schemaName) {
     Logger::debug("Refreshing views for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
         Logger::warn("Not connected to database, cannot refresh views");
-        getSchemaData(schemaName).viewsLoaded = true;
+        auto& schemaData = getSchemaData(schemaName);
+        schemaData.viewsLoaded = true;
         return;
     }
 
-    startRefreshViewAsync(schemaName);
+    auto& schemaData = getSchemaData(schemaName);
+    schemaData.startViewsLoadAsync();
 }
 
 // Sequence management methods
@@ -672,15 +592,13 @@ void PostgresDatabase::refreshSequences(const std::string& schemaName) {
     Logger::debug("Refreshing sequences for database: " + name + " schema: " + schemaName);
     if (!isConnected()) {
         Logger::warn("Not connected to database, cannot refresh sequences");
-        getSchemaData(schemaName).sequencesLoaded = true;
+        auto& schemaData = getSchemaData(schemaName);
+        schemaData.sequencesLoaded = true;
         return;
     }
 
-    startRefreshSequenceAsync(schemaName);
-}
-
-std::vector<std::string> PostgresDatabase::getViewNames() {
-    return getViewNames("public");
+    auto& schemaData = getSchemaData(schemaName);
+    schemaData.startSequencesLoadAsync();
 }
 
 std::vector<std::string> PostgresDatabase::getViewNames(const std::string& schemaName) {
@@ -705,39 +623,6 @@ std::vector<std::string> PostgresDatabase::getViewNames(const std::string& schem
 
     std::cout << "Query completed. Found " << viewNames.size() << " views." << std::endl;
     return viewNames;
-}
-
-std::vector<Column> PostgresDatabase::getViewColumns(const std::string& viewName) {
-    std::vector<Column> columns;
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery = "SELECT c.column_name, c.data_type, c.is_nullable "
-                                     "FROM information_schema.columns c "
-                                     "WHERE c.table_name = '" +
-                                     viewName +
-                                     "' "
-                                     "ORDER BY c.ordinal_position";
-
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            Column col;
-            col.name = row.get<std::string>(0);
-            col.type = row.get<std::string>(1);
-            col.isNotNull = row.get<std::string>(2) == "NO";
-            col.isPrimaryKey = false; // Views don't have primary keys
-            columns.push_back(col);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting view columns: " << e.what() << std::endl;
-    }
-
-    return columns;
-}
-
-std::vector<std::string> PostgresDatabase::getSequenceNames() {
-    return getSequenceNames("public");
 }
 
 std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& schemaName) {
@@ -766,405 +651,6 @@ std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& s
     return sequenceNames;
 }
 
-// void PostgresDatabase::checkTablesStatusAsync() {
-//     // Check all schemas for table loading completion
-//     auto* dbData = getCurrentDatabaseData();
-//     if (!dbData)
-//         return;
-//     for (auto& schema : dbData->schemas) {
-//         // checkSchemaTablesStatusAsync(schema->name);
-//     }
-// }
-
-void PostgresDatabase::startRefreshTableAsync(const std::string& schemaName) {
-    auto& schemaData = getSchemaData(schemaName);
-    // Clear previous results
-    schemaData.tables.clear();
-    schemaData.tablesLoaded = false;
-    schemaData.loadingTables = true;
-
-    // Start async loading with std::async
-    schemaData.tablesFuture = std::async(
-        std::launch::async, [this, schemaName]() { return getTablesWithColumnsAsync(schemaName); });
-}
-
-std::vector<Table> PostgresDatabase::getTablesWithColumnsAsync(const std::string& schemaName) {
-    std::vector<Table> result;
-    auto& schemaData = getSchemaData(schemaName);
-
-    // Check if we're still supposed to be loading
-    if (!schemaData.loadingTables.load()) {
-        return result;
-    }
-
-    try {
-        if (!schemaData.loadingTables.load()) {
-            return result;
-        }
-
-        // Get table names using the connection pool
-        std::vector<std::string> tableNames;
-        const std::string tableNamesQuery = std::format(
-            "SELECT tablename FROM pg_tables WHERE schemaname = '{}' ORDER BY tablename",
-            schemaName);
-        std::cout << "getTablesWithColumnsAsync: " << tableNamesQuery << "\n";
-
-        {
-            auto session = getSession();
-            const soci::rowset tableRs = session->prepare << tableNamesQuery;
-            for (const auto& row : tableRs) {
-                if (!schemaData.loadingTables.load()) {
-                    return result;
-                }
-                tableNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        std::cout << ("Found " + std::to_string(tableNames.size()) + " tables, loading columns...")
-                  << "\n";
-
-        if (tableNames.empty() || !schemaData.loadingTables.load()) {
-            return result;
-        }
-
-        // Build a single query to get all columns for all tables at once
-        std::string sqlQuery =
-            "SELECT "
-            "c.table_name, "
-            "c.column_name, "
-            "c.data_type, "
-            "c.is_nullable, "
-            "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
-            "as is_primary_key "
-            "FROM information_schema.columns c "
-            "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
-            "kcu.column_name AND c.table_name = kcu.table_name "
-            "LEFT JOIN information_schema.table_constraints tc ON kcu.constraint_name = "
-            "tc.constraint_name "
-            "WHERE c.table_name IN (";
-
-        // Add table names to the query
-        for (size_t i = 0; i < tableNames.size(); ++i) {
-            sqlQuery += "'" + tableNames[i] + "'";
-            if (i < tableNames.size() - 1) {
-                sqlQuery += ", ";
-            }
-        }
-        sqlQuery += ") ORDER BY c.table_name, c.ordinal_position";
-
-        // Execute the query using the connection pool
-        std::unordered_map<std::string, std::vector<Column>> tableColumns;
-        {
-            auto session = getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
-
-            for (const auto& row : rs) {
-                if (!schemaData.loadingTables.load()) {
-                    break; // Stop processing if we should no longer be loading
-                }
-
-                auto tableName = row.get<std::string>(0);
-                Column col;
-                col.name = row.get<std::string>(1);
-                col.type = row.get<std::string>(2);
-                col.isNotNull = row.get<std::string>(3) == "NO";
-                col.isPrimaryKey = row.get<std::string>(4) == "true";
-
-                tableColumns[tableName].push_back(col);
-            }
-        }
-
-        // Build the result tables
-        for (const auto& tableName : tableNames) {
-            if (!schemaData.loadingTables.load()) {
-                break; // Stop processing if we should no longer be loading
-            }
-
-            Table table;
-            table.name = tableName;
-            table.fullName = name + "." + database + "." + schemaName + "." +
-                             tableName;              // PostgreSQL: connection.database.schema.table
-            table.columns = tableColumns[tableName]; // Will be empty if table has no columns
-
-            // Load indexes and foreign keys
-            table.indexes = getTableIndexes(tableName);
-            table.foreignKeys = getTableForeignKeys(tableName, schemaName);
-            buildForeignKeyLookup(table);
-
-            result.push_back(table);
-            Logger::debug("Loaded table: " + tableName + " with " +
-                          std::to_string(table.columns.size()) + " columns");
-        }
-
-        populateIncomingForeignKeys(result);
-
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting tables with columns: " << e.what() << std::endl;
-    }
-
-    return result;
-}
-
-void PostgresDatabase::checkViewsStatusAsync() {
-    // Check all schemas for view loading completion
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-    for (auto& schema : dbData->schemas) {
-        checkSchemaViewsStatusAsync(schema->name);
-    }
-}
-
-void PostgresDatabase::startRefreshViewAsync(const std::string& schemaName) {
-    auto& schemaData = getSchemaData(schemaName);
-    // Clear previous results
-    schemaData.views.clear();
-    schemaData.viewsLoaded = false;
-    schemaData.loadingViews = true;
-
-    // Start async loading with std::async
-    schemaData.viewsFuture = std::async(
-        std::launch::async, [this, schemaName]() { return getViewsWithColumnsAsync(schemaName); });
-}
-
-std::vector<Table> PostgresDatabase::getViewsWithColumnsAsync(const std::string& schemaName) {
-    std::vector<Table> result;
-    auto& schemaData = getSchemaData(schemaName);
-
-    // Check if we're still supposed to be loading
-    if (!schemaData.loadingViews.load()) {
-        return result;
-    }
-
-    try {
-        if (!schemaData.loadingViews.load()) {
-            return result;
-        }
-
-        // Get view names using the connection pool
-        std::vector<std::string> viewNames;
-        const std::string viewNamesQuery = std::format(
-            "SELECT viewname FROM pg_views WHERE schemaname = '{}' ORDER BY viewname", schemaName);
-
-        {
-            auto sql = getSession();
-            const soci::rowset viewRs = sql->prepare << viewNamesQuery;
-            for (const auto& row : viewRs) {
-                if (!schemaData.loadingViews.load()) {
-                    return result;
-                }
-                viewNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        Logger::debug("Found " + std::to_string(viewNames.size()) + " views, loading columns...");
-
-        if (viewNames.empty() || !schemaData.loadingViews.load()) {
-            return result;
-        }
-
-        // Build a single query to get all columns for all views at once
-        std::string sqlQuery = "SELECT "
-                               "c.table_name, "
-                               "c.column_name, "
-                               "c.data_type, "
-                               "c.is_nullable "
-                               "FROM information_schema.columns c "
-                               "WHERE c.table_name IN (";
-
-        // Add view names to the query
-        for (size_t i = 0; i < viewNames.size(); ++i) {
-            sqlQuery += "'" + viewNames[i] + "'";
-            if (i < viewNames.size() - 1) {
-                sqlQuery += ", ";
-            }
-        }
-        sqlQuery += ") ORDER BY c.table_name, c.ordinal_position";
-
-        // Execute the query using the connection pool
-        std::unordered_map<std::string, std::vector<Column>> viewColumns;
-        {
-            auto session = getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
-
-            for (const auto& row : rs) {
-                if (!schemaData.loadingViews.load()) {
-                    break; // Stop processing if we should no longer be loading
-                }
-
-                auto viewName = row.get<std::string>(0);
-                Column col;
-                col.name = row.get<std::string>(1);
-                col.type = row.get<std::string>(2);
-                col.isNotNull = row.get<std::string>(3) == "NO";
-                col.isPrimaryKey = false; // Views don't have primary keys
-
-                viewColumns[viewName].push_back(col);
-            }
-        }
-
-        // Build the result views
-        for (const auto& viewName : viewNames) {
-            if (!schemaData.loadingViews.load()) {
-                break; // Stop processing if we should no longer be loading
-            }
-
-            Table view;
-            view.name = viewName;
-            view.fullName = name + "." + database + "." + schemaName + "." +
-                            viewName;             // PostgreSQL: connection.database.schema.view
-            view.columns = viewColumns[viewName]; // Will be empty if view has no columns
-            result.push_back(view);
-            Logger::debug("Loaded view: " + viewName + " with " +
-                          std::to_string(view.columns.size()) + " columns");
-        }
-
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting views with columns: " << e.what() << std::endl;
-    }
-
-    return result;
-}
-
-void PostgresDatabase::checkSequencesStatusAsync() {
-    // Check all schemas for sequence loading completion
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-    for (auto& schema : dbData->schemas) {
-        checkSchemaSequencesStatusAsync(schema->name);
-    }
-}
-
-void PostgresDatabase::startRefreshSequenceAsync(const std::string& schemaName) {
-    auto& schemaData = getSchemaData(schemaName);
-    // Clear previous results
-    schemaData.sequences.clear();
-    schemaData.sequencesLoaded = false;
-    schemaData.loadingSequences = true;
-
-    // Start async loading with std::async
-    schemaData.sequencesFuture = std::async(
-        std::launch::async, [this, schemaName]() { return getSequencesAsync(schemaName); });
-}
-
-std::vector<std::string> PostgresDatabase::getSequencesAsync(const std::string& schemaName) const {
-    std::vector<std::string> result;
-    const auto& schemaData = getSchemaData(schemaName);
-
-    // Check if we're still supposed to be loading
-    if (!schemaData.loadingSequences.load()) {
-        return result;
-    }
-
-    try {
-        if (!schemaData.loadingSequences.load()) {
-            return result;
-        }
-
-        const std::string sqlQuery = std::format(
-            "SELECT sequencename FROM pg_sequences WHERE schemaname = '{}' ORDER BY sequencename",
-            schemaName);
-
-        std::cout << "Executing query to get sequence names from schema: " << schemaName
-                  << std::endl;
-        const auto session = getSession();
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            if (!schemaData.loadingSequences.load()) {
-                break;
-            }
-
-            auto sequenceName = row.get<std::string>(0);
-            std::cout << "Found sequence: " << sequenceName << std::endl;
-            result.push_back(sequenceName);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Failed to execute query: " << e.what() << std::endl;
-    }
-
-    std::cout << "Query completed. Found " << result.size() << " sequences." << std::endl;
-    return result;
-}
-
-// Async table data loading methods
-void PostgresDatabase::startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
-                                               const std::string& whereClause) {
-    const bool started = tableDataLoader.start(tableName, [this, tableName, limit, offset,
-                                                           whereClause](TableDataLoadState& state) {
-        try {
-            if (!state.loading.load()) {
-                return;
-            }
-
-            std::string dataQuery = "SELECT * FROM \"" + tableName + "\"";
-            if (!whereClause.empty()) {
-                dataQuery += " WHERE " + whereClause;
-            }
-            dataQuery += " LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
-
-            {
-                const auto session = getSession();
-                const soci::rowset dataRs = session->prepare << dataQuery;
-
-                for (const auto& row : dataRs) {
-                    if (!state.loading.load()) {
-                        break;
-                    }
-
-                    std::vector<std::string> rowData;
-                    rowData.reserve(row.size());
-                    for (std::size_t i = 0; i < row.size(); ++i) {
-                        rowData.emplace_back(convertRowValue(row, i));
-                    }
-                    state.tableData.push_back(std::move(rowData));
-                }
-            }
-
-            if (!state.loading.load()) {
-                return;
-            }
-
-            const std::string columnQuery =
-                std::format("SELECT column_name FROM information_schema.columns "
-                            "WHERE table_name = '{}' ORDER BY ordinal_position",
-                            tableName);
-
-            const auto columnSession = getSession();
-            const soci::rowset columnRs = columnSession->prepare << columnQuery;
-            for (const auto& row : columnRs) {
-                if (!state.loading.load()) {
-                    break;
-                }
-                state.columnNames.push_back(row.get<std::string>(0));
-            }
-
-            if (!state.loading.load()) {
-                return;
-            }
-
-            std::string countQuery = std::format(R"(SELECT COUNT(*) FROM "{}")", tableName);
-            if (!whereClause.empty()) {
-                countQuery =
-                    std::format(R"(SELECT COUNT(*) FROM "{}" WHERE {})", tableName, whereClause);
-            }
-            const auto countSession = getSession();
-            *countSession << countQuery, soci::into(state.rowCount);
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table data load: " << e.what() << std::endl;
-            state.tableData.clear();
-            state.columnNames.clear();
-            state.rowCount = 0;
-            state.lastError = e.what();
-        }
-    });
-
-    if (!started) {
-        return;
-    }
-}
-
 // Schema management methods
 void PostgresDatabase::refreshSchemas() {
     std::cout << "Refreshing schemas for database: " << name << std::endl;
@@ -1177,7 +663,10 @@ void PostgresDatabase::refreshSchemas() {
         return;
     }
 
-    startRefreshSchemaAsync();
+    auto* dbData = getCurrentDatabaseData();
+    if (dbData) {
+        dbData->startSchemasLoadAsync();
+    }
 }
 
 const std::vector<std::unique_ptr<PostgresSchemaNode>>& PostgresDatabase::getSchemas() const {
@@ -1207,123 +696,6 @@ void PostgresDatabase::setSchemasLoaded(const bool loaded) {
 bool PostgresDatabase::isLoadingSchemas() const {
     const auto* dbData = getCurrentDatabaseData();
     return dbData ? dbData->loadingSchemas.load() : false;
-}
-
-// void PostgresDatabase::checkSchemasStatusAsync() {
-//     checkSchemasStatusAsync(database);
-// }
-
-void PostgresDatabase::startRefreshSchemaAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-
-    // Clear previous results
-    dbData->schemas.clear();
-    dbData->schemasLoaded = false;
-    dbData->loadingSchemas = true;
-
-    // Start async loading with std::async
-    dbData->schemasFuture = std::async(std::launch::async, [this]() { return getSchemasAsync(); });
-}
-
-std::vector<std::unique_ptr<PostgresSchemaNode>> PostgresDatabase::getSchemasAsync() const {
-    std::vector<std::unique_ptr<PostgresSchemaNode>> result;
-    const auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return result;
-
-    // Check if we're still supposed to be loading
-    if (!dbData->loadingSchemas.load()) {
-        return result;
-    }
-
-    try {
-        if (!dbData->loadingSchemas.load()) {
-            return result;
-        }
-
-        // Get schema names using the connection pool
-        std::vector<std::string> schemaNames;
-        const std::string sqlQuery =
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
-            "AND schema_name NOT LIKE 'pg_temp_%' "
-            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
-            "ORDER BY schema_name";
-
-        {
-            const auto session = getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
-            for (const auto& row : rs) {
-                if (!dbData->loadingSchemas.load()) {
-                    return result;
-                }
-                schemaNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        std::cout << "Found " << schemaNames.size() << " schemas, loading objects..." << std::endl;
-
-        if (schemaNames.empty() || !dbData->loadingSchemas.load()) {
-            return result;
-        }
-
-        for (const auto& schemaName : schemaNames) {
-            if (!dbData->loadingSchemas.load()) {
-                break;
-            }
-
-            auto schema = std::make_unique<PostgresSchemaNode>();
-            schema->name = schemaName;
-
-            result.push_back(std::move(schema));
-            std::cout << "Loaded schema: " << schemaName << std::endl;
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting schemas: " << e.what() << std::endl;
-    }
-
-    return result;
-}
-
-std::vector<std::string> PostgresDatabase::getSchemaNames() const {
-    std::vector<std::string> schemaNames;
-    const auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return schemaNames;
-
-    try {
-        if (!dbData->loadingSchemas.load()) {
-            return schemaNames;
-        }
-
-        const auto session = getSession();
-        const std::string sqlQuery =
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
-            "AND schema_name NOT LIKE 'pg_temp_%' "
-            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
-            "ORDER BY schema_name";
-
-        std::cout << "Executing query to get schema names..." << std::endl;
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            if (!dbData->loadingSchemas.load()) {
-                break;
-            }
-
-            auto schemaName = row.get<std::string>(0);
-            std::cout << "Found schema: " << schemaName << std::endl;
-            schemaNames.push_back(schemaName);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Failed to execute schema query: " << e.what() << std::endl;
-    }
-
-    std::cout << "Query completed. Found " << schemaNames.size() << " schemas." << std::endl;
-    return schemaNames;
 }
 
 std::vector<std::string> PostgresDatabase::getDatabases() {
@@ -1501,37 +873,6 @@ void PostgresDatabase::switchToDatabaseAsync(const std::string& targetDatabase) 
 
 bool PostgresDatabase::isSwitchingDatabase() const {
     return switchingDatabase.load();
-}
-
-void PostgresDatabase::checkDatabaseSwitchStatusAsync() {
-    if (databaseSwitchFuture.valid() &&
-        databaseSwitchFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            auto [success, error] = databaseSwitchFuture.get();
-            switchingDatabase = false;
-
-            if (success) {
-                Logger::info("Async database switch completed successfully to: " +
-                             targetDatabaseName);
-
-                // Auto-start loading schemas for the switched database if not already loaded
-                const auto* targetDbData = getDatabaseData(targetDatabaseName);
-                if (targetDbData && !targetDbData->schemasLoaded && !targetDbData->loadingSchemas) {
-                    Logger::debug("Auto-starting schema loading after database switch to: " +
-                                  targetDatabaseName);
-                    refreshSchemas();
-                }
-            } else {
-                Logger::error("Async database switch failed to: " + targetDatabaseName + " - " +
-                              error);
-                setLastConnectionError(error);
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async database switch: " << e.what() << std::endl;
-            switchingDatabase = false;
-            setLastConnectionError(e.what());
-        }
-    }
 }
 
 soci::connection_pool*

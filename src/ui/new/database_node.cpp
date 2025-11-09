@@ -6,8 +6,7 @@
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
-#include "database/redis/redis_node.hpp"
-#include "database/sqlite/sqlite_database_node.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
 #include <format>
@@ -53,48 +52,45 @@ namespace NewHierarchy {
                 return;
             }
 
-            auto dbNode = sqliteDb->getDatabaseNode();
-            if (!dbNode) {
-                return;
-            }
-
             // SQLite: direct tables/views rendering (no multi-database support)
             // Render Tables section
             {
                 const std::string tablesNodeId =
-                    std::format("sqlite_tables_{:p}", static_cast<void*>(dbNode.get()));
+                    std::format("sqlite_tables_{:p}", static_cast<void*>(sqliteDb));
                 const bool tablesOpen = renderTreeNodeWithIcon(
                     "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
                 // Context menu for Tables node
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("Refresh")) {
-                        dbNode->startTablesLoadAsync();
+                        sqliteDb->startTablesLoadAsync();
                     }
                     ImGui::EndPopup();
                 }
 
                 if (tablesOpen) {
-                    if (!dbNode->tablesLoaded && !dbNode->loadingTables) {
-                        dbNode->startTablesLoadAsync();
+                    if (!sqliteDb->areTablesLoaded() && !sqliteDb->loadingTables) {
+                        sqliteDb->startTablesLoadAsync();
                     }
 
-                    if (dbNode->loadingTables) {
-                        dbNode->checkTablesStatusAsync();
+                    if (sqliteDb->loadingTables) {
+                        sqliteDb->checkTablesStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading tables...");
                         ImGui::SameLine();
                         UIUtils::Spinner("##loading_tables", 6.0f, 2,
                                          ImGui::GetColorU32(colors.peach));
                         ImGui::PopStyleColor();
-                    } else if (dbNode->tablesLoaded) {
-                        if (dbNode->tables.empty()) {
+                    } else if (sqliteDb->areTablesLoaded()) {
+                        auto& tables = const_cast<std::vector<Table>&>(
+                            const_cast<const SQLiteDatabase*>(sqliteDb)->getTables());
+                        if (tables.empty()) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                             ImGui::Text("  No tables");
                             ImGui::PopStyleColor();
                         } else {
-                            for (auto& table : dbNode->tables) {
-                                renderSQLiteTableNode(table, dbNode.get());
+                            for (auto& table : tables) {
+                                renderSQLiteTableNode(table, sqliteDb);
                             }
                         }
                     }
@@ -105,39 +101,41 @@ namespace NewHierarchy {
             // Render Views section
             {
                 const std::string viewsNodeId =
-                    std::format("sqlite_views_{:p}", static_cast<void*>(dbNode.get()));
+                    std::format("sqlite_views_{:p}", static_cast<void*>(sqliteDb));
                 const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
                                                               ImGui::GetColorU32(colors.teal));
 
                 // Context menu for Views node
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("Refresh")) {
-                        dbNode->startViewsLoadAsync();
+                        sqliteDb->startViewsLoadAsync();
                     }
                     ImGui::EndPopup();
                 }
 
                 if (viewsOpen) {
-                    if (!dbNode->viewsLoaded && !dbNode->loadingViews) {
-                        dbNode->startViewsLoadAsync();
+                    if (!sqliteDb->isLoadingViews() && sqliteDb->getViews().empty()) {
+                        sqliteDb->startViewsLoadAsync();
                     }
 
-                    if (dbNode->loadingViews) {
-                        dbNode->checkViewsStatusAsync();
+                    if (sqliteDb->loadingViews) {
+                        sqliteDb->checkViewsStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading views...");
                         ImGui::SameLine();
                         UIUtils::Spinner("##loading_views", 6.0f, 2,
                                          ImGui::GetColorU32(colors.peach));
                         ImGui::PopStyleColor();
-                    } else if (dbNode->viewsLoaded) {
-                        if (dbNode->views.empty()) {
+                    } else {
+                        auto& views = const_cast<std::vector<Table>&>(
+                            const_cast<const SQLiteDatabase*>(sqliteDb)->getViews());
+                        if (views.empty()) {
                             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                             ImGui::Text("  No views");
                             ImGui::PopStyleColor();
                         } else {
-                            for (auto& view : dbNode->views) {
-                                renderSQLiteViewNode(view, dbNode.get());
+                            for (auto& view : views) {
+                                renderSQLiteViewNode(view, sqliteDb);
                             }
                         }
                     }
@@ -203,11 +201,6 @@ namespace NewHierarchy {
                 return;
             }
 
-            auto redisNode = redisDb->getRedisNode();
-            if (!redisNode) {
-                return;
-            }
-
             // Show connection status
             if (!redisDb->isConnected()) {
                 if (redisDb->isConnecting()) {
@@ -230,26 +223,26 @@ namespace NewHierarchy {
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), ICON_FA_DATABASE " Connected");
 
             // Load keys if not loaded yet
-            if (!redisNode->keysLoaded && !redisNode->loadingKeys.load()) {
-                redisNode->startKeysLoadAsync();
+            if (!redisDb->keysLoaded && !redisDb->loadingKeys.load()) {
+                redisDb->startKeysLoadAsync();
             }
 
             // Check async status
-            if (redisNode->loadingKeys.load()) {
-                redisNode->checkKeysStatusAsync();
+            if (redisDb->loadingKeys.load()) {
+                redisDb->checkKeysStatusAsync();
             }
 
             // Show loading indicator if loading
-            if (redisNode->loadingKeys.load()) {
+            if (redisDb->loadingKeys.load()) {
                 ImGui::SameLine();
                 ImGui::Text("Loading keys...");
                 return;
             }
 
             // Show key groups directly (no nested Keys section)
-            const auto& keyGroups = redisNode->getKeyGroups();
+            const auto& keyGroups = redisDb->getKeyGroups();
             if (keyGroups.empty()) {
-                if (!redisNode->keysLoaded) {
+                if (!redisDb->keysLoaded) {
                     ImGui::Text("  Loading...");
                 } else {
                     ImGui::Text("  No keys found");
@@ -270,10 +263,9 @@ namespace NewHierarchy {
                     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), ICON_FA_KEY);
 
                     // Context menu
-                    if (ImGui::BeginPopupContextItem()) {
+                    if (ImGui::BeginPopupContextItem(keyGroupId.c_str())) {
                         if (ImGui::MenuItem("Refresh Keys")) {
-                            redisNode->keysLoaded = false;
-                            redisNode->startKeysLoadAsync();
+                            redisDb->startKeysLoadAsync(true);
                         }
                         ImGui::EndPopup();
                     }
@@ -459,7 +451,7 @@ namespace NewHierarchy {
                 // Context menu for Sequences node
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("Refresh")) {
-                        schemaData->startSequencesLoadAsync(true); // Force refresh
+                        schemaData->startSequencesLoadAsync(true);
                     }
                     ImGui::EndPopup();
                 }
@@ -602,7 +594,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabaseNode* dbNode) {
+    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb) {
         // This is now handled in renderRootDatabaseNode
     }
 
@@ -920,7 +912,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderSQLiteTableNode(Table& table, SQLiteDatabaseNode* dbNode) {
+    void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -940,13 +932,13 @@ namespace NewHierarchy {
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(dbNode, table.name);
+            app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(dbNode, table.name);
+                app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
@@ -1114,7 +1106,7 @@ namespace NewHierarchy {
         }
     }
 
-    void renderSQLiteViewNode(Table& view, SQLiteDatabaseNode* dbNode) {
+    void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb) {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
@@ -1136,13 +1128,13 @@ namespace NewHierarchy {
 
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(dbNode, view.name);
+            app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(dbNode, view.name);
+                app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
+#include "database/sqlite/sqlite_database_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
@@ -18,31 +19,7 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
                                std::string tableName, PostgresSchemaNode* schemaNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)), tableName(tableName),
       databaseNode(schemaNode) {
-
-    // Initialize table renderer with editable configuration
-    TableRenderer::Config config;
-    config.allowEditing = true;
-    config.allowSelection = true;
-    config.showRowNumbers = true; // Enable row numbers
-    config.minHeight = 200.0f;
-
-    tableRenderer = std::make_unique<TableRenderer>(config);
-
-    // Set up callbacks
-    tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
-        if (newValue != tableData[row][col]) {
-            tableData[row][col] = newValue;
-            hasChanges = true;
-
-            // Mark cell as edited
-            if (row < editedCells.size() && col < editedCells[row].size()) {
-                editedCells[row][col] = true;
-            }
-        }
-    });
-
-    tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
-
+    initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();
 }
@@ -51,31 +28,16 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
                                std::string tableName, MySQLDatabaseNode* mysqlNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
       tableName(std::move(tableName)), databaseNode(mysqlNode) {
+    initializeTableRenderer();
+    initializeFilterAutoComplete();
+    loadDataAsync();
+}
 
-    // Initialize table renderer with editable configuration
-    TableRenderer::Config config;
-    config.allowEditing = true;
-    config.allowSelection = true;
-    config.showRowNumbers = true; // Enable row numbers
-    config.minHeight = 200.0f;
-
-    tableRenderer = std::make_unique<TableRenderer>(config);
-
-    // Set up callbacks
-    tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
-        if (newValue != tableData[row][col]) {
-            tableData[row][col] = newValue;
-            hasChanges = true;
-
-            // Mark cell as edited
-            if (row < editedCells.size() && col < editedCells[row].size()) {
-                editedCells[row][col] = true;
-            }
-        }
-    });
-
-    tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
-
+TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
+                               std::string tableName, SQLiteDatabaseNode* dbNode)
+    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
+      tableName(std::move(tableName)), databaseNode(dbNode) {
+    initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();
 }
@@ -512,12 +474,6 @@ void TableViewerTab::handleKeyboardNavigation() {
 }
 
 void TableViewerTab::loadDataAsync() {
-    if (!databaseNode) {
-        hasLoadingError = true;
-        loadingError = "Database node not found";
-        return;
-    }
-
     isLoadingData = true;
     hasLoadingError = false;
     loadingError.clear();
@@ -536,8 +492,6 @@ void TableViewerTab::loadDataAsync() {
         try {
             totalRows = databaseNode->getRowCount(tableName, currentFilter);
             columnNames = databaseNode->getColumnNames(tableName);
-
-            // Get data with pagination
             const int offset = currentPage * rowsPerPage;
             tableData = databaseNode->getTableData(tableName, rowsPerPage, offset, currentFilter);
 
@@ -564,17 +518,11 @@ void TableViewerTab::checkAsyncLoadStatus() {
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
-    std::vector<std::string> pkColumns;
-
-    if (!databaseNode) {
-        return pkColumns;
-    }
-
     // Find table columns in node (check both tables and views)
-    // For PostgreSQL, tableName may be schema-qualified (schema.table)
     for (const auto& table : databaseNode->getTables()) {
         bool matches = (table.name == tableName) || (table.fullName.ends_with("." + tableName));
         if (matches) {
+            std::vector<std::string> pkColumns;
             for (const auto& column : table.columns) {
                 if (column.isPrimaryKey) {
                     pkColumns.push_back(column.name);
@@ -588,7 +536,7 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     for (const auto& view : databaseNode->getViews()) {
         bool matches = (view.name == tableName) || (view.fullName.ends_with("." + tableName));
         if (matches) {
-            // Views typically don't have primary keys, but we check anyway
+            std::vector<std::string> pkColumns;
             for (const auto& column : view.columns) {
                 if (column.isPrimaryKey) {
                     pkColumns.push_back(column.name);
@@ -598,15 +546,11 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
         }
     }
 
-    return pkColumns;
+    return std::vector<std::string>();
 }
 
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     std::vector<std::string> sqlStatements;
-
-    if (!databaseNode) {
-        return sqlStatements;
-    }
 
     const std::vector<std::string> pkColumns = getPrimaryKeyColumns();
 
@@ -744,18 +688,12 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
                 // Copy SQL statements and database node for async execution
                 auto sqlStatements = pendingUpdateSQL;
-                auto* node = databaseNode;
+                auto node = databaseNode;
 
                 sqlExecutionFuture = std::async(
                     std::launch::async, [node, sqlStatements]() -> std::pair<bool, std::string> {
                         bool allSuccess = true;
                         std::string errorMessage;
-
-                        if (!node) {
-                            allSuccess = false;
-                            errorMessage = "Database node not found";
-                            return {allSuccess, errorMessage};
-                        }
 
                         for (const auto& sql : sqlStatements) {
                             std::cout << "Executing SQL: " << sql << std::endl;
@@ -766,15 +704,17 @@ void TableViewerTab::showSaveConfirmationDialog() {
                                 allSuccess = false;
                                 errorMessage = result;
                                 std::cerr << "SQL execution failed: " << result << std::endl;
-                                return {allSuccess, errorMessage};
+                                return std::make_pair(allSuccess, errorMessage);
                             }
                         }
 
-                        if (allSuccess) {
+                        auto result = std::make_pair(allSuccess, errorMessage);
+
+                        if (result.first) {
                             std::cout << "All SQL statements executed successfully" << std::endl;
                         }
 
-                        return {allSuccess, errorMessage};
+                        return result;
                     });
             }
         }
@@ -868,6 +808,32 @@ void TableViewerTab::applyFilter() {
 
     // Reload data with new filter
     loadDataAsync();
+}
+
+void TableViewerTab::initializeTableRenderer() {
+    // Initialize table renderer with editable configuration
+    TableRenderer::Config config;
+    config.allowEditing = true;
+    config.allowSelection = true;
+    config.showRowNumbers = true;
+    config.minHeight = 200.0f;
+
+    tableRenderer = std::make_unique<TableRenderer>(config);
+
+    // Set up callbacks
+    tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
+        if (newValue != tableData[row][col]) {
+            tableData[row][col] = newValue;
+            hasChanges = true;
+
+            // Mark cell as edited
+            if (row < editedCells.size() && col < editedCells[row].size()) {
+                editedCells[row][col] = true;
+            }
+        }
+    });
+
+    tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
 }
 
 void TableViewerTab::initializeFilterAutoComplete() {

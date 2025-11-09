@@ -4,6 +4,7 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
+#include "database/sqlite/sqlite_database_node.hpp"
 #include "imgui.h"
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -194,6 +195,48 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(MySQLDatabaseNode* dbNode,
     app.resetDockingLayout();
 
     std::cout << "Created new tab for MySQL table: " << tableName
+              << " with fullName: " << tableFullName << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabaseNode* dbNode,
+                                                      const std::string& tableName) {
+    if (!dbNode) {
+        std::cout << "Cannot create table viewer tab: database node is null" << std::endl;
+        return nullptr;
+    }
+
+    // Build the full table path for identification (connection.table)
+    const std::string tableFullName = dbNode->name + "." + tableName;
+
+    // Check if tab already exists
+    for (auto& tab : tabs) {
+        if (tab->getType() == TabType::TABLE_VIEWER) {
+            const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
+            if (tableTab && tableTab->getDatabasePath() == tableFullName) {
+                // Tab already exists, mark it to be focused
+                tableTab->setShouldFocus(true);
+                std::cout << "Table " << tableName << " is already open, focusing existing tab"
+                          << " " << tableFullName << " " << tableTab->getDatabasePath()
+                          << std::endl;
+                return tab;
+            }
+        }
+    }
+
+    // Create user-friendly tab name
+    std::string tabName = tableName + " (" + dbNode->name + ")";
+
+    // Create new tab
+    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, dbNode);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    std::cout << "Created new tab for SQLite table: " << tableName
               << " with fullName: " << tableFullName << std::endl;
     return tab;
 }

@@ -12,6 +12,8 @@
 // Forward declarations
 class PostgresSchemaNode;
 class MySQLDatabaseNode;
+class SQLiteDatabaseNode;
+class DatabaseInterface;
 
 class TableViewerTab final : public Tab {
 public:
@@ -19,6 +21,8 @@ public:
                    PostgresSchemaNode* schemaNode);
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
                    MySQLDatabaseNode* mysqlNode);
+    TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
+                   SQLiteDatabaseNode* dbNode);
 
     void render() override;
 
@@ -90,6 +94,7 @@ private:
     std::unique_ptr<AutoCompleteInput> filterAutoComplete;
 
     // Helper methods
+    void initializeTableRenderer();
     void selectCell(int row, int col);
     void handleKeyboardNavigation();
     void applyFilter();

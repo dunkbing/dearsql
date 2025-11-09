@@ -6,6 +6,9 @@
 #include "database/sqlite.hpp"
 #include <memory>
 
+// Forward declarations
+class SQLiteDatabaseNode;
+
 /**
  * @brief Renders database hierarchy nodes
  *
@@ -56,9 +59,9 @@ namespace NewHierarchy {
      * @brief Render a SQLite database node with its tables/views/sequences
      *
      * @param sqliteDb The SQLite database instance
-     * @param dbData The database data containing tables/views/sequences
+     * @param dbNode The database node containing tables/views/sequences
      */
-    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabase::DatabaseData* dbData);
+    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabaseNode* dbNode);
 
     /**
      * @brief Render a table node with expandable structure (columns, keys, indexes)
@@ -99,5 +102,21 @@ namespace NewHierarchy {
      * @param mysqlDb The MySQL database instance
      */
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData, MySQLDatabase* mysqlDb);
+
+    /**
+     * @brief Render a SQLite table node with expandable structure (columns, keys, indexes)
+     *
+     * @param table The table to render
+     * @param dbNode The SQLite database node
+     */
+    void renderSQLiteTableNode(Table& table, SQLiteDatabaseNode* dbNode);
+
+    /**
+     * @brief Render a SQLite view node as a leaf item with double-click and context menu
+     *
+     * @param view The view to render
+     * @param dbNode The SQLite database node
+     */
+    void renderSQLiteViewNode(Table& view, SQLiteDatabaseNode* dbNode);
 
 } // namespace NewHierarchy

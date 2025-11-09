@@ -272,19 +272,6 @@ std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
     return result;
 }
 
-// void MySQLDatabase::checkTablesStatusAsync() {
-//     auto* dbData = getCurrentDatabaseData();
-//     if (!dbData)
-//         return;
-
-//     if (dbData->tablesFuture.valid() &&
-//         dbData->tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-//         dbData->tables = dbData->tablesFuture.get();
-//         dbData->tablesLoaded = true;
-//         dbData->loadingTables.store(false);
-//     }
-// }
-
 void MySQLDatabase::refreshViews() {
     if (isLoadingViews()) {
         return;

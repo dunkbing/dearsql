@@ -1,4 +1,5 @@
 #include "database/sqlite.hpp"
+#include "database/sqlite/sqlite_database_node.hpp"
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -7,6 +8,11 @@
 
 SQLiteDatabase::SQLiteDatabase(std::string name_, std::string path) : path(std::move(path)) {
     name = std::move(name_);
+
+    // Create the database node
+    databaseNode = std::make_shared<SQLiteDatabaseNode>();
+    databaseNode->parentDb = this;
+    databaseNode->name = name;
 }
 
 SQLiteDatabase::~SQLiteDatabase() {
@@ -195,8 +201,27 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
     }
 }
 
-std::vector<std::vector<std::string>>
-SQLiteDatabase::getTableData(const std::string& tableName, const int limit, const int offset) {
+std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& tableName) {
+    std::vector<std::string> columnNames;
+    if (!isConnected()) {
+        return columnNames;
+    }
+
+    try {
+        const std::string sql = "PRAGMA table_info(" + tableName + ");";
+        soci::rowset<soci::row> rs = session->prepare << sql;
+
+        for (const auto& row : rs) {
+            columnNames.emplace_back(row.get<std::string>(1));
+        }
+    } catch (const soci::soci_error& e) {
+        std::cerr << "Error getting column names: " << e.what() << std::endl;
+    }
+    return columnNames;
+}
+
+std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::string& tableName,
+                                                                   int limit, int offset) {
     std::vector<std::vector<std::string>> data;
     if (!isConnected()) {
         return data;
@@ -222,14 +247,11 @@ SQLiteDatabase::getTableData(const std::string& tableName, const int limit, cons
                 case soci::db_string:
                     rowData.emplace_back(row.get<std::string>(i));
                     break;
-                case soci::db_wstring:
-                    // Convert wide string to UTF-8 string
-                    {
-                        auto ws = row.get<std::wstring>(i);
-                        std::string utf8_str(ws.begin(), ws.end());
-                        rowData.emplace_back(utf8_str);
-                    }
-                    break;
+                case soci::db_wstring: {
+                    auto ws = row.get<std::wstring>(i);
+                    std::string utf8_str(ws.begin(), ws.end());
+                    rowData.emplace_back(utf8_str);
+                } break;
                 case soci::db_int8:
                     rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
                     break;
@@ -263,25 +285,6 @@ SQLiteDatabase::getTableData(const std::string& tableName, const int limit, cons
         std::cerr << "Error getting table data: " << e.what() << std::endl;
     }
     return data;
-}
-
-std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& tableName) {
-    std::vector<std::string> columnNames;
-    if (!isConnected()) {
-        return columnNames;
-    }
-
-    try {
-        const std::string sql = "PRAGMA table_info(" + tableName + ");";
-        soci::rowset<soci::row> rs = session->prepare << sql;
-
-        for (const auto& row : rs) {
-            columnNames.emplace_back(row.get<std::string>(1));
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting column names: " << e.what() << std::endl;
-    }
-    return columnNames;
 }
 
 int SQLiteDatabase::getRowCount(const std::string& tableName) {
@@ -543,4 +546,15 @@ void SQLiteDatabase::startTableDataLoadAsync(const std::string& tableName, int l
                 state.rowCount = 0;
             }
         });
+}
+
+std::shared_ptr<SQLiteDatabaseNode> SQLiteDatabase::getDatabaseNode() const {
+    return databaseNode;
+}
+
+soci::session* SQLiteDatabase::getSession() const {
+    if (!isConnected() || !session) {
+        return nullptr;
+    }
+    return session.get();
 }

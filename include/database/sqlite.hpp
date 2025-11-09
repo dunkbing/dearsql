@@ -1,8 +1,12 @@
 #pragma once
 
 #include "base_database.hpp"
+#include <memory>
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
+
+// Forward declaration
+class SQLiteDatabaseNode;
 
 class SQLiteDatabase final : public BaseDatabaseImpl {
 public:
@@ -38,46 +42,11 @@ public:
     void startTableDataLoadAsync(const std::string& tableName, int limit, int offset,
                                  const std::string& whereClause = "") override;
 
-    // Per-file data structure (made public for hierarchy rendering)
-public:
-    /**
-     * @brief Database-level data for SQLite
-     *
-     * SQLite hierarchy: File → Tables/Views/Sequences
-     * SQLite is a single-file database, so there's no "databases" layer.
-     * This struct holds the contents of the single .db file.
-     */
-    struct DatabaseData {
-        std::string name; // File name/path
+    // Database node access
+    std::shared_ptr<SQLiteDatabaseNode> getDatabaseNode() const;
 
-        // SQLite: Direct Tables/Views/Sequences (no database or schema layers)
-        std::vector<Table> tables;
-        std::vector<Table> views;
-        std::vector<std::string> sequences; // SQLite has sqlite_sequence
-
-        // Loading state flags
-        bool tablesLoaded = false;
-        bool viewsLoaded = false;
-        bool sequencesLoaded = false;
-        std::atomic<bool> loadingTables = false;
-        std::atomic<bool> loadingViews = false;
-        std::atomic<bool> loadingSequences = false;
-
-        // Async futures
-        std::future<std::vector<Table>> tablesFuture;
-        std::future<std::vector<Table>> viewsFuture;
-        std::future<std::vector<std::string>> sequencesFuture;
-
-        // UI expansion state
-        bool tablesExpanded = false;
-        bool viewsExpanded = false;
-        bool sequencesExpanded = false;
-
-        // Error tracking
-        std::string lastTablesError;
-        std::string lastViewsError;
-        std::string lastSequencesError;
-    };
+    // Session access for node (returns raw pointer since SQLite has single session)
+    soci::session* getSession() const;
 
 protected:
     std::vector<std::string> getTableNames();
@@ -92,4 +61,7 @@ private:
     // SQLite-specific state (base class handles common state)
     std::string path;
     std::unique_ptr<soci::session> session;
+
+    // Database node (represents the single file)
+    std::shared_ptr<SQLiteDatabaseNode> databaseNode;
 };

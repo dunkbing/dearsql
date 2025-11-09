@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
+#include "database/sqlite/sqlite_database_node.hpp"
 #include "imgui.h"
 #include "utils/spinner.hpp"
 #include <format>
@@ -42,9 +43,102 @@ namespace NewHierarchy {
         const auto dbType = dbInterface->getType();
 
         if (dbType == DatabaseType::SQLITE) {
+            auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(dbInterface.get());
+            if (!sqliteDb) {
+                return;
+            }
+
+            auto dbNode = sqliteDb->getDatabaseNode();
+            if (!dbNode) {
+                return;
+            }
+
             // SQLite: direct tables/views rendering (no multi-database support)
-            // TODO: Implement SQLite hierarchy
-            ImGui::Text("SQLite rendering");
+            // Render Tables section
+            {
+                const std::string tablesNodeId =
+                    std::format("sqlite_tables_{:p}", static_cast<void*>(dbNode.get()));
+                const bool tablesOpen = renderTreeNodeWithIcon(
+                    "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
+
+                // Context menu for Tables node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        dbNode->startTablesLoadAsync();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                if (tablesOpen) {
+                    if (!dbNode->tablesLoaded && !dbNode->loadingTables) {
+                        dbNode->startTablesLoadAsync();
+                    }
+
+                    if (dbNode->loadingTables) {
+                        dbNode->checkTablesStatusAsync();
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading tables...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_tables", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (dbNode->tablesLoaded) {
+                        if (dbNode->tables.empty()) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                            ImGui::Text("  No tables");
+                            ImGui::PopStyleColor();
+                        } else {
+                            for (auto& table : dbNode->tables) {
+                                renderSQLiteTableNode(table, dbNode.get());
+                            }
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Render Views section
+            {
+                const std::string viewsNodeId =
+                    std::format("sqlite_views_{:p}", static_cast<void*>(dbNode.get()));
+                const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
+                                                              ImGui::GetColorU32(colors.teal));
+
+                // Context menu for Views node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        dbNode->startViewsLoadAsync();
+                    }
+                    ImGui::EndPopup();
+                }
+
+                if (viewsOpen) {
+                    if (!dbNode->viewsLoaded && !dbNode->loadingViews) {
+                        dbNode->startViewsLoadAsync();
+                    }
+
+                    if (dbNode->loadingViews) {
+                        dbNode->checkViewsStatusAsync();
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                        ImGui::Text("  Loading views...");
+                        ImGui::SameLine();
+                        UIUtils::Spinner("##loading_views", 6.0f, 2,
+                                         ImGui::GetColorU32(colors.peach));
+                        ImGui::PopStyleColor();
+                    } else if (dbNode->viewsLoaded) {
+                        if (dbNode->views.empty()) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                            ImGui::Text("  No views");
+                            ImGui::PopStyleColor();
+                        } else {
+                            for (auto& view : dbNode->views) {
+                                renderSQLiteViewNode(view, dbNode.get());
+                            }
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
         } else if (dbType == DatabaseType::POSTGRESQL) {
             auto* pgDb = dynamic_cast<PostgresDatabase*>(dbInterface.get());
             if (!pgDb) {
@@ -422,8 +516,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabase::DatabaseData* dbData) {
-        // TODO: Implement SQLite database node rendering using nested DatabaseData
+    void renderSQLiteDatabaseNode(SQLiteDatabase* sqliteDb, SQLiteDatabaseNode* dbNode) {
+        // This is now handled in renderRootDatabaseNode
     }
 
     void renderTableNode(Table& table, PostgresSchemaNode* schemaData,
@@ -732,6 +826,237 @@ namespace NewHierarchy {
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(dbData, view.name, mysqlDb);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show view structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    void renderSQLiteTableNode(Table& table, SQLiteDatabaseNode* dbNode) {
+        auto& app = Application::getInstance();
+        const auto& colors = app.getCurrentColors();
+
+        ImGuiTreeNodeFlags tableFlags =
+            ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+        if (table.expanded) {
+            tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
+
+        const std::string tableNodeId =
+            std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
+        const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
+                                                      ImGui::GetColorU32(colors.green), tableFlags);
+
+        table.expanded = tableOpen;
+
+        // Double-click to open table viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            app.getTabManager()->createTableViewerTab(dbNode, table.name);
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                app.getTabManager()->createTableViewerTab(dbNode, table.name);
+            }
+            if (ImGui::MenuItem("Show Structure")) {
+                // TODO: Show table structure in a tab
+            }
+            ImGui::EndPopup();
+        }
+
+        if (tableOpen) {
+            // Columns section
+            {
+                const std::string columnsNodeId =
+                    std::format("columns_{}_{:p}", table.name, static_cast<void*>(&table.columns));
+                const bool columnsOpen =
+                    renderTreeNodeWithIcon("Columns", columnsNodeId, ICON_FA_TABLE_COLUMNS,
+                                           ImGui::GetColorU32(colors.green));
+
+                if (columnsOpen) {
+                    for (const auto& column : table.columns) {
+                        ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                         ImGuiTreeNodeFlags_FramePadding;
+
+                        std::string columnDisplay =
+                            std::format("{} ({})", column.name, column.type);
+                        if (column.isPrimaryKey) {
+                            columnDisplay += ", PK";
+                        }
+                        if (column.isNotNull) {
+                            columnDisplay += ", NOT NULL";
+                        }
+
+                        const std::string columnNodeId =
+                            std::format("col_{}_{}_{:p}", table.name, column.name,
+                                        static_cast<const void*>(&column));
+                        const std::string columnLabel =
+                            std::format("   {}###{}", columnDisplay, columnNodeId);
+                        ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Keys section
+            {
+                const std::string keysNodeId =
+                    std::format("keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                const bool keysOpen = renderTreeNodeWithIcon("Keys", keysNodeId, ICON_FA_KEY,
+                                                             ImGui::GetColorU32(colors.yellow));
+
+                if (keysOpen) {
+                    // Primary key
+                    bool hasPrimaryKey = false;
+                    std::string primaryKeyColumns;
+                    for (const auto& column : table.columns) {
+                        if (column.isPrimaryKey) {
+                            if (hasPrimaryKey) {
+                                primaryKeyColumns += ", ";
+                            }
+                            primaryKeyColumns += column.name;
+                            hasPrimaryKey = true;
+                        }
+                    }
+
+                    if (hasPrimaryKey) {
+                        ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                     ImGuiTreeNodeFlags_FramePadding;
+                        std::string pkDisplay = "   Primary Key (" + primaryKeyColumns + ")";
+                        ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
+                    }
+
+                    // Foreign keys
+                    if (!table.foreignKeys.empty()) {
+                        for (const auto& fk : table.foreignKeys) {
+                            ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                         ImGuiTreeNodeFlags_FramePadding;
+                            std::string fkDisplay =
+                                std::format("   Foreign Key: {} -> {}.{}", fk.sourceColumn,
+                                            fk.targetTable, fk.targetColumn);
+                            ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
+                        }
+                    }
+
+                    if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No keys defined");
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Indexes section
+            {
+                const std::string indexesNodeId =
+                    std::format("indexes_{}_{:p}", table.name, static_cast<void*>(&table.indexes));
+                const bool indexesOpen =
+                    renderTreeNodeWithIcon("Indexes", indexesNodeId, ICON_FA_MAGNIFYING_GLASS,
+                                           ImGui::GetColorU32(colors.lavender));
+
+                if (indexesOpen) {
+                    if (!table.indexes.empty()) {
+                        for (const auto& index : table.indexes) {
+                            ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
+                                                            ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                            ImGuiTreeNodeFlags_FramePadding;
+                            std::string indexDisplay = "   " + index.name;
+                            if (!index.columns.empty()) {
+                                indexDisplay += " (";
+                                for (size_t i = 0; i < index.columns.size(); ++i) {
+                                    if (i > 0)
+                                        indexDisplay += ", ";
+                                    indexDisplay += index.columns[i];
+                                }
+                                indexDisplay += ")";
+                            }
+                            if (index.isUnique) {
+                                indexDisplay += " UNIQUE";
+                            }
+                            ImGui::TreeNodeEx(indexDisplay.c_str(), indexFlags);
+                        }
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No indexes defined");
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // References section (incoming foreign keys)
+            if (!table.incomingForeignKeys.empty()) {
+                const std::string referencesNodeId =
+                    std::format("references_{}_{:p}", table.name,
+                                static_cast<void*>(&table.incomingForeignKeys));
+                const bool referencesOpen = renderTreeNodeWithIcon("References", referencesNodeId,
+                                                                   ICON_FA_ARROW_RIGHT_TO_BRACKET,
+                                                                   ImGui::GetColorU32(colors.sky));
+
+                if (referencesOpen) {
+                    for (const auto& ref : table.incomingForeignKeys) {
+                        ImGuiTreeNodeFlags refFlags = ImGuiTreeNodeFlags_Leaf |
+                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                      ImGuiTreeNodeFlags_FramePadding;
+                        std::string refDisplay =
+                            std::format("   {}.{}", ref.targetTable, ref.sourceColumn);
+                        ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
+
+                        if (ImGui::IsItemHovered()) {
+                            std::string tooltip =
+                                std::format("{}.{} → {}.{}", ref.targetTable, ref.sourceColumn,
+                                            table.name, ref.targetColumn);
+                            if (!ref.name.empty()) {
+                                tooltip += std::format("\nConstraint: {}", ref.name);
+                            }
+                            ImGui::SetTooltip("%s", tooltip.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::TreePop();
+        }
+    }
+
+    void renderSQLiteViewNode(Table& view, SQLiteDatabaseNode* dbNode) {
+        auto& app = Application::getInstance();
+        const auto& colors = app.getCurrentColors();
+
+        ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                       ImGuiTreeNodeFlags_FramePadding;
+
+        const std::string viewNodeId =
+            std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+        const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
+        ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+
+        // Draw icon
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.teal), ICON_FK_EYE);
+
+        // Double-click to open view viewer
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+            app.getTabManager()->createTableViewerTab(dbNode, view.name);
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("View Data")) {
+                app.getTabManager()->createTableViewerTab(dbNode, view.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

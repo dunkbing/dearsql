@@ -46,8 +46,9 @@ public:
                                               const std::string& schemaName);
     std::shared_ptr<Tab> createTableViewerTab(MySQLDatabaseNode* dbNode,
                                               const std::string& tableName, MySQLDatabase* mysqlDb);
-    std::shared_ptr<Tab> createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
-                                          const std::string& targetDatabaseName = "");
+
+    std::shared_ptr<Tab> createDiagramTab(PostgresSchemaNode* schemaNode);
+    std::shared_ptr<Tab> createDiagramTab(MySQLDatabaseNode* dbNode);
 
     // UI rendering
     void renderTabs();

@@ -172,6 +172,14 @@ namespace NewHierarchy {
         const bool isOpen = renderTreeNodeWithIcon(schemaData->name, nodeId, ICON_FK_FOLDER,
                                                    ImGui::GetColorU32(colors.yellow));
 
+        // Context menu for schema
+        if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("Show Diagram")) {
+                app.getTabManager()->createDiagramTab(schemaData);
+            }
+            ImGui::EndPopup();
+        }
+
         if (isOpen) {
             // Render Tables section
             {
@@ -330,6 +338,9 @@ namespace NewHierarchy {
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("New SQL Editor")) {
                 app.getTabManager()->createSQLEditorTab("", dbData);
+            }
+            if (ImGui::MenuItem("Show Diagram")) {
+                app.getTabManager()->createDiagramTab(dbData);
             }
             ImGui::EndPopup();
         }

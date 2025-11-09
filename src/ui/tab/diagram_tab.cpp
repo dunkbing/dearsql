@@ -1,19 +1,27 @@
 #include "ui/tab/diagram_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
-#include "database/mysql.hpp"
-#include "database/postgresql.hpp"
+#include "database/mysql/mysql_database_node.hpp"
+#include "database/postgres/postgres_database_node.hpp"
+#include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include <algorithm>
+#include <format>
 #include <iostream>
 #include <ranges>
 #include <set>
 #include <utility>
 
-DiagramTab::DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
-                       std::string targetDatabaseName)
-    : Tab(name, TabType::DIAGRAM), database(std::move(database)),
-      targetDatabaseName(std::move(targetDatabaseName)) {
+// Constructor for PostgreSQL schema
+DiagramTab::DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode)
+    : Tab(name, TabType::DIAGRAM), databaseNode(schemaNode) {
+    initializeEditor();
+    loadDatabaseSchema();
+}
+
+// Constructor for MySQL database
+DiagramTab::DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode)
+    : Tab(name, TabType::DIAGRAM), databaseNode(dbNode) {
     initializeEditor();
     loadDatabaseSchema();
 }
@@ -51,11 +59,6 @@ void DiagramTab::initializeEditor() {
 }
 
 void DiagramTab::render() {
-    if (!database || !database->isConnected()) {
-        ImGui::Text("Database not connected");
-        return;
-    }
-
     if (!editorContext) {
         ImGui::Text("Error: Node editor context not initialized");
         return;
@@ -69,39 +72,44 @@ void DiagramTab::render() {
             loadDatabaseSchema();
         }
 
-        // Check async loading status for PostgreSQL and MySQL
-        if (database->getType() == DatabaseType::POSTGRESQL) {
-            const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
-            if (pgDb) {
-                // pgDb->checkTablesStatusAsync();
-                // Reset loading flag if tables are loaded (checks all schemas)
-                if (pgDb->areTablesLoaded()) {
+        // Check async loading status
+        if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
+            if (*schemaNode) {
+                (*schemaNode)->checkTablesStatusAsync();
+                if ((*schemaNode)->tablesLoaded) {
                     isLoadingSchema = false;
                 }
             }
-        } else if (database->getType() == DatabaseType::MYSQL) {
-            const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
-            if (mysqlDb) {
-                // mysqlDb->checkTablesStatusAsync();
-                // Reset loading flag if tables are loaded
-                const auto* dbData = mysqlDb->getDatabaseData(
-                    targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName);
-                if (dbData &&
-                    (dbData->tablesLoaded || (!dbData->loadingTables && !dbData->tables.empty()))) {
+        } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
+            if (*mysqlNode) {
+                (*mysqlNode)->checkTablesStatusAsync();
+                if ((*mysqlNode)->tablesLoaded) {
                     isLoadingSchema = false;
                 }
-            }
-        } else {
-            // For other databases, reset flag if tables are loaded
-            if (database->areTablesLoaded()) {
-                isLoadingSchema = false;
             }
         }
         return;
     }
 
     // Toolbar
-    ImGui::Text("Database: %s", database->getName().c_str());
+    if (auto schemaNode = std::get<PostgresSchemaNode*>(databaseNode)) {
+        if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
+            auto toolBarName =
+                std::format("Schema: {}.{}", schemaNode->parentDbNode->name, schemaNode->name);
+            ImGui::Text("Schema: %s", toolBarName.c_str());
+        } else {
+            ImGui::Text("Schema: (disconnected)");
+        }
+    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
+        if (*mysqlNode && (*mysqlNode)->parentDb) {
+            ImGui::Text("Database: %s", (*mysqlNode)->name.c_str());
+        } else {
+            ImGui::Text("Database: (disconnected)");
+        }
+    } else {
+        ImGui::Text("Database: (no database selected)");
+    }
+
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_ARROWS_ROTATE " Refresh")) {
         schemaLoaded = false;
@@ -174,40 +182,20 @@ void DiagramTab::handleZoomShortcuts() {
 std::vector<Table> DiagramTab::getTablesForDiagram() const {
     std::vector<Table> tables;
 
-    if (!database || !database->isConnected()) {
-        return tables;
-    }
-
-    // For PostgreSQL and MySQL, we need to get tables for a specific database
-    if (database->getType() == DatabaseType::POSTGRESQL) {
-        const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
-        if (pgDb) {
-            // getTables() aggregates tables from all schemas
-            tables = pgDb->getTables();
+    if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
+        if (*schemaNode) {
+            return (*schemaNode)->tables;
         }
-    } else if (database->getType() == DatabaseType::MYSQL) {
-        const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
-        if (mysqlDb) {
-            const std::string dbToUse =
-                targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName;
-            const auto* dbData = mysqlDb->getDatabaseData(dbToUse);
-            if (dbData) {
-                tables = dbData->tables;
-            }
+    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
+        if (*mysqlNode) {
+            return (*mysqlNode)->tables;
         }
-    } else {
-        // For SQLite and other databases, use the standard interface
-        tables = database->getTables();
     }
 
     return tables;
 }
 
 void DiagramTab::loadDatabaseSchema() {
-    if (!database || !database->isConnected()) {
-        return;
-    }
-
     nodes.clear();
     links.clear();
     tableToNodeIdMap.clear();
@@ -217,84 +205,38 @@ void DiagramTab::loadDatabaseSchema() {
     nextLinkId = 10000;
     nextPinId = 100000;
 
-    // For PostgreSQL and MySQL, we need to get tables for a specific database
     std::vector<Table> tables;
-    if (database->getType() == DatabaseType::POSTGRESQL) {
-        auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(database);
-        if (pgDb) {
-            std::string dbToUse =
-                targetDatabaseName.empty() ? pgDb->getDatabaseName() : targetDatabaseName;
 
-            // For PostgreSQL, if the target database is different from current,
-            // we need to switch to it first
-            if (!targetDatabaseName.empty() && targetDatabaseName != pgDb->getDatabaseName()) {
-                // Tables may not be available for different database
-            }
-
-            // Check if tables are loaded (checks all schemas)
-            if (!pgDb->areTablesLoaded() && !pgDb->isLoadingTables()) {
-                // Trigger table loading
-                if (dbToUse == pgDb->getDatabaseName()) {
-                    // If it's the current database, use the regular refresh
-                    pgDb->refreshTables();
-                } else {
-                    // For a different database, we need to switch to it first
-                    schemaLoaded = true;
-                    return;
-                }
+    if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
+        if (*schemaNode) {
+            // Check if tables are loaded
+            if (!(*schemaNode)->tablesLoaded && !(*schemaNode)->loadingTables) {
+                (*schemaNode)->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if (pgDb->isLoadingTables()) {
+            if ((*schemaNode)->loadingTables) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            // getTables() aggregates tables from all schemas
-            tables = pgDb->getTables();
+            tables = (*schemaNode)->tables;
         }
-    } else if (database->getType() == DatabaseType::MYSQL) {
-        const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(database);
-        if (mysqlDb) {
-            const std::string dbToUse =
-                targetDatabaseName.empty() ? mysqlDb->getDatabaseName() : targetDatabaseName;
-
-            // For MySQL, if the target database is different from current,
-            // we need to switch to it first
-            if (!targetDatabaseName.empty() && targetDatabaseName != mysqlDb->getDatabaseName()) {
-                // Tables may not be available for different database
-            }
-
-            // Get the tables for the specific database
-            const auto* dbData = mysqlDb->getDatabaseData(dbToUse);
-            if (dbData && !dbData->tablesLoaded && !dbData->loadingTables) {
-                // For the target database, we need to trigger table loading
-                if (dbToUse == mysqlDb->getDatabaseName()) {
-                    // If it's the current database, use the regular refresh
-                    mysqlDb->refreshTables();
-                } else {
-                    // For a different database, we need to switch to it first
-                    schemaLoaded = true;
-                    return;
-                }
+    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
+        if (*mysqlNode) {
+            // Check if tables are loaded
+            if (!(*mysqlNode)->tablesLoaded && !(*mysqlNode)->loadingTables) {
+                (*mysqlNode)->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if (dbData && dbData->loadingTables) {
+            if ((*mysqlNode)->loadingTables) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            if (dbData) {
-                tables = dbData->tables;
-            }
+            tables = (*mysqlNode)->tables;
         }
-    } else {
-        // For SQLite and other databases, use the standard interface
-        if (!database->areTablesLoaded()) {
-            database->refreshTables();
-        }
-        tables = database->getTables();
     }
 
     if (tables.empty()) {

@@ -1,11 +1,16 @@
 #pragma once
 
-#include "database/db_interface.hpp"
+#include "database/db.hpp"
 #include "imgui_node_editor.h"
 #include "ui/tab/tab.hpp"
-#include <memory>
 #include <unordered_map>
+#include <variant>
 #include <vector>
+
+// Forward declarations
+class PostgresDatabaseNode;
+class PostgresSchemaNode;
+class MySQLDatabaseNode;
 
 struct DiagramNode {
     ax::NodeEditor::NodeId id;
@@ -29,8 +34,10 @@ struct DiagramLink {
 
 class DiagramTab : public Tab {
 public:
-    DiagramTab(const std::string& name, std::shared_ptr<DatabaseInterface> database,
-               std::string targetDatabaseName = "");
+    // Constructor for PostgreSQL schema
+    DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode);
+    // Constructor for MySQL database
+    DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode);
     ~DiagramTab() override;
 
     void render() override;
@@ -53,8 +60,9 @@ private:
     getTablesForDiagram() const; // Helper to get tables from database
 
 private:
-    std::shared_ptr<DatabaseInterface> database;
-    std::string targetDatabaseName;
+    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*> databaseNode;
+    std::string databaseName; // for PostgreSQL
+    std::string schemaName;   // for PostgreSQL
     ax::NodeEditor::EditorContext* editorContext = nullptr;
 
     std::vector<DiagramNode> nodes;

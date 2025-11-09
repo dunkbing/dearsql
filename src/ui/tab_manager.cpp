@@ -242,18 +242,15 @@ void TabManager::renderEmptyState() {
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);
 }
 
-std::shared_ptr<Tab>
-TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
-                             const std::string& targetDatabaseName) {
-    if (!database) {
-        std::cout << "Cannot create diagram tab: database is null" << std::endl;
+std::shared_ptr<Tab> TabManager::createDiagramTab(PostgresSchemaNode* schemaNode) {
+    if (!schemaNode) {
+        std::cout << "Cannot create diagram tab: schema node is null" << std::endl;
         return nullptr;
     }
 
     // Generate a unique tab name for the diagram
-    const std::string dbName =
-        targetDatabaseName.empty() ? database->getName() : targetDatabaseName;
-    const std::string baseName = "Diagram - " + dbName;
+    const std::string baseName =
+        "Diagram - " + schemaNode->parentDbNode->name + "." + schemaNode->name;
     std::string tabName = baseName;
     int count = 1;
     while (hasTab(tabName)) {
@@ -261,8 +258,8 @@ TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
         tabName = baseName + " (" + std::to_string(count) + ")";
     }
 
-    // Create the diagram tab with the target database name
-    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, database, targetDatabaseName);
+    // Create the diagram tab
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, schemaNode);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -270,7 +267,35 @@ TabManager::createDiagramTab(const std::shared_ptr<DatabaseInterface>& database,
     auto& app = Application::getInstance();
     app.resetDockingLayout();
 
-    std::cout << "Created new diagram tab for database: " << database->getName() << std::endl;
+    std::cout << "Created new diagram tab for schema: " << schemaNode->name << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createDiagramTab(MySQLDatabaseNode* dbNode) {
+    if (!dbNode) {
+        std::cout << "Cannot create diagram tab: database node is null" << std::endl;
+        return nullptr;
+    }
+
+    // Generate a unique tab name for the diagram
+    const std::string baseName = "Diagram - " + dbNode->name;
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        count++;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    // Create the diagram tab
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, dbNode);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    std::cout << "Created new diagram tab for MySQL database: " << dbNode->name << std::endl;
     return tab;
 }
 

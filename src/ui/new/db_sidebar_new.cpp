@@ -427,9 +427,6 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             db->setLastConnectionError("");
             db->startConnectionAsync();
         }
-        if (ImGui::MenuItem("Show Diagram")) {
-            app.getTabManager()->createDiagramTab(db);
-        }
         ImGui::Separator();
 
         if (db->getType() == DatabaseType::POSTGRESQL || db->getType() == DatabaseType::MYSQL) {

@@ -122,16 +122,25 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 // Postgres - show connection dialog
                 currentState = DialogState::PostgreSQLConnection;
                 port = 5432; // Set default Postgres port
+                if (strlen(connectionName) == 0) {
+                    strncpy(connectionName, "PostgreSQL Connection", sizeof(connectionName) - 1);
+                }
                 break;
             case DatabaseType::MYSQL:
                 // MySQL - show connection dialog
                 currentState = DialogState::MySQLConnection;
                 port = 3306; // Set default MySQL port
+                if (strlen(connectionName) == 0) {
+                    strncpy(connectionName, "MySQL Connection", sizeof(connectionName) - 1);
+                }
                 break;
             case DatabaseType::REDIS:
                 // Redis - show connection dialog
                 currentState = DialogState::RedisConnection;
                 port = 6379; // Set default Redis port
+                if (strlen(connectionName) == 0) {
+                    strncpy(connectionName, "Redis Connection", sizeof(connectionName) - 1);
+                }
                 break;
             }
         }
@@ -173,9 +182,18 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
             ImGui::BeginDisabled();
         }
 
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
+
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
 
         if (isPostgres) {
             ImGui::InputText("Database (?)", database, sizeof(database));
@@ -188,16 +206,34 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
             ImGui::InputText("Database (optional)", database, sizeof(database));
         }
 
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
         ImGui::Spacing();
         ImGui::Text("Authentication:");
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+
         ImGui::RadioButton("Username & Password", &authType, 0);
         ImGui::SameLine();
         ImGui::RadioButton("No Authentication", &authType, 1);
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+
         ImGui::Spacing();
 
         if (authType == 0) {
+            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+
             ImGui::InputText("Username", username, sizeof(username));
             ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+
             ImGui::SameLine();
             ImGui::TextDisabled("(?)");
             if (ImGui::IsItemHovered()) {
@@ -308,31 +344,57 @@ void DatabaseConnectionDialog::renderRedisConnection() {
             ImGui::BeginDisabled();
         }
 
+        const auto& colors = Application::getInstance().getCurrentColors();
+
         ImGui::Text("Connection Name:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::Spacing();
 
         ImGui::Text("Host:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::InputText("##host", host, sizeof(host));
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::Spacing();
 
         ImGui::Text("Port:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::InputInt("##port", &port);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::Spacing();
 
         ImGui::Text("Authentication:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::RadioButton("No Authentication", &authType, 1);
         ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::Spacing();
 
         if (authType == 0) {
             ImGui::Text("Username:");
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
             ImGui::InputText("##username", username, sizeof(username));
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
             ImGui::Spacing();
 
             ImGui::Text("Password:");
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
             ImGui::InputText("##password", password, sizeof(password),
                              ImGuiInputTextFlags_Password);
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
             ImGui::Spacing();
         }
 

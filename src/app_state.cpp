@@ -82,16 +82,16 @@ bool AppState::createTables() {
         );
     )";
 
-    bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) &&
-                   executeSQL(createWorkspacesTable);
+    const bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) &&
+                         executeSQL(createWorkspacesTable);
 
-    auto ensureColumnExists = [this](std::string columnName, std::string alterSql) {
+    auto ensureColumnExists = [this](const std::string& columnName, const std::string& alterSql) {
         const std::string checkSql =
             "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name='" +
             columnName + "';";
 
         sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(db, checkSql.c_str(), -1, &stmt, nullptr);
+        const int rc = sqlite3_prepare_v2(db, checkSql.c_str(), -1, &stmt, nullptr);
         if (rc == SQLITE_OK) {
             bool columnExists = false;
             if (sqlite3_step(stmt) == SQLITE_ROW) {

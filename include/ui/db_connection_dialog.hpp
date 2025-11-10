@@ -38,7 +38,7 @@ public:
     void reset();
 
     // Edit an existing connection
-    void editConnection(std::shared_ptr<DatabaseInterface> db);
+    void editConnection(const std::shared_ptr<DatabaseInterface>& db);
 
 private:
     // Dialog state

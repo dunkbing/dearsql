@@ -243,7 +243,7 @@ PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::str
     std::vector<std::vector<std::string>> result;
 
     try {
-        std::string query = std::format("SELECT * FROM \"{}\".\"{}\"", schemaName, tableName);
+        std::string query = std::format(R"(SELECT * FROM "{}"."{}")", schemaName, tableName);
         if (!whereClause.empty()) {
             query += " WHERE " + whereClause;
         }
@@ -277,8 +277,8 @@ std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string&
             "table_name = '{}' ORDER BY ordinal_position",
             schemaName, tableName);
 
-        auto session = getSession();
-        soci::rowset<std::string> rs = session->prepare << query;
+        const auto session = getSession();
+        const soci::rowset<std::string> rs = session->prepare << query;
 
         for (const auto& columnName : rs) {
             result.push_back(columnName);
@@ -293,13 +293,12 @@ std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string&
 int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::string& tableName,
                                       const std::string& whereClause) {
     try {
-        std::string query =
-            std::format("SELECT COUNT(*) FROM \"{}\".\"{}\"", schemaName, tableName);
+        std::string query = std::format(R"(SELECT COUNT(*) FROM "{}"."{}")", schemaName, tableName);
         if (!whereClause.empty()) {
             query += " WHERE " + whereClause;
         }
 
-        auto session = getSession();
+        const auto session = getSession();
         int count = 0;
         *session << query, soci::into(count);
         return count;

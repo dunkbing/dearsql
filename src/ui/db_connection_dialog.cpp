@@ -24,24 +24,22 @@ void DatabaseConnectionDialog::showDialog() {
     }
 
     // Render the dialog based on current state
-    if (isOpen) {
-        switch (currentState) {
-        case DialogState::TypeSelection:
-            renderTypeSelection();
-            break;
-        case DialogState::PostgreSQLConnection:
-            renderSqlConnectionDialog(DatabaseType::POSTGRESQL);
-            break;
-        case DialogState::MySQLConnection:
-            renderSqlConnectionDialog(DatabaseType::MYSQL);
-            break;
-        case DialogState::RedisConnection:
-            renderRedisConnection();
-            break;
-        case DialogState::SavedConnections:
-            renderSavedConnections();
-            break;
-        }
+    switch (currentState) {
+    case DialogState::TypeSelection:
+        renderTypeSelection();
+        break;
+    case DialogState::PostgreSQLConnection:
+        renderSqlConnectionDialog(DatabaseType::POSTGRESQL);
+        break;
+    case DialogState::MySQLConnection:
+        renderSqlConnectionDialog(DatabaseType::MYSQL);
+        break;
+    case DialogState::RedisConnection:
+        renderRedisConnection();
+        break;
+    case DialogState::SavedConnections:
+        renderSavedConnections();
+        break;
     }
 }
 
@@ -296,7 +294,7 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
             ImGui::EndDisabled();
 
             ImGui::SameLine();
-            ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.1f) & 3]);
+            ImGui::Text("%c", "|/-\\"[static_cast<int>(ImGui::GetTime() / 0.1f) & 3]);
         } else {
             const char* buttonLabel = editingDatabase ? "Update" : "Connect";
             if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
@@ -473,7 +471,7 @@ void DatabaseConnectionDialog::reset() {
     editingConnectionId = -1;
 }
 
-void DatabaseConnectionDialog::editConnection(std::shared_ptr<DatabaseInterface> db) {
+void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
         return;
     }
@@ -840,7 +838,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
 
     // If in edit mode, update the saved connection immediately
     if (editingDatabase && editingConnectionId != -1) {
-        auto& app = Application::getInstance();
+        const auto& app = Application::getInstance();
 
         // Get the old connection to preserve password if needed
         const auto savedConnections = app.getAppState()->getSavedConnections();
@@ -907,7 +905,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             if (authType == 0) {
                 std::string providedPassword(password);
                 if (providedPassword.empty() && editingConnectionId != -1) {
-                    auto& app = Application::getInstance();
+                    const auto& app = Application::getInstance();
                     const auto savedConnections = app.getAppState()->getSavedConnections();
                     for (const auto& conn : savedConnections) {
                         if (conn.id == editingConnectionId) {

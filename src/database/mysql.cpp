@@ -4,6 +4,7 @@
 #include <chrono>
 #include <format>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -25,7 +26,7 @@ MySQLDatabase::~MySQLDatabase() {
     tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
-    for (auto& [_, dbDataPtr] : databaseDataCache) {
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
             dbDataPtr->loadingTables = false;
             dbDataPtr->loadingViews = false;
@@ -59,7 +60,7 @@ void MySQLDatabase::setConnectionInfo(const DatabaseConnectionInfo& info) {
 
 // Helper methods for per-database data access
 MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() {
-    auto it = databaseDataCache.find(database);
+    const auto it = databaseDataCache.find(database);
     if (it == databaseDataCache.end()) {
         auto newData = std::make_unique<MySQLDatabaseNode>();
         newData->name = database;
@@ -77,7 +78,7 @@ const MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() const {
 }
 
 MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
-    auto it = databaseDataCache.find(dbName);
+    const auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
         // Create new MySQLDatabaseNode with the name set
         auto newData = std::make_unique<MySQLDatabaseNode>();
@@ -97,7 +98,7 @@ const MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbNam
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
     // Check if we already have a connection pool to the current database
-    auto* pool = getConnectionPoolForDatabase(database);
+    const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
         return {true, ""};
     }
@@ -107,7 +108,6 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         connected = true;
 
         // Verify the pool was created successfully
-        auto* pool = getConnectionPoolForDatabase(database);
         if (!pool) {
             std::cerr << "ERROR: Connection pool was not created for database: " << database
                       << std::endl;
@@ -146,7 +146,7 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
 void MySQLDatabase::disconnect() {
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
-    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
             dbDataPtr->connectionPool.reset();
         }
@@ -530,9 +530,9 @@ std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) 
         std::unordered_map<std::string, Index> indexMap;
 
         for (const auto& row : rs) {
-            std::string indexName = row.get<std::string>(2); // Key_name
+            auto indexName = row.get<std::string>(2); // Key_name
 
-            if (indexMap.find(indexName) == indexMap.end()) {
+            if (!indexMap.contains(indexName)) {
                 Index idx;
                 idx.name = indexName;
                 idx.isUnique = row.get<int>(1) == 0; // Non_unique (0 means unique)
@@ -542,12 +542,12 @@ std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) 
             }
 
             // Add column to the index
-            std::string colName = row.get<std::string>(4); // Column_name
+            auto colName = row.get<std::string>(4); // Column_name
             indexMap[indexName].columns.push_back(colName);
         }
 
         // Convert map to vector
-        for (auto& [name, idx] : indexMap) {
+        for (auto& idx : indexMap | std::views::values) {
             indexes.push_back(idx);
         }
     } catch (const soci::soci_error& e) {
@@ -613,12 +613,12 @@ std::vector<std::string> MySQLDatabase::getDatabaseNames() {
         refreshDatabaseNames();
     }
 
-    return availableDatabases; // Return current state (may be empty if still loading)
+    return availableDatabases; // Return current state (maybe empty if still loading)
 }
 
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
 MySQLDatabase::getDatabaseDataMap() {
-    // Auto-load databases if not loaded and not currently loading
+    // autoload databases if not loaded and not currently loading
     if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
         refreshDatabaseNames();
     }
@@ -799,7 +799,7 @@ void MySQLDatabase::initializeConnectionPool(const std::string& dbName,
         return;
     }
 
-    const size_t poolSize = 10;
+    constexpr size_t poolSize = 10;
     auto pool = std::make_unique<soci::connection_pool>(poolSize);
 
     // Initialize connections in parallel for faster startup

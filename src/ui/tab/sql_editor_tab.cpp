@@ -11,6 +11,7 @@
 #include <chrono>
 #include <format>
 #include <future>
+#include <ranges>
 #include <set>
 #include <variant>
 
@@ -177,8 +178,8 @@ void SQLEditorTab::renderLoadingSchemaCombo() {
 }
 
 void SQLEditorTab::renderMySQLDatabaseSelector() {
-    auto currentNodePtr = std::get_if<MySQLDatabaseNode*>(&databaseNode);
-    MySQLDatabaseNode* currentNode =
+    const auto currentNodePtr = std::get_if<MySQLDatabaseNode*>(&databaseNode);
+    const MySQLDatabaseNode* currentNode =
         (currentNodePtr && *currentNodePtr) ? *currentNodePtr : nullptr;
 
     MySQLDatabase* mysqlDb = currentNode ? currentNode->parentDb : nullptr;
@@ -203,7 +204,7 @@ void SQLEditorTab::renderMySQLDatabaseSelector() {
 
         if (mysqlDb) {
             auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
-            for (const auto& [name, dataPtr] : databaseDataMap) {
+            for (const auto& dataPtr : databaseDataMap | std::views::values) {
                 if (!dataPtr) {
                     continue;
                 }
@@ -248,7 +249,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
     if (pgDb) {
         const auto& databaseDataMap = pgDb->getDatabaseDataMap();
         availableDatabases.reserve(databaseDataMap.size());
-        for (const auto& [dbName, db] : databaseDataMap) {
+        for (const auto& db : databaseDataMap | std::views::values) {
             if (db) {
                 availableDatabases.push_back(db.get());
             }
@@ -301,7 +302,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
 
         if (pgDb->shouldShowAllDatabases()) {
             const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-            for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
+            for (const auto& dbDataPtr : databaseDataMap | std::views::values) {
                 if (dbDataPtr) {
                     dbDataPtr->checkSchemasStatusAsync();
                 }
@@ -386,7 +387,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
     }
 }
 
-void SQLEditorTab::renderQueryResults() {
+void SQLEditorTab::renderQueryResults() const {
     if (!queryError.empty()) {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
     } else if (hasStructuredResults && !queryColumnNames.empty()) {
@@ -574,7 +575,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
             // Add database names if in multi-database mode
             if (pgDb->shouldShowAllDatabases()) {
                 const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-                for (const auto& [dbName, _] : databaseDataMap) {
+                for (const auto& dbName : databaseDataMap | std::views::keys) {
                     uniqueKeywords.insert(dbName);
                 }
             }

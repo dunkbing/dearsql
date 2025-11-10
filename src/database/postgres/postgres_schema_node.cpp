@@ -5,7 +5,6 @@
 #include <chrono>
 #include <format>
 #include <iostream>
-#include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
 #include <unordered_map>
 
@@ -410,7 +409,7 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
 }
 
 std::vector<std::vector<std::string>>
-PostgresSchemaNode::getTableData(const std::string& tableName, int limit, int offset,
+PostgresSchemaNode::getTableData(const std::string& tableName, const int limit, const int offset,
                                  const std::string& whereClause) {
     if (!parentDbNode) {
         return {};

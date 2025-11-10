@@ -1,5 +1,6 @@
 #include "database/db.hpp"
 #include <chrono>
+#include <ranges>
 #include <soci/soci.h>
 #include <sstream>
 #include <string>
@@ -166,13 +167,8 @@ bool TableDataLoader::isLoading(const std::string& tableName) const {
 }
 
 bool TableDataLoader::isAnyLoading() const {
-    for (const auto& entry : states) {
-        const auto& state = entry.second;
-        if (state.loading.load()) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(states,
+                               [](const auto& entry) { return entry.second.loading.load(); });
 }
 
 bool TableDataLoader::hasResult(const std::string& tableName) const {
@@ -181,13 +177,7 @@ bool TableDataLoader::hasResult(const std::string& tableName) const {
 }
 
 bool TableDataLoader::hasAnyResult() const {
-    for (const auto& entry : states) {
-        const auto& state = entry.second;
-        if (state.ready.load()) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(states, [](const auto& entry) { return entry.second.ready.load(); });
 }
 
 std::vector<std::vector<std::string>>
@@ -200,8 +190,8 @@ TableDataLoader::getTableData(const std::string& tableName) const {
 }
 
 std::vector<std::vector<std::string>> TableDataLoader::getFirstAvailableTableData() const {
-    for (const auto& entry : states) {
-        const auto& state = entry.second;
+    for (const auto& val : states | std::views::values) {
+        const auto& state = val;
         if (state.ready.load()) {
             return state.tableData;
         }
@@ -218,8 +208,8 @@ std::vector<std::string> TableDataLoader::getColumnNames(const std::string& tabl
 }
 
 std::vector<std::string> TableDataLoader::getFirstAvailableColumnNames() const {
-    for (const auto& entry : states) {
-        const auto& state = entry.second;
+    for (const auto& val : states | std::views::values) {
+        const auto& state = val;
         if (state.ready.load()) {
             return state.columnNames;
         }
@@ -236,8 +226,8 @@ int TableDataLoader::getRowCount(const std::string& tableName) const {
 }
 
 int TableDataLoader::getFirstAvailableRowCount() const {
-    for (const auto& entry : states) {
-        const auto& state = entry.second;
+    for (const auto& val : states | std::views::values) {
+        const auto& state = val;
         if (state.ready.load()) {
             return state.rowCount;
         }
@@ -267,8 +257,8 @@ void TableDataLoader::clear(const std::string& tableName) {
 }
 
 void TableDataLoader::clearAll() {
-    for (auto& entry : states) {
-        auto& state = entry.second;
+    for (auto& val : states | std::views::values) {
+        auto& state = val;
         state.ready = false;
         state.tableData.clear();
         state.columnNames.clear();
@@ -278,8 +268,8 @@ void TableDataLoader::clearAll() {
 }
 
 void TableDataLoader::cancelAllAndWait() {
-    for (auto& entry : states) {
-        auto& state = entry.second;
+    for (auto& val : states | std::views::values) {
+        auto& state = val;
         state.loading.store(false);
         if (state.future.valid()) {
             state.future.wait();

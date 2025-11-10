@@ -16,7 +16,7 @@
 #include <utility>
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName, PostgresSchemaNode* schemaNode)
+                               const std::string& tableName, PostgresSchemaNode* schemaNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)), tableName(tableName),
       databaseNode(schemaNode) {
     initializeTableRenderer();
@@ -546,7 +546,7 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
         }
     }
 
-    return std::vector<std::string>();
+    return {};
 }
 
 std::vector<std::string> TableViewerTab::generateUpdateSQL() {

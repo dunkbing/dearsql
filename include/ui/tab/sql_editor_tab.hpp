@@ -88,7 +88,7 @@ private:
     void renderLoadingSchemaCombo();
     void renderMySQLDatabaseSelector();
     void renderPostgresSchemaSelector();
-    void renderQueryResults();
+    void renderQueryResults() const;
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,

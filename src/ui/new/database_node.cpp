@@ -333,11 +333,8 @@ namespace NewHierarchy {
             return;
         }
 
-        auto& app = Application::getInstance();
+        const auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
-
-        // Get the shared_ptr for the database
-        const auto& databases = app.getDatabases();
 
         const std::string nodeId =
             std::format("schema_{}_{:p}", schemaData->name, static_cast<void*>(schemaData));
@@ -818,7 +815,6 @@ namespace NewHierarchy {
 
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            auto& app = Application::getInstance();
             app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
                                                       schemaName);
         }
@@ -826,7 +822,6 @@ namespace NewHierarchy {
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                auto& app = Application::getInstance();
                 app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
                                                           schemaName);
             }

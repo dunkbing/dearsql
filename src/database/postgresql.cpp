@@ -27,14 +27,14 @@ PostgresDatabase::~PostgresDatabase() {
     tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
-    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (!dbDataPtr)
             continue;
         auto& dbData = *dbDataPtr;
         dbData.loadingSchemas = false;
 
         // Wait for all schema-level futures to complete
-        for (auto& schema : dbData.schemas) {
+        for (const auto& schema : dbData.schemas) {
             schema->loadingTables = false;
             schema->loadingViews = false;
             schema->loadingSequences = false;
@@ -64,7 +64,7 @@ PostgresDatabase::~PostgresDatabase() {
     }
 
     // Wait for all per-database schema futures to complete
-    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (!dbDataPtr)
             continue;
         auto& dbData = *dbDataPtr;
@@ -201,7 +201,7 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 void PostgresDatabase::disconnect() {
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
-    for (auto& [dbName, dbDataPtr] : databaseDataCache) {
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
             dbDataPtr->connectionPool.reset();
         }
@@ -426,43 +426,6 @@ void* PostgresDatabase::getConnection() const {
     return getConnectionPoolForDatabase(database);
 }
 
-// std::vector<Column> PostgresDatabase::getTableColumns(const std::string& tableName) {
-//     std::vector<Column> columns;
-
-//     try {
-//         const auto session = getSession();
-//         const std::string sqlQuery =
-//             "SELECT c.column_name, c.data_type, c.is_nullable, "
-//             "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
-//             "as is_primary_key "
-//             "FROM information_schema.columns c "
-//             "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
-//             "kcu.column_name AND c.table_name = kcu.table_name "
-//             "LEFT JOIN information_schema.table_constraints tc ON "
-//             "kcu.constraint_name = tc.constraint_name "
-//             "WHERE c.table_name = '" +
-//             tableName +
-//             "' "
-//             "ORDER BY c.ordinal_position";
-
-//         const soci::rowset rs = session->prepare << sqlQuery;
-
-//         for (const auto& row : rs) {
-//             Column col;
-//             col.name = row.get<std::string>(0);
-//             col.type = row.get<std::string>(1);
-//             col.isNotNull = row.get<std::string>(2) == "NO";
-//             auto isPkStr = row.get<std::string>(3);
-//             col.isPrimaryKey = (isPkStr == "true");
-//             columns.push_back(col);
-//         }
-//     } catch (const soci::soci_error& e) {
-//         std::cerr << "Error getting table columns: " << e.what() << std::endl;
-//     }
-
-//     return columns;
-// }
-
 std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableName) {
     std::vector<Index> indexes;
 
@@ -671,7 +634,7 @@ void PostgresDatabase::refreshSchemas() {
 
 const std::vector<std::unique_ptr<PostgresSchemaNode>>& PostgresDatabase::getSchemas() const {
     const auto* dbData = getCurrentDatabaseData();
-    static const std::vector<std::unique_ptr<PostgresSchemaNode>> emptySchemas;
+    static constexpr std::vector<std::unique_ptr<PostgresSchemaNode>> emptySchemas;
     return dbData ? dbData->schemas : emptySchemas;
 }
 
@@ -700,10 +663,9 @@ bool PostgresDatabase::isLoadingSchemas() const {
 
 std::vector<std::string> PostgresDatabase::getDatabases() {
     if (databasesLoaded) {
-        const auto keys = databaseDataCache | std::ranges::views::keys;
         std::vector<std::string> databases;
         databases.reserve(databaseDataCache.size());
-        for (auto& [k, _] : databaseDataCache) {
+        for (const auto& k : databaseDataCache | std::views::keys) {
             databases.push_back(k);
         }
         return databases;
@@ -713,10 +675,9 @@ std::vector<std::string> PostgresDatabase::getDatabases() {
         refreshDatabaseNames();
     }
 
-    const auto keys = databaseDataCache | std::ranges::views::keys;
     std::vector<std::string> databases;
     databases.reserve(databaseDataCache.size());
-    for (auto& [k, _] : databaseDataCache) {
+    for (const auto& k : databaseDataCache | std::views::keys) {
         databases.push_back(k);
     }
     return databases;
@@ -724,7 +685,7 @@ std::vector<std::string> PostgresDatabase::getDatabases() {
 
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
 PostgresDatabase::getDatabaseDataMap() {
-    // Auto-load databases if not loaded and not currently loading
+    // autoload databases if not loaded and not currently loading
     if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
         refreshDatabaseNames();
     }

@@ -17,7 +17,7 @@ class DatabaseInterface;
 
 class TableViewerTab final : public Tab {
 public:
-    TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
+    TableViewerTab(const std::string& name, std::string databasePath, const std::string& tableName,
                    PostgresSchemaNode* schemaNode);
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
                    MySQLDatabaseNode* mysqlNode);

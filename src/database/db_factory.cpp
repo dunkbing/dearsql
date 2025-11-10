@@ -5,7 +5,7 @@
 #include "database/sqlite.hpp"
 
 // Helper functions to convert between DatabaseType enum and strings
-std::string databaseTypeToString(DatabaseType type) {
+std::string databaseTypeToString(const DatabaseType type) {
     switch (type) {
     case DatabaseType::SQLITE:
         return "sqlite";

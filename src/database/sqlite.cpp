@@ -228,7 +228,7 @@ void* SQLiteDatabase::getConnection() const {
     return session.get();
 }
 
-std::vector<std::string> SQLiteDatabase::getTableNames() {
+std::vector<std::string> SQLiteDatabase::getTableNames() const {
     std::vector<std::string> tableNames;
 
     std::cout << "Executing query to get table names..." << std::endl;
@@ -247,34 +247,6 @@ std::vector<std::string> SQLiteDatabase::getTableNames() {
     std::cout << "Query completed. Found " << tableNames.size() << " tables." << std::endl;
     return tableNames;
 }
-
-// std::vector<Column> SQLiteDatabase::getTableColumns(const std::string& tableName) {
-//     std::vector<Column> columns;
-//     const std::string sql = std::format("PRAGMA table_info('{}');", tableName);
-
-//     try {
-//         const soci::rowset rs = session->prepare << sql;
-
-//         for (const auto& row : rs) {
-//             Column col;
-//             col.name = convertRowValue(row, 1);
-//             col.type = convertRowValue(row, 2);
-
-//             // Handle notnull column (can be int or string)
-//             std::string notNullStr = convertRowValue(row, 3);
-//             col.isNotNull = (notNullStr == "1" || notNullStr == "true");
-
-//             // Handle primary key column (can be int or string)
-//             std::string pkStr = convertRowValue(row, 5);
-//             col.isPrimaryKey = (pkStr == "1" || pkStr == "true");
-
-//             columns.push_back(col);
-//         }
-//     } catch (const soci::soci_error& e) {
-//         std::cerr << "Error getting table columns: " << e.what() << std::endl;
-//     }
-//     return columns;
-// }
 
 std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName) const {
     std::vector<Index> indexes;
@@ -405,7 +377,7 @@ void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
     tablesFuture = std::async(std::launch::async, [this]() { return getTablesAsync(); });
 }
 
-std::vector<Table> SQLiteDatabase::getTablesAsync() {
+std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
@@ -563,7 +535,7 @@ void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
     viewsFuture = std::async(std::launch::async, [this]() { return getViewsAsync(); });
 }
 
-std::vector<Table> SQLiteDatabase::getViewsAsync() {
+std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     std::vector<Table> result;
 
     if (!loadingViews.load()) {
@@ -622,104 +594,6 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() {
         Logger::info("Finished loading views. Total views: " + std::to_string(result.size()));
     } catch (const std::exception& e) {
         Logger::error(std::format("Error loading views: {}", e.what()));
-    }
-
-    return result;
-}
-
-// Async sequence loading
-void SQLiteDatabase::checkSequencesStatusAsync() {
-    if (sequencesFuture.valid() &&
-        sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            sequences = sequencesFuture.get();
-            Logger::info(
-                std::format("Sequence loading completed. Found {} sequences", sequences.size()));
-            sequencesLoaded = true;
-            loadingSequences = false;
-        } catch (const std::exception& e) {
-            Logger::error(std::format("Error in sequence loading: {}", e.what()));
-            lastSequencesError = e.what();
-            sequencesLoaded = true;
-            loadingSequences = false;
-        }
-    }
-}
-
-void SQLiteDatabase::startSequencesLoadAsync(bool forceRefresh) {
-    Logger::debug("startSequencesLoadAsync for SQLite database" +
-                  std::string(forceRefresh ? " (force refresh)" : ""));
-
-    // Don't start if already loading
-    if (loadingSequences.load()) {
-        return;
-    }
-
-    // If force refresh, clear existing sequences and reset state
-    if (forceRefresh) {
-        sequences.clear();
-        sequencesLoaded = false;
-        lastSequencesError.clear();
-    }
-
-    // Don't start if already loaded (unless force refresh)
-    if (!forceRefresh && sequencesLoaded) {
-        return;
-    }
-
-    loadingSequences = true;
-    sequences.clear();
-
-    // Start async loading
-    sequencesFuture = std::async(std::launch::async, [this]() { return getSequencesAsync(); });
-}
-
-std::vector<std::string> SQLiteDatabase::getSequencesAsync() {
-    std::vector<std::string> result;
-
-    if (!loadingSequences.load()) {
-        return result;
-    }
-
-    try {
-        if (!isConnected()) {
-            Logger::error("Database not connected");
-            return result;
-        }
-
-        // Check if sqlite_sequence table exists
-        const std::string checkQuery =
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'";
-        {
-            const soci::rowset checkRs = session->prepare << checkQuery;
-            bool hasSequenceTable = false;
-            for (const auto& row : checkRs) {
-                hasSequenceTable = true;
-                break;
-            }
-
-            if (!hasSequenceTable) {
-                Logger::debug("sqlite_sequence table does not exist");
-                return result;
-            }
-        }
-
-        // Get sequences
-        const std::string seqQuery = "SELECT name FROM sqlite_sequence";
-        {
-            const soci::rowset seqRs = session->prepare << seqQuery;
-            for (const auto& row : seqRs) {
-                if (!loadingSequences.load()) {
-                    return result;
-                }
-                result.push_back(convertRowValue(row, 0));
-            }
-        }
-
-        Logger::info("Finished loading sequences. Total sequences: " +
-                     std::to_string(result.size()));
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error loading sequences: {}", e.what()));
     }
 
     return result;

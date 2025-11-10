@@ -371,7 +371,7 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
     }
 
     try {
-        auto keys = getKeys(keyPattern, 10000); // Get up to 10k keys for count
+        const auto keys = getKeys(keyPattern, 10000); // Get up to 10k keys for count
         return static_cast<int>(keys.size());
     } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key count: " << e.what() << std::endl;
@@ -404,7 +404,7 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
     }
 
     try {
-        auto* reply = (redisReply*)redisCommand(context, "KEYS %s", pattern.c_str());
+        auto* reply = static_cast<redisReply*>(redisCommand(context, "KEYS %s", pattern.c_str()));
         if (!reply || reply->type != REDIS_REPLY_ARRAY) {
             if (reply)
                 freeReplyObject(reply);
@@ -440,7 +440,7 @@ std::string RedisDatabase::getKeyValue(const std::string& key) const {
         std::string type = getKeyType(key);
 
         if (type == "string") {
-            auto* reply = (redisReply*)redisCommand(context, "GET %s", key.c_str());
+            auto* reply = static_cast<redisReply*>(redisCommand(context, "GET %s", key.c_str()));
             if (reply && reply->type == REDIS_REPLY_STRING) {
                 std::string value = reply->str;
                 freeReplyObject(reply);
@@ -487,7 +487,8 @@ std::string RedisDatabase::getKeyValue(const std::string& key) const {
             if (reply)
                 freeReplyObject(reply);
         } else if (type == "hash") {
-            auto* reply = (redisReply*)redisCommand(context, "HGETALL %s", key.c_str());
+            auto* reply =
+                static_cast<redisReply*>(redisCommand(context, "HGETALL %s", key.c_str()));
             if (reply && reply->type == REDIS_REPLY_ARRAY) {
                 std::stringstream ss;
                 ss << "{";

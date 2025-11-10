@@ -32,15 +32,11 @@ public:
     // Async table/view/sequence loading
     void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
-    std::vector<Table> getTablesAsync();
+    std::vector<Table> getTablesAsync() const;
 
     void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();
-    std::vector<Table> getViewsAsync();
-
-    void startSequencesLoadAsync(bool forceRefresh = false);
-    void checkSequencesStatusAsync();
-    std::vector<std::string> getSequencesAsync();
+    std::vector<Table> getViewsAsync() const;
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -81,7 +77,7 @@ public:
     std::string lastSequencesError;
 
 protected:
-    std::vector<std::string> getTableNames();
+    std::vector<std::string> getTableNames() const;
     std::vector<Index> getTableIndexes(const std::string& tableName) const;
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;
 

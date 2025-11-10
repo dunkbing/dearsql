@@ -7,7 +7,6 @@
 #include "imgui.h"
 #include "ui/drop_column_dialog.hpp"
 #include "ui/new/database_node.hpp"
-#include "ui/tab_manager.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -22,7 +21,7 @@ void DatabaseSidebarNew::showConnectionDialog() {
 }
 
 void DatabaseSidebarNew::renderEmpty() {
-    auto& app = Application::getInstance();
+    const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
     ImGui::TextWrapped("No databases connected");
@@ -388,8 +387,6 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     if (!db) {
         return;
     }
-
-    auto& app = Application::getInstance();
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Refresh All")) {

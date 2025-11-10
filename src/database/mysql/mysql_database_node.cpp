@@ -293,10 +293,11 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
 
         query += std::format(" LIMIT {} OFFSET {}", limit, offset);
 
-        const soci::rowset<soci::row> rs = session->prepare << query;
+        const soci::rowset rs = session->prepare << query;
 
         for (const auto& row : rs) {
             std::vector<std::string> rowData;
+            rowData.reserve(row.size());
             for (std::size_t i = 0; i < row.size(); ++i) {
                 rowData.push_back(convertRowValue(row, i));
             }
@@ -315,7 +316,7 @@ std::vector<std::string> MySQLDatabaseNode::getColumnNames(const std::string& ta
     try {
         const auto session = getSession();
         const std::string query = std::format("DESCRIBE `{}`", tableName);
-        const soci::rowset<soci::row> rs = session->prepare << query;
+        const soci::rowset rs = session->prepare << query;
 
         for (const auto& row : rs) {
             columnNames.push_back(row.get<std::string>(0)); // Field name is first column

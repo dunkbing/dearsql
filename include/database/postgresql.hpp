@@ -65,17 +65,11 @@ public:
     }
     bool isLoadingDatabases() const;
     void checkDatabasesStatusAsync();
-    std::pair<bool, std::string> switchToDatabase(const std::string& targetDatabase);
-    void switchToDatabaseAsync(const std::string& targetDatabase);
-    bool isSwitchingDatabase() const;
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
     executeQueryStructured(const std::string& query) override;
-    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset) override;
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
 
 protected:
     // std::vector<Column> getTableColumns(const std::string& tableName) override;
@@ -104,10 +98,7 @@ private:
     std::atomic<bool> loadingDatabases = false;
     std::future<std::vector<std::string>> databasesFuture;
 
-    // Async database switching
-    std::atomic<bool> switchingDatabase = false;
     std::string targetDatabaseName;
-    std::future<std::pair<bool, std::string>> databaseSwitchFuture;
 
 public:
     // Helper methods for per-database data access

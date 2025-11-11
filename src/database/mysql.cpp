@@ -21,9 +21,6 @@ MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
 MySQLDatabase::~MySQLDatabase() {
     // Stop all async operations before cleaning up
     loadingDatabases = false;
-    switchingDatabase = false;
-
-    tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -43,9 +40,6 @@ MySQLDatabase::~MySQLDatabase() {
 
     if (databasesFuture.valid()) {
         databasesFuture.wait();
-    }
-    if (databaseSwitchFuture.valid()) {
-        databaseSwitchFuture.wait();
     }
 
     disconnect();
@@ -466,55 +460,6 @@ MySQLDatabase::executeQueryStructured(const std::string& query) {
     }
 }
 
-std::vector<std::vector<std::string>>
-MySQLDatabase::getTableData(const std::string& tableName, const int limit, const int offset) {
-    if (!connect().first) {
-        return {};
-    }
-
-    std::vector<std::vector<std::string>> data;
-    try {
-        const auto sql = getSession();
-        const std::string query = "SELECT * FROM `" + tableName + "` LIMIT " +
-                                  std::to_string(limit) + " OFFSET " + std::to_string(offset);
-        const soci::rowset rs = (sql->prepare << query);
-
-        for (auto& row : rs) {
-            std::vector<std::string> rowData;
-
-            for (std::size_t i = 0; i != row.size(); ++i) {
-                rowData.emplace_back(convertRowValue(row, i));
-            }
-            data.push_back(rowData);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting table data: " << e.what() << std::endl;
-    }
-
-    return data;
-}
-
-std::vector<std::string> MySQLDatabase::getColumnNames(const std::string& tableName) {
-    if (!connect().first) {
-        return {};
-    }
-
-    std::vector<std::string> columns;
-    try {
-        const auto sql = getSession();
-        const std::string query = "SHOW COLUMNS FROM `" + tableName + "`";
-        const soci::rowset rs = (sql->prepare << query);
-
-        for (auto& row : rs) {
-            columns.push_back(row.get<std::string>(0));
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "[soci] MySQL Error getting column names: " << e.what() << std::endl;
-    }
-
-    return columns;
-}
-
 std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) {
     std::vector<Index> indexes;
 
@@ -715,62 +660,6 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
 
     std::cout << "Async query completed. Found " << result.size() << " databases." << std::endl;
     return result;
-}
-
-std::pair<bool, std::string> MySQLDatabase::switchToDatabase(const std::string& targetDatabase) {
-    if (database == targetDatabase && connected) {
-        return {true, ""}; // Already connected to the target database
-    }
-
-    // Update database name and connection string
-    database = targetDatabase;
-    connectionString = buildConnectionString(targetDatabase);
-
-    // Check if we already have a connection pool to the target database
-    auto* pool = getConnectionPoolForDatabase(targetDatabase);
-    if (pool) {
-        connected = true;
-        std::cout << "Reusing existing connection pool to database: " << targetDatabase
-                  << std::endl;
-        return {true, ""};
-    }
-
-    // Create new connection pool to the target database
-    try {
-        initializeConnectionPool(targetDatabase, connectionString);
-        connected = true;
-        std::cout << "Created new connection pool to database: " << targetDatabase << std::endl;
-        return {true, ""};
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
-                  << std::endl;
-        connected = false;
-        setLastConnectionError(e.what());
-        return {false, e.what()};
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
-                  << std::endl;
-        connected = false;
-        setLastConnectionError(e.what());
-        return {false, e.what()};
-    }
-}
-
-void MySQLDatabase::switchToDatabaseAsync(const std::string& targetDatabase) {
-    if (switchingDatabase.load()) {
-        return; // Already switching
-    }
-
-    targetDatabaseName = targetDatabase;
-    switchingDatabase = true;
-
-    // Start async database switching
-    databaseSwitchFuture = std::async(
-        std::launch::async, [this, targetDatabase]() { return switchToDatabase(targetDatabase); });
-}
-
-bool MySQLDatabase::isSwitchingDatabase() const {
-    return switchingDatabase.load();
 }
 
 soci::connection_pool*

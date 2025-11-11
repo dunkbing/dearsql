@@ -22,9 +22,6 @@ PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
 PostgresDatabase::~PostgresDatabase() {
     // Stop all async operations before cleaning up
     loadingDatabases = false;
-    switchingDatabase = false;
-
-    tableDataLoader.cancelAllAndWait();
 
     // Stop all per-database async operations
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -58,9 +55,6 @@ PostgresDatabase::~PostgresDatabase() {
 
     if (databasesFuture.valid()) {
         databasesFuture.wait();
-    }
-    if (databaseSwitchFuture.valid()) {
-        databaseSwitchFuture.wait();
     }
 
     // Wait for all per-database schema futures to complete
@@ -357,69 +351,6 @@ PostgresDatabase::executeQueryStructured(const std::string& query) {
         Logger::error("[soci] Postgres Error: " + std::string(e.what()));
         return {columnNames, data};
     }
-}
-
-std::vector<std::vector<std::string>>
-PostgresDatabase::getTableData(const std::string& tableName, const int limit, const int offset) {
-    std::vector<std::vector<std::string>> data;
-    if (!isConnected()) {
-        auto [success, error] = connect();
-        if (!success) {
-            std::cerr << "Failed to connect: " << error << std::endl;
-            return data;
-        }
-    }
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery = "SELECT * FROM \"" + tableName + "\" LIMIT " +
-                                     std::to_string(limit) + " OFFSET " + std::to_string(offset);
-
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.emplace_back(convertRowValue(row, i));
-            }
-            data.push_back(rowData);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting table data: " << e.what() << std::endl;
-    }
-
-    return data;
-}
-
-std::vector<std::string> PostgresDatabase::getColumnNames(const std::string& tableName) {
-    std::vector<std::string> columnNames;
-    if (!isConnected()) {
-        auto [success, error] = connect();
-        if (!success) {
-            std::cerr << "Failed to connect: " << error << std::endl;
-            return columnNames;
-        }
-    }
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery =
-            std::format("SELECT column_name FROM information_schema.columns "
-                        "WHERE table_name = '{}' ORDER BY ordinal_position",
-                        tableName);
-
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            columnNames.push_back(row.get<std::string>(0));
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting column names: " << e.what() << std::endl;
-    }
-
-    return columnNames;
 }
 
 void* PostgresDatabase::getConnection() const {
@@ -781,59 +712,6 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
 
     Logger::info(std::format("Async query completed. Found: {} databases", result.size()));
     return result;
-}
-
-std::pair<bool, std::string> PostgresDatabase::switchToDatabase(const std::string& targetDatabase) {
-    if (database == targetDatabase && connected) {
-        return {true, ""}; // Already connected to the target database
-    }
-
-    std::string targetConnectionString = buildConnectionString(targetDatabase);
-    auto* pool = getConnectionPoolForDatabase(targetDatabase);
-
-    if (pool) {
-        // update database name and connection string only after successful connection
-        database = targetDatabase;
-        connectionString = targetConnectionString;
-        connected = true;
-        Logger::debug("Reusing existing connection pool to database: " + targetDatabase);
-        return {true, ""};
-    }
-
-    // Create new connection pool to the target database
-    try {
-        initializeConnectionPool(targetDatabase, targetConnectionString);
-
-        // Update database name and connection string only after successful connection
-        database = targetDatabase;
-        connectionString = targetConnectionString;
-        connected = true;
-        Logger::info("Created new connection pool to database: " + targetDatabase);
-        return {true, ""};
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Failed to connect to database " << targetDatabase << ": " << e.what()
-                  << std::endl;
-        connected = false;
-        setLastConnectionError(e.what());
-        return {false, e.what()};
-    }
-}
-
-void PostgresDatabase::switchToDatabaseAsync(const std::string& targetDatabase) {
-    if (isSwitchingDatabase()) {
-        return;
-    }
-
-    targetDatabaseName = targetDatabase;
-    switchingDatabase = true;
-
-    // Start async database switching
-    databaseSwitchFuture = std::async(
-        std::launch::async, [this, targetDatabase]() { return switchToDatabase(targetDatabase); });
-}
-
-bool PostgresDatabase::isSwitchingDatabase() const {
-    return switchingDatabase.load();
 }
 
 soci::connection_pool*

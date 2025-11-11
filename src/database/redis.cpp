@@ -115,8 +115,6 @@ void RedisDatabase::disconnect() {
 
     // Reset loading states
     loadingKeys = false;
-    tableDataLoader.cancelAllAndWait();
-    tableDataLoader.clearAll();
 
     std::cout << "Disconnected from Redis: " << connectionString << std::endl;
 }
@@ -199,30 +197,10 @@ std::vector<Table>& RedisDatabase::getTables() {
     return tables;
 }
 
-bool RedisDatabase::areTablesLoaded() const {
-    return tablesLoaded;
-}
-
-void RedisDatabase::setTablesLoaded(bool loaded) {
-    tablesLoaded = loaded;
-}
-
 // Views not applicable for Redis
 void RedisDatabase::refreshViews() {
     views.clear();
     viewsLoaded = true;
-}
-
-const std::vector<Table>& RedisDatabase::getViews() const {
-    return views;
-}
-
-std::vector<Table>& RedisDatabase::getViews() {
-    return views;
-}
-
-void RedisDatabase::setViewsLoaded(bool loaded) {
-    viewsLoaded = loaded;
 }
 
 // Sequences not applicable for Redis
@@ -237,10 +215,6 @@ const std::vector<std::string>& RedisDatabase::getSequences() const {
 
 std::vector<std::string>& RedisDatabase::getSequences() {
     return sequences;
-}
-
-void RedisDatabase::setSequencesLoaded(const bool loaded) {
-    sequencesLoaded = loaded;
 }
 
 std::string RedisDatabase::executeQuery(const std::string& command) {

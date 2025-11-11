@@ -81,7 +81,7 @@ namespace NewHierarchy {
                         UIUtils::Spinner("##loading_tables", 6.0f, 2,
                                          ImGui::GetColorU32(colors.peach));
                         ImGui::PopStyleColor();
-                    } else if (sqliteDb->areTablesLoaded()) {
+                    } else if (sqliteDb->tablesLoaded) {
                         auto& tables = const_cast<std::vector<Table>&>(
                             const_cast<const SQLiteDatabase*>(sqliteDb)->getTables());
                         if (tables.empty()) {

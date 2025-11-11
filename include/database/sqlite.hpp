@@ -24,6 +24,13 @@ public:
     void* getConnection() const override;
     DatabaseType getType() const override;
 
+    bool areTablesLoaded() const {
+        return tablesLoaded;
+    }
+    void setTablesLoaded(bool loaded) {
+        tablesLoaded = loaded;
+    }
+
     // Schema management (BaseDatabaseImpl provides getters/setters)
     void refreshTables() override;
     void refreshViews() override;
@@ -45,7 +52,7 @@ public:
 
     // DatabaseInterface implementation (without whereClause)
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset) override;
+                                                       int offset);
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
 
     // ITableDataProvider implementation (with whereClause)
@@ -70,6 +77,10 @@ public:
     std::atomic<bool> loadingTables = false;
     std::atomic<bool> loadingViews = false;
     std::atomic<bool> loadingSequences = false;
+
+    bool tablesLoaded = false;
+    bool viewsLoaded = false;
+    bool sequencesLoaded = false;
 
     // Error tracking
     std::string lastTablesError;

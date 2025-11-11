@@ -390,10 +390,10 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("Refresh All")) {
-            db->setTablesLoaded(false);
-            db->setViewsLoaded(false);
+            // db->setTablesLoaded(false);
+            // db->setViewsLoaded(false);
             if (db->getType() == DatabaseType::POSTGRESQL) {
-                db->setSequencesLoaded(false);
+                // db->setSequencesLoaded(false);
             }
             db->refreshTables();
             db->refreshViews();
@@ -403,24 +403,24 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh Tables")) {
-            db->setTablesLoaded(false);
+            // db->setTablesLoaded(false);
             db->refreshTables();
         }
         if (ImGui::MenuItem("Refresh Views")) {
-            db->setViewsLoaded(false);
+            // db->setViewsLoaded(false);
             db->refreshViews();
         }
         if (db->getType() == DatabaseType::POSTGRESQL && ImGui::MenuItem("Refresh Sequences")) {
-            db->setSequencesLoaded(false);
+            // db->setSequencesLoaded(false);
             db->refreshSequences();
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {
             db->disconnect();
             db->setAttemptedConnection(false);
-            db->setTablesLoaded(false);
-            db->setViewsLoaded(false);
-            db->setSequencesLoaded(false);
+            // db->setTablesLoaded(false);
+            // db->setViewsLoaded(false);
+            // db->setSequencesLoaded(false);
             db->setLastConnectionError("");
             db->startConnectionAsync();
         }

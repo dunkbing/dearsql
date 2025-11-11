@@ -36,22 +36,16 @@ public:
     void refreshTables() override; // Will load keys
     const std::vector<Table>& getTables() const;
     std::vector<Table>& getTables() override;
-    bool areTablesLoaded() const override;
-    void setTablesLoaded(bool loaded) override;
     bool isLoadingTables() const override;
     void checkTablesStatusAsync();
 
     // Views not applicable for Redis
     void refreshViews() override;
-    const std::vector<Table>& getViews() const override;
-    std::vector<Table>& getViews() override;
-    void setViewsLoaded(bool loaded) override;
 
     // Sequences not applicable for Redis
     void refreshSequences() override;
     const std::vector<std::string>& getSequences() const override;
     std::vector<std::string>& getSequences() override;
-    void setSequencesLoaded(bool loaded) override;
 
     // Redis command execution (adapted to query interface)
     std::string executeQuery(const std::string& command) override;
@@ -60,8 +54,8 @@ public:
 
     // Key data viewing (adapted to table interface)
     std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,
-                                                       int offset) override;
-    std::vector<std::string> getColumnNames(const std::string& keyPattern) override;
+                                                       int offset);
+    std::vector<std::string> getColumnNames(const std::string& keyPattern);
     int getRowCount(const std::string& keyPattern);
 
     // Connection attempt tracking
@@ -141,8 +135,6 @@ private:
 
     // Async key loading future
     std::future<std::vector<Table>> keysFuture;
-
-    TableDataLoader tableDataLoader;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

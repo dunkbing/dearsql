@@ -65,12 +65,6 @@ public:
     }
 
     // Schema loading state (tables)
-    bool areTablesLoaded() const override {
-        return tablesLoaded;
-    }
-    void setTablesLoaded(bool loaded) override {
-        tablesLoaded = loaded;
-    }
     bool isLoadingTables() const override {
         return tablesOp.isRunning();
     }
@@ -78,27 +72,10 @@ public:
         return tables;
     }
 
-    // Schema loading state (views)
-    void setViewsLoaded(bool loaded) override {
-        viewsLoaded = loaded;
-    }
-    bool isLoadingViews() const override {
-        return viewsOp.isRunning();
-    }
-    const std::vector<Table>& getViews() const override {
-        return views;
-    }
-    std::vector<Table>& getViews() override {
-        return views;
-    }
-
     // Schema loading state (sequences)
-    void setSequencesLoaded(bool loaded) override {
-        sequencesLoaded = loaded;
-    }
-    bool isLoadingSequences() const override {
-        return sequencesOp.isRunning();
-    }
+    // bool isLoadingSequences() const override {
+    //     return sequencesOp.isRunning();
+    // }
     const std::vector<std::string>& getSequences() const override {
         return sequences;
     }
@@ -117,16 +94,9 @@ protected:
     std::vector<Table> views;
     std::vector<std::string> sequences;
 
-    bool tablesLoaded = false;
-    bool viewsLoaded = false;
-    bool sequencesLoaded = false;
-
     // Async operations
     AsyncOperation<std::pair<bool, std::string>> connectionOp;
     AsyncOperation<std::vector<Table>> tablesOp;
     AsyncOperation<std::vector<Table>> viewsOp;
     AsyncOperation<std::vector<std::string>> sequencesOp;
-
-    // Table data loader (already a good abstraction)
-    TableDataLoader tableDataLoader;
 };

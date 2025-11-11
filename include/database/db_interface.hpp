@@ -49,17 +49,12 @@ public:
     // Table management
     virtual void refreshTables() = 0;
     virtual std::vector<Table>& getTables() = 0;
-    [[nodiscard]] virtual bool areTablesLoaded() const = 0;
-    virtual void setTablesLoaded(bool loaded) = 0;
     [[nodiscard]] virtual bool isLoadingTables() const {
         return false;
     }
 
     // View management
     virtual void refreshViews() = 0;
-    [[nodiscard]] virtual const std::vector<Table>& getViews() const = 0;
-    virtual std::vector<Table>& getViews() = 0;
-    virtual void setViewsLoaded(bool loaded) = 0;
     [[nodiscard]] virtual bool isLoadingViews() const {
         return false;
     }
@@ -68,7 +63,6 @@ public:
     virtual void refreshSequences() = 0;
     [[nodiscard]] virtual const std::vector<std::string>& getSequences() const = 0;
     virtual std::vector<std::string>& getSequences() = 0;
-    virtual void setSequencesLoaded(bool loaded) = 0;
     [[nodiscard]] virtual bool isLoadingSequences() const {
         return false;
     }
@@ -77,9 +71,6 @@ public:
     virtual std::string executeQuery(const std::string& query) = 0;
     virtual std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
     executeQueryStructured(const std::string& query) = 0;
-    virtual std::vector<std::vector<std::string>> getTableData(const std::string& tableName,
-                                                               int limit, int offset) = 0;
-    virtual std::vector<std::string> getColumnNames(const std::string& tableName) = 0;
 
     // Connection attempt tracking
     [[nodiscard]] virtual bool hasAttemptedConnection() const = 0;

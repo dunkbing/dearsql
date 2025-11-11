@@ -3,7 +3,6 @@
 #include "soci/row.h"
 
 #include <atomic>
-#include <functional>
 #include <future>
 #include <string>
 #include <unordered_map>
@@ -119,35 +118,4 @@ struct TableDataLoadState {
     int rowCount = 0;
     std::string lastError;
     std::future<void> future;
-};
-
-class TableDataLoader {
-public:
-    using Task = std::function<void(TableDataLoadState&)>;
-
-    // Start a new async task; returns false if a task is already running for tableName
-    bool start(const std::string& tableName, Task task);
-    void check(const std::string& tableName);
-    void checkAll();
-    [[nodiscard]] bool isLoading(const std::string& tableName) const;
-    [[nodiscard]] bool isAnyLoading() const;
-    [[nodiscard]] bool hasResult(const std::string& tableName) const;
-    [[nodiscard]] bool hasAnyResult() const;
-    [[nodiscard]] std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName) const;
-    [[nodiscard]] std::vector<std::vector<std::string>> getFirstAvailableTableData() const;
-    [[nodiscard]] std::vector<std::string> getColumnNames(const std::string& tableName) const;
-    [[nodiscard]] std::vector<std::string> getFirstAvailableColumnNames() const;
-    [[nodiscard]] int getRowCount(const std::string& tableName) const;
-    [[nodiscard]] int getFirstAvailableRowCount() const;
-    [[nodiscard]] std::string getLastError(const std::string& tableName) const;
-    void clear(const std::string& tableName);
-    void clearAll();
-    void cancelAllAndWait();
-
-private:
-    TableDataLoadState* findState(const std::string& tableName);
-    const TableDataLoadState* findState(const std::string& tableName) const;
-
-    std::unordered_map<std::string, TableDataLoadState> states;
 };

@@ -17,7 +17,7 @@ SQLiteDatabase::~SQLiteDatabase() {
     SQLiteDatabase::disconnect();
 }
 
-std::pair<bool, std::string> SQLiteDatabase::connect() {
+std::pair<bool, std::string> SQLiteDatabase::connect(bool forceRefresh) {
     if (connected && session) {
         return {true, ""};
     }

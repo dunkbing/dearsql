@@ -116,7 +116,7 @@ bool DropColumnDialog::executeDropColumn() {
 
         // Refresh table structure
         // database->setTablesLoaded(false);
-        database->refreshAllTables();
+        // database->refreshAllTables();
 
         return true;
 

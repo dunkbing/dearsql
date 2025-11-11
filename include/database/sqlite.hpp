@@ -14,7 +14,7 @@ public:
     ~SQLiteDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles async)
-    std::pair<bool, std::string> connect() override;
+    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
     void disconnect() override;
 
     // Database info
@@ -32,7 +32,7 @@ public:
     }
 
     // Schema management (BaseDatabaseImpl provides getters/setters)
-    void refreshAllTables() override;
+    void refreshAllTables();
     void refreshViews() override;
     void refreshSequences() override;
 

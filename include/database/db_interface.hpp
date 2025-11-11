@@ -25,13 +25,13 @@ public:
     virtual ~DatabaseInterface() = default;
 
     // Connection management
-    virtual std::pair<bool, std::string> connect() = 0;
+    virtual std::pair<bool, std::string> connect(bool forceRefresh = false) = 0;
     virtual void disconnect() = 0;
     [[nodiscard]] virtual bool isConnected() const = 0;
     [[nodiscard]] virtual bool isConnecting() const {
         return false;
     }
-    virtual void startConnectionAsync() {}
+    virtual void startConnectionAsync(bool forceRefresh = false) {}
     virtual void checkConnectionStatusAsync() {}
 
     // Database info
@@ -47,7 +47,6 @@ public:
     }
 
     // Table management
-    virtual void refreshAllTables() = 0;
     virtual std::vector<Table>& getTables() = 0;
     [[nodiscard]] virtual bool isLoadingTables() const {
         return false;

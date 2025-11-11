@@ -19,11 +19,11 @@ public:
     ~RedisDatabase() override;
 
     // Connection management
-    std::pair<bool, std::string> connect() override;
+    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
     void disconnect() override;
     bool isConnected() const override;
     bool isConnecting() const override;
-    void startConnectionAsync() override;
+    void startConnectionAsync(bool forceRefresh = false) override;
     void checkConnectionStatusAsync() override;
 
     // Database info
@@ -33,7 +33,6 @@ public:
     DatabaseType getType() const override;
 
     // Redis-specific key management (adapted to table interface)
-    void refreshAllTables() override; // Will load keys
     const std::vector<Table>& getTables() const;
     std::vector<Table>& getTables() override;
     bool isLoadingTables() const override;

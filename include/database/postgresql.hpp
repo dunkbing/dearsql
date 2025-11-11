@@ -18,7 +18,7 @@ public:
     ~PostgresDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles common async)
-    std::pair<bool, std::string> connect() override;
+    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
     void disconnect() override;
 
     // Database info
@@ -29,8 +29,6 @@ public:
     const std::string& getDatabaseName() const;
 
     // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshAllTables() override;
-    void refreshTables(const std::string& schemaName);
     void refreshViews() override;
     void refreshViews(const std::string& schemaName);
     void refreshSequences() override;
@@ -132,4 +130,5 @@ private:
 
     // Helper method for session management
     std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;
+    void triggerChildDbRefresh();
 };

@@ -9,7 +9,6 @@
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
-#include "utils/toggle_button.hpp"
 #include <algorithm>
 #include <csignal>
 #include <format>
@@ -747,33 +746,6 @@ void Application::renderMainUI() {
         ImGui::PopStyleVar(1);
     }
     ImGui::End();
-}
-
-void Application::renderMenuBar() {
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("View")) {
-            if (ImGui::MenuItem("Refresh All")) {
-                for (const auto& db : databases) {
-                    if (db->isConnected()) {
-                        db->refreshAllTables();
-                    }
-                }
-            }
-            ImGui::EndMenu();
-        }
-
-        // Push theme toggle to the right side of the menu bar
-        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 100);
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("Dark");
-        ImGui::SameLine();
-        UIUtils::ToggleButton("##ThemeToggle", &darkTheme);
-        if (ImGui::IsItemClicked()) {
-            setDarkTheme(darkTheme);
-        }
-
-        ImGui::EndMenuBar();
-    }
 }
 
 // Platform-specific methods that delegate to the platform implementation

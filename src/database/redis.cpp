@@ -16,7 +16,7 @@ RedisDatabase::~RedisDatabase() {
     disconnect();
 }
 
-std::pair<bool, std::string> RedisDatabase::connect() {
+std::pair<bool, std::string> RedisDatabase::connect(bool forceRefresh) {
     if (connected && context) {
         return {true, ""};
     }
@@ -127,7 +127,7 @@ bool RedisDatabase::isConnecting() const {
     return connecting;
 }
 
-void RedisDatabase::startConnectionAsync() {
+void RedisDatabase::startConnectionAsync(bool forceRefresh) {
     if (connecting || connected) {
         return;
     }
@@ -168,17 +168,6 @@ void* RedisDatabase::getConnection() const {
 
 DatabaseType RedisDatabase::getType() const {
     return DatabaseType::REDIS;
-}
-
-void RedisDatabase::refreshAllTables() {
-    if (!isConnected()) {
-        tablesLoaded = true;
-        return;
-    }
-
-    tables.clear();
-    groupKeysByPattern();
-    tablesLoaded = true;
 }
 
 bool RedisDatabase::isLoadingTables() const {

@@ -90,7 +90,7 @@ const MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbNam
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
-std::pair<bool, std::string> MySQLDatabase::connect() {
+std::pair<bool, std::string> MySQLDatabase::connect(bool forceRefresh) {
     // Check if we already have a connection pool to the current database
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
@@ -166,13 +166,6 @@ DatabaseType MySQLDatabase::getType() const {
 
 const std::string& MySQLDatabase::getDatabaseName() const {
     return database;
-}
-
-void MySQLDatabase::refreshAllTables() {
-    if (isLoadingTables()) {
-        return;
-    }
-    startRefreshTableAsync();
 }
 
 void MySQLDatabase::startRefreshTableAsync() {

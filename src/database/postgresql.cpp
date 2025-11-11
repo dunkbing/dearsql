@@ -157,7 +157,7 @@ const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbN
     return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
-std::pair<bool, std::string> PostgresDatabase::connect() {
+std::pair<bool, std::string> PostgresDatabase::connect(bool forceRefresh) {
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
         return {true, ""};
@@ -217,23 +217,6 @@ DatabaseType PostgresDatabase::getType() const {
 
 const std::string& PostgresDatabase::getDatabaseName() const {
     return database;
-}
-
-void PostgresDatabase::refreshAllTables() {
-    refreshTables("public");
-}
-
-void PostgresDatabase::refreshTables(const std::string& schemaName) {
-    std::cout << ("Refreshing tables for database: " + name + " schema: " + schemaName) << "\n";
-    if (!isConnected()) {
-        Logger::warn("Not connected to database, cannot refresh tables");
-        auto& schemaData = getSchemaData(schemaName);
-        schemaData.tablesLoaded = true;
-        return;
-    }
-
-    auto& schemaData = getSchemaData(schemaName);
-    schemaData.startTablesLoadAsync();
 }
 
 std::string PostgresDatabase::executeQuery(const std::string& query) {
@@ -795,4 +778,19 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& d
         res->reconnect();
     }
     return res;
+}
+
+void PostgresDatabase::triggerChildDbRefresh() {
+    Logger::debug(std::format("Triggering child db refresh for connection: {}", name));
+
+    // loop through all schemas and trigger refresh for tables, views, and sequences
+    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+        if (dbDataPtr) {
+            Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
+            dbDataPtr->startSchemasLoadAsync(true, true);
+        }
+    }
+
+    Logger::info(
+        std::format("Triggered refresh for {} schemas in database {}", databaseDataCache.size(), name));
 }

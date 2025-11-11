@@ -4,6 +4,7 @@
 #include "database/db_interface.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/drop_column_dialog.hpp"
 #include "ui/new/database_node.hpp"
@@ -75,7 +76,9 @@ void DatabaseSidebarNew::render() {
         if (success) {
             // Only refresh tables immediately for SQLite, Postgres will do it async when needed
             if (db->getType() == DatabaseType::SQLITE) {
-                db->refreshAllTables();
+                if (auto* sqlite = dynamic_cast<SQLiteDatabase*>(db.get())) {
+                    sqlite->refreshAllTables();
+                }
             }
             Logger::info(std::format("Database connection established: {}", db->getName()));
             app.addDatabase(db);
@@ -410,6 +413,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             db->setAttemptedConnection(false);
             db->setLastConnectionError("");
             db->startConnectionAsync();
+            // TODO: refresh the children's db
         }
         ImGui::EndPopup();
     }

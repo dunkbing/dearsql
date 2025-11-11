@@ -17,7 +17,7 @@ public:
     ~MySQLDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles common async)
-    std::pair<bool, std::string> connect() override;
+    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
     void disconnect() override;
 
     // Database info
@@ -28,7 +28,6 @@ public:
     const std::string& getDatabaseName() const;
 
     // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshAllTables() override;
     void refreshViews() override;
     void refreshSequences() override;
 

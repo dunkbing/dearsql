@@ -48,8 +48,8 @@ public:
     }
 
     // Async connection with automatic error handling
-    void startConnectionAsync() override {
-        connectionOp.start([this]() { return this->connect(); });
+    void startConnectionAsync(bool forceRefresh = false) override {
+        connectionOp.start([this, forceRefresh]() { return this->connect(forceRefresh); });
     }
 
     void checkConnectionStatusAsync() override {
@@ -72,10 +72,6 @@ public:
         return tables;
     }
 
-    // Schema loading state (sequences)
-    // bool isLoadingSequences() const override {
-    //     return sequencesOp.isRunning();
-    // }
     const std::vector<std::string>& getSequences() const override {
         return sequences;
     }

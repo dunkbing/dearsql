@@ -139,7 +139,6 @@ private:
     bool initializeImGui() const;
     static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
-    void renderMenuBar();
 
 public:
     void renderMainUI();

@@ -4,7 +4,6 @@
 #include "themes.hpp"
 #include <iostream>
 
-#ifdef USE_METAL_BACKEND
 #import <AppKit/AppKit.h>
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
@@ -178,15 +177,11 @@
 
 @end
 
-#endif
-
 MacOSPlatform::MacOSPlatform(Application* app) : app_(app), window_(nullptr) {
-#ifdef USE_METAL_BACKEND
     toolbarDelegate_ = nullptr;
     metalDevice_ = nullptr;
     metalCommandQueue_ = nullptr;
     metalLayer_ = nullptr;
-#endif
 }
 
 MacOSPlatform::~MacOSPlatform() {
@@ -196,7 +191,6 @@ MacOSPlatform::~MacOSPlatform() {
 bool MacOSPlatform::initializePlatform(GLFWwindow* window) {
     window_ = window;
 
-#ifdef USE_METAL_BACKEND
     // Initialize Metal device and layer
     metalDevice_ = MTLCreateSystemDefaultDevice();
     if (!metalDevice_) {
@@ -221,21 +215,17 @@ bool MacOSPlatform::initializePlatform(GLFWwindow* window) {
     metalLayer_ = layer;
 
     std::cout << "Metal device and layer initialized successfully" << std::endl;
-#endif
 
     return true;
 }
 
 bool MacOSPlatform::initializeImGuiBackend() {
-#ifdef USE_METAL_BACKEND
     ImGui_ImplMetal_Init((id<MTLDevice>)metalDevice_);
     std::cout << "ImGui Metal backend initialized" << std::endl;
-#endif
     return true;
 }
 
 void MacOSPlatform::setupTitlebar() {
-#ifdef USE_METAL_BACKEND
     // Get the native NSWindow from GLFW
     NSWindow* nsWindow = glfwGetCocoaWindow(window_);
     if (!nsWindow) {
@@ -305,11 +295,9 @@ void MacOSPlatform::setupTitlebar() {
     [nsWindow setBackgroundColor:bgColor];
 
     std::cout << "Titlebar configured successfully" << std::endl;
-#endif
 }
 
 float MacOSPlatform::getTitlebarHeight() const {
-#ifdef USE_METAL_BACKEND
     NSWindow* nsWindow = glfwGetCocoaWindow(window_);
     if (!nsWindow) {
         return 0.0f;
@@ -319,9 +307,6 @@ float MacOSPlatform::getTitlebarHeight() const {
     NSRect frame = [nsWindow frame];
     NSRect contentRect = [nsWindow contentRectForFrameRect:frame];
     return static_cast<float>(frame.size.height - contentRect.size.height);
-#else
-    return 0.0f;
-#endif
 }
 
 void MacOSPlatform::onSidebarToggleClicked() {
@@ -334,18 +319,15 @@ void MacOSPlatform::onSidebarToggleClicked() {
 }
 
 void MacOSPlatform::cleanup() {
-#ifdef USE_METAL_BACKEND
     if (toolbarDelegate_) {
         toolbarDelegate_ = nullptr;
     }
     metalDevice_ = nullptr;
     metalCommandQueue_ = nullptr;
     metalLayer_ = nullptr;
-#endif
 }
 
 void MacOSPlatform::renderFrame() {
-#ifdef USE_METAL_BACKEND
     @autoreleasepool {
         // Get the Metal drawable
         id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer_ nextDrawable];
@@ -393,20 +375,15 @@ void MacOSPlatform::renderFrame() {
         [commandBuffer presentDrawable:drawable];
         [commandBuffer commit];
     }
-#endif
 }
 
 void MacOSPlatform::shutdownImGui() {
-#ifdef USE_METAL_BACKEND
     ImGui_ImplMetal_Shutdown();
     std::cout << "ImGui Metal backend shutdown" << std::endl;
-#endif
 }
 
 void MacOSPlatform::updateWorkspaceDropdown() {
-#ifdef USE_METAL_BACKEND
     if (toolbarDelegate_) {
         [toolbarDelegate_ updateWorkspaceDropdown];
     }
-#endif
 }

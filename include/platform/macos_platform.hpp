@@ -2,13 +2,11 @@
 
 #include "platform_interface.hpp"
 
-#ifdef USE_METAL_BACKEND
 // Forward declarations for Objective-C types
 #ifdef __OBJC__
 @class ToolbarDelegate;
 #else
 typedef void ToolbarDelegate;
-#endif
 #endif
 
 class Application;
@@ -32,7 +30,6 @@ private:
     Application* app_;
     GLFWwindow* window_;
 
-#ifdef USE_METAL_BACKEND
     ToolbarDelegate* toolbarDelegate_;
 #ifdef __OBJC__
     id metalDevice_;
@@ -42,6 +39,5 @@ private:
     void* metalDevice_;
     void* metalCommandQueue_;
     void* metalLayer_;
-#endif
 #endif
 };

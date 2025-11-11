@@ -17,7 +17,7 @@
 #include <iostream>
 #include <limits>
 
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
 #include "imgui_impl_opengl3.h"
 #endif
 
@@ -139,12 +139,12 @@ bool Application::initialize() {
     // Setup title bar after window creation
     platform_->setupTitlebar();
 
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     // Update workspace dropdown after titlebar is set up
     updateWorkspaceDropdown();
 #endif
 
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
@@ -153,7 +153,7 @@ bool Application::initialize() {
 }
 
 void Application::run() {
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
     glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
                  darkTheme ? 0.137f : 0.957f, 0.98f);
 #endif
@@ -181,9 +181,9 @@ void Application::run() {
             glfwPollEvents();
         }
 
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
         platform_->renderFrame();
-#elif defined(USE_OPENGL_BACKEND)
+#elif defined(__linux__) || defined(_WIN32)
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -383,10 +383,10 @@ bool Application::initializeGLFW() {
         return false;
     }
 
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     // Metal backend doesn't need OpenGL context hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#elif defined(USE_OPENGL_BACKEND)
+#elif defined(__linux__) || defined(_WIN32)
     // OpenGL backend requires context hints
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -406,7 +406,7 @@ bool Application::initializeGLFW() {
         return false;
     }
 
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 #endif
@@ -427,9 +427,9 @@ bool Application::initializeImGui() const {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 
     // Initialize GLFW backend
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     ImGui_ImplGlfw_InitForOther(window, true);
-#elif defined(USE_OPENGL_BACKEND)
+#elif defined(__linux__) || defined(_WIN32)
     ImGui_ImplGlfw_InitForOpenGL(window, true);
 #endif
 
@@ -439,9 +439,9 @@ bool Application::initializeImGui() const {
         return false;
     }
 
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     std::cout << "ImGui initialized with Metal backend" << std::endl;
-#elif defined(USE_OPENGL_BACKEND)
+#elif defined(__linux__) || defined(_WIN32)
     std::cout << "ImGui initialized with OpenGL backend" << std::endl;
 #endif
 
@@ -488,7 +488,7 @@ void Application::setupFonts() {
 
     // Build the font atlas only for OpenGL backend
     // Metal backend handles this automatically
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
     io.Fonts->Build();
 #endif
 }
@@ -544,7 +544,7 @@ int Application::createWorkspace(const std::string& name, const std::string& des
     const int newWorkspaceId = appState->saveWorkspace(workspace);
 
     if (newWorkspaceId > 0) {
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
         updateWorkspaceDropdown();
 #endif
         // Switch to the newly created workspace
@@ -771,7 +771,7 @@ void Application::renderMenuBar() {
 }
 
 // Platform-specific methods that delegate to the platform implementation
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
 void Application::onSidebarToggleClicked() const {
     if (platform_) {
         platform_->onSidebarToggleClicked();

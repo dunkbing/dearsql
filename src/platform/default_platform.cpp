@@ -2,7 +2,7 @@
 #include "application.hpp"
 #include <iostream>
 
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
 #include "imgui_impl_opengl3.h"
 #endif
 
@@ -15,7 +15,7 @@ bool DefaultPlatform::initializePlatform(GLFWwindow* window) {
 }
 
 bool DefaultPlatform::initializeImGuiBackend() {
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
     ImGui_ImplOpenGL3_Init("#version 330");
     std::cout << "ImGui OpenGL backend initialized" << std::endl;
 #endif
@@ -44,7 +44,7 @@ void DefaultPlatform::renderFrame() {
 }
 
 void DefaultPlatform::shutdownImGui() {
-#ifdef USE_OPENGL_BACKEND
+#if defined(__linux__) || defined(_WIN32)
     ImGui_ImplOpenGL3_Shutdown();
     std::cout << "ImGui OpenGL backend shutdown" << std::endl;
 #endif

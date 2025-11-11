@@ -100,7 +100,7 @@ public:
     void refreshWorkspaceConnections();
 
     // Platform-specific methods
-#ifdef USE_METAL_BACKEND
+#ifdef __APPLE__
     void onSidebarToggleClicked() const;
     [[nodiscard]] float getTitlebarHeight() const;
     void updateWorkspaceDropdown() const;

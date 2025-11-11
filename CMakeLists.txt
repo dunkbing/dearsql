@@ -60,9 +60,6 @@ if(APPLE)
 
     # Add Metal backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
-
-    # Define preprocessor macro
-    add_definitions(-DUSE_METAL_BACKEND)
 else()
     # OpenGL backend for other platforms
     find_package(OpenGL REQUIRED)
@@ -71,9 +68,6 @@ else()
 
     # Add OpenGL backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
-
-    # Define preprocessor macro
-    add_definitions(-DUSE_OPENGL_BACKEND)
 endif()
 
 # Application source files

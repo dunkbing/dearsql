@@ -648,7 +648,7 @@ bool TableDialog::executeAddColumn() {
 
         // Refresh table structure
         // database->setTablesLoaded(false);
-        database->refreshTables();
+        database->refreshAllTables();
 
         std::cout << ("Column '" + std::string(columnName) + "' added successfully to table '" +
                       targetTableName + "'");
@@ -710,7 +710,7 @@ bool TableDialog::executeEditColumn() {
 
         // Refresh table structure
         // database->setTablesLoaded(false);
-        database->refreshTables();
+        database->refreshAllTables();
 
         Logger::info("Column '" + originalColumnName + "' updated successfully in table '" +
                      targetTableName + "'");
@@ -1112,7 +1112,7 @@ bool TableDialog::executeCreateTable() {
 
         // Refresh table structure
         // database->setTablesLoaded(false);
-        database->refreshTables();
+        database->refreshAllTables();
 
         Logger::info("Table '" + std::string(newTableName) + "' created successfully");
         return true;
@@ -1332,7 +1332,7 @@ bool TableDialog::saveTableChanges() {
 
         // Refresh table structure
         // database->setTablesLoaded(false);
-        database->refreshTables();
+        database->refreshAllTables();
 
         Logger::info("Table changes saved successfully");
         return true;

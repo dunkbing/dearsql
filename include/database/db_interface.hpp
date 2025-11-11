@@ -47,7 +47,7 @@ public:
     }
 
     // Table management
-    virtual void refreshTables() = 0;
+    virtual void refreshAllTables() = 0;
     virtual std::vector<Table>& getTables() = 0;
     [[nodiscard]] virtual bool isLoadingTables() const {
         return false;

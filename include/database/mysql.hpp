@@ -28,7 +28,7 @@ public:
     const std::string& getDatabaseName() const;
 
     // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshTables() override;
+    void refreshAllTables() override;
     void refreshViews() override;
     void refreshSequences() override;
 

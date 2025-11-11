@@ -219,7 +219,7 @@ const std::string& PostgresDatabase::getDatabaseName() const {
     return database;
 }
 
-void PostgresDatabase::refreshTables() {
+void PostgresDatabase::refreshAllTables() {
     refreshTables("public");
 }
 

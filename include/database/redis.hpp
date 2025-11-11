@@ -33,7 +33,7 @@ public:
     DatabaseType getType() const override;
 
     // Redis-specific key management (adapted to table interface)
-    void refreshTables() override; // Will load keys
+    void refreshAllTables() override; // Will load keys
     const std::vector<Table>& getTables() const;
     std::vector<Table>& getTables() override;
     bool isLoadingTables() const override;

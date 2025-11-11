@@ -32,7 +32,7 @@ public:
     }
 
     // Schema management (BaseDatabaseImpl provides getters/setters)
-    void refreshTables() override;
+    void refreshAllTables() override;
     void refreshViews() override;
     void refreshSequences() override;
 

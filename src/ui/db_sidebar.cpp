@@ -70,7 +70,7 @@ void DatabaseSidebar::render() {
         if (success) {
             // Only refresh tables immediately for SQLite, Postgres will do it async when needed
             if (db->getType() == DatabaseType::SQLITE) {
-                db->refreshTables();
+                db->refreshAllTables();
             }
             Logger::info(std::format("Database connection established: {}", db->getName()));
             app.addDatabase(db);
@@ -490,7 +490,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(const std::shared_ptr<DatabaseIn
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 db->setSequencesLoaded(false);
             }
-            db->refreshTables();
+            db->refreshAllTables();
             db->refreshViews();
             if (db->getType() == DatabaseType::POSTGRESQL) {
                 db->refreshSequences();
@@ -499,7 +499,7 @@ void DatabaseSidebar::handleDatabaseContextMenu(const std::shared_ptr<DatabaseIn
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh Tables")) {
             db->setTablesLoaded(false);
-            db->refreshTables();
+            db->refreshAllTables();
         }
         if (ImGui::MenuItem("Refresh Views")) {
             db->setViewsLoaded(false);

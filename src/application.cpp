@@ -278,6 +278,12 @@ bool Application::hasPendingAsyncWork() const {
             }
         }
 
+        if (const auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db)) {
+            if (sqliteDb->isLoadingTables() || sqliteDb->isLoadingViews()) {
+                return true;
+            }
+        }
+
         if (const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db)) {
             if (redisDb->isLoadingTables()) {
                 return true;
@@ -749,7 +755,7 @@ void Application::renderMenuBar() {
             if (ImGui::MenuItem("Refresh All")) {
                 for (const auto& db : databases) {
                     if (db->isConnected()) {
-                        db->refreshTables();
+                        db->refreshAllTables();
                     }
                 }
             }

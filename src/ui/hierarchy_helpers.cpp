@@ -457,7 +457,7 @@ namespace HierarchyHelpers {
                     auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                     pgDb->refreshTables(schemaName);
                 } else {
-                    db->refreshTables();
+                    db->refreshAllTables();
                 }
             }
             ImGui::EndPopup();
@@ -471,7 +471,7 @@ namespace HierarchyHelpers {
                 auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
                 pgDb->refreshTables(schemaName);
             } else {
-                db->refreshTables();
+                db->refreshAllTables();
             }
         }
 

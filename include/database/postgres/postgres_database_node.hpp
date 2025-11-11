@@ -43,9 +43,8 @@ public:
     bool viewsExpanded = false;  // For backward compatibility
 
     // Methods
-    void startSchemasLoadAsync(bool forceRefresh = false);
+    void startSchemasLoadAsync(bool forceRefresh = false, bool refreshChildren = false);
     void checkSchemasStatusAsync();
-    std::vector<std::unique_ptr<PostgresSchemaNode>> getSchemasForDatabaseAsync();
     std::unique_ptr<soci::session> getSession() const;
     void initializeConnectionPool(const std::string& connStr);
 
@@ -68,4 +67,7 @@ private:
     mutable std::vector<Table> allViews;
     mutable bool allTablesCached = false;
     mutable bool allViewsCached = false;
+
+    // internal method to refresh all child schemas (tables, views, sequences)
+    void triggerChildSchemaRefresh();
 };

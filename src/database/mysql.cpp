@@ -168,7 +168,7 @@ const std::string& MySQLDatabase::getDatabaseName() const {
     return database;
 }
 
-void MySQLDatabase::refreshTables() {
+void MySQLDatabase::refreshAllTables() {
     if (isLoadingTables()) {
         return;
     }

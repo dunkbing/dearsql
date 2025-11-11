@@ -170,7 +170,7 @@ DatabaseType RedisDatabase::getType() const {
     return DatabaseType::REDIS;
 }
 
-void RedisDatabase::refreshTables() {
+void RedisDatabase::refreshAllTables() {
     if (!isConnected()) {
         tablesLoaded = true;
         return;

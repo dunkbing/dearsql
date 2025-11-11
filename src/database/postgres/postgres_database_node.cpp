@@ -28,9 +28,10 @@ void PostgresDatabaseNode::checkSchemasStatusAsync() {
     }
 }
 
-void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh) {
+void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refreshChildren) {
     Logger::debug("startSchemasLoadAsync for database: " + name +
-                  (forceRefresh ? " (force refresh)" : ""));
+                  (forceRefresh ? " (force refresh)" : "") +
+                  (refreshChildren ? " (refresh children)" : ""));
     if (!parentDb) {
         return;
     }
@@ -55,75 +56,75 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh) {
     loadingSchemas = true;
 
     // Start async loading using the database's own schemasFuture
-    schemasFuture =
-        std::async(std::launch::async, [this]() { return getSchemasForDatabaseAsync(); });
-}
+    schemasFuture = std::async(std::launch::async, [this, refreshChildren]() {
+        std::vector<std::unique_ptr<PostgresSchemaNode>> result;
 
-std::vector<std::unique_ptr<PostgresSchemaNode>>
-PostgresDatabaseNode::getSchemasForDatabaseAsync() {
-    std::vector<std::unique_ptr<PostgresSchemaNode>> result;
-
-    // Check if we're still supposed to be loading
-    if (!loadingSchemas.load()) {
-        return result;
-    }
-
-    try {
-        // Ensure we have a connection pool for the specific database
-        const auto& pool = connectionPool;
-        if (!pool) {
-            // If no pool exists for this database, create one temporarily
-            const std::string dbConnectionString = parentDb->buildConnectionString(name);
-            initializeConnectionPool(dbConnectionString);
-        }
-
+        // Check if we're still supposed to be loading
         if (!loadingSchemas.load()) {
             return result;
         }
 
-        // Get schema names using the connection pool
-        std::vector<std::string> schemaNames;
-        const std::string sqlQuery =
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
-            "AND schema_name NOT LIKE 'pg_temp_%' "
-            "AND schema_name NOT LIKE 'pg_toast_temp_%' "
-            "ORDER BY schema_name";
-
-        {
-            const auto session = getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
-            for (const auto& row : rs) {
-                if (!loadingSchemas.load()) {
-                    return result;
-                }
-                schemaNames.push_back(row.get<std::string>(0));
+        try {
+            // Ensure we have a connection pool for the specific database
+            const auto& pool = connectionPool;
+            if (!pool) {
+                // If no pool exists for this database, create one temporarily
+                const std::string dbConnectionString = parentDb->buildConnectionString(name);
+                initializeConnectionPool(dbConnectionString);
             }
-        }
 
-        Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
-                      name);
-
-        if (schemaNames.empty() || !loadingSchemas.load()) {
-            return result;
-        }
-
-        for (const auto& schemaName : schemaNames) {
             if (!loadingSchemas.load()) {
-                break;
+                return result;
             }
 
-            auto schema = std::make_unique<PostgresSchemaNode>();
-            schema->name = schemaName;
-            schema->parentDbNode = this;
+            // Get schema names using the connection pool
+            std::vector<std::string> schemaNames;
+            const std::string sqlQuery =
+                "SELECT schema_name FROM information_schema.schemata "
+                "WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast') "
+                "AND schema_name NOT LIKE 'pg_temp_%' "
+                "AND schema_name NOT LIKE 'pg_toast_temp_%' "
+                "ORDER BY schema_name";
 
-            result.push_back(std::move(schema));
+            {
+                const auto session = getSession();
+                const soci::rowset rs = session->prepare << sqlQuery;
+                for (const auto& row : rs) {
+                    if (!loadingSchemas.load()) {
+                        return result;
+                    }
+                    schemaNames.push_back(row.get<std::string>(0));
+                }
+            }
+
+            Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
+                          name);
+
+            if (schemaNames.empty() || !loadingSchemas.load()) {
+                return result;
+            }
+
+            for (const auto& schemaName : schemaNames) {
+                if (!loadingSchemas.load()) {
+                    break;
+                }
+
+                auto schema = std::make_unique<PostgresSchemaNode>();
+                schema->name = schemaName;
+                schema->parentDbNode = this;
+
+                result.push_back(std::move(schema));
+            }
+        } catch (const soci::soci_error& e) {
+            std::cerr << "Error getting schemas for database " << name << ": " << e.what()
+                      << std::endl;
         }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting schemas for database " << name << ": " << e.what() << std::endl;
-    }
+        if (refreshChildren) {
+            this->triggerChildSchemaRefresh();
+        }
 
-    return result;
+        return result;
+    });
 }
 
 std::unique_ptr<soci::session> PostgresDatabaseNode::getSession() const {
@@ -306,4 +307,27 @@ int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::
         std::cerr << "Error getting row count: " << e.what() << std::endl;
         return 0;
     }
+}
+
+void PostgresDatabaseNode::triggerChildSchemaRefresh() {
+    Logger::debug(std::format("Triggering child schema refresh for database: {}", name));
+
+    // loop through all schemas and trigger refresh for tables, views, and sequences
+    for (auto& schema : schemas) {
+        if (schema) {
+            Logger::debug(std::format("Refreshing schema: {}", schema->name));
+
+            // trigger refresh for tables
+            schema->startTablesLoadAsync(true);
+
+            // trigger refresh for views
+            schema->startViewsLoadAsync(true);
+
+            // trigger refresh for sequences
+            schema->startSequencesLoadAsync(true);
+        }
+    }
+
+    Logger::info(
+        std::format("Triggered refresh for {} schemas in database {}", schemas.size(), name));
 }

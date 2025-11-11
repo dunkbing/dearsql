@@ -75,7 +75,7 @@ void DatabaseSidebarNew::render() {
         if (success) {
             // Only refresh tables immediately for SQLite, Postgres will do it async when needed
             if (db->getType() == DatabaseType::SQLITE) {
-                db->refreshTables();
+                db->refreshAllTables();
             }
             Logger::info(std::format("Database connection established: {}", db->getName()));
             app.addDatabase(db);
@@ -389,61 +389,27 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     }
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        if (ImGui::MenuItem("Refresh All")) {
-            // db->setTablesLoaded(false);
-            // db->setViewsLoaded(false);
-            if (db->getType() == DatabaseType::POSTGRESQL) {
-                // db->setSequencesLoaded(false);
-            }
-            db->refreshTables();
-            db->refreshViews();
-            if (db->getType() == DatabaseType::POSTGRESQL) {
-                db->refreshSequences();
+        if (ImGui::MenuItem("Edit connection")) {
+            databaseToEdit = db;
+        }
+
+        if (db->isConnected()) {
+            if (ImGui::MenuItem("Disconnect")) {
+                db->disconnect();
             }
         }
+
         ImGui::Separator();
-        if (ImGui::MenuItem("Refresh Tables")) {
-            // db->setTablesLoaded(false);
-            db->refreshTables();
-        }
-        if (ImGui::MenuItem("Refresh Views")) {
-            // db->setViewsLoaded(false);
-            db->refreshViews();
-        }
-        if (db->getType() == DatabaseType::POSTGRESQL && ImGui::MenuItem("Refresh Sequences")) {
-            // db->setSequencesLoaded(false);
-            db->refreshSequences();
+        if (ImGui::MenuItem("Remove Database")) {
+            shouldShowDeleteConfirmation = true;
+            databasePendingDeletion = db;
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {
             db->disconnect();
             db->setAttemptedConnection(false);
-            // db->setTablesLoaded(false);
-            // db->setViewsLoaded(false);
-            // db->setSequencesLoaded(false);
             db->setLastConnectionError("");
             db->startConnectionAsync();
-        }
-        ImGui::Separator();
-
-        if (db->getType() == DatabaseType::POSTGRESQL || db->getType() == DatabaseType::MYSQL) {
-            if (ImGui::MenuItem("Create new database")) {
-                shouldShowCreateDatabaseDialog = true;
-                createDatabaseTarget = db;
-            }
-        }
-
-        if (ImGui::MenuItem("Edit connection")) {
-            databaseToEdit = db;
-        }
-
-        if (ImGui::MenuItem("Disconnect")) {
-            db->disconnect();
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Remove Database")) {
-            shouldShowDeleteConfirmation = true;
-            databasePendingDeletion = db;
         }
         ImGui::EndPopup();
     }

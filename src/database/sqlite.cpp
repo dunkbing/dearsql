@@ -57,7 +57,7 @@ DatabaseType SQLiteDatabase::getType() const {
     return DatabaseType::SQLITE;
 }
 
-void SQLiteDatabase::refreshTables() {
+void SQLiteDatabase::refreshAllTables() {
     std::cout << "Refreshing tables for database: " << name << std::endl;
     if (!isConnected()) {
         std::cout << "Failed to connect to database" << std::endl;

@@ -299,7 +299,7 @@ namespace NewHierarchy {
                 app.getTabManager()->createSQLEditorTab("", dbData);
             }
             if (ImGui::MenuItem("Refresh")) {
-                dbData->startSchemasLoadAsync(true);
+                dbData->startSchemasLoadAsync(true, true);
             }
             ImGui::EndPopup();
         }
@@ -346,6 +346,11 @@ namespace NewHierarchy {
             if (ImGui::MenuItem("Show Diagram")) {
                 app.getTabManager()->createDiagramTab(schemaData);
             }
+            if (ImGui::MenuItem("Refresh")) {
+                schemaData->startTablesLoadAsync(true);
+                schemaData->startViewsLoadAsync(true);
+                schemaData->startSequencesLoadAsync(true);
+            }
             ImGui::EndPopup();
         }
 
@@ -360,7 +365,7 @@ namespace NewHierarchy {
                 // Context menu for Tables node
                 if (ImGui::BeginPopupContextItem(nullptr)) {
                     if (ImGui::MenuItem("Refresh")) {
-                        schemaData->startTablesLoadAsync(true); // Force refresh
+                        schemaData->startTablesLoadAsync(true);
                     }
                     ImGui::EndPopup();
                 }

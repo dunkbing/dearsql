@@ -306,11 +306,11 @@ namespace NewHierarchy {
 
         if (isOpen) {
             // PostgreSQL: render schemas
-            if (!dbData->schemasLoaded && !dbData->loadingSchemas) {
+            if (!dbData->schemasLoaded && !dbData->schemasLoader.isRunning()) {
                 dbData->startSchemasLoadAsync();
             }
 
-            if (dbData->loadingSchemas) {
+            if (dbData->schemasLoader.isRunning()) {
                 dbData->checkSchemasStatusAsync();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading schemas...");
@@ -371,11 +371,11 @@ namespace NewHierarchy {
                 }
 
                 if (tablesOpen) {
-                    if (!schemaData->tablesLoaded && !schemaData->loadingTables) {
+                    if (!schemaData->tablesLoaded && !schemaData->tablesLoader.isRunning()) {
                         schemaData->startTablesLoadAsync();
                     }
 
-                    if (schemaData->loadingTables) {
+                    if (schemaData->tablesLoader.isRunning()) {
                         schemaData->checkTablesStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading tables...");
@@ -414,11 +414,11 @@ namespace NewHierarchy {
                 }
 
                 if (viewsOpen) {
-                    if (!schemaData->viewsLoaded && !schemaData->loadingViews) {
+                    if (!schemaData->viewsLoaded && !schemaData->viewsLoader.isRunning()) {
                         schemaData->startViewsLoadAsync();
                     }
 
-                    if (schemaData->loadingViews) {
+                    if (schemaData->viewsLoader.isRunning()) {
                         schemaData->checkViewsStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading views...");
@@ -459,11 +459,11 @@ namespace NewHierarchy {
                 }
 
                 if (seqOpen) {
-                    if (!schemaData->sequencesLoaded && !schemaData->loadingSequences) {
+                    if (!schemaData->sequencesLoaded && !schemaData->sequencesLoader.isRunning()) {
                         schemaData->startSequencesLoadAsync();
                     }
 
-                    if (schemaData->loadingSequences) {
+                    if (schemaData->sequencesLoader.isRunning()) {
                         schemaData->checkSequencesStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading sequences...");

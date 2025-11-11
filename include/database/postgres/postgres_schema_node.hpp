@@ -1,9 +1,8 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "database/table_data_provider.hpp"
-#include <atomic>
-#include <future>
 #include <string>
 #include <vector>
 
@@ -30,14 +29,11 @@ public:
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false;
-    std::atomic<bool> loadingTables = false;
-    std::atomic<bool> loadingViews = false;
-    std::atomic<bool> loadingSequences = false;
 
-    // Async futures
-    std::future<std::vector<Table>> tablesFuture;
-    std::future<std::vector<Table>> viewsFuture;
-    std::future<std::vector<std::string>> sequencesFuture;
+    // Async operations
+    AsyncOperation<std::vector<Table>> tablesLoader;
+    AsyncOperation<std::vector<Table>> viewsLoader;
+    AsyncOperation<std::vector<std::string>> sequencesLoader;
 
     // UI expansion state
     bool tablesExpanded = false;

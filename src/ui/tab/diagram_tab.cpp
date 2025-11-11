@@ -210,12 +210,12 @@ void DiagramTab::loadDatabaseSchema() {
     if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
         if (*schemaNode) {
             // Check if tables are loaded
-            if (!(*schemaNode)->tablesLoaded && !(*schemaNode)->loadingTables) {
+            if (!(*schemaNode)->tablesLoaded && !(*schemaNode)->tablesLoader.isRunning()) {
                 (*schemaNode)->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if ((*schemaNode)->loadingTables) {
+            if ((*schemaNode)->tablesLoader.isRunning()) {
                 schemaLoaded = false; // Keep trying
                 return;
             }

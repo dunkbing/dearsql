@@ -1,7 +1,6 @@
 #include "database/postgresql.hpp"
 #include "database/db.hpp"
 #include "utils/logger.hpp"
-#include <chrono>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -20,50 +19,21 @@ PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
 }
 
 PostgresDatabase::~PostgresDatabase() {
-    // Stop all async operations before cleaning up
-    loadingDatabases = false;
+    // Cancel and stop all async operations before cleaning up
+    databasesLoader.cancel();
 
     // Stop all per-database async operations
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (!dbDataPtr)
             continue;
         auto& dbData = *dbDataPtr;
-        dbData.loadingSchemas = false;
+        dbData.schemasLoader.cancel();
 
-        // Wait for all schema-level futures to complete
+        // Wait for all schema-level operations to complete
         for (const auto& schema : dbData.schemas) {
-            schema->loadingTables = false;
-            schema->loadingViews = false;
-            schema->loadingSequences = false;
-
-            if (schema->tablesFuture.valid()) {
-                schema->tablesFuture.wait();
-            }
-            if (schema->viewsFuture.valid()) {
-                schema->viewsFuture.wait();
-            }
-            if (schema->sequencesFuture.valid()) {
-                schema->sequencesFuture.wait();
-            }
-        }
-
-        // Wait for database-level futures
-        if (dbData.schemasFuture.valid()) {
-            dbData.schemasFuture.wait();
-        }
-    }
-
-    if (databasesFuture.valid()) {
-        databasesFuture.wait();
-    }
-
-    // Wait for all per-database schema futures to complete
-    for (auto& dbDataPtr : databaseDataCache | std::views::values) {
-        if (!dbDataPtr)
-            continue;
-        auto& dbData = *dbDataPtr;
-        if (dbData.schemasFuture.valid()) {
-            dbData.schemasFuture.wait();
+            schema->tablesLoader.cancel();
+            schema->viewsLoader.cancel();
+            schema->sequencesLoader.cancel();
         }
     }
 
@@ -172,7 +142,7 @@ std::pair<bool, std::string> PostgresDatabase::connect(bool forceRefresh) {
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
-        if (connectionInfo.showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
+        if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
             Logger::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
@@ -572,7 +542,7 @@ void PostgresDatabase::setSchemasLoaded(const bool loaded) {
 
 bool PostgresDatabase::isLoadingSchemas() const {
     const auto* dbData = getCurrentDatabaseData();
-    return dbData ? dbData->loadingSchemas.load() : false;
+    return dbData ? dbData->schemasLoader.isRunning() : false;
 }
 
 std::vector<std::string> PostgresDatabase::getDatabases() {
@@ -585,7 +555,7 @@ std::vector<std::string> PostgresDatabase::getDatabases() {
         return databases;
     }
 
-    if (!loadingDatabases.load() && isConnected()) {
+    if (!databasesLoader.isRunning() && isConnected()) {
         refreshDatabaseNames();
     }
 
@@ -600,70 +570,60 @@ std::vector<std::string> PostgresDatabase::getDatabases() {
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
 PostgresDatabase::getDatabaseDataMap() {
     // autoload databases if not loaded and not currently loading
-    if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
+    if (!databasesLoaded && !databasesLoader.isRunning() && isConnected()) {
         refreshDatabaseNames();
     }
     return databaseDataCache;
 }
 
 void PostgresDatabase::refreshDatabaseNames() {
-    if (loadingDatabases.load()) {
+    if (databasesLoader.isRunning()) {
         return;
     }
 
     // clear previous results
     availableDatabases.clear();
     databasesLoaded = false;
-    loadingDatabases = true;
 
-    // start async loading with std::async
-    databasesFuture = std::async(std::launch::async, [this]() { return getDatabaseNamesAsync(); });
+    // start async loading using AsyncOperation
+    databasesLoader.start([this]() { return getDatabaseNamesAsync(); });
 }
 
 bool PostgresDatabase::isLoadingDatabases() const {
-    return loadingDatabases.load();
+    return databasesLoader.isRunning();
 }
 
 void PostgresDatabase::checkDatabasesStatusAsync() {
-    if (databasesFuture.valid() &&
-        databasesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            const auto& databases = databasesFuture.get();
-            std::cout << "Async database loading completed. Found " << databases.size()
-                      << " databases." << std::endl;
+    databasesLoader.check([this](const std::vector<std::string>& databases) {
+        std::cout << "Async database loading completed. Found " << databases.size()
+                  << " databases." << std::endl;
 
-            // Populate databaseDataCache with all available databases
-            for (const auto& dbName : databases) {
-                auto it = databaseDataCache.find(dbName);
-                if (it == databaseDataCache.end()) {
-                    // Create new DatabaseData with the name set
-                    auto newData = std::make_unique<PostgresDatabaseNode>();
-                    newData->name = dbName;
-                    newData->parentDb = this;
-                    databaseDataCache[dbName] = std::move(newData);
-                }
+        // Populate databaseDataCache with all available databases
+        for (const auto& dbName : databases) {
+            auto it = databaseDataCache.find(dbName);
+            if (it == databaseDataCache.end()) {
+                // Create new DatabaseData with the name set
+                auto newData = std::make_unique<PostgresDatabaseNode>();
+                newData->name = dbName;
+                newData->parentDb = this;
+                databaseDataCache[dbName] = std::move(newData);
             }
-
-            databasesLoaded = true;
-            loadingDatabases = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async database loading: " << e.what() << std::endl;
-            databasesLoaded = true;
-            loadingDatabases = false;
         }
-    }
+
+        databasesLoaded = true;
+    });
 }
 
 std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
     std::vector<std::string> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingDatabases.load()) {
+    if (!databasesLoader.isRunning()) {
         return result;
     }
 
     try {
-        if (!loadingDatabases.load()) {
+        if (!databasesLoader.isRunning()) {
             return result;
         }
 
@@ -681,8 +641,8 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
         const soci::rowset rs = session->prepare << sqlQuery;
 
         for (const auto& row : rs) {
-            if (!loadingDatabases.load()) {
-                break; // Stop processing if we should no longer be loading
+            if (!databasesLoader.isRunning()) {
+                break;
             }
 
             auto dbName = row.get<std::string>(0);

@@ -1,10 +1,9 @@
 #pragma once
 
+#include "async_helper.hpp"
 #include "base_database.hpp"
 #include "postgres/postgres_database_node.hpp"
 #include "postgres/postgres_schema_node.hpp"
-#include <atomic>
-#include <future>
 #include <mutex>
 #include <set>
 #include <soci/connection-pool.h>
@@ -93,8 +92,7 @@ private:
     bool databasesLoaded = false;
 
     // Async database loading
-    std::atomic<bool> loadingDatabases = false;
-    std::future<std::vector<std::string>> databasesFuture;
+    AsyncOperation<std::vector<std::string>> databasesLoader;
 
     std::string targetDatabaseName;
 

@@ -413,7 +413,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             db->setAttemptedConnection(false);
             db->setLastConnectionError("");
             db->startConnectionAsync();
-            // TODO: refresh the children's db
+            // TODO: refresh the children's node
         }
         ImGui::EndPopup();
     }

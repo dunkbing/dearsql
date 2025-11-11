@@ -26,7 +26,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode
     populateAutoCompleteKeywords();
 
     // Start loading schemas if not already loaded
-    if (dbNode && !dbNode->schemasLoaded && !dbNode->loadingSchemas) {
+    if (dbNode && !dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning()) {
         dbNode->startSchemasLoadAsync();
     }
 }
@@ -264,12 +264,12 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
 
         if (!targetDb.empty()) {
             const auto* dbData = pgDb->getDatabaseData(targetDb);
-            if (dbData && dbData->loadingSchemas) {
+            if (dbData && dbData->schemasLoader.isRunning()) {
                 isLoadingAnySchemas = true;
             }
 
             if (dbData && selectedSchemaName.empty() && !dbData->schemasLoaded &&
-                !dbData->loadingSchemas) {
+                !dbData->schemasLoader.isRunning()) {
                 needsSchemasForTargetDb = true;
             }
         }
@@ -314,7 +314,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
 
             if (!targetDb.empty()) {
                 auto* targetDbData = pgDb->getDatabaseData(targetDb);
-                if (targetDbData && !targetDbData->schemasLoaded && !targetDbData->loadingSchemas) {
+                if (targetDbData && !targetDbData->schemasLoaded && !targetDbData->schemasLoader.isRunning()) {
                     if (targetDb == pgDb->getDatabaseName()) {
                         if (!pgDb->isLoadingSchemas()) {
                             pgDb->refreshSchemas();
@@ -326,7 +326,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             }
 
             for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
-                if (dbDataPtr && !dbDataPtr->schemasLoaded && !dbDataPtr->loadingSchemas &&
+                if (dbDataPtr && !dbDataPtr->schemasLoaded && !dbDataPtr->schemasLoader.isRunning() &&
                     (!currentNode || dbName != currentNode->name)) {
                     dbDataPtr->startSchemasLoadAsync();
                 }
@@ -349,7 +349,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
                         schemas.push_back(schemaPtr->name);
                     }
                 }
-            } else if (!db->loadingSchemas) {
+            } else if (!db->schemasLoader.isRunning()) {
                 db->startSchemasLoadAsync();
             }
 
@@ -372,7 +372,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             }
 
             const bool isCurrentDatabase = currentNode && currentNode->name == db->name;
-            if (db->loadingSchemas) {
+            if (db->schemasLoader.isRunning()) {
                 ImGui::Indent(16.0f);
                 ImGui::Text("  Loading schemas...");
                 ImGui::Unindent(16.0f);

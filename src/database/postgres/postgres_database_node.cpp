@@ -9,23 +9,12 @@
 #include <soci/soci.h>
 
 void PostgresDatabaseNode::checkSchemasStatusAsync() {
-    // Check the schema future in PostgresDatabaseNode
-    if (schemasFuture.valid() &&
-        schemasFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            schemas = schemasFuture.get();
-            Logger::info(
-                std::format("Async schema loading completed for database {}. Found {} schemas",
-                            name, schemas.size()));
-            schemasLoaded = true;
-            loadingSchemas = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async schema loading for database " << name << ": " << e.what()
-                      << std::endl;
-            schemasLoaded = true;
-            loadingSchemas = false;
-        }
-    }
+    schemasLoader.check([this](const std::vector<std::unique_ptr<PostgresSchemaNode>>& result) {
+        schemas = std::move(const_cast<std::vector<std::unique_ptr<PostgresSchemaNode>>&>(result));
+        Logger::info(std::format("Async schema loading completed for database {}. Found {} schemas",
+                                 name, schemas.size()));
+        schemasLoaded = true;
+    });
 }
 
 void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refreshChildren) {
@@ -37,7 +26,7 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
     }
 
     // Don't start if already loading
-    if (loadingSchemas.load()) {
+    if (schemasLoader.isRunning()) {
         return;
     }
 
@@ -53,14 +42,12 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
         return;
     }
 
-    loadingSchemas = true;
-
-    // Start async loading using the database's own schemasFuture
-    schemasFuture = std::async(std::launch::async, [this, refreshChildren]() {
+    // Start async loading using AsyncOperation
+    schemasLoader.start([this, refreshChildren]() {
         std::vector<std::unique_ptr<PostgresSchemaNode>> result;
 
         // Check if we're still supposed to be loading
-        if (!loadingSchemas.load()) {
+        if (!schemasLoader.isRunning()) {
             return result;
         }
 
@@ -73,7 +60,7 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
                 initializeConnectionPool(dbConnectionString);
             }
 
-            if (!loadingSchemas.load()) {
+            if (!schemasLoader.isRunning()) {
                 return result;
             }
 
@@ -90,7 +77,7 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
                 const auto session = getSession();
                 const soci::rowset rs = session->prepare << sqlQuery;
                 for (const auto& row : rs) {
-                    if (!loadingSchemas.load()) {
+                    if (!schemasLoader.isRunning()) {
                         return result;
                     }
                     schemaNames.push_back(row.get<std::string>(0));
@@ -100,12 +87,12 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
             Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
                           name);
 
-            if (schemaNames.empty() || !loadingSchemas.load()) {
+            if (schemaNames.empty() || !schemasLoader.isRunning()) {
                 return result;
             }
 
             for (const auto& schemaName : schemaNames) {
-                if (!loadingSchemas.load()) {
+                if (!schemasLoader.isRunning()) {
                     break;
                 }
 

@@ -1,9 +1,8 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "postgres_schema_node.hpp"
-#include <atomic>
-#include <future>
 #include <memory>
 #include <soci/connection-pool.h>
 #include <string>
@@ -33,8 +32,7 @@ public:
     // deprecated
     std::unordered_map<std::string, std::unique_ptr<PostgresSchemaNode>> schemaDataCache;
     bool schemasLoaded = false;
-    std::atomic<bool> loadingSchemas = false;
-    std::future<std::vector<std::unique_ptr<PostgresSchemaNode>>> schemasFuture;
+    AsyncOperation<std::vector<std::unique_ptr<PostgresSchemaNode>>> schemasLoader;
     std::string lastSchemasError;
 
     // UI expansion state

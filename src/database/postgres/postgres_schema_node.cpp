@@ -9,22 +9,12 @@
 #include <unordered_map>
 
 void PostgresSchemaNode::checkTablesStatusAsync() {
-    if (tablesFuture.valid() &&
-        tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tables = tablesFuture.get();
-            Logger::info(std::format("Async table loading completed for schema {}. Found {} tables",
-                                     name, tables.size()));
-            tablesLoaded = true;
-            loadingTables = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async table loading for schema " << name << ": " << e.what()
-                      << std::endl;
-            lastTablesError = e.what();
-            tablesLoaded = true;
-            loadingTables = false;
-        }
-    }
+    tablesLoader.check([this](const std::vector<Table>& result) {
+        tables = result;
+        Logger::info(std::format("Async table loading completed for schema {}. Found {} tables",
+                                 name, tables.size()));
+        tablesLoaded = true;
+    });
 }
 
 void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
@@ -35,7 +25,7 @@ void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
     }
 
     // Don't start if already loading
-    if (loadingTables.load()) {
+    if (tablesLoader.isRunning()) {
         return;
     }
 
@@ -51,18 +41,17 @@ void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
         return;
     }
 
-    loadingTables = true;
     tables.clear();
 
     // Start async loading
-    tablesFuture = std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
+    tablesLoader.start([this]() { return getTablesWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingTables.load()) {
+    if (!tablesLoader.isRunning()) {
         return result;
     }
 
@@ -80,7 +69,7 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
             auto session = parentDbNode->getSession();
             const soci::rowset tableRs = session->prepare << tableNamesQuery;
             for (const auto& row : tableRs) {
-                if (!loadingTables.load()) {
+                if (!tablesLoader.isRunning()) {
                     return result;
                 }
                 tableNames.push_back(row.get<std::string>(0));
@@ -89,7 +78,7 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
 
         Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in schema " + name);
 
-        if (tableNames.empty() || !loadingTables.load()) {
+        if (tableNames.empty() || !tablesLoader.isRunning()) {
             return result;
         }
 
@@ -127,7 +116,7 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
             const soci::rowset rs = session->prepare << sqlQuery;
 
             for (const auto& row : rs) {
-                if (!loadingTables.load()) {
+                if (!tablesLoader.isRunning()) {
                     break;
                 }
 
@@ -144,7 +133,7 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
 
         // Build the result tables
         for (const auto& tableName : tableNames) {
-            if (!loadingTables.load()) {
+            if (!tablesLoader.isRunning()) {
                 break;
             }
 
@@ -168,22 +157,12 @@ std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
 }
 
 void PostgresSchemaNode::checkViewsStatusAsync() {
-    if (viewsFuture.valid() &&
-        viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            views = viewsFuture.get();
-            Logger::info(std::format("Async view loading completed for schema {}. Found {} views",
-                                     name, views.size()));
-            viewsLoaded = true;
-            loadingViews = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async view loading for schema " << name << ": " << e.what()
-                      << std::endl;
-            lastViewsError = e.what();
-            viewsLoaded = true;
-            loadingViews = false;
-        }
-    }
+    viewsLoader.check([this](const std::vector<Table>& result) {
+        views = result;
+        Logger::info(std::format("Async view loading completed for schema {}. Found {} views", name,
+                                 views.size()));
+        viewsLoaded = true;
+    });
 }
 
 void PostgresSchemaNode::startViewsLoadAsync(bool forceRefresh) {
@@ -194,7 +173,7 @@ void PostgresSchemaNode::startViewsLoadAsync(bool forceRefresh) {
     }
 
     // Don't start if already loading
-    if (loadingViews.load()) {
+    if (viewsLoader.isRunning()) {
         return;
     }
 
@@ -210,18 +189,17 @@ void PostgresSchemaNode::startViewsLoadAsync(bool forceRefresh) {
         return;
     }
 
-    loadingViews = true;
     views.clear();
 
     // Start async loading
-    viewsFuture = std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
+    viewsLoader.start([this]() { return getViewsWithColumnsAsync(); });
 }
 
 std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingViews.load()) {
+    if (!viewsLoader.isRunning()) {
         return result;
     }
 
@@ -239,7 +217,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             auto session = parentDbNode->getSession();
             const soci::rowset viewRs = session->prepare << viewNamesQuery;
             for (const auto& row : viewRs) {
-                if (!loadingViews.load()) {
+                if (!viewsLoader.isRunning()) {
                     return result;
                 }
                 viewNames.push_back(row.get<std::string>(0));
@@ -248,7 +226,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 
         Logger::debug("Found " + std::to_string(viewNames.size()) + " views in schema " + name);
 
-        if (viewNames.empty() || !loadingViews.load()) {
+        if (viewNames.empty() || !viewsLoader.isRunning()) {
             return result;
         }
 
@@ -278,7 +256,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             const soci::rowset rs = session->prepare << sqlQuery;
 
             for (const auto& row : rs) {
-                if (!loadingViews.load()) {
+                if (!viewsLoader.isRunning()) {
                     break;
                 }
 
@@ -295,7 +273,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 
         // Build the result views
         for (const auto& viewName : viewNames) {
-            if (!loadingViews.load()) {
+            if (!viewsLoader.isRunning()) {
                 break;
             }
 
@@ -319,23 +297,12 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 }
 
 void PostgresSchemaNode::checkSequencesStatusAsync() {
-    if (sequencesFuture.valid() &&
-        sequencesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            sequences = sequencesFuture.get();
-            Logger::info(
-                std::format("Async sequence loading completed for schema {}. Found {} sequences",
-                            name, sequences.size()));
-            sequencesLoaded = true;
-            loadingSequences = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async sequence loading for schema " << name << ": " << e.what()
-                      << std::endl;
-            lastSequencesError = e.what();
-            sequencesLoaded = true;
-            loadingSequences = false;
-        }
-    }
+    sequencesLoader.check([this](const std::vector<std::string>& result) {
+        sequences = result;
+        Logger::info(std::format("Async sequence loading completed for schema {}. Found {} sequences",
+                                 name, sequences.size()));
+        sequencesLoaded = true;
+    });
 }
 
 void PostgresSchemaNode::startSequencesLoadAsync(bool forceRefresh) {
@@ -346,7 +313,7 @@ void PostgresSchemaNode::startSequencesLoadAsync(bool forceRefresh) {
     }
 
     // Don't start if already loading
-    if (loadingSequences.load()) {
+    if (sequencesLoader.isRunning()) {
         return;
     }
 
@@ -362,18 +329,17 @@ void PostgresSchemaNode::startSequencesLoadAsync(bool forceRefresh) {
         return;
     }
 
-    loadingSequences = true;
     sequences.clear();
 
     // Start async loading
-    sequencesFuture = std::async(std::launch::async, [this]() { return getSequencesAsync(); });
+    sequencesLoader.start([this]() { return getSequencesAsync(); });
 }
 
 std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
     std::vector<std::string> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingSequences.load()) {
+    if (!sequencesLoader.isRunning()) {
         return result;
     }
 
@@ -391,7 +357,7 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
             auto session = parentDbNode->getSession();
             const soci::rowset sequenceRs = session->prepare << sequencesQuery;
             for (const auto& row : sequenceRs) {
-                if (!loadingSequences.load()) {
+                if (!sequencesLoader.isRunning()) {
                     return result;
                 }
                 result.push_back(row.get<std::string>(0));

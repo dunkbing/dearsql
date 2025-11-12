@@ -530,11 +530,11 @@ namespace NewHierarchy {
                     "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
                 if (tablesOpen) {
-                    if (!dbData->tablesLoaded && !dbData->loadingTables) {
+                    if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
                         dbData->startTablesLoadAsync();
                     }
 
-                    if (dbData->loadingTables) {
+                    if (dbData->tablesLoader.isRunning()) {
                         dbData->checkTablesStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading tables...");
@@ -565,11 +565,11 @@ namespace NewHierarchy {
                                                               ImGui::GetColorU32(colors.teal));
 
                 if (viewsOpen) {
-                    if (!dbData->viewsLoaded && !dbData->loadingViews) {
+                    if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning()) {
                         dbData->startViewsLoadAsync();
                     }
 
-                    if (dbData->loadingViews) {
+                    if (dbData->viewsLoader.isRunning()) {
                         dbData->checkViewsStatusAsync();
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                         ImGui::Text("  Loading views...");

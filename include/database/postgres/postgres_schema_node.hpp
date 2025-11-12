@@ -48,7 +48,7 @@ public:
     // Methods
     void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
-    std::vector<Table> getTablesWithColumnsAsync();
+    std::vector<Table> getTablesAsync();
 
     void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();

@@ -9,47 +9,41 @@
 #include <soci/soci.h>
 
 void MySQLDatabaseNode::checkTablesStatusAsync() {
-    if (tablesFuture.valid() &&
-        tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tables = tablesFuture.get();
-            Logger::info(
-                std::format("Async table loading completed for database {}. Found {} tables", name,
-                            tables.size()));
-            tablesLoaded = true;
-            loadingTables = false;
-        } catch (const std::exception& e) {
-            Logger::error(
-                std::format("Error in async table loading for database {}: {}", name, e.what()));
-            lastTablesError = e.what();
-            tablesLoaded = true;
-            loadingTables = false;
-        }
-    }
+    tablesLoader.check([this](const std::vector<Table>& result) {
+        tables = result;
+        Logger::info(std::format("Async table loading completed for database {}. Found {} tables",
+                                 name, tables.size()));
+        tablesLoaded = true;
+    });
 }
 
-void MySQLDatabaseNode::startTablesLoadAsync() {
+void MySQLDatabaseNode::startTablesLoadAsync(bool forceRefresh) {
     Logger::debug("startTablesLoadAsync for database: " + name);
     if (!parentDb) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingTables.load() || tablesLoaded) {
+    // Don't start if already loading or already loaded (unless force refresh)
+    if (tablesLoader.isRunning() || (tablesLoaded && !forceRefresh)) {
         return;
     }
 
-    loadingTables = true;
+    // Clear previous results on force refresh
+    if (forceRefresh) {
+        tables.clear();
+        tablesLoaded = false;
+        lastTablesError.clear();
+    }
 
-    // Start async loading
-    tablesFuture = std::async(std::launch::async, [this]() { return getTablesForDatabaseAsync(); });
+    // Start async loading using AsyncOperation
+    tablesLoader.start([this]() { return getTablesAsync(); });
 }
 
-std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
+std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingTables.load()) {
+    if (!tablesLoader.isRunning()) {
         return result;
     }
 
@@ -60,7 +54,7 @@ std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
             initializeConnectionPool(dbConnectionString);
         }
 
-        if (!loadingTables.load()) {
+        if (!tablesLoader.isRunning()) {
             return result;
         }
 
@@ -71,7 +65,7 @@ std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
             const auto session = getSession();
             const soci::rowset tableRs = session->prepare << tableNamesQuery;
             for (const auto& row : tableRs) {
-                if (!loadingTables.load()) {
+                if (!tablesLoader.isRunning()) {
                     return result;
                 }
                 tableNames.push_back(row.get<std::string>(0));
@@ -80,13 +74,13 @@ std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
 
         Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in database " + name);
 
-        if (tableNames.empty() || !loadingTables.load()) {
+        if (tableNames.empty() || !tablesLoader.isRunning()) {
             return result;
         }
 
         // Load table details
         for (const auto& tableName : tableNames) {
-            if (!loadingTables.load()) {
+            if (!tablesLoader.isRunning()) {
                 break;
             }
 
@@ -101,7 +95,7 @@ std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
                 const soci::rowset columnsRs = session->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
-                    if (!loadingTables.load()) {
+                    if (!tablesLoader.isRunning()) {
                         break;
                     }
 
@@ -125,46 +119,41 @@ std::vector<Table> MySQLDatabaseNode::getTablesForDatabaseAsync() {
 }
 
 void MySQLDatabaseNode::checkViewsStatusAsync() {
-    if (viewsFuture.valid() &&
-        viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            views = viewsFuture.get();
-            Logger::info(std::format("Async view loading completed for database {}. Found {} views",
-                                     name, views.size()));
-            viewsLoaded = true;
-            loadingViews = false;
-        } catch (const std::exception& e) {
-            Logger::error(
-                std::format("Error in async view loading for database {}: {}", name, e.what()));
-            lastViewsError = e.what();
-            viewsLoaded = true;
-            loadingViews = false;
-        }
-    }
+    viewsLoader.check([this](const std::vector<Table>& result) {
+        views = result;
+        Logger::info(std::format("Async view loading completed for database {}. Found {} views",
+                                 name, views.size()));
+        viewsLoaded = true;
+    });
 }
 
-void MySQLDatabaseNode::startViewsLoadAsync() {
+void MySQLDatabaseNode::startViewsLoadAsync(bool forceRefresh) {
     Logger::debug("startViewsLoadAsync for database: " + name);
     if (!parentDb) {
         return;
     }
 
-    // Don't start if already loading or loaded
-    if (loadingViews.load() || viewsLoaded) {
+    // Don't start if already loading or already loaded (unless force refresh)
+    if (viewsLoader.isRunning() || (viewsLoaded && !forceRefresh)) {
         return;
     }
 
-    loadingViews = true;
+    // Clear previous results on force refresh
+    if (forceRefresh) {
+        views.clear();
+        viewsLoaded = false;
+        lastViewsError.clear();
+    }
 
-    // Start async loading
-    viewsFuture = std::async(std::launch::async, [this]() { return getViewsForDatabaseAsync(); });
+    // Start async loading using AsyncOperation
+    viewsLoader.start([this]() { return getViewsForDatabaseAsync(); });
 }
 
 std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
-    if (!loadingViews.load()) {
+    if (!viewsLoader.isRunning()) {
         return result;
     }
 
@@ -175,7 +164,7 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             initializeConnectionPool(dbConnectionString);
         }
 
-        if (!loadingViews.load()) {
+        if (!viewsLoader.isRunning()) {
             return result;
         }
 
@@ -186,7 +175,7 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             const auto session = getSession();
             const soci::rowset viewRs = session->prepare << viewNamesQuery;
             for (const auto& row : viewRs) {
-                if (!loadingViews.load()) {
+                if (!viewsLoader.isRunning()) {
                     return result;
                 }
                 viewNames.push_back(row.get<std::string>(0));
@@ -195,13 +184,13 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
 
         Logger::debug("Found " + std::to_string(viewNames.size()) + " views in database " + name);
 
-        if (viewNames.empty() || !loadingViews.load()) {
+        if (viewNames.empty() || !viewsLoader.isRunning()) {
             return result;
         }
 
         // Load view details
         for (const auto& viewName : viewNames) {
-            if (!loadingViews.load()) {
+            if (!viewsLoader.isRunning()) {
                 break;
             }
 
@@ -216,7 +205,7 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
                 const soci::rowset columnsRs = session->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
-                    if (!loadingViews.load()) {
+                    if (!viewsLoader.isRunning()) {
                         break;
                     }
 

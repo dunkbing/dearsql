@@ -2,7 +2,6 @@
 #include "database/db.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
-#include <chrono>
 #include <format>
 #include <iostream>
 #include <soci/soci.h>
@@ -44,10 +43,10 @@ void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
     tables.clear();
 
     // Start async loading
-    tablesLoader.start([this]() { return getTablesWithColumnsAsync(); });
+    tablesLoader.start([this]() { return getTablesAsync(); });
 }
 
-std::vector<Table> PostgresSchemaNode::getTablesWithColumnsAsync() {
+std::vector<Table> PostgresSchemaNode::getTablesAsync() {
     std::vector<Table> result;
 
     // Check if we're still supposed to be loading
@@ -299,8 +298,9 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 void PostgresSchemaNode::checkSequencesStatusAsync() {
     sequencesLoader.check([this](const std::vector<std::string>& result) {
         sequences = result;
-        Logger::info(std::format("Async sequence loading completed for schema {}. Found {} sequences",
-                                 name, sequences.size()));
+        Logger::info(
+            std::format("Async sequence loading completed for schema {}. Found {} sequences", name,
+                        sequences.size()));
         sequencesLoaded = true;
     });
 }

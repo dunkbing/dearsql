@@ -314,7 +314,8 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
 
             if (!targetDb.empty()) {
                 auto* targetDbData = pgDb->getDatabaseData(targetDb);
-                if (targetDbData && !targetDbData->schemasLoaded && !targetDbData->schemasLoader.isRunning()) {
+                if (targetDbData && !targetDbData->schemasLoaded &&
+                    !targetDbData->schemasLoader.isRunning()) {
                     if (targetDb == pgDb->getDatabaseName()) {
                         if (!pgDb->isLoadingSchemas()) {
                             pgDb->refreshSchemas();
@@ -326,7 +327,8 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             }
 
             for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
-                if (dbDataPtr && !dbDataPtr->schemasLoaded && !dbDataPtr->schemasLoader.isRunning() &&
+                if (dbDataPtr && !dbDataPtr->schemasLoaded &&
+                    !dbDataPtr->schemasLoader.isRunning() &&
                     (!currentNode || dbName != currentNode->name)) {
                     dbDataPtr->startSchemasLoadAsync();
                 }

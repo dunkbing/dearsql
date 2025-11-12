@@ -21,6 +21,7 @@ PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
 PostgresDatabase::~PostgresDatabase() {
     // Cancel and stop all async operations before cleaning up
     databasesLoader.cancel();
+    refreshWorkflow.cancel();
 
     // Stop all per-database async operations
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -127,7 +128,7 @@ const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbN
     return (it != dbData->schemaDataCache.end() && it->second) ? *it->second : emptyData;
 }
 
-std::pair<bool, std::string> PostgresDatabase::connect(bool forceRefresh) {
+std::pair<bool, std::string> PostgresDatabase::connect() {
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
         return {true, ""};
@@ -171,6 +172,59 @@ void PostgresDatabase::disconnect() {
         }
     }
     connected = false;
+}
+
+void PostgresDatabase::refreshConnection() {
+    // Start the sequential refresh workflow
+    refreshWorkflow.start([this]() -> bool {
+        // Step 1: Disconnect and reset state
+        disconnect();
+        setAttemptedConnection(false);
+        setLastConnectionError("");
+
+        // Step 2: Reconnect (synchronously, without triggering auto-refresh)
+        try {
+            initializeConnectionPool(database, connectionString);
+            Logger::info("Successfully reconnected to PostgreSQL database: " + database);
+            connected = true;
+            setLastConnectionError("");
+        } catch (const soci::soci_error& e) {
+            Logger::error("Reconnection failed: " + std::string(e.what()));
+            setLastConnectionError(e.what());
+            return false;
+        }
+
+        // Step 3: If showAllDatabases is enabled, load database names synchronously
+        if (connectionInfo.showAllDatabases) {
+            Logger::debug("Loading database names synchronously for refresh...");
+            auto databases = getDatabaseNamesAsync();
+
+            // Populate databaseDataCache with all available databases
+            for (const auto& dbName : databases) {
+                auto it = databaseDataCache.find(dbName);
+                if (it == databaseDataCache.end()) {
+                    auto newData = std::make_unique<PostgresDatabaseNode>();
+                    newData->name = dbName;
+                    newData->parentDb = this;
+                    databaseDataCache[dbName] = std::move(newData);
+                }
+            }
+            databasesLoaded = true;
+        }
+
+        // Step 4: Trigger refresh for all child databases
+        Logger::debug("Triggering child database refresh...");
+        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+            if (dbDataPtr) {
+                Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
+                dbDataPtr->startSchemasLoadAsync(true, true);
+            }
+        }
+
+        Logger::info(
+            std::format("Refresh workflow completed for {} databases", databaseDataCache.size()));
+        return true;
+    });
 }
 
 const std::string& PostgresDatabase::getName() const {
@@ -595,8 +649,8 @@ bool PostgresDatabase::isLoadingDatabases() const {
 
 void PostgresDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& databases) {
-        std::cout << "Async database loading completed. Found " << databases.size()
-                  << " databases." << std::endl;
+        std::cout << "Async database loading completed. Found " << databases.size() << " databases."
+                  << std::endl;
 
         // Populate databaseDataCache with all available databases
         for (const auto& dbName : databases) {
@@ -611,6 +665,16 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
         }
 
         databasesLoaded = true;
+    });
+}
+
+void PostgresDatabase::checkRefreshWorkflowAsync() {
+    refreshWorkflow.check([this](bool success) {
+        if (success) {
+            Logger::info("Refresh workflow completed successfully");
+        } else {
+            Logger::error("Refresh workflow failed");
+        }
     });
 }
 
@@ -751,6 +815,6 @@ void PostgresDatabase::triggerChildDbRefresh() {
         }
     }
 
-    Logger::info(
-        std::format("Triggered refresh for {} schemas in database {}", databaseDataCache.size(), name));
+    Logger::info(std::format("Triggered refresh for {} schemas in database {}",
+                             databaseDataCache.size(), name));
 }

@@ -17,8 +17,9 @@ public:
     ~PostgresDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles common async)
-    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
+    std::pair<bool, std::string> connect() override;
     void disconnect() override;
+    void refreshConnection() override;
 
     // Database info
     const std::string& getName() const override;
@@ -62,6 +63,7 @@ public:
     }
     bool isLoadingDatabases() const;
     void checkDatabasesStatusAsync();
+    void checkRefreshWorkflowAsync();
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -93,6 +95,9 @@ private:
 
     // Async database loading
     AsyncOperation<std::vector<std::string>> databasesLoader;
+
+    // Async refresh workflow (for sequential operations)
+    AsyncOperation<bool> refreshWorkflow;
 
     std::string targetDatabaseName;
 

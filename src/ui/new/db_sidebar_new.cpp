@@ -357,6 +357,20 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     db->checkConnectionStatusAsync();
 
+    // Check refresh workflow status for PostgreSQL
+    if (db->getType() == DatabaseType::POSTGRESQL) {
+        if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+            pgDb->checkRefreshWorkflowAsync();
+        }
+    }
+
+    // Check refresh workflow status for MySQL
+    else if (db->getType() == DatabaseType::MYSQL) {
+        if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+            mysqlDb->checkRefreshWorkflowAsync();
+        }
+    }
+
     if (dbOpen) {
         if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
             Logger::info(std::format("Starting connection to database: {}", db->getName()));
@@ -409,11 +423,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {
-            db->disconnect();
-            db->setAttemptedConnection(false);
-            db->setLastConnectionError("");
-            db->startConnectionAsync();
-            // TODO: refresh the children's node
+            Logger::info(std::format("Refreshing connection for database: {}", db->getName()));
+            db->refreshConnection();
         }
         ImGui::EndPopup();
     }

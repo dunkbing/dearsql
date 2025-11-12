@@ -47,9 +47,20 @@ public:
         return connectionOp.isRunning();
     }
 
+    // Refresh connection and all child data
+    void refreshConnection() override {
+        disconnect();
+        setAttemptedConnection(false);
+        setLastConnectionError("");
+        auto [success, error] = connect();
+        if (!success) {
+            setLastConnectionError(error);
+        }
+    }
+
     // Async connection with automatic error handling
-    void startConnectionAsync(bool forceRefresh = false) override {
-        connectionOp.start([this, forceRefresh]() { return this->connect(forceRefresh); });
+    void startConnectionAsync() override {
+        connectionOp.start([this]() { return this->connect(); });
     }
 
     void checkConnectionStatusAsync() override {

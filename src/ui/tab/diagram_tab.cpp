@@ -225,12 +225,12 @@ void DiagramTab::loadDatabaseSchema() {
     } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
         if (*mysqlNode) {
             // Check if tables are loaded
-            if (!(*mysqlNode)->tablesLoaded && !(*mysqlNode)->loadingTables) {
+            if (!(*mysqlNode)->tablesLoaded && !(*mysqlNode)->tablesLoader.isRunning()) {
                 (*mysqlNode)->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if ((*mysqlNode)->loadingTables) {
+            if ((*mysqlNode)->tablesLoader.isRunning()) {
                 schemaLoaded = false; // Keep trying
                 return;
             }

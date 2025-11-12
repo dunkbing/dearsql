@@ -16,7 +16,7 @@ RedisDatabase::~RedisDatabase() {
     disconnect();
 }
 
-std::pair<bool, std::string> RedisDatabase::connect(bool forceRefresh) {
+std::pair<bool, std::string> RedisDatabase::connect() {
     if (connected && context) {
         return {true, ""};
     }
@@ -119,6 +119,23 @@ void RedisDatabase::disconnect() {
     std::cout << "Disconnected from Redis: " << connectionString << std::endl;
 }
 
+void RedisDatabase::refreshConnection() {
+    // Disconnect and reset state
+    disconnect();
+    attemptedConnection = false;
+    lastConnectionError.clear();
+
+    // Reconnect with force refresh
+    auto [success, error] = connect();
+    if (!success) {
+        lastConnectionError = error;
+        return;
+    }
+
+    // Refresh keys after reconnection
+    startKeysLoadAsync(true);
+}
+
 bool RedisDatabase::isConnected() const {
     return connected && context;
 }
@@ -127,7 +144,7 @@ bool RedisDatabase::isConnecting() const {
     return connecting;
 }
 
-void RedisDatabase::startConnectionAsync(bool forceRefresh) {
+void RedisDatabase::startConnectionAsync() {
     if (connecting || connected) {
         return;
     }

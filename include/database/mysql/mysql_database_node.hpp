@@ -1,9 +1,8 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "database/table_data_provider.hpp"
-#include <atomic>
-#include <future>
 #include <memory>
 #include <soci/connection-pool.h>
 #include <string>
@@ -37,12 +36,10 @@ public:
     bool tablesLoaded = false;
     bool viewsLoaded = false;
     bool sequencesLoaded = false; // For API compatibility
-    std::atomic<bool> loadingTables = false;
-    std::atomic<bool> loadingViews = false;
 
-    // Async futures
-    std::future<std::vector<Table>> tablesFuture;
-    std::future<std::vector<Table>> viewsFuture;
+    // Async operations
+    AsyncOperation<std::vector<Table>> tablesLoader;
+    AsyncOperation<std::vector<Table>> viewsLoader;
 
     // UI expansion state
     bool expanded = false;
@@ -55,11 +52,11 @@ public:
     std::string lastViewsError;
 
     // Methods
-    void startTablesLoadAsync();
+    void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
-    std::vector<Table> getTablesForDatabaseAsync();
+    std::vector<Table> getTablesAsync();
 
-    void startViewsLoadAsync();
+    void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();
     std::vector<Table> getViewsForDatabaseAsync();
 

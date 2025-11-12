@@ -19,11 +19,12 @@ public:
     ~RedisDatabase() override;
 
     // Connection management
-    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
+    std::pair<bool, std::string> connect() override;
     void disconnect() override;
+    void refreshConnection() override;
     bool isConnected() const override;
     bool isConnecting() const override;
-    void startConnectionAsync(bool forceRefresh = false) override;
+    void startConnectionAsync() override;
     void checkConnectionStatusAsync() override;
 
     // Database info

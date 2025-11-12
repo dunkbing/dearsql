@@ -25,13 +25,14 @@ public:
     virtual ~DatabaseInterface() = default;
 
     // Connection management
-    virtual std::pair<bool, std::string> connect(bool forceRefresh = false) = 0;
+    virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
+    virtual void refreshConnection() = 0; // Reconnect and refresh all child data
     [[nodiscard]] virtual bool isConnected() const = 0;
     [[nodiscard]] virtual bool isConnecting() const {
         return false;
     }
-    virtual void startConnectionAsync(bool forceRefresh = false) {}
+    virtual void startConnectionAsync() {}
     virtual void checkConnectionStatusAsync() {}
 
     // Database info

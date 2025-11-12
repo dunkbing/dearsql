@@ -21,20 +21,13 @@ MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
 MySQLDatabase::~MySQLDatabase() {
     // Stop all async operations before cleaning up
     loadingDatabases = false;
+    refreshWorkflow.cancel();
 
     // Stop all per-database async operations
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
-            dbDataPtr->loadingTables = false;
-            dbDataPtr->loadingViews = false;
-
-            // Wait for all futures to complete
-            if (dbDataPtr->tablesFuture.valid()) {
-                dbDataPtr->tablesFuture.wait();
-            }
-            if (dbDataPtr->viewsFuture.valid()) {
-                dbDataPtr->viewsFuture.wait();
-            }
+            dbDataPtr->tablesLoader.cancel();
+            dbDataPtr->viewsLoader.cancel();
         }
     }
 
@@ -90,26 +83,26 @@ const MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbNam
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
-std::pair<bool, std::string> MySQLDatabase::connect(bool forceRefresh) {
+std::pair<bool, std::string> MySQLDatabase::connect() {
     // Check if we already have a connection pool to the current database
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
         return {true, ""};
     }
 
+    setAttemptedConnection(true);
+
     try {
         initializeConnectionPool(database, connectionString);
+        Logger::info("Successfully connected to MySQL database: " + database);
         connected = true;
+        setLastConnectionError("");
 
-        // Verify the pool was created successfully
-        if (!pool) {
-            std::cerr << "ERROR: Connection pool was not created for database: " << database
-                      << std::endl;
-            connected = false;
-            return {false, "Failed to create connection pool"};
+        // Start loading databases immediately if showAllDatabases is enabled
+        if (connectionInfo.showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
+            Logger::debug("Starting async database loading after connection...");
+            refreshDatabaseNames();
         }
-        std::cout << "DEBUG: Connection pool created successfully for database: " << database
-                  << std::endl;
 
         return {true, ""};
     } catch (const soci::soci_error& e) {
@@ -148,6 +141,61 @@ void MySQLDatabase::disconnect() {
     connected = false;
 }
 
+void MySQLDatabase::refreshConnection() {
+    // Start the sequential refresh workflow
+    refreshWorkflow.start([this]() -> bool {
+        // Step 1: Disconnect and reset state
+        disconnect();
+        setAttemptedConnection(false);
+        setLastConnectionError("");
+
+        // Step 2: Reconnect (synchronously, without triggering auto-refresh)
+        try {
+            initializeConnectionPool(database, connectionString);
+            Logger::info("Successfully reconnected to MySQL database: " + database);
+            connected = true;
+            setLastConnectionError("");
+        } catch (const soci::soci_error& e) {
+            Logger::error("MySQL reconnection failed: " + std::string(e.what()));
+            setLastConnectionError(e.what());
+            return false;
+        } catch (const std::exception& e) {
+            Logger::error("MySQL reconnection failed: " + std::string(e.what()));
+            setLastConnectionError(e.what());
+            return false;
+        }
+
+        // Step 3: If showAllDatabases is enabled, load database names synchronously
+        if (connectionInfo.showAllDatabases) {
+            Logger::debug("Loading database names synchronously for refresh...");
+            auto databases = getDatabaseNamesAsync();
+
+            // Populate databaseDataCache with all available databases
+            for (const auto& dbName : databases) {
+                // Use getDatabaseData which creates if not exists
+                getDatabaseData(dbName);
+            }
+
+            availableDatabases = databases;
+            databasesLoaded = true;
+        }
+
+        // Step 4: Trigger refresh for all child databases
+        Logger::debug("Triggering child database refresh...");
+        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+            if (dbDataPtr) {
+                Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
+                dbDataPtr->startTablesLoadAsync(true);
+                dbDataPtr->startViewsLoadAsync(true);
+            }
+        }
+
+        Logger::info(std::format("MySQL refresh workflow completed for {} databases",
+                                 databaseDataCache.size()));
+        return true;
+    });
+}
+
 const std::string& MySQLDatabase::getName() const {
     return name;
 }
@@ -173,90 +221,8 @@ void MySQLDatabase::startRefreshTableAsync() {
     if (!dbData)
         return;
 
-    if (dbData->loadingTables.load()) {
-        return;
-    }
-
-    dbData->loadingTables.store(true);
-    dbData->tablesFuture =
-        std::async(std::launch::async, [this]() { return getTablesWithColumnsAsync(); });
-}
-
-std::vector<Table> MySQLDatabase::getTablesWithColumnsAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData || !dbData->loadingTables.load()) {
-        return {};
-    }
-
-    std::vector<Table> result;
-
-    try {
-        if (!dbData->loadingTables.load()) {
-            return result;
-        }
-
-        // Get table names using the session
-        std::vector<std::string> tableNames;
-        const std::string tableNamesQuery = "SHOW TABLES";
-        {
-            const auto sql = getSession();
-            const soci::rowset tableRs = sql->prepare << tableNamesQuery;
-            for (const auto& row : tableRs) {
-                if (!dbData->loadingTables.load()) {
-                    return result;
-                }
-                tableNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        if (!dbData->loadingTables.load()) {
-            return result;
-        }
-
-        for (const auto& tableName : tableNames) {
-            if (!dbData->loadingTables.load()) {
-                break; // Stop processing if we should no longer be loading
-            }
-
-            Table table;
-            table.name = tableName;
-            table.fullName =
-                name + "." + database + "." + tableName; // MySQL: connection.database.table
-
-            // Get table columns using the session
-            const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
-            {
-                const auto sql = getSession();
-                const soci::rowset columnsRs = sql->prepare << columnsQuery;
-
-                for (const auto& colRow : columnsRs) {
-                    if (!dbData->loadingTables.load()) {
-                        break;
-                    }
-
-                    Column col;
-                    col.name = colRow.get<std::string>(0);                  // Field
-                    col.type = colRow.get<std::string>(1);                  // Type
-                    col.isNotNull = colRow.get<std::string>(2) == "NO";     // Null
-                    col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
-                    table.columns.push_back(col);
-                }
-            }
-
-            // Load indexes and foreign keys
-            table.indexes = getTableIndexes(tableName);
-            table.foreignKeys = getTableForeignKeys(tableName);
-            buildForeignKeyLookup(table);
-
-            result.push_back(table);
-        }
-
-        populateIncomingForeignKeys(result);
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting tables with columns: " << e.what() << std::endl;
-    }
-
-    return result;
+    // Delegate to MySQLDatabaseNode
+    dbData->startTablesLoadAsync();
 }
 
 void MySQLDatabase::refreshViews() {
@@ -271,83 +237,18 @@ void MySQLDatabase::startRefreshViewAsync() {
     if (!dbData)
         return;
 
-    if (dbData->loadingViews.load()) {
-        return;
-    }
-
-    dbData->loadingViews.store(true);
-    dbData->viewsFuture =
-        std::async(std::launch::async, [this]() { return getViewsWithColumnsAsync(); });
+    // Delegate to MySQLDatabaseNode
+    dbData->startViewsLoadAsync();
 }
 
 std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
     auto* dbData = getCurrentDatabaseData();
-    if (!dbData || !dbData->loadingViews.load()) {
+    if (!dbData) {
         return {};
     }
 
-    std::vector<Table> result;
-
-    try {
-        if (!dbData->loadingViews.load()) {
-            return result;
-        }
-
-        // Get view names using the session
-        std::vector<std::string> viewNames;
-        const std::string viewNamesQuery = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
-        {
-            const auto sql = getSession();
-            const soci::rowset viewRs = sql->prepare << viewNamesQuery;
-            for (const auto& row : viewRs) {
-                if (!dbData->loadingViews.load()) {
-                    return result;
-                }
-                viewNames.push_back(row.get<std::string>(0));
-            }
-        }
-
-        if (!dbData->loadingViews.load()) {
-            return result;
-        }
-
-        for (const auto& viewName : viewNames) {
-            if (!dbData->loadingViews.load()) {
-                break; // Stop processing if we should no longer be loading
-            }
-
-            Table view;
-            view.name = viewName;
-            view.fullName =
-                name + "." + database + "." + viewName; // MySQL: connection.database.view
-
-            // Get view columns using the session (same as table columns for MySQL)
-            const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
-            {
-                const auto sql = getSession();
-                const soci::rowset columnsRs = sql->prepare << columnsQuery;
-
-                for (const auto& colRow : columnsRs) {
-                    if (!dbData->loadingViews.load()) {
-                        break;
-                    }
-
-                    Column col;
-                    col.name = colRow.get<std::string>(0);                  // Field
-                    col.type = colRow.get<std::string>(1);                  // Type
-                    col.isNotNull = colRow.get<std::string>(2) == "NO";     // Null
-                    col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
-                    view.columns.push_back(col);
-                }
-            }
-
-            result.push_back(view);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting views with columns: " << e.what() << std::endl;
-    }
-
-    return result;
+    // Delegate to MySQLDatabaseNode
+    return dbData->getViewsForDatabaseAsync();
 }
 
 void MySQLDatabase::refreshSequences() {
@@ -603,6 +504,16 @@ void MySQLDatabase::checkDatabasesStatusAsync() {
             loadingDatabases = false;
         }
     }
+}
+
+void MySQLDatabase::checkRefreshWorkflowAsync() {
+    refreshWorkflow.check([this](bool success) {
+        if (success) {
+            Logger::info("MySQL refresh workflow completed successfully");
+        } else {
+            Logger::error("MySQL refresh workflow failed");
+        }
+    });
 }
 
 std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {

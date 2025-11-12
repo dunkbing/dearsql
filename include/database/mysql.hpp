@@ -1,5 +1,6 @@
 #pragma once
 
+#include "async_helper.hpp"
 #include "base_database.hpp"
 #include "mysql/mysql_database_node.hpp"
 #include <atomic>
@@ -17,8 +18,9 @@ public:
     ~MySQLDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles common async)
-    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
+    std::pair<bool, std::string> connect() override;
     void disconnect() override;
+    void refreshConnection() override;
 
     // Database info
     const std::string& getName() const override;
@@ -56,6 +58,7 @@ public:
     }
     bool isLoadingDatabases() const;
     void checkDatabasesStatusAsync();
+    void checkRefreshWorkflowAsync();
 
 protected:
     // std::vector<Column> getTableColumns(const std::string& tableName) override;
@@ -64,7 +67,6 @@ protected:
 
     // Async loading helpers
     void startRefreshTableAsync();
-    std::vector<Table> getTablesWithColumnsAsync();
     void startRefreshViewAsync();
     std::vector<Table> getViewsWithColumnsAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
@@ -83,6 +85,9 @@ private:
     // Async database loading
     std::atomic<bool> loadingDatabases = false;
     std::future<std::vector<std::string>> databasesFuture;
+
+    // Async refresh workflow (for sequential operations)
+    AsyncOperation<bool> refreshWorkflow;
 
     // Async database switching
     std::string targetDatabaseName;

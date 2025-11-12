@@ -14,7 +14,7 @@ public:
     ~SQLiteDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles async)
-    std::pair<bool, std::string> connect(bool forceRefresh = false) override;
+    std::pair<bool, std::string> connect() override;
     void disconnect() override;
 
     // Database info

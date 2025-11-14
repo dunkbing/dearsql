@@ -54,13 +54,10 @@ public:
     }
 
     // View management
-    virtual void refreshViews() = 0;
     [[nodiscard]] virtual bool isLoadingViews() const {
         return false;
     }
 
-    // Sequence management (Postgres)
-    virtual void refreshSequences() = 0;
     [[nodiscard]] virtual const std::vector<std::string>& getSequences() const = 0;
     virtual std::vector<std::string>& getSequences() = 0;
     [[nodiscard]] virtual bool isLoadingSequences() const {
@@ -69,8 +66,6 @@ public:
 
     // Query execution
     virtual std::string executeQuery(const std::string& query) = 0;
-    virtual std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query) = 0;
 
     // Connection attempt tracking
     [[nodiscard]] virtual bool hasAttemptedConnection() const = 0;

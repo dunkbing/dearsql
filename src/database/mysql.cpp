@@ -210,13 +210,6 @@ void MySQLDatabase::startRefreshTableAsync() {
     dbData->startTablesLoadAsync();
 }
 
-void MySQLDatabase::refreshViews() {
-    if (isLoadingViews()) {
-        return;
-    }
-    startRefreshViewAsync();
-}
-
 void MySQLDatabase::startRefreshViewAsync() {
     auto* dbData = getCurrentDatabaseData();
     if (!dbData)
@@ -234,15 +227,6 @@ std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
 
     // Delegate to MySQLDatabaseNode
     return dbData->getViewsForDatabaseAsync();
-}
-
-void MySQLDatabase::refreshSequences() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-
-    dbData->sequences.clear();
-    dbData->sequencesLoaded = true;
 }
 
 std::string MySQLDatabase::executeQuery(const std::string& query) {
@@ -286,56 +270,6 @@ std::string MySQLDatabase::executeQuery(const std::string& query) {
         return "MySQL Error: " + std::string(e.what());
     } catch (const std::exception& e) {
         return "Error: " + std::string(e.what());
-    }
-}
-
-std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-MySQLDatabase::executeQueryStructured(const std::string& query) {
-    std::vector<std::string> columnNames;
-    std::vector<std::vector<std::string>> data;
-
-    if (!connect().first) {
-        return {columnNames, data};
-    }
-
-    try {
-        const auto sql = getSession();
-        const soci::rowset rs = (sql->prepare << query);
-
-        // Get column names if available
-        const auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                columnNames.push_back(firstRow.get_properties(i).get_name());
-            }
-        }
-
-        int rowCount = 0;
-        for (auto& row : rs) {
-            if (rowCount >= 1000)
-                break;
-
-            std::vector<std::string> rowData;
-
-            for (std::size_t i = 0; i != row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                } else {
-                    rowData.push_back(row.get<std::string>(i, ""));
-                }
-            }
-            data.push_back(rowData);
-            rowCount++;
-        }
-
-        return {columnNames, data};
-    } catch (const soci::soci_error& e) {
-        std::cout << "[soci] MySQL Error: " + std::string(e.what());
-        return {columnNames, data};
-    } catch (const std::exception& e) {
-        std::cout << "MySQL Error: " + std::string(e.what());
-        return {columnNames, data};
     }
 }
 

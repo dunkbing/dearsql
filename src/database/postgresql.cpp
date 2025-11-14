@@ -315,52 +315,6 @@ std::string PostgresDatabase::executeQuery(const std::string& query) {
     }
 }
 
-std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-PostgresDatabase::executeQueryStructured(const std::string& query) {
-    std::vector<std::string> columnNames;
-    std::vector<std::vector<std::string>> data;
-
-    if (!isConnected()) {
-        auto [success, error] = connect();
-        if (!success) {
-            return {columnNames, data};
-        }
-    }
-
-    try {
-        const auto sql = getSession();
-        const soci::rowset rs = sql->prepare << query;
-
-        // Get column names if available
-        const auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                columnNames.push_back(firstRow.get_properties(i).get_name());
-            }
-        }
-
-        int rowCount = 0;
-        for (const auto& row : rs) {
-            if (rowCount >= 1000)
-                break;
-
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.emplace_back(convertRowValue(row, i));
-            }
-            data.push_back(rowData);
-            rowCount++;
-        }
-
-        return {columnNames, data};
-    } catch (const soci::soci_error& e) {
-        Logger::error("[soci] Postgres Error: " + std::string(e.what()));
-        return {columnNames, data};
-    }
-}
-
 void* PostgresDatabase::getConnection() const {
     return getConnectionPoolForDatabase(database);
 }
@@ -467,42 +421,6 @@ std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string&
     return foreignKeys;
 }
 
-// View management methods
-void PostgresDatabase::refreshViews() {
-    refreshViews("public");
-}
-
-void PostgresDatabase::refreshViews(const std::string& schemaName) {
-    Logger::debug("Refreshing views for database: " + name + " schema: " + schemaName);
-    if (!isConnected()) {
-        Logger::warn("Not connected to database, cannot refresh views");
-        auto& schemaData = getSchemaData(schemaName);
-        schemaData.viewsLoaded = true;
-        return;
-    }
-
-    auto& schemaData = getSchemaData(schemaName);
-    schemaData.startViewsLoadAsync();
-}
-
-// Sequence management methods
-void PostgresDatabase::refreshSequences() {
-    refreshSequences("public");
-}
-
-void PostgresDatabase::refreshSequences(const std::string& schemaName) {
-    Logger::debug("Refreshing sequences for database: " + name + " schema: " + schemaName);
-    if (!isConnected()) {
-        Logger::warn("Not connected to database, cannot refresh sequences");
-        auto& schemaData = getSchemaData(schemaName);
-        schemaData.sequencesLoaded = true;
-        return;
-    }
-
-    auto& schemaData = getSchemaData(schemaName);
-    schemaData.startSequencesLoadAsync();
-}
-
 std::vector<std::string> PostgresDatabase::getViewNames(const std::string& schemaName) {
     std::vector<std::string> viewNames;
 
@@ -551,24 +469,6 @@ std::vector<std::string> PostgresDatabase::getSequenceNames(const std::string& s
 
     std::cout << "Query completed. Found " << sequenceNames.size() << " sequences." << std::endl;
     return sequenceNames;
-}
-
-// Schema management methods
-void PostgresDatabase::refreshSchemas() {
-    std::cout << "Refreshing schemas for database: " << name << std::endl;
-    if (!isConnected()) {
-        std::cout << "Not connected to database, cannot refresh schemas" << std::endl;
-        auto* dbData = getCurrentDatabaseData();
-        if (dbData) {
-            dbData->schemasLoaded = true;
-        }
-        return;
-    }
-
-    auto* dbData = getCurrentDatabaseData();
-    if (dbData) {
-        dbData->startSchemasLoadAsync();
-    }
 }
 
 const std::vector<std::unique_ptr<PostgresSchemaNode>>& PostgresDatabase::getSchemas() const {

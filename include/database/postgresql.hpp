@@ -28,14 +28,7 @@ public:
     DatabaseType getType() const override;
     const std::string& getDatabaseName() const;
 
-    // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshViews() override;
-    void refreshViews(const std::string& schemaName);
-    void refreshSequences() override;
-    void refreshSequences(const std::string& schemaName);
-
     // Schema management
-    void refreshSchemas();
     const std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas() const;
     std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas();
     bool areSchemasLoaded() const;
@@ -72,8 +65,6 @@ public:
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query) override;
 
 protected:
     // std::vector<Column> getTableColumns(const std::string& tableName) override;

@@ -39,18 +39,12 @@ public:
     bool isLoadingTables() const override;
     void checkTablesStatusAsync();
 
-    // Views not applicable for Redis
-    void refreshViews() override;
-
     // Sequences not applicable for Redis
-    void refreshSequences() override;
     const std::vector<std::string>& getSequences() const override;
     std::vector<std::string>& getSequences() override;
 
     // Redis command execution (adapted to query interface)
     std::string executeQuery(const std::string& command) override;
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& command) override;
 
     // Key data viewing (adapted to table interface)
     std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,

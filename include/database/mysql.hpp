@@ -27,14 +27,8 @@ public:
     DatabaseType getType() const override;
     const std::string& getDatabaseName() const;
 
-    // Schema management (BaseDatabaseImpl provides base getters/setters)
-    void refreshViews() override;
-    void refreshSequences() override;
-
     // Query execution
     std::string executeQuery(const std::string& query) override;
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query) override;
 
     // Database list methods
     void refreshDatabaseNames();

@@ -33,8 +33,6 @@ public:
 
     // Schema management (BaseDatabaseImpl provides getters/setters)
     void refreshAllTables();
-    void refreshViews() override;
-    void refreshSequences() override;
 
     // Async table/view/sequence loading
     void startTablesLoadAsync(bool forceRefresh = false);
@@ -48,7 +46,7 @@ public:
     // Query execution
     std::string executeQuery(const std::string& query) override;
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query) override;
+    executeQueryStructured(const std::string& query);
 
     // DatabaseInterface implementation (without whereClause)
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,

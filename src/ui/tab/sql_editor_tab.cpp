@@ -318,7 +318,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
                     !targetDbData->schemasLoader.isRunning()) {
                     if (targetDb == pgDb->getDatabaseName()) {
                         if (!pgDb->isLoadingSchemas()) {
-                            pgDb->refreshSchemas();
+                            // pgDb->refreshSchemas();
                         }
                     } else {
                         targetDbData->startSchemasLoadAsync();

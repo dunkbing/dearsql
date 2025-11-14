@@ -203,18 +203,6 @@ std::vector<Table>& RedisDatabase::getTables() {
     return tables;
 }
 
-// Views not applicable for Redis
-void RedisDatabase::refreshViews() {
-    views.clear();
-    viewsLoaded = true;
-}
-
-// Sequences not applicable for Redis
-void RedisDatabase::refreshSequences() {
-    sequences.clear();
-    sequencesLoaded = true;
-}
-
 const std::vector<std::string>& RedisDatabase::getSequences() const {
     return sequences;
 }
@@ -252,58 +240,6 @@ std::string RedisDatabase::executeQuery(const std::string& command) {
         return result;
     } catch (const std::exception& e) {
         return "Error: " + std::string(e.what());
-    }
-}
-
-std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-RedisDatabase::executeQueryStructured(const std::string& command) {
-    std::vector<std::string> columnNames = {"Result"};
-    std::vector<std::vector<std::string>> data;
-
-    if (!isConnected()) {
-        // Return empty data and let the error be handled by the calling code
-        return {columnNames, data};
-    }
-
-    try {
-        // Parse command into parts
-        auto commandParts = parseRedisCommand(command);
-        if (commandParts.empty()) {
-            // Return empty data for empty command
-            return {columnNames, data};
-        }
-
-        redisReply* reply = executeRedisCommandParsed(commandParts);
-        if (!reply) {
-            // Return empty data and let the error be handled by the calling code
-            return {columnNames, data};
-        }
-
-        // Check for Redis errors - return empty data so error can be shown in UI
-        if (reply->type == REDIS_REPLY_ERROR) {
-            freeReplyObject(reply);
-            return {columnNames, data};
-        }
-
-        // Handle different reply types
-        if (reply->type == REDIS_REPLY_ARRAY) {
-            columnNames = {"Index", "Value"};
-            for (size_t i = 0; i < reply->elements; ++i) {
-                std::vector<std::string> row;
-                row.push_back(std::to_string(i));
-                row.push_back(formatRedisReply(reply->element[i]));
-                data.push_back(row);
-            }
-        } else {
-            data.push_back({formatRedisReply(reply)});
-        }
-
-        freeReplyObject(reply);
-        return {columnNames, data};
-    } catch (const std::exception& e) {
-        std::cerr << "[Redis] Error: " + std::string(e.what());
-        // Return empty data and let the error be handled by the calling code
-        return {columnNames, data};
     }
 }
 

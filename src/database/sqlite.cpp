@@ -320,17 +320,6 @@ std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& t
     return foreignKeys;
 }
 
-// View management methods
-void SQLiteDatabase::refreshViews() {
-    startViewsLoadAsync(true);
-}
-
-// Sequence management methods (not applicable for SQLite)
-void SQLiteDatabase::refreshSequences() {
-    sequences.clear();
-    sequencesLoaded = true; // No sequences in SQLite
-}
-
 // Async table loading
 void SQLiteDatabase::checkTablesStatusAsync() {
     if (tablesFuture.valid() &&

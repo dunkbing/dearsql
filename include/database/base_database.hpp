@@ -4,6 +4,7 @@
 #include "db.hpp"
 #include "db_interface.hpp"
 #include "db_ui_state.hpp"
+#include "utils/logger.hpp"
 
 /**
  * Base implementation class providing common functionality for all database types.
@@ -49,6 +50,7 @@ public:
 
     // Refresh connection and all child data
     void refreshConnection() override {
+        Logger::info("base_database: refreshConnection");
         disconnect();
         setAttemptedConnection(false);
         setLastConnectionError("");

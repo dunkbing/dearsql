@@ -516,18 +516,28 @@ namespace NewHierarchy {
             if (ImGui::MenuItem("Show Diagram")) {
                 app.getTabManager()->createDiagramTab(dbData);
             }
+            if (ImGui::MenuItem("Refresh")) {
+                dbData->startTablesLoadAsync(true);
+                dbData->startViewsLoadAsync(true);
+            }
             ImGui::EndPopup();
         }
 
         if (isOpen) {
-            // MySQL: render tables and views directly (no schema layer)
-
             // Render Tables section
             {
                 const std::string tablesNodeId = std::format("tables_{}_{:p}", dbData->name,
                                                              static_cast<void*>(&dbData->tables));
                 const bool tablesOpen = renderTreeNodeWithIcon(
                     "Tables", tablesNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
+
+                // Context menu for Tables node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        dbData->startTablesLoadAsync(true);
+                    }
+                    ImGui::EndPopup();
+                }
 
                 if (tablesOpen) {
                     if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
@@ -563,6 +573,14 @@ namespace NewHierarchy {
                     std::format("views_{}_{:p}", dbData->name, static_cast<void*>(&dbData->views));
                 const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
                                                               ImGui::GetColorU32(colors.teal));
+
+                // Context menu for Views node
+                if (ImGui::BeginPopupContextItem(nullptr)) {
+                    if (ImGui::MenuItem("Refresh")) {
+                        dbData->startViewsLoadAsync(true);
+                    }
+                    ImGui::EndPopup();
+                }
 
                 if (viewsOpen) {
                     if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning()) {

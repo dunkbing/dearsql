@@ -3,8 +3,6 @@
 #include "async_helper.hpp"
 #include "base_database.hpp"
 #include "mysql/mysql_database_node.hpp"
-#include <atomic>
-#include <future>
 #include <mutex>
 #include <set>
 #include <soci/connection-pool.h>
@@ -39,10 +37,14 @@ public:
     executeQueryStructured(const std::string& query) override;
 
     // Database list methods
-    std::vector<std::string> getDatabaseNames();
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
         return connectionInfo.showAllDatabases;
+    }
+
+    // Connection status
+    bool isConnecting() const override {
+        return connectionOp.isRunning() || refreshWorkflow.isRunning();
     }
 
     const DatabaseConnectionInfo& getConnectionInfo() const {
@@ -78,13 +80,11 @@ private:
     std::string connectionString;
 
     std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>> databaseDataCache;
-    std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
 
     // Async database loading
-    std::atomic<bool> loadingDatabases = false;
-    std::future<std::vector<std::string>> databasesFuture;
+    AsyncOperation<std::vector<std::string>> databasesLoader;
 
     // Async refresh workflow (for sequential operations)
     AsyncOperation<bool> refreshWorkflow;
@@ -97,7 +97,6 @@ public:
     MySQLDatabaseNode* getCurrentDatabaseData();
     const MySQLDatabaseNode* getCurrentDatabaseData() const;
     MySQLDatabaseNode* getDatabaseData(const std::string& dbName);
-    const MySQLDatabaseNode* getDatabaseData(const std::string& dbName) const;
 
     // Accessor for database data map (used by new hierarchy)
     // Auto-loads databases if not loaded and not currently loading

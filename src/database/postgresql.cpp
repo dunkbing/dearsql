@@ -150,7 +150,7 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 
         return {true, ""};
     } catch (const soci::soci_error& e) {
-        std::cerr << "Connection to database failed: " << e.what() << std::endl;
+        Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
         auto it = databaseDataCache.find(database);
@@ -158,8 +158,9 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
             it->second->connectionPool.reset();
         }
         connected = false;
-        setLastConnectionError(e.what());
-        return {false, e.what()};
+        std::string error = "Postgres connection failed: " + std::string(e.what());
+        setLastConnectionError(error);
+        return {false, error};
     }
 }
 
@@ -635,8 +636,6 @@ void PostgresDatabase::refreshDatabaseNames() {
         return;
     }
 
-    // clear previous results
-    availableDatabases.clear();
     databasesLoaded = false;
 
     // start async loading using AsyncOperation

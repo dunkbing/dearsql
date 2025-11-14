@@ -52,6 +52,8 @@ public:
     std::string lastViewsError;
 
     // Methods
+    void ensureConnectionPool();
+
     void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
     std::vector<Table> getTablesAsync();

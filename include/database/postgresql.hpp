@@ -50,6 +50,11 @@ public:
         return connectionInfo.showAllDatabases;
     }
 
+    // Connection status
+    bool isConnecting() const override {
+        return connectionOp.isRunning() || refreshWorkflow.isRunning();
+    }
+
     // Connection info getter/setter
     const DatabaseConnectionInfo& getConnectionInfo() const {
         return connectionInfo;
@@ -89,7 +94,6 @@ private:
     std::string connectionString;
 
     std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
-    std::vector<std::string> availableDatabases;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
 

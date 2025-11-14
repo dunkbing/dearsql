@@ -608,7 +608,8 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
 
             // Add database names if in multi-database mode
             if (mysqlDb->shouldShowAllDatabases()) {
-                for (const auto& dbName : mysqlDb->getDatabaseNames()) {
+                const auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
+                for (const auto& dbName : databaseDataMap | std::views::keys) {
                     uniqueKeywords.insert(dbName);
                 }
             }

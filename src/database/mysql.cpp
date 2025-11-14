@@ -1,7 +1,6 @@
 #include "database/mysql.hpp"
 #include "database/db.hpp"
 #include "utils/logger.hpp"
-#include <chrono>
 #include <format>
 #include <iostream>
 #include <ranges>
@@ -16,11 +15,14 @@ MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
         std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
                     database, connInfo.showAllDatabases));
     connectionString = buildConnectionString(database);
+    if (database.empty()) {
+        this->database = "mysql";
+    }
 }
 
 MySQLDatabase::~MySQLDatabase() {
     // Stop all async operations before cleaning up
-    loadingDatabases = false;
+    databasesLoader.cancel();
     refreshWorkflow.cancel();
 
     // Stop all per-database async operations
@@ -29,10 +31,6 @@ MySQLDatabase::~MySQLDatabase() {
             dbDataPtr->tablesLoader.cancel();
             dbDataPtr->viewsLoader.cancel();
         }
-    }
-
-    if (databasesFuture.valid()) {
-        databasesFuture.wait();
     }
 
     disconnect();
@@ -52,6 +50,7 @@ MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() {
         auto newData = std::make_unique<MySQLDatabaseNode>();
         newData->name = database;
         newData->parentDb = this;
+        newData->ensureConnectionPool();
         auto* ptr = newData.get();
         databaseDataCache[database] = std::move(newData);
         return ptr;
@@ -71,6 +70,7 @@ MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
         auto newData = std::make_unique<MySQLDatabaseNode>();
         newData->name = dbName;
         newData->parentDb = this;
+        newData->ensureConnectionPool();
         auto* ptr = newData.get();
         databaseDataCache[dbName] = std::move(newData);
         return ptr;
@@ -78,13 +78,7 @@ MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
     return it->second.get();
 }
 
-const MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) const {
-    const auto it = databaseDataCache.find(dbName);
-    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
-}
-
 std::pair<bool, std::string> MySQLDatabase::connect() {
-    // Check if we already have a connection pool to the current database
     const auto* pool = getConnectionPoolForDatabase(database);
     if (connected && pool) {
         return {true, ""};
@@ -99,31 +93,21 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
-        if (connectionInfo.showAllDatabases && !databasesLoaded && !loadingDatabases.load()) {
+        if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
             Logger::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const soci::soci_error& e) {
-        connected = false;
+        Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
         auto* dbData = getDatabaseData(database);
         if (dbData) {
             dbData->connectionPool.reset();
         }
-        std::string error = "MySQL connection failed: " + std::string(e.what());
-        setLastConnectionError(error);
-        return {false, error};
-    } catch (const std::exception& e) {
         connected = false;
-        std::lock_guard lock(sessionMutex);
-        // Clear connection pool from DatabaseData
-        auto* dbData = getDatabaseData(database);
-        if (dbData) {
-            dbData->connectionPool.reset();
-        }
         std::string error = "MySQL connection failed: " + std::string(e.what());
         setLastConnectionError(error);
         return {false, error};
@@ -159,10 +143,6 @@ void MySQLDatabase::refreshConnection() {
             Logger::error("MySQL reconnection failed: " + std::string(e.what()));
             setLastConnectionError(e.what());
             return false;
-        } catch (const std::exception& e) {
-            Logger::error("MySQL reconnection failed: " + std::string(e.what()));
-            setLastConnectionError(e.what());
-            return false;
         }
 
         // Step 3: If showAllDatabases is enabled, load database names synchronously
@@ -172,15 +152,20 @@ void MySQLDatabase::refreshConnection() {
 
             // Populate databaseDataCache with all available databases
             for (const auto& dbName : databases) {
-                // Use getDatabaseData which creates if not exists
                 getDatabaseData(dbName);
             }
-
-            availableDatabases = databases;
-            databasesLoaded = true;
         }
 
-        // Step 4: Trigger refresh for all child databases
+        // Step 4: Ensure all database nodes have connection pools
+        Logger::debug("Ensuring connection pools for all databases...");
+        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+            if (dbDataPtr) {
+                dbDataPtr->ensureConnectionPool();
+            }
+        }
+        databasesLoaded = true;
+
+        // Step 5: Trigger refresh for all child databases
         Logger::debug("Triggering child database refresh...");
         for (auto& dbDataPtr : databaseDataCache | std::views::values) {
             if (dbDataPtr) {
@@ -442,68 +427,44 @@ std::vector<ForeignKey> MySQLDatabase::getTableForeignKeys(const std::string& ta
     return foreignKeys;
 }
 
-std::vector<std::string> MySQLDatabase::getDatabaseNames() {
-    if (databasesLoaded) {
-        return availableDatabases;
-    }
-
-    // Start async loading if not already loading and we're connected
-    if (!loadingDatabases.load() && isConnected()) {
-        refreshDatabaseNames();
-    }
-
-    return availableDatabases; // Return current state (maybe empty if still loading)
-}
-
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
 MySQLDatabase::getDatabaseDataMap() {
     // autoload databases if not loaded and not currently loading
-    if (!databasesLoaded && !loadingDatabases.load() && isConnected()) {
+    if (!databasesLoaded && !databasesLoader.isRunning() && isConnected()) {
         refreshDatabaseNames();
     }
     return databaseDataCache;
 }
 
 void MySQLDatabase::refreshDatabaseNames() {
-    if (loadingDatabases.load()) {
+    if (databasesLoader.isRunning()) {
         return; // Already loading
     }
 
     // Clear previous results
-    availableDatabases.clear();
     databasesLoaded = false;
-    loadingDatabases = true;
 
-    // Start async loading with std::async
-    databasesFuture = std::async(std::launch::async, [this]() { return getDatabaseNamesAsync(); });
+    // Start async loading using AsyncOperation
+    databasesLoader.start([this]() { return getDatabaseNamesAsync(); });
 }
 
 bool MySQLDatabase::isLoadingDatabases() const {
-    return loadingDatabases.load();
+    return databasesLoader.isRunning();
 }
 
 void MySQLDatabase::checkDatabasesStatusAsync() {
-    if (databasesFuture.valid() &&
-        databasesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            availableDatabases = databasesFuture.get();
-            std::cout << "Async database loading completed. Found " << availableDatabases.size()
-                      << " databases." << std::endl;
+    databasesLoader.check([this](const std::vector<std::string>& databases) {
+        std::cout << "Async database loading completed. Found " << databases.size() << " databases."
+                  << std::endl;
 
-            // Populate databaseDataCache with all available databases
-            for (const auto& dbName : availableDatabases) {
-                // Use getDatabaseData which creates if not exists
-                getDatabaseData(dbName);
-            }
-
-            databasesLoaded = true;
-            loadingDatabases = false;
-        } catch (const std::exception& e) {
-            std::cerr << "Error in async database loading: " << e.what() << std::endl;
-            databasesLoaded = true; // Mark as loaded to prevent retry loops
-            loadingDatabases = false;
+        // Populate databaseDataCache with all available databases
+        for (const auto& dbName : databases) {
+            // Use getDatabaseData which creates if not exists
+            getDatabaseData(dbName);
         }
-    }
+
+        databasesLoaded = true;
+    });
 }
 
 void MySQLDatabase::checkRefreshWorkflowAsync() {
@@ -517,18 +478,10 @@ void MySQLDatabase::checkRefreshWorkflowAsync() {
 }
 
 std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
+    Logger::info("getDatabaseNamesAsync");
     std::vector<std::string> result;
 
-    // Check if we're still supposed to be loading
-    if (!loadingDatabases.load()) {
-        return result;
-    }
-
     try {
-        if (!loadingDatabases.load()) {
-            return result;
-        }
-
         // Check if we have a valid connection pool before trying to query
         if (!isConnected()) {
             std::cerr << "Cannot load databases: not connected" << std::endl;
@@ -538,6 +491,14 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
         std::cout << "DEBUG: isConnected() = true, attempting to get session for database: "
                   << database << std::endl;
 
+        // If showAllDatabases is false, only return the current database
+        if (!connectionInfo.showAllDatabases) {
+            result.push_back(database);
+            std::cout << "showAllDatabases is false, returning only current database: " << database
+                      << std::endl;
+            return result;
+        }
+
         const std::string sqlQuery = "SHOW DATABASES";
 
         std::cout << "Executing async query to get database names..." << std::endl;
@@ -546,10 +507,6 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
         const soci::rowset rs = sql->prepare << sqlQuery;
 
         for (const auto& row : rs) {
-            if (!loadingDatabases.load()) {
-                break; // Stop processing if we should no longer be loading
-            }
-
             auto dbName = row.get<std::string>(0);
             // Filter out system databases
             if (dbName != "information_schema" && dbName != "performance_schema" &&
@@ -571,9 +528,9 @@ MySQLDatabase::getConnectionPoolForDatabase(const std::string& dbName) const {
     std::lock_guard lock(sessionMutex);
 
     // Use nested DatabaseData structure
-    const auto* dbData = getDatabaseData(dbName);
-    if (dbData && dbData->connectionPool) {
-        return dbData->connectionPool.get();
+    auto it = databaseDataCache.find(dbName);
+    if (it != databaseDataCache.end() && it->second && it->second->connectionPool) {
+        return it->second->connectionPool.get();
     }
     return nullptr;
 }
@@ -634,7 +591,8 @@ std::unique_ptr<soci::session> MySQLDatabase::getSession(const std::string& dbNa
     const std::string targetDb = dbName.empty() ? database : dbName;
     auto* pool = getConnectionPoolForDatabase(targetDb);
     if (!pool) {
-        throw std::runtime_error("Connection pool not available for database: " + targetDb);
+        throw std::runtime_error(
+            "MySQLDatabase::getSession: Connection pool not available for database: " + targetDb);
     }
     auto res = std::make_unique<soci::session>(*pool);
     if (!res->is_connected()) {

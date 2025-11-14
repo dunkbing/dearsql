@@ -8,6 +8,13 @@
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
+void MySQLDatabaseNode::ensureConnectionPool() {
+    if (!connectionPool && parentDb) {
+        const std::string dbConnectionString = parentDb->buildConnectionString(name);
+        initializeConnectionPool(dbConnectionString);
+    }
+}
+
 void MySQLDatabaseNode::checkTablesStatusAsync() {
     tablesLoader.check([this](const std::vector<Table>& result) {
         tables = result;
@@ -18,22 +25,30 @@ void MySQLDatabaseNode::checkTablesStatusAsync() {
 }
 
 void MySQLDatabaseNode::startTablesLoadAsync(bool forceRefresh) {
-    Logger::debug("startTablesLoadAsync for database: " + name);
+    Logger::debug("startTablesLoadAsync for db: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
     if (!parentDb) {
         return;
     }
 
     // Don't start if already loading or already loaded (unless force refresh)
-    if (tablesLoader.isRunning() || (tablesLoaded && !forceRefresh)) {
+    if (tablesLoader.isRunning()) {
         return;
     }
 
-    // Clear previous results on force refresh
+    // If force refresh, clear existing tables and reset state
     if (forceRefresh) {
         tables.clear();
         tablesLoaded = false;
         lastTablesError.clear();
     }
+
+    // Don't start if already loaded (unless force refresh)
+    if (!forceRefresh && tablesLoaded) {
+        return;
+    }
+
+    tables.clear();
 
     // Start async loading using AsyncOperation
     tablesLoader.start([this]() { return getTablesAsync(); });
@@ -48,21 +63,16 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
     }
 
     try {
-        // Ensure we have a connection pool for the specific database
-        if (!connectionPool) {
-            const std::string dbConnectionString = parentDb->buildConnectionString(name);
-            initializeConnectionPool(dbConnectionString);
-        }
-
         if (!tablesLoader.isRunning()) {
             return result;
         }
+        Logger::info("getTablesAsync_getSession");
+        const auto session = getSession();
 
         // Get table names
         std::vector<std::string> tableNames;
         const std::string tableNamesQuery = "SHOW TABLES";
         {
-            const auto session = getSession();
             const soci::rowset tableRs = session->prepare << tableNamesQuery;
             for (const auto& row : tableRs) {
                 if (!tablesLoader.isRunning()) {
@@ -91,7 +101,6 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
             // Get table columns
             const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
             {
-                const auto session = getSession();
                 const soci::rowset columnsRs = session->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
@@ -168,11 +177,13 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             return result;
         }
 
+        Logger::info("getViewsForDatabaseAsync_getSession");
+        const auto session = getSession();
+
         // Get view names
         std::vector<std::string> viewNames;
         const std::string viewNamesQuery = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
         {
-            const auto session = getSession();
             const soci::rowset viewRs = session->prepare << viewNamesQuery;
             for (const auto& row : viewRs) {
                 if (!viewsLoader.isRunning()) {
@@ -201,7 +212,6 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             // Get view columns (same as table columns for MySQL)
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
             {
-                const auto session = getSession();
                 const soci::rowset columnsRs = session->prepare << columnsQuery;
 
                 for (const auto& colRow : columnsRs) {
@@ -229,7 +239,8 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
 
 std::unique_ptr<soci::session> MySQLDatabaseNode::getSession() const {
     if (!connectionPool) {
-        throw std::runtime_error("Connection pool not available for database: " + name);
+        throw std::runtime_error(
+            "MySQLDatabaseNode::getSession: Connection pool not available for database: " + name);
     }
     auto res = std::make_unique<soci::session>(*connectionPool);
     if (!res->is_connected()) {
@@ -244,7 +255,7 @@ void MySQLDatabaseNode::initializeConnectionPool(const std::string& connStr) {
         return;
     }
 
-    constexpr size_t poolSize = 3;
+    constexpr size_t poolSize = 2;
     auto pool = std::make_unique<soci::connection_pool>(poolSize);
 
     // Initialize connections in parallel for faster startup
@@ -273,6 +284,7 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
     std::vector<std::vector<std::string>> result;
 
     try {
+        Logger::info("getTableData_getSession");
         const auto session = getSession();
         std::string query = std::format("SELECT * FROM `{}` ", tableName);
 
@@ -303,6 +315,7 @@ std::vector<std::string> MySQLDatabaseNode::getColumnNames(const std::string& ta
     std::vector<std::string> columnNames;
 
     try {
+        Logger::info("getColumnNames_getSession");
         const auto session = getSession();
         const std::string query = std::format("DESCRIBE `{}`", tableName);
         const soci::rowset rs = session->prepare << query;
@@ -321,6 +334,7 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
     int count = 0;
 
     try {
+        Logger::info("getRowCount_getSession");
         const auto session = getSession();
         std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
 
@@ -338,6 +352,7 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
 
 std::string MySQLDatabaseNode::executeQuery(const std::string& query) {
     try {
+        Logger::info("executeQuery_getSession");
         const auto session = getSession();
         *session << query;
         return "Query executed successfully";
@@ -352,6 +367,7 @@ QueryResult MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
+        Logger::info("executeQueryWithResult_getSession");
         const auto session = getSession();
         if (!session) {
             result.success = false;

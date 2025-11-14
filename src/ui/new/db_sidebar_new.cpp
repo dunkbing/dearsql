@@ -125,8 +125,6 @@ void DatabaseSidebarNew::render() {
             ImGui::Separator();
 
             if (ImGui::Button("Remove", ImVec2(100, 0))) {
-                const auto savedConnections = app.getAppState()->getSavedConnections();
-
                 if (app.getAppState()->deleteConnection(db->getConnectionId())) {
                     Logger::info(std::format("Removed saved connection: {}", db->getName()));
                 }

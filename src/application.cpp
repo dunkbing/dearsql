@@ -359,12 +359,9 @@ void Application::restorePreviousConnections() {
         } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
             db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
-            db = std::make_shared<SQLiteDatabase>(conn.connectionInfo.name,
-                                                  conn.connectionInfo.path);
+            db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
-            db = std::make_shared<RedisDatabase>(
-                conn.connectionInfo.name, conn.connectionInfo.host, conn.connectionInfo.port,
-                conn.connectionInfo.password, conn.connectionInfo.username);
+            db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         }
 
         if (db) {

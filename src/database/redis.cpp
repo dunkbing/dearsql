@@ -5,11 +5,8 @@
 #include <iostream>
 #include <sstream>
 
-RedisDatabase::RedisDatabase(std::string name, std::string host, int port, std::string password,
-                             std::string username)
-    : name(std::move(name)), host(std::move(host)), port(port), password(std::move(password)),
-      username(std::move(username)) {
-    connectionString = std::format("redis://{}:{}", this->host, this->port);
+RedisDatabase::RedisDatabase(const DatabaseConnectionInfo& connInfo) {
+    this->connectionInfo = connInfo;
 }
 
 RedisDatabase::~RedisDatabase() {
@@ -28,16 +25,18 @@ std::pair<bool, std::string> RedisDatabase::connect() {
     }
     connected = false;
 
-    attemptedConnection = true;
-    std::cout << "Attempting Redis connection to " << host << ":" << port << std::endl;
+    setAttemptedConnection(true);
+    std::cout << "Attempting Redis connection to " << connectionInfo.host << ":"
+              << connectionInfo.port << std::endl;
 
     try {
         // Use redisConnectWithTimeout for better timeout handling
         constexpr timeval timeout = {5, 0}; // 5 seconds timeout
-        context = redisConnectWithTimeout(host.c_str(), port, timeout);
+        context =
+            redisConnectWithTimeout(connectionInfo.host.c_str(), connectionInfo.port, timeout);
         if (!context || context->err) {
             std::string error = context ? context->errstr : "Failed to allocate redis context";
-            lastConnectionError = error;
+            setLastConnectionError(error);
             std::cout << "Redis connection failed: " << error << std::endl;
             if (context) {
                 redisFree(context);
@@ -47,25 +46,27 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         }
 
         // Authenticate if password is provided
-        if (!password.empty()) {
+        if (!connectionInfo.password.empty()) {
             std::cout << "Authenticating with Redis server..." << std::endl;
 
             redisReply* reply = nullptr;
 
             // Use Redis 6+ ACL authentication if username is provided
-            if (!username.empty()) {
-                std::cout << "Using Redis ACL authentication with username: " << username
-                          << std::endl;
-                reply = (redisReply*)redisCommand(context, "AUTH %s %s", username.c_str(),
-                                                  password.c_str());
+            if (!connectionInfo.username.empty()) {
+                std::cout << "Using Redis ACL authentication with username: "
+                          << connectionInfo.username << std::endl;
+                reply = (redisReply*)redisCommand(context, "AUTH %s %s",
+                                                  connectionInfo.username.c_str(),
+                                                  connectionInfo.password.c_str());
             } else {
                 std::cout << "Using legacy Redis authentication (password only)" << std::endl;
-                reply = (redisReply*)redisCommand(context, "AUTH %s", password.c_str());
+                reply =
+                    (redisReply*)redisCommand(context, "AUTH %s", connectionInfo.password.c_str());
             }
 
             if (!reply || reply->type == REDIS_REPLY_ERROR) {
                 std::string error = reply ? reply->str : "Authentication failed";
-                lastConnectionError = error;
+                setLastConnectionError(error);
                 std::cout << "Redis authentication failed: " << error << std::endl;
                 if (reply)
                     freeReplyObject(reply);
@@ -81,7 +82,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         auto* reply = (redisReply*)redisCommand(context, "PING");
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
             std::string error = reply ? reply->str : "Connection test failed";
-            lastConnectionError = error;
+            setLastConnectionError(error);
             if (reply)
                 freeReplyObject(reply);
             redisFree(context);
@@ -91,12 +92,13 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         freeReplyObject(reply);
 
         connected = true;
-        lastConnectionError.clear();
-        std::cout << "Successfully connected to Redis: " << connectionString << std::endl;
+        setLastConnectionError("");
+        std::cout << "Successfully connected to Redis: " << connectionInfo.buildConnectionString()
+                  << std::endl;
         return {true, ""};
     } catch (const std::exception& e) {
         std::string error = e.what();
-        lastConnectionError = error;
+        setLastConnectionError(error);
         if (context) {
             redisFree(context);
             context = nullptr;
@@ -111,24 +113,23 @@ void RedisDatabase::disconnect() {
         context = nullptr;
     }
     connected = false;
-    connecting = false;
 
     // Reset loading states
     loadingKeys = false;
 
-    std::cout << "Disconnected from Redis: " << connectionString << std::endl;
+    std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString() << std::endl;
 }
 
 void RedisDatabase::refreshConnection() {
     // Disconnect and reset state
     disconnect();
-    attemptedConnection = false;
-    lastConnectionError.clear();
+    setAttemptedConnection(false);
+    setLastConnectionError("");
 
     // Reconnect with force refresh
     auto [success, error] = connect();
     if (!success) {
-        lastConnectionError = error;
+        setLastConnectionError(error);
         return;
     }
 
@@ -136,79 +137,12 @@ void RedisDatabase::refreshConnection() {
     startKeysLoadAsync(true);
 }
 
-bool RedisDatabase::isConnected() const {
-    return connected && context;
-}
-
-bool RedisDatabase::isConnecting() const {
-    return connecting;
-}
-
-void RedisDatabase::startConnectionAsync() {
-    if (connecting || connected) {
-        return;
-    }
-
-    connecting = true;
-    connectionFuture = std::async(std::launch::async, [this]() { return connect(); });
-}
-
-void RedisDatabase::checkConnectionStatusAsync() {
-    if (!connecting) {
-        return;
-    }
-
-    if (connectionFuture.valid() &&
-        connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            auto result = connectionFuture.get();
-            connecting = false;
-            // Connection result is already stored in the connect() method
-        } catch (const std::exception& e) {
-            connecting = false;
-            lastConnectionError = e.what();
-        }
-    }
-}
-
-const std::string& RedisDatabase::getName() const {
-    return name;
-}
-
-const std::string& RedisDatabase::getConnectionString() const {
-    return connectionString;
-}
-
 void* RedisDatabase::getConnection() const {
     return context;
 }
 
-DatabaseType RedisDatabase::getType() const {
-    return DatabaseType::REDIS;
-}
-
-bool RedisDatabase::isLoadingTables() const {
-    return loadingKeys.load();
-}
-
 void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
-}
-
-const std::vector<Table>& RedisDatabase::getTables() const {
-    return tables;
-}
-
-std::vector<Table>& RedisDatabase::getTables() {
-    return tables;
-}
-
-const std::vector<std::string>& RedisDatabase::getSequences() const {
-    return sequences;
-}
-
-std::vector<std::string>& RedisDatabase::getSequences() {
-    return sequences;
 }
 
 std::string RedisDatabase::executeQuery(const std::string& command) {
@@ -293,22 +227,6 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
         std::cerr << "Error getting Redis key count: " << e.what() << std::endl;
         return 0;
     }
-}
-
-bool RedisDatabase::hasAttemptedConnection() const {
-    return attemptedConnection;
-}
-
-void RedisDatabase::setAttemptedConnection(bool attempted) {
-    attemptedConnection = attempted;
-}
-
-const std::string& RedisDatabase::getLastConnectionError() const {
-    return lastConnectionError;
-}
-
-void RedisDatabase::setLastConnectionError(const std::string& error) {
-    lastConnectionError = error;
 }
 
 // Redis-specific methods
@@ -634,7 +552,7 @@ void RedisDatabase::groupKeysByPattern() {
     // Use "*" as the name so it can be used as a Redis key pattern
     Table allKeys;
     allKeys.name = "*";
-    allKeys.fullName = name + ".*";
+    allKeys.fullName = connectionInfo.name + ".*";
     // allKeys.columns = getTableColumns("*");
     tables.push_back(allKeys);
 }

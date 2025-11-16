@@ -80,11 +80,12 @@ void DatabaseSidebarNew::render() {
                     sqlite->refreshAllTables();
                 }
             }
-            Logger::info(std::format("Database connection established: {}", db->getName()));
+            Logger::info(
+                std::format("Database connection established: {}", db->getConnectionInfo().name));
             app.addDatabase(db);
         } else {
-            Logger::error(
-                std::format("Failed to connect to database '{}': {}", db->getName(), error));
+            Logger::error(std::format("Failed to connect to database '{}': {}",
+                                      db->getConnectionInfo().name, error));
         }
     }
 
@@ -114,8 +115,9 @@ void DatabaseSidebarNew::render() {
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         const auto db = databasePendingDeletion;
         if (db) {
+            auto const connectionInfo = db->getConnectionInfo();
             ImGui::Text("Are you sure you want to remove this database connection?");
-            ImGui::Text("Database: %s", db->getName().c_str());
+            ImGui::Text("Database: %s", connectionInfo.name.c_str());
             ImGui::Spacing();
             ImGui::Text("This will:");
             ImGui::BulletText("Remove the database from the current session");
@@ -126,9 +128,9 @@ void DatabaseSidebarNew::render() {
 
             if (ImGui::Button("Remove", ImVec2(100, 0))) {
                 if (app.getAppState()->deleteConnection(db->getConnectionId())) {
-                    Logger::info(std::format("Removed saved connection: {}", db->getName()));
+                    Logger::info(std::format("Removed saved connection: {}", connectionInfo.name));
                 }
-                Logger::info(std::format("Database removed: {}", db->getName()));
+                Logger::info(std::format("Database removed: {}", connectionInfo.name));
                 app.removeDatabase(db);
                 databasePendingDeletion.reset();
                 ImGui::CloseCurrentPopup();
@@ -183,8 +185,9 @@ void DatabaseSidebarNew::render() {
                 ImGui::CloseCurrentPopup();
             }
         } else {
+            auto const connectionInfo = db->getConnectionInfo();
             ImGui::Text("Create new database on:");
-            ImGui::Text("Connection: %s", db->getName().c_str());
+            ImGui::Text("Connection: %s", connectionInfo.name.c_str());
             ImGui::Text("Type: %s",
                         db->getType() == DatabaseType::POSTGRESQL ? "PostgreSQL" : "MySQL");
             ImGui::Separator();
@@ -282,6 +285,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         return;
     }
 
+    auto const connectionInfo = db->getConnectionInfo();
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -313,7 +317,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     }
 
     const std::string dbLabel =
-        std::format("   {}###db_{:p}", db->getName(), static_cast<const void*>(db.get()));
+        std::format("   {}###db_{:p}", connectionInfo.name, static_cast<const void*>(db.get()));
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
 
     const auto dbIconPos =
@@ -371,7 +375,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     if (dbOpen) {
         if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
-            Logger::info(std::format("Starting connection to database: {}", db->getName()));
+            Logger::info(std::format("Starting connection to database: {}", connectionInfo.name));
             db->startConnectionAsync();
         }
 
@@ -421,7 +425,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {
-            Logger::info(std::format("Refreshing connection for database: {}", db->getName()));
+            Logger::info(std::format("Refreshing connection for database: {}",
+                                     db->getConnectionInfo().name));
             db->refreshConnection();
         }
         ImGui::EndPopup();

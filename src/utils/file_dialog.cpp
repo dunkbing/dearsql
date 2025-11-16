@@ -31,7 +31,12 @@ std::shared_ptr<DatabaseInterface> FileDialog::openSQLiteFile() {
         const size_t lastSlash = path.find_last_of("/\\");
         std::string name = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
 
-        auto db = std::make_shared<SQLiteDatabase>(name, path);
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = name;
+        info.path = path;
+
+        auto db = std::make_shared<SQLiteDatabase>(info);
         NFD_FreePath(outPath);
         return db;
     }

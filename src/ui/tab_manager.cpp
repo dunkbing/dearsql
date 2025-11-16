@@ -165,7 +165,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(MySQLDatabaseNode* dbNode,
 
     // Build the full table path for identification (MySQL: connection.database.table)
     const std::string tableFullName =
-        dbNode->parentDb->getName() + "." + dbNode->name + "." + tableName;
+        dbNode->parentDb->getConnectionInfo().name + "." + dbNode->name + "." + tableName;
 
     // Check if tab already exists
     for (auto& tab : tabs) {
@@ -207,7 +207,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabase* db,
     }
 
     // Build the full table path for identification (connection.table)
-    const std::string tableFullName = db->getName() + "." + tableName;
+    const std::string tableFullName = db->getConnectionInfo().name + "." + tableName;
 
     // Check if tab already exists
     for (auto& tab : tabs) {
@@ -225,7 +225,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(SQLiteDatabase* db,
     }
 
     // Create user-friendly tab name
-    std::string tabName = tableName + " (" + db->getName() + ")";
+    std::string tabName = tableName + " (" + db->getConnectionInfo().name + ")";
 
     // Create new tab
     auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, db);

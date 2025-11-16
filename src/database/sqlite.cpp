@@ -9,8 +9,8 @@
 #include <typeinfo>
 #include <utility>
 
-SQLiteDatabase::SQLiteDatabase(std::string name_, std::string path) : path(std::move(path)) {
-    name = std::move(name_);
+SQLiteDatabase::SQLiteDatabase(const DatabaseConnectionInfo& connInfo) {
+    connectionInfo = connInfo;
 }
 
 SQLiteDatabase::~SQLiteDatabase() {
@@ -23,8 +23,8 @@ std::pair<bool, std::string> SQLiteDatabase::connect() {
     }
 
     try {
-        session = std::make_unique<soci::session>(soci::sqlite3, path);
-        std::cout << "Successfully connected to database: " << path << std::endl;
+        session = std::make_unique<soci::session>(soci::sqlite3, connectionInfo.path);
+        std::cout << "Successfully connected to database: " << connectionInfo.path << std::endl;
         connected = true;
         return {true, ""};
     } catch (const soci::soci_error& e) {
@@ -41,24 +41,12 @@ void SQLiteDatabase::disconnect() {
     connected = false;
 }
 
-const std::string& SQLiteDatabase::getName() const {
-    return name;
-}
-
-const std::string& SQLiteDatabase::getConnectionString() const {
-    return path;
-}
-
 const std::string& SQLiteDatabase::getPath() const {
-    return path;
-}
-
-DatabaseType SQLiteDatabase::getType() const {
-    return DatabaseType::SQLITE;
+    return connectionInfo.path;
 }
 
 void SQLiteDatabase::refreshAllTables() {
-    std::cout << "Refreshing tables for database: " << name << std::endl;
+    std::cout << "Refreshing tables for database: " << connectionInfo.name << std::endl;
     if (!isConnected()) {
         std::cout << "Failed to connect to database" << std::endl;
         tablesLoaded = true;
@@ -73,7 +61,7 @@ void SQLiteDatabase::refreshAllTables() {
         std::cout << "Adding table: " << tableName << std::endl;
         Table table;
         table.name = tableName;
-        table.fullName = name + "." + tableName; // SQLite: connection.table
+        table.fullName = connectionInfo.name + "." + tableName; // SQLite: connection.table
         // table.columns = getTableColumns(tableName);
         table.indexes = getTableIndexes(tableName);
         table.foreignKeys = getTableForeignKeys(tableName);
@@ -409,7 +397,7 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
 
             Table table;
             table.name = tableName;
-            table.fullName = name + "." + tableName;
+            table.fullName = connectionInfo.name + "." + tableName;
 
             // Get table columns
             const std::string columnsQuery = std::format("PRAGMA table_info({})", tableName);
@@ -560,7 +548,7 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
 
             Table view;
             view.name = viewName;
-            view.fullName = name + "." + viewName;
+            view.fullName = connectionInfo.name + "." + viewName;
 
             // Get view columns
             const std::string columnsQuery = std::format("PRAGMA table_info({})", viewName);

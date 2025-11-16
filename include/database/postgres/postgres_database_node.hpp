@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
+#include "database/db_interface.hpp"
 #include "postgres_schema_node.hpp"
 #include <memory>
 #include <soci/connection-pool.h>
@@ -44,7 +45,7 @@ public:
     void startSchemasLoadAsync(bool forceRefresh = false, bool refreshChildren = false);
     void checkSchemasStatusAsync();
     std::unique_ptr<soci::session> getSession() const;
-    void initializeConnectionPool(const std::string& connStr);
+    void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
     // query execution with comprehensive result
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);

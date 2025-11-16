@@ -99,7 +99,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 if (db) {
                     // Save SQLite connection to app state
                     SavedConnection conn;
-                    conn.connectionInfo.name = db->getName();
+                    conn.connectionInfo.name = db->getConnectionInfo().name;
                     conn.connectionInfo.type = DatabaseType::SQLITE;
                     conn.connectionInfo.path = db->getPath();
                     conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
@@ -480,7 +480,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
     reset();
 
     // Fill in the connection details from the database
-    strncpy(connectionName, db->getName().c_str(), sizeof(connectionName) - 1);
+    strncpy(connectionName, db->getConnectionInfo().name.c_str(), sizeof(connectionName) - 1);
     connectionName[sizeof(connectionName) - 1] = '\0';
 
     editingConnectionId = db->getConnectionId();
@@ -498,7 +498,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         const auto& connInfo = pgDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
         port = connInfo.port;
-        strncpy(database, pgDb->getDatabase().c_str(), sizeof(database) - 1);
+        strncpy(database, connInfo.database.c_str(), sizeof(database) - 1);
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
@@ -512,7 +512,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         const auto& connInfo = mysqlDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
         port = connInfo.port;
-        strncpy(database, mysqlDb->getDatabase().c_str(), sizeof(database) - 1);
+        strncpy(database, connInfo.database.c_str(), sizeof(database) - 1);
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
@@ -523,11 +523,12 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
 
         // Get connection details from the database
         const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
-        strncpy(host, redisDb->getHost().c_str(), sizeof(host) - 1);
-        port = redisDb->getPort();
-        strncpy(username, redisDb->getUsername().c_str(), sizeof(username) - 1);
-        strncpy(password, redisDb->getPassword().c_str(), sizeof(password) - 1);
-        authType = (redisDb->getPassword().empty() && redisDb->getUsername().empty()) ? 1 : 0;
+        const auto& connInfo = redisDb->getConnectionInfo();
+        strncpy(host, connInfo.name.c_str(), sizeof(host) - 1);
+        port = connInfo.port;
+        strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
+        strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
+        authType = (connInfo.password.empty() && connInfo.username.empty()) ? 1 : 0;
     }
 
     editingDatabase = db;
@@ -609,18 +610,21 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
         return nullptr;
     }
 
-    // For Redis with auth, username is optional (Redis 6+ ACL) but password is required
-    std::string passwordStr = (authType == 0) ? std::string(password) : "";
-    std::string usernameStr = (authType == 0) ? std::string(username) : "";
-
     std::cout << "Creating RedisDatabase: " << connectionName << " -> " << host << ":" << port
               << " (auth: " << (authType == 0 ? "username & password" : "none") << ")" << std::endl;
     if (authType == 0 && strlen(username) > 0) {
         std::cout << "Using username: " << username << std::endl;
     }
 
-    return std::make_shared<RedisDatabase>(std::string(connectionName), std::string(host), port,
-                                           passwordStr, usernameStr);
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::REDIS;
+    info.name = std::string(connectionName);
+    info.host = std::string(host);
+    info.port = port;
+    info.username = (authType == 0) ? std::string(username) : "";
+    info.password = (authType == 0) ? std::string(password) : "";
+
+    return std::make_shared<RedisDatabase>(info);
 }
 
 void DatabaseConnectionDialog::loadSavedConnections() {
@@ -771,8 +775,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                 }
             } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
                 // Create SQLite database from saved path
-                const auto db = std::make_shared<SQLiteDatabase>(conn.connectionInfo.name,
-                                                                 conn.connectionInfo.path);
+                const auto db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
                 if (db) {
                     db->setConnectionId(conn.id);
                     auto [success, error] = db->connect();

@@ -10,7 +10,7 @@
 
 class SQLiteDatabase final : public BaseDatabaseImpl, public ITableDataProvider {
 public:
-    SQLiteDatabase(std::string name, std::string path);
+    SQLiteDatabase(const DatabaseConnectionInfo& connInfo);
     ~SQLiteDatabase() override;
 
     // Connection management (BaseDatabaseImpl handles async)
@@ -18,11 +18,8 @@ public:
     void disconnect() override;
 
     // Database info
-    const std::string& getName() const override;
-    const std::string& getConnectionString() const override;
     const std::string& getPath() const;
     void* getConnection() const override;
-    DatabaseType getType() const override;
 
     bool areTablesLoaded() const {
         return tablesLoaded;
@@ -92,7 +89,6 @@ protected:
 
 private:
     // SQLite-specific state (base class handles common state)
-    std::string path;
     std::unique_ptr<soci::session> session;
 
     // Async futures

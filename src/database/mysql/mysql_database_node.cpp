@@ -4,14 +4,14 @@
 #include "utils/logger.hpp"
 #include <chrono>
 #include <format>
-#include <future>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
 void MySQLDatabaseNode::ensureConnectionPool() {
     if (!connectionPool && parentDb) {
-        const std::string dbConnectionString = parentDb->buildConnectionString(name);
-        initializeConnectionPool(dbConnectionString);
+        auto nodeInfo = parentDb->getConnectionInfo();
+        nodeInfo.database = name;
+        initializeConnectionPool(nodeInfo);
     }
 }
 
@@ -96,7 +96,7 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
 
             Table table;
             table.name = tableName;
-            table.fullName = parentDb->getName() + "." + name + "." + tableName;
+            table.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
             // Get table columns
             const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
@@ -169,8 +169,9 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
     try {
         // Ensure we have a connection pool for the specific database
         if (!connectionPool) {
-            const std::string dbConnectionString = parentDb->buildConnectionString(name);
-            initializeConnectionPool(dbConnectionString);
+            auto nodeInfo = parentDb->getConnectionInfo();
+            nodeInfo.database = name;
+            initializeConnectionPool(nodeInfo);
         }
 
         if (!viewsLoader.isRunning()) {
@@ -207,7 +208,7 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
 
             Table view;
             view.name = viewName;
-            view.fullName = parentDb->getName() + "." + name + "." + viewName;
+            view.fullName = parentDb->getConnectionInfo().name + "." + name + "." + viewName;
 
             // Get view columns (same as table columns for MySQL)
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
@@ -249,33 +250,18 @@ std::unique_ptr<soci::session> MySQLDatabaseNode::getSession() const {
     return res;
 }
 
-void MySQLDatabaseNode::initializeConnectionPool(const std::string& connStr) {
-    Logger::debug(std::format("initializeConnectionPool {}", connStr));
+void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& info) {
+    if (!parentDb) {
+        return;
+    }
+
+    Logger::debug(std::format("initializeConnectionPool {}", info.buildConnectionString()));
     if (connectionPool) {
         return;
     }
 
     constexpr size_t poolSize = 2;
-    auto pool = std::make_unique<soci::connection_pool>(poolSize);
-
-    // Initialize connections in parallel for faster startup
-    std::vector<std::future<void>> connectionFutures;
-    connectionFutures.reserve(poolSize);
-
-    for (size_t i = 0; i != poolSize; ++i) {
-        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& session = pool->at(i);
-            session.open(soci::mysql, connStr);
-        }));
-    }
-
-    // Wait for all connections to complete
-    for (auto& future : connectionFutures) {
-        future.wait();
-    }
-
-    // Store in MySQLDatabaseNode
-    connectionPool = std::move(pool);
+    connectionPool = parentDb->initializeConnectionPool(info, poolSize);
 }
 
 std::vector<std::vector<std::string>>

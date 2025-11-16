@@ -9,12 +9,10 @@
 #include <unordered_map>
 #include <vector>
 
-PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo)
-    : connectionInfo(connInfo), database(connInfo.database) {
-    this->name = connInfo.name;
-    connectionString = buildConnectionString(database);
-    if (database.empty()) {
-        this->database = "postgres";
+PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo) {
+    this->connectionInfo = connInfo;
+    if (connectionInfo.database.empty()) {
+        connectionInfo.database = "postgres";
     }
 }
 
@@ -41,32 +39,22 @@ PostgresDatabase::~PostgresDatabase() {
     PostgresDatabase::disconnect();
 }
 
-void PostgresDatabase::setConnectionInfo(const DatabaseConnectionInfo& info) {
-    connectionInfo = info;
-    database = info.database;
-    name = info.name;
-    connectionString = buildConnectionString(database);
-    if (database.empty()) {
-        database = "postgres";
-    }
-}
-
 // Helper methods for per-database data access
 PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() {
-    auto it = databaseDataCache.find(database);
+    auto it = databaseDataCache.find(connectionInfo.database);
     if (it == databaseDataCache.end()) {
         auto newData = std::make_unique<PostgresDatabaseNode>();
-        newData->name = database;
+        newData->name = connectionInfo.database;
         newData->parentDb = this;
         auto* ptr = newData.get();
-        databaseDataCache[database] = std::move(newData);
+        databaseDataCache[connectionInfo.database] = std::move(newData);
         return ptr;
     }
     return it->second.get();
 }
 
 const PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() const {
-    const auto it = databaseDataCache.find(database);
+    const auto it = databaseDataCache.find(connectionInfo.database);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
@@ -129,7 +117,7 @@ const PostgresSchemaNode& PostgresDatabase::getSchemaData(const std::string& dbN
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
-    const auto* pool = getConnectionPoolForDatabase(database);
+    const auto* pool = getConnectionPoolForDatabase(connectionInfo.database);
     if (connected && pool) {
         return {true, ""};
     }
@@ -137,8 +125,8 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
     setAttemptedConnection(true);
 
     try {
-        initializeConnectionPool(database, connectionString);
-        Logger::info("Successfully connected to PostgreSQL database: " + database);
+        ensureConnectionPoolForDatabase(connectionInfo);
+        Logger::info("Successfully connected to PostgreSQL database: " + connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
@@ -153,7 +141,7 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
         Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
-        auto it = databaseDataCache.find(database);
+        auto it = databaseDataCache.find(connectionInfo.database);
         if (it != databaseDataCache.end() && it->second) {
             it->second->connectionPool.reset();
         }
@@ -185,8 +173,9 @@ void PostgresDatabase::refreshConnection() {
 
         // Step 2: Reconnect (synchronously, without triggering auto-refresh)
         try {
-            initializeConnectionPool(database, connectionString);
-            Logger::info("Successfully reconnected to PostgreSQL database: " + database);
+            ensureConnectionPoolForDatabase(connectionInfo);
+            Logger::info("Successfully reconnected to PostgreSQL database: " +
+                         connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const soci::soci_error& e) {
@@ -226,22 +215,6 @@ void PostgresDatabase::refreshConnection() {
             std::format("Refresh workflow completed for {} databases", databaseDataCache.size()));
         return true;
     });
-}
-
-const std::string& PostgresDatabase::getName() const {
-    return name;
-}
-
-const std::string& PostgresDatabase::getConnectionString() const {
-    return connectionString;
-}
-
-DatabaseType PostgresDatabase::getType() const {
-    return DatabaseType::POSTGRESQL;
-}
-
-const std::string& PostgresDatabase::getDatabaseName() const {
-    return database;
 }
 
 std::string PostgresDatabase::executeQuery(const std::string& query) {
@@ -316,7 +289,7 @@ std::string PostgresDatabase::executeQuery(const std::string& query) {
 }
 
 void* PostgresDatabase::getConnection() const {
-    return getConnectionPoolForDatabase(database);
+    return getConnectionPoolForDatabase(connectionInfo.database);
 }
 
 std::vector<Index> PostgresDatabase::getTableIndexes(const std::string& tableName) {
@@ -500,28 +473,6 @@ bool PostgresDatabase::isLoadingSchemas() const {
     return dbData ? dbData->schemasLoader.isRunning() : false;
 }
 
-std::vector<std::string> PostgresDatabase::getDatabases() {
-    if (databasesLoaded) {
-        std::vector<std::string> databases;
-        databases.reserve(databaseDataCache.size());
-        for (const auto& k : databaseDataCache | std::views::keys) {
-            databases.push_back(k);
-        }
-        return databases;
-    }
-
-    if (!databasesLoader.isRunning() && isConnected()) {
-        refreshDatabaseNames();
-    }
-
-    std::vector<std::string> databases;
-    databases.reserve(databaseDataCache.size());
-    for (const auto& k : databaseDataCache | std::views::keys) {
-        databases.push_back(k);
-    }
-    return databases;
-}
-
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
 PostgresDatabase::getDatabaseDataMap() {
     // autoload databases if not loaded and not currently loading
@@ -592,7 +543,7 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
 
         std::vector<std::string> conditions = {sql::eq("datistemplate", "false")};
         if (!connectionInfo.showAllDatabases) {
-            conditions.push_back(sql::eq("datname", "'" + database + "'"));
+            conditions.push_back(sql::eq("datname", "'" + connectionInfo.database + "'"));
         }
 
         const std::string whereClause = sql::and_(conditions);
@@ -632,66 +583,24 @@ PostgresDatabase::getConnectionPoolForDatabase(const std::string& dbName) const 
     return nullptr;
 }
 
-void PostgresDatabase::initializeConnectionPool(const std::string& dbName,
-                                                const std::string& connStr) {
+void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
     std::lock_guard lock(sessionMutex);
 
-    // Get or create PostgresDatabaseNode for this database
-    auto* dbData = getDatabaseData(dbName);
-    if (!dbData)
-        return;
+    if (info.database.empty()) {
+        throw std::runtime_error("ensureConnectionPoolForDatabase: database name is required");
+    }
 
-    // Don't recreate if pool already exists
-    if (dbData->connectionPool) {
+    auto* dbData = getDatabaseData(info.database);
+    if (!dbData || dbData->connectionPool) {
         return;
     }
 
     constexpr size_t poolSize = 3;
-    auto pool = std::make_unique<soci::connection_pool>(poolSize);
-
-    // Initialize connections in parallel for faster startup
-    std::vector<std::future<void>> connectionFutures;
-    connectionFutures.reserve(poolSize);
-
-    for (size_t i = 0; i != poolSize; ++i) {
-        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& session = pool->at(i);
-            session.open(soci::postgresql, connStr);
-        }));
-    }
-
-    // Wait for all connections to complete
-    for (auto& future : connectionFutures) {
-        future.wait();
-    }
-
-    // Store in PostgresDatabaseNode
-    dbData->connectionPool = std::move(pool);
-}
-
-std::string PostgresDatabase::buildConnectionString(const std::string& dbName) const {
-    std::stringstream ss;
-    ss << "host=" << connectionInfo.host << " port=" << connectionInfo.port;
-
-    if (!dbName.empty()) {
-        ss << " dbname=" << dbName;
-    } else {
-        ss << " dbname=" << "postgres";
-    }
-
-    if (!connectionInfo.username.empty()) {
-        ss << " user=" << connectionInfo.username;
-    }
-
-    if (!connectionInfo.password.empty()) {
-        ss << " password=" << connectionInfo.password;
-    }
-
-    return ss.str();
+    dbData->connectionPool = BaseDatabaseImpl::initializeConnectionPool(info, poolSize);
 }
 
 std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& dbName) const {
-    const std::string targetDb = dbName.empty() ? database : dbName;
+    const std::string targetDb = dbName.empty() ? connectionInfo.database : dbName;
     auto* pool = getConnectionPoolForDatabase(targetDb);
     if (!pool) {
         throw std::runtime_error("Connection pool not available for database: " + targetDb);
@@ -704,7 +613,8 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& d
 }
 
 void PostgresDatabase::triggerChildDbRefresh() {
-    Logger::debug(std::format("Triggering child db refresh for connection: {}", name));
+    Logger::debug(
+        std::format("Triggering child db refresh for connection: {}", connectionInfo.name));
 
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -715,5 +625,5 @@ void PostgresDatabase::triggerChildDbRefresh() {
     }
 
     Logger::info(std::format("Triggered refresh for {} schemas in database {}",
-                             databaseDataCache.size(), name));
+                             databaseDataCache.size(), connectionInfo.name));
 }

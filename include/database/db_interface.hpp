@@ -11,13 +11,65 @@ enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS };
 struct DatabaseConnectionInfo {
     DatabaseType type;
     std::string name;
-    std::string path;
+    std::string path; // for SQLite file path
     std::string host;
     int port = 5432;
     std::string database;
     std::string username;
     std::string password;
     bool showAllDatabases = false;
+
+    // Build database-specific connection string
+    std::string buildConnectionString(const std::string& dbName = "") const {
+        switch (type) {
+        case DatabaseType::SQLITE:
+            return path;
+
+        case DatabaseType::POSTGRESQL: {
+            std::string connStr = "host=" + host + " port=" + std::to_string(port);
+
+            if (!dbName.empty()) {
+                connStr += " dbname=" + dbName;
+            } else if (!database.empty()) {
+                connStr += " dbname=" + database;
+            } else {
+                connStr += " dbname=postgres";
+            }
+
+            if (!username.empty()) {
+                connStr += " user=" + username;
+            }
+
+            if (!password.empty()) {
+                connStr += " password=" + password;
+            }
+
+            return connStr;
+        }
+
+        case DatabaseType::MYSQL: {
+            const std::string targetDb = !dbName.empty() ? dbName : database;
+            std::string connStr =
+                "host=" + host + " port=" + std::to_string(port) + " dbname=" + targetDb;
+
+            if (!username.empty()) {
+                connStr += " user=" + username;
+            }
+
+            if (!password.empty()) {
+                connStr += " password=" + password;
+            }
+
+            return connStr;
+        }
+
+        case DatabaseType::REDIS:
+            return "redis://" + host + ":" + std::to_string(port);
+
+        default:
+            return "";
+        }
+    }
 };
 
 class DatabaseInterface {
@@ -36,8 +88,6 @@ public:
     virtual void checkConnectionStatusAsync() {}
 
     // Database info
-    [[nodiscard]] virtual const std::string& getName() const = 0;
-    [[nodiscard]] virtual const std::string& getConnectionString() const = 0;
     [[nodiscard]] virtual void* getConnection() const = 0;
     [[nodiscard]] virtual DatabaseType getType() const = 0;
 
@@ -72,6 +122,8 @@ public:
     virtual void setAttemptedConnection(bool attempted) = 0;
     [[nodiscard]] virtual const std::string& getLastConnectionError() const = 0;
     virtual void setLastConnectionError(const std::string& error) = 0;
+    virtual const DatabaseConnectionInfo& getConnectionInfo() const = 0;
+    virtual void setConnectionInfo(const DatabaseConnectionInfo& info) = 0;
 };
 
 // Helper functions to convert between DatabaseType enum and strings

@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
+#include "database/db_interface.hpp"
 #include "database/table_data_provider.hpp"
 #include <memory>
 #include <soci/connection-pool.h>
@@ -63,7 +64,7 @@ public:
     std::vector<Table> getViewsForDatabaseAsync();
 
     std::unique_ptr<soci::session> getSession() const;
-    void initializeConnectionPool(const std::string& connStr);
+    void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
     // Table data operations (for table viewer - ITableDataProvider interface)
     std::vector<std::vector<std::string>>

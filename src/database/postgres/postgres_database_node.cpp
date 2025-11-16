@@ -3,7 +3,6 @@
 #include "utils/logger.hpp"
 #include <chrono>
 #include <format>
-#include <future>
 #include <iostream>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
@@ -53,11 +52,10 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
 
         try {
             // Ensure we have a connection pool for the specific database
-            const auto& pool = connectionPool;
-            if (!pool) {
-                // If no pool exists for this database, create one temporarily
-                const std::string dbConnectionString = parentDb->buildConnectionString(name);
-                initializeConnectionPool(dbConnectionString);
+            if (!connectionPool) {
+                auto nodeInfo = parentDb->getConnectionInfo();
+                nodeInfo.database = name;
+                initializeConnectionPool(nodeInfo);
             }
 
             if (!schemasLoader.isRunning()) {
@@ -125,33 +123,18 @@ std::unique_ptr<soci::session> PostgresDatabaseNode::getSession() const {
     return res;
 }
 
-void PostgresDatabaseNode::initializeConnectionPool(const std::string& connStr) {
-    Logger::debug(std::format("initializeConnectionPool {}", connStr));
+void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& info) {
+    if (!parentDb) {
+        return;
+    }
+
+    Logger::debug(std::format("initializeConnectionPool {}", info.buildConnectionString()));
     if (connectionPool) {
         return;
     }
 
     constexpr size_t poolSize = 3;
-    auto pool = std::make_unique<soci::connection_pool>(poolSize);
-
-    // Initialize connections in parallel for faster startup
-    std::vector<std::future<void>> connectionFutures;
-    connectionFutures.reserve(poolSize);
-
-    for (size_t i = 0; i != poolSize; ++i) {
-        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& session = pool->at(i);
-            session.open(soci::postgresql, connStr);
-        }));
-    }
-
-    // Wait for all connections to complete
-    for (auto& future : connectionFutures) {
-        future.wait();
-    }
-
-    // Store in PostgresDatabaseNode
-    connectionPool = std::move(pool);
+    connectionPool = parentDb->initializeConnectionPool(info, poolSize);
 }
 
 QueryResult PostgresDatabaseNode::executeQueryWithResult(const std::string& query,

@@ -8,15 +8,13 @@
 #include <unordered_map>
 #include <vector>
 
-MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo)
-    : connectionInfo(connInfo), database(connInfo.database) {
-    this->name = connInfo.name;
+MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo) {
+    this->connectionInfo = connInfo;
     Logger::debug(
         std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
-                    database, connInfo.showAllDatabases));
-    connectionString = buildConnectionString(database);
-    if (database.empty()) {
-        this->database = "mysql";
+                    connectionInfo.database, connInfo.showAllDatabases));
+    if (connectionInfo.database.empty()) {
+        connectionInfo.database = "mysql";
     }
 }
 
@@ -36,30 +34,23 @@ MySQLDatabase::~MySQLDatabase() {
     disconnect();
 }
 
-void MySQLDatabase::setConnectionInfo(const DatabaseConnectionInfo& info) {
-    connectionInfo = info;
-    database = info.database;
-    name = info.name;
-    connectionString = buildConnectionString(database);
-}
-
 // Helper methods for per-database data access
 MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() {
-    const auto it = databaseDataCache.find(database);
+    const auto it = databaseDataCache.find(connectionInfo.database);
     if (it == databaseDataCache.end()) {
         auto newData = std::make_unique<MySQLDatabaseNode>();
-        newData->name = database;
+        newData->name = connectionInfo.database;
         newData->parentDb = this;
         newData->ensureConnectionPool();
         auto* ptr = newData.get();
-        databaseDataCache[database] = std::move(newData);
+        databaseDataCache[connectionInfo.database] = std::move(newData);
         return ptr;
     }
     return it->second.get();
 }
 
 const MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() const {
-    const auto it = databaseDataCache.find(database);
+    const auto it = databaseDataCache.find(connectionInfo.database);
     return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
 }
 
@@ -79,7 +70,7 @@ MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
 }
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
-    const auto* pool = getConnectionPoolForDatabase(database);
+    const auto* pool = getConnectionPoolForDatabase(connectionInfo.database);
     if (connected && pool) {
         return {true, ""};
     }
@@ -87,8 +78,8 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
     setAttemptedConnection(true);
 
     try {
-        initializeConnectionPool(database, connectionString);
-        Logger::info("Successfully connected to MySQL database: " + database);
+        ensureConnectionPoolForDatabase(connectionInfo);
+        Logger::info("Successfully connected to MySQL database: " + connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
@@ -103,7 +94,7 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
-        auto* dbData = getDatabaseData(database);
+        auto* dbData = getDatabaseData(connectionInfo.database);
         if (dbData) {
             dbData->connectionPool.reset();
         }
@@ -135,8 +126,8 @@ void MySQLDatabase::refreshConnection() {
 
         // Step 2: Reconnect (synchronously, without triggering auto-refresh)
         try {
-            initializeConnectionPool(database, connectionString);
-            Logger::info("Successfully reconnected to MySQL database: " + database);
+            ensureConnectionPoolForDatabase(connectionInfo);
+            Logger::info("Successfully reconnected to MySQL database: " + connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const soci::soci_error& e) {
@@ -181,24 +172,8 @@ void MySQLDatabase::refreshConnection() {
     });
 }
 
-const std::string& MySQLDatabase::getName() const {
-    return name;
-}
-
-const std::string& MySQLDatabase::getConnectionString() const {
-    return connectionString;
-}
-
 void* MySQLDatabase::getConnection() const {
-    return getConnectionPoolForDatabase(database);
-}
-
-DatabaseType MySQLDatabase::getType() const {
-    return DatabaseType::MYSQL;
-}
-
-const std::string& MySQLDatabase::getDatabaseName() const {
-    return database;
+    return getConnectionPoolForDatabase(connectionInfo.database);
 }
 
 void MySQLDatabase::startRefreshTableAsync() {
@@ -423,13 +398,13 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
         }
 
         std::cout << "DEBUG: isConnected() = true, attempting to get session for database: "
-                  << database << std::endl;
+                  << connectionInfo.database << std::endl;
 
         // If showAllDatabases is false, only return the current database
         if (!connectionInfo.showAllDatabases) {
-            result.push_back(database);
-            std::cout << "showAllDatabases is false, returning only current database: " << database
-                      << std::endl;
+            result.push_back(connectionInfo.database);
+            std::cout << "showAllDatabases is false, returning only current database: "
+                      << connectionInfo.database << std::endl;
             return result;
         }
 
@@ -469,60 +444,24 @@ MySQLDatabase::getConnectionPoolForDatabase(const std::string& dbName) const {
     return nullptr;
 }
 
-void MySQLDatabase::initializeConnectionPool(const std::string& dbName,
-                                             const std::string& connStr) {
+void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
     std::lock_guard lock(sessionMutex);
 
-    // Get or create DatabaseData for this database
-    auto* dbData = getDatabaseData(dbName);
-    if (!dbData)
-        return;
+    if (info.database.empty()) {
+        throw std::runtime_error("ensureConnectionPoolForDatabase: database name is required");
+    }
 
-    // Don't recreate if pool already exists
-    if (dbData->connectionPool) {
+    auto* dbData = getDatabaseData(info.database);
+    if (!dbData || dbData->connectionPool) {
         return;
     }
 
     constexpr size_t poolSize = 10;
-    auto pool = std::make_unique<soci::connection_pool>(poolSize);
-
-    // Initialize connections in parallel for faster startup
-    std::vector<std::future<void>> connectionFutures;
-    connectionFutures.reserve(poolSize);
-
-    for (size_t i = 0; i != poolSize; ++i) {
-        connectionFutures.emplace_back(std::async(std::launch::async, [&pool, i, connStr]() {
-            soci::session& sql = pool->at(i);
-            sql.open(soci::mysql, connStr);
-        }));
-    }
-
-    // Wait for all connections to complete
-    for (auto& future : connectionFutures) {
-        future.wait();
-    }
-
-    // Store in DatabaseData
-    dbData->connectionPool = std::move(pool);
-}
-
-std::string MySQLDatabase::buildConnectionString(const std::string& dbName) const {
-    std::string connStr = "host=" + connectionInfo.host +
-                          " port=" + std::to_string(connectionInfo.port) + " dbname=" + dbName;
-
-    if (!connectionInfo.username.empty()) {
-        connStr += " user=" + connectionInfo.username;
-    }
-
-    if (!connectionInfo.password.empty()) {
-        connStr += " password=" + connectionInfo.password;
-    }
-
-    return connStr;
+    dbData->connectionPool = BaseDatabaseImpl::initializeConnectionPool(info, poolSize);
 }
 
 std::unique_ptr<soci::session> MySQLDatabase::getSession(const std::string& dbName) const {
-    const std::string targetDb = dbName.empty() ? database : dbName;
+    const std::string targetDb = dbName.empty() ? connectionInfo.database : dbName;
     auto* pool = getConnectionPoolForDatabase(targetDb);
     if (!pool) {
         throw std::runtime_error(

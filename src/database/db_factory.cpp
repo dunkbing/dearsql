@@ -35,7 +35,7 @@ std::shared_ptr<DatabaseInterface>
 DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
     switch (info.type) {
     case DatabaseType::SQLITE:
-        return std::make_shared<SQLiteDatabase>(info.name, info.path);
+        return std::make_shared<SQLiteDatabase>(info);
 
     case DatabaseType::POSTGRESQL:
         return std::make_shared<PostgresDatabase>(info);
@@ -44,7 +44,7 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
         return std::make_shared<MySQLDatabase>(info);
 
     case DatabaseType::REDIS:
-        return std::make_shared<RedisDatabase>(info.name, info.host, info.port, info.password);
+        return std::make_shared<RedisDatabase>(info);
 
     default:
         return nullptr;

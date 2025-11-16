@@ -82,10 +82,11 @@ void SQLEditorTab::renderConnectionInfo() {
         if (*pgNode && (*pgNode)->parentDb) {
             if (!selectedSchemaName.empty()) {
                 ImGui::Text("Server: %s | Database: %s | Schema: %s",
-                            (*pgNode)->parentDb->getName().c_str(), (*pgNode)->name.c_str(),
-                            selectedSchemaName.c_str());
+                            (*pgNode)->parentDb->getConnectionInfo().name.c_str(),
+                            (*pgNode)->name.c_str(), selectedSchemaName.c_str());
             } else {
-                ImGui::Text("Server: %s | Database: %s", (*pgNode)->parentDb->getName().c_str(),
+                ImGui::Text("Server: %s | Database: %s",
+                            (*pgNode)->parentDb->getConnectionInfo().name.c_str(),
                             (*pgNode)->name.c_str());
             }
         } else {
@@ -93,7 +94,8 @@ void SQLEditorTab::renderConnectionInfo() {
         }
     } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
         if (*mysqlNode && (*mysqlNode)->parentDb) {
-            ImGui::Text("Server: %s | Database: %s", (*mysqlNode)->parentDb->getName().c_str(),
+            ImGui::Text("Server: %s | Database: %s",
+                        (*mysqlNode)->parentDb->getConnectionInfo().name.c_str(),
                         (*mysqlNode)->name.c_str());
         } else {
             ImGui::Text("SQL Editor (No database selected)");
@@ -259,7 +261,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
         if (currentNode && !currentNode->name.empty()) {
             targetDb = currentNode->name;
         } else {
-            targetDb = pgDb->getDatabaseName();
+            targetDb = pgDb->getConnectionInfo().database;
         }
 
         if (!targetDb.empty()) {
@@ -274,7 +276,8 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             }
         }
 
-        if (!targetDb.empty() && pgDb->isLoadingSchemas() && targetDb == pgDb->getDatabaseName()) {
+        if (!targetDb.empty() && pgDb->isLoadingSchemas() &&
+            targetDb == pgDb->getConnectionInfo().database) {
             isLoadingAnySchemas = true;
         }
 
@@ -310,13 +313,13 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
 
             std::string targetDb = (currentNode && !currentNode->name.empty())
                                        ? currentNode->name
-                                       : pgDb->getDatabaseName();
+                                       : pgDb->getConnectionInfo().database;
 
             if (!targetDb.empty()) {
                 auto* targetDbData = pgDb->getDatabaseData(targetDb);
                 if (targetDbData && !targetDbData->schemasLoaded &&
                     !targetDbData->schemasLoader.isRunning()) {
-                    if (targetDb == pgDb->getDatabaseName()) {
+                    if (targetDb == pgDb->getConnectionInfo().database) {
                         if (!pgDb->isLoadingSchemas()) {
                             // pgDb->refreshSchemas();
                         }

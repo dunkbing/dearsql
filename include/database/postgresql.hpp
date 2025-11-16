@@ -12,6 +12,8 @@
 #include <unordered_map>
 
 class PostgresDatabase final : public BaseDatabaseImpl {
+    friend class PostgresDatabaseNode;
+
 public:
     PostgresDatabase(const DatabaseConnectionInfo& connInfo);
     ~PostgresDatabase() override;
@@ -22,11 +24,7 @@ public:
     void refreshConnection() override;
 
     // Database info
-    const std::string& getName() const override;
-    const std::string& getConnectionString() const override;
     void* getConnection() const override;
-    DatabaseType getType() const override;
-    const std::string& getDatabaseName() const;
 
     // Schema management
     const std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas() const;
@@ -35,9 +33,6 @@ public:
     void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
 
-    // Database list methods
-    [[deprecated("Use getDatabaseDataMap() instead")]]
-    std::vector<std::string> getDatabases();
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
         return connectionInfo.showAllDatabases;
@@ -48,14 +43,6 @@ public:
         return connectionOp.isRunning() || refreshWorkflow.isRunning();
     }
 
-    // Connection info getter/setter
-    const DatabaseConnectionInfo& getConnectionInfo() const {
-        return connectionInfo;
-    }
-    void setConnectionInfo(const DatabaseConnectionInfo& info);
-    const std::string& getDatabase() const {
-        return database;
-    }
     bool areDatabasesLoaded() const {
         return databasesLoaded;
     }
@@ -79,11 +66,6 @@ protected:
     std::vector<std::string> getDatabaseNamesAsync() const;
 
 private:
-    // PostgreSQL-specific connection details (base class handles common state)
-    DatabaseConnectionInfo connectionInfo;
-    std::string database;
-    std::string connectionString;
-
     std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
     std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
@@ -115,16 +97,13 @@ public:
     const PostgresSchemaNode& getSchemaData(const std::string& dbName,
                                             const std::string& schemaName) const;
 
-    // Public helper for building connection strings (used by PostgresDatabaseNode)
-    std::string buildConnectionString(const std::string& dbName) const;
-
 private:
     // Thread synchronization
     mutable std::mutex sessionMutex;
 
     // Helper methods for connection pool
     soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
-    void initializeConnectionPool(const std::string& dbName, const std::string& connStr);
+    void ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info);
 
     // Helper method for session management
     std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;

@@ -41,6 +41,7 @@ public:
     // Async operations
     AsyncOperation<std::vector<Table>> tablesLoader;
     AsyncOperation<std::vector<Table>> viewsLoader;
+    std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
     // UI expansion state
     bool expanded = false;
@@ -62,6 +63,11 @@ public:
     void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();
     std::vector<Table> getViewsForDatabaseAsync();
+
+    void startTableRefreshAsync(const std::string& tableName);
+    void checkTableRefreshStatusAsync(const std::string& tableName);
+    Table refreshTableAsync(const std::string& tableName);
+    bool isTableRefreshing(const std::string& tableName) const;
 
     std::unique_ptr<soci::session> getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);

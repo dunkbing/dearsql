@@ -637,6 +637,29 @@ namespace NewHierarchy {
 
         table.expanded = tableOpen;
 
+        // Check if table is refreshing (before checking status, so we show spinner for at least one
+        // frame)
+        const bool isRefreshing = schemaData->isTableRefreshing(table.name);
+
+        // Show loading indicator if refreshing
+        if (isRefreshing) {
+            // Position spinner at the end of the tree node item, centered vertically
+            const float spinnerRadius = 6.0f;
+            const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
+            const float itemCenterY =
+                ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);
+            const float spinnerY = itemCenterY - spinnerRadius - ImGui::GetStyle().FramePadding.y;
+            ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
+
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            UIUtils::Spinner(std::format("##refreshing_table_{}", table.name).c_str(),
+                             spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+            ImGui::PopStyleColor();
+
+            // Check status AFTER rendering spinner
+            schemaData->checkTableRefreshStatusAsync(table.name);
+        }
+
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
             app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
@@ -651,6 +674,9 @@ namespace NewHierarchy {
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
+            }
+            if (ImGui::MenuItem("Refresh")) {
+                schemaData->startTableRefreshAsync(table.name);
             }
             ImGui::EndPopup();
         }
@@ -859,22 +885,42 @@ namespace NewHierarchy {
         auto& app = Application::getInstance();
         const auto& colors = app.getCurrentColors();
 
-        ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf |
-                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                        ImGuiTreeNodeFlags_FramePadding;
+        ImGuiTreeNodeFlags tableFlags =
+            ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+        if (table.expanded) {
+            tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
+        }
 
         const std::string tableNodeId =
             std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
-        const std::string tableLabel = std::format("   {}###{}", table.name, tableNodeId);
-        ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
+        const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
+                                                      ImGui::GetColorU32(colors.green), tableFlags);
 
-        // Draw icon
-        const auto iconPos =
-            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-                   ImGui::GetItemRectMin().y +
-                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.green),
-                                            ICON_FK_TABLE);
+        table.expanded = tableOpen;
+
+        // Check if table is refreshing (before checking status, so we show spinner for at least one
+        // frame)
+        const bool isRefreshing = dbData->isTableRefreshing(table.name);
+
+        // Show loading indicator if refreshing
+        if (isRefreshing) {
+            // Position spinner at the end of the tree node item, centered vertically
+            const float spinnerRadius = 6.0f;
+            const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
+            const float itemCenterY =
+                ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);
+            const float spinnerY = itemCenterY - spinnerRadius - ImGui::GetStyle().FramePadding.y;
+            ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
+
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            UIUtils::Spinner(std::format("##refreshing_table_{}", table.name).c_str(),
+                             spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+            ImGui::PopStyleColor();
+
+            // Check status AFTER rendering spinner
+            dbData->checkTableRefreshStatusAsync(table.name);
+        }
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -889,7 +935,169 @@ namespace NewHierarchy {
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
             }
+            if (ImGui::MenuItem("Refresh")) {
+                dbData->startTableRefreshAsync(table.name);
+            }
             ImGui::EndPopup();
+        }
+
+        if (tableOpen) {
+            // Columns section
+            {
+                const std::string columnsNodeId =
+                    std::format("columns_{}_{:p}", table.name, static_cast<void*>(&table.columns));
+                const bool columnsOpen =
+                    renderTreeNodeWithIcon("Columns", columnsNodeId, ICON_FA_TABLE_COLUMNS,
+                                           ImGui::GetColorU32(colors.green));
+
+                if (columnsOpen) {
+                    for (const auto& column : table.columns) {
+                        ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                         ImGuiTreeNodeFlags_FramePadding;
+
+                        std::string columnDisplay =
+                            std::format("{} ({})", column.name, column.type);
+                        if (column.isPrimaryKey) {
+                            columnDisplay += ", PK";
+                        }
+                        if (column.isNotNull) {
+                            columnDisplay += ", NOT NULL";
+                        }
+
+                        const std::string columnNodeId =
+                            std::format("col_{}_{}_{:p}", table.name, column.name,
+                                        static_cast<const void*>(&column));
+                        const std::string columnLabel =
+                            std::format("   {}###{}", columnDisplay, columnNodeId);
+                        ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Keys section
+            {
+                const std::string keysNodeId =
+                    std::format("keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                const bool keysOpen = renderTreeNodeWithIcon("Keys", keysNodeId, ICON_FA_KEY,
+                                                             ImGui::GetColorU32(colors.yellow));
+
+                if (keysOpen) {
+                    // Primary key
+                    bool hasPrimaryKey = false;
+                    std::string primaryKeyColumns;
+                    for (const auto& column : table.columns) {
+                        if (column.isPrimaryKey) {
+                            if (hasPrimaryKey) {
+                                primaryKeyColumns += ", ";
+                            }
+                            primaryKeyColumns += column.name;
+                            hasPrimaryKey = true;
+                        }
+                    }
+
+                    if (hasPrimaryKey) {
+                        ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                     ImGuiTreeNodeFlags_FramePadding;
+                        std::string pkDisplay = "   Primary Key (" + primaryKeyColumns + ")";
+                        ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
+                    }
+
+                    // Foreign keys
+                    if (!table.foreignKeys.empty()) {
+                        for (const auto& fk : table.foreignKeys) {
+                            ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                         ImGuiTreeNodeFlags_FramePadding;
+                            std::string fkDisplay =
+                                std::format("   Foreign Key: {} -> {}.{}", fk.sourceColumn,
+                                            fk.targetTable, fk.targetColumn);
+                            ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
+                        }
+                    }
+
+                    if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No keys defined");
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // Indexes section
+            {
+                const std::string indexesNodeId =
+                    std::format("indexes_{}_{:p}", table.name, static_cast<void*>(&table.indexes));
+                const bool indexesOpen =
+                    renderTreeNodeWithIcon("Indexes", indexesNodeId, ICON_FA_MAGNIFYING_GLASS,
+                                           ImGui::GetColorU32(colors.lavender));
+
+                if (indexesOpen) {
+                    if (!table.indexes.empty()) {
+                        for (const auto& index : table.indexes) {
+                            ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
+                                                            ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                            ImGuiTreeNodeFlags_FramePadding;
+                            std::string indexDisplay = "   " + index.name;
+                            if (!index.columns.empty()) {
+                                indexDisplay += " (";
+                                for (size_t i = 0; i < index.columns.size(); ++i) {
+                                    if (i > 0)
+                                        indexDisplay += ", ";
+                                    indexDisplay += index.columns[i];
+                                }
+                                indexDisplay += ")";
+                            }
+                            if (index.isUnique) {
+                                indexDisplay += " UNIQUE";
+                            }
+                            ImGui::TreeNodeEx(indexDisplay.c_str(), indexFlags);
+                        }
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No indexes defined");
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            // References section (incoming foreign keys)
+            if (!table.incomingForeignKeys.empty()) {
+                const std::string referencesNodeId =
+                    std::format("references_{}_{:p}", table.name,
+                                static_cast<void*>(&table.incomingForeignKeys));
+                const bool referencesOpen = renderTreeNodeWithIcon("References", referencesNodeId,
+                                                                   ICON_FA_ARROW_RIGHT_TO_BRACKET,
+                                                                   ImGui::GetColorU32(colors.sky));
+
+                if (referencesOpen) {
+                    for (const auto& ref : table.incomingForeignKeys) {
+                        ImGuiTreeNodeFlags refFlags = ImGuiTreeNodeFlags_Leaf |
+                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                      ImGuiTreeNodeFlags_FramePadding;
+                        std::string refDisplay =
+                            std::format("   {}.{}", ref.targetTable, ref.sourceColumn);
+                        ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
+
+                        if (ImGui::IsItemHovered()) {
+                            std::string tooltip =
+                                std::format("{}.{} → {}.{}", ref.targetTable, ref.sourceColumn,
+                                            table.name, ref.targetColumn);
+                            if (!ref.name.empty()) {
+                                tooltip += std::format("\nConstraint: {}", ref.name);
+                            }
+                            ImGui::SetTooltip("%s", tooltip.c_str());
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::TreePop();
         }
     }
 

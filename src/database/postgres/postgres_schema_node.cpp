@@ -2,8 +2,10 @@
 #include "database/db.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
 #include <format>
 #include <iostream>
+#include <map>
 #include <soci/soci.h>
 #include <unordered_map>
 
@@ -372,6 +374,172 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
     }
 
     return result;
+}
+
+void PostgresSchemaNode::startTableRefreshAsync(const std::string& tableName) {
+    Logger::debug(std::format("Starting async refresh for table: {}.{}", name, tableName));
+
+    // Check if already refreshing
+    if (tableRefreshLoaders.find(tableName) != tableRefreshLoaders.end() &&
+        tableRefreshLoaders[tableName].isRunning()) {
+        return;
+    }
+
+    // Start async loading
+    tableRefreshLoaders[tableName].start(
+        [this, tableName]() { return refreshTableAsync(tableName); });
+}
+
+void PostgresSchemaNode::checkTableRefreshStatusAsync(const std::string& tableName) {
+    auto it = tableRefreshLoaders.find(tableName);
+    if (it == tableRefreshLoaders.end()) {
+        return;
+    }
+
+    it->second.check([this, tableName](const Table& refreshedTable) {
+        // Find the table in the tables vector and update it
+        auto tableIt = std::find_if(tables.begin(), tables.end(),
+                                    [&tableName](const Table& t) { return t.name == tableName; });
+
+        if (tableIt != tables.end()) {
+            // Preserve expansion state
+            bool wasExpanded = tableIt->expanded;
+            *tableIt = refreshedTable;
+            tableIt->expanded = wasExpanded;
+            Logger::info(std::format("Table {}.{} refreshed successfully", name, tableName));
+        }
+
+        // Clean up the loader
+        tableRefreshLoaders.erase(tableName);
+    });
+}
+
+Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
+    Logger::debug(std::format("Refreshing table: {}.{}", name, tableName));
+
+    Table refreshedTable;
+    refreshedTable.name = tableName;
+
+    if (!parentDbNode) {
+        Logger::error("Cannot refresh table: no parent database node");
+        return refreshedTable;
+    }
+
+    try {
+        const auto session = parentDbNode->getSession();
+
+        // Get table columns
+        const std::string columnsQuery =
+            std::format("SELECT column_name, data_type, is_nullable, column_default "
+                        "FROM information_schema.columns "
+                        "WHERE table_schema = '{}' AND table_name = '{}' "
+                        "ORDER BY ordinal_position",
+                        name, tableName);
+
+        {
+            const soci::rowset columnsRs = session->prepare << columnsQuery;
+            for (const auto& colRow : columnsRs) {
+                Column col;
+                col.name = colRow.get<std::string>(0);
+                col.type = colRow.get<std::string>(1);
+                col.isNotNull = colRow.get<std::string>(2) == "NO";
+                refreshedTable.columns.push_back(col);
+            }
+        }
+
+        // Get primary key information
+        const std::string pkQuery = std::format(
+            "SELECT a.attname "
+            "FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+            "WHERE i.indrelid = '\"{}\".\"{}\"'::regclass AND i.indisprimary",
+            name, tableName);
+
+        {
+            const soci::rowset pkRs = session->prepare << pkQuery;
+            std::vector<std::string> pkColumns;
+            for (const auto& pkRow : pkRs) {
+                pkColumns.push_back(pkRow.get<std::string>(0));
+            }
+
+            // Mark columns as primary key
+            for (auto& col : refreshedTable.columns) {
+                if (std::find(pkColumns.begin(), pkColumns.end(), col.name) != pkColumns.end()) {
+                    col.isPrimaryKey = true;
+                }
+            }
+        }
+
+        // Get indexes
+        const std::string indexQuery =
+            std::format("SELECT i.relname, a.attname, ix.indisunique "
+                        "FROM pg_class t "
+                        "JOIN pg_index ix ON t.oid = ix.indrelid "
+                        "JOIN pg_class i ON i.oid = ix.indexrelid "
+                        "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) "
+                        "WHERE t.relkind = 'r' AND t.relnamespace = '{}'::regnamespace "
+                        "AND t.relname = '{}' AND NOT ix.indisprimary "
+                        "ORDER BY i.relname, a.attnum",
+                        name, tableName);
+
+        {
+            const soci::rowset indexRs = session->prepare << indexQuery;
+            std::unordered_map<std::string, Index> indexMap;
+
+            for (const auto& idxRow : indexRs) {
+                const std::string indexName = idxRow.get<std::string>(0);
+                const std::string columnName = idxRow.get<std::string>(1);
+                const bool isUnique = idxRow.get<int>(2) != 0;
+
+                if (indexMap.find(indexName) == indexMap.end()) {
+                    Index idx;
+                    idx.name = indexName;
+                    idx.isUnique = isUnique;
+                    indexMap[indexName] = idx;
+                }
+                indexMap[indexName].columns.push_back(columnName);
+            }
+
+            for (auto& [_, idx] : indexMap) {
+                refreshedTable.indexes.push_back(idx);
+            }
+        }
+
+        // Get foreign keys
+        const std::string fkQuery = std::format(
+            "SELECT kcu.column_name, ccu.table_name, ccu.column_name, tc.constraint_name "
+            "FROM information_schema.table_constraints AS tc "
+            "JOIN information_schema.key_column_usage AS kcu "
+            "  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage AS ccu "
+            "  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = '{}' AND tc.table_name "
+            "= '{}'",
+            name, tableName);
+
+        {
+            const soci::rowset fkRs = session->prepare << fkQuery;
+            for (const auto& fkRow : fkRs) {
+                ForeignKey fk;
+                fk.sourceColumn = fkRow.get<std::string>(0);
+                fk.targetTable = fkRow.get<std::string>(1);
+                fk.targetColumn = fkRow.get<std::string>(2);
+                fk.name = fkRow.get<std::string>(3);
+                refreshedTable.foreignKeys.push_back(fk);
+            }
+        }
+
+    } catch (const soci::soci_error& e) {
+        Logger::error(std::format("Error refreshing table {}.{}: {}", name, tableName, e.what()));
+        throw;
+    }
+
+    return refreshedTable;
+}
+
+bool PostgresSchemaNode::isTableRefreshing(const std::string& tableName) const {
+    auto it = tableRefreshLoaders.find(tableName);
+    return it != tableRefreshLoaders.end() && it->second.isRunning();
 }
 
 std::vector<std::vector<std::string>>

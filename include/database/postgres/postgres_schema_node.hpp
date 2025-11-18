@@ -34,6 +34,7 @@ public:
     AsyncOperation<std::vector<Table>> tablesLoader;
     AsyncOperation<std::vector<Table>> viewsLoader;
     AsyncOperation<std::vector<std::string>> sequencesLoader;
+    std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
     // UI expansion state
     bool tablesExpanded = false;
@@ -57,6 +58,11 @@ public:
     void startSequencesLoadAsync(bool forceRefresh = false);
     void checkSequencesStatusAsync();
     std::vector<std::string> getSequencesAsync();
+
+    void startTableRefreshAsync(const std::string& tableName);
+    void checkTableRefreshStatusAsync(const std::string& tableName);
+    Table refreshTableAsync(const std::string& tableName);
+    bool isTableRefreshing(const std::string& tableName) const;
 
     // Query execution methods for TableViewerTab (ITableDataProvider interface)
     std::vector<std::vector<std::string>>

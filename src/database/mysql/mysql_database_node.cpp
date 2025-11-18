@@ -2,8 +2,10 @@
 #include "database/db.hpp"
 #include "database/mysql.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
 #include <chrono>
 #include <format>
+#include <map>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
@@ -236,6 +238,134 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
     }
 
     return result;
+}
+
+void MySQLDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
+    Logger::debug(std::format("Starting async refresh for table: {}", tableName));
+
+    // Check if already refreshing
+    if (tableRefreshLoaders.find(tableName) != tableRefreshLoaders.end() &&
+        tableRefreshLoaders[tableName].isRunning()) {
+        Logger::debug(std::format("Table {} is already being refreshed", tableName));
+        return;
+    }
+
+    // Start async loading
+    tableRefreshLoaders[tableName].start(
+        [this, tableName]() { return refreshTableAsync(tableName); });
+    Logger::debug(std::format("Async refresh started for table: {}", tableName));
+}
+
+void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableName) {
+    auto it = tableRefreshLoaders.find(tableName);
+    if (it == tableRefreshLoaders.end()) {
+        return;
+    }
+
+    it->second.check([this, tableName](const Table& refreshedTable) {
+        // Find the table in the tables vector and update it
+        auto tableIt = std::find_if(tables.begin(), tables.end(),
+                                    [&tableName](const Table& t) { return t.name == tableName; });
+
+        if (tableIt != tables.end()) {
+            // Preserve expansion state
+            bool wasExpanded = tableIt->expanded;
+            *tableIt = refreshedTable;
+            tableIt->expanded = wasExpanded;
+            Logger::info(std::format("Table {} refreshed successfully", tableName));
+        }
+
+        // Clean up the loader
+        tableRefreshLoaders.erase(tableName);
+    });
+}
+
+Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
+    Logger::debug(std::format("Refreshing table: {}", tableName));
+
+    Table refreshedTable;
+    refreshedTable.name = tableName;
+    refreshedTable.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
+
+    try {
+        const auto session = getSession();
+
+        // Reload columns
+        const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
+        {
+            const soci::rowset columnsRs = session->prepare << columnsQuery;
+
+            for (const auto& colRow : columnsRs) {
+                Column col;
+                col.name = colRow.get<std::string>(0);                  // Field
+                col.type = colRow.get<std::string>(1);                  // Type
+                col.isNotNull = colRow.get<std::string>(2) == "NO";     // Null
+                col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
+                refreshedTable.columns.push_back(col);
+            }
+        }
+
+        // Reload indexes
+        const std::string indexQuery =
+            std::format("SHOW INDEX FROM `{}` WHERE Key_name != 'PRIMARY'", tableName);
+        {
+            const soci::rowset indexRs = session->prepare << indexQuery;
+
+            // Collect indexes by name
+            std::map<std::string, Index> indexMap;
+            for (const auto& idxRow : indexRs) {
+                const std::string indexName = idxRow.get<std::string>(2);  // Key_name
+                const std::string columnName = idxRow.get<std::string>(4); // Column_name
+                const int nonUnique = idxRow.get<int>(1);                  // Non_unique
+
+                if (indexMap.find(indexName) == indexMap.end()) {
+                    Index idx;
+                    idx.name = indexName;
+                    idx.isUnique = (nonUnique == 0);
+                    indexMap[indexName] = idx;
+                }
+                indexMap[indexName].columns.push_back(columnName);
+            }
+
+            // Add indexes to table
+            for (auto& [_, idx] : indexMap) {
+                refreshedTable.indexes.push_back(idx);
+            }
+        }
+
+        // Reload foreign keys
+        const std::string fkQuery = std::format(
+            "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, CONSTRAINT_NAME "
+            "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE "
+            "WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' AND REFERENCED_TABLE_NAME IS NOT NULL",
+            name, tableName);
+        {
+            const soci::rowset fkRs = session->prepare << fkQuery;
+
+            for (const auto& fkRow : fkRs) {
+                ForeignKey fk;
+                fk.sourceColumn = fkRow.get<std::string>(0);
+                fk.targetTable = fkRow.get<std::string>(1);
+                fk.targetColumn = fkRow.get<std::string>(2);
+                fk.name = fkRow.get<std::string>(3);
+                refreshedTable.foreignKeys.push_back(fk);
+            }
+        }
+    } catch (const soci::soci_error& e) {
+        Logger::error(std::format("Error refreshing table {}: {}", tableName, e.what()));
+        throw;
+    }
+
+    return refreshedTable;
+}
+
+bool MySQLDatabaseNode::isTableRefreshing(const std::string& tableName) const {
+    auto it = tableRefreshLoaders.find(tableName);
+    bool isRefreshing = it != tableRefreshLoaders.end() && it->second.isRunning();
+    if (isRefreshing) {
+        Logger::debug(std::format("Table {} is currently refreshing", tableName));
+    }
+    return isRefreshing;
 }
 
 std::unique_ptr<soci::session> MySQLDatabaseNode::getSession() const {

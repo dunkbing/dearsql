@@ -4,7 +4,6 @@
 #include <chrono>
 #include <format>
 #include <iostream>
-#include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
 
 void PostgresDatabaseNode::checkSchemasStatusAsync() {

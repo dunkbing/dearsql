@@ -6,6 +6,7 @@
 #include <format>
 #include <iostream>
 #include <map>
+#include <ranges>
 #include <soci/soci.h>
 #include <unordered_map>
 
@@ -380,8 +381,7 @@ void PostgresSchemaNode::startTableRefreshAsync(const std::string& tableName) {
     Logger::debug(std::format("Starting async refresh for table: {}.{}", name, tableName));
 
     // Check if already refreshing
-    if (tableRefreshLoaders.find(tableName) != tableRefreshLoaders.end() &&
-        tableRefreshLoaders[tableName].isRunning()) {
+    if (tableRefreshLoaders.contains(tableName) && tableRefreshLoaders[tableName].isRunning()) {
         return;
     }
 
@@ -398,8 +398,8 @@ void PostgresSchemaNode::checkTableRefreshStatusAsync(const std::string& tableNa
 
     it->second.check([this, tableName](const Table& refreshedTable) {
         // Find the table in the tables vector and update it
-        auto tableIt = std::find_if(tables.begin(), tables.end(),
-                                    [&tableName](const Table& t) { return t.name == tableName; });
+        const auto tableIt = std::ranges::find_if(
+            tables, [&tableName](const Table& t) { return t.name == tableName; });
 
         if (tableIt != tables.end()) {
             // Preserve expansion state
@@ -464,7 +464,7 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
 
             // Mark columns as primary key
             for (auto& col : refreshedTable.columns) {
-                if (std::find(pkColumns.begin(), pkColumns.end(), col.name) != pkColumns.end()) {
+                if (std::ranges::find(pkColumns, col.name) != pkColumns.end()) {
                     col.isPrimaryKey = true;
                 }
             }
@@ -487,11 +487,11 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
             std::unordered_map<std::string, Index> indexMap;
 
             for (const auto& idxRow : indexRs) {
-                const std::string indexName = idxRow.get<std::string>(0);
-                const std::string columnName = idxRow.get<std::string>(1);
+                const auto indexName = idxRow.get<std::string>(0);
+                const auto columnName = idxRow.get<std::string>(1);
                 const bool isUnique = idxRow.get<int>(2) != 0;
 
-                if (indexMap.find(indexName) == indexMap.end()) {
+                if (!indexMap.contains(indexName)) {
                     Index idx;
                     idx.name = indexName;
                     idx.isUnique = isUnique;
@@ -500,7 +500,7 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
                 indexMap[indexName].columns.push_back(columnName);
             }
 
-            for (auto& [_, idx] : indexMap) {
+            for (auto& idx : indexMap | std::views::values) {
                 refreshedTable.indexes.push_back(idx);
             }
         }

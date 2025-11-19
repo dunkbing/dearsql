@@ -328,7 +328,8 @@ namespace NewHierarchy {
         }
     }
 
-    void renderPostgresSchemaNode(PostgresDatabaseNode* dbData, PostgresSchemaNode* schemaData) {
+    void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,
+                                  PostgresSchemaNode* schemaData) {
         if (!dbData || !schemaData) {
             return;
         }
@@ -644,7 +645,7 @@ namespace NewHierarchy {
         // Show loading indicator if refreshing
         if (isRefreshing) {
             // Position spinner at the end of the tree node item, centered vertically
-            const float spinnerRadius = 6.0f;
+            constexpr float spinnerRadius = 6.0f;
             const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
             const float itemCenterY =
                 ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);
@@ -906,7 +907,7 @@ namespace NewHierarchy {
         // Show loading indicator if refreshing
         if (isRefreshing) {
             // Position spinner at the end of the tree node item, centered vertically
-            const float spinnerRadius = 6.0f;
+            constexpr float spinnerRadius = 6.0f;
             const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
             const float itemCenterY =
                 ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);

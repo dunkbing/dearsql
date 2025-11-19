@@ -519,7 +519,7 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
 }
 
 void PostgresDatabase::checkRefreshWorkflowAsync() {
-    refreshWorkflow.check([this](bool success) {
+    refreshWorkflow.check([this](const bool success) {
         if (success) {
             Logger::info("Refresh workflow completed successfully");
         } else {

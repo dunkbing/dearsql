@@ -40,7 +40,8 @@ namespace NewHierarchy {
      * @param dbData The parent database data
      * @param schemaData The schema data to render
      */
-    void renderPostgresSchemaNode(PostgresDatabaseNode* dbData, PostgresSchemaNode* schemaData);
+    void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,
+                                  PostgresSchemaNode* schemaData);
 
     /**
      * @brief Render a MySQL database node with its tables/views

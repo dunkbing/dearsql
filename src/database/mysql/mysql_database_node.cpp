@@ -6,6 +6,7 @@
 #include <chrono>
 #include <format>
 #include <map>
+#include <ranges>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 
@@ -244,8 +245,7 @@ void MySQLDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
     Logger::debug(std::format("Starting async refresh for table: {}", tableName));
 
     // Check if already refreshing
-    if (tableRefreshLoaders.find(tableName) != tableRefreshLoaders.end() &&
-        tableRefreshLoaders[tableName].isRunning()) {
+    if (tableRefreshLoaders.contains(tableName) && tableRefreshLoaders[tableName].isRunning()) {
         Logger::debug(std::format("Table {} is already being refreshed", tableName));
         return;
     }
@@ -264,12 +264,12 @@ void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableNam
 
     it->second.check([this, tableName](const Table& refreshedTable) {
         // Find the table in the tables vector and update it
-        auto tableIt = std::find_if(tables.begin(), tables.end(),
-                                    [&tableName](const Table& t) { return t.name == tableName; });
+        const auto tableIt = std::ranges::find_if(
+            tables, [&tableName](const Table& t) { return t.name == tableName; });
 
         if (tableIt != tables.end()) {
             // Preserve expansion state
-            bool wasExpanded = tableIt->expanded;
+            const bool wasExpanded = tableIt->expanded;
             *tableIt = refreshedTable;
             tableIt->expanded = wasExpanded;
             Logger::info(std::format("Table {} refreshed successfully", tableName));
@@ -314,11 +314,11 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
             // Collect indexes by name
             std::map<std::string, Index> indexMap;
             for (const auto& idxRow : indexRs) {
-                const std::string indexName = idxRow.get<std::string>(2);  // Key_name
-                const std::string columnName = idxRow.get<std::string>(4); // Column_name
-                const int nonUnique = idxRow.get<int>(1);                  // Non_unique
+                const auto indexName = idxRow.get<std::string>(2);  // Key_name
+                const auto columnName = idxRow.get<std::string>(4); // Column_name
+                const int nonUnique = idxRow.get<int>(1);           // Non_unique
 
-                if (indexMap.find(indexName) == indexMap.end()) {
+                if (!indexMap.contains(indexName)) {
                     Index idx;
                     idx.name = indexName;
                     idx.isUnique = (nonUnique == 0);
@@ -328,7 +328,7 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
             }
 
             // Add indexes to table
-            for (auto& [_, idx] : indexMap) {
+            for (auto& idx : indexMap | std::views::values) {
                 refreshedTable.indexes.push_back(idx);
             }
         }

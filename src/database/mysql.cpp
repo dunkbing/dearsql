@@ -377,7 +377,7 @@ void MySQLDatabase::checkDatabasesStatusAsync() {
 }
 
 void MySQLDatabase::checkRefreshWorkflowAsync() {
-    refreshWorkflow.check([this](bool success) {
+    refreshWorkflow.check([this](const bool success) {
         if (success) {
             Logger::info("MySQL refresh workflow completed successfully");
         } else {

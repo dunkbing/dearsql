@@ -268,14 +268,27 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 conn.connectionInfo.type = DatabaseType::REDIS;
             }
 
-            conn.connectionInfo.host = row.get<std::string>(3, "");
-            conn.connectionInfo.port = row.get<int>(4, 0);
-            conn.connectionInfo.database = row.get<std::string>(5, "");
+            // Use convertRowValue for type-safe column access
+            std::string hostStr = convertRowValue(row, 3);
+            conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
+
+            std::string portStr = convertRowValue(row, 4);
+            conn.connectionInfo.port =
+                (portStr == "NULL" || portStr.empty()) ? 0 : std::stoi(portStr);
+
+            std::string dbStr = convertRowValue(row, 5);
+            conn.connectionInfo.database = (dbStr == "NULL") ? "" : dbStr;
 
             // Decrypt sensitive data
-            std::string encryptedUsername = row.get<std::string>(6, "");
-            std::string encryptedPassword = row.get<std::string>(7, "");
-            std::string saltStr = row.get<std::string>(9, "");
+            std::string usernameStr = convertRowValue(row, 6);
+            std::string encryptedUsername = (usernameStr == "NULL") ? "" : usernameStr;
+
+            std::string passwordStr = convertRowValue(row, 7);
+            std::string encryptedPassword = (passwordStr == "NULL") ? "" : passwordStr;
+
+            std::string saltStr = convertRowValue(row, 9);
+            if (saltStr == "NULL")
+                saltStr = "";
 
             try {
                 if (!saltStr.empty()) {
@@ -321,14 +334,21 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 conn.connectionInfo.password = "";
             }
 
-            conn.connectionInfo.path = row.get<std::string>(8, "");
+            std::string pathStr = convertRowValue(row, 8);
+            conn.connectionInfo.path = (pathStr == "NULL") ? "" : pathStr;
 
             conn.lastUsed = convertRowValue(row, 10);
             if (conn.lastUsed == "NULL")
                 conn.lastUsed = "";
 
-            conn.workspaceId = row.get<int>(11);
-            conn.connectionInfo.showAllDatabases = row.get<int>(12) != 0;
+            std::string workspaceIdStr = convertRowValue(row, 11);
+            conn.workspaceId = (workspaceIdStr == "NULL" || workspaceIdStr.empty())
+                                   ? 1
+                                   : std::stoi(workspaceIdStr);
+
+            std::string showAllStr = convertRowValue(row, 12);
+            conn.connectionInfo.showAllDatabases =
+                (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
             connections.push_back(conn);
         }
@@ -508,13 +528,26 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 conn.connectionInfo.type = DatabaseType::REDIS;
             }
 
-            conn.connectionInfo.host = row.get<std::string>(3, "");
-            conn.connectionInfo.port = row.get<int>(4, 0);
-            conn.connectionInfo.database = row.get<std::string>(5, "");
+            // Use convertRowValue for type-safe column access
+            std::string hostStr = convertRowValue(row, 3);
+            conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
 
-            std::string encryptedUsername = row.get<std::string>(6, "");
-            std::string encryptedPassword = row.get<std::string>(7, "");
-            std::string saltStr = row.get<std::string>(9, "");
+            std::string portStr = convertRowValue(row, 4);
+            conn.connectionInfo.port =
+                (portStr == "NULL" || portStr.empty()) ? 0 : std::stoi(portStr);
+
+            std::string dbStr = convertRowValue(row, 5);
+            conn.connectionInfo.database = (dbStr == "NULL") ? "" : dbStr;
+
+            std::string usernameStr = convertRowValue(row, 6);
+            std::string encryptedUsername = (usernameStr == "NULL") ? "" : usernameStr;
+
+            std::string passwordStr = convertRowValue(row, 7);
+            std::string encryptedPassword = (passwordStr == "NULL") ? "" : passwordStr;
+
+            std::string saltStr = convertRowValue(row, 9);
+            if (saltStr == "NULL")
+                saltStr = "";
 
             try {
                 if (!saltStr.empty()) {
@@ -548,14 +581,21 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 conn.connectionInfo.password = "";
             }
 
-            conn.connectionInfo.path = row.get<std::string>(8, "");
+            std::string pathStr = convertRowValue(row, 8);
+            conn.connectionInfo.path = (pathStr == "NULL") ? "" : pathStr;
 
             conn.lastUsed = convertRowValue(row, 10);
             if (conn.lastUsed == "NULL")
                 conn.lastUsed = "";
 
-            conn.workspaceId = row.get<int>(11);
-            conn.connectionInfo.showAllDatabases = row.get<int>(12) != 0;
+            std::string workspaceIdStr = convertRowValue(row, 11);
+            conn.workspaceId = (workspaceIdStr == "NULL" || workspaceIdStr.empty())
+                                   ? 1
+                                   : std::stoi(workspaceIdStr);
+
+            std::string showAllStr = convertRowValue(row, 12);
+            conn.connectionInfo.showAllDatabases =
+                (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
             connections.push_back(conn);
         }

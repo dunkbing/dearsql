@@ -255,41 +255,7 @@ void Application::setDarkTheme(const bool dark) {
 
 bool Application::hasPendingAsyncWork() const {
     return std::ranges::any_of(databases, [](const std::shared_ptr<DatabaseInterface>& db) {
-        if (!db) {
-            return false;
-        }
-
-        if (db->isConnecting() || db->isLoadingTables() || db->isLoadingViews() ||
-            db->isLoadingSequences()) {
-            return true;
-        }
-
-        if (const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db)) {
-            if (pgDb->isLoadingSchemas() || pgDb->isLoadingDatabases() ||
-                pgDb->isLoadingSequences()) {
-                return true;
-            }
-        }
-
-        if (const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db)) {
-            if (mysqlDb->isLoadingDatabases()) {
-                return true;
-            }
-        }
-
-        if (const auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db)) {
-            if (sqliteDb->isLoadingTables() || sqliteDb->isLoadingViews()) {
-                return true;
-            }
-        }
-
-        if (const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db)) {
-            if (redisDb->isLoadingTables()) {
-                return true;
-            }
-        }
-
-        return false;
+        return db && db->hasPendingAsyncWork();
     });
 }
 

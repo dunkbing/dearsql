@@ -5,7 +5,6 @@
 #include "postgres/postgres_database_node.hpp"
 #include "postgres/postgres_schema_node.hpp"
 #include <mutex>
-#include <set>
 #include <soci/connection-pool.h>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
@@ -23,14 +22,7 @@ public:
     void disconnect() override;
     void refreshConnection() override;
 
-    // Database info
-    void* getConnection() const override;
-
     // Schema management
-    const std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas() const;
-    std::vector<std::unique_ptr<PostgresSchemaNode>>& getSchemas();
-    bool areSchemasLoaded() const;
-    void setSchemasLoaded(bool loaded);
     bool isLoadingSchemas() const;
 
     void refreshDatabaseNames();
@@ -50,24 +42,22 @@ public:
     void checkDatabasesStatusAsync();
     void checkRefreshWorkflowAsync();
 
+    // Async operation status
+    [[nodiscard]] bool hasPendingAsyncWork() const override;
+
     // Query execution
     std::string executeQuery(const std::string& query) override;
 
 protected:
-    // std::vector<Column> getTableColumns(const std::string& tableName) override;
-    std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName,
                                                 const std::string& schemaName);
-    std::vector<std::string> getViewNames(const std::string& schemaName);
-    std::vector<std::string> getSequenceNames(const std::string& schemaName);
 
     // Async loading helpers
     std::vector<std::string> getDatabaseNamesAsync() const;
 
 private:
     std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
-    std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
 
     // Async database loading
@@ -75,8 +65,6 @@ private:
 
     // Async refresh workflow (for sequential operations)
     AsyncOperation<bool> refreshWorkflow;
-
-    std::string targetDatabaseName;
 
 public:
     // Helper methods for per-database data access
@@ -89,13 +77,6 @@ public:
     // Auto-loads databases if not loaded and not currently loading
     const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
     getDatabaseDataMap();
-
-    // Helper methods for per-schema data access
-    PostgresSchemaNode& getSchemaData(const std::string& schemaName);
-    const PostgresSchemaNode& getSchemaData(const std::string& schemaName) const;
-    PostgresSchemaNode& getSchemaData(const std::string& dbName, const std::string& schemaName);
-    const PostgresSchemaNode& getSchemaData(const std::string& dbName,
-                                            const std::string& schemaName) const;
 
 private:
     // Thread synchronization

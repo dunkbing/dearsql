@@ -137,10 +137,6 @@ void RedisDatabase::refreshConnection() {
     startKeysLoadAsync(true);
 }
 
-void* RedisDatabase::getConnection() const {
-    return context;
-}
-
 void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
 }

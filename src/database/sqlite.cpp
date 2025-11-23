@@ -212,10 +212,6 @@ std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::st
     return getTableData(tableName, limit, offset, "");
 }
 
-void* SQLiteDatabase::getConnection() const {
-    return session.get();
-}
-
 std::vector<std::string> SQLiteDatabase::getTableNames() const {
     std::vector<std::string> tableNames;
 

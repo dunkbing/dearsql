@@ -276,10 +276,9 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             }
         }
 
-        if (!targetDb.empty() && pgDb->isLoadingSchemas() &&
-            targetDb == pgDb->getConnectionInfo().database) {
-            isLoadingAnySchemas = true;
-        }
+        // if (!targetDb.empty() && targetDb == pgDb->getConnectionInfo().database) {
+        //     isLoadingAnySchemas = true;
+        // }
 
         if (pgDb->isLoadingDatabases()) {
             isLoadingAnySchemas = true;
@@ -320,9 +319,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
                 if (targetDbData && !targetDbData->schemasLoaded &&
                     !targetDbData->schemasLoader.isRunning()) {
                     if (targetDb == pgDb->getConnectionInfo().database) {
-                        if (!pgDb->isLoadingSchemas()) {
-                            // pgDb->refreshSchemas();
-                        }
+                        // TODO: load schemas
                     } else {
                         targetDbData->startSchemasLoadAsync();
                     }

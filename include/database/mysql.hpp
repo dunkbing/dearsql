@@ -4,7 +4,6 @@
 #include "base_database.hpp"
 #include "mysql/mysql_database_node.hpp"
 #include <mutex>
-#include <set>
 #include <soci/connection-pool.h>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
@@ -21,9 +20,6 @@ public:
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
     void refreshConnection() override;
-
-    // Database info
-    void* getConnection() const override;
 
     // Query execution
     std::string executeQuery(const std::string& query) override;
@@ -46,20 +42,17 @@ public:
     void checkDatabasesStatusAsync();
     void checkRefreshWorkflowAsync();
 
+    // Async operation status
+    [[nodiscard]] bool hasPendingAsyncWork() const override;
+
 protected:
-    // std::vector<Column> getTableColumns(const std::string& tableName) override;
-    std::vector<Index> getTableIndexes(const std::string& tableName);
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
 
     // Async loading helpers
-    void startRefreshTableAsync();
-    void startRefreshViewAsync();
-    std::vector<Table> getViewsWithColumnsAsync();
     std::vector<std::string> getDatabaseNamesAsync() const;
 
 private:
     std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>> databaseDataCache;
-    std::set<std::string> expandedDatabases; // Track which databases have been expanded
     bool databasesLoaded = false;
 
     // Async database loading
@@ -67,9 +60,6 @@ private:
 
     // Async refresh workflow (for sequential operations)
     AsyncOperation<bool> refreshWorkflow;
-
-    // Async database switching
-    std::string targetDatabaseName;
 
 public:
     // Helper methods for per-database data access

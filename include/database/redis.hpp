@@ -22,8 +22,6 @@ public:
     void disconnect() override;
     void refreshConnection() override;
 
-    void* getConnection() const override;
-
     // Redis-specific key management (adapted to table interface)
     void checkTablesStatusAsync();
 
@@ -50,6 +48,11 @@ public:
     // Key groups access
     const std::vector<Table>& getKeyGroups() const {
         return tables;
+    }
+
+    // Async operation status
+    [[nodiscard]] bool hasPendingAsyncWork() const override {
+        return isConnecting() || loadingKeys.load();
     }
 
     // Loading state (public like SQLite)

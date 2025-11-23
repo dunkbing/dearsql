@@ -114,7 +114,7 @@ namespace NewHierarchy {
                 }
 
                 if (viewsOpen) {
-                    if (!sqliteDb->isLoadingViews() && sqliteDb->getViews().empty()) {
+                    if (!sqliteDb->loadingViews.load() && sqliteDb->getViews().empty()) {
                         sqliteDb->startViewsLoadAsync();
                     }
 

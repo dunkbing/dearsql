@@ -19,7 +19,6 @@ public:
 
     // Database info
     const std::string& getPath() const;
-    void* getConnection() const override;
 
     bool areTablesLoaded() const {
         return tablesLoaded;
@@ -67,6 +66,12 @@ public:
 
     // Session access (returns raw pointer since SQLite has single session)
     soci::session* getSession() const;
+
+    // Async operation status
+    [[nodiscard]] bool hasPendingAsyncWork() const override {
+        return isConnecting() || loadingTables.load() || loadingViews.load() ||
+               loadingSequences.load();
+    }
 
     // Loading state
     std::atomic<bool> loadingTables = false;

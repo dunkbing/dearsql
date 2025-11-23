@@ -88,7 +88,6 @@ public:
     virtual void checkConnectionStatusAsync() {}
 
     // Database info
-    [[nodiscard]] virtual void* getConnection() const = 0;
     [[nodiscard]] virtual DatabaseType getType() const = 0;
 
     // Saved connection ID (for app state persistence)
@@ -99,18 +98,13 @@ public:
 
     // Table management
     virtual std::vector<Table>& getTables() = 0;
-    [[nodiscard]] virtual bool isLoadingTables() const {
-        return false;
-    }
 
     // View management
-    [[nodiscard]] virtual bool isLoadingViews() const {
-        return false;
-    }
-
     [[nodiscard]] virtual const std::vector<std::string>& getSequences() const = 0;
     virtual std::vector<std::string>& getSequences() = 0;
-    [[nodiscard]] virtual bool isLoadingSequences() const {
+
+    // Async operation status
+    [[nodiscard]] virtual bool hasPendingAsyncWork() const {
         return false;
     }
 

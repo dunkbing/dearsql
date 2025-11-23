@@ -172,38 +172,6 @@ void MySQLDatabase::refreshConnection() {
     });
 }
 
-void* MySQLDatabase::getConnection() const {
-    return getConnectionPoolForDatabase(connectionInfo.database);
-}
-
-void MySQLDatabase::startRefreshTableAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-
-    // Delegate to MySQLDatabaseNode
-    dbData->startTablesLoadAsync();
-}
-
-void MySQLDatabase::startRefreshViewAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData)
-        return;
-
-    // Delegate to MySQLDatabaseNode
-    dbData->startViewsLoadAsync();
-}
-
-std::vector<Table> MySQLDatabase::getViewsWithColumnsAsync() {
-    auto* dbData = getCurrentDatabaseData();
-    if (!dbData) {
-        return {};
-    }
-
-    // Delegate to MySQLDatabaseNode
-    return dbData->getViewsForDatabaseAsync();
-}
-
 std::string MySQLDatabase::executeQuery(const std::string& query) {
     if (!connect().first) {
         return "Error: Not connected to database";
@@ -246,48 +214,6 @@ std::string MySQLDatabase::executeQuery(const std::string& query) {
     } catch (const std::exception& e) {
         return "Error: " + std::string(e.what());
     }
-}
-
-std::vector<Index> MySQLDatabase::getTableIndexes(const std::string& tableName) {
-    std::vector<Index> indexes;
-
-    if (!connect().first) {
-        return indexes;
-    }
-
-    try {
-        const auto sql = getSession();
-        const std::string query = std::format("SHOW INDEX FROM `{}`", tableName);
-        const soci::rowset rs = sql->prepare << query;
-
-        std::unordered_map<std::string, Index> indexMap;
-
-        for (const auto& row : rs) {
-            auto indexName = row.get<std::string>(2); // Key_name
-
-            if (!indexMap.contains(indexName)) {
-                Index idx;
-                idx.name = indexName;
-                idx.isUnique = row.get<int>(1) == 0; // Non_unique (0 means unique)
-                idx.isPrimary = (indexName == "PRIMARY");
-                idx.type = row.get<std::string>(10); // Index_type
-                indexMap[indexName] = idx;
-            }
-
-            // Add column to the index
-            auto colName = row.get<std::string>(4); // Column_name
-            indexMap[indexName].columns.push_back(colName);
-        }
-
-        // Convert map to vector
-        for (auto& idx : indexMap | std::views::values) {
-            indexes.push_back(idx);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting table indexes: " << e.what() << std::endl;
-    }
-
-    return indexes;
 }
 
 std::vector<ForeignKey> MySQLDatabase::getTableForeignKeys(const std::string& tableName) {
@@ -359,6 +285,27 @@ void MySQLDatabase::refreshDatabaseNames() {
 
 bool MySQLDatabase::isLoadingDatabases() const {
     return databasesLoader.isRunning();
+}
+
+bool MySQLDatabase::hasPendingAsyncWork() const {
+    // Check connection and database-level async operations
+    if (isConnecting() || isLoadingDatabases()) {
+        return true;
+    }
+
+    // Check all database nodes for pending async work
+    for (const auto& [_, dbNode] : databaseDataCache) {
+        if (!dbNode) {
+            continue;
+        }
+
+        // Check if tables, views, or sequences are loading
+        if (dbNode->tablesLoader.isRunning() || dbNode->viewsLoader.isRunning()) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void MySQLDatabase::checkDatabasesStatusAsync() {

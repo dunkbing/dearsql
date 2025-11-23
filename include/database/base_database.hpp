@@ -85,9 +85,6 @@ public:
     }
 
     // Schema loading state (tables)
-    bool isLoadingTables() const override {
-        return tablesOp.isRunning();
-    }
     std::vector<Table>& getTables() override {
         return tables;
     }

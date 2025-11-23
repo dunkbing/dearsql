@@ -8,11 +8,14 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/table_dialog.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 #include <ranges>
 
 namespace NewHierarchy {
+    // Forward declaration for dialog access
+    TableDialog& getTableDialog();
     namespace {
         // helper function to render a tree node with icon
         bool
@@ -673,6 +676,9 @@ namespace NewHierarchy {
                 app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
                                                           schemaName);
             }
+            if (ImGui::MenuItem("Edit Table")) {
+                getTableDialog().showTableDialog(schemaData, table.name, schemaName);
+            }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
             }
@@ -933,6 +939,9 @@ namespace NewHierarchy {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(dbData, table.name);
             }
+            if (ImGui::MenuItem("Edit Table")) {
+                getTableDialog().showTableDialog(dbData, table.name);
+            }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab
             }
@@ -1166,6 +1175,9 @@ namespace NewHierarchy {
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
                 app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
+            }
+            if (ImGui::MenuItem("Edit Table")) {
+                getTableDialog().showTableDialog(sqliteDb, table.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show table structure in a tab

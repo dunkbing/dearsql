@@ -2,6 +2,12 @@
 
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
+#include <variant>
+
+// Forward declarations
+class PostgresSchemaNode;
+class MySQLDatabaseNode;
+class SQLiteDatabase;
 
 enum class ColumnEditMode { None, Add, Edit };
 enum class TableDialogMode { Edit, Create };
@@ -9,16 +15,18 @@ enum class RightPanelMode { TableProperties, ColumnEditor, Instructions };
 
 class TableDialog {
 public:
+    using DatabaseNode =
+        std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
+
     TableDialog() = default;
     ~TableDialog() = default;
 
     // Show dialog for editing a table
-    void showTableDialog(const std::shared_ptr<DatabaseInterface>& db, const std::string& tableName,
+    void showTableDialog(const DatabaseNode& dbNode, const std::string& tableName,
                          const std::string& schemaName = "");
 
     // Show dialog for creating a new table
-    void showCreateTableDialog(const std::shared_ptr<DatabaseInterface>& db,
-                               const std::string& schemaName = "");
+    void showCreateTableDialog(const DatabaseNode& dbNode, const std::string& schemaName = "");
 
     // Check if dialog is currently open
     bool isDialogOpen() const {
@@ -45,7 +53,7 @@ private:
     RightPanelMode rightPanelMode = RightPanelMode::Instructions;
 
     // Database context
-    std::shared_ptr<DatabaseInterface> database;
+    DatabaseNode databaseNode;
     std::string targetTableName;
     std::string targetSchemaName;
     std::vector<Column> tableColumns;
@@ -118,4 +126,7 @@ private:
     std::string generateAddColumnSQL();
     std::string generateEditColumnSQL();
     [[nodiscard]] std::vector<std::string> getCommonDataTypes() const;
+    [[nodiscard]] DatabaseType getDatabaseType() const;
+    std::string executeQuery(const std::string& query);
+    const std::vector<Table>& getTables() const;
 };

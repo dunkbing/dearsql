@@ -1,6 +1,12 @@
 #include "ui/table_dialog.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/mysql.hpp"
+#include "database/mysql/mysql_database_node.hpp"
+#include "database/postgres/postgres_database_node.hpp"
+#include "database/postgres/postgres_schema_node.hpp"
+#include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
@@ -8,9 +14,9 @@
 #include <iostream>
 #include <sstream>
 
-void TableDialog::showTableDialog(const std::shared_ptr<DatabaseInterface>& db,
-                                  const std::string& tableName, const std::string& schemaName) {
-    database = db;
+void TableDialog::showTableDialog(const DatabaseNode& dbNode, const std::string& tableName,
+                                  const std::string& schemaName) {
+    databaseNode = dbNode;
     targetTableName = tableName;
     targetSchemaName = schemaName;
     dialogMode = TableDialogMode::Edit;
@@ -33,9 +39,8 @@ void TableDialog::showTableDialog(const std::shared_ptr<DatabaseInterface>& db,
     // TODO: Load actual table comment from database metadata
 }
 
-void TableDialog::showCreateTableDialog(const std::shared_ptr<DatabaseInterface>& db,
-                                        const std::string& schemaName) {
-    database = db;
+void TableDialog::showCreateTableDialog(const DatabaseNode& dbNode, const std::string& schemaName) {
+    databaseNode = dbNode;
     targetSchemaName = schemaName;
     dialogMode = TableDialogMode::Create;
 
@@ -455,8 +460,7 @@ void TableDialog::renderColumnEditor() {
     ImGui::Spacing();
 
     // Comment (if supported by database)
-    if (database->getType() == DatabaseType::MYSQL ||
-        database->getType() == DatabaseType::POSTGRESQL) {
+    if (getDatabaseType() == DatabaseType::MYSQL || getDatabaseType() == DatabaseType::POSTGRESQL) {
         ImGui::Text("Comment:");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputTextMultiline("##column_comment", columnComment, sizeof(columnComment),
@@ -599,7 +603,7 @@ bool TableDialog::executeAddColumn() {
         Logger::info("Executing: " + sql);
 
         // For PostgreSQL with comments, we need to execute multiple statements
-        if (database->getType() == DatabaseType::POSTGRESQL && strlen(columnComment) > 0) {
+        if (getDatabaseType() == DatabaseType::POSTGRESQL && strlen(columnComment) > 0) {
             // Split the SQL into separate statements
             size_t semicolonPos = sql.find(';');
             if (semicolonPos != std::string::npos) {
@@ -607,7 +611,7 @@ bool TableDialog::executeAddColumn() {
                 std::string commentSQL = sql.substr(semicolonPos + 1);
 
                 // Execute ADD COLUMN first
-                std::string result1 = database->executeQuery(addColumnSQL);
+                std::string result1 = executeQuery(addColumnSQL);
                 if (result1.find("ERROR") != std::string::npos ||
                     result1.find("Error") != std::string::npos) {
                     const std::string& cleanError = result1;
@@ -621,7 +625,7 @@ bool TableDialog::executeAddColumn() {
                 }
 
                 // Execute COMMENT statement
-                std::string result2 = database->executeQuery(commentSQL);
+                std::string result2 = executeQuery(commentSQL);
                 if (result2.find("ERROR") != std::string::npos ||
                     result2.find("Error") != std::string::npos) {
                     // Column was added but comment failed - log warning but don't fail
@@ -630,7 +634,7 @@ bool TableDialog::executeAddColumn() {
             }
         } else {
             // Single statement execution
-            std::string result = database->executeQuery(sql);
+            std::string result = executeQuery(sql);
 
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
@@ -647,8 +651,8 @@ bool TableDialog::executeAddColumn() {
         }
 
         // Refresh table structure
-        // database->setTablesLoaded(false);
-        // database->refreshAllTables();
+        // getDatabaseInterface()->setTablesLoaded(false);
+        // getDatabaseInterface()->refreshAllTables();
 
         std::cout << ("Column '" + std::string(columnName) + "' added successfully to table '" +
                       targetTableName + "'");
@@ -671,7 +675,7 @@ bool TableDialog::executeEditColumn() {
         Logger::info("Executing: " + sql);
 
         // For PostgreSQL, we need to execute multiple statements
-        if (database->getType() == DatabaseType::POSTGRESQL) {
+        if (getDatabaseType() == DatabaseType::POSTGRESQL) {
             // Split the SQL into separate statements
             std::vector<std::string> statements;
             std::string currentStatement;
@@ -689,7 +693,7 @@ bool TableDialog::executeEditColumn() {
 
             // Execute each statement
             for (const auto& statement : statements) {
-                std::string result = database->executeQuery(statement);
+                std::string result = executeQuery(statement);
                 if (result.find("ERROR") != std::string::npos ||
                     result.find("Error") != std::string::npos) {
                     errorMessage = "Failed to edit column: " + result;
@@ -698,7 +702,7 @@ bool TableDialog::executeEditColumn() {
             }
         } else {
             // Single statement execution
-            std::string result = database->executeQuery(sql);
+            std::string result = executeQuery(sql);
 
             // Check if there was an error in the result
             if (result.find("ERROR") != std::string::npos ||
@@ -709,8 +713,8 @@ bool TableDialog::executeEditColumn() {
         }
 
         // Refresh table structure
-        // database->setTablesLoaded(false);
-        // database->refreshAllTables();
+        // getDatabaseInterface()->setTablesLoaded(false);
+        // getDatabaseInterface()->refreshAllTables();
 
         Logger::info("Column '" + originalColumnName + "' updated successfully in table '" +
                      targetTableName + "'");
@@ -747,7 +751,7 @@ void TableDialog::loadTableStructure() {
     tableColumns.clear();
 
     // Find the table in the database's table list
-    const auto& tables = database->getTables();
+    const auto& tables = getTables();
     for (const auto& table : tables) {
         if (table.name == targetTableName) {
             tableColumns = table.columns;
@@ -771,7 +775,7 @@ void TableDialog::updatePreviewSQL() {
 std::string TableDialog::generateAddColumnSQL() {
     // For PostgreSQL, ensure table name is schema-qualified
     std::string qualifiedTableName = targetTableName;
-    if (database->getType() == DatabaseType::POSTGRESQL) {
+    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
         // If table name doesn't already contain a schema prefix, add schema
         if (qualifiedTableName.find('.') == std::string::npos) {
             const std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
@@ -797,10 +801,10 @@ std::string TableDialog::generateAddColumnSQL() {
 
     // Handle comments differently for different databases
     if (strlen(columnComment) > 0) {
-        if (database->getType() == DatabaseType::MYSQL) {
+        if (getDatabaseType() == DatabaseType::MYSQL) {
             // MySQL supports COMMENT in ALTER TABLE ADD COLUMN
             sql += " COMMENT '" + std::string(columnComment) + "'";
-        } else if (database->getType() == DatabaseType::POSTGRESQL) {
+        } else if (getDatabaseType() == DatabaseType::POSTGRESQL) {
             // PostgreSQL requires a separate COMMENT ON COLUMN statement
             sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + std::string(columnName) +
                    " IS '" + std::string(columnComment) + "'";
@@ -814,7 +818,7 @@ std::string TableDialog::generateEditColumnSQL() {
     std::string sql;
 
     // Different databases have different syntax for altering columns
-    switch (database->getType()) {
+    switch (getDatabaseType()) {
     case DatabaseType::POSTGRESQL: {
         std::string qualifiedTableName = targetTableName;
         if (qualifiedTableName.find('.') == std::string::npos) {
@@ -905,7 +909,7 @@ std::string TableDialog::generateEditColumnSQL() {
 std::vector<std::string> TableDialog::getCommonDataTypes() const {
     std::vector<std::string> types;
 
-    switch (database->getType()) {
+    switch (getDatabaseType()) {
     case DatabaseType::POSTGRESQL:
         types = {
             "INTEGER",      "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC", "REAL", "DOUBLE PRECISION",
@@ -952,8 +956,8 @@ void TableDialog::renderTableProperties() {
         ImGui::Spacing();
 
         // Comment (if supported by database)
-        if (database->getType() == DatabaseType::MYSQL ||
-            database->getType() == DatabaseType::POSTGRESQL) {
+        if (getDatabaseType() == DatabaseType::MYSQL ||
+            getDatabaseType() == DatabaseType::POSTGRESQL) {
             ImGui::Text("Comment:");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextMultiline("##table_comment", newTableComment,
@@ -980,8 +984,8 @@ void TableDialog::renderTableProperties() {
         ImGui::Spacing();
 
         // Comment (if supported by database)
-        if (database->getType() == DatabaseType::MYSQL ||
-            database->getType() == DatabaseType::POSTGRESQL) {
+        if (getDatabaseType() == DatabaseType::MYSQL ||
+            getDatabaseType() == DatabaseType::POSTGRESQL) {
             ImGui::Text("Comment:");
             ImGui::SetNextItemWidth(-1);
             ImGui::InputTextMultiline("##edit_table_comment", editTableComment,
@@ -1067,7 +1071,7 @@ bool TableDialog::executeCreateTable() {
         std::string sql = generateCreateTableSQL();
         Logger::info("Executing: " + sql);
 
-        std::string result = database->executeQuery(sql);
+        std::string result = executeQuery(sql);
 
         // Check if there was an error in the result
         if (result.find("ERROR") != std::string::npos ||
@@ -1082,12 +1086,12 @@ bool TableDialog::executeCreateTable() {
         }
 
         // Add comment if supported and provided
-        if ((database->getType() == DatabaseType::MYSQL ||
-             database->getType() == DatabaseType::POSTGRESQL) &&
+        if ((getDatabaseType() == DatabaseType::MYSQL ||
+             getDatabaseType() == DatabaseType::POSTGRESQL) &&
             strlen(newTableComment) > 0) {
 
             std::string commentSQL;
-            if (database->getType() == DatabaseType::POSTGRESQL) {
+            if (getDatabaseType() == DatabaseType::POSTGRESQL) {
                 auto qualifiedTableName = std::string(newTableName);
                 if (qualifiedTableName.find('.') == std::string::npos) {
                     std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
@@ -1095,13 +1099,13 @@ bool TableDialog::executeCreateTable() {
                 }
                 commentSQL = "COMMENT ON TABLE " + qualifiedTableName + " IS '" +
                              std::string(newTableComment) + "'";
-            } else if (database->getType() == DatabaseType::MYSQL) {
+            } else if (getDatabaseType() == DatabaseType::MYSQL) {
                 commentSQL = "ALTER TABLE " + std::string(newTableName) + " COMMENT = '" +
                              std::string(newTableComment) + "'";
             }
 
             if (!commentSQL.empty()) {
-                std::string commentResult = database->executeQuery(commentSQL);
+                std::string commentResult = executeQuery(commentSQL);
                 if (commentResult.find("ERROR") != std::string::npos ||
                     commentResult.find("Error") != std::string::npos) {
                     // Table was created but comment failed - log warning but don't fail
@@ -1111,8 +1115,8 @@ bool TableDialog::executeCreateTable() {
         }
 
         // Refresh table structure
-        // database->setTablesLoaded(false);
-        // database->refreshAllTables();
+        // getDatabaseInterface()->setTablesLoaded(false);
+        // getDatabaseInterface()->refreshAllTables();
 
         Logger::info("Table '" + std::string(newTableName) + "' created successfully");
         return true;
@@ -1130,7 +1134,7 @@ std::string TableDialog::generateCreateTableSQL() {
     }
 
     std::string qualifiedTableName = std::string(newTableName);
-    if (database->getType() == DatabaseType::POSTGRESQL) {
+    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
         // If table name doesn't already contain a schema prefix, add schema
         if (qualifiedTableName.find('.') == std::string::npos) {
             std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
@@ -1149,7 +1153,7 @@ std::string TableDialog::generateCreateTableSQL() {
             sql += " NOT NULL";
         }
 
-        if (!column.comment.empty() && database->getType() == DatabaseType::MYSQL) {
+        if (!column.comment.empty() && getDatabaseType() == DatabaseType::MYSQL) {
             sql += " COMMENT '" + column.comment + "'";
         }
 
@@ -1181,7 +1185,7 @@ std::string TableDialog::generateCreateTableSQL() {
     sql += ")";
 
     // Add table comment for MySQL (PostgreSQL uses separate COMMENT ON TABLE statement)
-    if (database->getType() == DatabaseType::MYSQL && strlen(newTableComment) > 0) {
+    if (getDatabaseType() == DatabaseType::MYSQL && strlen(newTableComment) > 0) {
         sql += " COMMENT = '" + std::string(newTableComment) + "'";
     }
 
@@ -1211,7 +1215,7 @@ bool TableDialog::saveTableChanges() {
         // Check if table name changed
         if (std::string(editTableName) != targetTableName) {
             std::string renameSQL;
-            if (database->getType() == DatabaseType::POSTGRESQL) {
+            if (getDatabaseType() == DatabaseType::POSTGRESQL) {
                 std::string qualifiedOldName = targetTableName;
                 auto qualifiedNewName = std::string(editTableName);
                 if (qualifiedOldName.find('.') == std::string::npos) {
@@ -1220,10 +1224,10 @@ bool TableDialog::saveTableChanges() {
                 }
                 renameSQL =
                     "ALTER TABLE " + qualifiedOldName + " RENAME TO " + std::string(editTableName);
-            } else if (database->getType() == DatabaseType::MYSQL) {
+            } else if (getDatabaseType() == DatabaseType::MYSQL) {
                 renameSQL =
                     "ALTER TABLE " + targetTableName + " RENAME TO " + std::string(editTableName);
-            } else if (database->getType() == DatabaseType::SQLITE) {
+            } else if (getDatabaseType() == DatabaseType::SQLITE) {
                 renameSQL =
                     "ALTER TABLE " + targetTableName + " RENAME TO " + std::string(editTableName);
             }
@@ -1235,7 +1239,7 @@ bool TableDialog::saveTableChanges() {
 
         // Get original table structure for comparison
         std::vector<Column> originalColumns;
-        const auto& tables = database->getTables();
+        const auto& tables = getTables();
         for (const auto& table : tables) {
             if (table.name == targetTableName) {
                 originalColumns = table.columns;
@@ -1293,7 +1297,7 @@ bool TableDialog::saveTableChanges() {
                                             ? std::string(editTableName)
                                             : targetTableName;
 
-                if (database->getType() == DatabaseType::POSTGRESQL) {
+                if (getDatabaseType() == DatabaseType::POSTGRESQL) {
                     std::string qualifiedTableName = tableName;
                     if (qualifiedTableName.find('.') == std::string::npos) {
                         std::string schemaName =
@@ -1302,9 +1306,9 @@ bool TableDialog::saveTableChanges() {
                     }
                     dropSQL =
                         "ALTER TABLE " + qualifiedTableName + " DROP COLUMN " + originalColumn.name;
-                } else if (database->getType() == DatabaseType::MYSQL) {
+                } else if (getDatabaseType() == DatabaseType::MYSQL) {
                     dropSQL = "ALTER TABLE " + tableName + " DROP COLUMN " + originalColumn.name;
-                } else if (database->getType() == DatabaseType::SQLITE) {
+                } else if (getDatabaseType() == DatabaseType::SQLITE) {
                     // SQLite doesn't support DROP COLUMN directly
                     Logger::warn("SQLite doesn't support DROP COLUMN. Column '" +
                                  originalColumn.name + "' will remain in the table.");
@@ -1320,7 +1324,7 @@ bool TableDialog::saveTableChanges() {
         // Execute all SQL statements
         for (const auto& sql : sqlStatements) {
             Logger::info("Executing: " + sql);
-            std::string result = database->executeQuery(sql);
+            std::string result = executeQuery(sql);
 
             if (result.find("ERROR") != std::string::npos ||
                 result.find("Error") != std::string::npos) {
@@ -1331,8 +1335,8 @@ bool TableDialog::saveTableChanges() {
         }
 
         // Refresh table structure
-        // database->setTablesLoaded(false);
-        // database->refreshAllTables();
+        // getDatabaseInterface()->setTablesLoaded(false);
+        // getDatabaseInterface()->refreshAllTables();
 
         Logger::info("Table changes saved successfully");
         return true;
@@ -1349,7 +1353,7 @@ std::string TableDialog::generateAddColumnSQLForColumn(const Column& column) {
                                 : targetTableName;
 
     std::string qualifiedTableName = tableName;
-    if (database->getType() == DatabaseType::POSTGRESQL) {
+    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
         if (qualifiedTableName.find('.') == std::string::npos) {
             std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
             qualifiedTableName = schemaName + "." + qualifiedTableName;
@@ -1365,9 +1369,9 @@ std::string TableDialog::generateAddColumnSQLForColumn(const Column& column) {
 
     // Handle comments differently for different databases
     if (!column.comment.empty()) {
-        if (database->getType() == DatabaseType::MYSQL) {
+        if (getDatabaseType() == DatabaseType::MYSQL) {
             sql += " COMMENT '" + column.comment + "'";
-        } else if (database->getType() == DatabaseType::POSTGRESQL) {
+        } else if (getDatabaseType() == DatabaseType::POSTGRESQL) {
             sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + column.name + " IS '" +
                    column.comment + "'";
         }
@@ -1384,7 +1388,7 @@ std::string TableDialog::generateEditColumnSQLForColumn(const Column& column,
 
     std::string sql;
 
-    switch (database->getType()) {
+    switch (getDatabaseType()) {
     case DatabaseType::POSTGRESQL: {
         std::string qualifiedTableName = tableName;
         if (qualifiedTableName.find('.') == std::string::npos) {
@@ -1452,4 +1456,56 @@ std::string TableDialog::generateEditColumnSQLForColumn(const Column& column,
     }
 
     return sql;
+}
+
+DatabaseType TableDialog::getDatabaseType() const {
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        return DatabaseType::POSTGRESQL;
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        return DatabaseType::MYSQL;
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        return DatabaseType::SQLITE;
+    }
+    return DatabaseType::POSTGRESQL; // fallback
+}
+
+std::string TableDialog::executeQuery(const std::string& query) {
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
+        if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
+            return schemaNode->parentDbNode->parentDb->executeQuery(query);
+        }
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* dbNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (dbNode && dbNode->parentDb) {
+            return dbNode->parentDb->executeQuery(query);
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteDb = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteDb) {
+            return sqliteDb->executeQuery(query);
+        }
+    }
+    return "ERROR: No database connection";
+}
+
+const std::vector<Table>& TableDialog::getTables() const {
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
+        if (schemaNode) {
+            return schemaNode->tables;
+        }
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* dbNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (dbNode) {
+            return dbNode->tables;
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteDb = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteDb) {
+            return sqliteDb->getTables();
+        }
+    }
+    static const std::vector<Table> empty;
+    return empty;
 }

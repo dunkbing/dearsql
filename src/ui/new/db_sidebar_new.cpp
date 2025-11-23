@@ -17,6 +17,17 @@
 static TableDialog tableDialogNew;
 static DropColumnDialog dropColumnDialogNew;
 
+// Function to access the dialogs from database_node rendering
+namespace NewHierarchy {
+    TableDialog& getTableDialog() {
+        return tableDialogNew;
+    }
+
+    DropColumnDialog& getDropColumnDialog() {
+        return dropColumnDialogNew;
+    }
+} // namespace NewHierarchy
+
 void DatabaseSidebarNew::showConnectionDialog() {
     shouldShowConnectionDialog = true;
 }

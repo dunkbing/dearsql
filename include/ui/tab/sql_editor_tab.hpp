@@ -14,14 +14,17 @@
 class DatabaseInterface;
 class PostgresDatabaseNode;
 class MySQLDatabaseNode;
+class SQLiteDatabase;
 
 class SQLEditorTab final : public Tab {
 public:
-    using DatabaseNode = std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*>;
+    using DatabaseNode =
+        std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
 
     // Constructor for specific database node
     explicit SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode);
     explicit SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode);
+    explicit SQLEditorTab(const std::string& name, SQLiteDatabase* dbNode);
 
     ~SQLEditorTab() override;
 
@@ -53,7 +56,7 @@ public:
 private:
     std::string sqlQuery;
     std::string queryResult;
-    DatabaseNode databaseNode;      // Specific database node (Postgres/MySQL)
+    DatabaseNode databaseNode;      // Specific database node (Postgres/MySQL/SQLite)
     std::string selectedSchemaName; // Selected schema within the database
     TextEditor sqlEditor;
 

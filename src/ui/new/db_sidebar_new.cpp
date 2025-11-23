@@ -408,6 +408,20 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     }
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        // SQLite-specific menu items (only when connected)
+        if (db->isConnected() && db->getType() == DatabaseType::SQLITE) {
+            auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
+            if (sqliteDb) {
+                if (ImGui::MenuItem("New SQL Editor")) {
+                    Application::getInstance().getTabManager()->createSQLEditorTab("", sqliteDb);
+                }
+                if (ImGui::MenuItem("Show Diagram")) {
+                    Application::getInstance().getTabManager()->createDiagramTab(sqliteDb);
+                }
+                ImGui::Separator();
+            }
+        }
+
         if (ImGui::MenuItem("Edit connection")) {
             databaseToEdit = db;
         }

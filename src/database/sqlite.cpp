@@ -165,15 +165,7 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
 
             std::vector<std::string> rowData;
             for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                } else {
-                    try {
-                        rowData.push_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast&) {
-                        rowData.emplace_back("[BINARY DATA]");
-                    }
-                }
+                rowData.push_back(convertRowValue(row, i));
             }
             data.push_back(rowData);
             rowCount++;

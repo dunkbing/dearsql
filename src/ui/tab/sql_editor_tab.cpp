@@ -4,6 +4,7 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/table_renderer.hpp"
 #include "utils/spinner.hpp"
@@ -33,6 +34,16 @@ SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode
 
 // Constructor for MySQL database node
 SQLEditorTab::SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode)
+    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode) {
+    sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
+    sqlEditor.SetShowWhitespacesEnabled(false);
+    sqlEditor.SetShowLineNumbersEnabled(true);
+
+    // Populate auto-complete with table and column names
+    populateAutoCompleteKeywords();
+}
+
+SQLEditorTab::SQLEditorTab(const std::string& name, SQLiteDatabase* dbNode)
     : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
@@ -78,25 +89,34 @@ void SQLEditorTab::render() {
 }
 
 void SQLEditorTab::renderConnectionInfo() {
-    if (auto* pgNode = std::get_if<PostgresDatabaseNode*>(&databaseNode)) {
-        if (*pgNode && (*pgNode)->parentDb) {
+    if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
+        auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
+        if (pgNode && pgNode->parentDb) {
             if (!selectedSchemaName.empty()) {
                 ImGui::Text("Server: %s | Database: %s | Schema: %s",
-                            (*pgNode)->parentDb->getConnectionInfo().name.c_str(),
-                            (*pgNode)->name.c_str(), selectedSchemaName.c_str());
+                            pgNode->parentDb->getConnectionInfo().name.c_str(),
+                            pgNode->name.c_str(), selectedSchemaName.c_str());
             } else {
                 ImGui::Text("Server: %s | Database: %s",
-                            (*pgNode)->parentDb->getConnectionInfo().name.c_str(),
-                            (*pgNode)->name.c_str());
+                            pgNode->parentDb->getConnectionInfo().name.c_str(),
+                            pgNode->name.c_str());
             }
         } else {
             ImGui::Text("SQL Editor (No database selected)");
         }
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-        if (*mysqlNode && (*mysqlNode)->parentDb) {
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (mysqlNode && mysqlNode->parentDb) {
             ImGui::Text("Server: %s | Database: %s",
-                        (*mysqlNode)->parentDb->getConnectionInfo().name.c_str(),
-                        (*mysqlNode)->name.c_str());
+                        mysqlNode->parentDb->getConnectionInfo().name.c_str(),
+                        mysqlNode->name.c_str());
+        } else {
+            ImGui::Text("SQL Editor (No database selected)");
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteNode) {
+            ImGui::Text("Database: %s", sqliteNode->getConnectionInfo().name.c_str());
         } else {
             ImGui::Text("SQL Editor (No database selected)");
         }
@@ -151,6 +171,7 @@ void SQLEditorTab::renderDatabaseSchemaSelector() {
         renderMySQLDatabaseSelector();
     } else if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
         renderPostgresSchemaSelector();
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
     } else {
         renderSchemaSelectorForDisconnected();
     }
@@ -180,9 +201,7 @@ void SQLEditorTab::renderLoadingSchemaCombo() {
 }
 
 void SQLEditorTab::renderMySQLDatabaseSelector() {
-    const auto currentNodePtr = std::get_if<MySQLDatabaseNode*>(&databaseNode);
-    const MySQLDatabaseNode* currentNode =
-        (currentNodePtr && *currentNodePtr) ? *currentNodePtr : nullptr;
+    const MySQLDatabaseNode* currentNode = std::get<MySQLDatabaseNode*>(databaseNode);
 
     MySQLDatabase* mysqlDb = currentNode ? currentNode->parentDb : nullptr;
 
@@ -233,9 +252,7 @@ void SQLEditorTab::renderMySQLDatabaseSelector() {
 }
 
 void SQLEditorTab::renderPostgresSchemaSelector() {
-    auto currentNodePtr = std::get_if<PostgresDatabaseNode*>(&databaseNode);
-    PostgresDatabaseNode* currentNode =
-        (currentNodePtr && *currentNodePtr) ? *currentNodePtr : nullptr;
+    PostgresDatabaseNode* currentNode = std::get<PostgresDatabaseNode*>(databaseNode);
 
     PostgresDatabase* pgDb = currentNode ? currentNode->parentDb : nullptr;
 
@@ -458,16 +475,26 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
         QueryResult result;
 
         // execute query based on database type
-        if (auto pgNode = std::get<PostgresDatabaseNode*>(databaseNode)) {
+        if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
+            auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
             if (pgNode) {
                 result = pgNode->executeQueryWithResult(query);
             } else {
                 result.success = false;
                 result.errorMessage = "No database selected";
             }
-        } else if (auto mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode)) {
+        } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+            auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
             if (mysqlNode) {
                 result = mysqlNode->executeQueryWithResult(query);
+            } else {
+                result.success = false;
+                result.errorMessage = "No database selected";
+            }
+        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+            auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+            if (sqliteNode) {
+                result = sqliteNode->executeQueryWithResult(query);
             } else {
                 result.success = false;
                 result.errorMessage = "No database selected";
@@ -538,13 +565,14 @@ void SQLEditorTab::cancelQueryExecution() {
 void SQLEditorTab::populateAutoCompleteKeywords() {
     std::set<std::string> uniqueKeywords;
 
-    if (auto* pgNode = std::get_if<PostgresDatabaseNode*>(&databaseNode)) {
-        if (*pgNode && (*pgNode)->parentDb) {
-            PostgresDatabase* pgDb = (*pgNode)->parentDb;
+    if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
+        auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
+        if (pgNode && pgNode->parentDb) {
+            PostgresDatabase* pgDb = pgNode->parentDb;
 
             // Add tables and columns from all loaded schemas
-            if ((*pgNode)->schemasLoaded) {
-                for (const auto& schemaPtr : (*pgNode)->schemas) {
+            if (pgNode->schemasLoaded) {
+                for (const auto& schemaPtr : pgNode->schemas) {
                     if (!schemaPtr) {
                         continue;
                     }
@@ -582,13 +610,14 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
                 }
             }
         }
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-        if (*mysqlNode && (*mysqlNode)->parentDb) {
-            MySQLDatabase* mysqlDb = (*mysqlNode)->parentDb;
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (mysqlNode && mysqlNode->parentDb) {
+            MySQLDatabase* mysqlDb = mysqlNode->parentDb;
 
             // Add table names and column names
-            if ((*mysqlNode)->tablesLoaded) {
-                for (const auto& table : (*mysqlNode)->tables) {
+            if (mysqlNode->tablesLoaded) {
+                for (const auto& table : mysqlNode->tables) {
                     uniqueKeywords.insert(table.name);
                     for (const auto& column : table.columns) {
                         uniqueKeywords.insert(column.name);
@@ -597,8 +626,8 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
             }
 
             // Add view names and column names
-            if ((*mysqlNode)->viewsLoaded) {
-                for (const auto& view : (*mysqlNode)->views) {
+            if (mysqlNode->viewsLoaded) {
+                for (const auto& view : mysqlNode->views) {
                     uniqueKeywords.insert(view.name);
                     for (const auto& column : view.columns) {
                         uniqueKeywords.insert(column.name);
@@ -611,6 +640,27 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
                 const auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
                 for (const auto& dbName : databaseDataMap | std::views::keys) {
                     uniqueKeywords.insert(dbName);
+                }
+            }
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteNode) {
+            // Add table names and column names
+            if (sqliteNode->areTablesLoaded()) {
+                for (const auto& table : sqliteNode->getTables()) {
+                    uniqueKeywords.insert(table.name);
+                    for (const auto& column : table.columns) {
+                        uniqueKeywords.insert(column.name);
+                    }
+                }
+            }
+
+            // Add view names and column names
+            for (const auto& view : sqliteNode->getViews()) {
+                uniqueKeywords.insert(view.name);
+                for (const auto& column : view.columns) {
+                    uniqueKeywords.insert(column.name);
                 }
             }
         }

@@ -4,6 +4,7 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
 #include <algorithm>
 #include <format>
@@ -21,6 +22,13 @@ DiagramTab::DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode)
 
 // Constructor for MySQL database
 DiagramTab::DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode)
+    : Tab(name, TabType::DIAGRAM), databaseNode(dbNode) {
+    initializeEditor();
+    loadDatabaseSchema();
+}
+
+// Constructor for SQLite database
+DiagramTab::DiagramTab(const std::string& name, SQLiteDatabase* dbNode)
     : Tab(name, TabType::DIAGRAM), databaseNode(dbNode) {
     initializeEditor();
     loadDatabaseSchema();
@@ -65,7 +73,15 @@ void DiagramTab::render() {
     }
 
     if (!schemaLoaded) {
-        ImGui::Text("Loading database schema...");
+        // Show appropriate loading message
+        if (std::holds_alternative<PostgresSchemaNode*>(databaseNode) ||
+            std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+            ImGui::Text("Loading database schema...");
+        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+            ImGui::Text("Loading tables...");
+        } else {
+            ImGui::Text("Loading...");
+        }
 
         if (!isLoadingSchema) {
             isLoadingSchema = true;
@@ -73,17 +89,27 @@ void DiagramTab::render() {
         }
 
         // Check async loading status
-        if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
-            if (*schemaNode) {
-                (*schemaNode)->checkTablesStatusAsync();
-                if ((*schemaNode)->tablesLoaded) {
+        if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+            auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
+            if (schemaNode) {
+                schemaNode->checkTablesStatusAsync();
+                if (schemaNode->tablesLoaded) {
                     isLoadingSchema = false;
                 }
             }
-        } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-            if (*mysqlNode) {
-                (*mysqlNode)->checkTablesStatusAsync();
-                if ((*mysqlNode)->tablesLoaded) {
+        } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+            auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+            if (mysqlNode) {
+                mysqlNode->checkTablesStatusAsync();
+                if (mysqlNode->tablesLoaded) {
+                    isLoadingSchema = false;
+                }
+            }
+        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+            auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+            if (sqliteNode) {
+                sqliteNode->checkTablesStatusAsync();
+                if (sqliteNode->areTablesLoaded()) {
                     isLoadingSchema = false;
                 }
             }
@@ -92,7 +118,8 @@ void DiagramTab::render() {
     }
 
     // Toolbar
-    if (auto schemaNode = std::get<PostgresSchemaNode*>(databaseNode)) {
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
         if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
             auto toolBarName =
                 std::format("Schema: {}.{}", schemaNode->parentDbNode->name, schemaNode->name);
@@ -100,9 +127,17 @@ void DiagramTab::render() {
         } else {
             ImGui::Text("Schema: (disconnected)");
         }
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-        if (*mysqlNode && (*mysqlNode)->parentDb) {
-            ImGui::Text("Database: %s", (*mysqlNode)->name.c_str());
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (mysqlNode && mysqlNode->parentDb) {
+            ImGui::Text("Database: %s", mysqlNode->name.c_str());
+        } else {
+            ImGui::Text("Database: (disconnected)");
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteNode) {
+            ImGui::Text("Database: %s", sqliteNode->getConnectionInfo().name.c_str());
         } else {
             ImGui::Text("Database: (disconnected)");
         }
@@ -180,19 +215,24 @@ void DiagramTab::handleZoomShortcuts() {
 }
 
 std::vector<Table> DiagramTab::getTablesForDiagram() const {
-    std::vector<Table> tables;
-
-    if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
-        if (*schemaNode) {
-            return (*schemaNode)->tables;
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
+        if (schemaNode) {
+            return schemaNode->tables;
         }
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-        if (*mysqlNode) {
-            return (*mysqlNode)->tables;
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (mysqlNode) {
+            return mysqlNode->tables;
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteNode) {
+            return sqliteNode->getTables();
         }
     }
 
-    return tables;
+    return {};
 }
 
 void DiagramTab::loadDatabaseSchema() {
@@ -207,35 +247,53 @@ void DiagramTab::loadDatabaseSchema() {
 
     std::vector<Table> tables;
 
-    if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&databaseNode)) {
-        if (*schemaNode) {
+    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
+        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
+        if (schemaNode) {
             // Check if tables are loaded
-            if (!(*schemaNode)->tablesLoaded && !(*schemaNode)->tablesLoader.isRunning()) {
-                (*schemaNode)->startTablesLoadAsync();
+            if (!schemaNode->tablesLoaded && !schemaNode->tablesLoader.isRunning()) {
+                schemaNode->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if ((*schemaNode)->tablesLoader.isRunning()) {
+            if (schemaNode->tablesLoader.isRunning()) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            tables = (*schemaNode)->tables;
+            tables = schemaNode->tables;
         }
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&databaseNode)) {
-        if (*mysqlNode) {
+    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
+        if (mysqlNode) {
             // Check if tables are loaded
-            if (!(*mysqlNode)->tablesLoaded && !(*mysqlNode)->tablesLoader.isRunning()) {
-                (*mysqlNode)->startTablesLoadAsync();
+            if (!mysqlNode->tablesLoaded && !mysqlNode->tablesLoader.isRunning()) {
+                mysqlNode->startTablesLoadAsync();
             }
 
             // If tables are still loading, wait
-            if ((*mysqlNode)->tablesLoader.isRunning()) {
+            if (mysqlNode->tablesLoader.isRunning()) {
                 schemaLoaded = false; // Keep trying
                 return;
             }
 
-            tables = (*mysqlNode)->tables;
+            tables = mysqlNode->tables;
+        }
+    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
+        if (sqliteNode) {
+            // Check if tables are loaded
+            if (!sqliteNode->areTablesLoaded() && !sqliteNode->loadingTables) {
+                sqliteNode->startTablesLoadAsync();
+            }
+
+            // If tables are still loading, wait
+            if (sqliteNode->loadingTables) {
+                // Don't set schemaLoaded = false for SQLite (it's not a schema, just tables)
+                return;
+            }
+
+            tables = sqliteNode->getTables();
         }
     }
 

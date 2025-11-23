@@ -11,6 +11,7 @@
 class PostgresDatabaseNode;
 class PostgresSchemaNode;
 class MySQLDatabaseNode;
+class SQLiteDatabase;
 
 struct DiagramNode {
     ax::NodeEditor::NodeId id;
@@ -38,6 +39,8 @@ public:
     DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode);
     // Constructor for MySQL database
     DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode);
+    // Constructor for SQLite database
+    DiagramTab(const std::string& name, SQLiteDatabase* dbNode);
     ~DiagramTab() override;
 
     void render() override;
@@ -60,7 +63,8 @@ private:
     getTablesForDiagram() const; // Helper to get tables from database
 
 private:
-    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*> databaseNode;
+    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*, SQLiteDatabase*>
+        databaseNode;
     std::string databaseName; // for PostgreSQL
     std::string schemaName;   // for PostgreSQL
     ax::NodeEditor::EditorContext* editorContext = nullptr;

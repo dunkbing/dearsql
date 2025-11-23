@@ -41,6 +41,7 @@ public:
     // New API for specific database nodes
     std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode);
     std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode);
+    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, SQLiteDatabase* dbNode);
 
     std::shared_ptr<Tab> createTableViewerTab(PostgresSchemaNode* schemaNode,
                                               const std::string& tableName,
@@ -52,6 +53,7 @@ public:
 
     std::shared_ptr<Tab> createDiagramTab(PostgresSchemaNode* schemaNode);
     std::shared_ptr<Tab> createDiagramTab(MySQLDatabaseNode* dbNode);
+    std::shared_ptr<Tab> createDiagramTab(SQLiteDatabase* dbNode);
 
     // UI rendering
     void renderTabs();

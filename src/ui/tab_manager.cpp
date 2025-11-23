@@ -111,6 +111,38 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
     return tab;
 }
 
+std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
+                                                    SQLiteDatabase* dbNode) {
+    if (!dbNode) {
+        return nullptr;
+    }
+
+    std::string tabName;
+    if (name.empty()) {
+        std::string baseName = "SQL - " + dbNode->getPath();
+
+        // Make sure the name is unique
+        int count = 1;
+        tabName = baseName;
+        while (hasTab(tabName)) {
+            count++;
+            tabName = baseName + " (" + std::to_string(count) + ")";
+        }
+    } else {
+        tabName = name;
+    }
+
+    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    return tab;
+}
+
 std::shared_ptr<Tab> TabManager::createTableViewerTab(PostgresSchemaNode* schemaNode,
                                                       const std::string& tableName,
                                                       const std::string& databaseName,
@@ -339,6 +371,34 @@ std::shared_ptr<Tab> TabManager::createDiagramTab(MySQLDatabaseNode* dbNode) {
     app.resetDockingLayout();
 
     std::cout << "Created new diagram tab for MySQL database: " << dbNode->name << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createDiagramTab(SQLiteDatabase* dbNode) {
+    if (!dbNode) {
+        std::cout << "Cannot create diagram tab: database node is null" << std::endl;
+        return nullptr;
+    }
+
+    // Generate a unique tab name for the diagram
+    const std::string baseName = "Diagram - " + dbNode->getConnectionInfo().name;
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        count++;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    // Create the diagram tab
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, dbNode);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    // Force docking layout to be rebuilt to include the new tab
+    auto& app = Application::getInstance();
+    app.resetDockingLayout();
+
+    std::cout << "Created new diagram tab for SQLite database: " << dbNode->getPath() << std::endl;
     return tab;
 }
 

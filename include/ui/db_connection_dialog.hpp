@@ -10,6 +10,7 @@
 
 enum class DialogState {
     TypeSelection,
+    SQLiteConnection,
     PostgreSQLConnection,
     MySQLConnection,
     RedisConnection,
@@ -59,6 +60,9 @@ private:
     // Selected database type
     DatabaseType selectedDatabaseType = DatabaseType::SQLITE;
 
+    // SQLite connection fields
+    char sqlitePath[512] = "";
+
     // PostgreSQL/MySQL connection fields
     char connectionName[256] = "";
     char host[256] = "localhost";
@@ -74,6 +78,7 @@ private:
 
     // Dialog rendering functions
     void renderTypeSelection();
+    void renderSQLiteConnection();
     void renderSqlConnectionDialog(DatabaseType type);
     void renderRedisConnection();
     void renderSavedConnections();

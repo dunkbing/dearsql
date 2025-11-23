@@ -28,6 +28,9 @@ void DatabaseConnectionDialog::showDialog() {
     case DialogState::TypeSelection:
         renderTypeSelection();
         break;
+    case DialogState::SQLiteConnection:
+        renderSQLiteConnection();
+        break;
     case DialogState::PostgreSQLConnection:
         renderSqlConnectionDialog(DatabaseType::POSTGRESQL);
         break;
@@ -93,29 +96,13 @@ void DatabaseConnectionDialog::renderTypeSelection() {
 
         if (ImGui::Button("Next", ImVec2(100, 0))) {
             switch (selectedDatabaseType) {
-            case DatabaseType::SQLITE: {
-                // SQLite - directly open file dialog
-                const auto db = std::dynamic_pointer_cast<SQLiteDatabase>(createSQLiteDatabase());
-                if (db) {
-                    // Save SQLite connection to app state
-                    SavedConnection conn;
-                    conn.connectionInfo.name = db->getConnectionInfo().name;
-                    conn.connectionInfo.type = DatabaseType::SQLITE;
-                    conn.connectionInfo.path = db->getPath();
-                    conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
-
-                    const auto& app = Application::getInstance();
-                    int newConnectionId = app.getAppState()->saveConnection(conn);
-                    if (newConnectionId != -1) {
-                        db->setConnectionId(newConnectionId);
-                    }
-
-                    result = db;
-                    ImGui::CloseCurrentPopup();
-                    reset();
+            case DatabaseType::SQLITE:
+                // SQLite - show connection dialog
+                currentState = DialogState::SQLiteConnection;
+                if (strlen(connectionName) == 0) {
+                    strncpy(connectionName, "SQLite Connection", sizeof(connectionName) - 1);
                 }
                 break;
-            }
             case DatabaseType::POSTGRESQL:
                 // Postgres - show connection dialog
                 currentState = DialogState::PostgreSQLConnection;
@@ -146,6 +133,128 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
             ImGui::CloseCurrentPopup();
             reset();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void DatabaseConnectionDialog::renderSQLiteConnection() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(550, 280), ImGuiCond_Always);
+
+    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Connect to SQLite Database:");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        const auto& colors = Application::getInstance().getCurrentColors();
+
+        // Connection name
+        ImGui::Text("Connection Name:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+        ImGui::Spacing();
+
+        // Database file path with file picker button
+        ImGui::Text("Database File Path:");
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+
+        // Path input - takes most of the width
+        ImGui::SetNextItemWidth(400.0); // Leave space for button
+        ImGui::InputText("##sqlite_path", sqlitePath, sizeof(sqlitePath));
+
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+
+        // Browse button on the same line
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...", ImVec2(80, 0))) {
+            auto db = FileDialog::openSQLiteFile();
+            if (db) {
+                auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
+                if (sqliteDb) {
+                    // Fill in the path from the selected file
+                    strncpy(sqlitePath, sqliteDb->getPath().c_str(), sizeof(sqlitePath) - 1);
+                    sqlitePath[sizeof(sqlitePath) - 1] = '\0';
+
+                    // Use filename as connection name if not set
+                    if (strlen(connectionName) == 0 ||
+                        strcmp(connectionName, "SQLite Connection") == 0) {
+                        strncpy(connectionName, sqliteDb->getConnectionInfo().name.c_str(),
+                                sizeof(connectionName) - 1);
+                        connectionName[sizeof(connectionName) - 1] = '\0';
+                    }
+                }
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        // Connect button
+        if (ImGui::Button("Connect", ImVec2(100, 0))) {
+            if (strlen(sqlitePath) > 0) {
+                // Create SQLite database with the provided path
+                DatabaseConnectionInfo connInfo;
+                connInfo.type = DatabaseType::SQLITE;
+                connInfo.name = std::string(connectionName);
+                connInfo.path = std::string(sqlitePath);
+
+                auto db = std::make_shared<SQLiteDatabase>(connInfo);
+                if (db) {
+                    auto [success, error] = db->connect();
+                    if (success) {
+                        // Save SQLite connection to app state
+                        SavedConnection conn;
+                        conn.connectionInfo = connInfo;
+                        conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
+
+                        const auto& app = Application::getInstance();
+                        int newConnectionId = app.getAppState()->saveConnection(conn);
+                        if (newConnectionId != -1) {
+                            db->setConnectionId(newConnectionId);
+                        }
+
+                        result = db;
+                        ImGui::CloseCurrentPopup();
+                        reset();
+                    } else {
+                        errorMessage = "Failed to connect: " + error;
+                    }
+                }
+            } else {
+                errorMessage = "Please select a database file";
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Back", ImVec2(100, 0))) {
+            currentState = DialogState::TypeSelection;
+            errorMessage.clear();
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+            ImGui::CloseCurrentPopup();
+            reset();
+        }
+
+        // Show error message if there is one
+        if (!errorMessage.empty()) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::PopStyleColor();
         }
 
         ImGui::EndPopup();
@@ -469,6 +578,7 @@ void DatabaseConnectionDialog::reset() {
     authType = 0;
     editingDatabase = nullptr;
     editingConnectionId = -1;
+    sqlitePath[0] = '\0';
 }
 
 void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInterface>& db) {

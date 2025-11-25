@@ -120,6 +120,31 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
                 }
             }
 
+            // Get foreign keys
+            const std::string fkQuery = std::format(
+                "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, "
+                "CONSTRAINT_NAME "
+                "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE "
+                "WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' AND REFERENCED_TABLE_NAME IS NOT "
+                "NULL",
+                name, tableName);
+            {
+                const soci::rowset fkRs = session->prepare << fkQuery;
+
+                for (const auto& fkRow : fkRs) {
+                    if (!tablesLoader.isRunning()) {
+                        break;
+                    }
+
+                    ForeignKey fk;
+                    fk.sourceColumn = fkRow.get<std::string>(0);
+                    fk.targetTable = fkRow.get<std::string>(1);
+                    fk.targetColumn = fkRow.get<std::string>(2);
+                    fk.name = fkRow.get<std::string>(3);
+                    table.foreignKeys.push_back(fk);
+                }
+            }
+
             result.push_back(table);
         }
     } catch (const soci::soci_error& e) {

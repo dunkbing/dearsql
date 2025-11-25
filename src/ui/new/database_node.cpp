@@ -723,51 +723,30 @@ namespace NewHierarchy {
                 }
             }
 
-            // Keys section
+            // Foreign Keys section
             {
-                const std::string keysNodeId =
-                    std::format("keys_{}_{:p}", table.name, static_cast<void*>(&table));
-                const bool keysOpen = renderTreeNodeWithIcon("Keys", keysNodeId, ICON_FA_KEY,
-                                                             ImGui::GetColorU32(colors.yellow));
+                const std::string fkNodeId =
+                    std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
+                                                           ImGui::GetColorU32(colors.yellow));
 
-                if (keysOpen) {
-                    // Primary key
-                    bool hasPrimaryKey = false;
-                    std::string primaryKeyColumns;
-                    for (const auto& column : table.columns) {
-                        if (column.isPrimaryKey) {
-                            if (hasPrimaryKey) {
-                                primaryKeyColumns += ", ";
-                            }
-                            primaryKeyColumns += column.name;
-                            hasPrimaryKey = true;
-                        }
-                    }
-
-                    if (hasPrimaryKey) {
-                        ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-                        std::string pkDisplay = "   Primary Key (" + primaryKeyColumns + ")";
-                        ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
-                    }
-
-                    // Foreign keys
+                if (fkOpen) {
                     if (!table.foreignKeys.empty()) {
                         for (const auto& fk : table.foreignKeys) {
                             ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                          ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                          ImGuiTreeNodeFlags_FramePadding;
-                            std::string fkDisplay =
-                                std::format("   Foreign Key: {} -> {}.{}", fk.sourceColumn,
-                                            fk.targetTable, fk.targetColumn);
+                            std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                                                                fk.targetTable, fk.targetColumn);
                             ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
-                        }
-                    }
 
-                    if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                            if (ImGui::IsItemHovered() && !fk.name.empty()) {
+                                ImGui::SetTooltip("Constraint: %s", fk.name.c_str());
+                            }
+                        }
+                    } else {
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-                        ImGui::Text("  No keys defined");
+                        ImGui::Text("  No foreign keys");
                         ImGui::PopStyleColor();
                     }
                     ImGui::TreePop();
@@ -986,51 +965,30 @@ namespace NewHierarchy {
                 }
             }
 
-            // Keys section
+            // Foreign Keys section
             {
-                const std::string keysNodeId =
-                    std::format("keys_{}_{:p}", table.name, static_cast<void*>(&table));
-                const bool keysOpen = renderTreeNodeWithIcon("Keys", keysNodeId, ICON_FA_KEY,
-                                                             ImGui::GetColorU32(colors.yellow));
+                const std::string fkNodeId =
+                    std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
+                                                           ImGui::GetColorU32(colors.yellow));
 
-                if (keysOpen) {
-                    // Primary key
-                    bool hasPrimaryKey = false;
-                    std::string primaryKeyColumns;
-                    for (const auto& column : table.columns) {
-                        if (column.isPrimaryKey) {
-                            if (hasPrimaryKey) {
-                                primaryKeyColumns += ", ";
-                            }
-                            primaryKeyColumns += column.name;
-                            hasPrimaryKey = true;
-                        }
-                    }
-
-                    if (hasPrimaryKey) {
-                        ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-                        std::string pkDisplay = "   Primary Key (" + primaryKeyColumns + ")";
-                        ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
-                    }
-
-                    // Foreign keys
+                if (fkOpen) {
                     if (!table.foreignKeys.empty()) {
                         for (const auto& fk : table.foreignKeys) {
                             ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                          ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                          ImGuiTreeNodeFlags_FramePadding;
-                            std::string fkDisplay =
-                                std::format("   Foreign Key: {} -> {}.{}", fk.sourceColumn,
-                                            fk.targetTable, fk.targetColumn);
+                            std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                                                                fk.targetTable, fk.targetColumn);
                             ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
-                        }
-                    }
 
-                    if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                            if (ImGui::IsItemHovered() && !fk.name.empty()) {
+                                ImGui::SetTooltip("Constraint: %s", fk.name.c_str());
+                            }
+                        }
+                    } else {
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-                        ImGui::Text("  No keys defined");
+                        ImGui::Text("  No foreign keys");
                         ImGui::PopStyleColor();
                     }
                     ImGui::TreePop();
@@ -1220,51 +1178,30 @@ namespace NewHierarchy {
                 }
             }
 
-            // Keys section
+            // Foreign Keys section
             {
-                const std::string keysNodeId =
-                    std::format("keys_{}_{:p}", table.name, static_cast<void*>(&table));
-                const bool keysOpen = renderTreeNodeWithIcon("Keys", keysNodeId, ICON_FA_KEY,
-                                                             ImGui::GetColorU32(colors.yellow));
+                const std::string fkNodeId =
+                    std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
+                                                           ImGui::GetColorU32(colors.yellow));
 
-                if (keysOpen) {
-                    // Primary key
-                    bool hasPrimaryKey = false;
-                    std::string primaryKeyColumns;
-                    for (const auto& column : table.columns) {
-                        if (column.isPrimaryKey) {
-                            if (hasPrimaryKey) {
-                                primaryKeyColumns += ", ";
-                            }
-                            primaryKeyColumns += column.name;
-                            hasPrimaryKey = true;
-                        }
-                    }
-
-                    if (hasPrimaryKey) {
-                        ImGuiTreeNodeFlags pkFlags = ImGuiTreeNodeFlags_Leaf |
-                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                     ImGuiTreeNodeFlags_FramePadding;
-                        std::string pkDisplay = "   Primary Key (" + primaryKeyColumns + ")";
-                        ImGui::TreeNodeEx(pkDisplay.c_str(), pkFlags);
-                    }
-
-                    // Foreign keys
+                if (fkOpen) {
                     if (!table.foreignKeys.empty()) {
                         for (const auto& fk : table.foreignKeys) {
                             ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                          ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                          ImGuiTreeNodeFlags_FramePadding;
-                            std::string fkDisplay =
-                                std::format("   Foreign Key: {} -> {}.{}", fk.sourceColumn,
-                                            fk.targetTable, fk.targetColumn);
+                            std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                                                                fk.targetTable, fk.targetColumn);
                             ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
-                        }
-                    }
 
-                    if (!hasPrimaryKey && table.foreignKeys.empty()) {
+                            if (ImGui::IsItemHovered() && !fk.name.empty()) {
+                                ImGui::SetTooltip("Constraint: %s", fk.name.c_str());
+                            }
+                        }
+                    } else {
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-                        ImGui::Text("  No keys defined");
+                        ImGui::Text("  No foreign keys");
                         ImGui::PopStyleColor();
                     }
                     ImGui::TreePop();

@@ -49,10 +49,6 @@ public:
     std::string executeQuery(const std::string& query) override;
 
 protected:
-    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
-    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName,
-                                                const std::string& schemaName);
-
     // Async loading helpers
     std::vector<std::string> getDatabaseNamesAsync() const;
 

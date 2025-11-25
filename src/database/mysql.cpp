@@ -1,5 +1,4 @@
 #include "database/mysql.hpp"
-#include "database/db.hpp"
 #include "utils/logger.hpp"
 #include <format>
 #include <iostream>
@@ -214,52 +213,6 @@ std::string MySQLDatabase::executeQuery(const std::string& query) {
     } catch (const std::exception& e) {
         return "Error: " + std::string(e.what());
     }
-}
-
-std::vector<ForeignKey> MySQLDatabase::getTableForeignKeys(const std::string& tableName) {
-    std::vector<ForeignKey> foreignKeys;
-
-    if (!connect().first) {
-        return foreignKeys;
-    }
-
-    try {
-        const auto sql = getSession();
-        const std::string query =
-            std::format("SELECT "
-                        "    kcu.CONSTRAINT_NAME, "
-                        "    kcu.COLUMN_NAME, "
-                        "    kcu.REFERENCED_TABLE_NAME, "
-                        "    kcu.REFERENCED_COLUMN_NAME, "
-                        "    rc.UPDATE_RULE, "
-                        "    rc.DELETE_RULE "
-                        "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu "
-                        "JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc "
-                        "    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME "
-                        "    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA "
-                        "WHERE kcu.TABLE_NAME = '{}' "
-                        "AND kcu.TABLE_SCHEMA = DATABASE() "
-                        "AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
-                        tableName);
-
-        const soci::rowset rs = sql->prepare << query;
-
-        for (const auto& row : rs) {
-            ForeignKey fk;
-            fk.name = row.get<std::string>(0);
-            fk.sourceColumn = row.get<std::string>(1);
-            fk.targetTable = row.get<std::string>(2);
-            fk.targetColumn = row.get<std::string>(3);
-            fk.onUpdate = row.get<std::string>(4);
-            fk.onDelete = row.get<std::string>(5);
-
-            foreignKeys.push_back(fk);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "MySQL Error getting table foreign keys: " << e.what() << std::endl;
-    }
-
-    return foreignKeys;
 }
 
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&

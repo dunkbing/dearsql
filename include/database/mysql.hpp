@@ -46,8 +46,6 @@ public:
     [[nodiscard]] bool hasPendingAsyncWork() const override;
 
 protected:
-    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName);
-
     // Async loading helpers
     std::vector<std::string> getDatabaseNamesAsync() const;
 

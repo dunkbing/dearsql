@@ -133,6 +133,52 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
             }
         }
 
+        // Build a query to get all foreign keys for all tables at once
+        std::string fkQuery =
+            "SELECT "
+            "tc.table_name, "
+            "kcu.column_name AS source_column, "
+            "ccu.table_name AS target_table, "
+            "ccu.column_name AS target_column, "
+            "tc.constraint_name "
+            "FROM information_schema.table_constraints AS tc "
+            "JOIN information_schema.key_column_usage AS kcu "
+            "  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema "
+            "JOIN information_schema.constraint_column_usage AS ccu "
+            "  ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema "
+            "WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = '" +
+            name + "' AND tc.table_name IN (";
+
+        for (size_t i = 0; i < tableNames.size(); ++i) {
+            fkQuery += "'" + tableNames[i] + "'";
+            if (i < tableNames.size() - 1) {
+                fkQuery += ", ";
+            }
+        }
+        fkQuery += ") ORDER BY tc.table_name";
+
+        // Execute the foreign keys query
+        std::unordered_map<std::string, std::vector<ForeignKey>> tableForeignKeys;
+        {
+            auto session = parentDbNode->getSession();
+            const soci::rowset fkRs = session->prepare << fkQuery;
+
+            for (const auto& row : fkRs) {
+                if (!tablesLoader.isRunning()) {
+                    break;
+                }
+
+                auto tableName = row.get<std::string>(0);
+                ForeignKey fk;
+                fk.sourceColumn = row.get<std::string>(1);
+                fk.targetTable = row.get<std::string>(2);
+                fk.targetColumn = row.get<std::string>(3);
+                fk.name = row.get<std::string>(4);
+
+                tableForeignKeys[tableName].push_back(fk);
+            }
+        }
+
         // Build the result tables
         for (const auto& tableName : tableNames) {
             if (!tablesLoader.isRunning()) {
@@ -143,10 +189,12 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
             table.name = tableName;
             table.fullName = parentDbNode->name + "." + name + "." + tableName;
             table.columns = tableColumns[tableName];
+            table.foreignKeys = tableForeignKeys[tableName];
 
             result.push_back(table);
             Logger::debug("Loaded table: " + tableName + " with " +
-                          std::to_string(table.columns.size()) + " columns");
+                          std::to_string(table.columns.size()) + " columns and " +
+                          std::to_string(table.foreignKeys.size()) + " foreign keys");
         }
 
     } catch (const soci::soci_error& e) {

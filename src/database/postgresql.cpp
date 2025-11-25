@@ -249,59 +249,6 @@ std::string PostgresDatabase::executeQuery(const std::string& query) {
     }
 }
 
-std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string& tableName) {
-    return getTableForeignKeys(tableName, "public");
-}
-
-std::vector<ForeignKey> PostgresDatabase::getTableForeignKeys(const std::string& tableName,
-                                                              const std::string& schemaName) {
-    std::vector<ForeignKey> foreignKeys;
-
-    try {
-        const auto session = getSession();
-        const std::string sqlQuery =
-            std::format("SELECT "
-                        "    tc.constraint_name, "
-                        "    kcu.column_name as source_column, "
-                        "    ccu.table_name as target_table, "
-                        "    ccu.column_name as target_column, "
-                        "    rc.update_rule, "
-                        "    rc.delete_rule "
-                        "FROM information_schema.table_constraints tc "
-                        "JOIN information_schema.key_column_usage kcu "
-                        "    ON tc.constraint_name = kcu.constraint_name "
-                        "    AND tc.table_schema = kcu.table_schema "
-                        "JOIN information_schema.constraint_column_usage ccu "
-                        "    ON ccu.constraint_name = tc.constraint_name "
-                        "    AND ccu.table_schema = tc.table_schema "
-                        "JOIN information_schema.referential_constraints rc "
-                        "    ON rc.constraint_name = tc.constraint_name "
-                        "    AND rc.constraint_schema = tc.table_schema "
-                        "WHERE tc.constraint_type = 'FOREIGN KEY' "
-                        "AND tc.table_name = '{}' "
-                        "AND tc.table_schema = '{}'",
-                        tableName, schemaName);
-
-        const soci::rowset rs = session->prepare << sqlQuery;
-
-        for (const auto& row : rs) {
-            ForeignKey fk;
-            fk.name = row.get<std::string>(0);
-            fk.sourceColumn = row.get<std::string>(1);
-            fk.targetTable = row.get<std::string>(2);
-            fk.targetColumn = row.get<std::string>(3);
-            fk.onUpdate = row.get<std::string>(4);
-            fk.onDelete = row.get<std::string>(5);
-
-            foreignKeys.push_back(fk);
-        }
-    } catch (const soci::soci_error& e) {
-        std::cerr << "Error getting table foreign keys: " << e.what() << std::endl;
-    }
-
-    return foreignKeys;
-}
-
 bool PostgresDatabase::isLoadingSchemas() const {
     const auto* dbData = getCurrentDatabaseData();
     return dbData ? dbData->schemasLoader.isRunning() : false;

@@ -118,9 +118,6 @@ public:
             return;
         }
     }
-    DatabaseType getType() const override {
-        return connectionInfo.type;
-    }
 
 protected:
     // Common state

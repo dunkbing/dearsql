@@ -87,9 +87,6 @@ public:
     virtual void startConnectionAsync() {}
     virtual void checkConnectionStatusAsync() {}
 
-    // Database info
-    [[nodiscard]] virtual DatabaseType getType() const = 0;
-
     // Saved connection ID (for app state persistence)
     virtual void setConnectionId(int id) {}
     [[nodiscard]] virtual int getConnectionId() const {

@@ -594,12 +594,13 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
     connectionName[sizeof(connectionName) - 1] = '\0';
 
     editingConnectionId = db->getConnectionId();
+    auto const type = db->getConnectionInfo().type;
 
-    if (db->getType() == DatabaseType::SQLITE) {
+    if (type == DatabaseType::SQLITE) {
         selectedDatabaseType = DatabaseType::SQLITE;
         // SQLite doesn't need a connection dialog, just show type selection
         currentState = DialogState::TypeSelection;
-    } else if (db->getType() == DatabaseType::POSTGRESQL) {
+    } else if (type == DatabaseType::POSTGRESQL) {
         selectedDatabaseType = DatabaseType::POSTGRESQL;
         currentState = DialogState::PostgreSQLConnection;
 
@@ -613,7 +614,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
-    } else if (db->getType() == DatabaseType::MYSQL) {
+    } else if (type == DatabaseType::MYSQL) {
         selectedDatabaseType = DatabaseType::MYSQL;
         currentState = DialogState::MySQLConnection;
 
@@ -627,7 +628,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
-    } else if (db->getType() == DatabaseType::REDIS) {
+    } else if (type == DatabaseType::REDIS) {
         selectedDatabaseType = DatabaseType::REDIS;
         currentState = DialogState::RedisConnection;
 
@@ -988,12 +989,13 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         updatedInfo.showAllDatabases = showAllDatabases;
 
         // Update the database object with new connection info
-        if (editingDatabase->getType() == DatabaseType::POSTGRESQL) {
+        auto const type = editingDatabase->getConnectionInfo().type;
+        if (type == DatabaseType::POSTGRESQL) {
             auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(editingDatabase);
             if (pgDb) {
                 pgDb->setConnectionInfo(updatedInfo);
             }
-        } else if (editingDatabase->getType() == DatabaseType::MYSQL) {
+        } else if (type == DatabaseType::MYSQL) {
             auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(editingDatabase);
             if (mysqlDb) {
                 mysqlDb->setConnectionInfo(updatedInfo);

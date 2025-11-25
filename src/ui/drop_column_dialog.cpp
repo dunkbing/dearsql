@@ -130,7 +130,7 @@ bool DropColumnDialog::executeDropColumn() {
 std::string DropColumnDialog::generateDropColumnSQL() {
     std::string sql;
 
-    switch (database->getType()) {
+    switch (database->getConnectionInfo().type) {
     case DatabaseType::POSTGRESQL:
     case DatabaseType::MYSQL:
         sql = "ALTER TABLE " + targetTableName + " DROP COLUMN " + targetColumnName;

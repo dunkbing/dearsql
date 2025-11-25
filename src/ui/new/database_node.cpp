@@ -47,7 +47,7 @@ namespace NewHierarchy {
         const auto& colors = app.getCurrentColors();
 
         // Get database type
-        const auto dbType = dbInterface->getType();
+        const auto dbType = dbInterface->getConnectionInfo().type;
 
         if (dbType == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(dbInterface.get());

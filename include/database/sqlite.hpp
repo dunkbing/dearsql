@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base_database.hpp"
+#include "query_executor.hpp"
 #include "table_data_provider.hpp"
 #include <atomic>
 #include <future>
@@ -8,7 +9,9 @@
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-class SQLiteDatabase final : public BaseDatabaseImpl, public ITableDataProvider {
+class SQLiteDatabase final : public BaseDatabaseImpl,
+                             public ITableDataProvider,
+                             public IQueryExecutor {
 public:
     SQLiteDatabase(const DatabaseConnectionInfo& connInfo);
     ~SQLiteDatabase() override;
@@ -62,7 +65,7 @@ public:
     }
 
     // query execution with comprehensive result
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 
     // Session access (returns raw pointer since SQLite has single session)
     soci::session* getSession() const;

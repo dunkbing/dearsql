@@ -3,6 +3,7 @@
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
+#include "database/query_executor.hpp"
 #include "postgres_schema_node.hpp"
 #include <memory>
 #include <soci/connection-pool.h>
@@ -19,7 +20,7 @@ class PostgresDatabase;
  * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
  * Each PostgresDatabaseNode represents one database within the PostgreSQL server.
  */
-class PostgresDatabaseNode {
+class PostgresDatabaseNode : public IQueryExecutor {
 public:
     PostgresDatabase* parentDb = nullptr;
 
@@ -48,7 +49,7 @@ public:
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
     // query execution with comprehensive result
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 
     // database operations (schema-aware)
     std::vector<std::vector<std::string>> getTableData(const std::string& schemaName,

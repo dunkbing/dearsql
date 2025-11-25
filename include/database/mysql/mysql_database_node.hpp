@@ -3,6 +3,7 @@
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
+#include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <memory>
 #include <soci/connection-pool.h>
@@ -19,7 +20,7 @@ class MySQLDatabase;
  * Each MySQLDatabaseNode represents one database within the MySQL server.
  * Note: MySQL doesn't have schemas, so tables/views are directly under database.
  */
-class MySQLDatabaseNode : public ITableDataProvider {
+class MySQLDatabaseNode : public ITableDataProvider, public IQueryExecutor {
 public:
     MySQLDatabase* parentDb = nullptr;
 
@@ -87,5 +88,5 @@ public:
     }
 
     // query execution with comprehensive result
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000);
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 };

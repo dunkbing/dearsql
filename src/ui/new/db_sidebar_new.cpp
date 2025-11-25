@@ -86,7 +86,7 @@ void DatabaseSidebarNew::render() {
         auto [success, error] = db->connect();
         if (success) {
             // Only refresh tables immediately for SQLite, Postgres will do it async when needed
-            if (db->getType() == DatabaseType::SQLITE) {
+            if (db->getConnectionInfo().type == DatabaseType::SQLITE) {
                 if (auto* sqlite = dynamic_cast<SQLiteDatabase*>(db.get())) {
                     sqlite->refreshAllTables();
                 }
@@ -197,10 +197,10 @@ void DatabaseSidebarNew::render() {
             }
         } else {
             auto const connectionInfo = db->getConnectionInfo();
+            const auto dbType = connectionInfo.type;
             ImGui::Text("Create new database on:");
             ImGui::Text("Connection: %s", connectionInfo.name.c_str());
-            ImGui::Text("Type: %s",
-                        db->getType() == DatabaseType::POSTGRESQL ? "PostgreSQL" : "MySQL");
+            ImGui::Text("Type: %s", dbType == DatabaseType::POSTGRESQL ? "PostgreSQL" : "MySQL");
             ImGui::Separator();
             ImGui::Spacing();
 
@@ -210,7 +210,7 @@ void DatabaseSidebarNew::render() {
 
             ImGui::Spacing();
 
-            if (db->getType() == DatabaseType::MYSQL) {
+            if (dbType == DatabaseType::MYSQL) {
                 ImGui::Text("Comment (optional):");
                 ImGui::SetNextItemWidth(300);
                 ImGui::InputText("##db_comment", dbComment, sizeof(dbComment));
@@ -235,9 +235,9 @@ void DatabaseSidebarNew::render() {
                     errorMessage = "Database name cannot be empty";
                 } else {
                     std::string sql;
-                    if (db->getType() == DatabaseType::POSTGRESQL) {
+                    if (dbType == DatabaseType::POSTGRESQL) {
                         sql = std::format(R"(CREATE DATABASE "{}")", dbName);
-                    } else if (db->getType() == DatabaseType::MYSQL) {
+                    } else if (dbType == DatabaseType::MYSQL) {
                         sql = std::format("CREATE DATABASE `{}`", dbName);
                         if (strlen(dbComment) > 0) {
                             sql += std::format(" COMMENT '{}'", dbComment);
@@ -254,11 +254,11 @@ void DatabaseSidebarNew::render() {
                         errorMessage.clear();
                         ImGui::CloseCurrentPopup();
 
-                        if (db->getType() == DatabaseType::POSTGRESQL) {
+                        if (dbType == DatabaseType::POSTGRESQL) {
                             if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
                                 pgDb->refreshDatabaseNames();
                             }
-                        } else if (db->getType() == DatabaseType::MYSQL) {
+                        } else if (dbType == DatabaseType::MYSQL) {
                             if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
                                 mysqlDb->refreshDatabaseNames();
                             }
@@ -297,6 +297,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     }
 
     auto const connectionInfo = db->getConnectionInfo();
+    auto const type = connectionInfo.type;
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -309,7 +310,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     const bool showSpinner = db->isConnecting();
     std::string icon;
-    switch (db->getType()) {
+    switch (type) {
     case DatabaseType::SQLITE:
         icon = ICON_FK_DATABASE;
         break;
@@ -337,7 +338,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
 
     ImU32 iconColor = ImGui::GetColorU32(colors.overlay1);
-    switch (db->getType()) {
+    switch (type) {
     case DatabaseType::SQLITE:
         iconColor = ImGui::GetColorU32(colors.sky);
         break;
@@ -371,14 +372,14 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     db->checkConnectionStatusAsync();
 
     // Check refresh workflow status for PostgreSQL
-    if (db->getType() == DatabaseType::POSTGRESQL) {
+    if (type == DatabaseType::POSTGRESQL) {
         if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
             pgDb->checkRefreshWorkflowAsync();
         }
     }
 
     // Check refresh workflow status for MySQL
-    else if (db->getType() == DatabaseType::MYSQL) {
+    else if (type == DatabaseType::MYSQL) {
         if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
             mysqlDb->checkRefreshWorkflowAsync();
         }
@@ -420,7 +421,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         // SQLite-specific menu items (only when connected)
-        if (db->isConnected() && db->getType() == DatabaseType::SQLITE) {
+        if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
             if (sqliteDb) {
                 if (ImGui::MenuItem("New SQL Editor")) {

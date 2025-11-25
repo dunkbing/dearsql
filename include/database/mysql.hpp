@@ -61,8 +61,6 @@ private:
 
 public:
     // Helper methods for per-database data access
-    MySQLDatabaseNode* getCurrentDatabaseData();
-    const MySQLDatabaseNode* getCurrentDatabaseData() const;
     MySQLDatabaseNode* getDatabaseData(const std::string& dbName);
 
     // Accessor for database data map (used by new hierarchy)

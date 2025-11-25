@@ -33,26 +33,6 @@ MySQLDatabase::~MySQLDatabase() {
     disconnect();
 }
 
-// Helper methods for per-database data access
-MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() {
-    const auto it = databaseDataCache.find(connectionInfo.database);
-    if (it == databaseDataCache.end()) {
-        auto newData = std::make_unique<MySQLDatabaseNode>();
-        newData->name = connectionInfo.database;
-        newData->parentDb = this;
-        newData->ensureConnectionPool();
-        auto* ptr = newData.get();
-        databaseDataCache[connectionInfo.database] = std::move(newData);
-        return ptr;
-    }
-    return it->second.get();
-}
-
-const MySQLDatabaseNode* MySQLDatabase::getCurrentDatabaseData() const {
-    const auto it = databaseDataCache.find(connectionInfo.database);
-    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
-}
-
 MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
     const auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {

@@ -39,25 +39,6 @@ PostgresDatabase::~PostgresDatabase() {
     PostgresDatabase::disconnect();
 }
 
-// Helper methods for per-database data access
-PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() {
-    auto it = databaseDataCache.find(connectionInfo.database);
-    if (it == databaseDataCache.end()) {
-        auto newData = std::make_unique<PostgresDatabaseNode>();
-        newData->name = connectionInfo.database;
-        newData->parentDb = this;
-        auto* ptr = newData.get();
-        databaseDataCache[connectionInfo.database] = std::move(newData);
-        return ptr;
-    }
-    return it->second.get();
-}
-
-const PostgresDatabaseNode* PostgresDatabase::getCurrentDatabaseData() const {
-    const auto it = databaseDataCache.find(connectionInfo.database);
-    return (it != databaseDataCache.end()) ? it->second.get() : nullptr;
-}
-
 PostgresDatabaseNode* PostgresDatabase::getDatabaseData(const std::string& dbName) {
     auto it = databaseDataCache.find(dbName);
     if (it == databaseDataCache.end()) {
@@ -247,11 +228,6 @@ std::string PostgresDatabase::executeQuery(const std::string& query) {
     } catch (const soci::soci_error& e) {
         return "Error: " + std::string(e.what());
     }
-}
-
-bool PostgresDatabase::isLoadingSchemas() const {
-    const auto* dbData = getCurrentDatabaseData();
-    return dbData ? dbData->schemasLoader.isRunning() : false;
 }
 
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&

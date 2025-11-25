@@ -22,9 +22,6 @@ public:
     void disconnect() override;
     void refreshConnection() override;
 
-    // Schema management
-    bool isLoadingSchemas() const;
-
     void refreshDatabaseNames();
     bool shouldShowAllDatabases() const {
         return connectionInfo.showAllDatabases;
@@ -64,8 +61,6 @@ private:
 
 public:
     // Helper methods for per-database data access
-    PostgresDatabaseNode* getCurrentDatabaseData();
-    const PostgresDatabaseNode* getCurrentDatabaseData() const;
     PostgresDatabaseNode* getDatabaseData(const std::string& dbName);
     const PostgresDatabaseNode* getDatabaseData(const std::string& dbName) const;
 

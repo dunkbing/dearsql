@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
+#include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <string>
 #include <vector>
@@ -15,7 +16,7 @@ class PostgresDatabaseNode;
  * PostgreSQL hierarchy: Database → Schema → Tables/Views/Sequences
  * Each PostgresSchemaNode represents one schema (e.g., "public", "analytics")
  */
-class PostgresSchemaNode : public ITableDataProvider {
+class PostgresSchemaNode : public ITableDataProvider, public IQueryExecutor {
 public:
     PostgresDatabaseNode* parentDbNode = nullptr;
     std::string name;
@@ -64,17 +65,19 @@ public:
     Table refreshTableAsync(const std::string& tableName);
     bool isTableRefreshing(const std::string& tableName) const;
 
-    // Query execution methods for TableViewerTab (ITableDataProvider interface)
+    // ITableDataProvider implementation
     std::vector<std::vector<std::string>>
     getTableData(const std::string& tableName, int limit, int offset,
                  const std::string& whereClause = "") override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
-    std::string executeQuery(const std::string& query) override;
     const std::vector<Table>& getTables() const override {
         return tables;
     }
     const std::vector<Table>& getViews() const override {
         return views;
     }
+
+    // IQueryExecutor implementation
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 };

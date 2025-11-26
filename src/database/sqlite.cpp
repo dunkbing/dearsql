@@ -5,7 +5,6 @@
 #include <future>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <typeinfo>
 #include <utility>
 
@@ -45,104 +44,12 @@ const std::string& SQLiteDatabase::getPath() const {
     return connectionInfo.path;
 }
 
-void SQLiteDatabase::refreshAllTables() {
-    std::cout << "Refreshing tables for database: " << connectionInfo.name << std::endl;
-    if (!isConnected()) {
-        std::cout << "Failed to connect to database" << std::endl;
-        tablesLoaded = true;
-        return;
-    }
-
-    tables.clear();
-    const std::vector<std::string> tableNames = getTableNames();
-    std::cout << "Found " << tableNames.size() << " tables" << std::endl;
-
-    for (const auto& tableName : tableNames) {
-        std::cout << "Adding table: " << tableName << std::endl;
-        Table table;
-        table.name = tableName;
-        table.fullName = connectionInfo.name + "." + tableName; // SQLite: connection.table
-        // table.columns = getTableColumns(tableName);
-        table.indexes = getTableIndexes(tableName);
-        table.foreignKeys = getTableForeignKeys(tableName);
-        buildForeignKeyLookup(table);
-
-        tables.push_back(table);
-    }
-
-    populateIncomingForeignKeys(tables);
-
-    std::cout << "Finished refreshing tables. Total tables: " << tables.size() << std::endl;
-    tablesLoaded = true;
-}
-
-std::string SQLiteDatabase::executeQuery(const std::string& query) {
-    if (!isConnected()) {
-        return "Error: Failed to connect to database";
-    }
-
-    try {
-        std::stringstream result;
-        const soci::rowset rs = session->prepare << query;
-
-        // Get column names if available
-        auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                result << firstRow.get_properties(i).get_name();
-                if (i < firstRow.size() - 1)
-                    result << " | ";
-            }
-            result << "\n";
-
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                result << "----------";
-                if (i < firstRow.size() - 1)
-                    result << "-+-";
-            }
-            result << "\n";
-        }
-
-        int rowCount = 0;
-        for (const auto& row : rs) {
-            if (rowCount >= 1000)
-                break;
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    result << "NULL";
-                } else {
-                    try {
-                        result << row.get<std::string>(i);
-                    } catch (const std::bad_cast&) {
-                        result << "[BINARY DATA]";
-                    }
-                }
-                if (i < row.size() - 1)
-                    result << " | ";
-            }
-            result << "\n";
-            rowCount++;
-        }
-
-        if (rowCount == 0) {
-            result << "Query executed successfully.";
-        } else if (rowCount == 1000) {
-            result << "\n... (showing first 1000 rows)";
-        }
-
-        return result.str();
-    } catch (const soci::soci_error& e) {
-        return "Error: " + std::string(e.what());
-    }
-}
-
 std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
 SQLiteDatabase::executeQueryStructured(const std::string& query) {
     std::vector<std::string> columnNames;
     std::vector<std::vector<std::string>> data;
 
-    if (!isConnected()) {
+    if (!connected) {
         return {columnNames, data};
     }
 
@@ -181,7 +88,7 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
 
 std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& tableName) {
     std::vector<std::string> columnNames;
-    if (!isConnected()) {
+    if (!connected) {
         return columnNames;
     }
 
@@ -352,7 +259,7 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
 
     try {
         // Check connection
-        if (!isConnected()) {
+        if (!connected) {
             Logger::error("Database not connected");
             return result;
         }
@@ -508,7 +415,7 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     }
 
     try {
-        if (!isConnected()) {
+        if (!connected) {
             Logger::error("Database not connected");
             return result;
         }
@@ -569,7 +476,7 @@ std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::st
                                                                    int limit, int offset,
                                                                    const std::string& whereClause) {
     std::vector<std::vector<std::string>> data;
-    if (!isConnected()) {
+    if (!connected) {
         return data;
     }
 
@@ -639,7 +546,7 @@ std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::st
 }
 
 int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string& whereClause) {
-    if (!isConnected()) {
+    if (!connected) {
         return 0;
     }
 
@@ -661,7 +568,7 @@ int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string&
 
 QueryResult SQLiteDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
     QueryResult result;
-    if (!isConnected()) {
+    if (!connected) {
         result.success = false;
         result.message = "Error: Database not connected";
         return result;
@@ -682,7 +589,7 @@ QueryResult SQLiteDatabase::executeQueryWithResult(const std::string& query, int
 }
 
 soci::session* SQLiteDatabase::getSession() const {
-    if (!isConnected() || !session) {
+    if (!connected || !session) {
         return nullptr;
     }
     return session.get();

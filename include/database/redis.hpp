@@ -1,6 +1,7 @@
 #pragma once
 
-#include "base_database.hpp"
+#include "db_interface.hpp"
+#include "query_executor.hpp"
 #include <atomic>
 #include <future>
 #include <hiredis.h>
@@ -12,7 +13,7 @@ struct RedisKey {
     int64_t ttl = -1; // -1 means no expiration
 };
 
-class RedisDatabase final : public BaseDatabaseImpl {
+class RedisDatabase final : public DatabaseInterface, public IQueryExecutor {
 public:
     RedisDatabase(const DatabaseConnectionInfo& connInfo);
     ~RedisDatabase() override;
@@ -25,8 +26,8 @@ public:
     // Redis-specific key management (adapted to table interface)
     void checkTablesStatusAsync();
 
-    // Redis command execution (adapted to query interface)
-    std::string executeQuery(const std::string& command) override;
+    // IQueryExecutor implementation
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 
     // Key data viewing (adapted to table interface)
     std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,

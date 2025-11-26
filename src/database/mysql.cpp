@@ -3,7 +3,6 @@
 #include <format>
 #include <iostream>
 #include <ranges>
-#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -49,8 +48,7 @@ MySQLDatabaseNode* MySQLDatabase::getDatabaseData(const std::string& dbName) {
 }
 
 std::pair<bool, std::string> MySQLDatabase::connect() {
-    const auto* pool = getConnectionPoolForDatabase(connectionInfo.database);
-    if (connected && pool) {
+    if (connected) {
         return {true, ""};
     }
 
@@ -151,48 +149,74 @@ void MySQLDatabase::refreshConnection() {
     });
 }
 
-std::string MySQLDatabase::executeQuery(const std::string& query) {
+QueryResult MySQLDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
+    QueryResult result;
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
     if (!connect().first) {
-        return "Error: Not connected to database";
+        result.success = false;
+        result.errorMessage = "Not connected to database";
+        return result;
     }
 
     try {
         const auto sql = getSession();
         const soci::rowset rs = (sql->prepare << query);
 
-        std::ostringstream result;
-        bool first_row = true;
+        // Get column names and fetch rows
+        bool firstRow = true;
+        int rowCount = 0;
 
         for (auto& row : rs) {
-            if (first_row) {
+            if (firstRow) {
                 for (std::size_t i = 0; i != row.size(); ++i) {
-                    if (i > 0)
-                        result << "\t";
-                    result << row.get_properties(i).get_name();
+                    result.columnNames.push_back(row.get_properties(i).get_name());
                 }
-                result << "\n";
-                first_row = false;
+                firstRow = false;
             }
 
+            if (rowCount >= rowLimit) {
+                break;
+            }
+
+            std::vector<std::string> rowData;
+            rowData.reserve(row.size());
             for (std::size_t i = 0; i != row.size(); ++i) {
-                if (i > 0)
-                    result << "\t";
-
                 if (row.get_indicator(i) == soci::i_null) {
-                    result << "NULL";
+                    rowData.emplace_back("NULL");
                 } else {
-                    result << row.get<std::string>(i, "");
+                    rowData.push_back(row.get<std::string>(i, ""));
                 }
             }
-            result << "\n";
+            result.tableData.push_back(rowData);
+            rowCount++;
         }
 
-        return result.str();
+        // Set message based on result
+        if (!result.columnNames.empty()) {
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+        } else {
+            result.message = "Query executed successfully";
+        }
+
+        result.success = true;
     } catch (const soci::soci_error& e) {
-        return "MySQL Error: " + std::string(e.what());
+        result.success = false;
+        result.errorMessage = e.what();
     } catch (const std::exception& e) {
-        return "Error: " + std::string(e.what());
+        result.success = false;
+        result.errorMessage = e.what();
     }
+
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    return result;
 }
 
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
@@ -312,18 +336,6 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
     return result;
 }
 
-soci::connection_pool*
-MySQLDatabase::getConnectionPoolForDatabase(const std::string& dbName) const {
-    std::lock_guard lock(sessionMutex);
-
-    // Use nested DatabaseData structure
-    auto it = databaseDataCache.find(dbName);
-    if (it != databaseDataCache.end() && it->second && it->second->connectionPool) {
-        return it->second->connectionPool.get();
-    }
-    return nullptr;
-}
-
 void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
     std::lock_guard lock(sessionMutex);
 
@@ -337,17 +349,22 @@ void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo
     }
 
     constexpr size_t poolSize = 10;
-    dbData->connectionPool = BaseDatabaseImpl::initializeConnectionPool(info, poolSize);
+    dbData->connectionPool = DatabaseInterface::initializeConnectionPool(info, poolSize);
 }
 
-std::unique_ptr<soci::session> MySQLDatabase::getSession(const std::string& dbName) const {
-    const std::string targetDb = dbName.empty() ? connectionInfo.database : dbName;
-    auto* pool = getConnectionPoolForDatabase(targetDb);
-    if (!pool) {
+std::unique_ptr<soci::session> MySQLDatabase::getSession() const {
+    std::lock_guard lock(sessionMutex);
+
+    const std::string targetDb = connectionInfo.database;
+
+    // Find connection pool in databaseDataCache
+    auto it = databaseDataCache.find(targetDb);
+    if (it == databaseDataCache.end() || !it->second || !it->second->connectionPool) {
         throw std::runtime_error(
             "MySQLDatabase::getSession: Connection pool not available for database: " + targetDb);
     }
-    auto res = std::make_unique<soci::session>(*pool);
+
+    auto res = std::make_unique<soci::session>(*it->second->connectionPool);
     if (!res->is_connected()) {
         res->reconnect();
     }

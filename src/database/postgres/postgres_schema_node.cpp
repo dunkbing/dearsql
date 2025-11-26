@@ -613,9 +613,12 @@ int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::str
     return parentDbNode->getRowCount(name, tableName, whereClause);
 }
 
-std::string PostgresSchemaNode::executeQuery(const std::string& query) {
+QueryResult PostgresSchemaNode::executeQueryWithResult(const std::string& query, int rowLimit) {
     if (!parentDbNode) {
-        return "Error: No database connection";
+        QueryResult result;
+        result.success = false;
+        result.errorMessage = "No database connection";
+        return result;
     }
-    return parentDbNode->executeQueryWithResult(query, 1000).errorMessage;
+    return parentDbNode->executeQueryWithResult(query, rowLimit);
 }

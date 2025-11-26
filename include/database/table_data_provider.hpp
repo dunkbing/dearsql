@@ -42,13 +42,6 @@ public:
     virtual int getRowCount(const std::string& tableName, const std::string& whereClause = "") = 0;
 
     /**
-     * @brief Execute a SQL query (typically for updates)
-     * @param query SQL query to execute
-     * @return Result message (success or error)
-     */
-    virtual std::string executeQuery(const std::string& query) = 0;
-
-    /**
      * @brief Get access to tables for metadata (e.g., primary keys)
      * @return Reference to tables vector
      */

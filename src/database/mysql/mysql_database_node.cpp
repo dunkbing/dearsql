@@ -491,17 +491,6 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
     return count;
 }
 
-std::string MySQLDatabaseNode::executeQuery(const std::string& query) {
-    try {
-        Logger::info("executeQuery_getSession");
-        const auto session = getSession();
-        *session << query;
-        return "Query executed successfully";
-    } catch (const soci::soci_error& e) {
-        return std::format("Error: {}", e.what());
-    }
-}
-
 QueryResult MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
                                                       const int rowLimit) {
     QueryResult result;

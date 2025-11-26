@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
+#include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -686,24 +687,33 @@ void TableViewerTab::showSaveConfirmationDialog() {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
                 executingSQL = true;
 
-                // Copy SQL statements and database node for async execution
+                // Copy SQL statements and cast database node to IQueryExecutor for async execution
                 auto sqlStatements = pendingUpdateSQL;
-                auto node = databaseNode;
+                auto* executor = dynamic_cast<IQueryExecutor*>(databaseNode);
 
                 sqlExecutionFuture = std::async(
-                    std::launch::async, [node, sqlStatements]() -> std::pair<bool, std::string> {
+                    std::launch::async,
+                    [executor, sqlStatements]() -> std::pair<bool, std::string> {
+                        if (!executor) {
+                            return std::make_pair(
+                                false, "Error: Database does not support query execution");
+                        }
+
                         bool allSuccess = true;
                         std::string errorMessage;
 
                         for (const auto& sql : sqlStatements) {
                             std::cout << "Executing SQL: " << sql << std::endl;
-                            const std::string result = node->executeQuery(sql);
-                            std::cout << "SQL Result: " << result << std::endl;
+                            const auto result = executor->executeQueryWithResult(sql);
+                            std::cout << "SQL Result: "
+                                      << (result.success ? result.message : result.errorMessage)
+                                      << std::endl;
 
-                            if (result.find("Error:") == 0) {
+                            if (!result.success) {
                                 allSuccess = false;
-                                errorMessage = result;
-                                std::cerr << "SQL execution failed: " << result << std::endl;
+                                errorMessage = "Error: " + result.errorMessage;
+                                std::cerr << "SQL execution failed: " << result.errorMessage
+                                          << std::endl;
                                 return std::make_pair(allSuccess, errorMessage);
                             }
                         }

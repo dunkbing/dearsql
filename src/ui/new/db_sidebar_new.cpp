@@ -4,6 +4,7 @@
 #include "database/db_interface.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/drop_column_dialog.hpp"
@@ -12,6 +13,7 @@
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <format>
+#include <memory>
 
 // Static dialog instances
 static TableDialog tableDialogNew;
@@ -85,12 +87,6 @@ void DatabaseSidebarNew::render() {
     if (const auto db = connectionDialog.getResult()) {
         auto [success, error] = db->connect();
         if (success) {
-            // Only refresh tables immediately for SQLite, Postgres will do it async when needed
-            if (db->getConnectionInfo().type == DatabaseType::SQLITE) {
-                if (auto* sqlite = dynamic_cast<SQLiteDatabase*>(db.get())) {
-                    sqlite->refreshAllTables();
-                }
-            }
             Logger::info(
                 std::format("Database connection established: {}", db->getConnectionInfo().name));
             app.addDatabase(db);
@@ -244,26 +240,31 @@ void DatabaseSidebarNew::render() {
                         }
                     }
 
-                    const std::string result = db->executeQuery(sql);
-                    if (result.find("Error") != std::string::npos) {
-                        errorMessage = result;
+                    auto executor = std::dynamic_pointer_cast<IQueryExecutor>(db);
+                    if (!executor) {
+                        errorMessage = "Database does not support query execution";
                     } else {
-                        Logger::info(std::format("Database '{}' created successfully", dbName));
-                        memset(dbName, 0, sizeof(dbName));
-                        memset(dbComment, 0, sizeof(dbComment));
-                        errorMessage.clear();
-                        ImGui::CloseCurrentPopup();
+                        const auto queryResult = executor->executeQueryWithResult(sql);
+                        if (!queryResult.success) {
+                            errorMessage = queryResult.errorMessage;
+                        } else {
+                            Logger::info(std::format("Database '{}' created successfully", dbName));
+                            memset(dbName, 0, sizeof(dbName));
+                            memset(dbComment, 0, sizeof(dbComment));
+                            errorMessage.clear();
+                            ImGui::CloseCurrentPopup();
 
-                        if (dbType == DatabaseType::POSTGRESQL) {
-                            if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                                pgDb->refreshDatabaseNames();
+                            if (dbType == DatabaseType::POSTGRESQL) {
+                                if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+                                    pgDb->refreshDatabaseNames();
+                                }
+                            } else if (dbType == DatabaseType::MYSQL) {
+                                if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+                                    mysqlDb->refreshDatabaseNames();
+                                }
                             }
-                        } else if (dbType == DatabaseType::MYSQL) {
-                            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                                mysqlDb->refreshDatabaseNames();
-                            }
+                            createDatabaseTarget.reset();
                         }
-                        createDatabaseTarget.reset();
                     }
                 }
             }

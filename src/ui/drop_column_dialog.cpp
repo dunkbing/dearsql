@@ -1,8 +1,10 @@
 #include "ui/drop_column_dialog.hpp"
 #include "application.hpp"
+#include "database/query_executor.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
+#include <memory>
 
 void DropColumnDialog::showDropColumnDialog(const std::shared_ptr<DatabaseInterface>& db,
                                             const std::string& tableName,
@@ -105,18 +107,17 @@ bool DropColumnDialog::executeDropColumn() {
 
         Logger::info("Executing: " + sql);
 
-        const std::string result = database->executeQuery(sql);
-
-        // Check if there was an error in the result
-        if (result.find("ERROR") != std::string::npos ||
-            result.find("Error") != std::string::npos) {
-            errorMessage = "Failed to drop column: " + result;
+        auto executor = std::dynamic_pointer_cast<IQueryExecutor>(database);
+        if (!executor) {
+            errorMessage = "Database does not support query execution";
             return false;
         }
 
-        // Refresh table structure
-        // database->setTablesLoaded(false);
-        // database->refreshAllTables();
+        const auto result = executor->executeQueryWithResult(sql);
+        if (!result.success) {
+            errorMessage = "Failed to drop column: " + result.errorMessage;
+            return false;
+        }
 
         return true;
 

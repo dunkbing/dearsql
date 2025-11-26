@@ -319,7 +319,7 @@ void SQLEditorTab::renderPostgresSchemaSelector() {
             selectedSchemaName.clear();
         }
 
-        if (pgDb->shouldShowAllDatabases()) {
+        if (pgDb->getConnectionInfo().showAllDatabases) {
             const auto& databaseDataMap = pgDb->getDatabaseDataMap();
             for (const auto& dbDataPtr : databaseDataMap | std::views::values) {
                 if (dbDataPtr) {
@@ -603,7 +603,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
             }
 
             // Add database names if in multi-database mode
-            if (pgDb->shouldShowAllDatabases()) {
+            if (pgDb->getConnectionInfo().showAllDatabases) {
                 const auto& databaseDataMap = pgDb->getDatabaseDataMap();
                 for (const auto& dbName : databaseDataMap | std::views::keys) {
                     uniqueKeywords.insert(dbName);
@@ -636,7 +636,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
             }
 
             // Add database names if in multi-database mode
-            if (mysqlDb->shouldShowAllDatabases()) {
+            if (mysqlDb->getConnectionInfo().showAllDatabases) {
                 const auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
                 for (const auto& dbName : databaseDataMap | std::views::keys) {
                     uniqueKeywords.insert(dbName);

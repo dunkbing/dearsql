@@ -6,6 +6,7 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -1470,23 +1471,34 @@ DatabaseType TableDialog::getDatabaseType() const {
 }
 
 std::string TableDialog::executeQuery(const std::string& query) {
+    IQueryExecutor* executor = nullptr;
+
     if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
         auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
         if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-            return schemaNode->parentDbNode->parentDb->executeQuery(query);
+            executor = schemaNode->parentDbNode->parentDb;
         }
     } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
         auto* dbNode = std::get<MySQLDatabaseNode*>(databaseNode);
         if (dbNode && dbNode->parentDb) {
-            return dbNode->parentDb->executeQuery(query);
+            executor = dbNode->parentDb;
         }
     } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
         auto* sqliteDb = std::get<SQLiteDatabase*>(databaseNode);
         if (sqliteDb) {
-            return sqliteDb->executeQuery(query);
+            executor = sqliteDb;
         }
     }
-    return "ERROR: No database connection";
+
+    if (!executor) {
+        return "ERROR: No database connection";
+    }
+
+    const auto result = executor->executeQueryWithResult(query);
+    if (!result.success) {
+        return "ERROR: " + result.errorMessage;
+    }
+    return result.message;
 }
 
 const std::vector<Table>& TableDialog::getTables() const {

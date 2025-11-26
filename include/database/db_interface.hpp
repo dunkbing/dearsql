@@ -1,10 +1,19 @@
 #pragma once
 
+#include "async_helper.hpp"
+#include "db.hpp"
+#include "db_ui_state.hpp"
+#include "utils/logger.hpp"
+#include <future>
 #include <memory>
+#include <soci/connection-pool.h>
+#include <soci/mysql/soci-mysql.h>
+#include <soci/postgresql/soci-postgresql.h>
+#include <soci/soci.h>
+#include <soci/sqlite3/soci-sqlite3.h>
+#include <stdexcept>
 #include <string>
 #include <vector>
-
-#include "db.hpp"
 
 enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS };
 
@@ -72,49 +81,190 @@ struct DatabaseConnectionInfo {
     }
 };
 
+/**
+ * Abstract base class for all database implementations.
+ * Provides both the interface contract and common functionality:
+ * - UI state management
+ * - Async connection handling
+ * - Basic getters/setters
+ * - Schema loading patterns (tables, views, sequences)
+ */
 class DatabaseInterface {
 public:
     virtual ~DatabaseInterface() = default;
 
+    // ========== Pure virtual methods (must be implemented by subclasses) ==========
+
     // Connection management
     virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
-    virtual void refreshConnection() = 0; // Reconnect and refresh all child data
-    [[nodiscard]] virtual bool isConnected() const = 0;
-    [[nodiscard]] virtual bool isConnecting() const {
-        return false;
+
+    // ========== Virtual methods with default implementations ==========
+
+    // Connection status
+    [[nodiscard]] virtual bool isConnected() const {
+        return connected;
     }
-    virtual void startConnectionAsync() {}
-    virtual void checkConnectionStatusAsync() {}
+
+    [[nodiscard]] virtual bool isConnecting() const {
+        return connectionOp.isRunning();
+    }
+
+    // Refresh connection and all child data
+    virtual void refreshConnection() {
+        Logger::info("DatabaseInterface: refreshConnection");
+        disconnect();
+        setAttemptedConnection(false);
+        setLastConnectionError("");
+        auto [success, error] = connect();
+        if (!success) {
+            setLastConnectionError(error);
+        }
+    }
+
+    // Async connection with automatic error handling
+    virtual void startConnectionAsync() {
+        connectionOp.start([this]() { return this->connect(); });
+    }
+
+    virtual void checkConnectionStatusAsync() {
+        connectionOp.check([this](std::pair<bool, std::string> result) {
+            auto [success, error] = result;
+            setAttemptedConnection(true);
+            if (!success) {
+                setLastConnectionError(error);
+            } else {
+                setLastConnectionError("");
+            }
+        });
+    }
 
     // Saved connection ID (for app state persistence)
-    virtual void setConnectionId(int id) {}
+    virtual void setConnectionId(int id) {
+        uiState.savedConnectionId = id;
+    }
+
     [[nodiscard]] virtual int getConnectionId() const {
-        return -1;
+        return uiState.savedConnectionId;
+    }
+
+    // Connection attempt tracking
+    [[nodiscard]] virtual bool hasAttemptedConnection() const {
+        return uiState.attemptedConnection;
+    }
+
+    virtual void setAttemptedConnection(bool attempted) {
+        uiState.attemptedConnection = attempted;
+    }
+
+    [[nodiscard]] virtual const std::string& getLastConnectionError() const {
+        return uiState.lastConnectionError;
+    }
+
+    virtual void setLastConnectionError(const std::string& error) {
+        uiState.lastConnectionError = error;
+    }
+
+    // Connection info getter/setter
+    virtual const DatabaseConnectionInfo& getConnectionInfo() const {
+        return connectionInfo;
+    }
+
+    virtual void setConnectionInfo(const DatabaseConnectionInfo& info) {
+        connectionInfo = info;
+        if (!info.database.empty())
+            return;
+
+        switch (info.type) {
+        case DatabaseType::POSTGRESQL: {
+            connectionInfo.database = "postgres";
+            break;
+        }
+        case DatabaseType::MYSQL: {
+            connectionInfo.database = "mysql";
+            break;
+        }
+        default:
+            return;
+        }
     }
 
     // Table management
-    virtual std::vector<Table>& getTables() = 0;
+    virtual std::vector<Table>& getTables() {
+        return tables;
+    }
 
-    // View management
-    [[nodiscard]] virtual const std::vector<std::string>& getSequences() const = 0;
-    virtual std::vector<std::string>& getSequences() = 0;
+    // Sequence management
+    [[nodiscard]] virtual const std::vector<std::string>& getSequences() const {
+        return sequences;
+    }
+
+    virtual std::vector<std::string>& getSequences() {
+        return sequences;
+    }
 
     // Async operation status
     [[nodiscard]] virtual bool hasPendingAsyncWork() const {
         return false;
     }
 
-    // Query execution
-    virtual std::string executeQuery(const std::string& query) = 0;
+protected:
+    // Common state
+    DatabaseUIState uiState;
+    bool connected = false;
+    DatabaseConnectionInfo connectionInfo;
 
-    // Connection attempt tracking
-    [[nodiscard]] virtual bool hasAttemptedConnection() const = 0;
-    virtual void setAttemptedConnection(bool attempted) = 0;
-    [[nodiscard]] virtual const std::string& getLastConnectionError() const = 0;
-    virtual void setLastConnectionError(const std::string& error) = 0;
-    virtual const DatabaseConnectionInfo& getConnectionInfo() const = 0;
-    virtual void setConnectionInfo(const DatabaseConnectionInfo& info) = 0;
+    // Schema data
+    std::vector<Table> tables;
+    std::vector<Table> views;
+    std::vector<std::string> sequences;
+
+    // Async operations
+    AsyncOperation<std::pair<bool, std::string>> connectionOp;
+    AsyncOperation<std::vector<Table>> tablesOp;
+    AsyncOperation<std::vector<Table>> viewsOp;
+    AsyncOperation<std::vector<std::string>> sequencesOp;
+
+    std::unique_ptr<soci::connection_pool>
+    initializeConnectionPool(const DatabaseConnectionInfo& info, size_t poolSize = 2) const {
+        if (poolSize == 0) {
+            throw std::invalid_argument("poolSize must be greater than zero");
+        }
+
+        auto pool = std::make_unique<soci::connection_pool>(poolSize);
+        auto* poolPtr = pool.get();
+        const auto type = info.type;
+        const std::string connStr = info.buildConnectionString();
+
+        std::vector<std::future<void>> connectionFutures;
+        connectionFutures.reserve(poolSize);
+
+        for (size_t i = 0; i != poolSize; ++i) {
+            connectionFutures.emplace_back(std::async(std::launch::async, [poolPtr, i, connStr,
+                                                                           type]() {
+                soci::session& session = poolPtr->at(i);
+                switch (type) {
+                case DatabaseType::POSTGRESQL:
+                    session.open(soci::postgresql, connStr);
+                    break;
+                case DatabaseType::MYSQL:
+                    session.open(soci::mysql, connStr);
+                    break;
+                case DatabaseType::SQLITE:
+                    session.open(soci::sqlite3, connStr);
+                    break;
+                default:
+                    throw std::runtime_error("initializeConnectionPool: unsupported database type");
+                }
+            }));
+        }
+
+        for (auto& future : connectionFutures) {
+            future.wait();
+        }
+
+        return pool;
+    }
 };
 
 // Helper functions to convert between DatabaseType enum and strings

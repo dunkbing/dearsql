@@ -73,13 +73,12 @@ public:
     std::unique_ptr<soci::session> getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
-    // Table data operations (for table viewer - ITableDataProvider interface)
+    // ITableDataProvider implementation
     std::vector<std::vector<std::string>>
     getTableData(const std::string& tableName, int limit, int offset,
                  const std::string& whereClause = "") override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
-    std::string executeQuery(const std::string& query) override;
     const std::vector<Table>& getTables() const override {
         return tables;
     }
@@ -87,6 +86,6 @@ public:
         return views;
     }
 
-    // query execution with comprehensive result
+    // IQueryExecutor implementation
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 };

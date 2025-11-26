@@ -1,16 +1,17 @@
 #pragma once
 
 #include "async_helper.hpp"
-#include "base_database.hpp"
+#include "db_interface.hpp"
 #include "postgres/postgres_database_node.hpp"
 #include "postgres/postgres_schema_node.hpp"
+#include "query_executor.hpp"
 #include <mutex>
 #include <soci/connection-pool.h>
 #include <soci/postgresql/soci-postgresql.h>
 #include <soci/soci.h>
 #include <unordered_map>
 
-class PostgresDatabase final : public BaseDatabaseImpl {
+class PostgresDatabase final : public DatabaseInterface, public IQueryExecutor {
     friend class PostgresDatabaseNode;
 
 public:
@@ -23,9 +24,6 @@ public:
     void refreshConnection() override;
 
     void refreshDatabaseNames();
-    bool shouldShowAllDatabases() const {
-        return connectionInfo.showAllDatabases;
-    }
 
     // Connection status
     bool isConnecting() const override {
@@ -42,8 +40,8 @@ public:
     // Async operation status
     [[nodiscard]] bool hasPendingAsyncWork() const override;
 
-    // Query execution
-    std::string executeQuery(const std::string& query) override;
+    // IQueryExecutor implementation
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 
 protected:
     // Async loading helpers
@@ -78,6 +76,6 @@ private:
     void ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info);
 
     // Helper method for session management
-    std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;
+    std::unique_ptr<soci::session> getSession() const;
     void triggerChildDbRefresh();
 };

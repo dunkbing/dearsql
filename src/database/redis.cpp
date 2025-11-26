@@ -141,36 +141,58 @@ void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
 }
 
-std::string RedisDatabase::executeQuery(const std::string& command) {
+QueryResult RedisDatabase::executeQueryWithResult(const std::string& command, int rowLimit) {
+    QueryResult result;
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
     if (!isConnected()) {
-        return "Error: Not connected to Redis server";
+        result.success = false;
+        result.errorMessage = "Not connected to Redis server";
+        return result;
     }
 
     try {
         // Parse command into parts
         auto commandParts = parseRedisCommand(command);
         if (commandParts.empty()) {
-            return "Error: Empty command";
+            result.success = false;
+            result.errorMessage = "Empty command";
+            return result;
         }
 
         redisReply* reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
-            return "Error: Failed to execute command";
+            result.success = false;
+            result.errorMessage = "Failed to execute command";
+            return result;
         }
 
-        // Check for Redis errors and return them directly
+        // Check for Redis errors
         if (reply->type == REDIS_REPLY_ERROR) {
-            std::string error = "Error: " + std::string(reply->str);
+            result.success = false;
+            result.errorMessage = reply->str;
             freeReplyObject(reply);
-            return error;
+            return result;
         }
 
-        std::string result = formatRedisReply(reply);
+        // Format result as a single-column table for consistency
+        result.columnNames.push_back("result");
+        std::string formattedReply = formatRedisReply(reply);
+        result.tableData.push_back({formattedReply});
+        result.message = "Command executed successfully";
+        result.success = true;
+
         freeReplyObject(reply);
-        return result;
     } catch (const std::exception& e) {
-        return "Error: " + std::string(e.what());
+        result.success = false;
+        result.errorMessage = e.what();
     }
+
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    return result;
 }
 
 std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::string& keyPattern,

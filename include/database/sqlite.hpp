@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base_database.hpp"
+#include "db_interface.hpp"
 #include "query_executor.hpp"
 #include "table_data_provider.hpp"
 #include <atomic>
@@ -9,7 +9,7 @@
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-class SQLiteDatabase final : public BaseDatabaseImpl,
+class SQLiteDatabase final : public DatabaseInterface,
                              public ITableDataProvider,
                              public IQueryExecutor {
 public:
@@ -30,9 +30,6 @@ public:
         tablesLoaded = loaded;
     }
 
-    // Schema management (BaseDatabaseImpl provides getters/setters)
-    void refreshAllTables();
-
     // Async table/view/sequence loading
     void startTablesLoadAsync(bool forceRefresh = false);
     void checkTablesStatusAsync();
@@ -41,11 +38,6 @@ public:
     void startViewsLoadAsync(bool forceRefresh = false);
     void checkViewsStatusAsync();
     std::vector<Table> getViewsAsync() const;
-
-    // Query execution
-    std::string executeQuery(const std::string& query) override;
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query);
 
     // DatabaseInterface implementation (without whereClause)
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
@@ -103,4 +95,8 @@ private:
     std::future<std::vector<Table>> tablesFuture;
     std::future<std::vector<Table>> viewsFuture;
     std::future<std::vector<std::string>> sequencesFuture;
+
+    // Query execution
+    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+    executeQueryStructured(const std::string& query);
 };

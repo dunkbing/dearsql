@@ -1,15 +1,16 @@
 #pragma once
 
 #include "async_helper.hpp"
-#include "base_database.hpp"
+#include "db_interface.hpp"
 #include "mysql/mysql_database_node.hpp"
+#include "query_executor.hpp"
 #include <mutex>
 #include <soci/connection-pool.h>
 #include <soci/mysql/soci-mysql.h>
 #include <soci/soci.h>
 #include <unordered_map>
 
-class MySQLDatabase final : public BaseDatabaseImpl {
+class MySQLDatabase final : public DatabaseInterface, public IQueryExecutor {
     friend class MySQLDatabaseNode;
 
 public:
@@ -21,14 +22,11 @@ public:
     void disconnect() override;
     void refreshConnection() override;
 
-    // Query execution
-    std::string executeQuery(const std::string& query) override;
+    // IQueryExecutor implementation
+    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 
     // Database list methods
     void refreshDatabaseNames();
-    bool shouldShowAllDatabases() const {
-        return connectionInfo.showAllDatabases;
-    }
 
     // Connection status
     bool isConnecting() const override {
@@ -75,10 +73,7 @@ private:
     // Thread synchronization
     mutable std::mutex sessionMutex;
 
-    // Helper methods for connection pool
-    soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
+    // Helper methods for connection pool and session management
     void ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info);
-
-    // Helper method for session management
-    std::unique_ptr<soci::session> getSession(const std::string& dbName = "") const;
+    std::unique_ptr<soci::session> getSession() const;
 };

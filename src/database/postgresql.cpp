@@ -5,7 +5,6 @@
 #include <iostream>
 #include <memory>
 #include <ranges>
-#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -59,8 +58,7 @@ const PostgresDatabaseNode* PostgresDatabase::getDatabaseData(const std::string&
 }
 
 std::pair<bool, std::string> PostgresDatabase::connect() {
-    const auto* pool = getConnectionPoolForDatabase(connectionInfo.database);
-    if (connected && pool) {
+    if (connected) {
         return {true, ""};
     }
 
@@ -159,75 +157,71 @@ void PostgresDatabase::refreshConnection() {
     });
 }
 
-std::string PostgresDatabase::executeQuery(const std::string& query) {
+QueryResult PostgresDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
+    QueryResult result;
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
     if (!isConnected()) {
         auto [success, error] = connect();
         if (!success) {
-            return "Error: Failed to connect to database: " + error;
+            result.success = false;
+            result.errorMessage = "Failed to connect to database: " + error;
+            return result;
         }
     }
 
     try {
         auto sql = getSession();
-        std::stringstream output;
 
-        // Check if this is a DDL statement (ALTER, CREATE, DROP, etc.)
-        std::string upperQuery = query;
-        std::ranges::transform(upperQuery, upperQuery.begin(), ::toupper);
-        const bool isDDL = upperQuery.find("ALTER ") == 0 || upperQuery.find("CREATE ") == 0 ||
-                           upperQuery.find("DROP ") == 0 || upperQuery.find("COMMENT ") == 0;
+        const soci::rowset rs = sql->prepare << query;
 
-        if (isDDL) {
-            // Use once() for DDL statements
-            *sql << query;
-            output << "Query executed successfully.";
-        } else {
-            // Use prepare for SELECT and other DML statements
-            const soci::rowset rs = sql->prepare << query;
-
-            // Get column names if available
-            const auto it = rs.begin();
-            if (it != rs.end()) {
-                const soci::row& firstRow = *it;
-                for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                    output << firstRow.get_properties(i).get_name();
-                    if (i < firstRow.size() - 1)
-                        output << " | ";
-                }
-                output << "\n";
-
-                for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                    output << "----------";
-                    if (i < firstRow.size() - 1)
-                        output << "-+-";
-                }
-                output << "\n";
-            }
-
-            int rowCount = 0;
-            for (const auto& row : rs) {
-                if (rowCount >= 1000)
-                    break;
-                for (std::size_t i = 0; i < row.size(); ++i) {
-                    output << convertRowValue(row, i);
-                    if (i < row.size() - 1)
-                        output << " | ";
-                }
-                output << "\n";
-                rowCount++;
-            }
-
-            if (rowCount == 0) {
-                output << "Query executed successfully.";
-            } else if (rowCount == 1000) {
-                output << "\n... (showing first 1000 rows)";
+        // Get column names if available
+        const auto it = rs.begin();
+        if (it != rs.end()) {
+            const soci::row& firstRow = *it;
+            for (std::size_t i = 0; i < firstRow.size(); ++i) {
+                result.columnNames.push_back(firstRow.get_properties(i).get_name());
             }
         }
 
-        return output.str();
+        // Fetch rows (up to rowLimit)
+        int rowCount = 0;
+        for (const auto& row : rs) {
+            if (rowCount >= rowLimit) {
+                break;
+            }
+
+            std::vector<std::string> rowData;
+            rowData.reserve(row.size());
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                rowData.push_back(convertRowValue(row, i));
+            }
+            result.tableData.push_back(rowData);
+            rowCount++;
+        }
+
+        // Set message based on result
+        if (!result.columnNames.empty()) {
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+        } else {
+            result.message = "Query executed successfully";
+        }
+
+        result.success = true;
     } catch (const soci::soci_error& e) {
-        return "Error: " + std::string(e.what());
+        result.success = false;
+        result.errorMessage = e.what();
     }
+
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    return result;
 }
 
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
@@ -386,16 +380,22 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
     }
 
     constexpr size_t poolSize = 3;
-    dbData->connectionPool = BaseDatabaseImpl::initializeConnectionPool(info, poolSize);
+    dbData->connectionPool = DatabaseInterface::initializeConnectionPool(info, poolSize);
 }
 
-std::unique_ptr<soci::session> PostgresDatabase::getSession(const std::string& dbName) const {
-    const std::string targetDb = dbName.empty() ? connectionInfo.database : dbName;
-    auto* pool = getConnectionPoolForDatabase(targetDb);
-    if (!pool) {
-        throw std::runtime_error("Connection pool not available for database: " + targetDb);
+std::unique_ptr<soci::session> PostgresDatabase::getSession() const {
+    std::lock_guard lock(sessionMutex);
+
+    const std::string targetDb = connectionInfo.database;
+
+    // Find connection pool in databaseDataCache
+    auto it = databaseDataCache.find(targetDb);
+    if (it == databaseDataCache.end() || !it->second || !it->second->connectionPool) {
+        throw std::runtime_error(
+            "MySQLDatabase::getSession: Connection pool not available for database: " + targetDb);
     }
-    auto res = std::make_unique<soci::session>(*pool);
+
+    auto res = std::make_unique<soci::session>(*it->second->connectionPool);
     if (!res->is_connected()) {
         res->reconnect();
     }

@@ -17,27 +17,21 @@
 #include <utility>
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               const std::string& tableName, PostgresSchemaNode* schemaNode)
-    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)), tableName(tableName),
-      databaseNode(schemaNode) {
-    initializeTableRenderer();
-    initializeFilterAutoComplete();
-    loadDataAsync();
-}
-
-TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName, MySQLDatabaseNode* mysqlNode)
+                               std::string tableName, const TableDataNode& dataNode)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), databaseNode(mysqlNode) {
-    initializeTableRenderer();
-    initializeFilterAutoComplete();
-    loadDataAsync();
-}
+      tableName(std::move(tableName)) {
+    // Extract ITableDataProvider* from variant
+    databaseNode = std::visit(
+        [](auto&& node) -> ITableDataProvider* {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return nullptr;
+            } else {
+                return static_cast<ITableDataProvider*>(node);
+            }
+        },
+        dataNode);
 
-TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName, SQLiteDatabase* db)
-    : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)), databaseNode(db) {
     initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();

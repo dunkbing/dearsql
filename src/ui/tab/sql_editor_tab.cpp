@@ -4,6 +4,7 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/table_renderer.hpp"
@@ -16,9 +17,9 @@
 #include <set>
 #include <variant>
 
-// Constructor for PostgreSQL database node
-SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode) {
+SQLEditorTab::SQLEditorTab(const std::string& name, const DatabaseNode& dbNode,
+                           const std::string& schemaName)
+    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), selectedSchemaName(schemaName) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
@@ -26,31 +27,21 @@ SQLEditorTab::SQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode
     // Populate auto-complete with table and column names
     populateAutoCompleteKeywords();
 
-    // Start loading schemas if not already loaded
-    if (dbNode && !dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning()) {
-        dbNode->startSchemasLoadAsync();
+    // PostgreSQL-specific initialization
+    if (auto* pgNode = std::get_if<PostgresDatabaseNode*>(&databaseNode)) {
+        if (*pgNode) {
+            // Start loading schemas if not already loaded
+            if (!(*pgNode)->schemasLoaded && !(*pgNode)->schemasLoader.isRunning()) {
+                (*pgNode)->startSchemasLoadAsync();
+            }
+
+            // If no schema provided but schemas are loaded, default to first schema
+            if (selectedSchemaName.empty() && (*pgNode)->schemasLoaded &&
+                !(*pgNode)->schemas.empty()) {
+                selectedSchemaName = (*pgNode)->schemas[0]->name;
+            }
+        }
     }
-}
-
-// Constructor for MySQL database node
-SQLEditorTab::SQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode) {
-    sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
-    sqlEditor.SetShowWhitespacesEnabled(false);
-    sqlEditor.SetShowLineNumbersEnabled(true);
-
-    // Populate auto-complete with table and column names
-    populateAutoCompleteKeywords();
-}
-
-SQLEditorTab::SQLEditorTab(const std::string& name, SQLiteDatabase* dbNode)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode) {
-    sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
-    sqlEditor.SetShowWhitespacesEnabled(false);
-    sqlEditor.SetShowLineNumbersEnabled(true);
-
-    // Populate auto-complete with table and column names
-    populateAutoCompleteKeywords();
 }
 
 SQLEditorTab::~SQLEditorTab() {
@@ -162,16 +153,22 @@ void SQLEditorTab::renderToolbar() {
 void SQLEditorTab::renderDatabaseSchemaSelector() {
     ImGui::SameLine();
     const bool isMySQL = std::holds_alternative<MySQLDatabaseNode*>(databaseNode);
-    ImGui::Text(isMySQL ? "Database:" : "Schema:");
+    const bool isPostgres = std::holds_alternative<PostgresDatabaseNode*>(databaseNode);
+    const bool isSqlite = std::holds_alternative<SQLiteDatabase*>(databaseNode);
+    if (isMySQL) {
+        ImGui::Text("Database:");
+    } else if (isPostgres) {
+        ImGui::Text("Schema:");
+    }
     ImGui::SameLine();
 
     ImGui::SetNextItemWidth(200.0f);
 
-    if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
+    if (isMySQL) {
         renderMySQLDatabaseSelector();
-    } else if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
+    } else if (isPostgres) {
         renderPostgresSchemaSelector();
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
+    } else if (isSqlite) {
     } else {
         renderSchemaSelectorForDisconnected();
     }
@@ -466,39 +463,19 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     queryTableData.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
 
+    // Get query executor from variant
+    IQueryExecutor* executor = getQueryExecutor();
+
     // start async query execution
-    queryExecutionFuture = std::async(std::launch::async, [this, query]() {
+    queryExecutionFuture = std::async(std::launch::async, [this, query, executor]() {
         if (shouldCancelQuery) {
             return;
         }
 
         QueryResult result;
 
-        // execute query based on database type
-        if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
-            auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
-            if (pgNode) {
-                result = pgNode->executeQueryWithResult(query);
-            } else {
-                result.success = false;
-                result.errorMessage = "No database selected";
-            }
-        } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-            auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-            if (mysqlNode) {
-                result = mysqlNode->executeQueryWithResult(query);
-            } else {
-                result.success = false;
-                result.errorMessage = "No database selected";
-            }
-        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-            auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-            if (sqliteNode) {
-                result = sqliteNode->executeQueryWithResult(query);
-            } else {
-                result.success = false;
-                result.errorMessage = "No database selected";
-            }
+        if (executor) {
+            result = executor->executeQueryWithResult(query);
         } else {
             result.success = false;
             result.errorMessage = "No database selected";
@@ -560,6 +537,19 @@ void SQLEditorTab::cancelQueryExecution() {
     hasStructuredResults = false;
     queryColumnNames.clear();
     queryTableData.clear();
+}
+
+IQueryExecutor* SQLEditorTab::getQueryExecutor() const {
+    return std::visit(
+        [](auto&& node) -> IQueryExecutor* {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return nullptr;
+            } else {
+                return static_cast<IQueryExecutor*>(node);
+            }
+        },
+        databaseNode);
 }
 
 void SQLEditorTab::populateAutoCompleteKeywords() {

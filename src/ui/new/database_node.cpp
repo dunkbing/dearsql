@@ -299,7 +299,12 @@ namespace NewHierarchy {
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("New SQL Editor")) {
-                app.getTabManager()->createSQLEditorTab("", dbData);
+                // Default to first schema if available
+                std::string defaultSchema;
+                if (dbData->schemasLoaded && !dbData->schemas.empty()) {
+                    defaultSchema = dbData->schemas[0]->name;
+                }
+                app.getTabManager()->createSQLEditorTab("", dbData, defaultSchema);
             }
             if (ImGui::MenuItem("Refresh")) {
                 dbData->startSchemasLoadAsync(true, true);
@@ -347,6 +352,10 @@ namespace NewHierarchy {
 
         // Context menu for schema
         if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("New SQL Editor")) {
+                app.getTabManager()->createSQLEditorTab("", schemaData->parentDbNode,
+                                                        schemaData->name);
+            }
             if (ImGui::MenuItem("Show Diagram")) {
                 app.getTabManager()->createDiagramTab(schemaData);
             }
@@ -666,15 +675,13 @@ namespace NewHierarchy {
 
         // Double-click to open table viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
-                                                      schemaName);
+            app.getTabManager()->createTableViewerTab(schemaData, table.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(schemaData, table.name, databaseName,
-                                                          schemaName);
+                app.getTabManager()->createTableViewerTab(schemaData, table.name);
             }
             if (ImGui::MenuItem("Edit Table")) {
                 getTableDialog().showTableDialog(schemaData, table.name, schemaName);
@@ -850,15 +857,13 @@ namespace NewHierarchy {
 
         // Double-click to open view viewer
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-            app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
-                                                      schemaName);
+            app.getTabManager()->createTableViewerTab(schemaData, view.name);
         }
 
         // Context menu
         if (ImGui::BeginPopupContextItem(nullptr)) {
             if (ImGui::MenuItem("View Data")) {
-                app.getTabManager()->createTableViewerTab(schemaData, view.name, databaseName,
-                                                          schemaName);
+                app.getTabManager()->createTableViewerTab(schemaData, view.name);
             }
             if (ImGui::MenuItem("Show Structure")) {
                 // TODO: Show view structure in a tab

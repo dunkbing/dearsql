@@ -2,6 +2,8 @@
 
 #include "ui/tab/tab.hpp"
 #include <memory>
+#include <string>
+#include <variant>
 #include <vector>
 
 class DatabaseInterface;
@@ -11,6 +13,14 @@ class MySQLDatabaseNode;
 class MySQLDatabase;
 class SQLiteDatabase;
 class ITableDataProvider;
+
+// Database node variant type for SQL editor tabs
+using DatabaseNode =
+    std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
+
+// Table data provider variant type for table viewer tabs
+using TableDataNode =
+    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
 
 class TabManager {
 public:
@@ -24,7 +34,6 @@ public:
     void closeAllTabs();
 
     // Tab queries
-    std::shared_ptr<Tab> findTab(const std::string& name) const;
     bool hasTab(const std::string& name) const;
     bool isEmpty() const {
         return tabs.empty();
@@ -38,18 +47,11 @@ public:
     }
 
     // Tab creation helpers
-    // New API for specific database nodes
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, PostgresDatabaseNode* dbNode);
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, MySQLDatabaseNode* dbNode);
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, SQLiteDatabase* dbNode);
+    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, const DatabaseNode& dbNode,
+                                            const std::string& schemaName = "");
 
-    std::shared_ptr<Tab> createTableViewerTab(PostgresSchemaNode* schemaNode,
-                                              const std::string& tableName,
-                                              const std::string& databaseName,
-                                              const std::string& schemaName);
-    std::shared_ptr<Tab> createTableViewerTab(MySQLDatabaseNode* dbNode,
+    std::shared_ptr<Tab> createTableViewerTab(const TableDataNode& dataNode,
                                               const std::string& tableName);
-    std::shared_ptr<Tab> createTableViewerTab(SQLiteDatabase* dbNode, const std::string& tableName);
 
     std::shared_ptr<Tab> createDiagramTab(PostgresSchemaNode* schemaNode);
     std::shared_ptr<Tab> createDiagramTab(MySQLDatabaseNode* dbNode);

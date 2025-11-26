@@ -70,6 +70,7 @@ private:
 
     // Async key loading future
     std::future<std::vector<Table>> keysFuture;
+    std::vector<Table> tables;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

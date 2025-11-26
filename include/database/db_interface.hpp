@@ -2,7 +2,6 @@
 
 #include "async_helper.hpp"
 #include "db.hpp"
-#include "db_ui_state.hpp"
 #include "utils/logger.hpp"
 #include <future>
 #include <memory>
@@ -141,28 +140,28 @@ public:
 
     // Saved connection ID (for app state persistence)
     virtual void setConnectionId(int id) {
-        uiState.savedConnectionId = id;
+        savedConnectionId = id;
     }
 
     [[nodiscard]] virtual int getConnectionId() const {
-        return uiState.savedConnectionId;
+        return savedConnectionId;
     }
 
     // Connection attempt tracking
     [[nodiscard]] virtual bool hasAttemptedConnection() const {
-        return uiState.attemptedConnection;
+        return attemptedConnection;
     }
 
     virtual void setAttemptedConnection(bool attempted) {
-        uiState.attemptedConnection = attempted;
+        attemptedConnection = attempted;
     }
 
     [[nodiscard]] virtual const std::string& getLastConnectionError() const {
-        return uiState.lastConnectionError;
+        return lastConnectionError;
     }
 
     virtual void setLastConnectionError(const std::string& error) {
-        uiState.lastConnectionError = error;
+        lastConnectionError = error;
     }
 
     // Connection info getter/setter
@@ -189,20 +188,6 @@ public:
         }
     }
 
-    // Table management
-    virtual std::vector<Table>& getTables() {
-        return tables;
-    }
-
-    // Sequence management
-    [[nodiscard]] virtual const std::vector<std::string>& getSequences() const {
-        return sequences;
-    }
-
-    virtual std::vector<std::string>& getSequences() {
-        return sequences;
-    }
-
     // Async operation status
     [[nodiscard]] virtual bool hasPendingAsyncWork() const {
         return false;
@@ -210,14 +195,12 @@ public:
 
 protected:
     // Common state
-    DatabaseUIState uiState;
+    bool attemptedConnection = false;
+    std::string lastConnectionError;
+    // Persistent connection ID for app state
+    int savedConnectionId = -1;
     bool connected = false;
     DatabaseConnectionInfo connectionInfo;
-
-    // Schema data
-    std::vector<Table> tables;
-    std::vector<Table> views;
-    std::vector<std::string> sequences;
 
     // Async operations
     AsyncOperation<std::pair<bool, std::string>> connectionOp;

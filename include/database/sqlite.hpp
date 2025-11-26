@@ -96,6 +96,9 @@ private:
     std::future<std::vector<Table>> viewsFuture;
     std::future<std::vector<std::string>> sequencesFuture;
 
+    std::vector<Table> tables;
+    std::vector<Table> views;
+
     // Query execution
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
     executeQueryStructured(const std::string& query);

@@ -7,15 +7,17 @@
 #include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/confirm_dialog.hpp"
 #include "ui/drop_column_dialog.hpp"
 #include "ui/new/database_node.hpp"
+#include "ui/rename_dialog.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 #include <memory>
 
-// Static dialog instances
+// Static dialog instances (non-singleton dialogs)
 static TableDialog tableDialogNew;
 static DropColumnDialog dropColumnDialogNew;
 
@@ -29,6 +31,22 @@ namespace NewHierarchy {
         return dropColumnDialogNew;
     }
 } // namespace NewHierarchy
+
+DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
+    if (!db) {
+        return nullptr;
+    }
+
+    auto it = hierarchyCache.find(db.get());
+    if (it != hierarchyCache.end()) {
+        return it->second.get();
+    }
+
+    // Create new hierarchy if not found (shouldn't happen if syncHierarchyCache is called)
+    auto [inserted, success] =
+        hierarchyCache.emplace(db.get(), std::make_unique<DatabaseHierarchy>(db));
+    return inserted->second.get();
+}
 
 void DatabaseSidebarNew::showConnectionDialog() {
     shouldShowConnectionDialog = true;
@@ -138,6 +156,8 @@ void DatabaseSidebarNew::render() {
                     Logger::info(std::format("Removed saved connection: {}", connectionInfo.name));
                 }
                 Logger::info(std::format("Database removed: {}", connectionInfo.name));
+                // Remove from hierarchy cache before removing database
+                hierarchyCache.erase(db.get());
                 app.removeDatabase(db);
                 databasePendingDeletion.reset();
                 ImGui::CloseCurrentPopup();
@@ -171,6 +191,16 @@ void DatabaseSidebarNew::render() {
     // Handle drop column dialog completion
     if (dropColumnDialogNew.hasResult()) {
         dropColumnDialogNew.clearResult();
+    }
+
+    // Render rename dialog if open
+    if (RenameDialog::instance().isOpen()) {
+        RenameDialog::instance().render();
+    }
+
+    // Render confirm dialog if open
+    if (ConfirmDialog::instance().isOpen()) {
+        ConfirmDialog::instance().render();
     }
 
     // Handle create database dialog
@@ -408,8 +438,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
         } else if (db->isConnected()) {
-            // Use the new refactored hierarchy rendering
-            NewHierarchy::renderRootDatabaseNode(db);
+            // Use cached hierarchy for rendering (avoids creating new objects every frame)
+            if (auto* hierarchy = getHierarchy(db)) {
+                hierarchy->renderRootNode();
+            }
         }
         ImGui::TreePop();
     }

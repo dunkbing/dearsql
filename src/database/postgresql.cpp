@@ -417,3 +417,71 @@ void PostgresDatabase::triggerChildDbRefresh() {
     Logger::info(std::format("Triggered refresh for {} schemas in database {}",
                              databaseDataCache.size(), connectionInfo.name));
 }
+
+std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string& oldName,
+                                                              const std::string& newName) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    try {
+        // PostgreSQL requires that no one is connected to the database being renamed
+        // We need to connect to a different database (like postgres) to execute this
+        const std::string sql =
+            std::format("ALTER DATABASE \"{}\" RENAME TO \"{}\"", oldName, newName);
+
+        auto session = getSession();
+        *session << sql;
+
+        // Update the cache if the renamed database exists in it
+        auto it = databaseDataCache.find(oldName);
+        if (it != databaseDataCache.end()) {
+            auto node = std::move(it->second);
+            node->name = newName;
+            databaseDataCache.erase(it);
+            databaseDataCache[newName] = std::move(node);
+        }
+
+        Logger::info(std::format("Database '{}' renamed to '{}'", oldName, newName));
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        Logger::error(std::format("Failed to rename database: {}", e.what()));
+        return {false, e.what()};
+    }
+}
+
+std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& dbName) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    // Prevent dropping the currently connected database
+    if (dbName == connectionInfo.database) {
+        return {false, "Cannot drop the currently connected database"};
+    }
+
+    try {
+        // PostgreSQL requires that no one is connected to the database being dropped
+        // First, terminate all connections to the target database
+        const std::string terminateSql =
+            std::format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = '{}' AND pid <> pg_backend_pid()",
+                        dbName);
+
+        auto session = getSession();
+        *session << terminateSql;
+
+        // Now drop the database
+        const std::string dropSql = std::format("DROP DATABASE \"{}\"", dbName);
+        *session << dropSql;
+
+        // Remove from cache
+        databaseDataCache.erase(dbName);
+
+        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        return {false, e.what()};
+    }
+}

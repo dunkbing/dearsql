@@ -22,6 +22,11 @@ public:
     void disconnect() override;
     void refreshConnection() override;
 
+    // Database operations
+    std::pair<bool, std::string> renameDatabase(const std::string& oldName,
+                                                const std::string& newName) override;
+    std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;
+
     // IQueryExecutor implementation
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
 

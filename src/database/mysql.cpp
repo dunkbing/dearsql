@@ -370,3 +370,38 @@ std::unique_ptr<soci::session> MySQLDatabase::getSession() const {
     }
     return res;
 }
+
+std::pair<bool, std::string> MySQLDatabase::renameDatabase(const std::string& oldName,
+                                                           const std::string& newName) {
+    // MySQL does not support direct database renaming
+    // This would require creating a new database, copying all tables, and dropping the old one
+    return {false, "MySQL does not support direct database renaming. "
+                   "You need to create a new database, copy all data, and drop the old one."};
+}
+
+std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbName) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    // Prevent dropping the currently connected database
+    if (dbName == connectionInfo.database) {
+        return {false, "Cannot drop the currently connected database"};
+    }
+
+    try {
+        const std::string sql = std::format("DROP DATABASE `{}`", dbName);
+
+        auto session = getSession();
+        *session << sql;
+
+        // Remove from cache
+        databaseDataCache.erase(dbName);
+
+        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        return {false, e.what()};
+    }
+}

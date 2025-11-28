@@ -11,7 +11,6 @@ add_subdirectory(external/soci)
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
 add_subdirectory(external/nativefiledialog-extended)
-add_subdirectory(external/googletest)
 
 enable_testing()
 
@@ -92,6 +91,8 @@ set(APP_SOURCES
     src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
+    src/ui/confirm_dialog.cpp
+    src/ui/rename_dialog.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     # src/ui/db_sidebar.cpp

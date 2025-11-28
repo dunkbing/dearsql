@@ -98,6 +98,19 @@ public:
     virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
 
+    // ========== Database operations (with default unsupported implementations) ==========
+
+    // Rename a database (returns success, error message)
+    virtual std::pair<bool, std::string> renameDatabase(const std::string& oldName,
+                                                        const std::string& newName) {
+        return {false, "Rename database not supported for this database type"};
+    }
+
+    // Drop a database (returns success, error message)
+    virtual std::pair<bool, std::string> dropDatabase(const std::string& dbName) {
+        return {false, "Drop database not supported for this database type"};
+    }
+
     // ========== Virtual methods with default implementations ==========
 
     // Connection status

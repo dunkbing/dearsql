@@ -2,7 +2,9 @@
 
 #include "database/db_interface.hpp"
 #include "ui/db_connection_dialog.hpp"
+#include "ui/new/database_node.hpp"
 #include <memory>
+#include <unordered_map>
 
 /**
  * @brief New refactored database sidebar using per-node data attachment
@@ -17,6 +19,9 @@ public:
 
     void render();
     void showConnectionDialog();
+
+    // Get or create a DatabaseHierarchy for a given database
+    DatabaseHierarchy* getHierarchy(const std::shared_ptr<DatabaseInterface>& db);
 
 private:
     void renderEmpty();
@@ -35,4 +40,7 @@ private:
     // Create database dialog
     bool shouldShowCreateDatabaseDialog = false;
     std::shared_ptr<DatabaseInterface> createDatabaseTarget;
+
+    // Cache of DatabaseHierarchy instances (keyed by raw pointer for fast lookup)
+    std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;
 };

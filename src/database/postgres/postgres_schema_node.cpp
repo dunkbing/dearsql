@@ -622,3 +622,10 @@ QueryResult PostgresSchemaNode::executeQueryWithResult(const std::string& query,
     }
     return parentDbNode->executeQueryWithResult(query, rowLimit);
 }
+
+std::pair<bool, std::string> PostgresSchemaNode::executeQuery(const std::string& query) {
+    if (!parentDbNode) {
+        return {false, "No database connection"};
+    }
+    return parentDbNode->executeQuery(query);
+}

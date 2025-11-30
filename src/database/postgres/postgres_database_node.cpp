@@ -136,6 +136,21 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
     connectionPool = parentDb->initializeConnectionPool(info, poolSize);
 }
 
+std::pair<bool, std::string> PostgresDatabaseNode::executeQuery(const std::string& query) {
+    try {
+        const auto session = getSession();
+        if (!session) {
+            return {false, "Failed to get database session"};
+        }
+        *session << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
 QueryResult PostgresDatabaseNode::executeQueryWithResult(const std::string& query,
                                                          const int rowLimit) {
     QueryResult result;

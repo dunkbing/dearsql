@@ -224,6 +224,24 @@ QueryResult PostgresDatabase::executeQueryWithResult(const std::string& query, i
     return result;
 }
 
+std::pair<bool, std::string> PostgresDatabase::executeQuery(const std::string& query) {
+    if (!isConnected()) {
+        auto [success, error] = connect();
+        if (!success) {
+            return {false, "Failed to connect to database: " + error};
+        }
+    }
+    try {
+        auto sql = getSession();
+        *sql << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&
 PostgresDatabase::getDatabaseDataMap() {
     // autoload databases if not loaded and not currently loading

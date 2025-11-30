@@ -588,6 +588,20 @@ QueryResult SQLiteDatabase::executeQueryWithResult(const std::string& query, int
     return result;
 }
 
+std::pair<bool, std::string> SQLiteDatabase::executeQuery(const std::string& query) {
+    if (!connected || !session) {
+        return {false, "Database not connected"};
+    }
+    try {
+        *session << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
 soci::session* SQLiteDatabase::getSession() const {
     if (!connected || !session) {
         return nullptr;

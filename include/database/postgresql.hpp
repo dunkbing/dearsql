@@ -47,6 +47,7 @@ public:
 
     // IQueryExecutor implementation
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
 protected:
     // Async loading helpers

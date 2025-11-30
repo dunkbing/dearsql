@@ -562,3 +562,18 @@ QueryResult MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
 
     return result;
 }
+
+std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& query) {
+    try {
+        const auto session = getSession();
+        if (!session) {
+            return {false, "Failed to get database session"};
+        }
+        *session << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}

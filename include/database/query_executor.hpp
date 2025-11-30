@@ -2,6 +2,7 @@
 
 #include "db.hpp"
 #include <string>
+#include <utility>
 
 /**
  * @brief Interface for executing SQL queries with comprehensive results
@@ -26,4 +27,14 @@ public:
      * @return QueryResult containing execution results, errors, and metadata
      */
     virtual QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) = 0;
+
+    /**
+     * @brief Execute a DDL/DML query that doesn't return rows
+     *
+     * Use this for ALTER, CREATE, DROP, INSERT, UPDATE, DELETE, etc.
+     *
+     * @param query The SQL query to execute
+     * @return pair<bool, string> - success flag and error message (empty on success)
+     */
+    virtual std::pair<bool, std::string> executeQuery(const std::string& query) = 0;
 };

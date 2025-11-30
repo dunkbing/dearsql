@@ -9,7 +9,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/confirm_dialog.hpp"
-#include "ui/rename_dialog.hpp"
+#include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -313,12 +313,27 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            RenameDialog::instance().show(dbData, [this, dbData]() {
-                // Use DatabaseInterface method to refresh
-                if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                    pgDb->refreshDatabaseNames();
-                }
-            });
+            const std::string oldName = dbData->name;
+            InputDialog::instance().showWithValidation(
+                "Rename Database", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [this, dbData, oldName](const std::string& newName) {
+                    const std::string sql =
+                        std::format("ALTER DATABASE \"{}\" RENAME TO \"{}\"", oldName, newName);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = dbData->executeQuery(sql);
+                    if (success) {
+                        if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+                            pgDb->refreshDatabaseNames();
+                        }
+                    } else {
+                        InputDialog::instance().setError(error);
+                    }
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string dbName = dbData->name;
@@ -327,7 +342,6 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                 {"Permanently delete the database and ALL its data",
                  "Remove all tables, views, and other objects", "This operation is IRREVERSIBLE"},
                 "Delete Database", [this, dbName]() {
-                    // Use DatabaseInterface method to drop database
                     auto [success, error] = db->dropDatabase(dbName);
                     if (success) {
                         Logger::info(std::format("Database '{}' deleted successfully", dbName));
@@ -396,11 +410,27 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            RenameDialog::instance().show(schemaData, [schemaData]() {
-                if (schemaData->parentDbNode) {
-                    schemaData->parentDbNode->startSchemasLoadAsync(true, false);
-                }
-            });
+            const std::string oldName = schemaData->name;
+            InputDialog::instance().showWithValidation(
+                "Rename Schema", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [schemaData, oldName](const std::string& newName) {
+                    const std::string sql =
+                        std::format("ALTER SCHEMA \"{}\" RENAME TO \"{}\"", oldName, newName);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = schemaData->executeQuery(sql);
+                    if (success) {
+                        if (schemaData->parentDbNode) {
+                            schemaData->parentDbNode->startSchemasLoadAsync(true, false);
+                        }
+                    } else {
+                        InputDialog::instance().setError(error);
+                    }
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string schemaName = schemaData->name;
@@ -412,9 +442,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 "Delete Schema", [schemaData, schemaName]() {
                     const std::string sql = std::format("DROP SCHEMA \"{}\" CASCADE", schemaName);
                     Logger::info("Executing: " + sql);
-                    auto result = schemaData->executeQueryWithResult(sql);
-                    if (result.success && schemaData->parentDbNode) {
+                    auto [success, error] = schemaData->executeQuery(sql);
+                    if (success && schemaData->parentDbNode) {
                         schemaData->parentDbNode->startSchemasLoadAsync(true, false);
+                    } else if (!success) {
+                        ConfirmDialog::instance().setError(error);
                     }
                 });
         }
@@ -584,12 +616,17 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            RenameDialog::instance().show(dbData, [this, dbData]() {
-                // MySQL doesn't support direct database renaming
-                if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                    mysqlDb->refreshDatabaseNames();
-                }
-            });
+            // MySQL doesn't support direct database renaming
+            const std::string oldName = dbData->name;
+            InputDialog::instance().showWithValidation(
+                "Rename Database", "New name:", oldName, "Rename",
+                [](const std::string&) -> std::string {
+                    return "MySQL does not support direct database renaming. You need to create a "
+                           "new database, copy all data, and drop the old one.";
+                },
+                [](const std::string&) {
+                    // This won't be called due to validation always failing
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string dbName = dbData->name;
@@ -598,7 +635,6 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 {"Permanently delete the database and ALL its data",
                  "Remove all tables, views, and other objects", "This operation is IRREVERSIBLE"},
                 "Delete Database", [this, dbName]() {
-                    // Use DatabaseInterface method to drop database
                     auto [success, error] = db->dropDatabase(dbName);
                     if (success) {
                         Logger::info(std::format("Database '{}' deleted successfully", dbName));
@@ -763,9 +799,27 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            const std::string tableName = table.name;
-            RenameDialog::instance().showForTable(
-                schemaData, tableName, [schemaData]() { schemaData->startTablesLoadAsync(true); });
+            const std::string oldName = table.name;
+            const std::string schemaNameCopy = schemaData->name;
+            InputDialog::instance().showWithValidation(
+                "Rename Table", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [schemaData, schemaNameCopy, oldName](const std::string& newName) {
+                    const std::string sql =
+                        std::format("ALTER TABLE \"{}\".\"{}\" RENAME TO \"{}\"", schemaNameCopy,
+                                    oldName, newName);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = schemaData->executeQuery(sql);
+                    if (success) {
+                        schemaData->startTablesLoadAsync(true);
+                    } else {
+                        InputDialog::instance().setError(error);
+                    }
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string tableName = table.name;
@@ -780,9 +834,11 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     const std::string sql =
                         std::format("DROP TABLE \"{}\".\"{}\"", schemaNameCopy, tableName);
                     Logger::info("Executing: " + sql);
-                    auto result = schemaData->executeQueryWithResult(sql);
-                    if (result.success) {
+                    auto [success, error] = schemaData->executeQuery(sql);
+                    if (success) {
                         schemaData->startTablesLoadAsync(true);
+                    } else {
+                        ConfirmDialog::instance().setError(error);
                     }
                 });
         }
@@ -1021,9 +1077,25 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            const std::string tableName = table.name;
-            RenameDialog::instance().showForTable(
-                dbData, tableName, [dbData]() { dbData->startTablesLoadAsync(true); });
+            const std::string oldName = table.name;
+            InputDialog::instance().showWithValidation(
+                "Rename Table", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [dbData, oldName](const std::string& newName) {
+                    const std::string sql =
+                        std::format("RENAME TABLE `{}` TO `{}`", oldName, newName);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = dbData->executeQuery(sql);
+                    if (success) {
+                        dbData->startTablesLoadAsync(true);
+                    } else {
+                        InputDialog::instance().setError(error);
+                    }
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string tableName = table.name;
@@ -1035,9 +1107,11 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                 "Delete Table", [dbData, tableName]() {
                     const std::string sql = std::format("DROP TABLE `{}`", tableName);
                     Logger::info("Executing: " + sql);
-                    auto result = dbData->executeQueryWithResult(sql);
-                    if (result.success) {
+                    auto [success, error] = dbData->executeQuery(sql);
+                    if (success) {
                         dbData->startTablesLoadAsync(true);
+                    } else {
+                        ConfirmDialog::instance().setError(error);
                     }
                 });
         }
@@ -1252,9 +1326,25 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            const std::string tableName = table.name;
-            RenameDialog::instance().showForTable(
-                sqliteDb, tableName, [sqliteDb]() { sqliteDb->startTablesLoadAsync(true); });
+            const std::string oldName = table.name;
+            InputDialog::instance().showWithValidation(
+                "Rename Table", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [sqliteDb, oldName](const std::string& newName) {
+                    const std::string sql =
+                        std::format("ALTER TABLE \"{}\" RENAME TO \"{}\"", oldName, newName);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = sqliteDb->executeQuery(sql);
+                    if (success) {
+                        sqliteDb->startTablesLoadAsync(true);
+                    } else {
+                        InputDialog::instance().setError(error);
+                    }
+                });
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string tableName = table.name;
@@ -1266,9 +1356,11 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                 "Delete Table", [sqliteDb, tableName]() {
                     const std::string sql = std::format("DROP TABLE \"{}\"", tableName);
                     Logger::info("Executing: " + sql);
-                    auto result = sqliteDb->executeQueryWithResult(sql);
-                    if (result.success) {
+                    auto [success, error] = sqliteDb->executeQuery(sql);
+                    if (success) {
                         sqliteDb->startTablesLoadAsync(true);
+                    } else {
+                        ConfirmDialog::instance().setError(error);
                     }
                 });
         }

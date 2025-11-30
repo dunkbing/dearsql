@@ -9,8 +9,8 @@
 #include "imgui.h"
 #include "ui/confirm_dialog.hpp"
 #include "ui/drop_column_dialog.hpp"
+#include "ui/input_dialog.hpp"
 #include "ui/new/database_node.hpp"
-#include "ui/rename_dialog.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -193,9 +193,9 @@ void DatabaseSidebarNew::render() {
         dropColumnDialogNew.clearResult();
     }
 
-    // Render rename dialog if open
-    if (RenameDialog::instance().isOpen()) {
-        RenameDialog::instance().render();
+    // Render input dialog if open (used by RenameDialog and other features)
+    if (InputDialog::instance().isOpen()) {
+        InputDialog::instance().render();
     }
 
     // Render confirm dialog if open

@@ -58,6 +58,7 @@ public:
 
     // query execution with comprehensive result
     QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
     // Session access (returns raw pointer since SQLite has single session)
     soci::session* getSession() const;

@@ -92,7 +92,7 @@ set(APP_SOURCES
     src/ui/table_dialog.cpp
     src/ui/drop_column_dialog.cpp
     src/ui/confirm_dialog.cpp
-    src/ui/rename_dialog.cpp
+    src/ui/input_dialog.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     # src/ui/db_sidebar.cpp

@@ -219,6 +219,21 @@ QueryResult MySQLDatabase::executeQueryWithResult(const std::string& query, int 
     return result;
 }
 
+std::pair<bool, std::string> MySQLDatabase::executeQuery(const std::string& query) {
+    if (!connect().first) {
+        return {false, "Not connected to database"};
+    }
+    try {
+        const auto sql = getSession();
+        *sql << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&
 MySQLDatabase::getDatabaseDataMap() {
     // autoload databases if not loaded and not currently loading

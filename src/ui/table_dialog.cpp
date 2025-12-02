@@ -1,69 +1,58 @@
 #include "ui/table_dialog.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
-#include "database/mysql.hpp"
-#include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
-#include "database/postgresql.hpp"
-#include "database/query_executor.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
-#include <iostream>
-#include <sstream>
+#include <cstring>
+#include <format>
 
-void TableDialog::showTableDialog(const DatabaseNode& dbNode, const std::string& tableName,
-                                  const std::string& schemaName) {
-    databaseNode = dbNode;
-    targetTableName = tableName;
-    targetSchemaName = schemaName;
-    dialogMode = TableDialogMode::Edit;
-
-    loadTableStructure();
-    resetColumnForm();
-    columnEditMode = ColumnEditMode::None;
-    selectedColumnIndex = -1;
-    rightPanelMode = RightPanelMode::TableProperties;
-    isOpen = true;
-    hasCompletedResult = false;
-    errorMessage.clear();
-    previewSQL.clear();
-    showPreview = false;
-
-    // Load existing table data if available
-    memset(editTableComment, 0, sizeof(editTableComment));
-    strncpy(editTableName, targetTableName.c_str(), sizeof(editTableName) - 1);
-    editTableName[sizeof(editTableName) - 1] = '\0';
-    // TODO: Load actual table comment from database metadata
+TableDialog& TableDialog::instance() {
+    static TableDialog inst;
+    return inst;
 }
 
-void TableDialog::showCreateTableDialog(const DatabaseNode& dbNode, const std::string& schemaName) {
-    databaseNode = dbNode;
-    targetSchemaName = schemaName;
+void TableDialog::showCreate(DatabaseType dbType, const std::string& schema, SaveCallback onSave,
+                             CancelCallback onCancel) {
+    reset();
     dialogMode = TableDialogMode::Create;
+    databaseType = dbType;
+    schemaName = schema;
+    saveCallback = std::move(onSave);
+    cancelCallback = std::move(onCancel);
 
     // Initialize with empty table
-    targetTableName = "";
-    tableColumns.clear();
-    memset(newTableName, 0, sizeof(newTableName));
-    memset(newTableComment, 0, sizeof(newTableComment));
+    editingTable = Table{};
+    editingTable.columns.clear();
 
-    resetColumnForm();
-    columnEditMode = ColumnEditMode::None;
-    selectedColumnIndex = -1;
     rightPanelMode = RightPanelMode::TableProperties;
-    isOpen = true;
-    hasCompletedResult = false;
-    errorMessage.clear();
-    previewSQL.clear();
-    showPreview = false;
+    isDialogOpen = true;
 }
 
-void TableDialog::renderDialog() {
-    if (!isOpen)
+void TableDialog::showEdit(const Table& table, DatabaseType dbType, const std::string& schema,
+                           SaveCallback onSave, CancelCallback onCancel) {
+    reset();
+    dialogMode = TableDialogMode::Edit;
+    databaseType = dbType;
+    schemaName = schema;
+    saveCallback = std::move(onSave);
+    cancelCallback = std::move(onCancel);
+
+    // Copy the table for editing
+    editingTable = table;
+    originalTableName = table.name;
+
+    // Initialize buffers
+    std::strncpy(tableNameBuffer, table.name.c_str(), sizeof(tableNameBuffer) - 1);
+    tableNameBuffer[sizeof(tableNameBuffer) - 1] = '\0';
+    std::memset(tableCommentBuffer, 0, sizeof(tableCommentBuffer));
+
+    rightPanelMode = RightPanelMode::TableProperties;
+    isDialogOpen = true;
+}
+
+void TableDialog::render() {
+    if (!isDialogOpen)
         return;
 
     const char* title = (dialogMode == TableDialogMode::Create) ? "Create New Table" : "Edit Table";
@@ -76,19 +65,19 @@ void TableDialog::renderDialog() {
     // Set popup size - make it larger for the new layout
     ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_FirstUseEver);
 
-    if (ImGui::BeginPopupModal(title, &isOpen, ImGuiWindowFlags_NoScrollbar)) {
+    if (ImGui::BeginPopupModal(title, &isDialogOpen, ImGuiWindowFlags_NoScrollbar)) {
         // Show table context
         if (dialogMode == TableDialogMode::Edit) {
-            ImGui::Text("Table: %s", targetTableName.c_str());
-            if (!targetSchemaName.empty()) {
+            ImGui::Text("Table: %s", originalTableName.c_str());
+            if (!schemaName.empty()) {
                 ImGui::SameLine();
-                ImGui::Text("Schema: %s", targetSchemaName.c_str());
+                ImGui::Text("Schema: %s", schemaName.c_str());
             }
         } else {
             ImGui::Text("Creating new table");
-            if (!targetSchemaName.empty()) {
+            if (!schemaName.empty()) {
                 ImGui::SameLine();
-                ImGui::Text("Schema: %s", targetSchemaName.c_str());
+                ImGui::Text("in schema: %s", schemaName.c_str());
             }
         }
         ImGui::Separator();
@@ -132,13 +121,12 @@ void TableDialog::renderDialog() {
         ImGui::EndPopup();
     }
 
-    if (!isOpen) {
-        // Dialog was closed, reset state
-        resetColumnForm();
-        errorMessage.clear();
-        columnEditMode = ColumnEditMode::None;
-        selectedColumnIndex = -1;
-        rightPanelMode = RightPanelMode::Instructions;
+    if (!isDialogOpen) {
+        // Dialog was closed without saving
+        if (cancelCallback) {
+            cancelCallback();
+        }
+        reset();
     }
 }
 
@@ -179,9 +167,11 @@ void TableDialog::renderTableTree() {
 
     std::string displayName;
     if (dialogMode == TableDialogMode::Create) {
-        displayName = (strlen(newTableName) > 0 ? std::string(newTableName) : "New Table");
+        displayName =
+            (std::strlen(tableNameBuffer) > 0 ? std::string(tableNameBuffer) : "New Table");
     } else {
-        displayName = (strlen(editTableName) > 0 ? std::string(editTableName) : targetTableName);
+        displayName =
+            (std::strlen(tableNameBuffer) > 0 ? std::string(tableNameBuffer) : originalTableName);
     }
     const std::string tableLabel = std::format("   {}", displayName);
     bool tableOpen = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
@@ -215,7 +205,7 @@ void TableDialog::renderColumnsNode() {
                                       ImGuiTreeNodeFlags_FramePadding;
 
     const std::string columnsLabel =
-        std::format("   Columns ({})      ", tableColumns.size()); // Extra spaces for plus icon
+        std::format("   Columns ({})      ", editingTable.columns.size());
     bool columnsOpen = ImGui::TreeNodeEx(columnsLabel.c_str(), columnsFlags);
 
     // Draw columns icon
@@ -238,10 +228,8 @@ void TableDialog::renderColumnsNode() {
     const bool isPlusHovered = ImGui::IsMouseHoveringRect(plusIconMin, plusIconMax);
 
     // Draw plus icon with hover effect
-    ImU32 plusColor =
-        isPlusHovered ? ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f))
-                      :                                         // Brighter green when hovered
-            ImGui::GetColorU32(ImVec4(0.6f, 0.6f, 0.6f, 0.8f)); // Gray when not hovered
+    ImU32 plusColor = isPlusHovered ? ImGui::GetColorU32(ImVec4(0.3f, 0.8f, 0.3f, 1.0f))
+                                    : ImGui::GetColorU32(ImVec4(0.6f, 0.6f, 0.6f, 0.8f));
 
     ImGui::GetWindowDrawList()->AddText(plusIconPos, plusColor, ICON_FA_PLUS);
 
@@ -266,14 +254,14 @@ void TableDialog::renderColumnsNode() {
     }
 
     if (columnsOpen) {
-        for (int i = 0; i < tableColumns.size(); i++) {
-            const auto& column = tableColumns[i];
+        for (size_t i = 0; i < editingTable.columns.size(); i++) {
+            const auto& column = editingTable.columns[i];
 
             ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                              ImGuiTreeNodeFlags_FramePadding;
 
-            if (selectedColumnIndex == i) {
+            if (selectedColumnIndex == static_cast<int>(i)) {
                 columnFlags |= ImGuiTreeNodeFlags_Selected;
             }
 
@@ -286,32 +274,31 @@ void TableDialog::renderColumnsNode() {
                 columnDisplay += ", NOT NULL";
             }
 
-            ImGui::PushID(i);
+            ImGui::PushID(static_cast<int>(i));
             ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
 
             if (ImGui::IsItemClicked()) {
-                startEditColumn(i);
+                startEditColumn(static_cast<int>(i));
                 rightPanelMode = RightPanelMode::ColumnEditor;
             }
 
             // Context menu for individual column
             if (ImGui::BeginPopupContextItem("column_context_menu")) {
                 if (ImGui::MenuItem("Edit Column")) {
-                    startEditColumn(i);
+                    startEditColumn(static_cast<int>(i));
                     rightPanelMode = RightPanelMode::ColumnEditor;
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Delete Column")) {
                     // Remove from local list
-                    tableColumns.erase(tableColumns.begin() + i);
-                    if (selectedColumnIndex == i) {
-                        // If we're deleting the currently selected column, go back to table
-                        // properties
+                    editingTable.columns.erase(editingTable.columns.begin() +
+                                               static_cast<ptrdiff_t>(i));
+                    if (selectedColumnIndex == static_cast<int>(i)) {
                         rightPanelMode = RightPanelMode::TableProperties;
                         columnEditMode = ColumnEditMode::None;
                         selectedColumnIndex = -1;
                         resetColumnForm();
-                    } else if (selectedColumnIndex > i) {
+                    } else if (selectedColumnIndex > static_cast<int>(i)) {
                         selectedColumnIndex--;
                     }
                     if (showPreview) {
@@ -345,7 +332,7 @@ void TableDialog::renderKeysNode() const {
         // Show primary key if any column is marked as primary key
         bool hasPrimaryKey = false;
         std::string primaryKeyColumns;
-        for (const auto& column : tableColumns) {
+        for (const auto& column : editingTable.columns) {
             if (column.isPrimaryKey) {
                 if (hasPrimaryKey) {
                     primaryKeyColumns += ", ";
@@ -421,7 +408,7 @@ void TableDialog::renderColumnEditor() {
             if (lowerInput.empty() || lowerType.find(lowerInput) != std::string::npos) {
                 bool isSelected = (type == currentInput);
                 if (ImGui::Selectable(type.c_str(), isSelected)) {
-                    strncpy(columnType, type.c_str(), sizeof(columnType) - 1);
+                    std::strncpy(columnType, type.c_str(), sizeof(columnType) - 1);
                     columnType[sizeof(columnType) - 1] = '\0';
                     updateCurrentColumn();
                 }
@@ -461,7 +448,7 @@ void TableDialog::renderColumnEditor() {
     ImGui::Spacing();
 
     // Comment (if supported by database)
-    if (getDatabaseType() == DatabaseType::MYSQL || getDatabaseType() == DatabaseType::POSTGRESQL) {
+    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::POSTGRESQL) {
         ImGui::Text("Comment:");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputTextMultiline("##column_comment", columnComment, sizeof(columnComment),
@@ -503,16 +490,22 @@ void TableDialog::renderButtons() {
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
 
     if (ImGui::Button("Save", ImVec2(120, 0))) {
-        if (dialogMode == TableDialogMode::Create) {
-            if (validateTableInput() && executeCreateTable()) {
-                hasCompletedResult = true;
-                isOpen = false;
+        if (validateTableInput()) {
+            // Build the result table and call the callback
+            Table resultTable = buildResultTable();
+            errorMessage.clear();
+
+            if (saveCallback) {
+                saveCallback(resultTable);
             }
-        } else {
-            // For edit mode, save any pending changes
-            if (saveTableChanges()) {
-                hasCompletedResult = true;
-                isOpen = false;
+
+            // Only close if no error was set by the callback
+            if (errorMessage.empty()) {
+                isDialogOpen = false;
+                // Don't call cancelCallback since we saved successfully
+                saveCallback = nullptr;
+                cancelCallback = nullptr;
+                reset();
             }
         }
     }
@@ -525,8 +518,8 @@ void TableDialog::renderButtons() {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
 
-    if (ImGui::Button("Close", ImVec2(120, 0))) {
-        isOpen = false;
+    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        isDialogOpen = false;
     }
 
     ImGui::PopStyleColor(3);
@@ -541,11 +534,11 @@ void TableDialog::startAddColumn() {
     newColumn.isPrimaryKey = false;
     newColumn.isNotNull = false;
 
-    tableColumns.push_back(newColumn);
+    editingTable.columns.push_back(newColumn);
 
     // Set up the editor for the new column
     columnEditMode = ColumnEditMode::Edit;
-    selectedColumnIndex = static_cast<int>(tableColumns.size() - 1);
+    selectedColumnIndex = static_cast<int>(editingTable.columns.size() - 1);
     rightPanelMode = RightPanelMode::ColumnEditor;
 
     // Populate the form with the new column data
@@ -555,12 +548,12 @@ void TableDialog::startAddColumn() {
 }
 
 void TableDialog::startEditColumn(int columnIndex) {
-    if (columnIndex >= 0 && columnIndex < tableColumns.size()) {
+    if (columnIndex >= 0 && columnIndex < static_cast<int>(editingTable.columns.size())) {
         columnEditMode = ColumnEditMode::Edit;
         selectedColumnIndex = columnIndex;
         rightPanelMode = RightPanelMode::ColumnEditor;
-        originalColumnName = tableColumns[columnIndex].name;
-        populateColumnFormFromColumn(tableColumns[columnIndex]);
+        originalColumnName = editingTable.columns[columnIndex].name;
+        populateColumnFormFromColumn(editingTable.columns[columnIndex]);
         errorMessage.clear();
     }
 }
@@ -574,165 +567,11 @@ void TableDialog::cancelColumnEdit() {
     previewSQL.clear();
 }
 
-bool TableDialog::saveColumn() {
-    // This method is no longer used since we update in real-time
-    // Just validate the current input
-    return validateColumnInput();
-}
-
-bool TableDialog::validateColumnInput() {
-    errorMessage.clear();
-
-    // Check column name
-    if (strlen(columnName) == 0) {
-        errorMessage = "Column name cannot be empty";
-        return false;
-    }
-
-    // Check data type
-    if (strlen(columnType) == 0) {
-        errorMessage = "Data type cannot be empty";
-        return false;
-    }
-
-    return true;
-}
-
-bool TableDialog::executeAddColumn() {
-    try {
-        std::string sql = generateAddColumnSQL();
-        Logger::info("Executing: " + sql);
-
-        // For PostgreSQL with comments, we need to execute multiple statements
-        if (getDatabaseType() == DatabaseType::POSTGRESQL && strlen(columnComment) > 0) {
-            // Split the SQL into separate statements
-            size_t semicolonPos = sql.find(';');
-            if (semicolonPos != std::string::npos) {
-                std::string addColumnSQL = sql.substr(0, semicolonPos);
-                std::string commentSQL = sql.substr(semicolonPos + 1);
-
-                // Execute ADD COLUMN first
-                std::string result1 = executeQuery(addColumnSQL);
-                if (result1.find("ERROR") != std::string::npos ||
-                    result1.find("Error") != std::string::npos) {
-                    const std::string& cleanError = result1;
-                    if (cleanError.find("already exists") != std::string::npos) {
-                        errorMessage = "Column '" + std::string(columnName) +
-                                       "' already exists in table '" + targetTableName + "'";
-                    } else {
-                        errorMessage = "Failed to add column: " + result1;
-                    }
-                    return false;
-                }
-
-                // Execute COMMENT statement
-                std::string result2 = executeQuery(commentSQL);
-                if (result2.find("ERROR") != std::string::npos ||
-                    result2.find("Error") != std::string::npos) {
-                    // Column was added but comment failed - log warning but don't fail
-                    Logger::warn("Column added but comment failed: " + result2);
-                }
-            }
-        } else {
-            // Single statement execution
-            std::string result = executeQuery(sql);
-
-            // Check if there was an error in the result
-            if (result.find("ERROR") != std::string::npos ||
-                result.find("Error") != std::string::npos) {
-                const std::string& cleanError = result;
-                if (cleanError.find("already exists") != std::string::npos) {
-                    errorMessage = "Column '" + std::string(columnName) +
-                                   "' already exists in table '" + targetTableName + "'";
-                } else {
-                    errorMessage = "Failed to add column: " + result;
-                }
-                return false;
-            }
-        }
-
-        // Refresh table structure
-        // getDatabaseInterface()->setTablesLoaded(false);
-        // getDatabaseInterface()->refreshAllTables();
-
-        std::cout << ("Column '" + std::string(columnName) + "' added successfully to table '" +
-                      targetTableName + "'");
-        return true;
-
-    } catch (const std::exception& e) {
-        errorMessage = "Failed to add column: " + std::string(e.what());
-        Logger::error(errorMessage);
-        return false;
-    }
-}
-
-bool TableDialog::executeEditColumn() {
-    try {
-        std::string sql = generateEditColumnSQL();
-        if (sql.empty()) {
-            return false; // Error message already set in generateEditColumnSQL
-        }
-
-        Logger::info("Executing: " + sql);
-
-        // For PostgreSQL, we need to execute multiple statements
-        if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-            // Split the SQL into separate statements
-            std::vector<std::string> statements;
-            std::string currentStatement;
-            std::istringstream sqlStream(sql);
-
-            while (std::getline(sqlStream, currentStatement, ';')) {
-                // Trim whitespace
-                currentStatement.erase(0, currentStatement.find_first_not_of(" \t\n\r"));
-                currentStatement.erase(currentStatement.find_last_not_of(" \t\n\r") + 1);
-
-                if (!currentStatement.empty()) {
-                    statements.push_back(currentStatement);
-                }
-            }
-
-            // Execute each statement
-            for (const auto& statement : statements) {
-                std::string result = executeQuery(statement);
-                if (result.find("ERROR") != std::string::npos ||
-                    result.find("Error") != std::string::npos) {
-                    errorMessage = "Failed to edit column: " + result;
-                    return false;
-                }
-            }
-        } else {
-            // Single statement execution
-            std::string result = executeQuery(sql);
-
-            // Check if there was an error in the result
-            if (result.find("ERROR") != std::string::npos ||
-                result.find("Error") != std::string::npos) {
-                errorMessage = "Failed to edit column: " + result;
-                return false;
-            }
-        }
-
-        // Refresh table structure
-        // getDatabaseInterface()->setTablesLoaded(false);
-        // getDatabaseInterface()->refreshAllTables();
-
-        Logger::info("Column '" + originalColumnName + "' updated successfully in table '" +
-                     targetTableName + "'");
-        return true;
-
-    } catch (const std::exception& e) {
-        errorMessage = "Failed to edit column: " + std::string(e.what());
-        Logger::error(errorMessage);
-        return false;
-    }
-}
-
 void TableDialog::resetColumnForm() {
-    memset(columnName, 0, sizeof(columnName));
-    memset(columnType, 0, sizeof(columnType));
-    memset(columnComment, 0, sizeof(columnComment));
-    memset(defaultValue, 0, sizeof(defaultValue));
+    std::memset(columnName, 0, sizeof(columnName));
+    std::memset(columnType, 0, sizeof(columnType));
+    std::memset(columnComment, 0, sizeof(columnComment));
+    std::memset(defaultValue, 0, sizeof(defaultValue));
 
     isPrimaryKey = false;
     isNotNull = false;
@@ -740,25 +579,12 @@ void TableDialog::resetColumnForm() {
 }
 
 void TableDialog::populateColumnFormFromColumn(const Column& column) {
-    strncpy(columnName, column.name.c_str(), sizeof(columnName) - 1);
-    strncpy(columnType, column.type.c_str(), sizeof(columnType) - 1);
-    strncpy(columnComment, column.comment.c_str(), sizeof(columnComment) - 1);
+    std::strncpy(columnName, column.name.c_str(), sizeof(columnName) - 1);
+    std::strncpy(columnType, column.type.c_str(), sizeof(columnType) - 1);
+    std::strncpy(columnComment, column.comment.c_str(), sizeof(columnComment) - 1);
 
     isPrimaryKey = column.isPrimaryKey;
     isNotNull = column.isNotNull;
-}
-
-void TableDialog::loadTableStructure() {
-    tableColumns.clear();
-
-    // Find the table in the database's table list
-    const auto& tables = getTables();
-    for (const auto& table : tables) {
-        if (table.name == targetTableName) {
-            tableColumns = table.columns;
-            break;
-        }
-    }
 }
 
 void TableDialog::updatePreviewSQL() {
@@ -773,14 +599,15 @@ void TableDialog::updatePreviewSQL() {
     }
 }
 
-std::string TableDialog::generateAddColumnSQL() {
+std::string TableDialog::generateAddColumnSQL() const {
+    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTableName;
+
     // For PostgreSQL, ensure table name is schema-qualified
-    std::string qualifiedTableName = targetTableName;
-    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-        // If table name doesn't already contain a schema prefix, add schema
+    std::string qualifiedTableName = tableName;
+    if (databaseType == DatabaseType::POSTGRESQL) {
         if (qualifiedTableName.find('.') == std::string::npos) {
-            const std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-            qualifiedTableName = schemaName + "." + qualifiedTableName;
+            const std::string schema = schemaName.empty() ? "public" : schemaName;
+            qualifiedTableName = schema + "." + qualifiedTableName;
         }
     }
 
@@ -796,17 +623,15 @@ std::string TableDialog::generateAddColumnSQL() {
         sql += " UNIQUE";
     }
 
-    if (strlen(defaultValue) > 0) {
+    if (std::strlen(defaultValue) > 0) {
         sql += " DEFAULT " + std::string(defaultValue);
     }
 
     // Handle comments differently for different databases
-    if (strlen(columnComment) > 0) {
-        if (getDatabaseType() == DatabaseType::MYSQL) {
-            // MySQL supports COMMENT in ALTER TABLE ADD COLUMN
+    if (std::strlen(columnComment) > 0) {
+        if (databaseType == DatabaseType::MYSQL) {
             sql += " COMMENT '" + std::string(columnComment) + "'";
-        } else if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-            // PostgreSQL requires a separate COMMENT ON COLUMN statement
+        } else if (databaseType == DatabaseType::POSTGRESQL) {
             sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + std::string(columnName) +
                    " IS '" + std::string(columnComment) + "'";
         }
@@ -815,19 +640,18 @@ std::string TableDialog::generateAddColumnSQL() {
     return sql;
 }
 
-std::string TableDialog::generateEditColumnSQL() {
+std::string TableDialog::generateEditColumnSQL() const {
+    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTableName;
     std::string sql;
 
-    // Different databases have different syntax for altering columns
-    switch (getDatabaseType()) {
+    switch (databaseType) {
     case DatabaseType::POSTGRESQL: {
-        std::string qualifiedTableName = targetTableName;
+        std::string qualifiedTableName = tableName;
         if (qualifiedTableName.find('.') == std::string::npos) {
-            const std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-            qualifiedTableName = schemaName + "." + qualifiedTableName;
+            const std::string schema = schemaName.empty() ? "public" : schemaName;
+            qualifiedTableName = schema + "." + qualifiedTableName;
         }
 
-        // PostgreSQL uses ALTER COLUMN for each property
         std::vector<std::string> statements;
 
         // Rename column if needed
@@ -850,7 +674,7 @@ std::string TableDialog::generateEditColumnSQL() {
         }
 
         // Handle default value
-        if (strlen(defaultValue) > 0) {
+        if (std::strlen(defaultValue) > 0) {
             statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
                                  std::string(columnName) + " SET DEFAULT " +
                                  std::string(defaultValue));
@@ -860,7 +684,7 @@ std::string TableDialog::generateEditColumnSQL() {
         }
 
         // Handle comment
-        if (strlen(columnComment) > 0) {
+        if (std::strlen(columnComment) > 0) {
             statements.push_back("COMMENT ON COLUMN " + qualifiedTableName + "." +
                                  std::string(columnName) + " IS '" + std::string(columnComment) +
                                  "'");
@@ -876,32 +700,29 @@ std::string TableDialog::generateEditColumnSQL() {
     }
 
     case DatabaseType::MYSQL:
-        // MySQL uses MODIFY COLUMN
-        sql = "ALTER TABLE " + targetTableName + " MODIFY COLUMN " + std::string(columnName) + " " +
+        sql = "ALTER TABLE " + tableName + " MODIFY COLUMN " + std::string(columnName) + " " +
               std::string(columnType);
 
         if (isNotNull) {
             sql += " NOT NULL";
         }
 
-        if (strlen(defaultValue) > 0) {
+        if (std::strlen(defaultValue) > 0) {
             sql += " DEFAULT " + std::string(defaultValue);
         }
 
-        if (strlen(columnComment) > 0) {
+        if (std::strlen(columnComment) > 0) {
             sql += " COMMENT '" + std::string(columnComment) + "'";
         }
         break;
 
     case DatabaseType::SQLITE:
-        // SQLite doesn't support ALTER COLUMN directly
-        errorMessage =
-            "SQLite doesn't support column modification. You need to recreate the table.";
-        return "";
+        sql = "-- SQLite doesn't support column modification directly";
+        break;
 
     default:
-        errorMessage = "Column editing not supported for this database type";
-        return "";
+        sql = "-- Column editing not supported for this database type";
+        break;
     }
 
     return sql;
@@ -910,7 +731,7 @@ std::string TableDialog::generateEditColumnSQL() {
 std::vector<std::string> TableDialog::getCommonDataTypes() const {
     std::vector<std::string> types;
 
-    switch (getDatabaseType()) {
+    switch (databaseType) {
     case DatabaseType::POSTGRESQL:
         types = {
             "INTEGER",      "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC", "REAL", "DOUBLE PRECISION",
@@ -945,54 +766,29 @@ void TableDialog::renderTableProperties() {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.5f, 0.5f, 0.5f, 0.5f));
 
-    if (dialogMode == TableDialogMode::Create) {
-        // Table Name
-        ImGui::Text("Table Name:");
+    // Table Name
+    ImGui::Text("Table Name:");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##table_name", tableNameBuffer, sizeof(tableNameBuffer))) {
+        editingTable.name = tableNameBuffer;
+        if (showPreview) {
+            updatePreviewSQL();
+        }
+    }
+    ImGui::Spacing();
+
+    // Comment (if supported by database)
+    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::POSTGRESQL) {
+        ImGui::Text("Comment:");
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputText("##table_name", newTableName, sizeof(newTableName))) {
+        if (ImGui::InputTextMultiline("##table_comment", tableCommentBuffer,
+                                      sizeof(tableCommentBuffer), ImVec2(0, 60))) {
+            // Note: Table struct doesn't have comment field, but we store it for SQL generation
             if (showPreview) {
                 updatePreviewSQL();
             }
         }
         ImGui::Spacing();
-
-        // Comment (if supported by database)
-        if (getDatabaseType() == DatabaseType::MYSQL ||
-            getDatabaseType() == DatabaseType::POSTGRESQL) {
-            ImGui::Text("Comment:");
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::InputTextMultiline("##table_comment", newTableComment,
-                                          sizeof(newTableComment), ImVec2(0, 60))) {
-                if (showPreview) {
-                    updatePreviewSQL();
-                }
-            }
-            ImGui::Spacing();
-        }
-    } else {
-        // Edit mode - allow table name editing
-        ImGui::Text("Table Name:");
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputText("##edit_table_name", editTableName, sizeof(editTableName))) {
-            if (showPreview) {
-                updatePreviewSQL();
-            }
-        }
-
-        if (!targetSchemaName.empty()) {
-            ImGui::Text("Schema: %s", targetSchemaName.c_str());
-        }
-        ImGui::Spacing();
-
-        // Comment (if supported by database)
-        if (getDatabaseType() == DatabaseType::MYSQL ||
-            getDatabaseType() == DatabaseType::POSTGRESQL) {
-            ImGui::Text("Comment:");
-            ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextMultiline("##edit_table_comment", editTableComment,
-                                      sizeof(editTableComment), ImVec2(0, 60));
-            ImGui::Spacing();
-        }
     }
 
     // Pop style
@@ -1005,9 +801,10 @@ void TableDialog::renderTableProperties() {
     // Instructions
     if (dialogMode == TableDialogMode::Create) {
         ImGui::TextWrapped(
-            "Add columns to your table by right-clicking on 'Columns' in the tree on the left.");
+            "Add columns to your table by clicking the + icon or right-clicking on 'Columns' in "
+            "the tree on the left.");
 
-        if (tableColumns.empty()) {
+        if (editingTable.columns.empty()) {
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
                                "Note: A table must have at least one column to be created.");
@@ -1039,126 +836,67 @@ bool TableDialog::validateTableInput() {
     errorMessage.clear();
 
     // Check table name
-    if (strlen(newTableName) == 0) {
+    if (std::strlen(tableNameBuffer) == 0) {
         errorMessage = "Table name cannot be empty";
         return false;
     }
 
     // Check if table has at least one column
-    if (tableColumns.empty()) {
+    if (editingTable.columns.empty()) {
         errorMessage = "Table must have at least one column";
         return false;
-    }
-
-    // Check if table has a primary key (recommended but not required)
-    bool hasPrimaryKey = false;
-    for (const auto& column : tableColumns) {
-        if (column.isPrimaryKey) {
-            hasPrimaryKey = true;
-            break;
-        }
-    }
-
-    if (!hasPrimaryKey) {
-        // This is just a warning, not an error
-        Logger::warn("Table '" + std::string(newTableName) + "' does not have a primary key");
     }
 
     return true;
 }
 
-bool TableDialog::executeCreateTable() {
-    try {
-        std::string sql = generateCreateTableSQL();
-        Logger::info("Executing: " + sql);
+bool TableDialog::validateColumnInput() {
+    errorMessage.clear();
 
-        std::string result = executeQuery(sql);
-
-        // Check if there was an error in the result
-        if (result.find("ERROR") != std::string::npos ||
-            result.find("Error") != std::string::npos) {
-            const std::string& cleanError = result;
-            if (cleanError.find("already exists") != std::string::npos) {
-                errorMessage = "Table '" + std::string(newTableName) + "' already exists";
-            } else {
-                errorMessage = "Failed to create table: " + result;
-            }
-            return false;
-        }
-
-        // Add comment if supported and provided
-        if ((getDatabaseType() == DatabaseType::MYSQL ||
-             getDatabaseType() == DatabaseType::POSTGRESQL) &&
-            strlen(newTableComment) > 0) {
-
-            std::string commentSQL;
-            if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-                auto qualifiedTableName = std::string(newTableName);
-                if (qualifiedTableName.find('.') == std::string::npos) {
-                    std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-                    qualifiedTableName = schemaName + "." + qualifiedTableName;
-                }
-                commentSQL = "COMMENT ON TABLE " + qualifiedTableName + " IS '" +
-                             std::string(newTableComment) + "'";
-            } else if (getDatabaseType() == DatabaseType::MYSQL) {
-                commentSQL = "ALTER TABLE " + std::string(newTableName) + " COMMENT = '" +
-                             std::string(newTableComment) + "'";
-            }
-
-            if (!commentSQL.empty()) {
-                std::string commentResult = executeQuery(commentSQL);
-                if (commentResult.find("ERROR") != std::string::npos ||
-                    commentResult.find("Error") != std::string::npos) {
-                    // Table was created but comment failed - log warning but don't fail
-                    Logger::warn("Table created but comment failed: " + commentResult);
-                }
-            }
-        }
-
-        // Refresh table structure
-        // getDatabaseInterface()->setTablesLoaded(false);
-        // getDatabaseInterface()->refreshAllTables();
-
-        Logger::info("Table '" + std::string(newTableName) + "' created successfully");
-        return true;
-
-    } catch (const std::exception& e) {
-        errorMessage = "Failed to create table: " + std::string(e.what());
-        Logger::error(errorMessage);
+    // Check column name
+    if (std::strlen(columnName) == 0) {
+        errorMessage = "Column name cannot be empty";
         return false;
     }
+
+    // Check data type
+    if (std::strlen(columnType) == 0) {
+        errorMessage = "Data type cannot be empty";
+        return false;
+    }
+
+    return true;
 }
 
-std::string TableDialog::generateCreateTableSQL() {
-    if (tableColumns.empty()) {
+std::string TableDialog::generateCreateTableSQL() const {
+    if (editingTable.columns.empty()) {
         return "";
     }
 
-    std::string qualifiedTableName = std::string(newTableName);
-    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-        // If table name doesn't already contain a schema prefix, add schema
+    std::string qualifiedTableName = std::string(tableNameBuffer);
+    if (databaseType == DatabaseType::POSTGRESQL) {
         if (qualifiedTableName.find('.') == std::string::npos) {
-            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-            qualifiedTableName = schemaName + "." + qualifiedTableName;
+            std::string schema = schemaName.empty() ? "public" : schemaName;
+            qualifiedTableName = schema + "." + qualifiedTableName;
         }
     }
 
     std::string sql = "CREATE TABLE " + qualifiedTableName + " (\n";
 
     // Add columns
-    for (size_t i = 0; i < tableColumns.size(); ++i) {
-        const auto& column = tableColumns[i];
+    for (size_t i = 0; i < editingTable.columns.size(); ++i) {
+        const auto& column = editingTable.columns[i];
         sql += "    " + column.name + " " + column.type;
 
         if (column.isNotNull) {
             sql += " NOT NULL";
         }
 
-        if (!column.comment.empty() && getDatabaseType() == DatabaseType::MYSQL) {
+        if (!column.comment.empty() && databaseType == DatabaseType::MYSQL) {
             sql += " COMMENT '" + column.comment + "'";
         }
 
-        if (i < tableColumns.size() - 1) {
+        if (i < editingTable.columns.size() - 1) {
             sql += ",";
         }
         sql += "\n";
@@ -1166,7 +904,7 @@ std::string TableDialog::generateCreateTableSQL() {
 
     // Add primary key constraint if any columns are marked as primary key
     std::vector<std::string> primaryKeyColumns;
-    for (const auto& column : tableColumns) {
+    for (const auto& column : editingTable.columns) {
         if (column.isPrimaryKey) {
             primaryKeyColumns.push_back(column.name);
         }
@@ -1185,17 +923,18 @@ std::string TableDialog::generateCreateTableSQL() {
 
     sql += ")";
 
-    // Add table comment for MySQL (PostgreSQL uses separate COMMENT ON TABLE statement)
-    if (getDatabaseType() == DatabaseType::MYSQL && strlen(newTableComment) > 0) {
-        sql += " COMMENT = '" + std::string(newTableComment) + "'";
+    // Add table comment for MySQL
+    if (databaseType == DatabaseType::MYSQL && std::strlen(tableCommentBuffer) > 0) {
+        sql += " COMMENT = '" + std::string(tableCommentBuffer) + "'";
     }
 
     return sql;
 }
 
 void TableDialog::updateCurrentColumn() {
-    if (selectedColumnIndex >= 0 && selectedColumnIndex < tableColumns.size()) {
-        auto& column = tableColumns[selectedColumnIndex];
+    if (selectedColumnIndex >= 0 &&
+        selectedColumnIndex < static_cast<int>(editingTable.columns.size())) {
+        auto& column = editingTable.columns[selectedColumnIndex];
         column.name = std::string(columnName);
         column.type = std::string(columnType);
         column.comment = std::string(columnComment);
@@ -1209,315 +948,31 @@ void TableDialog::updateCurrentColumn() {
     }
 }
 
-bool TableDialog::saveTableChanges() {
-    try {
-        std::vector<std::string> sqlStatements;
-
-        // Check if table name changed
-        if (std::string(editTableName) != targetTableName) {
-            std::string renameSQL;
-            if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-                std::string qualifiedOldName = targetTableName;
-                auto qualifiedNewName = std::string(editTableName);
-                if (qualifiedOldName.find('.') == std::string::npos) {
-                    std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-                    qualifiedOldName = schemaName + "." + qualifiedOldName;
-                }
-                renameSQL =
-                    "ALTER TABLE " + qualifiedOldName + " RENAME TO " + std::string(editTableName);
-            } else if (getDatabaseType() == DatabaseType::MYSQL) {
-                renameSQL =
-                    "ALTER TABLE " + targetTableName + " RENAME TO " + std::string(editTableName);
-            } else if (getDatabaseType() == DatabaseType::SQLITE) {
-                renameSQL =
-                    "ALTER TABLE " + targetTableName + " RENAME TO " + std::string(editTableName);
-            }
-
-            if (!renameSQL.empty()) {
-                sqlStatements.push_back(renameSQL);
-            }
-        }
-
-        // Get original table structure for comparison
-        std::vector<Column> originalColumns;
-        const auto& tables = getTables();
-        for (const auto& table : tables) {
-            if (table.name == targetTableName) {
-                originalColumns = table.columns;
-                break;
-            }
-        }
-
-        // Compare current columns with original columns and generate ALTER statements
-        for (const auto& currentColumn : tableColumns) {
-            // Find corresponding original column
-            bool foundOriginal = false;
-            for (const auto& originalColumn : originalColumns) {
-                if (originalColumn.name == currentColumn.name) {
-                    foundOriginal = true;
-                    // Check if column properties changed
-                    if (originalColumn.type != currentColumn.type ||
-                        originalColumn.isNotNull != currentColumn.isNotNull ||
-                        originalColumn.isPrimaryKey != currentColumn.isPrimaryKey ||
-                        originalColumn.comment != currentColumn.comment) {
-
-                        // Generate ALTER COLUMN statement
-                        std::string alterSQL =
-                            generateEditColumnSQLForColumn(currentColumn, originalColumn.name);
-                        if (!alterSQL.empty()) {
-                            sqlStatements.push_back(alterSQL);
-                        }
-                    }
-                    break;
-                }
-            }
-
-            // If not found in original, it's a new column
-            if (!foundOriginal) {
-                std::string addSQL = generateAddColumnSQLForColumn(currentColumn);
-                if (!addSQL.empty()) {
-                    sqlStatements.push_back(addSQL);
-                }
-            }
-        }
-
-        // Check for deleted columns (columns that were in original but not in current)
-        for (const auto& originalColumn : originalColumns) {
-            bool foundInCurrent = false;
-            for (const auto& currentColumn : tableColumns) {
-                if (currentColumn.name == originalColumn.name) {
-                    foundInCurrent = true;
-                    break;
-                }
-            }
-
-            if (!foundInCurrent) {
-                // Generate DROP COLUMN statement
-                std::string dropSQL;
-                std::string tableName = (std::string(editTableName) != targetTableName)
-                                            ? std::string(editTableName)
-                                            : targetTableName;
-
-                if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-                    std::string qualifiedTableName = tableName;
-                    if (qualifiedTableName.find('.') == std::string::npos) {
-                        std::string schemaName =
-                            targetSchemaName.empty() ? "public" : targetSchemaName;
-                        qualifiedTableName = std::format("{}.{}", schemaName, qualifiedTableName);
-                    }
-                    dropSQL =
-                        "ALTER TABLE " + qualifiedTableName + " DROP COLUMN " + originalColumn.name;
-                } else if (getDatabaseType() == DatabaseType::MYSQL) {
-                    dropSQL = "ALTER TABLE " + tableName + " DROP COLUMN " + originalColumn.name;
-                } else if (getDatabaseType() == DatabaseType::SQLITE) {
-                    // SQLite doesn't support DROP COLUMN directly
-                    Logger::warn("SQLite doesn't support DROP COLUMN. Column '" +
-                                 originalColumn.name + "' will remain in the table.");
-                    continue;
-                }
-
-                if (!dropSQL.empty()) {
-                    sqlStatements.push_back(dropSQL);
-                }
-            }
-        }
-
-        // Execute all SQL statements
-        for (const auto& sql : sqlStatements) {
-            Logger::info("Executing: " + sql);
-            std::string result = executeQuery(sql);
-
-            if (result.find("ERROR") != std::string::npos ||
-                result.find("Error") != std::string::npos) {
-                errorMessage = std::format("Failed to execute: {}", sql);
-                Logger::error(errorMessage);
-                return false;
-            }
-        }
-
-        // Refresh table structure
-        // getDatabaseInterface()->setTablesLoaded(false);
-        // getDatabaseInterface()->refreshAllTables();
-
-        Logger::info("Table changes saved successfully");
-        return true;
-
-    } catch (const std::exception& e) {
-        errorMessage = "Failed to save table changes: " + std::string(e.what());
-        Logger::error(errorMessage);
-        return false;
-    }
-}
-std::string TableDialog::generateAddColumnSQLForColumn(const Column& column) {
-    std::string tableName = (std::string(editTableName) != targetTableName)
-                                ? std::string(editTableName)
-                                : targetTableName;
-
-    std::string qualifiedTableName = tableName;
-    if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-        if (qualifiedTableName.find('.') == std::string::npos) {
-            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-            qualifiedTableName = schemaName + "." + qualifiedTableName;
-        }
-    }
-
-    std::string sql =
-        "ALTER TABLE " + qualifiedTableName + " ADD COLUMN " + column.name + " " + column.type;
-
-    if (column.isNotNull) {
-        sql += " NOT NULL";
-    }
-
-    // Handle comments differently for different databases
-    if (!column.comment.empty()) {
-        if (getDatabaseType() == DatabaseType::MYSQL) {
-            sql += " COMMENT '" + column.comment + "'";
-        } else if (getDatabaseType() == DatabaseType::POSTGRESQL) {
-            sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + column.name + " IS '" +
-                   column.comment + "'";
-        }
-    }
-
-    return sql;
+Table TableDialog::buildResultTable() const {
+    Table result = editingTable;
+    result.name = std::string(tableNameBuffer);
+    // Note: Table struct doesn't have comment field
+    return result;
 }
 
-std::string TableDialog::generateEditColumnSQLForColumn(const Column& column,
-                                                        const std::string& originalName) {
-    std::string tableName = (std::string(editTableName) != targetTableName)
-                                ? std::string(editTableName)
-                                : targetTableName;
+void TableDialog::reset() {
+    columnEditMode = ColumnEditMode::None;
+    selectedColumnIndex = -1;
+    rightPanelMode = RightPanelMode::TableProperties;
 
-    std::string sql;
+    editingTable = Table{};
+    originalTableName.clear();
+    originalColumnName.clear();
+    schemaName.clear();
 
-    switch (getDatabaseType()) {
-    case DatabaseType::POSTGRESQL: {
-        std::string qualifiedTableName = tableName;
-        if (qualifiedTableName.find('.') == std::string::npos) {
-            std::string schemaName = targetSchemaName.empty() ? "public" : targetSchemaName;
-            qualifiedTableName = schemaName + "." + qualifiedTableName;
-        }
+    std::memset(tableNameBuffer, 0, sizeof(tableNameBuffer));
+    std::memset(tableCommentBuffer, 0, sizeof(tableCommentBuffer));
+    resetColumnForm();
 
-        std::vector<std::string> statements;
+    errorMessage.clear();
+    previewSQL.clear();
+    showPreview = false;
 
-        // Rename column if needed
-        if (column.name != originalName) {
-            statements.push_back("ALTER TABLE " + qualifiedTableName + " RENAME COLUMN " +
-                                 originalName + " TO " + column.name);
-        }
-
-        // Change column type
-        statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " + column.name +
-                             " TYPE " + column.type);
-
-        // Handle NOT NULL constraint
-        if (column.isNotNull) {
-            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
-                                 column.name + " SET NOT NULL");
-        } else {
-            statements.push_back("ALTER TABLE " + qualifiedTableName + " ALTER COLUMN " +
-                                 column.name + " DROP NOT NULL");
-        }
-
-        // Handle comment
-        if (!column.comment.empty()) {
-            statements.push_back("COMMENT ON COLUMN " + qualifiedTableName + "." + column.name +
-                                 " IS '" + column.comment + "'");
-        }
-
-        // Join all statements with semicolons
-        for (size_t i = 0; i < statements.size(); ++i) {
-            if (i > 0)
-                sql += "; ";
-            sql += statements[i];
-        }
-        break;
-    }
-
-    case DatabaseType::MYSQL:
-        // MySQL uses MODIFY COLUMN
-        sql = "ALTER TABLE " + tableName + " MODIFY COLUMN " + column.name + " " + column.type;
-
-        if (column.isNotNull) {
-            sql += " NOT NULL";
-        }
-
-        if (!column.comment.empty()) {
-            sql += " COMMENT '" + column.comment + "'";
-        }
-        break;
-
-    case DatabaseType::SQLITE:
-        // SQLite doesn't support ALTER COLUMN directly
-        Logger::warn("SQLite doesn't support column modification for column: " + column.name);
-        return "";
-
-    default:
-        Logger::warn("Column editing not supported for this database type");
-        return "";
-    }
-
-    return sql;
-}
-
-DatabaseType TableDialog::getDatabaseType() const {
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        return DatabaseType::POSTGRESQL;
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        return DatabaseType::MYSQL;
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        return DatabaseType::SQLITE;
-    }
-    return DatabaseType::POSTGRESQL; // fallback
-}
-
-std::string TableDialog::executeQuery(const std::string& query) {
-    IQueryExecutor* executor = nullptr;
-
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-        if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-            executor = schemaNode->parentDbNode->parentDb;
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* dbNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (dbNode && dbNode->parentDb) {
-            executor = dbNode->parentDb;
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteDb = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteDb) {
-            executor = sqliteDb;
-        }
-    }
-
-    if (!executor) {
-        return "ERROR: No database connection";
-    }
-
-    const auto result = executor->executeQueryWithResult(query);
-    if (!result.success) {
-        return "ERROR: " + result.errorMessage;
-    }
-    return result.message;
-}
-
-const std::vector<Table>& TableDialog::getTables() const {
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-        if (schemaNode) {
-            return schemaNode->tables;
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* dbNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (dbNode) {
-            return dbNode->tables;
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteDb = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteDb) {
-            return sqliteDb->getTables();
-        }
-    }
-    static const std::vector<Table> empty;
-    return empty;
+    saveCallback = nullptr;
+    cancelCallback = nullptr;
 }

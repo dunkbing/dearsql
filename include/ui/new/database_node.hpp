@@ -65,9 +65,3 @@ private:
                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                                       ImGuiTreeNodeFlags_FramePadding);
 };
-
-// Helper functions for dialog access (defined in db_sidebar_new.cpp)
-namespace NewHierarchy {
-    TableDialog& getTableDialog();
-    DropColumnDialog& getDropColumnDialog();
-} // namespace NewHierarchy

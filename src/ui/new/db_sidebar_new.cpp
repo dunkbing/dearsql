@@ -8,7 +8,6 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/confirm_dialog.hpp"
-#include "ui/drop_column_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/new/database_node.hpp"
 #include "ui/table_dialog.hpp"
@@ -16,21 +15,6 @@
 #include "utils/spinner.hpp"
 #include <format>
 #include <memory>
-
-// Static dialog instances (non-singleton dialogs)
-static TableDialog tableDialogNew;
-static DropColumnDialog dropColumnDialogNew;
-
-// Function to access the dialogs from database_node rendering
-namespace NewHierarchy {
-    TableDialog& getTableDialog() {
-        return tableDialogNew;
-    }
-
-    DropColumnDialog& getDropColumnDialog() {
-        return dropColumnDialogNew;
-    }
-} // namespace NewHierarchy
 
 DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
@@ -174,23 +158,8 @@ void DatabaseSidebarNew::render() {
     }
 
     // Render table dialog if open
-    if (tableDialogNew.isDialogOpen()) {
-        tableDialogNew.renderDialog();
-    }
-
-    // Handle table dialog completion
-    if (tableDialogNew.hasResult()) {
-        tableDialogNew.clearResult();
-    }
-
-    // Render drop column dialog if open
-    if (dropColumnDialogNew.isDialogOpen()) {
-        dropColumnDialogNew.renderDialog();
-    }
-
-    // Handle drop column dialog completion
-    if (dropColumnDialogNew.hasResult()) {
-        dropColumnDialogNew.clearResult();
+    if (TableDialog::instance().isOpen()) {
+        TableDialog::instance().render();
     }
 
     // Render input dialog if open (used by RenameDialog and other features)

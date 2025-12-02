@@ -16,13 +16,6 @@
 #include <format>
 #include <ranges>
 
-namespace NewHierarchy {
-    // Forward declaration for dialog access
-    TableDialog& getTableDialog();
-} // namespace NewHierarchy
-
-// ==================== DatabaseHierarchy Class Implementation ====================
-
 DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface)
     : db(std::move(dbInterface)) {}
 
@@ -739,6 +732,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schemaData,
                                         const std::string& databaseName,
                                         const std::string& schemaName) {
+    (void)databaseName; // unused for now
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -750,7 +744,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     }
 
     const std::string tableNodeId =
-        std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("pg_table_{}_{:p}", table.name, static_cast<void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
 
@@ -786,7 +780,14 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
             app.getTabManager()->createTableViewerTab(schemaData, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            NewHierarchy::getTableDialog().showTableDialog(schemaData, table.name, schemaName);
+            TableDialog::instance().showEdit(table, DatabaseType::POSTGRESQL, schemaName,
+                                             [schemaData](const Table& modifiedTable) {
+                                                 // TODO: Generate and execute ALTER TABLE
+                                                 // statements based on changes
+                                                 Logger::info("Table modified: " +
+                                                              modifiedTable.name);
+                                                 schemaData->startTablesLoadAsync(true);
+                                             });
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -843,10 +844,10 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     }
 
     if (tableOpen) {
-        // Columns section
+        // Columns section (PostgreSQL)
         {
             const std::string columnsNodeId =
-                std::format("columns_{}_{:p}", table.name, static_cast<void*>(&table.columns));
+                std::format("pg_columns_{}_{:p}", table.name, static_cast<void*>(&table.columns));
             const bool columnsOpen = renderTreeNodeWithIcon(
                 "Columns", columnsNodeId, ICON_FA_TABLE_COLUMNS, ImGui::GetColorU32(colors.green));
 
@@ -865,11 +866,40 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     }
 
                     const std::string columnNodeId =
-                        std::format("col_{}_{}_{:p}", table.name, column.name,
+                        std::format("pg_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
                         std::format("   {}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+
+                    // Context menu for column
+                    if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        if (ImGui::MenuItem("Delete...")) {
+                            const std::string colName = column.name;
+                            const std::string tblName = table.name;
+                            const std::string schemaNameCopy = schemaName;
+                            ConfirmDialog::instance().show(
+                                "Drop Column",
+                                std::format("You are about to drop the column: {}.{}.{}",
+                                            schemaNameCopy, tblName, colName),
+                                {"Permanently delete the column and all its data",
+                                 "Remove any indexes or constraints on this column",
+                                 "Potentially break applications that depend on this column"},
+                                "Drop Column", [schemaData, schemaNameCopy, tblName, colName]() {
+                                    const std::string sql =
+                                        std::format("ALTER TABLE \"{}\".\"{}\" DROP COLUMN \"{}\"",
+                                                    schemaNameCopy, tblName, colName);
+                                    Logger::info("Executing: " + sql);
+                                    auto [success, error] = schemaData->executeQuery(sql);
+                                    if (success) {
+                                        schemaData->startTablesLoadAsync(true);
+                                    } else {
+                                        ConfirmDialog::instance().setError(error);
+                                    }
+                                });
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
                 ImGui::TreePop();
             }
@@ -878,7 +908,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         // Foreign Keys section
         {
             const std::string fkNodeId =
-                std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                std::format("pg_foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
             const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
                                                        ImGui::GetColorU32(colors.yellow));
 
@@ -1028,7 +1058,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     }
 
     const std::string tableNodeId =
-        std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("mysql_table_{}_{:p}", table.name, static_cast<void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
 
@@ -1064,7 +1094,12 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
             app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            NewHierarchy::getTableDialog().showTableDialog(dbData, table.name);
+            TableDialog::instance().showEdit(
+                table, DatabaseType::MYSQL, "", [dbData](const Table& modifiedTable) {
+                    // TODO: Generate and execute ALTER TABLE statements based on changes
+                    Logger::info("Table modified: " + modifiedTable.name);
+                    dbData->startTablesLoadAsync(true);
+                });
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -1116,10 +1151,10 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     }
 
     if (tableOpen) {
-        // Columns section
+        // Columns section (MySQL)
         {
-            const std::string columnsNodeId =
-                std::format("columns_{}_{:p}", table.name, static_cast<void*>(&table.columns));
+            const std::string columnsNodeId = std::format("mysql_columns_{}_{:p}", table.name,
+                                                          static_cast<void*>(&table.columns));
             const bool columnsOpen = renderTreeNodeWithIcon(
                 "Columns", columnsNodeId, ICON_FA_TABLE_COLUMNS, ImGui::GetColorU32(colors.green));
 
@@ -1138,20 +1173,47 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     }
 
                     const std::string columnNodeId =
-                        std::format("col_{}_{}_{:p}", table.name, column.name,
+                        std::format("mysql_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
                         std::format("   {}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+
+                    // Context menu for column (MySQL)
+                    if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        if (ImGui::MenuItem("Delete...")) {
+                            const std::string colName = column.name;
+                            const std::string tblName = table.name;
+                            ConfirmDialog::instance().show(
+                                "Drop Column",
+                                std::format("You are about to drop the column: {}.{}", tblName,
+                                            colName),
+                                {"Permanently delete the column and all its data",
+                                 "Remove any indexes or constraints on this column",
+                                 "Potentially break applications that depend on this column"},
+                                "Drop Column", [dbData, tblName, colName]() {
+                                    const std::string sql = std::format(
+                                        "ALTER TABLE `{}` DROP COLUMN `{}`", tblName, colName);
+                                    Logger::info("Executing: " + sql);
+                                    auto [success, error] = dbData->executeQuery(sql);
+                                    if (success) {
+                                        dbData->startTablesLoadAsync(true);
+                                    } else {
+                                        ConfirmDialog::instance().setError(error);
+                                    }
+                                });
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
                 ImGui::TreePop();
             }
         }
 
-        // Foreign Keys section
+        // Foreign Keys section (MySQL)
         {
             const std::string fkNodeId =
-                std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                std::format("mysql_foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
             const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
                                                        ImGui::GetColorU32(colors.yellow));
 
@@ -1299,7 +1361,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
     }
 
     const std::string tableNodeId =
-        std::format("table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("sqlite_table_{}_{:p}", table.name, static_cast<void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
 
@@ -1316,7 +1378,12 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
             app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            NewHierarchy::getTableDialog().showTableDialog(sqliteDb, table.name);
+            TableDialog::instance().showEdit(
+                table, DatabaseType::SQLITE, "", [sqliteDb](const Table& modifiedTable) {
+                    // TODO: Generate and execute ALTER TABLE statements based on changes
+                    Logger::info("Table modified: " + modifiedTable.name);
+                    sqliteDb->startTablesLoadAsync(true);
+                });
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -1387,11 +1454,39 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     }
 
                     const std::string columnNodeId =
-                        std::format("col_{}_{}_{:p}", table.name, column.name,
+                        std::format("sqlite_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
                         std::format("   {}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+
+                    // Context menu for column
+                    if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        if (ImGui::MenuItem("Delete...")) {
+                            const std::string colName = column.name;
+                            const std::string tblName = table.name;
+                            ConfirmDialog::instance().show(
+                                "Drop Column",
+                                std::format("You are about to drop the column: {}.{}", tblName,
+                                            colName),
+                                {"Permanently delete the column and all its data",
+                                 "Remove any indexes or constraints on this column",
+                                 "Potentially break applications that depend on this column",
+                                 "Note: Requires SQLite 3.35.0+ (2021-03-12)"},
+                                "Drop Column", [sqliteDb, tblName, colName]() {
+                                    const std::string sql = std::format(
+                                        "ALTER TABLE \"{}\" DROP COLUMN \"{}\"", tblName, colName);
+                                    Logger::info("Executing: " + sql);
+                                    auto [success, error] = sqliteDb->executeQuery(sql);
+                                    if (success) {
+                                        sqliteDb->startTablesLoadAsync(true);
+                                    } else {
+                                        ConfirmDialog::instance().setError(error);
+                                    }
+                                });
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
                 ImGui::TreePop();
             }
@@ -1400,7 +1495,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
         // Foreign Keys section
         {
             const std::string fkNodeId =
-                std::format("foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+                std::format("sqlite_foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
             const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
                                                        ImGui::GetColorU32(colors.yellow));
 

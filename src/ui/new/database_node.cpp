@@ -321,11 +321,8 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                         return "New name must be different";
                     return "";
                 },
-                [this, dbData, oldName](const std::string& newName) {
-                    const std::string sql =
-                        std::format("ALTER DATABASE \"{}\" RENAME TO \"{}\"", oldName, newName);
-                    Logger::info("Executing: " + sql);
-                    auto [success, error] = dbData->executeQuery(sql);
+                [this, oldName](const std::string& newName) {
+                    auto [success, error] = db->renameDatabase(oldName, newName);
                     if (success) {
                         if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
                             pgDb->refreshDatabaseNames();

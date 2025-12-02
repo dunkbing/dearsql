@@ -24,6 +24,8 @@ public:
     DatabaseHierarchy* getHierarchy(const std::shared_ptr<DatabaseInterface>& db);
 
 private:
+    void renderStructure();
+    void renderHistory();
     void renderEmpty();
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);

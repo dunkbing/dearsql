@@ -90,9 +90,9 @@ set(APP_SOURCES
     # UI
     src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
-    src/ui/drop_column_dialog.cpp
     src/ui/confirm_dialog.cpp
     src/ui/input_dialog.cpp
+    src/ui/query_history.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     # src/ui/db_sidebar.cpp

@@ -1,4 +1,5 @@
 #include "ui/new/db_sidebar_new.hpp"
+#include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
@@ -10,9 +11,11 @@
 #include "ui/confirm_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/new/database_node.hpp"
+#include "ui/query_history.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
+#include <chrono>
 #include <format>
 #include <memory>
 
@@ -59,6 +62,145 @@ void DatabaseSidebarNew::renderEmpty() {
     }
 }
 
+void DatabaseSidebarNew::renderStructure() {
+    auto& app = Application::getInstance();
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
+    const auto& databases = app.getDatabases();
+
+    if (databases.empty()) {
+        renderEmpty();
+    } else {
+        for (const auto& db : databases) {
+            renderDatabaseNode(db);
+        }
+    }
+
+    ImGui::PopStyleVar();
+}
+
+void DatabaseSidebarNew::renderHistory() {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+    auto& history = QueryHistory::instance();
+
+    const auto& entries = history.getEntries();
+    if (entries.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::TextWrapped("No queries executed yet");
+        ImGui::PopStyleColor();
+        return;
+    }
+
+    // Calculate relative time
+    auto formatRelativeTime = [](const std::chrono::system_clock::time_point& tp) -> std::string {
+        auto now = std::chrono::system_clock::now();
+        auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - tp).count();
+
+        if (diff < 60) {
+            return "just now";
+        }
+        if (diff < 3600) {
+            int mins = static_cast<int>(diff / 60);
+            return std::format("{}m ago", mins);
+        }
+        if (diff < 86400) {
+            int hours = static_cast<int>(diff / 3600);
+            return std::format("{}h ago", hours);
+        }
+        int days = static_cast<int>(diff / 86400);
+        return std::format("{}d ago", days);
+    };
+
+    // Get query type label and color
+    auto getQueryTypeInfo = [&colors](QueryType type) -> std::pair<std::string, ImVec4> {
+        switch (type) {
+        case QueryType::SELECT:
+            return {"SELECT", colors.blue};
+        case QueryType::INSERT:
+            return {"INSERT", colors.green};
+        case QueryType::UPDATE:
+            return {"UPDATE", colors.peach};
+        case QueryType::DELETE:
+            return {"DELETE", colors.red};
+        case QueryType::CREATE:
+            return {"CREATE", colors.mauve};
+        case QueryType::ALTER:
+            return {"ALTER", colors.yellow};
+        case QueryType::DROP:
+            return {"DROP", colors.maroon};
+        default:
+            return {"OTHER", colors.overlay1};
+        }
+    };
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 8.0f));
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const auto& entry = entries[i];
+        const auto [typeLabel, typeColor] = getQueryTypeInfo(entry.type);
+
+        ImGui::PushID(static_cast<int>(i));
+
+        // Query type badge
+        ImGui::PushStyleColor(ImGuiCol_Button, typeColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
+        ImGui::SmallButton(typeLabel.c_str());
+        ImGui::PopStyleColor(4);
+
+        ImGui::SameLine();
+
+        // Truncated query text
+        const float availWidth = ImGui::GetContentRegionAvail().x - 30.0f;
+        std::string displayQuery = entry.query;
+        if (displayQuery.length() > 30) {
+            displayQuery = displayQuery.substr(0, 27) + "...";
+        }
+
+        // Make the query text clickable (selectable)
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
+        if (ImGui::Selectable(displayQuery.c_str(), false, 0, ImVec2(availWidth, 0))) {
+            // TODO: Could copy to clipboard or open in SQL editor
+        }
+        ImGui::PopStyleColor();
+
+        // Tooltip with full query on hover
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(400.0f);
+            ImGui::TextUnformatted(entry.query.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem("history_entry_menu")) {
+            if (ImGui::MenuItem("Copy to clipboard")) {
+                ImGui::SetClipboardText(entry.query.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        // Metadata line (time, rows, duration)
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        std::string metaInfo = formatRelativeTime(entry.timestamp);
+        if (entry.rowCount > 0) {
+            metaInfo += std::format(" {} rows", entry.rowCount);
+        }
+        if (entry.durationMs > 0) {
+            metaInfo += std::format(" {}ms", entry.durationMs);
+        }
+        ImGui::Text("%s %s", ICON_FA_CLOCK, metaInfo.c_str());
+        ImGui::PopStyleColor();
+
+        ImGui::PopID();
+    }
+
+    ImGui::PopStyleVar();
+}
+
 void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -100,19 +242,58 @@ void DatabaseSidebarNew::render() {
 
     ImGui::Separator();
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
-    const auto& databases = app.getDatabases();
+    // Calculate available height for the two sections
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
+    const float historyHeight = 200.0f; // Fixed height for history section
+    const float structureHeight = availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y;
 
-    if (databases.empty()) {
-        // Show helpful message when no databases are connected
-        renderEmpty();
-    } else {
-        for (const auto& db : databases) {
-            renderDatabaseNode(db);
-        }
+    // Calculate header height for history section
+    const float historyHeaderHeight = ImGui::GetTextLineHeightWithSpacing() + 8.0f;
+
+    // Structure section (top) - scrollbar visible only on hover
+    const float structureSectionHeight =
+        availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y;
+    const bool structureHovered = ImGui::IsMouseHoveringRect(
+        ImGui::GetCursorScreenPos(),
+        ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x,
+               ImGui::GetCursorScreenPos().y + structureSectionHeight));
+    ImGuiWindowFlags structureFlags = structureHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
+    ImGui::BeginChild("StructureSection", ImVec2(0, structureSectionHeight), false, structureFlags);
+    renderStructure();
+    ImGui::EndChild();
+
+    // Separator between Structure and History
+    ImGui::Separator();
+
+    // History header (fixed, not scrollable)
+    auto& history = QueryHistory::instance();
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::Text("History");
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+    if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
+        history.clear();
     }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Clear history");
+    }
+    ImGui::PopStyleColor(3);
 
-    ImGui::PopStyleVar();
+    ImGui::Separator();
+
+    // History list section (scrollable) - scrollbar visible only on hover
+    const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
+    const bool historyHovered = ImGui::IsMouseHoveringRect(
+        historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
+                                 historyCursorPos.y + ImGui::GetContentRegionAvail().y));
+    ImGuiWindowFlags historyFlags = historyHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
+    ImGui::BeginChild("HistorySection", ImVec2(0, 0), false, historyFlags);
+    renderHistory();
+    ImGui::EndChild();
 
     // Handle delete confirmation dialog
     if (shouldShowDeleteConfirmation) {

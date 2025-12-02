@@ -7,6 +7,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "ui/query_history.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
@@ -509,6 +510,18 @@ void TableViewerTab::checkAsyncLoadStatus() {
         dataLoadFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         dataLoadFuture.get(); // Wait for completion and handle any exceptions
         isLoadingData = false;
+
+        // Add to query history if load was successful
+        if (!hasLoadingError && !tableData.empty()) {
+            const int offset = currentPage * rowsPerPage;
+            std::string query = std::format("SELECT * FROM {}", tableName);
+            if (!currentFilter.empty()) {
+                query += std::format(" WHERE {}", currentFilter);
+            }
+            query += std::format(" LIMIT {} OFFSET {}", rowsPerPage, offset);
+
+            QueryHistory::instance().add(query, static_cast<int>(tableData.size()));
+        }
     }
 }
 

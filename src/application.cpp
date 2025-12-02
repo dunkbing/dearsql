@@ -84,6 +84,7 @@ namespace {
 } // namespace
 
 bool Application::initialize() {
+    std::cout << "ImGui version: " << IMGUI_VERSION << std::endl;
     std::cout << "Starting DearSQL..." << std::endl;
 
     if (!initializeGLFW()) {

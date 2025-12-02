@@ -1,8 +1,8 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include "database_node.hpp"
 #include "ui/db_connection_dialog.hpp"
-#include "ui/new/database_node.hpp"
 #include <memory>
 #include <unordered_map>
 

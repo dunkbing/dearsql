@@ -48,10 +48,8 @@ private:
     void renderSQLiteNode();
 
     // Table/view rendering (shared across database types)
-    void renderTableNode(Table& table, PostgresSchemaNode* schemaNode,
-                         const std::string& databaseName, const std::string& schemaName);
-    void renderViewNode(Table& view, PostgresSchemaNode* schemaNode,
-                        const std::string& databaseName, const std::string& schemaName);
+    void renderTableNode(Table& table, PostgresSchemaNode* schemaNode);
+    void renderViewNode(Table& view, PostgresSchemaNode* schemaNode);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
     void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);

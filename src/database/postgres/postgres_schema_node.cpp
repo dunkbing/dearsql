@@ -19,7 +19,7 @@ void PostgresSchemaNode::checkTablesStatusAsync() {
     });
 }
 
-void PostgresSchemaNode::startTablesLoadAsync(bool forceRefresh) {
+void PostgresSchemaNode::startTablesLoadAsync(const bool forceRefresh) {
     Logger::debug("startTablesLoadAsync for schema: " + name +
                   (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {

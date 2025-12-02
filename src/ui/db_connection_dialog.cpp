@@ -852,7 +852,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
-                        auto& app = Application::getInstance();
+                        const auto& app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
                         result = db;

@@ -1,6 +1,5 @@
 #include "ui/query_history.hpp"
 #include <algorithm>
-#include <cctype>
 
 QueryHistoryEntry::QueryHistoryEntry(std::string q, QueryType t, int rows, int duration,
                                      std::string dbName)
@@ -45,7 +44,7 @@ void QueryHistory::clear() {
 QueryType QueryHistory::detectQueryType(const std::string& query) {
     // Get first word (uppercase)
     std::string firstWord;
-    for (char c : query) {
+    for (const char c : query) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!firstWord.empty()) {
                 break;
@@ -85,7 +84,7 @@ std::string QueryHistory::normalizeQuery(const std::string& query) {
     result.reserve(query.size());
 
     bool lastWasSpace = true; // start true to trim leading space
-    for (char c : query) {
+    for (const char c : query) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (!lastWasSpace) {
                 result += ' ';

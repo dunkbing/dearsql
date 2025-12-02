@@ -95,14 +95,8 @@ set(APP_SOURCES
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
-    # src/ui/db_sidebar.cpp
-    # src/ui/hierarchy_helpers.cpp
-    # src/ui/sqlite_hierarchy.cpp
-    # src/ui/postgres_hierarchy.cpp
-    # src/ui/mysql_hierarchy.cpp
-    # New refactored hierarchy system
-    src/ui/new/database_node.cpp
-    src/ui/new/db_sidebar_new.cpp
+    src/ui/database_node.cpp
+    src/ui/db_sidebar_new.cpp
     # Tabs
     src/ui/tab_manager.cpp
     src/ui/tab/tab.cpp

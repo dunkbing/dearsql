@@ -1,4 +1,4 @@
-#include "ui/new/database_node.hpp"
+#include "../../include/ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -20,8 +20,8 @@ DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterf
     : db(std::move(dbInterface)) {}
 
 bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const std::string& nodeId,
-                                               const std::string& icon, ImU32 iconColor,
-                                               ImGuiTreeNodeFlags flags) {
+                                               const std::string& icon, const ImU32 iconColor,
+                                               const ImGuiTreeNodeFlags flags) {
     const std::string fullLabel = std::format("   {}###{}", label, nodeId);
     const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
 
@@ -40,7 +40,7 @@ void DatabaseHierarchy::renderRootNode() {
         return;
     }
 
-    auto& app = Application::getInstance();
+    const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
     // Get database type
@@ -100,7 +100,7 @@ void DatabaseHierarchy::renderRootNode() {
             }
         }
     } else if (dbType == DatabaseType::REDIS) {
-        auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
+        const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         if (!redisDb) {
             return;
         }
@@ -410,7 +410,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 },
                 [schemaData, oldName](const std::string& newName) {
                     const std::string sql =
-                        std::format("ALTER SCHEMA \"{}\" RENAME TO \"{}\"", oldName, newName);
+                        std::format(R"(ALTER SCHEMA "{}" RENAME TO "{}")", oldName, newName);
                     Logger::info("Executing: " + sql);
                     auto [success, error] = schemaData->executeQuery(sql);
                     if (success) {
@@ -478,7 +478,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                         ImGui::PopStyleColor();
                     } else {
                         for (auto& table : schemaData->tables) {
-                            renderTableNode(table, schemaData, dbData->name, schemaData->name);
+                            renderTableNode(table, schemaData);
                         }
                     }
                 }
@@ -520,7 +520,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                         ImGui::PopStyleColor();
                     } else {
                         for (auto& view : schemaData->views) {
-                            renderViewNode(view, schemaData, dbData->name, schemaData->name);
+                            renderViewNode(view, schemaData);
                         }
                     }
                 }
@@ -606,7 +606,6 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
-            // MySQL doesn't support direct database renaming
             const std::string oldName = dbData->name;
             InputDialog::instance().showWithValidation(
                 "Rename Database", "New name:", oldName, "Rename",
@@ -614,9 +613,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     return "MySQL does not support direct database renaming. You need to create a "
                            "new database, copy all data, and drop the old one.";
                 },
-                [](const std::string&) {
-                    // This won't be called due to validation always failing
-                });
+                [](const std::string&) {});
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string dbName = dbData->name;
@@ -729,10 +726,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
     }
 }
 
-void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schemaData,
-                                        const std::string& databaseName,
-                                        const std::string& schemaName) {
-    (void)databaseName; // unused for now
+void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schemaNode) {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -751,7 +745,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     table.expanded = tableOpen;
 
     // Check if table is refreshing
-    const bool isRefreshing = schemaData->isTableRefreshing(table.name);
+    const bool isRefreshing = schemaNode->isTableRefreshing(table.name);
 
     // Show loading indicator if refreshing
     if (isRefreshing) {
@@ -766,39 +760,39 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                          ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
-        schemaData->checkTableRefreshStatusAsync(table.name);
+        schemaNode->checkTableRefreshStatusAsync(table.name);
     }
 
     // Double-click to open table viewer
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-        app.getTabManager()->createTableViewerTab(schemaData, table.name);
+        app.getTabManager()->createTableViewerTab(schemaNode, table.name);
     }
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("View Data")) {
-            app.getTabManager()->createTableViewerTab(schemaData, table.name);
+            app.getTabManager()->createTableViewerTab(schemaNode, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            TableDialog::instance().showEdit(table, DatabaseType::POSTGRESQL, schemaName,
-                                             [schemaData](const Table& modifiedTable) {
+            TableDialog::instance().showEdit(table, DatabaseType::POSTGRESQL, schemaNode->name,
+                                             [schemaNode](const Table& modifiedTable) {
                                                  // TODO: Generate and execute ALTER TABLE
                                                  // statements based on changes
                                                  Logger::info("Table modified: " +
                                                               modifiedTable.name);
-                                                 schemaData->startTablesLoadAsync(true);
+                                                 schemaNode->startTablesLoadAsync(true);
                                              });
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
         }
         if (ImGui::MenuItem("Refresh")) {
-            schemaData->startTableRefreshAsync(table.name);
+            schemaNode->startTableRefreshAsync(table.name);
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Rename...")) {
             const std::string oldName = table.name;
-            const std::string schemaNameCopy = schemaData->name;
+            const std::string schemaNameCopy = schemaNode->name;
             InputDialog::instance().showWithValidation(
                 "Rename Table", "New name:", oldName, "Rename",
                 [oldName](const std::string& newName) -> std::string {
@@ -806,14 +800,13 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         return "New name must be different";
                     return "";
                 },
-                [schemaData, schemaNameCopy, oldName](const std::string& newName) {
-                    const std::string sql =
-                        std::format("ALTER TABLE \"{}\".\"{}\" RENAME TO \"{}\"", schemaNameCopy,
-                                    oldName, newName);
+                [schemaNode, schemaNameCopy, oldName](const std::string& newName) {
+                    const std::string sql = std::format(R"(ALTER TABLE "{}"."{}" RENAME TO "{}")",
+                                                        schemaNameCopy, oldName, newName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaData->executeQuery(sql);
+                    auto [success, error] = schemaNode->executeQuery(sql);
                     if (success) {
-                        schemaData->startTablesLoadAsync(true);
+                        schemaNode->startTablesLoadAsync(true);
                     } else {
                         InputDialog::instance().setError(error);
                     }
@@ -821,20 +814,20 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         }
         if (ImGui::MenuItem("Delete...")) {
             const std::string tableName = table.name;
-            const std::string schemaNameCopy = schemaData->name;
+            const std::string schemaNameCopy = schemaNode->name;
             ConfirmDialog::instance().show(
                 "Delete Table",
                 std::format("You are about to delete the table: {}.{}", schemaNameCopy, tableName),
                 {"Permanently delete the table and ALL its data",
                  "Remove all indexes and constraints",
                  "Break any foreign key references to this table"},
-                "Delete Table", [schemaData, schemaNameCopy, tableName]() {
+                "Delete Table", [schemaNode, schemaNameCopy, tableName]() {
                     const std::string sql =
-                        std::format("DROP TABLE \"{}\".\"{}\"", schemaNameCopy, tableName);
+                        std::format(R"(DROP TABLE "{}"."{}")", schemaNameCopy, tableName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaData->executeQuery(sql);
+                    auto [success, error] = schemaNode->executeQuery(sql);
                     if (success) {
-                        schemaData->startTablesLoadAsync(true);
+                        schemaNode->startTablesLoadAsync(true);
                     } else {
                         ConfirmDialog::instance().setError(error);
                     }
@@ -877,7 +870,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         if (ImGui::MenuItem("Delete...")) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
-                            const std::string schemaNameCopy = schemaName;
+                            const std::string& schemaNameCopy = schemaNode->name;
                             ConfirmDialog::instance().show(
                                 "Drop Column",
                                 std::format("You are about to drop the column: {}.{}.{}",
@@ -885,14 +878,14 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                 {"Permanently delete the column and all its data",
                                  "Remove any indexes or constraints on this column",
                                  "Potentially break applications that depend on this column"},
-                                "Drop Column", [schemaData, schemaNameCopy, tblName, colName]() {
+                                "Drop Column", [schemaNode, schemaNameCopy, tblName, colName]() {
                                     const std::string sql =
-                                        std::format("ALTER TABLE \"{}\".\"{}\" DROP COLUMN \"{}\"",
+                                        std::format(R"(ALTER TABLE "{}"."{}" DROP COLUMN "{}")",
                                                     schemaNameCopy, tblName, colName);
                                     Logger::info("Executing: " + sql);
-                                    auto [success, error] = schemaData->executeQuery(sql);
+                                    auto [success, error] = schemaNode->executeQuery(sql);
                                     if (success) {
-                                        schemaData->startTablesLoadAsync(true);
+                                        schemaNode->startTablesLoadAsync(true);
                                     } else {
                                         ConfirmDialog::instance().setError(error);
                                     }
@@ -1008,14 +1001,13 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     }
 }
 
-void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaData,
-                                       const std::string& databaseName,
-                                       const std::string& schemaName) {
-    auto& app = Application::getInstance();
+void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaData) {
+    const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                   ImGuiTreeNodeFlags_FramePadding;
+    constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
@@ -1314,11 +1306,12 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 }
 
 void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData) {
-    auto& app = Application::getInstance();
+    const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                   ImGuiTreeNodeFlags_FramePadding;
+    constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
@@ -1400,7 +1393,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                 },
                 [sqliteDb, oldName](const std::string& newName) {
                     const std::string sql =
-                        std::format("ALTER TABLE \"{}\" RENAME TO \"{}\"", oldName, newName);
+                        std::format(R"(ALTER TABLE "{}" RENAME TO "{}")", oldName, newName);
                     Logger::info("Executing: " + sql);
                     auto [success, error] = sqliteDb->executeQuery(sql);
                     if (success) {
@@ -1475,7 +1468,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                                  "Note: Requires SQLite 3.35.0+ (2021-03-12)"},
                                 "Drop Column", [sqliteDb, tblName, colName]() {
                                     const std::string sql = std::format(
-                                        "ALTER TABLE \"{}\" DROP COLUMN \"{}\"", tblName, colName);
+                                        R"(ALTER TABLE "{}" DROP COLUMN "{}")", tblName, colName);
                                     Logger::info("Executing: " + sql);
                                     auto [success, error] = sqliteDb->executeQuery(sql);
                                     if (success) {
@@ -1596,11 +1589,12 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
 }
 
 void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb) {
-    auto& app = Application::getInstance();
+    const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                   ImGuiTreeNodeFlags_FramePadding;
+    constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));

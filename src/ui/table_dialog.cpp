@@ -4,7 +4,6 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include <algorithm>
-#include <cstring>
 #include <format>
 
 TableDialog& TableDialog::instance() {

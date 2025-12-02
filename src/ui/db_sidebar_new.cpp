@@ -1,4 +1,4 @@
-#include "ui/new/db_sidebar_new.hpp"
+#include "ui/db_sidebar_new.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -9,8 +9,8 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/confirm_dialog.hpp"
+#include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
-#include "ui/new/database_node.hpp"
 #include "ui/query_history.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
@@ -94,8 +94,8 @@ void DatabaseSidebarNew::renderHistory() {
 
     // Calculate relative time
     auto formatRelativeTime = [](const std::chrono::system_clock::time_point& tp) -> std::string {
-        auto now = std::chrono::system_clock::now();
-        auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - tp).count();
+        const auto now = std::chrono::system_clock::now();
+        const auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - tp).count();
 
         if (diff < 60) {
             return "just now";
@@ -242,11 +242,7 @@ void DatabaseSidebarNew::render() {
 
     // Calculate available height for the two sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
-    const float historyHeight = 300.0f; // Fixed height for history section
-    const float structureHeight = availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y;
-
-    // Calculate header height for history section
-    const float historyHeaderHeight = ImGui::GetTextLineHeightWithSpacing() + 8.0f;
+    constexpr float historyHeight = 300.0f;
 
     // Structure section (top) - scrollbar visible only on hover
     const float structureSectionHeight =

@@ -209,16 +209,14 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 14.5f);
 
-    // Check if we should show the connection dialog
     if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
         shouldShowConnectionDialog = false;
     }
 
-    // Check if we should edit a connection
     if (databaseToEdit) {
         connectionDialog.editConnection(databaseToEdit);
-        connectionDialog.showDialog(); // Open the dialog immediately
+        connectionDialog.showDialog();
         databaseToEdit = nullptr;
     }
 
@@ -244,7 +242,7 @@ void DatabaseSidebarNew::render() {
 
     // Calculate available height for the two sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
-    const float historyHeight = 200.0f; // Fixed height for history section
+    const float historyHeight = 300.0f; // Fixed height for history section
     const float structureHeight = availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y;
 
     // Calculate header height for history section
@@ -282,8 +280,6 @@ void DatabaseSidebarNew::render() {
         ImGui::SetTooltip("Clear history");
     }
     ImGui::PopStyleColor(3);
-
-    ImGui::Separator();
 
     // History list section (scrollable) - scrollbar visible only on hover
     const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
@@ -338,17 +334,15 @@ void DatabaseSidebarNew::render() {
         ImGui::EndPopup();
     }
 
-    // Render table dialog if open
+    // dialogs
     if (TableDialog::instance().isOpen()) {
         TableDialog::instance().render();
     }
 
-    // Render input dialog if open (used by RenameDialog and other features)
     if (InputDialog::instance().isOpen()) {
         InputDialog::instance().render();
     }
 
-    // Render confirm dialog if open
     if (ConfirmDialog::instance().isOpen()) {
         ConfirmDialog::instance().render();
     }

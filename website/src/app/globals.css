@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  /* Native Dark Theme colors from themes.hpp */
+  --base: #141414;
+  --mantle: #0f0f0f;
+  --crust: #0a0a0a;
+  --surface0: #1f1f1f;
+  --surface1: #262626;
+  --surface2: #333333;
+  --overlay0: #404040;
+  --overlay1: #595959;
+  --overlay2: #737373;
+  --text: #ffffff;
+  --subtext0: #bfbfbf;
+  --subtext1: #e6e6e6;
+  --blue: #007aff;
+  --sky: #66b8ff;
+  --green: #a6e6ab;
+}
+
+@theme inline {
+  --color-base: var(--base);
+  --color-mantle: var(--mantle);
+  --color-crust: var(--crust);
+  --color-surface0: var(--surface0);
+  --color-surface1: var(--surface1);
+  --color-surface2: var(--surface2);
+  --color-overlay0: var(--overlay0);
+  --color-overlay1: var(--overlay1);
+  --color-overlay2: var(--overlay2);
+  --color-text: var(--text);
+  --color-subtext0: var(--subtext0);
+  --color-subtext1: var(--subtext1);
+  --color-blue: var(--blue);
+  --color-sky: var(--sky);
+  --color-green: var(--green);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--base);
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}

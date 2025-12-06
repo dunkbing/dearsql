@@ -39,6 +39,11 @@ set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_canvas.cpp
 )
 
+# ImAnim sources
+set(IMANIM_SOURCES
+    external/ImAnim/im_anim.cpp
+)
+
 # Platform-specific backend configuration
 if(APPLE)
     # Metal backend for macOS
@@ -136,6 +141,7 @@ add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
     ${IMGUI_NODE_EDITOR_SOURCES}
+    ${IMANIM_SOURCES}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -144,6 +150,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui/backends
     external/ImGuiColorTextEdit
     external/imgui-node-editor
+    external/ImAnim
     external/json/include
     external/soci/include
     external/IconFontCppHeaders

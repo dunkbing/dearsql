@@ -1,4 +1,3 @@
-#include "../../include/ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -7,7 +6,10 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "im_anim.h"
 #include "imgui.h"
+#include "imgui_internal.h"
+#include "ui/database_node.hpp"
 #include "ui/confirm_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"
@@ -23,6 +25,39 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
                                                const std::string& icon, const ImU32 iconColor,
                                                const ImGuiTreeNodeFlags flags) {
     const std::string fullLabel = std::format("   {}###{}", label, nodeId);
+
+    // Get hover state before rendering
+    ImGui::PushID(nodeId.c_str());
+    const ImGuiID id = ImGui::GetID("hover");
+    ImGui::PopID();
+
+    const float dt = ImGui::GetIO().DeltaTime;
+
+    // Check if this item will be hovered (predict based on cursor position)
+    const ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+    const float itemHeight = ImGui::GetFrameHeight();
+    const float itemWidth = ImGui::GetContentRegionAvail().x;
+    const ImVec2 itemMin = cursorPos;
+    const ImVec2 itemMax = ImVec2(cursorPos.x + itemWidth, cursorPos.y + itemHeight);
+    const bool willBeHovered = ImGui::IsMouseHoveringRect(itemMin, itemMax);
+
+    // Animate hover alpha
+    const float hoverAlpha =
+        iam_tween_float(id, ImHashStr("hover_alpha"), willBeHovered ? 1.0f : 0.0f,
+                        0.2f, // duration
+                        iam_ease_preset(iam_ease_out_cubic), iam_policy_crossfade, dt);
+
+    // Draw animated hover background if animating
+    if (hoverAlpha > 0.01f) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImVec4 hoverColor = colors.surface2;
+        hoverColor.w = hoverAlpha * 0.8f;
+        ImGui::GetWindowDrawList()->AddRectFilled(itemMin, itemMax,
+                                                  ImGui::ColorConvertFloat4ToU32(hoverColor),
+                                                  6.0f // rounding
+        );
+    }
+
     const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
 
     // Draw icon

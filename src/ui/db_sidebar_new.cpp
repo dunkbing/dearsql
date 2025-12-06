@@ -211,9 +211,12 @@ void DatabaseSidebarNew::render() {
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar();
 
-    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.6f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.8f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_Header,
+                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.8f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive,
+                          ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
@@ -246,7 +249,8 @@ void DatabaseSidebarNew::render() {
         }
     }
 
-    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.2f));
+    ImGui::PushStyleColor(ImGuiCol_Separator,
+                          ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.2f));
     ImGui::Separator();
     ImGui::PopStyleColor();
 
@@ -266,7 +270,8 @@ void DatabaseSidebarNew::render() {
     renderStructure();
     ImGui::EndChild();
 
-    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_Separator,
+                          ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.3f));
     ImGui::Separator();
     ImGui::PopStyleColor();
 
@@ -278,7 +283,8 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
     if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {

@@ -26,3 +26,6 @@
 [submodule "external/imgui_test_engine"]
 	path = external/imgui_test_engine
 	url = https://github.com/ocornut/imgui_test_engine.git
+[submodule "external/ImAnim"]
+	path = external/ImAnim
+	url = https://github.com/soufianekhiat/ImAnim

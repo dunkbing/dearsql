@@ -65,7 +65,8 @@ void DatabaseSidebarNew::renderEmpty() {
 void DatabaseSidebarNew::renderStructure() {
     auto& app = Application::getInstance();
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 6.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 5.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 2.0f));
     const auto& databases = app.getDatabases();
 
     if (databases.empty()) {
@@ -76,7 +77,7 @@ void DatabaseSidebarNew::renderStructure() {
         }
     }
 
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void DatabaseSidebarNew::renderHistory() {
@@ -134,7 +135,8 @@ void DatabaseSidebarNew::renderHistory() {
         }
     };
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 8.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
     for (size_t i = 0; i < entries.size(); ++i) {
         const auto& entry = entries[i];
@@ -198,16 +200,22 @@ void DatabaseSidebarNew::renderHistory() {
         ImGui::PopID();
     }
 
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
+    ImGui::PopStyleVar();
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 14.5f);
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.8f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
+
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
     if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
@@ -238,7 +246,9 @@ void DatabaseSidebarNew::render() {
         }
     }
 
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.2f));
     ImGui::Separator();
+    ImGui::PopStyleColor();
 
     // Calculate available height for the two sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
@@ -256,26 +266,30 @@ void DatabaseSidebarNew::render() {
     renderStructure();
     ImGui::EndChild();
 
-    // Separator between Structure and History
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.3f));
     ImGui::Separator();
-
-    // History header (fixed, not scrollable)
-    auto& history = QueryHistory::instance();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-    ImGui::Text("History");
     ImGui::PopStyleColor();
 
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20.0f);
+    auto& history = QueryHistory::instance();
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::TextUnformatted("HISTORY");
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
     if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
         history.clear();
     }
+    ImGui::PopStyleVar();
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Clear history");
     }
     ImGui::PopStyleColor(3);
+    ImGui::Spacing();
 
     // History list section (scrollable) - scrollbar visible only on hover
     const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
@@ -459,6 +473,7 @@ void DatabaseSidebarNew::render() {
         ImGui::EndPopup();
     }
 
+    ImGui::PopStyleColor(3);
     ImGui::End();
 }
 

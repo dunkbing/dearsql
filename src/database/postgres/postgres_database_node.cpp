@@ -224,13 +224,17 @@ QueryResult PostgresDatabaseNode::executeQueryWithResult(const std::string& quer
 
 std::vector<std::vector<std::string>>
 PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::string& tableName,
-                                   int limit, int offset, const std::string& whereClause) {
+                                   int limit, int offset, const std::string& whereClause,
+                                   const std::string& orderByClause) {
     std::vector<std::vector<std::string>> result;
 
     try {
         std::string query = std::format(R"(SELECT * FROM "{}"."{}")", schemaName, tableName);
         if (!whereClause.empty()) {
             query += " WHERE " + whereClause;
+        }
+        if (!orderByClause.empty()) {
+            query += " ORDER BY " + orderByClause;
         }
         query += std::format(" LIMIT {} OFFSET {}", limit, offset);
 

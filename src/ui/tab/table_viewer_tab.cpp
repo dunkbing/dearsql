@@ -274,6 +274,7 @@ void TableViewerTab::render() {
         tableRenderer->setCellEditedStatus(editedCells);
         tableRenderer->setSelectedCell(selectedRow, selectedCol);
         tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
+        tableRenderer->setSortColumn(sortColumn, sortDirection);
 
         tableRenderer->render("TableData");
 
@@ -483,13 +484,21 @@ void TableViewerTab::loadDataAsync() {
         Logger::debug("Cleared previous filtered data, starting fresh load");
     }
 
+    // Build ORDER BY clause from sort state
+    std::string orderByClause;
+    if (sortColumn >= 0 && sortDirection != SortDirection::None && !sortColumnName.empty()) {
+        orderByClause = std::format("\"{}\" {}", sortColumnName,
+                                    sortDirection == SortDirection::Ascending ? "ASC" : "DESC");
+    }
+
     // Launch async loading
-    dataLoadFuture = std::async(std::launch::async, [this]() {
+    dataLoadFuture = std::async(std::launch::async, [this, orderByClause]() {
         try {
             totalRows = databaseNode->getRowCount(tableName, currentFilter);
             columnNames = databaseNode->getColumnNames(tableName);
             const int offset = currentPage * rowsPerPage;
-            tableData = databaseNode->getTableData(tableName, rowsPerPage, offset, currentFilter);
+            tableData = databaseNode->getTableData(tableName, rowsPerPage, offset, currentFilter,
+                                                   orderByClause);
 
             // Store original data for change tracking
             originalData = tableData;
@@ -517,6 +526,11 @@ void TableViewerTab::checkAsyncLoadStatus() {
             std::string query = std::format("SELECT * FROM {}", tableName);
             if (!currentFilter.empty()) {
                 query += std::format(" WHERE {}", currentFilter);
+            }
+            if (sortColumn >= 0 && sortDirection != SortDirection::None &&
+                !sortColumnName.empty()) {
+                query += std::format(" ORDER BY \"{}\" {}", sortColumnName,
+                                     sortDirection == SortDirection::Ascending ? "ASC" : "DESC");
             }
             query += std::format(" LIMIT {} OFFSET {}", rowsPerPage, offset);
 
@@ -851,6 +865,24 @@ void TableViewerTab::initializeTableRenderer() {
     });
 
     tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
+
+    // Sort callback
+    tableRenderer->setOnSortChanged(
+        [this](int col, const std::string& colName, SortDirection direction) {
+            sortColumn = col;
+            sortColumnName = colName;
+            sortDirection = direction;
+
+            // Reset to first page when sort changes
+            currentPage = 0;
+
+            // Clear selection
+            selectedRow = -1;
+            selectedCol = -1;
+
+            // Reload data with new sort
+            loadDataAsync();
+        });
 }
 
 void TableViewerTab::initializeFilterAutoComplete() {

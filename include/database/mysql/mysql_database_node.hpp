@@ -76,7 +76,8 @@ public:
     // ITableDataProvider implementation
     std::vector<std::vector<std::string>>
     getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "") override;
+                 const std::string& whereClause = "",
+                 const std::string& orderByClause = "") override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
     const std::vector<Table>& getTables() const override {

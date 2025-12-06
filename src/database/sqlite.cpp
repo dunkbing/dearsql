@@ -471,23 +471,24 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     return result;
 }
 
-// ITableDataProvider implementation (with whereClause support)
-std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::string& tableName,
-                                                                   int limit, int offset,
-                                                                   const std::string& whereClause) {
+// ITableDataProvider implementation (with whereClause and orderByClause support)
+std::vector<std::vector<std::string>>
+SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset,
+                             const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> data;
     if (!connected) {
         return data;
     }
 
     try {
-        std::string sql;
-        if (whereClause.empty()) {
-            sql = std::format("SELECT * FROM {} LIMIT {} OFFSET {}", tableName, limit, offset);
-        } else {
-            sql = std::format("SELECT * FROM {} WHERE {} LIMIT {} OFFSET {}", tableName,
-                              whereClause, limit, offset);
+        std::string sql = std::format("SELECT * FROM {}", tableName);
+        if (!whereClause.empty()) {
+            sql += std::format(" WHERE {}", whereClause);
         }
+        if (!orderByClause.empty()) {
+            sql += std::format(" ORDER BY {}", orderByClause);
+        }
+        sql += std::format(" LIMIT {} OFFSET {}", limit, offset);
 
         const soci::rowset rs = session->prepare << sql;
 

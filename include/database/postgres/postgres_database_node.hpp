@@ -53,10 +53,9 @@ public:
     std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
     // database operations (schema-aware)
-    std::vector<std::vector<std::string>> getTableData(const std::string& schemaName,
-                                                       const std::string& tableName, int limit,
-                                                       int offset,
-                                                       const std::string& whereClause = "");
+    std::vector<std::vector<std::string>>
+    getTableData(const std::string& schemaName, const std::string& tableName, int limit, int offset,
+                 const std::string& whereClause = "", const std::string& orderByClause = "");
     std::vector<std::string> getColumnNames(const std::string& schemaName,
                                             const std::string& tableName);
     int getRowCount(const std::string& schemaName, const std::string& tableName,

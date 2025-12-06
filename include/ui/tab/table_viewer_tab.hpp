@@ -87,6 +87,11 @@ private:
     bool filterChanged = false;
     std::unique_ptr<AutoCompleteInput> filterAutoComplete;
 
+    // Sorting state
+    int sortColumn = -1;
+    std::string sortColumnName;
+    SortDirection sortDirection = SortDirection::None;
+
     // Helper methods
     void initializeTableRenderer();
     void selectCell(int row, int col);

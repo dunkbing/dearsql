@@ -16,6 +16,8 @@ struct TableCell {
     bool isSelected = false;
 };
 
+enum class SortDirection { None, Ascending, Descending };
+
 class TableRenderer {
 public:
     struct Config {
@@ -30,6 +32,8 @@ public:
     using OnCellEditCallback = std::function<void(int row, int col, const std::string& newValue)>;
     using OnCellSelectCallback = std::function<void(int row, int col)>;
     using OnCellDoubleClickCallback = std::function<void(int row, int col)>;
+    using OnSortChangedCallback =
+        std::function<void(int col, const std::string& colName, SortDirection direction)>;
 
     TableRenderer();
     explicit TableRenderer(const Config& config);
@@ -52,6 +56,21 @@ public:
     }
     void setOnCellDoubleClick(OnCellDoubleClickCallback callback) {
         onCellDoubleClick = callback;
+    }
+    void setOnSortChanged(OnSortChangedCallback callback) {
+        onSortChanged = callback;
+    }
+
+    // Sorting
+    void setSortColumn(int col, SortDirection direction) {
+        sortColumn = col;
+        sortDirection = direction;
+    }
+    [[nodiscard]] int getSortColumn() const {
+        return sortColumn;
+    }
+    [[nodiscard]] SortDirection getSortDirection() const {
+        return sortDirection;
     }
 
     // Render the table
@@ -102,7 +121,13 @@ private:
     OnCellEditCallback onCellEdit;
     OnCellSelectCallback onCellSelect;
     OnCellDoubleClickCallback onCellDoubleClick;
+    OnSortChangedCallback onSortChanged;
+
+    // Sorting state
+    int sortColumn = -1;
+    SortDirection sortDirection = SortDirection::None;
 
     void renderCell(int row, int col);
     void handleCellInteraction(int row, int col, bool isSelected);
+    void renderColumnHeader(int colIdx, const std::string& colName);
 };

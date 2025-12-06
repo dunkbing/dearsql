@@ -44,10 +44,10 @@ public:
                                                        int offset);
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
 
-    // ITableDataProvider implementation (with whereClause)
-    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset,
-                                                       const std::string& whereClause) override;
+    // ITableDataProvider implementation (with whereClause and orderByClause)
+    std::vector<std::vector<std::string>>
+    getTableData(const std::string& tableName, int limit, int offset,
+                 const std::string& whereClause, const std::string& orderByClause = "") override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
     const std::vector<Table>& getTables() const override {
         return tables;

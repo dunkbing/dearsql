@@ -20,11 +20,12 @@ public:
      * @param limit Number of rows to fetch
      * @param offset Starting row offset
      * @param whereClause Optional WHERE clause for filtering
+     * @param orderByClause Optional ORDER BY clause for sorting (e.g., "column_name ASC")
      * @return Vector of rows, where each row is a vector of string values
      */
     virtual std::vector<std::vector<std::string>>
     getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "") = 0;
+                 const std::string& whereClause = "", const std::string& orderByClause = "") = 0;
 
     /**
      * @brief Get column names for a table/view

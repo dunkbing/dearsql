@@ -592,11 +592,11 @@ bool PostgresSchemaNode::isTableRefreshing(const std::string& tableName) const {
 
 std::vector<std::vector<std::string>>
 PostgresSchemaNode::getTableData(const std::string& tableName, const int limit, const int offset,
-                                 const std::string& whereClause) {
+                                 const std::string& whereClause, const std::string& orderByClause) {
     if (!parentDbNode) {
         return {};
     }
-    return parentDbNode->getTableData(name, tableName, limit, offset, whereClause);
+    return parentDbNode->getTableData(name, tableName, limit, offset, whereClause, orderByClause);
 }
 
 std::vector<std::string> PostgresSchemaNode::getColumnNames(const std::string& tableName) {

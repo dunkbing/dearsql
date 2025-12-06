@@ -421,7 +421,7 @@ void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& i
 
 std::vector<std::vector<std::string>>
 MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, const int offset,
-                                const std::string& whereClause) {
+                                const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> result;
 
     try {
@@ -431,6 +431,9 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
 
         if (!whereClause.empty()) {
             query += " WHERE " + whereClause;
+        }
+        if (!orderByClause.empty()) {
+            query += " ORDER BY " + orderByClause;
         }
 
         query += std::format(" LIMIT {} OFFSET {}", limit, offset);

@@ -1,8 +1,10 @@
 #include "ui/table_renderer.hpp"
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include <cstring>
+#include <format>
 
 TableRenderer::TableRenderer() {
     // Set default table flags
@@ -113,7 +115,21 @@ void TableRenderer::render(const char* tableId) {
         for (const auto& colName : columns) {
             ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
         }
-        ImGui::TableHeadersRow();
+
+        // Custom header row with sort controls
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+
+        // Skip row number column header if present
+        if (config.showRowNumbers) {
+            ImGui::TableNextColumn();
+            // Empty header for row number column
+        }
+
+        // Render each column header with sort control
+        for (int colIdx = 0; colIdx < static_cast<int>(columns.size()); colIdx++) {
+            ImGui::TableNextColumn();
+            renderColumnHeader(colIdx, columns[colIdx]);
+        }
 
         // Use ImGuiListClipper for efficient row rendering
         ImGuiListClipper clipper;
@@ -359,4 +375,112 @@ void TableRenderer::scrollToCell(int row, int col) {
     shouldScrollToCell = true;
     scrollTargetRow = row;
     scrollTargetCol = col;
+}
+
+void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    const bool isSorted = (sortColumn == colIdx && sortDirection != SortDirection::None);
+    const std::string popupId = std::format("##sort_popup_{}", colIdx);
+
+    // Calculate widths
+    float columnWidth = ImGui::GetColumnWidth();
+
+    // Display column name
+    ImGui::Text("%s", colName.c_str());
+
+    // Show sort indicator if this column is sorted (clickable to clear)
+    if (isSorted) {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
+
+        const char* icon = sortDirection == SortDirection::Ascending
+                               ? ICON_FA_ARROW_UP_SHORT_WIDE
+                               : ICON_FA_ARROW_DOWN_WIDE_SHORT;
+        if (ImGui::SmallButton(icon)) {
+            // Clear sort when clicking the indicator
+            sortColumn = -1;
+            sortDirection = SortDirection::None;
+            if (onSortChanged) {
+                onSortChanged(-1, "", SortDirection::None);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Click to clear sort");
+        }
+
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(4);
+    }
+
+    // Chevron button on the right side of the header
+    ImGui::SameLine();
+
+    // Position chevron at the right edge of the column
+    float chevronWidth =
+        ImGui::CalcTextSize(ICON_FA_CHEVRON_DOWN).x + ImGui::GetStyle().FramePadding.x * 2;
+    float availableWidth = ImGui::GetContentRegionAvail().x;
+    if (availableWidth > chevronWidth) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + availableWidth - chevronWidth);
+    }
+
+    // Chevron button
+    ImGui::PushID(colIdx);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+
+    if (ImGui::SmallButton(ICON_FA_CHEVRON_DOWN)) {
+        ImGui::OpenPopup(popupId.c_str());
+    }
+
+    ImGui::PopStyleColor(3);
+
+    // Sort popup menu
+    if (ImGui::BeginPopup(popupId.c_str())) {
+        // Order by ASC option
+        bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
+        if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {
+            if (isAsc) {
+                // Clicking again clears the sort
+                sortColumn = -1;
+                sortDirection = SortDirection::None;
+                if (onSortChanged) {
+                    onSortChanged(-1, "", SortDirection::None);
+                }
+            } else {
+                sortColumn = colIdx;
+                sortDirection = SortDirection::Ascending;
+                if (onSortChanged) {
+                    onSortChanged(colIdx, colName, SortDirection::Ascending);
+                }
+            }
+        }
+
+        // Order by DESC option
+        bool isDesc = (sortColumn == colIdx && sortDirection == SortDirection::Descending);
+        if (ImGui::MenuItem(ICON_FA_ARROW_DOWN_WIDE_SHORT " Order by DESC", nullptr, isDesc)) {
+            if (isDesc) {
+                // Clicking again clears the sort
+                sortColumn = -1;
+                sortDirection = SortDirection::None;
+                if (onSortChanged) {
+                    onSortChanged(-1, "", SortDirection::None);
+                }
+            } else {
+                sortColumn = colIdx;
+                sortDirection = SortDirection::Descending;
+                if (onSortChanged) {
+                    onSortChanged(colIdx, colName, SortDirection::Descending);
+                }
+            }
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopID();
 }

@@ -1,0 +1,21 @@
+#!/bin/bash
+# Setup script for dependencies on Ubuntu
+
+set -e
+
+echo "Installing DearSQL dependencies..."
+
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    cmake \
+    libsqlite3-dev \
+    libpq-dev \
+    libgtk-4-dev \
+    libepoxy-dev \
+    libssl-dev \
+    libmysqlclient-dev \
+    libboost-regex-dev \
+    libdbus-1-dev
+
+echo "All dependencies installed successfully!"

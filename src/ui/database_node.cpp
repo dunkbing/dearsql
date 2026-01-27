@@ -1,3 +1,4 @@
+#include "ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -9,7 +10,6 @@
 #include "im_anim.h"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "ui/database_node.hpp"
 #include "ui/confirm_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"

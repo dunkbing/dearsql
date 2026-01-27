@@ -21,4 +21,8 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE="${BUILD
 echo "Building DearSQL application..."
 cmake --build "$BUILD_DIR" --target dear-sql
 
-echo "Build complete. Binary located at: $BUILD_DIR/DearSQL.app"
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo "Build complete. Binary located at: $BUILD_DIR/DearSQL.app"
+else
+    echo "Build complete. Binary located at: $BUILD_DIR/dear-sql"
+fi

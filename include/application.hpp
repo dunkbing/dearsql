@@ -7,9 +7,12 @@
 #include "ui/db_sidebar_new.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
-#include <GLFW/glfw3.h>
 #include <memory>
 #include <vector>
+
+#if defined(__APPLE__) || defined(_WIN32)
+#include <GLFW/glfw3.h>
+#endif
 
 class Application {
 public:
@@ -72,10 +75,12 @@ public:
     void restorePreviousConnections();
     [[nodiscard]] std::size_t findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const;
 
-    // Window reference
+    // Window reference (GLFW only on macOS/Windows)
+#if defined(__APPLE__) || defined(_WIN32)
     [[nodiscard]] GLFWwindow* getWindow() const {
         return window;
     }
+#endif
 
     // Sidebar visibility
     [[nodiscard]] bool isSidebarVisible() const {
@@ -111,7 +116,9 @@ private:
     ~Application() = default;
 
     // Core components
+#if defined(__APPLE__) || defined(_WIN32)
     GLFWwindow* window = nullptr;
+#endif
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
@@ -135,8 +142,10 @@ private:
     int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods
+#if defined(__APPLE__) || defined(_WIN32)
     bool initializeGLFW();
     bool initializeImGui() const;
+#endif
     static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
 

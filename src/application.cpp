@@ -4,8 +4,8 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "im_anim.h"
-#include "imgui_impl_glfw.h"
 #include "platform/default_platform.hpp"
+#include "platform/linux_platform.hpp"
 #include "platform/macos_platform.hpp"
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
@@ -17,7 +17,11 @@
 #include <iostream>
 #include <limits>
 
-#if defined(__linux__) || defined(_WIN32)
+#if defined(__APPLE__) || defined(_WIN32)
+#include "imgui_impl_glfw.h"
+#endif
+
+#if defined(_WIN32)
 #include "imgui_impl_opengl3.h"
 #endif
 
@@ -88,25 +92,48 @@ bool Application::initialize() {
     std::cout << "ImGui version: " << IMGUI_VERSION << std::endl;
     std::cout << "Starting DearSQL..." << std::endl;
 
-    if (!initializeGLFW()) {
-        return false;
-    }
-
     // Initialize platform-specific components
 #ifdef __APPLE__
     platform_ = std::make_unique<MacOSPlatform>(this);
-#else
-    platform_ = std::make_unique<DefaultPlatform>(this);
-#endif
-
+    if (!initializeGLFW()) {
+        return false;
+    }
     if (!platform_->initializePlatform(window)) {
         std::cerr << "Failed to initialize platform" << std::endl;
         return false;
     }
-
     if (!initializeImGui()) {
         return false;
     }
+#elif defined(__linux__)
+    platform_ = std::make_unique<LinuxPlatform>(this);
+    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
+    if (!linuxPlatform->initializeGTK(nullptr, nullptr)) {
+        return false;
+    }
+    // ImGui context creation for Linux
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    setupFonts();
+    ImGui::StyleColorsDark();
+    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+    // Setup titlebar before showing window
+    platform_->setupTitlebar();
+#else
+    platform_ = std::make_unique<DefaultPlatform>(this);
+    if (!initializeGLFW()) {
+        return false;
+    }
+    if (!platform_->initializePlatform(window)) {
+        std::cerr << "Failed to initialize platform" << std::endl;
+        return false;
+    }
+    if (!initializeImGui()) {
+        return false;
+    }
+#endif
 
     // Initialize NFD
     if (!FileDialog::initialize()) {
@@ -137,16 +164,23 @@ bool Application::initialize() {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
-    // Setup title bar after window creation
+#ifndef __linux__
+    // Setup title bar after window creation (Linux does it earlier)
     platform_->setupTitlebar();
+#endif
 
-#ifdef __APPLE__
+#if defined(__APPLE__)
     // Update workspace dropdown after titlebar is set up
     updateWorkspaceDropdown();
+#elif defined(__linux__)
+    // Update workspace dropdown for Linux
+    platform_->updateWorkspaceDropdown();
 #endif
 
 #ifdef __APPLE__
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
+#elif defined(__linux__)
+    std::cout << "Application initialized successfully (with GTK4 + OpenGL backend)" << std::endl;
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
 #endif
@@ -154,7 +188,13 @@ bool Application::initialize() {
 }
 
 void Application::run() {
-#if defined(__linux__) || defined(_WIN32)
+#if defined(__linux__)
+    // Linux uses GTK main loop
+    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
+    linuxPlatform->runMainLoop();
+#else
+    // macOS and Windows use GLFW main loop
+#if defined(_WIN32)
     glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
                  darkTheme ? 0.137f : 0.957f, 0.98f);
 #endif
@@ -182,24 +222,7 @@ void Application::run() {
             glfwPollEvents();
         }
 
-#ifdef __APPLE__
         platform_->renderFrame();
-#elif defined(__linux__) || defined(_WIN32)
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        renderMainUI();
-
-        ImGui::Render();
-
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
-#endif
 
         const bool userActive = isImGuiUserActive();
         const bool hasAsyncWork = hasPendingAsyncWork();
@@ -208,6 +231,7 @@ void Application::run() {
             lastInteractionTime = glfwGetTime();
         }
     }
+#endif
 }
 
 void Application::cleanup() {
@@ -237,15 +261,21 @@ void Application::cleanup() {
         platform_->cleanup();
         platform_.reset();
     }
+
+#if defined(__APPLE__) || defined(_WIN32)
     ImGui_ImplGlfw_Shutdown();
     std::cout << "ImGui GLFW backend shutdown" << std::endl;
+#endif
+
     ImGui::DestroyContext();
     std::cout << "ImGui context destroyed" << std::endl;
 
+#if defined(__APPLE__) || defined(_WIN32)
     if (window) {
         glfwDestroyWindow(window);
     }
     glfwTerminate();
+#endif
 
     std::cout << "Application cleanup completed" << std::endl;
 }
@@ -342,6 +372,7 @@ void Application::restorePreviousConnections() {
     }
 }
 
+#if defined(__APPLE__) || defined(_WIN32)
 bool Application::initializeGLFW() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -351,7 +382,7 @@ bool Application::initializeGLFW() {
 #ifdef __APPLE__
     // Metal backend doesn't need OpenGL context hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#elif defined(__linux__) || defined(_WIN32)
+#elif defined(_WIN32)
     // OpenGL backend requires context hints
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -371,7 +402,7 @@ bool Application::initializeGLFW() {
         return false;
     }
 
-#if defined(__linux__) || defined(_WIN32)
+#if defined(_WIN32)
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 #endif
@@ -379,7 +410,9 @@ bool Application::initializeGLFW() {
     std::cout << "GLFW window created successfully" << std::endl;
     return true;
 }
+#endif
 
+#if defined(__APPLE__) || defined(_WIN32)
 bool Application::initializeImGui() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -394,7 +427,7 @@ bool Application::initializeImGui() const {
     // Initialize GLFW backend
 #ifdef __APPLE__
     ImGui_ImplGlfw_InitForOther(window, true);
-#elif defined(__linux__) || defined(_WIN32)
+#elif defined(_WIN32)
     ImGui_ImplGlfw_InitForOpenGL(window, true);
 #endif
 
@@ -406,12 +439,13 @@ bool Application::initializeImGui() const {
 
 #ifdef __APPLE__
     std::cout << "ImGui initialized with Metal backend" << std::endl;
-#elif defined(__linux__) || defined(_WIN32)
+#elif defined(_WIN32)
     std::cout << "ImGui initialized with OpenGL backend" << std::endl;
 #endif
 
     return true;
 }
+#endif
 
 void Application::setupFonts() {
     const ImGuiIO& io = ImGui::GetIO();
@@ -451,11 +485,8 @@ void Application::setupFonts() {
         }
     }
 
-    // Build the font atlas only for OpenGL backend
-    // Metal backend handles this automatically
-#if defined(__linux__) || defined(_WIN32)
-    io.Fonts->Build();
-#endif
+    // Don't call io.Fonts->Build() - the backend handles this automatically
+    // when ImGuiBackendFlags_RendererHasTextures is set
 }
 
 void Application::setCurrentWorkspace(const int workspaceId) {

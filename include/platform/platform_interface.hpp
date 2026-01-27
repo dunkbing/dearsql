@@ -1,6 +1,11 @@
 #pragma once
 
+#if defined(__APPLE__) || defined(_WIN32)
 #include <GLFW/glfw3.h>
+#else
+// Forward declare for Linux (uses GTK instead of GLFW)
+struct GLFWwindow;
+#endif
 
 class PlatformInterface {
 public:

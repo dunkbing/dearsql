@@ -1,10 +1,6 @@
 #include "ui/tab_manager.hpp"
 #include "application.hpp"
-#include "database/mysql.hpp"
-#include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
-#include "database/sqlite.hpp"
+#include "database/database_node.hpp"
 #include "imgui.h"
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -44,26 +40,16 @@ bool TabManager::hasTab(const std::string& name) const {
     return tab != nullptr;
 }
 
-std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
-                                                    const DatabaseNode& dbNode,
+std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name, IDatabaseNode* node,
                                                     const std::string& schemaName) {
-    if (std::holds_alternative<std::monostate>(dbNode)) {
+    if (!node) {
         return nullptr;
     }
 
     // Generate unique tab name
     std::string tabName = name;
     if (tabName.empty()) {
-        std::string baseName = "SQL Editor";
-        if (auto* pgNode = std::get_if<PostgresDatabaseNode*>(&dbNode); pgNode && *pgNode) {
-            baseName = "SQL - " + (*pgNode)->name;
-        } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&dbNode);
-                   mysqlNode && *mysqlNode) {
-            baseName = "SQL - " + (*mysqlNode)->name;
-        } else if (auto* sqliteDb = std::get_if<SQLiteDatabase*>(&dbNode); sqliteDb && *sqliteDb) {
-            baseName = "SQL - " + (*sqliteDb)->getPath();
-        }
-
+        std::string baseName = "SQL - " + node->getName();
         int count = 1;
         tabName = baseName;
         while (hasTab(tabName)) {
@@ -72,7 +58,7 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
         }
     }
 
-    auto tab = std::make_shared<SQLEditorTab>(tabName, dbNode, schemaName);
+    auto tab = std::make_shared<SQLEditorTab>(tabName, node, schemaName);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -83,35 +69,16 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name,
     return tab;
 }
 
-std::shared_ptr<Tab> TabManager::createTableViewerTab(const TableDataNode& dataNode,
+std::shared_ptr<Tab> TabManager::createTableViewerTab(IDatabaseNode* node,
                                                       const std::string& tableName) {
-    if (std::holds_alternative<std::monostate>(dataNode)) {
-        std::cout << "Cannot create table viewer tab: data node is null" << std::endl;
+    if (!node) {
+        std::cout << "Cannot create table viewer tab: node is null" << std::endl;
         return nullptr;
     }
 
-    // Build the full table path and tab name based on node type
-    std::string tableFullName;
-    std::string tabName;
-
-    if (auto* schemaNode = std::get_if<PostgresSchemaNode*>(&dataNode); schemaNode && *schemaNode) {
-        const auto& dbName = (*schemaNode)->parentDbNode->name;
-        const auto& schemaName = (*schemaNode)->name;
-        tableFullName = dbName + "." + schemaName + "." + tableName;
-        tabName = tableName + " (" + dbName + "." + schemaName + ")";
-    } else if (auto* mysqlNode = std::get_if<MySQLDatabaseNode*>(&dataNode);
-               mysqlNode && *mysqlNode) {
-        const auto& connName = (*mysqlNode)->parentDb->getConnectionInfo().name;
-        tableFullName = connName + "." + (*mysqlNode)->name + "." + tableName;
-        tabName = tableName + " (" + (*mysqlNode)->name + ")";
-    } else if (auto* sqliteDb = std::get_if<SQLiteDatabase*>(&dataNode); sqliteDb && *sqliteDb) {
-        const auto& connName = (*sqliteDb)->getConnectionInfo().name;
-        tableFullName = connName + "." + tableName;
-        tabName = tableName + " (" + connName + ")";
-    } else {
-        std::cout << "Cannot create table viewer tab: unknown node type" << std::endl;
-        return nullptr;
-    }
+    // Build the full table path and tab name
+    std::string tableFullName = node->getFullPath() + "." + tableName;
+    std::string tabName = tableName + " (" + node->getName() + ")";
 
     // Check if tab already exists
     for (auto& tab : tabs) {
@@ -127,7 +94,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(const TableDataNode& dataN
     }
 
     // Create new tab
-    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, dataNode);
+    auto tab = std::make_shared<TableViewerTab>(tabName, tableFullName, tableName, node);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -184,15 +151,14 @@ void TabManager::renderEmptyState() {
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", text);
 }
 
-std::shared_ptr<Tab> TabManager::createDiagramTab(PostgresSchemaNode* schemaNode) {
-    if (!schemaNode) {
-        std::cout << "Cannot create diagram tab: schema node is null" << std::endl;
+std::shared_ptr<Tab> TabManager::createDiagramTab(IDatabaseNode* node) {
+    if (!node) {
+        std::cout << "Cannot create diagram tab: node is null" << std::endl;
         return nullptr;
     }
 
     // Generate a unique tab name for the diagram
-    const std::string baseName =
-        "Diagram - " + schemaNode->parentDbNode->name + "." + schemaNode->name;
+    const std::string baseName = "Diagram - " + node->getFullPath();
     std::string tabName = baseName;
     int count = 1;
     while (hasTab(tabName)) {
@@ -201,7 +167,7 @@ std::shared_ptr<Tab> TabManager::createDiagramTab(PostgresSchemaNode* schemaNode
     }
 
     // Create the diagram tab
-    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, schemaNode);
+    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, node);
     tab->setShouldFocus(true);
     addTab(tab);
 
@@ -209,63 +175,7 @@ std::shared_ptr<Tab> TabManager::createDiagramTab(PostgresSchemaNode* schemaNode
     auto& app = Application::getInstance();
     app.resetDockingLayout();
 
-    std::cout << "Created new diagram tab for schema: " << schemaNode->name << std::endl;
-    return tab;
-}
-
-std::shared_ptr<Tab> TabManager::createDiagramTab(MySQLDatabaseNode* dbNode) {
-    if (!dbNode) {
-        std::cout << "Cannot create diagram tab: database node is null" << std::endl;
-        return nullptr;
-    }
-
-    // Generate a unique tab name for the diagram
-    const std::string baseName = "Diagram - " + dbNode->name;
-    std::string tabName = baseName;
-    int count = 1;
-    while (hasTab(tabName)) {
-        count++;
-        tabName = baseName + " (" + std::to_string(count) + ")";
-    }
-
-    // Create the diagram tab
-    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, dbNode);
-    tab->setShouldFocus(true);
-    addTab(tab);
-
-    // Force docking layout to be rebuilt to include the new tab
-    auto& app = Application::getInstance();
-    app.resetDockingLayout();
-
-    std::cout << "Created new diagram tab for MySQL database: " << dbNode->name << std::endl;
-    return tab;
-}
-
-std::shared_ptr<Tab> TabManager::createDiagramTab(SQLiteDatabase* dbNode) {
-    if (!dbNode) {
-        std::cout << "Cannot create diagram tab: database node is null" << std::endl;
-        return nullptr;
-    }
-
-    // Generate a unique tab name for the diagram
-    const std::string baseName = "Diagram - " + dbNode->getConnectionInfo().name;
-    std::string tabName = baseName;
-    int count = 1;
-    while (hasTab(tabName)) {
-        count++;
-        tabName = baseName + " (" + std::to_string(count) + ")";
-    }
-
-    // Create the diagram tab
-    std::shared_ptr<Tab> tab = std::make_shared<DiagramTab>(tabName, dbNode);
-    tab->setShouldFocus(true);
-    addTab(tab);
-
-    // Force docking layout to be rebuilt to include the new tab
-    auto& app = Application::getInstance();
-    app.resetDockingLayout();
-
-    std::cout << "Created new diagram tab for SQLite database: " << dbNode->getPath() << std::endl;
+    std::cout << "Created new diagram tab for: " << node->getFullPath() << std::endl;
     return tab;
 }
 

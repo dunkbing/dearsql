@@ -1,5 +1,6 @@
 #include "database/sqlite.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <future>
@@ -608,4 +609,96 @@ soci::session* SQLiteDatabase::getSession() const {
         return nullptr;
     }
     return session.get();
+}
+
+std::string SQLiteDatabase::getName() const {
+    // Return just the filename from the path
+    const auto& path = connectionInfo.path;
+    auto pos = path.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    return path;
+}
+
+std::string SQLiteDatabase::getFullPath() const {
+    return connectionInfo.path;
+}
+
+void SQLiteDatabase::checkLoadingStatus() {
+    checkTablesStatusAsync();
+    checkViewsStatusAsync();
+}
+
+void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
+    if (refreshingTables.contains(tableName)) {
+        return;
+    }
+
+    refreshingTables.insert(tableName);
+    tableRefreshFutures[tableName] = std::async(std::launch::async, [this, tableName]() {
+        Table refreshedTable;
+        refreshedTable.name = tableName;
+        refreshedTable.fullName = connectionInfo.name + "." + tableName;
+
+        try {
+            // Get columns
+            const std::string columnsQuery = std::format("PRAGMA table_info(\"{}\")", tableName);
+            const soci::rowset columnsRs = session->prepare << columnsQuery;
+            for (const auto& row : columnsRs) {
+                Column col;
+                col.name = convertRowValue(row, 1);
+                col.type = convertRowValue(row, 2);
+                col.isNotNull = row.get<int>(3) != 0;
+                col.isPrimaryKey = row.get<int>(5) != 0;
+                refreshedTable.columns.push_back(col);
+            }
+
+            // Get indexes
+            refreshedTable.indexes = getTableIndexes(tableName);
+
+            // Get foreign keys
+            refreshedTable.foreignKeys = getTableForeignKeys(tableName);
+            buildForeignKeyLookup(refreshedTable);
+
+        } catch (const std::exception& e) {
+            Logger::error(std::format("Error refreshing table {}: {}", tableName, e.what()));
+        }
+
+        return refreshedTable;
+    });
+}
+
+bool SQLiteDatabase::isTableRefreshing(const std::string& tableName) const {
+    return refreshingTables.contains(tableName);
+}
+
+void SQLiteDatabase::checkTableRefreshStatusAsync(const std::string& tableName) {
+    auto it = tableRefreshFutures.find(tableName);
+    if (it == tableRefreshFutures.end()) {
+        return;
+    }
+
+    if (it->second.valid() &&
+        it->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            Table refreshedTable = it->second.get();
+
+            // Find and update the table in our tables vector
+            auto tableIt = std::find_if(tables.begin(), tables.end(), [&tableName](const Table& t) {
+                return t.name == tableName;
+            });
+            if (tableIt != tables.end()) {
+                *tableIt = refreshedTable;
+                Logger::info(std::format("Table {} refreshed successfully", tableName));
+            }
+
+        } catch (const std::exception& e) {
+            Logger::error(
+                std::format("Error completing table refresh for {}: {}", tableName, e.what()));
+        }
+
+        refreshingTables.erase(tableName);
+        tableRefreshFutures.erase(it);
+    }
 }

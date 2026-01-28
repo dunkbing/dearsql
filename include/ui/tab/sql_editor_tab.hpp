@@ -2,22 +2,18 @@
 
 #include "TextEditor.h"
 #include "ui/tab/tab.hpp"
-#include "ui/tab_manager.hpp" // For DatabaseNode type
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <future>
 #include <string>
 #include <vector>
 
 // Forward declarations
-class DatabaseInterface;
-class IQueryExecutor;
+class IDatabaseNode;
 
 class SQLEditorTab final : public Tab {
 public:
-    // Constructor taking DatabaseNode variant
-    explicit SQLEditorTab(const std::string& name, const DatabaseNode& dbNode,
+    explicit SQLEditorTab(const std::string& name, IDatabaseNode* node,
                           const std::string& schemaName = "");
 
     ~SQLEditorTab() override;
@@ -43,14 +39,14 @@ public:
     void setSelectedSchemaName(const std::string& schemaName) {
         selectedSchemaName = schemaName;
     }
-    [[nodiscard]] const DatabaseNode& getDatabaseNode() const {
-        return databaseNode;
+    [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
+        return node_;
     }
 
 private:
     std::string sqlQuery;
     std::string queryResult;
-    DatabaseNode databaseNode;      // Specific database node (Postgres/MySQL/SQLite)
+    IDatabaseNode* node_ = nullptr; // Database node implementing IDatabaseNode
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
     TextEditor sqlEditor;
 
@@ -77,17 +73,9 @@ private:
     void cancelQueryExecution();
     void populateAutoCompleteKeywords();
 
-    // Helper to get IQueryExecutor from variant
-    [[nodiscard]] IQueryExecutor* getQueryExecutor() const;
-
     // Render component helper methods
     void renderConnectionInfo();
     void renderToolbar();
-    void renderDatabaseSchemaSelector();
-    void renderSchemaSelectorForDisconnected();
-    void renderLoadingSchemaCombo();
-    void renderMySQLDatabaseSelector();
-    void renderPostgresSchemaSelector();
     void renderQueryResults() const;
 
     // Helper method for splitter

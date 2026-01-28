@@ -4,14 +4,10 @@
 #include "imgui_node_editor.h"
 #include "ui/tab/tab.hpp"
 #include <unordered_map>
-#include <variant>
 #include <vector>
 
 // Forward declarations
-class PostgresDatabaseNode;
-class PostgresSchemaNode;
-class MySQLDatabaseNode;
-class SQLiteDatabase;
+class IDatabaseNode;
 
 struct DiagramNode {
     ax::NodeEditor::NodeId id;
@@ -35,12 +31,7 @@ struct DiagramLink {
 
 class DiagramTab : public Tab {
 public:
-    // Constructor for PostgreSQL schema
-    DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode);
-    // Constructor for MySQL database
-    DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode);
-    // Constructor for SQLite database
-    DiagramTab(const std::string& name, SQLiteDatabase* dbNode);
+    DiagramTab(const std::string& name, IDatabaseNode* node);
     ~DiagramTab() override;
 
     void render() override;
@@ -59,14 +50,9 @@ private:
     void detectForeignKeysHeuristic(); // Fallback heuristic detection
     bool isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
                             std::string& referencedTable, std::string& referencedColumn);
-    [[nodiscard]] std::vector<Table>
-    getTablesForDiagram() const; // Helper to get tables from database
 
 private:
-    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*, SQLiteDatabase*>
-        databaseNode;
-    std::string databaseName; // for PostgreSQL
-    std::string schemaName;   // for PostgreSQL
+    IDatabaseNode* node_ = nullptr;
     ax::NodeEditor::EditorContext* editorContext = nullptr;
 
     std::vector<DiagramNode> nodes;

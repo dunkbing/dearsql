@@ -11,6 +11,12 @@ add_subdirectory(external/soci)
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
 
+# GoogleTest
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/googletest)
+
 # Use xdg-desktop-portal on Linux to avoid GTK3/GTK4 conflict
 if(UNIX AND NOT APPLE)
     set(NFD_PORTAL ON CACHE BOOL "Use xdg-desktop-portal instead of GTK" FORCE)
@@ -114,6 +120,8 @@ set(APP_SOURCES
     src/database/redis.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
+    src/database/sql_builder.cpp
+    src/database/connection_factory.cpp
 
     # UI
     src/ui/db_connection_dialog.cpp
@@ -247,16 +255,26 @@ add_executable(database_tests
     tests/database/sqlite_database_test.cpp
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
+    tests/database/redis_database_test.cpp
+    tests/database/sql_builder_test.cpp
+    tests/database/connection_factory_test.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
+    src/database/postgres/postgres_database_node.cpp
+    src/database/postgres/postgres_schema_node.cpp
     src/database/mysql.cpp
+    src/database/mysql/mysql_database_node.cpp
+    src/database/redis.cpp
     src/database/db_utils.cpp
+    src/database/sql_builder.cpp
+    src/database/connection_factory.cpp
     src/utils/logger.cpp
 )
 
 target_include_directories(database_tests PRIVATE
     include
     external/soci/include
+    external/hiredis
     tests/database
 )
 
@@ -266,6 +284,7 @@ target_link_libraries(database_tests PRIVATE
     soci_postgresql
     soci_mysql
     PostgreSQL::PostgreSQL
+    hiredis
 )
 
 add_test(NAME database_tests COMMAND database_tests)

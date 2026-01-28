@@ -1,9 +1,7 @@
 #pragma once
 
-#include "database/table_data_provider.hpp"
 #include "ui/auto_complete_input.hpp"
 #include "ui/tab/tab.hpp"
-#include "ui/tab_manager.hpp" // For TableDataNode type
 #include "ui/table_renderer.hpp"
 #include <future>
 #include <memory>
@@ -11,12 +9,12 @@
 #include <vector>
 
 // Forward declarations
-class DatabaseInterface;
+class IDatabaseNode;
 
 class TableViewerTab final : public Tab {
 public:
     TableViewerTab(const std::string& name, std::string databasePath, std::string tableName,
-                   const TableDataNode& dataNode);
+                   IDatabaseNode* node);
 
     void render() override;
 
@@ -27,8 +25,8 @@ public:
     [[nodiscard]] const std::string& getTableName() const {
         return tableName;
     }
-    [[nodiscard]] ITableDataProvider* getDatabaseNode() const {
-        return databaseNode;
+    [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
+        return node_;
     }
     void loadDataAsync();
     void checkAsyncLoadStatus();
@@ -49,7 +47,7 @@ public:
 private:
     std::string databasePath;
     std::string tableName;
-    ITableDataProvider* databaseNode;
+    IDatabaseNode* node_ = nullptr;
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;

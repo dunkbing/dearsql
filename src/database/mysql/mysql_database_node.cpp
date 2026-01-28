@@ -293,10 +293,7 @@ void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableNam
             tables, [&tableName](const Table& t) { return t.name == tableName; });
 
         if (tableIt != tables.end()) {
-            // Preserve expansion state
-            const bool wasExpanded = tableIt->expanded;
             *tableIt = refreshedTable;
-            tableIt->expanded = wasExpanded;
             Logger::info(std::format("Table {} refreshed successfully", tableName));
         }
 
@@ -579,4 +576,13 @@ std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& 
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }
+}
+
+std::string MySQLDatabaseNode::getFullPath() const {
+    return name;
+}
+
+void MySQLDatabaseNode::checkLoadingStatus() {
+    checkTablesStatusAsync();
+    checkViewsStatusAsync();
 }

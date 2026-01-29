@@ -6,6 +6,15 @@
 #include "platform/linux_platform.hpp"
 #include <iostream>
 
+// Clipboard support for GTK4
+static GdkClipboard* g_GtkClipboard = nullptr;
+static char* g_ClipboardText = nullptr;
+static bool g_ClipboardDirty = true;        // Need to fetch new content
+static bool g_ClipboardReadPending = false; // Async read in progress
+
+// Forward declarations for clipboard callbacks
+static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_data);
+
 LinuxPlatform::LinuxPlatform(Application* app)
     : app_(app), window_(nullptr), glArea_(nullptr), headerBar_(nullptr), sidebarButton_(nullptr),
       workspaceDropdown_(nullptr), addButton_(nullptr), workspaceModel_(nullptr),
@@ -169,6 +178,19 @@ void LinuxPlatform::onSidebarToggleClicked() {
 }
 
 void LinuxPlatform::cleanup() {
+    // Cleanup clipboard
+    if (g_GtkClipboard) {
+        g_signal_handlers_disconnect_by_func(g_GtkClipboard, (gpointer)clipboard_changed_callback,
+                                             nullptr);
+    }
+    if (g_ClipboardText) {
+        g_free(g_ClipboardText);
+        g_ClipboardText = nullptr;
+    }
+    g_GtkClipboard = nullptr;
+    g_ClipboardDirty = true;
+    g_ClipboardReadPending = false;
+
     if (window_) {
         gtk_window_destroy(GTK_WINDOW(window_));
         window_ = nullptr;
@@ -248,6 +270,64 @@ gboolean LinuxPlatform::onRender(GtkGLArea* area, GdkGLContext* context, gpointe
     return TRUE;
 }
 
+static void clipboard_read_callback(GObject* source, GAsyncResult* result, gpointer user_data) {
+    g_ClipboardReadPending = false;
+
+    if (g_ClipboardText) {
+        g_free(g_ClipboardText);
+        g_ClipboardText = nullptr;
+    }
+
+    GError* error = nullptr;
+    g_ClipboardText = gdk_clipboard_read_text_finish(GDK_CLIPBOARD(source), result, &error);
+
+    if (error) {
+        g_error_free(error);
+    }
+
+    g_ClipboardDirty = false;
+}
+
+static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_data) {
+    g_ClipboardDirty = true;
+
+    // Start fetching new content immediately
+    if (!g_ClipboardReadPending) {
+        g_ClipboardReadPending = true;
+        gdk_clipboard_read_text_async(clipboard, nullptr, clipboard_read_callback, nullptr);
+    }
+}
+
+static const char* ImGui_ImplGtk_GetClipboardText(void* user_data) {
+    if (!g_GtkClipboard) {
+        return "";
+    }
+
+    // If content is dirty and no read pending, start one
+    if (g_ClipboardDirty && !g_ClipboardReadPending) {
+        g_ClipboardReadPending = true;
+        gdk_clipboard_read_text_async(g_GtkClipboard, nullptr, clipboard_read_callback, nullptr);
+    }
+
+    // If a read is pending, wait for it to complete
+    if (g_ClipboardReadPending) {
+        GMainContext* context = g_main_context_default();
+        gint64 end_time = g_get_monotonic_time() + 200000; // 200ms timeout
+
+        while (g_ClipboardReadPending && g_get_monotonic_time() < end_time) {
+            g_main_context_iteration(context, TRUE);
+        }
+    }
+
+    return g_ClipboardText ? g_ClipboardText : "";
+}
+
+static void ImGui_ImplGtk_SetClipboardText(void* user_data, const char* text) {
+    if (g_GtkClipboard && text) {
+        gdk_clipboard_set_text(g_GtkClipboard, text);
+    }
+}
+
 void LinuxPlatform::onRealize(GtkGLArea* area, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
 
@@ -262,6 +342,22 @@ void LinuxPlatform::onRealize(GtkGLArea* area, gpointer userData) {
 
     // Initialize ImGui OpenGL backend now that we have a context
     ImGui_ImplOpenGL3_Init("#version 330");
+
+    // Setup clipboard
+    GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(area));
+    g_GtkClipboard = gdk_display_get_clipboard(display);
+
+    // Listen for clipboard changes to pre-fetch content
+    g_signal_connect(g_GtkClipboard, "changed", G_CALLBACK(clipboard_changed_callback), nullptr);
+
+    // Fetch initial clipboard content
+    g_ClipboardDirty = true;
+    g_ClipboardReadPending = true;
+    gdk_clipboard_read_text_async(g_GtkClipboard, nullptr, clipboard_read_callback, nullptr);
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.GetClipboardTextFn = ImGui_ImplGtk_GetClipboardText;
+    io.SetClipboardTextFn = ImGui_ImplGtk_SetClipboardText;
 
     std::cout << "OpenGL context realized" << std::endl;
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
@@ -285,10 +381,12 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
         io.AddKeyEvent(key, true);
     }
 
-    // Handle text input
-    gunichar unicode = gdk_keyval_to_unicode(keyval);
-    if (unicode != 0 && unicode < 0x10000) {
-        io.AddInputCharacter(unicode);
+    // Handle text input - but NOT when Ctrl is pressed (for shortcuts like Ctrl+V)
+    if (!(state & GDK_CONTROL_MASK)) {
+        gunichar unicode = gdk_keyval_to_unicode(keyval);
+        if (unicode != 0 && unicode < 0x10000) {
+            io.AddInputCharacter(unicode);
+        }
     }
 
     return io.WantCaptureKeyboard ? TRUE : FALSE;

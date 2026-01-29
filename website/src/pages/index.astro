@@ -1,0 +1,213 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const features = [
+  {
+    title: "Multiple database support",
+    description: "Connect to SQLite, PostgreSQL, MySQL, and Redis from a single app. Switch between databases effortlessly.",
+  },
+  {
+    title: "Native performance",
+    description: "Built with C++ and Metal rendering on macOS. No Electron, no bloat. Just fast, responsive UI.",
+  },
+  {
+    title: "SQL editor",
+    description: "Syntax highlighting, autocomplete, and query history. Write SQL faster with less friction.",
+  },
+  {
+    title: "Visual table editing",
+    description: "Browse, filter, and edit table data inline. Changes generate proper SQL statements.",
+  },
+  {
+    title: "ER diagrams",
+    description: "Visualize table relationships with auto-generated entity-relationship diagrams.",
+  },
+];
+
+const databases = [
+  { name: "SQLite", description: "Local file-based databases", icon: "devicon-sqlite-plain" },
+  { name: "PostgreSQL", description: "Full schema and pool support", icon: "devicon-postgresql-plain" },
+  { name: "MySQL", description: "Complete MySQL compatibility", icon: "devicon-mysql-plain" },
+  { name: "Redis", description: "Key-value browsing and editing", icon: "devicon-redis-plain" },
+];
+
+const currentYear = new Date().getFullYear();
+---
+
+<Layout title="Dear SQL - Simple, Powerful Database Manager">
+  <div class="min-h-screen bg-base">
+    <!-- Header -->
+    <header class="fixed top-0 left-0 right-0 z-50 bg-base/80 backdrop-blur-sm border-b border-surface1">
+      <nav class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2 font-semibold text-lg">
+          <img src="/icon.webp" alt="Dear SQL" width="28" height="28" class="rounded-md" />
+          Dear SQL
+        </a>
+        <div class="flex items-center gap-6 text-sm">
+          <a href="#features" class="text-subtext0 hover:text-text">Features</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Hero -->
+      <section class="pt-32 pb-16 px-6">
+        <div class="max-w-5xl mx-auto text-center">
+          <div class="flex justify-center mb-8">
+            <img src="/icon.webp" alt="Dear SQL" width="96" height="96" class="rounded-2xl" />
+          </div>
+          <h1 class="text-4xl md:text-5xl font-semibold tracking-tight mb-6 text-text">
+            Simple, powerful database manager
+          </h1>
+          <p class="text-xl text-subtext0 max-w-2xl mx-auto mb-10">
+            A native desktop SQL client for SQLite, PostgreSQL, MySQL, and Redis.
+            Fast, intuitive, and built for developers who value simplicity.
+          </p>
+          <div class="inline-flex items-center gap-2 bg-surface0 text-subtext0 px-6 py-3 rounded-lg text-lg">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-blue"></span>
+            </span>
+            Coming soon for macOS
+          </div>
+        </div>
+      </section>
+
+      <!-- Screenshots -->
+      <section class="pb-20 px-6">
+        <div class="max-w-5xl mx-auto">
+          <div class="flex justify-center gap-2 mb-6">
+            <button
+              id="tab-macos"
+              class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface1 text-text"
+              data-tab="macos"
+            >
+              macOS
+            </button>
+            <button
+              id="tab-linux"
+              class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface0 text-subtext0 hover:bg-surface1 hover:text-text transition-colors"
+              data-tab="linux"
+            >
+              Linux
+            </button>
+          </div>
+          <div id="screenshot-macos" class="screenshot-panel bg-surface0 rounded-xl p-2 shadow-2xl shadow-black/50">
+            <img
+              src="/sc.png"
+              alt="Dear SQL on macOS"
+              width="1920"
+              height="1080"
+              class="rounded-lg w-full h-auto"
+            />
+          </div>
+          <div id="screenshot-linux" class="screenshot-panel hidden bg-surface0 rounded-xl p-2 shadow-2xl shadow-black/50">
+            <img
+              src="/sc_gtk.png"
+              alt="Dear SQL on Linux"
+              width="1920"
+              height="1080"
+              class="rounded-lg w-full h-auto"
+            />
+          </div>
+        </div>
+      </section>
+
+      <script>
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+
+            document.querySelectorAll('.tab-btn').forEach(b => {
+              b.classList.remove('bg-surface1', 'text-text');
+              b.classList.add('bg-surface0', 'text-subtext0');
+            });
+            btn.classList.remove('bg-surface0', 'text-subtext0');
+            btn.classList.add('bg-surface1', 'text-text');
+
+            document.querySelectorAll('.screenshot-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(`screenshot-${tab}`)?.classList.remove('hidden');
+          });
+        });
+      </script>
+
+      <!-- Features -->
+      <section id="features" class="py-20 px-6 bg-mantle">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-3xl font-semibold text-center mb-4 text-text">
+            Best at the basics
+          </h2>
+          <p class="text-subtext0 text-center mb-12 max-w-2xl mx-auto">
+            Dear SQL focuses on what matters: connecting to databases, writing
+            queries, and managing data. No unnecessary complexity.
+          </p>
+          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {features.map((feature) => (
+              <div class="bg-surface0 p-6 rounded-xl border border-surface1">
+                <h3 class="font-semibold text-lg mb-2 text-text">{feature.title}</h3>
+                <p class="text-subtext0 text-sm leading-relaxed">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <!-- Databases -->
+      <section class="py-20 px-6">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-3xl font-semibold text-center mb-12 text-text">
+            All your databases, one app
+          </h2>
+          <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {databases.map((db) => (
+              <div class="text-center p-6 border border-surface1 rounded-xl bg-surface0">
+                <div class="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                  <i class={`${db.icon} colored text-5xl`}></i>
+                </div>
+                <h3 class="font-semibold mb-1 text-text">{db.name}</h3>
+                <p class="text-subtext0 text-sm">{db.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <!-- Coming Soon -->
+      <section id="download" class="py-20 px-6 bg-crust">
+        <div class="max-w-5xl mx-auto text-center">
+          <h2 class="text-3xl font-semibold mb-4 text-text">Coming Soon</h2>
+          <p class="text-subtext0 mb-8 max-w-xl mx-auto">
+            Dear SQL is currently in development. Sign up to get notified when
+            it's ready.
+          </p>
+          <div class="max-w-md mx-auto">
+            <iframe
+              src="https://tally.so/embed/eqMqGo?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1"
+              width="100%"
+              height="200"
+              frameborder="0"
+              title="Waitlist signup form"
+            ></iframe>
+          </div>
+          <p class="text-overlay1 text-sm mt-6">
+            Available for macOS. Windows and Linux planned.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-8 px-6 border-t border-surface1">
+      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p class="text-overlay1 text-sm">
+          &copy; {currentYear} Dear SQL.
+        </p>
+        <div class="flex gap-6 text-sm">
+          <a href="https://x.com/dunkbingg" target="_blank" class="text-overlay1 hover:text-text">
+            X
+          </a>
+        </div>
+      </div>
+    </footer>
+  </div>
+</Layout>

@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "config.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -90,7 +91,7 @@ namespace {
 
 bool Application::initialize() {
     std::cout << "ImGui version: " << IMGUI_VERSION << std::endl;
-    std::cout << "Starting DearSQL..." << std::endl;
+    std::cout << "Starting " << APP_NAME << "..." << std::endl;
 
     // Initialize platform-specific components
 #ifdef __APPLE__
@@ -235,7 +236,7 @@ void Application::run() {
 }
 
 void Application::cleanup() {
-    std::cout << "Cleaning up DearSQL..." << std::endl;
+    std::cout << "Cleaning up " << APP_NAME << "..." << std::endl;
 
     // Cleanup databases
     for (auto& db : databases) {
@@ -391,7 +392,7 @@ bool Application::initializeGLFW() {
 #endif
 
 #ifdef NDEBUG
-    const auto title = "DearSQL";
+    const auto title = APP_NAME;
 #else
     const auto title = "";
 #endif

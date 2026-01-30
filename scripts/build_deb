@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Configuration
 APP_NAME="dearsql"
-APP_DISPLAY_NAME="Dear SQL"
+APP_DISPLAY_NAME="DearSQL"
 VERSION="${VERSION:-1.0.0}"
 ARCH="${ARCH:-amd64}"
 MAINTAINER="${MAINTAINER:-dunkbing <bing@db99.dev>}"

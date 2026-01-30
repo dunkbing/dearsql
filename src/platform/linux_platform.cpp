@@ -2,9 +2,15 @@
 #include <epoxy/gl.h>
 
 #include "application.hpp"
+#include "config.hpp"
 #include "imgui_impl_opengl3.h"
 #include "platform/linux_platform.hpp"
 #include <iostream>
+
+#ifdef GDK_WINDOWING_X11
+#include <gdk/x11/gdkx.h>
+#include <X11/Xlib.h>
+#endif
 
 // Clipboard support for GTK4
 static GdkClipboard* g_GtkClipboard = nullptr;
@@ -31,9 +37,13 @@ bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
         return false;
     }
 
+    // Set application name for WM_CLASS matching with .desktop file
+    g_set_prgname(APP_NAME);
+    g_set_application_name(APP_NAME);
+
     // Create main window
     window_ = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(window_), "DearSQL");
+    gtk_window_set_title(GTK_WINDOW(window_), APP_NAME);
     gtk_window_set_default_size(GTK_WINDOW(window_), 1280, 720);
 
     // Connect close signal

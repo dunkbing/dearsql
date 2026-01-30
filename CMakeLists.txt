@@ -5,6 +5,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Application metadata
+set(APP_NAME "DearSQL")
+set(APP_VERSION "1.0.0")
+set(APP_IDENTIFIER "dearsql.db99.dev")
+
+configure_file(
+    ${CMAKE_SOURCE_DIR}/include/config.hpp.in
+    ${CMAKE_BINARY_DIR}/include/config.hpp
+    @ONLY
+)
+
 # Dependencies
 add_subdirectory(external/json)
 add_subdirectory(external/soci)
@@ -36,6 +47,7 @@ if(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
     pkg_check_modules(EPOXY REQUIRED epoxy)
+    find_package(X11 REQUIRED)
 else()
     # macOS and Windows use GLFW
     find_package(glfw3 3.3 REQUIRED)
@@ -223,6 +235,7 @@ elseif(UNIX AND NOT APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         ${GTK4_LIBRARIES}
         ${EPOXY_LIBRARIES}
+        ${X11_LIBRARIES}
     )
     target_link_directories(${PROJECT_NAME} PRIVATE ${GTK4_LIBRARY_DIRS} ${EPOXY_LIBRARY_DIRS})
 else()
@@ -236,12 +249,12 @@ endif()
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "dearsql.db99.dev"
-        MACOSX_BUNDLE_BUNDLE_NAME "DearSQL"
-        MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_IDENTIFIER}"
+        MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${APP_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${APP_VERSION}"
         MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-        OUTPUT_NAME "DearSQL"
+        OUTPUT_NAME "${APP_NAME}"
     )
 
     # Copy the icon file to the Resources directory

@@ -1,6 +1,6 @@
 # Fonts Directory
 
-Place your font files here to enable comprehensive language support in Dear SQL.
+Place your font files here to enable comprehensive language support in DearSQL.
 
 ## 🌍 Universal/Multilingual Fonts (Recommended)
 

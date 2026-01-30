@@ -24,7 +24,6 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Check dependencies
 check_deps() {
     local missing=()
     for cmd in dpkg-deb convert; do
@@ -40,7 +39,6 @@ check_deps() {
     fi
 }
 
-# Check if executable exists
 check_executable() {
     if [[ ! -f "${BUILD_DIR}/dear-sql" ]]; then
         log_error "Executable not found at ${BUILD_DIR}/dear-sql"
@@ -49,7 +47,6 @@ check_executable() {
     fi
 }
 
-# Create directory structure
 create_structure() {
     log_info "Creating package structure..."
     rm -rf "$DEB_DIR"
@@ -74,7 +71,6 @@ Description: Desktop SQL client
 EOF
 }
 
-# Create desktop entry
 create_desktop_entry() {
     log_info "Creating desktop entry..."
     cat > "$DEB_DIR/usr/share/applications/${APP_NAME}.desktop" << EOF
@@ -91,7 +87,6 @@ StartupWMClass=DearSQL
 EOF
 }
 
-# Generate icons
 create_icons() {
     log_info "Generating icons..."
     local icon_src="${PROJECT_DIR}/assets/appicon.png"
@@ -108,14 +103,12 @@ create_icons() {
     log_info "Icons generated: 48x48, 128x128, 256x256, 512x512"
 }
 
-# Copy executable
 copy_executable() {
     log_info "Copying executable..."
     cp "${BUILD_DIR}/dear-sql" "$DEB_DIR/usr/bin/${APP_NAME}"
     chmod 755 "$DEB_DIR/usr/bin/${APP_NAME}"
 }
 
-# Build the package
 build_package() {
     log_info "Building .deb package..."
     dpkg-deb --build "$DEB_DIR" "$OUTPUT_FILE"
@@ -126,7 +119,6 @@ build_package() {
     dpkg-deb --info "$OUTPUT_FILE"
 }
 
-# Main
 main() {
     log_info "Building ${APP_NAME} ${VERSION} for ${ARCH}"
 

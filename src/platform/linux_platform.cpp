@@ -8,8 +8,8 @@
 #include <iostream>
 
 #ifdef GDK_WINDOWING_X11
-#include <gdk/x11/gdkx.h>
 #include <X11/Xlib.h>
+#include <gdk/x11/gdkx.h>
 #endif
 
 // Clipboard support for GTK4

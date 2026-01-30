@@ -1,8 +1,11 @@
 #include "ui/table_dialog.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/database_node.hpp"
+#include "database/sql_builder.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/logger.hpp"
 #include <algorithm>
 #include <format>
 
@@ -11,16 +14,15 @@ TableDialog& TableDialog::instance() {
     return inst;
 }
 
-void TableDialog::showCreate(DatabaseType dbType, const std::string& schema, SaveCallback onSave,
-                             CancelCallback onCancel) {
+void TableDialog::showCreate(IDatabaseNode* node, const std::string& schema) {
     reset();
     dialogMode = TableDialogMode::Create;
-    databaseType = dbType;
+    dbNode = node;
+    databaseType = node ? node->getDatabaseType() : DatabaseType::SQLITE;
     schemaName = schema;
-    saveCallback = std::move(onSave);
-    cancelCallback = std::move(onCancel);
+    saveCallback = nullptr;
+    cancelCallback = nullptr;
 
-    // Initialize with empty table
     editingTable = Table{};
     editingTable.columns.clear();
 
@@ -28,20 +30,18 @@ void TableDialog::showCreate(DatabaseType dbType, const std::string& schema, Sav
     isDialogOpen = true;
 }
 
-void TableDialog::showEdit(const Table& table, DatabaseType dbType, const std::string& schema,
-                           SaveCallback onSave, CancelCallback onCancel) {
+void TableDialog::showEdit(IDatabaseNode* node, const Table& table, const std::string& schema) {
     reset();
     dialogMode = TableDialogMode::Edit;
-    databaseType = dbType;
+    dbNode = node;
+    databaseType = node ? node->getDatabaseType() : DatabaseType::SQLITE;
     schemaName = schema;
-    saveCallback = std::move(onSave);
-    cancelCallback = std::move(onCancel);
+    saveCallback = nullptr;
+    cancelCallback = nullptr;
 
-    // Copy the table for editing
     editingTable = table;
-    originalTableName = table.name;
+    originalTable = table;
 
-    // Initialize buffers
     std::strncpy(tableNameBuffer, table.name.c_str(), sizeof(tableNameBuffer) - 1);
     tableNameBuffer[sizeof(tableNameBuffer) - 1] = '\0';
     std::memset(tableCommentBuffer, 0, sizeof(tableCommentBuffer));
@@ -67,7 +67,7 @@ void TableDialog::render() {
     if (ImGui::BeginPopupModal(title, &isDialogOpen, ImGuiWindowFlags_NoScrollbar)) {
         // Show table context
         if (dialogMode == TableDialogMode::Edit) {
-            ImGui::Text("Table: %s", originalTableName.c_str());
+            ImGui::Text("Table: %s", originalTable.name.c_str());
             if (!schemaName.empty()) {
                 ImGui::SameLine();
                 ImGui::Text("Schema: %s", schemaName.c_str());
@@ -170,7 +170,7 @@ void TableDialog::renderTableTree() {
             (std::strlen(tableNameBuffer) > 0 ? std::string(tableNameBuffer) : "New Table");
     } else {
         displayName =
-            (std::strlen(tableNameBuffer) > 0 ? std::string(tableNameBuffer) : originalTableName);
+            (std::strlen(tableNameBuffer) > 0 ? std::string(tableNameBuffer) : originalTable.name);
     }
     const std::string tableLabel = std::format("   {}", displayName);
     bool tableOpen = ImGui::TreeNodeEx(tableLabel.c_str(), tableFlags);
@@ -490,20 +490,51 @@ void TableDialog::renderButtons() {
 
     if (ImGui::Button("Save", ImVec2(120, 0))) {
         if (validateTableInput()) {
-            // Build the result table and call the callback
             Table resultTable = buildResultTable();
             errorMessage.clear();
 
-            if (saveCallback) {
+            // Direct execution mode (dbNode set)
+            if (dbNode) {
+                if (dialogMode == TableDialogMode::Create) {
+                    auto builder = createSQLBuilder(databaseType);
+                    // Qualify table name with schema for PostgreSQL
+                    if (databaseType == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+                        resultTable.name = schemaName + "." + resultTable.name;
+                    }
+                    const std::string sql = builder->createTable(resultTable);
+                    Logger::info("Executing: " + sql);
+                    auto [success, error] = dbNode->executeQuery(sql);
+                    if (success) {
+                        dbNode->startTablesLoadAsync(true);
+                    } else {
+                        errorMessage = error;
+                    }
+                } else {
+                    // Edit mode - execute ALTER TABLE statements
+                    auto statements = generateAlterTableStatements();
+                    for (const auto& sql : statements) {
+                        Logger::info("Executing: " + sql);
+                        auto [success, error] = dbNode->executeQuery(sql);
+                        if (!success) {
+                            errorMessage = error;
+                            break;
+                        }
+                    }
+                    if (errorMessage.empty()) {
+                        dbNode->startTablesLoadAsync(true);
+                    }
+                }
+            } else if (saveCallback) {
+                // Callback mode
                 saveCallback(resultTable);
             }
 
-            // Only close if no error was set by the callback
+            // Only close if no error was set
             if (errorMessage.empty()) {
                 isDialogOpen = false;
-                // Don't call cancelCallback since we saved successfully
                 saveCallback = nullptr;
                 cancelCallback = nullptr;
+                dbNode = nullptr;
                 reset();
             }
         }
@@ -599,7 +630,7 @@ void TableDialog::updatePreviewSQL() {
 }
 
 std::string TableDialog::generateAddColumnSQL() const {
-    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTableName;
+    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTable.name;
 
     // For PostgreSQL, ensure table name is schema-qualified
     std::string qualifiedTableName = tableName;
@@ -640,7 +671,7 @@ std::string TableDialog::generateAddColumnSQL() const {
 }
 
 std::string TableDialog::generateEditColumnSQL() const {
-    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTableName;
+    std::string tableName = std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : originalTable.name;
     std::string sql;
 
     switch (databaseType) {
@@ -930,6 +961,46 @@ std::string TableDialog::generateCreateTableSQL() const {
     return sql;
 }
 
+std::vector<std::string> TableDialog::generateAlterTableStatements() const {
+    std::vector<std::string> statements;
+    auto builder = createSQLBuilder(databaseType);
+
+    std::string tableName = originalTable.name;
+    if (databaseType == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+        tableName = schemaName + "." + originalTable.name;
+    }
+
+    // Find dropped columns (in original but not in editing)
+    for (const auto& origCol : originalTable.columns) {
+        bool found = false;
+        for (const auto& editCol : editingTable.columns) {
+            if (origCol.name == editCol.name) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            statements.push_back(builder->dropColumn(tableName, origCol.name));
+        }
+    }
+
+    // Find added columns (in editing but not in original)
+    for (const auto& editCol : editingTable.columns) {
+        bool found = false;
+        for (const auto& origCol : originalTable.columns) {
+            if (editCol.name == origCol.name) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            statements.push_back(builder->addColumn(tableName, editCol));
+        }
+    }
+
+    return statements;
+}
+
 void TableDialog::updateCurrentColumn() {
     if (selectedColumnIndex >= 0 &&
         selectedColumnIndex < static_cast<int>(editingTable.columns.size())) {
@@ -960,7 +1031,7 @@ void TableDialog::reset() {
     rightPanelMode = RightPanelMode::TableProperties;
 
     editingTable = Table{};
-    originalTableName.clear();
+    originalTable = Table{};
     originalColumnName.clear();
     schemaName.clear();
 
@@ -974,4 +1045,5 @@ void TableDialog::reset() {
 
     saveCallback = nullptr;
     cancelCallback = nullptr;
+    dbNode = nullptr;
 }

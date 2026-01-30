@@ -229,6 +229,9 @@ void DatabaseHierarchy::renderSQLiteNode() {
 
         // Context menu for Tables node
         if (ImGui::BeginPopupContextItem(nullptr)) {
+            if (ImGui::MenuItem("Create Table...")) {
+                TableDialog::instance().showCreate(sqliteDb);
+            }
             if (ImGui::MenuItem("Refresh")) {
                 sqliteDb->startTablesLoadAsync();
             }
@@ -488,6 +491,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                if (ImGui::MenuItem("Create Table...")) {
+                    TableDialog::instance().showCreate(schemaData, schemaData->name);
+                }
                 if (ImGui::MenuItem("Refresh")) {
                     schemaData->startTablesLoadAsync(true);
                 }
@@ -682,6 +688,9 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                if (ImGui::MenuItem("Create Table...")) {
+                    TableDialog::instance().showCreate(dbData);
+                }
                 if (ImGui::MenuItem("Refresh")) {
                     dbData->startTablesLoadAsync(true);
                 }
@@ -803,14 +812,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
             app.getTabManager()->createTableViewerTab(schemaNode, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            TableDialog::instance().showEdit(table, DatabaseType::POSTGRESQL, schemaNode->name,
-                                             [schemaNode](const Table& modifiedTable) {
-                                                 // TODO: Generate and execute ALTER TABLE
-                                                 // statements based on changes
-                                                 Logger::info("Table modified: " +
-                                                              modifiedTable.name);
-                                                 schemaNode->startTablesLoadAsync(true);
-                                             });
+            TableDialog::instance().showEdit(schemaNode, table, schemaNode->name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -1109,12 +1111,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
             app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            TableDialog::instance().showEdit(
-                table, DatabaseType::MYSQL, "", [dbData](const Table& modifiedTable) {
-                    // TODO: Generate and execute ALTER TABLE statements based on changes
-                    Logger::info("Table modified: " + modifiedTable.name);
-                    dbData->startTablesLoadAsync(true);
-                });
+            TableDialog::instance().showEdit(dbData, table);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
@@ -1388,12 +1385,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
             app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
         if (ImGui::MenuItem("Edit Table")) {
-            TableDialog::instance().showEdit(
-                table, DatabaseType::SQLITE, "", [sqliteDb](const Table& modifiedTable) {
-                    // TODO: Generate and execute ALTER TABLE statements based on changes
-                    Logger::info("Table modified: " + modifiedTable.name);
-                    sqliteDb->startTablesLoadAsync(true);
-                });
+            TableDialog::instance().showEdit(sqliteDb, table);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab

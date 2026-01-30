@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+class IDatabaseNode;
+
 enum class ColumnEditMode { None, Add, Edit };
 enum class TableDialogMode { Edit, Create };
 enum class RightPanelMode { TableProperties, ColumnEditor, Instructions };
@@ -31,27 +33,21 @@ public:
     TableDialog& operator=(TableDialog&&) = delete;
 
     /**
-     * @brief Show dialog for creating a new table
+     * @brief Show dialog for creating a new table (direct execution)
      *
-     * @param databaseType The type of database (for syntax/type hints)
-     * @param schemaName Optional schema name for display
-     * @param onSave Callback with the created Table when user confirms
-     * @param onCancel Optional callback when user cancels
+     * @param dbNode The database node to execute CREATE TABLE on
+     * @param schemaName Optional schema name for qualified table names
      */
-    void showCreate(DatabaseType databaseType, const std::string& schemaName, SaveCallback onSave,
-                    CancelCallback onCancel = nullptr);
+    void showCreate(IDatabaseNode* dbNode, const std::string& schemaName = "");
 
     /**
-     * @brief Show dialog for editing an existing table
+     * @brief Show dialog for editing an existing table (direct execution)
      *
+     * @param dbNode The database node to execute ALTER TABLE on
      * @param table The table to edit
-     * @param databaseType The type of database (for syntax/type hints)
-     * @param schemaName Optional schema name for display
-     * @param onSave Callback with the modified Table when user confirms
-     * @param onCancel Optional callback when user cancels
+     * @param schemaName Optional schema name for qualified table names
      */
-    void showEdit(const Table& table, DatabaseType databaseType, const std::string& schemaName,
-                  SaveCallback onSave, CancelCallback onCancel = nullptr);
+    void showEdit(IDatabaseNode* dbNode, const Table& table, const std::string& schemaName = "");
 
     // Render the dialog (call from UI loop)
     void render();
@@ -84,10 +80,11 @@ private:
     // Database context
     DatabaseType databaseType = DatabaseType::SQLITE;
     std::string schemaName;
+    IDatabaseNode* dbNode = nullptr;
 
     // Table being edited
     Table editingTable;
-    std::string originalTableName; // For edit mode comparison
+    Table originalTable; // For edit mode comparison (full copy)
 
     // Column editing state
     int selectedColumnIndex = -1;
@@ -138,6 +135,7 @@ private:
     // Table operations
     bool validateTableInput();
     std::string generateCreateTableSQL() const;
+    std::vector<std::string> generateAlterTableStatements() const;
 
     // Validation
     bool validateColumnInput();

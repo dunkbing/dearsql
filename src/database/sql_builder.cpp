@@ -1,6 +1,5 @@
 #include "database/sql_builder.hpp"
 #include <format>
-#include <sstream>
 
 // ========== Factory Function ==========
 

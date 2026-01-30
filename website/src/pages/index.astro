@@ -33,22 +33,22 @@ const databases = [
   {
     name: "SQLite",
     description: "Local file-based databases",
-    icon: "devicon-sqlite-plain",
+    icon: "/icons/sqlite.svg",
   },
   {
     name: "PostgreSQL",
     description: "Full schema and pool support",
-    icon: "devicon-postgresql-plain",
+    icon: "/icons/postgresql.svg",
   },
   {
     name: "MySQL",
     description: "Complete MySQL compatibility",
-    icon: "devicon-mysql-plain",
+    icon: "/icons/mysql.svg",
   },
   {
     name: "Redis",
     description: "Key-value browsing and editing",
-    icon: "devicon-redis-plain",
+    icon: "/icons/redis.svg",
   },
 ];
 
@@ -144,8 +144,8 @@ const currentYear = new Date().getFullYear();
             <img
               src="/sc.png"
               alt="DearSQL on macOS"
-              width="1920"
-              height="1080"
+              width="3488"
+              height="2274"
               class="rounded-lg w-full h-auto"
             />
           </div>
@@ -156,8 +156,8 @@ const currentYear = new Date().getFullYear();
             <img
               src="/sc_gtk.png"
               alt="DearSQL on Linux"
-              width="1920"
-              height="1080"
+              width="1641"
+              height="918"
               class="rounded-lg w-full h-auto"
             />
           </div>
@@ -227,9 +227,11 @@ const currentYear = new Date().getFullYear();
             {
               databases.map((db) => (
                 <div class="text-center p-6 border border-surface1 rounded-xl bg-surface0">
-                  <div class="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                    <i class={`${db.icon} colored text-5xl`} />
-                  </div>
+                  <img
+                    src={db.icon}
+                    alt={db.name}
+                    class="w-12 h-12 mx-auto mb-4"
+                  />
                   <h3 class="font-semibold mb-1 text-text">{db.name}</h3>
                   <p class="text-subtext0 text-sm">{db.description}</p>
                 </div>
@@ -255,7 +257,7 @@ const currentYear = new Date().getFullYear();
               frameborder="0"
               title="Waitlist signup form"></iframe>
           </div>
-          <p class="text-overlay1 text-sm mt-6">
+          <p class="text-subtext0 text-sm mt-6">
             Available for macOS and Linux. Windows planned.
           </p>
         </div>
@@ -267,14 +269,14 @@ const currentYear = new Date().getFullYear();
       <div
         class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4"
       >
-        <p class="text-overlay1 text-sm">
+        <p class="text-subtext0 text-sm">
           &copy; {currentYear} DearSQL.
         </p>
         <div class="flex gap-6 text-sm">
           <a
             href="https://x.com/dunkbingg"
             target="_blank"
-            class="text-overlay1 hover:text-text"
+            class="text-subtext0 hover:text-text"
           >
             X
           </a>

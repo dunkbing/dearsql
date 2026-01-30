@@ -1,3 +1,4 @@
+#include "ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -9,7 +10,6 @@
 #include "im_anim.h"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "ui/database_node.hpp"
 #include "ui/confirm_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"
@@ -329,12 +329,11 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("New SQL Editor")) {
-            // Default to first schema if available
-            std::string defaultSchema;
+            // For PostgreSQL, we need to use a schema node (which implements IDatabaseNode)
             if (dbData->schemasLoaded && !dbData->schemas.empty()) {
-                defaultSchema = dbData->schemas[0]->name;
+                auto* schemaNode = dbData->schemas[0].get();
+                app.getTabManager()->createSQLEditorTab("", schemaNode);
             }
-            app.getTabManager()->createSQLEditorTab("", dbData, defaultSchema);
         }
         if (ImGui::MenuItem("Refresh")) {
             dbData->startSchemasLoadAsync(true, true);
@@ -423,7 +422,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
     // Context menu for schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
         if (ImGui::MenuItem("New SQL Editor")) {
-            app.getTabManager()->createSQLEditorTab("", schemaData->parentDbNode, schemaData->name);
+            // schemaData implements IDatabaseNode, so we can pass it directly
+            app.getTabManager()->createSQLEditorTab("", schemaData);
         }
         if (ImGui::MenuItem("Show Diagram")) {
             app.getTabManager()->createDiagramTab(schemaData);
@@ -765,19 +765,13 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags tableFlags =
+    constexpr ImGuiTreeNodeFlags tableFlags =
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
-    if (table.expanded) {
-        tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-    }
-
     const std::string tableNodeId =
-        std::format("pg_table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("pg_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
-
-    table.expanded = tableOpen;
 
     // Check if table is refreshing
     const bool isRefreshing = schemaNode->isTableRefreshing(table.name);
@@ -1077,19 +1071,13 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags tableFlags =
+    constexpr ImGuiTreeNodeFlags tableFlags =
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
-    if (table.expanded) {
-        tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-    }
-
     const std::string tableNodeId =
-        std::format("mysql_table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("mysql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
-
-    table.expanded = tableOpen;
 
     // Check if table is refreshing
     const bool isRefreshing = dbData->isTableRefreshing(table.name);
@@ -1381,19 +1369,13 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags tableFlags =
+    constexpr ImGuiTreeNodeFlags tableFlags =
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
 
-    if (table.expanded) {
-        tableFlags |= ImGuiTreeNodeFlags_DefaultOpen;
-    }
-
     const std::string tableNodeId =
-        std::format("sqlite_table_{}_{:p}", table.name, static_cast<void*>(&table));
+        std::format("sqlite_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
-
-    table.expanded = tableOpen;
 
     // Double-click to open table viewer
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {

@@ -3,24 +3,9 @@
 #include "ui/tab/tab.hpp"
 #include <memory>
 #include <string>
-#include <variant>
 #include <vector>
 
-class DatabaseInterface;
-class PostgresSchemaNode;
-class PostgresDatabaseNode;
-class MySQLDatabaseNode;
-class MySQLDatabase;
-class SQLiteDatabase;
-class ITableDataProvider;
-
-// Database node variant type for SQL editor tabs
-using DatabaseNode =
-    std::variant<std::monostate, PostgresDatabaseNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
-
-// Table data provider variant type for table viewer tabs
-using TableDataNode =
-    std::variant<std::monostate, PostgresSchemaNode*, MySQLDatabaseNode*, SQLiteDatabase*>;
+class IDatabaseNode;
 
 class TabManager {
 public:
@@ -46,16 +31,13 @@ public:
         return tabs;
     }
 
-    // Tab creation helpers
-    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, const DatabaseNode& dbNode,
+    // Tab creation helpers (unified interface)
+    std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, IDatabaseNode* node,
                                             const std::string& schemaName = "");
 
-    std::shared_ptr<Tab> createTableViewerTab(const TableDataNode& dataNode,
-                                              const std::string& tableName);
+    std::shared_ptr<Tab> createTableViewerTab(IDatabaseNode* node, const std::string& tableName);
 
-    std::shared_ptr<Tab> createDiagramTab(PostgresSchemaNode* schemaNode);
-    std::shared_ptr<Tab> createDiagramTab(MySQLDatabaseNode* dbNode);
-    std::shared_ptr<Tab> createDiagramTab(SQLiteDatabase* dbNode);
+    std::shared_ptr<Tab> createDiagramTab(IDatabaseNode* node);
 
     // UI rendering
     void renderTabs();

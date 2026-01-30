@@ -1,35 +1,16 @@
 #include "ui/tab/diagram_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
-#include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
-#include "database/sqlite.hpp"
+#include "database/database_node.hpp"
 #include "imgui.h"
 #include <algorithm>
-#include <format>
 #include <iostream>
 #include <ranges>
 #include <set>
 #include <utility>
 
-// Constructor for PostgreSQL schema
-DiagramTab::DiagramTab(const std::string& name, PostgresSchemaNode* schemaNode)
-    : Tab(name, TabType::DIAGRAM), databaseNode(schemaNode) {
-    initializeEditor();
-    loadDatabaseSchema();
-}
-
-// Constructor for MySQL database
-DiagramTab::DiagramTab(const std::string& name, MySQLDatabaseNode* dbNode)
-    : Tab(name, TabType::DIAGRAM), databaseNode(dbNode) {
-    initializeEditor();
-    loadDatabaseSchema();
-}
-
-// Constructor for SQLite database
-DiagramTab::DiagramTab(const std::string& name, SQLiteDatabase* dbNode)
-    : Tab(name, TabType::DIAGRAM), databaseNode(dbNode) {
+DiagramTab::DiagramTab(const std::string& name, IDatabaseNode* node)
+    : Tab(name, TabType::DIAGRAM), node_(node) {
     initializeEditor();
     loadDatabaseSchema();
 }
@@ -73,74 +54,26 @@ void DiagramTab::render() {
     }
 
     if (!schemaLoaded) {
-        // Show appropriate loading message
-        if (std::holds_alternative<PostgresSchemaNode*>(databaseNode) ||
-            std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-            ImGui::Text("Loading database schema...");
-        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-            ImGui::Text("Loading tables...");
-        } else {
-            ImGui::Text("Loading...");
-        }
+        ImGui::Text("Loading database schema...");
 
         if (!isLoadingSchema) {
             isLoadingSchema = true;
             loadDatabaseSchema();
         }
 
-        // Check async loading status
-        if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-            auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-            if (schemaNode) {
-                schemaNode->checkTablesStatusAsync();
-                if (schemaNode->tablesLoaded) {
-                    isLoadingSchema = false;
-                }
-            }
-        } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-            auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-            if (mysqlNode) {
-                mysqlNode->checkTablesStatusAsync();
-                if (mysqlNode->tablesLoaded) {
-                    isLoadingSchema = false;
-                }
-            }
-        } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-            auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-            if (sqliteNode) {
-                sqliteNode->checkTablesStatusAsync();
-                if (sqliteNode->areTablesLoaded()) {
-                    isLoadingSchema = false;
-                }
+        // Check async loading status using IDatabaseNode interface
+        if (node_) {
+            node_->checkLoadingStatus();
+            if (node_->isTablesLoaded()) {
+                isLoadingSchema = false;
             }
         }
         return;
     }
 
     // Toolbar
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-        if (schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-            auto toolBarName =
-                std::format("Schema: {}.{}", schemaNode->parentDbNode->name, schemaNode->name);
-            ImGui::Text("Schema: %s", toolBarName.c_str());
-        } else {
-            ImGui::Text("Schema: (disconnected)");
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (mysqlNode && mysqlNode->parentDb) {
-            ImGui::Text("Database: %s", mysqlNode->name.c_str());
-        } else {
-            ImGui::Text("Database: (disconnected)");
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteNode) {
-            ImGui::Text("Database: %s", sqliteNode->getConnectionInfo().name.c_str());
-        } else {
-            ImGui::Text("Database: (disconnected)");
-        }
+    if (node_) {
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
     } else {
         ImGui::Text("Database: (no database selected)");
     }
@@ -214,88 +147,32 @@ void DiagramTab::handleZoomShortcuts() {
     }
 }
 
-std::vector<Table> DiagramTab::getTablesForDiagram() const {
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-        if (schemaNode) {
-            return schemaNode->tables;
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (mysqlNode) {
-            return mysqlNode->tables;
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteNode) {
-            return sqliteNode->getTables();
-        }
-    }
-
-    return {};
-}
-
 void DiagramTab::loadDatabaseSchema() {
     nodes.clear();
     links.clear();
     tableToNodeIdMap.clear();
-    foreignKeyCache.clear(); // Clear the foreign key cache
-    // Start with higher IDs to avoid conflicts with internal node editor IDs
+    foreignKeyCache.clear();
     nextNodeId = 1000;
     nextLinkId = 10000;
     nextPinId = 100000;
 
-    std::vector<Table> tables;
-
-    if (std::holds_alternative<PostgresSchemaNode*>(databaseNode)) {
-        auto* schemaNode = std::get<PostgresSchemaNode*>(databaseNode);
-        if (schemaNode) {
-            // Check if tables are loaded
-            if (!schemaNode->tablesLoaded && !schemaNode->tablesLoader.isRunning()) {
-                schemaNode->startTablesLoadAsync();
-            }
-
-            // If tables are still loading, wait
-            if (schemaNode->tablesLoader.isRunning()) {
-                schemaLoaded = false; // Keep trying
-                return;
-            }
-
-            tables = schemaNode->tables;
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (mysqlNode) {
-            // Check if tables are loaded
-            if (!mysqlNode->tablesLoaded && !mysqlNode->tablesLoader.isRunning()) {
-                mysqlNode->startTablesLoadAsync();
-            }
-
-            // If tables are still loading, wait
-            if (mysqlNode->tablesLoader.isRunning()) {
-                schemaLoaded = false; // Keep trying
-                return;
-            }
-
-            tables = mysqlNode->tables;
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteNode) {
-            // Check if tables are loaded
-            if (!sqliteNode->areTablesLoaded() && !sqliteNode->loadingTables) {
-                sqliteNode->startTablesLoadAsync();
-            }
-
-            // If tables are still loading, wait
-            if (sqliteNode->loadingTables) {
-                // Don't set schemaLoaded = false for SQLite (it's not a schema, just tables)
-                return;
-            }
-
-            tables = sqliteNode->getTables();
-        }
+    if (!node_) {
+        schemaLoaded = true;
+        return;
     }
+
+    // Check if tables are loaded
+    if (!node_->isTablesLoaded() && !node_->isLoadingTables()) {
+        node_->startTablesLoadAsync();
+    }
+
+    // If tables are still loading, wait
+    if (node_->isLoadingTables()) {
+        schemaLoaded = false;
+        return;
+    }
+
+    const std::vector<Table>& tables = node_->getTables();
 
     if (tables.empty()) {
         schemaLoaded = true;
@@ -311,7 +188,7 @@ void DiagramTab::loadDatabaseSchema() {
     for (const auto& table : tables) {
         createTableNode(table, position);
         position.x += horizontalSpacing;
-        if (position.x > maxWidth) { // Wrap to next row
+        if (position.x > maxWidth) {
             position.x = 100;
             position.y += verticalSpacing;
         }
@@ -323,7 +200,6 @@ void DiagramTab::loadDatabaseSchema() {
 }
 
 void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
-    // Check if node already exists to prevent duplicates
     if (tableToNodeIdMap.contains(table.name)) {
         return;
     }
@@ -334,15 +210,12 @@ void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
     node.columns = table.columns;
     node.position = position;
 
-    // Check if this is a primary table (has primary key)
     node.isPrimaryTable =
         std::ranges::any_of(table.columns, [](const Column& col) { return col.isPrimaryKey; });
 
-    // Pre-allocate unique pin IDs for each column (including empty ones)
     node.columnPinIds.clear();
-    node.columnPinIds.resize(table.columns.size()); // Use resize to ensure exact size
+    node.columnPinIds.resize(table.columns.size());
     for (size_t i = 0; i < table.columns.size(); ++i) {
-        // Always allocate a pin ID even for empty columns to maintain index consistency
         node.columnPinIds[i] = ax::NodeEditor::PinId(nextPinId++);
     }
 
@@ -355,24 +228,20 @@ void DiagramTab::renderNodes() {
         return;
     }
 
-    // Get theme colors from application
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    // Use theme colors for better consistency
-    const ImVec4 primaryTableColor = colors.yellow;   // Primary keys in yellow
-    const ImVec4 normalTableColor = colors.text;      // Normal text color
-    const ImVec4 normalColumnColor = colors.subtext1; // Slightly muted text
-    const ImVec4 foreignKeyColor = colors.blue;       // Foreign keys in blue
-    const ImVec4 typeColor = colors.subtext0;         // Type info in muted color
-    const ImVec4 notNullColor = colors.red;           // NOT NULL constraints in red
+    const ImVec4 primaryTableColor = colors.yellow;
+    const ImVec4 normalTableColor = colors.text;
+    const ImVec4 normalColumnColor = colors.subtext1;
+    const ImVec4 foreignKeyColor = colors.blue;
+    const ImVec4 typeColor = colors.subtext0;
+    const ImVec4 notNullColor = colors.red;
 
-    // Build a set of foreign key columns for quick lookup
     std::set<std::pair<std::string, std::string>> foreignKeyColumns;
     for (const auto& link : links) {
         foreignKeyColumns.insert({link.fromTable, link.fromColumn});
     }
 
-    // Also build a set of referenced columns
     std::set<std::pair<std::string, std::string>> referencedColumns;
     for (const auto& link : links) {
         referencedColumns.insert({link.toTable, link.toColumn});
@@ -380,7 +249,6 @@ void DiagramTab::renderNodes() {
 
     for (auto& [id, tableName, columns, position, isPrimaryTable, initialPositionSet,
                 columnPinIds] : nodes) {
-        // Set initial position only once, then let the editor handle dragging
         if (!initialPositionSet) {
             ax::NodeEditor::SetNodePosition(id, position);
             initialPositionSet = true;
@@ -388,28 +256,22 @@ void DiagramTab::renderNodes() {
 
         ax::NodeEditor::BeginNode(id);
 
-        // Node header with table name
         ImGui::PushStyleColor(ImGuiCol_Text, isPrimaryTable ? primaryTableColor : normalTableColor);
         ImGui::Text(ICON_FA_TABLE " %s", tableName.c_str());
         ImGui::PopStyleColor();
         ImGui::Separator();
 
-        // Columns - use indexed loop to access cached pin IDs
         for (size_t i = 0; i < columns.size(); ++i) {
             const auto& column = columns[i];
 
-            // Skip empty column names
             if (column.name.empty()) {
                 continue;
             }
 
-            // Check if this column is a foreign key
             const bool isForeignKey = foreignKeyColumns.contains({tableName, column.name});
 
-            // Don't push ImGui IDs - let node editor manage IDs
             ImGui::BeginGroup();
 
-            // Create pin with cached ID - all pins are Input for simplicity
             ax::NodeEditor::BeginPin(columnPinIds[i], ax::NodeEditor::PinKind::Input);
             if (isForeignKey && showForeignKeys) {
                 ImGui::PushStyleColor(ImGuiCol_Text, foreignKeyColor);
@@ -422,23 +284,20 @@ void DiagramTab::renderNodes() {
 
             ImGui::SameLine();
 
-            // Column name with icons
             if (showPrimaryKeys && column.isPrimaryKey) {
                 ImGui::PushStyleColor(ImGuiCol_Text, primaryTableColor);
                 ImGui::Text(ICON_FA_KEY " %s", column.name.c_str());
                 ImGui::PopStyleColor();
             } else if (isForeignKey && showForeignKeys) {
-                // Highlight foreign keys with special icon and color
                 ImGui::PushStyleColor(ImGuiCol_Text, foreignKeyColor);
                 ImGui::Text(ICON_FA_LINK " %s", column.name.c_str());
                 ImGui::PopStyleColor();
 
-                // Show tooltip with relationship info
                 if (ImGui::IsItemHovered()) {
                     std::string cacheKey = tableName + "." + column.name;
                     auto fkIt = foreignKeyCache.find(cacheKey);
                     if (fkIt != foreignKeyCache.end()) {
-                        ImGui::SetTooltip("Foreign Key → %s.%s", fkIt->second.first.c_str(),
+                        ImGui::SetTooltip("Foreign Key -> %s.%s", fkIt->second.first.c_str(),
                                           fkIt->second.second.c_str());
                     }
                 }
@@ -448,7 +307,6 @@ void DiagramTab::renderNodes() {
                 ImGui::PopStyleColor();
             }
 
-            // Show column type if enabled
             if (showColumnTypes && !column.type.empty()) {
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Text, typeColor);
@@ -456,7 +314,6 @@ void DiagramTab::renderNodes() {
                 ImGui::PopStyleColor();
             }
 
-            // Show NOT NULL constraint
             if (column.isNotNull && !column.isPrimaryKey) {
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Text, notNullColor);
@@ -469,7 +326,6 @@ void DiagramTab::renderNodes() {
 
         ax::NodeEditor::EndNode();
 
-        // Always update position to track dragging
         position = ax::NodeEditor::GetNodePosition(id);
     }
 }
@@ -493,10 +349,8 @@ void DiagramTab::renderLinks() {
                              linkThickness);
     }
 
-    // Check for hovered link to show tooltip
     ax::NodeEditor::LinkId hoveredLinkId = ax::NodeEditor::GetHoveredLink();
     if (hoveredLinkId) {
-        // Find the link details
         const auto linkIt = std::ranges::find_if(
             links, [hoveredLinkId](const DiagramLink& link) { return link.id == hoveredLinkId; });
 
@@ -510,33 +364,19 @@ void DiagramTab::renderLinks() {
 }
 
 void DiagramTab::handleNodeInteraction() {
-    // Handle node creation (if needed in the future)
-    // Handle link creation (if needed in the future)
-
-    // For now, just handle selection and context menus
     ax::NodeEditor::NodeId hoveredNodeId = ax::NodeEditor::GetHoveredNode();
     if (hoveredNodeId) {
-        // Find the table name for the hovered node
         const auto nodeIt = std::ranges::find_if(
             nodes, [hoveredNodeId](const DiagramNode& node) { return node.id == hoveredNodeId; });
 
         if (nodeIt != nodes.end()) {
-            // Show tooltip with table info
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Table: %s\nColumns: %zu", nodeIt->tableName.c_str(),
                                   nodeIt->columns.size());
             }
-
-            // Handle double-click to open table viewer
-            if (ImGui::IsMouseDoubleClicked(0)) {
-                // TODO: Update to use PostgresSchemaNode for PostgreSQL databases
-                // const auto& app = Application::getInstance();
-                // app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
-            }
         }
     }
 
-    // Handle context menu
     ax::NodeEditor::NodeId contextNodeId;
     if (ax::NodeEditor::ShowNodeContextMenu(&contextNodeId)) {
         const auto nodeIt = std::ranges::find_if(
@@ -546,44 +386,37 @@ void DiagramTab::handleNodeInteraction() {
             ImGui::Text("Table: %s", nodeIt->tableName.c_str());
             ImGui::Separator();
             if (ImGui::MenuItem("View Data")) {
-                // TODO: Update to use PostgresSchemaNode for PostgreSQL databases
-                // const auto& app = Application::getInstance();
-                // app.getTabManager()->createTableViewerTab(database, nodeIt->tableName);
+                // TODO: Implement table viewer opening
             }
             if (ImGui::MenuItem("New SQL Editor")) {
-                const auto& app = Application::getInstance();
-                // app.getTabManager()->createSQLEditorTab("", database);
+                // TODO: Implement SQL editor opening
             }
         }
     }
 }
 
 void DiagramTab::detectForeignKeys() {
-    // Clear previous foreign key cache
     foreignKeyCache.clear();
 
-    // Get foreign keys from table metadata
-    const std::vector<Table> tables = getTablesForDiagram();
+    if (!node_) {
+        return;
+    }
+
+    const std::vector<Table>& tables = node_->getTables();
 
     for (const auto& table : tables) {
-        // Use the foreign keys stored in the table structure
         for (const auto& fk : table.foreignKeys) {
             std::string cacheKey = table.name + "." + fk.sourceColumn;
-
-            // Cache the foreign key relationship
             foreignKeyCache[cacheKey] = {fk.targetTable, fk.targetColumn};
 
-            // Find the source node and column pin
             auto sourceNodeIt = tableToNodeIdMap.find(table.name);
             if (sourceNodeIt == tableToNodeIdMap.end())
                 continue;
 
-            // Find the target node
             auto targetNodeIt = tableToNodeIdMap.find(fk.targetTable);
             if (targetNodeIt == tableToNodeIdMap.end())
                 continue;
 
-            // Find the source column pin ID
             ax::NodeEditor::PinId sourcePinId(0);
             for (const auto& node : nodes) {
                 if (node.tableName == table.name) {
@@ -597,7 +430,6 @@ void DiagramTab::detectForeignKeys() {
                 }
             }
 
-            // Find the target column pin ID
             ax::NodeEditor::PinId targetPinId(0);
             for (const auto& node : nodes) {
                 if (node.tableName == fk.targetTable) {
@@ -611,7 +443,6 @@ void DiagramTab::detectForeignKeys() {
                 }
             }
 
-            // Create link if both pins are found
             if (sourcePinId && targetPinId) {
                 DiagramLink link;
                 link.id = ax::NodeEditor::LinkId(nextLinkId++);
@@ -627,14 +458,12 @@ void DiagramTab::detectForeignKeys() {
         }
     }
 
-    // Fall back to heuristic detection if no foreign keys are defined in metadata
     if (links.empty()) {
         detectForeignKeysHeuristic();
     }
 }
 
 void DiagramTab::detectForeignKeysHeuristic() {
-    // Use naming conventions as a fallback when metadata is not available
     for (const auto& node : nodes) {
         for (size_t colIdx = 0; colIdx < node.columns.size(); ++colIdx) {
             const auto& column = node.columns[colIdx];
@@ -684,21 +513,16 @@ void DiagramTab::detectForeignKeysHeuristic() {
 
 bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
                                     std::string& referencedTable, std::string& referencedColumn) {
-    // Basic foreign key detection based on common naming patterns
-
-    // Pattern 1: column ends with "_id" and there's a table with that name
     const std::string suffix = "_id";
     if (columnName.length() > suffix.length() &&
         columnName.substr(columnName.length() - suffix.length()) == suffix) {
         const std::string potentialTable = columnName.substr(0, columnName.length() - 3);
 
-        // Look for plural form of table
         if (tableToNodeIdMap.contains(potentialTable + "s")) {
             referencedTable = potentialTable + "s";
             referencedColumn = "id";
             return true;
         }
-        // Look for exact match
         if (tableToNodeIdMap.contains(potentialTable)) {
             referencedTable = potentialTable;
             referencedColumn = "id";
@@ -706,7 +530,6 @@ bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::str
         }
     }
 
-    // Pattern 2: column name matches another table name + "_id"
     for (const auto& table : tableToNodeIdMap | std::views::keys) {
         if (columnName == table + "_id") {
             referencedTable = table;
@@ -715,6 +538,5 @@ bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::str
         }
     }
 
-    // More sophisticated detection would query the database for actual FK constraints
     return false;
 }

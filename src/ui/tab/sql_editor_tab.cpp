@@ -1,11 +1,6 @@
 #include "ui/tab/sql_editor_tab.hpp"
+#include "database/database_node.hpp"
 #include "database/db.hpp"
-#include "database/mysql.hpp"
-#include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_database_node.hpp"
-#include "database/postgresql.hpp"
-#include "database/query_executor.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/table_renderer.hpp"
 #include "utils/spinner.hpp"
@@ -15,37 +10,18 @@
 #include <future>
 #include <ranges>
 #include <set>
-#include <variant>
 
-SQLEditorTab::SQLEditorTab(const std::string& name, const DatabaseNode& dbNode,
+SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
                            const std::string& schemaName)
-    : Tab(name, TabType::SQL_EDITOR), databaseNode(dbNode), selectedSchemaName(schemaName) {
+    : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName) {
     sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
 
-    // Populate auto-complete with table and column names
     populateAutoCompleteKeywords();
-
-    // PostgreSQL-specific initialization
-    if (auto* pgNode = std::get_if<PostgresDatabaseNode*>(&databaseNode)) {
-        if (*pgNode) {
-            // Start loading schemas if not already loaded
-            if (!(*pgNode)->schemasLoaded && !(*pgNode)->schemasLoader.isRunning()) {
-                (*pgNode)->startSchemasLoadAsync();
-            }
-
-            // If no schema provided but schemas are loaded, default to first schema
-            if (selectedSchemaName.empty() && (*pgNode)->schemasLoaded &&
-                !(*pgNode)->schemas.empty()) {
-                selectedSchemaName = (*pgNode)->schemas[0]->name;
-            }
-        }
-    }
 }
 
 SQLEditorTab::~SQLEditorTab() {
-    // Wait for any ongoing query execution to complete
     if (isExecutingQuery && queryExecutionFuture.valid()) {
         queryExecutionFuture.wait();
     }
@@ -58,8 +34,7 @@ void SQLEditorTab::render() {
 
     totalContentHeight = ImGui::GetContentRegionAvail().y;
     const float editorHeight = totalContentHeight * splitterPosition;
-    const float resultsHeight =
-        totalContentHeight * (1.0f - splitterPosition) - 6.0f; // 6px hover area for splitter
+    const float resultsHeight = totalContentHeight * (1.0f - splitterPosition) - 6.0f;
 
     if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                           ImGuiWindowFlags_NoScrollbar)) {
@@ -73,44 +48,14 @@ void SQLEditorTab::render() {
     if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
                           ImGuiWindowFlags_NoScrollbar)) {
         renderToolbar();
-        renderDatabaseSchemaSelector();
         renderQueryResults();
     }
     ImGui::EndChild();
 }
 
 void SQLEditorTab::renderConnectionInfo() {
-    if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
-        auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
-        if (pgNode && pgNode->parentDb) {
-            if (!selectedSchemaName.empty()) {
-                ImGui::Text("Server: %s | Database: %s | Schema: %s",
-                            pgNode->parentDb->getConnectionInfo().name.c_str(),
-                            pgNode->name.c_str(), selectedSchemaName.c_str());
-            } else {
-                ImGui::Text("Server: %s | Database: %s",
-                            pgNode->parentDb->getConnectionInfo().name.c_str(),
-                            pgNode->name.c_str());
-            }
-        } else {
-            ImGui::Text("SQL Editor (No database selected)");
-        }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (mysqlNode && mysqlNode->parentDb) {
-            ImGui::Text("Server: %s | Database: %s",
-                        mysqlNode->parentDb->getConnectionInfo().name.c_str(),
-                        mysqlNode->name.c_str());
-        } else {
-            ImGui::Text("SQL Editor (No database selected)");
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteNode) {
-            ImGui::Text("Database: %s", sqliteNode->getConnectionInfo().name.c_str());
-        } else {
-            ImGui::Text("SQL Editor (No database selected)");
-        }
+    if (node_) {
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
     } else {
         ImGui::Text("SQL Editor (No database selected)");
     }
@@ -148,259 +93,8 @@ void SQLEditorTab::renderToolbar() {
         queryTableData.clear();
         queryError.clear();
     }
-}
-
-void SQLEditorTab::renderDatabaseSchemaSelector() {
-    ImGui::SameLine();
-    const bool isMySQL = std::holds_alternative<MySQLDatabaseNode*>(databaseNode);
-    const bool isPostgres = std::holds_alternative<PostgresDatabaseNode*>(databaseNode);
-    const bool isSqlite = std::holds_alternative<SQLiteDatabase*>(databaseNode);
-    if (isMySQL) {
-        ImGui::Text("Database:");
-    } else if (isPostgres) {
-        ImGui::Text("Schema:");
-    }
-    ImGui::SameLine();
-
-    ImGui::SetNextItemWidth(200.0f);
-
-    if (isMySQL) {
-        renderMySQLDatabaseSelector();
-    } else if (isPostgres) {
-        renderPostgresSchemaSelector();
-    } else if (isSqlite) {
-    } else {
-        renderSchemaSelectorForDisconnected();
-    }
 
     ImGui::Separator();
-}
-
-void SQLEditorTab::renderSchemaSelectorForDisconnected() {
-    const std::string currentSelection = selectedSchemaName.empty() ? "None" : selectedSchemaName;
-    if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
-        if (ImGui::Selectable("None", true)) {
-            databaseNode.emplace<std::monostate>();
-            selectedSchemaName.clear();
-        }
-        ImGui::EndCombo();
-    }
-}
-
-void SQLEditorTab::renderLoadingSchemaCombo() {
-    ImGui::BeginDisabled();
-    if (ImGui::BeginCombo("##schema_combo", "Loading...")) {
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    UIUtils::Spinner("##schema_loading_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-}
-
-void SQLEditorTab::renderMySQLDatabaseSelector() {
-    const MySQLDatabaseNode* currentNode = std::get<MySQLDatabaseNode*>(databaseNode);
-
-    MySQLDatabase* mysqlDb = currentNode ? currentNode->parentDb : nullptr;
-
-    std::string currentSelection = "None";
-    if (currentNode && !currentNode->name.empty()) {
-        currentSelection = currentNode->name;
-    }
-
-    const bool loadingDatabases = mysqlDb && mysqlDb->isLoadingDatabases();
-    if (loadingDatabases) {
-        renderLoadingSchemaCombo();
-        return;
-    }
-
-    if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
-        const bool noSelection = currentNode == nullptr || currentNode->name.empty();
-        if (ImGui::Selectable("None", noSelection)) {
-            databaseNode.emplace<std::monostate>();
-            selectedSchemaName.clear();
-        }
-
-        if (mysqlDb) {
-            auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
-            for (const auto& dataPtr : databaseDataMap | std::views::values) {
-                if (!dataPtr) {
-                    continue;
-                }
-
-                auto* dbNode = dataPtr.get();
-                const bool isSelected = currentNode && currentNode->name == dbNode->name;
-                if (ImGui::Selectable(dbNode->name.c_str(), isSelected)) {
-                    databaseNode = dbNode;
-                    selectedSchemaName.clear();
-                }
-                if (isSelected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-
-            if (mysqlDb->isLoadingDatabases()) {
-                mysqlDb->checkDatabasesStatusAsync();
-                ImGui::Text("  Loading databases...");
-            }
-        }
-
-        ImGui::EndCombo();
-    }
-}
-
-void SQLEditorTab::renderPostgresSchemaSelector() {
-    PostgresDatabaseNode* currentNode = std::get<PostgresDatabaseNode*>(databaseNode);
-
-    PostgresDatabase* pgDb = currentNode ? currentNode->parentDb : nullptr;
-
-    std::string currentSelection = "None";
-    if (currentNode && !selectedSchemaName.empty()) {
-        currentSelection = std::format("{}.{}", currentNode->name, selectedSchemaName);
-    }
-
-    std::vector<PostgresDatabaseNode*> availableDatabases;
-    bool isLoadingAnySchemas = false;
-    bool needsSchemasForTargetDb = false;
-
-    if (pgDb) {
-        const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-        availableDatabases.reserve(databaseDataMap.size());
-        for (const auto& db : databaseDataMap | std::views::values) {
-            if (db) {
-                availableDatabases.push_back(db.get());
-            }
-        }
-
-        std::string targetDb;
-        if (currentNode && !currentNode->name.empty()) {
-            targetDb = currentNode->name;
-        } else {
-            targetDb = pgDb->getConnectionInfo().database;
-        }
-
-        if (!targetDb.empty()) {
-            const auto* dbData = pgDb->getDatabaseData(targetDb);
-            if (dbData && dbData->schemasLoader.isRunning()) {
-                isLoadingAnySchemas = true;
-            }
-
-            if (dbData && selectedSchemaName.empty() && !dbData->schemasLoaded &&
-                !dbData->schemasLoader.isRunning()) {
-                needsSchemasForTargetDb = true;
-            }
-        }
-
-        // if (!targetDb.empty() && targetDb == pgDb->getConnectionInfo().database) {
-        //     isLoadingAnySchemas = true;
-        // }
-
-        if (pgDb->isLoadingDatabases()) {
-            isLoadingAnySchemas = true;
-        }
-    }
-
-    if (!pgDb) {
-        renderSchemaSelectorForDisconnected();
-        return;
-    }
-
-    if (isLoadingAnySchemas || needsSchemasForTargetDb) {
-        renderLoadingSchemaCombo();
-        return;
-    }
-
-    if (ImGui::BeginCombo("##schema_combo", currentSelection.c_str())) {
-        const bool noSchemaSelected = selectedSchemaName.empty();
-        if (ImGui::Selectable("None", noSchemaSelected)) {
-            databaseNode.emplace<std::monostate>();
-            selectedSchemaName.clear();
-        }
-
-        if (pgDb->getConnectionInfo().showAllDatabases) {
-            const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-            for (const auto& dbDataPtr : databaseDataMap | std::views::values) {
-                if (dbDataPtr) {
-                    dbDataPtr->checkSchemasStatusAsync();
-                }
-            }
-
-            std::string targetDb = (currentNode && !currentNode->name.empty())
-                                       ? currentNode->name
-                                       : pgDb->getConnectionInfo().database;
-
-            if (!targetDb.empty()) {
-                auto* targetDbData = pgDb->getDatabaseData(targetDb);
-                if (targetDbData && !targetDbData->schemasLoaded &&
-                    !targetDbData->schemasLoader.isRunning()) {
-                    if (targetDb == pgDb->getConnectionInfo().database) {
-                        // TODO: load schemas
-                    } else {
-                        targetDbData->startSchemasLoadAsync();
-                    }
-                }
-            }
-
-            for (const auto& [dbName, dbDataPtr] : databaseDataMap) {
-                if (dbDataPtr && !dbDataPtr->schemasLoaded &&
-                    !dbDataPtr->schemasLoader.isRunning() &&
-                    (!currentNode || dbName != currentNode->name)) {
-                    dbDataPtr->startSchemasLoadAsync();
-                }
-            }
-        }
-
-        for (auto* db : availableDatabases) {
-            if (!db) {
-                continue;
-            }
-
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-            ImGui::Text("%s", db->name.c_str());
-            ImGui::PopStyleColor();
-
-            std::vector<std::string> schemas;
-            if (db->schemasLoaded) {
-                for (const auto& schemaPtr : db->schemas) {
-                    if (schemaPtr) {
-                        schemas.push_back(schemaPtr->name);
-                    }
-                }
-            } else if (!db->schemasLoader.isRunning()) {
-                db->startSchemasLoadAsync();
-            }
-
-            for (const auto& schemaName : schemas) {
-                ImGui::Indent(16.0f);
-                const bool isSelected = (currentNode && currentNode->name == db->name &&
-                                         selectedSchemaName == schemaName);
-                const std::string schemaLabel = "  " + schemaName;
-                const std::string schemaId =
-                    std::format("{}##{}_{}", schemaLabel, db->name, schemaName);
-
-                if (ImGui::Selectable(schemaId.c_str(), isSelected)) {
-                    databaseNode = db;
-                    selectedSchemaName = schemaName;
-                }
-                if (isSelected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-                ImGui::Unindent(16.0f);
-            }
-
-            const bool isCurrentDatabase = currentNode && currentNode->name == db->name;
-            if (db->schemasLoader.isRunning()) {
-                ImGui::Indent(16.0f);
-                ImGui::Text("  Loading schemas...");
-                ImGui::Unindent(16.0f);
-            } else if (!isCurrentDatabase && !db->schemasLoaded && db->schemas.empty()) {
-                ImGui::Indent(16.0f);
-                ImGui::Text("  Click to load schemas...");
-                ImGui::Unindent(16.0f);
-            }
-        }
-
-        ImGui::EndCombo();
-    }
 }
 
 void SQLEditorTab::renderQueryResults() const {
@@ -411,7 +105,8 @@ void SQLEditorTab::renderQueryResults() const {
             ImGui::Text("No rows returned.");
             if (lastQueryDuration.count() > 0) {
                 ImGui::SameLine();
-                ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+                ImGui::Text("| Execution time: %ld ms",
+                            static_cast<long>(lastQueryDuration.count()));
             }
         } else {
             ImGui::Text("Rows: %zu", queryTableData.size());
@@ -421,7 +116,8 @@ void SQLEditorTab::renderQueryResults() const {
             }
             if (lastQueryDuration.count() > 0) {
                 ImGui::SameLine();
-                ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+                ImGui::Text("| Execution time: %ld ms",
+                            static_cast<long>(lastQueryDuration.count()));
             }
 
             float tableAvailableHeight = ImGui::GetContentRegionAvail().y - 20.0f;
@@ -443,7 +139,7 @@ void SQLEditorTab::renderQueryResults() const {
         ImGui::Text("Query executed successfully.");
         if (lastQueryDuration.count() > 0) {
             ImGui::SameLine();
-            ImGui::Text("| Execution time: %lld ms", lastQueryDuration.count());
+            ImGui::Text("| Execution time: %ld ms", static_cast<long>(lastQueryDuration.count()));
         }
     } else {
         ImGui::Text("No results to display. Execute a query to see results here.");
@@ -452,7 +148,7 @@ void SQLEditorTab::renderQueryResults() const {
 
 void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     if (isExecutingQuery) {
-        return; // Already executing
+        return;
     }
 
     isExecutingQuery = true;
@@ -463,10 +159,8 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     queryTableData.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
 
-    // Get query executor from variant
-    IQueryExecutor* executor = getQueryExecutor();
+    IDatabaseNode* executor = node_;
 
-    // start async query execution
     queryExecutionFuture = std::async(std::launch::async, [this, query, executor]() {
         if (shouldCancelQuery) {
             return;
@@ -481,12 +175,10 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             result.errorMessage = "No database selected";
         }
 
-        // check for cancellation before setting results
         if (shouldCancelQuery) {
             return;
         }
 
-        // update UI state with results
         lastQueryDuration = std::chrono::milliseconds{result.executionTimeMs};
 
         if (result.success) {
@@ -530,8 +222,6 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 
 void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
-    // Note: We can't cancel the database query once it's started,
-    // but we can prevent the results from being processed
     queryResult = "Query execution cancelled by user";
     queryError = queryResult;
     hasStructuredResults = false;
@@ -539,119 +229,29 @@ void SQLEditorTab::cancelQueryExecution() {
     queryTableData.clear();
 }
 
-IQueryExecutor* SQLEditorTab::getQueryExecutor() const {
-    return std::visit(
-        [](auto&& node) -> IQueryExecutor* {
-            using T = std::decay_t<decltype(node)>;
-            if constexpr (std::is_same_v<T, std::monostate>) {
-                return nullptr;
-            } else {
-                return static_cast<IQueryExecutor*>(node);
-            }
-        },
-        databaseNode);
-}
-
 void SQLEditorTab::populateAutoCompleteKeywords() {
+    if (!node_) {
+        return;
+    }
+
     std::set<std::string> uniqueKeywords;
 
-    if (std::holds_alternative<PostgresDatabaseNode*>(databaseNode)) {
-        auto* pgNode = std::get<PostgresDatabaseNode*>(databaseNode);
-        if (pgNode && pgNode->parentDb) {
-            PostgresDatabase* pgDb = pgNode->parentDb;
-
-            // Add tables and columns from all loaded schemas
-            if (pgNode->schemasLoaded) {
-                for (const auto& schemaPtr : pgNode->schemas) {
-                    if (!schemaPtr) {
-                        continue;
-                    }
-
-                    // Add schema name
-                    uniqueKeywords.insert(schemaPtr->name);
-
-                    // Add table names and column names
-                    if (schemaPtr->tablesLoaded) {
-                        for (const auto& table : schemaPtr->tables) {
-                            uniqueKeywords.insert(table.name);
-                            for (const auto& column : table.columns) {
-                                uniqueKeywords.insert(column.name);
-                            }
-                        }
-                    }
-
-                    // Add view names and column names
-                    if (schemaPtr->viewsLoaded) {
-                        for (const auto& view : schemaPtr->views) {
-                            uniqueKeywords.insert(view.name);
-                            for (const auto& column : view.columns) {
-                                uniqueKeywords.insert(column.name);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add database names if in multi-database mode
-            if (pgDb->getConnectionInfo().showAllDatabases) {
-                const auto& databaseDataMap = pgDb->getDatabaseDataMap();
-                for (const auto& dbName : databaseDataMap | std::views::keys) {
-                    uniqueKeywords.insert(dbName);
-                }
+    // Add table names and column names from the node
+    if (node_->isTablesLoaded()) {
+        for (const auto& table : node_->getTables()) {
+            uniqueKeywords.insert(table.name);
+            for (const auto& column : table.columns) {
+                uniqueKeywords.insert(column.name);
             }
         }
-    } else if (std::holds_alternative<MySQLDatabaseNode*>(databaseNode)) {
-        auto* mysqlNode = std::get<MySQLDatabaseNode*>(databaseNode);
-        if (mysqlNode && mysqlNode->parentDb) {
-            MySQLDatabase* mysqlDb = mysqlNode->parentDb;
+    }
 
-            // Add table names and column names
-            if (mysqlNode->tablesLoaded) {
-                for (const auto& table : mysqlNode->tables) {
-                    uniqueKeywords.insert(table.name);
-                    for (const auto& column : table.columns) {
-                        uniqueKeywords.insert(column.name);
-                    }
-                }
-            }
-
-            // Add view names and column names
-            if (mysqlNode->viewsLoaded) {
-                for (const auto& view : mysqlNode->views) {
-                    uniqueKeywords.insert(view.name);
-                    for (const auto& column : view.columns) {
-                        uniqueKeywords.insert(column.name);
-                    }
-                }
-            }
-
-            // Add database names if in multi-database mode
-            if (mysqlDb->getConnectionInfo().showAllDatabases) {
-                const auto& databaseDataMap = mysqlDb->getDatabaseDataMap();
-                for (const auto& dbName : databaseDataMap | std::views::keys) {
-                    uniqueKeywords.insert(dbName);
-                }
-            }
-        }
-    } else if (std::holds_alternative<SQLiteDatabase*>(databaseNode)) {
-        auto* sqliteNode = std::get<SQLiteDatabase*>(databaseNode);
-        if (sqliteNode) {
-            // Add table names and column names
-            if (sqliteNode->areTablesLoaded()) {
-                for (const auto& table : sqliteNode->getTables()) {
-                    uniqueKeywords.insert(table.name);
-                    for (const auto& column : table.columns) {
-                        uniqueKeywords.insert(column.name);
-                    }
-                }
-            }
-
-            // Add view names and column names
-            for (const auto& view : sqliteNode->getViews()) {
-                uniqueKeywords.insert(view.name);
-                for (const auto& column : view.columns) {
-                    uniqueKeywords.insert(column.name);
-                }
+    // Add view names and column names
+    if (node_->isViewsLoaded()) {
+        for (const auto& view : node_->getViews()) {
+            uniqueKeywords.insert(view.name);
+            for (const auto& column : view.columns) {
+                uniqueKeywords.insert(column.name);
             }
         }
     }
@@ -663,9 +263,7 @@ void SQLEditorTab::populateAutoCompleteKeywords() {
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,
                                           float minSize2) const {
     constexpr float hoverThickness = 6.0f;
-    constexpr float visualThickness = 2.0f;
 
-    // invisible button with larger hover area
     ImGui::InvisibleButton(id, ImVec2(-1, hoverThickness));
 
     const bool hovered = ImGui::IsItemHovered();
@@ -679,17 +277,11 @@ bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float
     if (held) {
         const float delta = ImGui::GetIO().MouseDelta.y;
         if (delta != 0.0f) {
-            // Use the stored total height for consistent calculation
             const float availableHeight = totalContentHeight;
-
-            // Calculate current pixel position
             const float currentPixelPos = *position * availableHeight;
             const float newPixelPos = currentPixelPos + delta;
-
-            // Convert back to normalized position
             float newPosition = newPixelPos / availableHeight;
 
-            // Apply constraints
             const float minPos1 = minSize1 / availableHeight;
             const float maxPos1 = 1.0f - (minSize2 / availableHeight);
 
@@ -702,18 +294,14 @@ bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float
         }
     }
 
-    // Draw thin visual splitter line centered in the hover area
-    const ImVec2 minPos = ImGui::GetItemRectMin();
-    const ImVec2 maxPos = ImGui::GetItemRectMax();
-
-    constexpr float centerOffset = (hoverThickness - visualThickness) * 0.5f;
-    const auto visualMin = ImVec2(minPos.x, minPos.y + centerOffset);
-    const auto visualMax = ImVec2(maxPos.x, minPos.y + centerOffset + visualThickness);
-
-    const ImU32 col = ImGui::GetColorU32(held      ? ImGuiCol_SeparatorActive
-                                         : hovered ? ImGuiCol_SeparatorHovered
-                                                   : ImGuiCol_Separator);
-    ImGui::GetWindowDrawList()->AddRectFilled(visualMin, visualMax, col);
+    // Draw splitter line
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImVec2 pos = ImGui::GetItemRectMin();
+    const ImVec2 size = ImGui::GetItemRectSize();
+    const float centerY = pos.y + size.y / 2.0f;
+    const ImU32 color = (hovered || held) ? ImGui::GetColorU32(ImGuiCol_SeparatorHovered)
+                                          : ImGui::GetColorU32(ImGuiCol_Separator);
+    drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 2.0f);
 
     return changed;
 }

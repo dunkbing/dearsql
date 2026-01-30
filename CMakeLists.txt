@@ -5,20 +5,53 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Application metadata
+set(APP_NAME "DearSQL")
+set(APP_VERSION "1.0.0")
+set(APP_IDENTIFIER "dearsql.db99.dev")
+
+configure_file(
+    ${CMAKE_SOURCE_DIR}/include/config.hpp.in
+    ${CMAKE_BINARY_DIR}/include/config.hpp
+    @ONLY
+)
+
 # Dependencies
 add_subdirectory(external/json)
 add_subdirectory(external/soci)
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
+
+# GoogleTest
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/googletest)
+
+# Use xdg-desktop-portal on Linux to avoid GTK3/GTK4 conflict
+if(UNIX AND NOT APPLE)
+    set(NFD_PORTAL ON CACHE BOOL "Use xdg-desktop-portal instead of GTK" FORCE)
+endif()
 add_subdirectory(external/nativefiledialog-extended)
 
 enable_testing()
 
 # Find system packages
-find_package(glfw3 3.3 REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
+
+# Platform-specific windowing
+if(UNIX AND NOT APPLE)
+    # Linux uses GTK4 for windowing
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK4 REQUIRED gtk4)
+    pkg_check_modules(EPOXY REQUIRED epoxy)
+    find_package(X11 REQUIRED)
+else()
+    # macOS and Windows use GLFW
+    find_package(glfw3 3.3 REQUIRED)
+endif()
 
 # Common ImGui sources
 set(IMGUI_SOURCES
@@ -26,10 +59,18 @@ set(IMGUI_SOURCES
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
-    external/imgui/backends/imgui_impl_glfw.cpp
     external/ImGuiColorTextEdit/TextEditor.cpp
     external/ImGuiColorTextEdit/LanguageDefinitions.cpp
 )
+
+# Platform-specific ImGui backend
+if(UNIX AND NOT APPLE)
+    # Linux uses GTK4, no GLFW backend needed
+    list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
+else()
+    # macOS and Windows use GLFW
+    list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
+endif()
 
 # ImGui Node Editor sources
 set(IMGUI_NODE_EDITOR_SOURCES
@@ -64,13 +105,13 @@ if(APPLE)
 
     # Add Metal backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
+elseif(UNIX AND NOT APPLE)
+    # Linux uses GTK4 + OpenGL via libepoxy
+    message(STATUS "Using GTK4 + OpenGL backend for Linux")
 else()
-    # OpenGL backend for other platforms
+    # Windows uses OpenGL
     find_package(OpenGL REQUIRED)
-
     message(STATUS "Using OpenGL backend for ${CMAKE_SYSTEM_NAME}")
-
-    # Add OpenGL backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 endif()
 
@@ -91,6 +132,8 @@ set(APP_SOURCES
     src/database/redis.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
+    src/database/sql_builder.cpp
+    src/database/connection_factory.cpp
 
     # UI
     src/ui/db_connection_dialog.cpp
@@ -123,6 +166,8 @@ list(APPEND APP_SOURCES src/application.cpp)
 # Add platform-specific files
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
+elseif(UNIX AND NOT APPLE)
+    list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
 else()
     list(APPEND APP_SOURCES src/platform/default_platform.cpp)
 endif()
@@ -160,9 +205,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/nativefiledialog-extended/src/include
 )
 
-# Link libraries
+# Platform-specific include directories
+if(UNIX AND NOT APPLE)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
+endif()
+
+# Link libraries (common)
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    glfw
     soci_sqlite3
     soci_postgresql
     soci_mysql
@@ -176,13 +225,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Platform-specific linking
 if(APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
+        glfw
         ${METAL_LIBRARY}
         ${QUARTZCORE_LIBRARY}
         ${FOUNDATION_LIBRARY}
         ${APPKIT_LIBRARY}
     )
+elseif(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        ${GTK4_LIBRARIES}
+        ${EPOXY_LIBRARIES}
+        ${X11_LIBRARIES}
+    )
+    target_link_directories(${PROJECT_NAME} PRIVATE ${GTK4_LIBRARY_DIRS} ${EPOXY_LIBRARY_DIRS})
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
+        glfw
         OpenGL::GL
     )
 endif()
@@ -191,12 +249,12 @@ endif()
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "dearsql.db99.dev"
-        MACOSX_BUNDLE_BUNDLE_NAME "DearSQL"
-        MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_IDENTIFIER}"
+        MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${APP_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${APP_VERSION}"
         MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
-        OUTPUT_NAME "DearSQL"
+        OUTPUT_NAME "${APP_NAME}"
     )
 
     # Copy the icon file to the Resources directory
@@ -210,16 +268,26 @@ add_executable(database_tests
     tests/database/sqlite_database_test.cpp
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
+    tests/database/redis_database_test.cpp
+    tests/database/sql_builder_test.cpp
+    tests/database/connection_factory_test.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
+    src/database/postgres/postgres_database_node.cpp
+    src/database/postgres/postgres_schema_node.cpp
     src/database/mysql.cpp
+    src/database/mysql/mysql_database_node.cpp
+    src/database/redis.cpp
     src/database/db_utils.cpp
+    src/database/sql_builder.cpp
+    src/database/connection_factory.cpp
     src/utils/logger.cpp
 )
 
 target_include_directories(database_tests PRIVATE
     include
     external/soci/include
+    external/hiredis
     tests/database
 )
 
@@ -229,6 +297,7 @@ target_link_libraries(database_tests PRIVATE
     soci_postgresql
     soci_mysql
     PostgreSQL::PostgreSQL
+    hiredis
 )
 
 add_test(NAME database_tests COMMAND database_tests)

@@ -49,8 +49,6 @@ struct Table {
 
     // Fast lookup for foreign keys by source column
     std::unordered_map<std::string, ForeignKey> foreignKeysByColumn;
-
-    bool expanded = false;
 };
 
 struct Schema {
@@ -58,13 +56,6 @@ struct Schema {
     std::vector<Table> tables;
     std::vector<Table> views;
     std::vector<std::string> sequences;
-    bool expanded = false;
-    bool tablesLoaded = false;
-    bool viewsLoaded = false;
-    bool sequencesLoaded = false;
-    bool tablesExpanded = false;
-    bool viewsExpanded = false;
-    bool sequencesExpanded = false;
 };
 
 /**

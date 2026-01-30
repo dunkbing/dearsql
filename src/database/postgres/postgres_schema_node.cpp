@@ -450,10 +450,7 @@ void PostgresSchemaNode::checkTableRefreshStatusAsync(const std::string& tableNa
             tables, [&tableName](const Table& t) { return t.name == tableName; });
 
         if (tableIt != tables.end()) {
-            // Preserve expansion state
-            bool wasExpanded = tableIt->expanded;
             *tableIt = refreshedTable;
-            tableIt->expanded = wasExpanded;
             Logger::info(std::format("Table {}.{} refreshed successfully", name, tableName));
         }
 
@@ -628,4 +625,17 @@ std::pair<bool, std::string> PostgresSchemaNode::executeQuery(const std::string&
         return {false, "No database connection"};
     }
     return parentDbNode->executeQuery(query);
+}
+
+std::string PostgresSchemaNode::getFullPath() const {
+    if (!parentDbNode) {
+        return name;
+    }
+    return parentDbNode->name + "." + name;
+}
+
+void PostgresSchemaNode::checkLoadingStatus() {
+    checkTablesStatusAsync();
+    checkViewsStatusAsync();
+    checkSequencesStatusAsync();
 }

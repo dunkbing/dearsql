@@ -1,22 +1,26 @@
 #pragma once
 
+#include "database_node.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
 #include "table_data_provider.hpp"
 #include <atomic>
 #include <future>
+#include <map>
 #include <memory>
+#include <set>
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-class SQLiteDatabase final : public DatabaseInterface,
+class SQLiteDatabase final : public IDatabaseNode,
+                             public DatabaseInterface,
                              public ITableDataProvider,
                              public IQueryExecutor {
 public:
     SQLiteDatabase(const DatabaseConnectionInfo& connInfo);
     ~SQLiteDatabase() override;
 
-    // Connection management (BaseDatabaseImpl handles async)
+    // Connection management
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
 
@@ -30,37 +34,78 @@ public:
         tablesLoaded = loaded;
     }
 
-    // Async table/view/sequence loading
-    void startTablesLoadAsync(bool forceRefresh = false);
-    void checkTablesStatusAsync();
-    std::vector<Table> getTablesAsync() const;
+    // ========== IDatabaseNode Implementation ==========
 
-    void startViewsLoadAsync(bool forceRefresh = false);
-    void checkViewsStatusAsync();
-    std::vector<Table> getViewsAsync() const;
+    [[nodiscard]] std::string getName() const override;
+    [[nodiscard]] std::string getFullPath() const override;
 
-    // DatabaseInterface implementation (without whereClause)
-    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset);
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    [[nodiscard]] DatabaseType getDatabaseType() const override {
+        return DatabaseType::SQLITE;
+    }
 
-    // ITableDataProvider implementation (with whereClause and orderByClause)
-    std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause, const std::string& orderByClause = "") override;
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
+    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+
+    std::vector<Table>& getTables() override {
+        return tables;
+    }
     const std::vector<Table>& getTables() const override {
         return tables;
+    }
+
+    std::vector<Table>& getViews() override {
+        return views;
     }
     const std::vector<Table>& getViews() const override {
         return views;
     }
 
-    // query execution with comprehensive result
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
-    std::pair<bool, std::string> executeQuery(const std::string& query) override;
+    // Overload without whereClause (internal use)
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset);
+    // IDatabaseNode/ITableDataProvider implementation
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset, const std::string& whereClause,
+                                                       const std::string& orderBy = "") override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
 
-    // Session access (returns raw pointer since SQLite has single session)
+    [[nodiscard]] bool isTablesLoaded() const override {
+        return tablesLoaded;
+    }
+    [[nodiscard]] bool isViewsLoaded() const override {
+        return viewsLoaded;
+    }
+    [[nodiscard]] bool isLoadingTables() const override {
+        return loadingTables.load();
+    }
+    [[nodiscard]] bool isLoadingViews() const override {
+        return loadingViews.load();
+    }
+
+    void startTablesLoadAsync(bool force = false) override;
+    void startViewsLoadAsync(bool force = false) override;
+    void checkLoadingStatus() override;
+
+    [[nodiscard]] const std::string& getLastTablesError() const override {
+        return lastTablesError;
+    }
+    [[nodiscard]] const std::string& getLastViewsError() const override {
+        return lastViewsError;
+    }
+
+    void startTableRefreshAsync(const std::string& tableName) override;
+    [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
+    void checkTableRefreshStatusAsync(const std::string& tableName) override;
+
+    // ========== Internal Methods ==========
+
+    void checkTablesStatusAsync();
+    std::vector<Table> getTablesAsync() const;
+    void checkViewsStatusAsync();
+    std::vector<Table> getViewsAsync() const;
+
+    // Session access
     soci::session* getSession() const;
 
     // Async operation status
@@ -83,13 +128,16 @@ public:
     std::string lastViewsError;
     std::string lastSequencesError;
 
+    // Table refresh tracking
+    std::map<std::string, std::future<Table>> tableRefreshFutures;
+    std::set<std::string> refreshingTables;
+
 protected:
     std::vector<std::string> getTableNames() const;
     std::vector<Index> getTableIndexes(const std::string& tableName) const;
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;
 
 private:
-    // SQLite-specific state (base class handles common state)
     std::unique_ptr<soci::session> session;
 
     // Async futures

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/async_helper.hpp"
+#include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "database/query_executor.hpp"
@@ -20,7 +21,7 @@ class MySQLDatabase;
  * Each MySQLDatabaseNode represents one database within the MySQL server.
  * Note: MySQL doesn't have schemas, so tables/views are directly under database.
  */
-class MySQLDatabaseNode : public ITableDataProvider, public IQueryExecutor {
+class MySQLDatabaseNode : public IDatabaseNode, public ITableDataProvider, public IQueryExecutor {
 public:
     MySQLDatabase* parentDb = nullptr;
 
@@ -44,50 +45,88 @@ public:
     AsyncOperation<std::vector<Table>> viewsLoader;
     std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
-    // UI expansion state
-    bool expanded = false;
-    bool tablesExpanded = false;
-    bool viewsExpanded = false;
-    bool sequencesExpanded = false; // For API compatibility
-
     // Error tracking
     std::string lastTablesError;
     std::string lastViewsError;
 
-    // Methods
-    void ensureConnectionPool();
+    // UI expansion state (to be moved to ViewModel in later phase)
+    bool expanded = false;
+    bool tablesExpanded = false;
+    bool viewsExpanded = false;
 
-    void startTablesLoadAsync(bool forceRefresh = false);
-    void checkTablesStatusAsync();
-    std::vector<Table> getTablesAsync();
+    // ========== IDatabaseNode Implementation ==========
 
-    void startViewsLoadAsync(bool forceRefresh = false);
-    void checkViewsStatusAsync();
-    std::vector<Table> getViewsForDatabaseAsync();
+    [[nodiscard]] std::string getName() const override {
+        return name;
+    }
 
-    void startTableRefreshAsync(const std::string& tableName);
-    void checkTableRefreshStatusAsync(const std::string& tableName);
-    Table refreshTableAsync(const std::string& tableName);
-    bool isTableRefreshing(const std::string& tableName) const;
+    [[nodiscard]] std::string getFullPath() const override;
 
-    std::unique_ptr<soci::session> getSession() const;
-    void initializeConnectionPool(const DatabaseConnectionInfo& info);
+    [[nodiscard]] DatabaseType getDatabaseType() const override {
+        return DatabaseType::MYSQL;
+    }
 
-    // ITableDataProvider implementation
-    std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "",
-                 const std::string& orderByClause = "") override;
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
+    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+
+    std::vector<Table>& getTables() override {
+        return tables;
+    }
     const std::vector<Table>& getTables() const override {
         return tables;
+    }
+
+    std::vector<Table>& getViews() override {
+        return views;
     }
     const std::vector<Table>& getViews() const override {
         return views;
     }
 
-    // IQueryExecutor implementation
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
-    std::pair<bool, std::string> executeQuery(const std::string& query) override;
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset,
+                                                       const std::string& whereClause = "",
+                                                       const std::string& orderBy = "") override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+
+    [[nodiscard]] bool isTablesLoaded() const override {
+        return tablesLoaded;
+    }
+    [[nodiscard]] bool isViewsLoaded() const override {
+        return viewsLoaded;
+    }
+    [[nodiscard]] bool isLoadingTables() const override {
+        return tablesLoader.isRunning();
+    }
+    [[nodiscard]] bool isLoadingViews() const override {
+        return viewsLoader.isRunning();
+    }
+
+    void startTablesLoadAsync(bool force = false) override;
+    void startViewsLoadAsync(bool force = false) override;
+    void checkLoadingStatus() override;
+
+    [[nodiscard]] const std::string& getLastTablesError() const override {
+        return lastTablesError;
+    }
+    [[nodiscard]] const std::string& getLastViewsError() const override {
+        return lastViewsError;
+    }
+
+    void startTableRefreshAsync(const std::string& tableName) override;
+    [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
+    void checkTableRefreshStatusAsync(const std::string& tableName) override;
+
+    // ========== Internal Methods ==========
+
+    void ensureConnectionPool();
+    void checkTablesStatusAsync();
+    std::vector<Table> getTablesAsync();
+    void checkViewsStatusAsync();
+    std::vector<Table> getViewsForDatabaseAsync();
+    Table refreshTableAsync(const std::string& tableName);
+
+    std::unique_ptr<soci::session> getSession() const;
+    void initializeConnectionPool(const DatabaseConnectionInfo& info);
 };

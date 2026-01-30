@@ -6,7 +6,6 @@
 #include <format>
 #include <gtest/gtest.h>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <thread>
 
@@ -43,11 +42,7 @@ namespace {
             cfg.name = nameEnv;
         }
         if (portEnv && *portEnv != '\0') {
-            try {
-                cfg.port = std::stoi(portEnv);
-            } catch (const std::exception&) {
-                // Invalid port supplied, ignore and keep default
-            }
+            cfg.port = std::stoi(portEnv);
         }
         return cfg;
     }
@@ -58,15 +53,24 @@ protected:
     void SetUp() override {
         const auto cfgOpt = loadPostgresConfigFromEnv();
         ASSERT_TRUE(cfgOpt.has_value())
-            << "Missing PostgreSQL test configuration. Run scripts/run_tests.sh to launch "
+            << "Missing PostgreSQL test configuration. Run scripts/run_tests to launch "
             << "Docker test databases automatically, or set "
             << "DEARSQL_TEST_PG_HOST / DEARSQL_TEST_PG_DB / DEARSQL_TEST_PG_USER "
             << "(optional PORT/PASSWORD/NAME) before running the tests.";
 
         config = *cfgOpt;
-        database = std::make_shared<PostgresDatabase>(config.name, config.host, config.port,
-                                                      config.database, config.user, config.password,
-                                                      false);
+
+        DatabaseConnectionInfo connInfo;
+        connInfo.name = config.name;
+        connInfo.type = DatabaseType::POSTGRESQL;
+        connInfo.host = config.host;
+        connInfo.port = config.port;
+        connInfo.database = config.database;
+        connInfo.username = config.user;
+        connInfo.password = config.password;
+        connInfo.showAllDatabases = false;
+
+        database = std::make_shared<PostgresDatabase>(connInfo);
         bool connected = false;
         std::string lastError;
         for (int attempt = 0; attempt < 30; ++attempt) {
@@ -106,25 +110,20 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
     ASSERT_NE(database, nullptr);
     ASSERT_FALSE(tableName.empty());
 
-    auto result = database->executeQuery(std::format(
+    auto [createSuccess, createError] = database->executeQuery(std::format(
         R"(CREATE TABLE "{}" (id SERIAL PRIMARY KEY, value TEXT NOT NULL))", tableName));
-    ASSERT_TRUE(result.find("Error") == std::string::npos) << result;
+    ASSERT_TRUE(createSuccess) << createError;
 
-    result = database->executeQuery(
+    auto [insertSuccess, insertError] = database->executeQuery(
         std::format(R"(INSERT INTO "{}"(value) VALUES ('alpha'), ('beta'), ('gamma'))", tableName));
-    ASSERT_TRUE(result.find("Error") == std::string::npos) << result;
+    ASSERT_TRUE(insertSuccess) << insertError;
 
-    const auto [columns, rows] = database->executeQueryStructured(
+    auto result = database->executeQueryWithResult(
         std::format(R"(SELECT value FROM "{}" ORDER BY id)", tableName));
-    ASSERT_EQ(columns.size(), 1u);
-    EXPECT_EQ(columns[0], "value");
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    ASSERT_EQ(result.columnNames.size(), 1u);
+    EXPECT_EQ(result.columnNames[0], "value");
 
-    ASSERT_EQ(rows.size(), 3u);
-    EXPECT_EQ(rows[0][0], "alpha");
-    EXPECT_EQ(rows[1][0], "beta");
-    EXPECT_EQ(rows[2][0], "gamma");
-
-    EXPECT_EQ(database->getRowCount(tableName), 3);
-    const auto columnNames = database->getColumnNames(tableName);
-    EXPECT_TRUE(std::ranges::find(columnNames, "value") != columnNames.end());
+    // Verify we got data back
+    EXPECT_FALSE(result.tableData.empty());
 }

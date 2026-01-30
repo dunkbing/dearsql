@@ -1,10 +1,7 @@
 #include "ui/tab/table_viewer_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
-#include "database/mysql/mysql_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
-#include "database/query_executor.hpp"
-#include "database/sqlite.hpp"
+#include "database/database_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/query_history.hpp"
@@ -18,21 +15,9 @@
 #include <utility>
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
-                               std::string tableName, const TableDataNode& dataNode)
+                               std::string tableName, IDatabaseNode* node)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
-      tableName(std::move(tableName)) {
-    // Extract ITableDataProvider* from variant
-    databaseNode = std::visit(
-        [](auto&& node) -> ITableDataProvider* {
-            using T = std::decay_t<decltype(node)>;
-            if constexpr (std::is_same_v<T, std::monostate>) {
-                return nullptr;
-            } else {
-                return static_cast<ITableDataProvider*>(node);
-            }
-        },
-        dataNode);
-
+      tableName(std::move(tableName)), node_(node) {
     initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();
@@ -494,11 +479,11 @@ void TableViewerTab::loadDataAsync() {
     // Launch async loading
     dataLoadFuture = std::async(std::launch::async, [this, orderByClause]() {
         try {
-            totalRows = databaseNode->getRowCount(tableName, currentFilter);
-            columnNames = databaseNode->getColumnNames(tableName);
+            totalRows = node_->getRowCount(tableName, currentFilter);
+            columnNames = node_->getColumnNames(tableName);
             const int offset = currentPage * rowsPerPage;
-            tableData = databaseNode->getTableData(tableName, rowsPerPage, offset, currentFilter,
-                                                   orderByClause);
+            tableData =
+                node_->getTableData(tableName, rowsPerPage, offset, currentFilter, orderByClause);
 
             // Store original data for change tracking
             originalData = tableData;
@@ -541,7 +526,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     // Find table columns in node (check both tables and views)
-    for (const auto& table : databaseNode->getTables()) {
+    for (const auto& table : node_->getTables()) {
         bool matches = (table.name == tableName) || (table.fullName.ends_with("." + tableName));
         if (matches) {
             std::vector<std::string> pkColumns;
@@ -555,7 +540,7 @@ std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
     }
 
     // Check views as well
-    for (const auto& view : databaseNode->getViews()) {
+    for (const auto& view : node_->getViews()) {
         bool matches = (view.name == tableName) || (view.fullName.ends_with("." + tableName));
         if (matches) {
             std::vector<std::string> pkColumns;
@@ -708,9 +693,8 @@ void TableViewerTab::showSaveConfirmationDialog() {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
                 executingSQL = true;
 
-                // Copy SQL statements and cast database node to IQueryExecutor for async execution
                 auto sqlStatements = pendingUpdateSQL;
-                auto* executor = dynamic_cast<IQueryExecutor*>(databaseNode);
+                IDatabaseNode* executor = node_;
 
                 sqlExecutionFuture = std::async(
                     std::launch::async,

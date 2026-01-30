@@ -6,24 +6,39 @@
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
+#include <cstring>
 #include <imgui.h>
 #include <iostream>
 #include <memory>
 #include <themes.hpp>
 
+namespace {
+    constexpr const char* DIALOG_TITLE = "Connect to Database";
+    constexpr const char* CONNECTION_NAME = "Connection Name";
+
+    constexpr const char* DEFAULT_NAMES[] = {"SQLite Connection", "PostgreSQL Connection",
+                                             "MySQL Connection", "Redis Connection"};
+
+    bool isDefaultName(const char* name) {
+        for (const auto* defaultName : DEFAULT_NAMES) {
+            if (strcmp(name, defaultName) == 0)
+                return true;
+        }
+        return false;
+    }
+} // namespace
+
 void DatabaseConnectionDialog::showDialog() {
     if (!isOpen) {
         isOpen = true;
-        // Only set default state if not in edit mode
         if (!editingDatabase) {
             currentState = DialogState::TypeSelection;
             result = nullptr;
         }
         loadSavedConnections();
-        ImGui::OpenPopup("Connect to Database");
+        ImGui::OpenPopup(DIALOG_TITLE);
     }
 
-    // Render the dialog based on current state
     switch (currentState) {
     case DialogState::TypeSelection:
         renderTypeSelection();
@@ -51,7 +66,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_Always);
 
-    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Choose how to connect to a database:");
         ImGui::Separator();
         ImGui::Spacing();
@@ -95,35 +110,33 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         ImGui::Separator();
 
         if (ImGui::Button("Next", ImVec2(100, 0))) {
+            bool shouldSetDefault = strlen(connectionName) == 0 || isDefaultName(connectionName);
+
             switch (selectedDatabaseType) {
             case DatabaseType::SQLITE:
-                // SQLite - show connection dialog
                 currentState = DialogState::SQLiteConnection;
-                if (strlen(connectionName) == 0) {
+                if (shouldSetDefault) {
                     strncpy(connectionName, "SQLite Connection", sizeof(connectionName) - 1);
                 }
                 break;
             case DatabaseType::POSTGRESQL:
-                // Postgres - show connection dialog
                 currentState = DialogState::PostgreSQLConnection;
-                port = 5432; // Set default Postgres port
-                if (strlen(connectionName) == 0) {
+                port = 5432;
+                if (shouldSetDefault) {
                     strncpy(connectionName, "PostgreSQL Connection", sizeof(connectionName) - 1);
                 }
                 break;
             case DatabaseType::MYSQL:
-                // MySQL - show connection dialog
                 currentState = DialogState::MySQLConnection;
-                port = 3306; // Set default MySQL port
-                if (strlen(connectionName) == 0) {
+                port = 3306;
+                if (shouldSetDefault) {
                     strncpy(connectionName, "MySQL Connection", sizeof(connectionName) - 1);
                 }
                 break;
             case DatabaseType::REDIS:
-                // Redis - show connection dialog
                 currentState = DialogState::RedisConnection;
-                port = 6379; // Set default Redis port
-                if (strlen(connectionName) == 0) {
+                port = 6379;
+                if (shouldSetDefault) {
                     strncpy(connectionName, "Redis Connection", sizeof(connectionName) - 1);
                 }
                 break;
@@ -144,7 +157,7 @@ void DatabaseConnectionDialog::renderSQLiteConnection() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(550, 280), ImGuiCond_Always);
 
-    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Connect to SQLite Database:");
         ImGui::Separator();
         ImGui::Spacing();
@@ -152,7 +165,7 @@ void DatabaseConnectionDialog::renderSQLiteConnection() {
         const auto& colors = Application::getInstance().getCurrentColors();
 
         // Connection name
-        ImGui::Text("Connection Name:");
+        ImGui::Text(CONNECTION_NAME);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
@@ -269,7 +282,7 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
 
-    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (editingDatabase) {
             ImGui::Text("Edit %s connection:", typeLabel);
         } else {
@@ -292,7 +305,7 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
 
-        ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
+        ImGui::InputText(CONNECTION_NAME, connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
 
@@ -437,7 +450,7 @@ void DatabaseConnectionDialog::renderRedisConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 
-    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         if (editingDatabase) {
             ImGui::Text("Edit Redis connection:");
         } else {
@@ -453,7 +466,7 @@ void DatabaseConnectionDialog::renderRedisConnection() {
 
         const auto& colors = Application::getInstance().getCurrentColors();
 
-        ImGui::Text("Connection Name:");
+        ImGui::Text(CONNECTION_NAME);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
@@ -748,7 +761,7 @@ void DatabaseConnectionDialog::renderSavedConnections() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(500, 450), ImGuiCond_Always);
 
-    if (ImGui::BeginPopupModal("Connect to Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Saved Database Connections:");
         ImGui::Separator();
         ImGui::Spacing();

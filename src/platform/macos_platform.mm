@@ -300,17 +300,26 @@
 
     bool isDark = self.app->isDarkTheme();
 
+    // Setup layers for all buttons
+    self.themeLightButton.wantsLayer = YES;
+    self.themeDarkButton.wantsLayer = YES;
+    self.themeAutoButton.wantsLayer = YES;
+
     // Reset all buttons to default appearance
     [self.themeLightButton setContentTintColor:nil];
     [self.themeDarkButton setContentTintColor:nil];
     [self.themeAutoButton setContentTintColor:nil];
+    self.themeLightButton.layer.backgroundColor = nil;
+    self.themeDarkButton.layer.backgroundColor = nil;
+    self.themeAutoButton.layer.backgroundColor = nil;
 
-    // Highlight the currently selected theme
-    if (isDark) {
-        [self.themeDarkButton setContentTintColor:[NSColor controlAccentColor]];
-    } else {
-        [self.themeLightButton setContentTintColor:[NSColor controlAccentColor]];
-    }
+    // Highlight the currently selected theme with accent color background
+    NSButton* selectedButton = isDark ? self.themeDarkButton : self.themeLightButton;
+    [selectedButton setContentTintColor:[NSColor controlAccentColor]];
+    selectedButton.layer.backgroundColor =
+        [[NSColor controlAccentColor] colorWithAlphaComponent:0.15].CGColor;
+    selectedButton.layer.cornerRadius = 6;
+    selectedButton.layer.masksToBounds = YES;
 }
 
 - (void)themeLightClicked:(id)sender {
@@ -445,16 +454,19 @@
         }
     }
 
+    // Get machine ID for display
+    std::string machineId = licenseManager.getInstanceId();
+
     // Create dialog window
     NSWindow* dialog =
-        [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 200)
+        [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 450, 230)
                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                                       backing:NSBackingStoreBuffered
                                         defer:NO];
     [dialog setTitle:@"Manage License"];
     [dialog center];
 
-    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 200)];
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 450, 230)];
 
     if (licenseManager.hasValidLicense()) {
         // Licensed view
@@ -466,20 +478,20 @@
         }
 
         // Status indicator
-        NSImageView* statusIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(24, 150, 20, 20)];
+        NSImageView* statusIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(24, 180, 20, 20)];
         statusIcon.image = [NSImage imageWithSystemSymbolName:@"checkmark.circle.fill"
                                      accessibilityDescription:@"Active"];
         statusIcon.contentTintColor = [NSColor systemGreenColor];
         [contentView addSubview:statusIcon];
 
         NSTextField* statusLabel = [NSTextField labelWithString:@"License Active"];
-        statusLabel.frame = NSMakeRect(48, 148, 200, 24);
+        statusLabel.frame = NSMakeRect(48, 178, 200, 24);
         statusLabel.font = [NSFont boldSystemFontOfSize:16];
         [contentView addSubview:statusLabel];
 
         // Email label
         NSTextField* emailLabel = [NSTextField labelWithString:@"Email:"];
-        emailLabel.frame = NSMakeRect(24, 110, 60, 20);
+        emailLabel.frame = NSMakeRect(24, 145, 80, 20);
         emailLabel.textColor = [NSColor secondaryLabelColor];
         emailLabel.alignment = NSTextAlignmentRight;
         [contentView addSubview:emailLabel];
@@ -488,37 +500,51 @@
                                    ? @"N/A"
                                    : [NSString stringWithUTF8String:info.customerEmail.c_str()];
         NSTextField* emailValueLabel = [NSTextField labelWithString:emailValue];
-        emailValueLabel.frame = NSMakeRect(92, 110, 280, 20);
+        emailValueLabel.frame = NSMakeRect(112, 145, 310, 20);
         emailValueLabel.selectable = YES;
         [contentView addSubview:emailValueLabel];
 
         // Key label
         NSTextField* keyLabel = [NSTextField labelWithString:@"Key:"];
-        keyLabel.frame = NSMakeRect(24, 85, 60, 20);
+        keyLabel.frame = NSMakeRect(24, 120, 80, 20);
         keyLabel.textColor = [NSColor secondaryLabelColor];
         keyLabel.alignment = NSTextAlignmentRight;
         [contentView addSubview:keyLabel];
 
         NSTextField* keyValueLabel =
             [NSTextField labelWithString:[NSString stringWithUTF8String:maskedKey.c_str()]];
-        keyValueLabel.frame = NSMakeRect(92, 85, 280, 20);
+        keyValueLabel.frame = NSMakeRect(112, 120, 310, 20);
         [contentView addSubview:keyValueLabel];
+
+        // Machine ID label
+        NSTextField* machineLabel = [NSTextField labelWithString:@"Device ID:"];
+        machineLabel.frame = NSMakeRect(24, 95, 80, 20);
+        machineLabel.textColor = [NSColor secondaryLabelColor];
+        machineLabel.alignment = NSTextAlignmentRight;
+        [contentView addSubview:machineLabel];
+
+        NSTextField* machineValueLabel =
+            [NSTextField labelWithString:[NSString stringWithUTF8String:machineId.c_str()]];
+        machineValueLabel.frame = NSMakeRect(112, 95, 310, 20);
+        machineValueLabel.selectable = YES;
+        machineValueLabel.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+        [contentView addSubview:machineValueLabel];
 
         // Status message label (for errors)
         NSTextField* statusMessageLabel = [NSTextField labelWithString:@""];
-        statusMessageLabel.frame = NSMakeRect(24, 55, 352, 20);
+        statusMessageLabel.frame = NSMakeRect(24, 65, 400, 20);
         statusMessageLabel.textColor = [NSColor systemRedColor];
         [contentView addSubview:statusMessageLabel];
 
         // Buttons
-        NSButton* closeButton = [[NSButton alloc] initWithFrame:NSMakeRect(290, 16, 90, 32)];
+        NSButton* closeButton = [[NSButton alloc] initWithFrame:NSMakeRect(340, 16, 90, 32)];
         closeButton.title = @"Close";
         closeButton.bezelStyle = NSBezelStyleRounded;
         closeButton.target = dialog;
         closeButton.action = @selector(close);
         [contentView addSubview:closeButton];
 
-        NSButton* deactivateButton = [[NSButton alloc] initWithFrame:NSMakeRect(180, 16, 100, 32)];
+        NSButton* deactivateButton = [[NSButton alloc] initWithFrame:NSMakeRect(230, 16, 100, 32)];
         deactivateButton.title = @"Deactivate";
         deactivateButton.bezelStyle = NSBezelStyleRounded;
         deactivateButton.hasDestructiveAction = YES;
@@ -535,17 +561,17 @@
     } else {
         // Unlicensed view
         NSTextField* titleLabel = [NSTextField labelWithString:@"Register License"];
-        titleLabel.frame = NSMakeRect(24, 155, 352, 24);
+        titleLabel.frame = NSMakeRect(24, 185, 400, 24);
         titleLabel.font = [NSFont boldSystemFontOfSize:16];
         [contentView addSubview:titleLabel];
 
         NSTextField* descLabel =
             [NSTextField labelWithString:@"Enter your license key to activate DearSQL:"];
-        descLabel.frame = NSMakeRect(24, 130, 352, 20);
+        descLabel.frame = NSMakeRect(24, 160, 400, 20);
         [contentView addSubview:descLabel];
 
         // License key text field
-        NSTextField* keyField = [[NSTextField alloc] initWithFrame:NSMakeRect(24, 95, 352, 28)];
+        NSTextField* keyField = [[NSTextField alloc] initWithFrame:NSMakeRect(24, 125, 400, 28)];
         keyField.placeholderString = @"XXXX-XXXX-XXXX-XXXX";
         keyField.editable = YES;
         keyField.selectable = YES;
@@ -556,9 +582,22 @@
         // Store keyField to make it first responder later
         objc_setAssociatedObject(dialog, "keyField", keyField, OBJC_ASSOCIATION_RETAIN);
 
+        // Machine ID label
+        NSTextField* machineLabel = [NSTextField labelWithString:@"Device ID:"];
+        machineLabel.frame = NSMakeRect(24, 95, 80, 20);
+        machineLabel.textColor = [NSColor secondaryLabelColor];
+        [contentView addSubview:machineLabel];
+
+        NSTextField* machineValueLabel =
+            [NSTextField labelWithString:[NSString stringWithUTF8String:machineId.c_str()]];
+        machineValueLabel.frame = NSMakeRect(105, 95, 320, 20);
+        machineValueLabel.selectable = YES;
+        machineValueLabel.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+        [contentView addSubview:machineValueLabel];
+
         // Status message label
         NSTextField* statusMessageLabel = [NSTextField labelWithString:@""];
-        statusMessageLabel.frame = NSMakeRect(24, 70, 352, 20);
+        statusMessageLabel.frame = NSMakeRect(24, 70, 400, 20);
         statusMessageLabel.textColor = [NSColor systemRedColor];
         [contentView addSubview:statusMessageLabel];
 
@@ -584,14 +623,14 @@
         [contentView addSubview:purchaseLink];
 
         // Buttons
-        NSButton* cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(200, 16, 90, 32)];
+        NSButton* cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(250, 16, 90, 32)];
         cancelButton.title = @"Cancel";
         cancelButton.bezelStyle = NSBezelStyleRounded;
         cancelButton.target = dialog;
         cancelButton.action = @selector(close);
         [contentView addSubview:cancelButton];
 
-        NSButton* activateButton = [[NSButton alloc] initWithFrame:NSMakeRect(295, 16, 90, 32)];
+        NSButton* activateButton = [[NSButton alloc] initWithFrame:NSMakeRect(345, 16, 90, 32)];
         activateButton.title = @"Activate";
         activateButton.bezelStyle = NSBezelStyleRounded;
         activateButton.keyEquivalent = @"\r"; // Enter key

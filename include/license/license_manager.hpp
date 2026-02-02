@@ -38,15 +38,15 @@ public:
         return activating;
     }
 
+    // Generate a unique instance ID for this machine
+    [[nodiscard]] std::string getInstanceId() const;
+
 private:
     LicenseManager() = default;
     ~LicenseManager() = default;
 
     LicenseInfo currentLicense;
     bool activating = false;
-
-    // Generate a unique instance ID for this machine
-    [[nodiscard]] std::string getInstanceId() const;
 
     // Store license locally
     void storeLicense(const LicenseInfo& license);

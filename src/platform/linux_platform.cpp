@@ -787,10 +787,16 @@ void LinuxPlatform::showLicenseDialog() {
         // Status message
         gtk_box_append(GTK_BOX(mainBox), statusLabel);
 
-        GtkWidget* linkLabel = gtk_label_new("Don't have a license? Purchase one at dearsql.com");
-        gtk_widget_add_css_class(linkLabel, "dim-label");
-        gtk_widget_set_halign(linkLabel, GTK_ALIGN_START);
-        gtk_box_append(GTK_BOX(mainBox), linkLabel);
+        GtkWidget* linkBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        gtk_widget_set_halign(linkBox, GTK_ALIGN_START);
+        GtkWidget* linkText = gtk_label_new("Don't have a license?");
+        gtk_widget_add_css_class(linkText, "dim-label");
+        GtkWidget* linkButton = gtk_link_button_new_with_label(
+            "https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673",
+            "Purchase one");
+        gtk_box_append(GTK_BOX(linkBox), linkText);
+        gtk_box_append(GTK_BOX(linkBox), linkButton);
+        gtk_box_append(GTK_BOX(mainBox), linkBox);
 
         // Buttons
         GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);

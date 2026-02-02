@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS };
+enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS, MONGODB };
 
 struct DatabaseConnectionInfo {
     DatabaseType type;
@@ -28,7 +28,7 @@ struct DatabaseConnectionInfo {
     bool showAllDatabases = false;
 
     // Build database-specific connection string
-    std::string buildConnectionString(const std::string& dbName = "") const {
+    [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
         switch (type) {
         case DatabaseType::SQLITE:
             return path;
@@ -73,6 +73,25 @@ struct DatabaseConnectionInfo {
 
         case DatabaseType::REDIS:
             return "redis://" + host + ":" + std::to_string(port);
+
+        case DatabaseType::MONGODB: {
+            // mongodb://[username:password@]host[:port][/database]
+            std::string connStr = "mongodb://";
+            if (!username.empty()) {
+                connStr += username;
+                if (!password.empty()) {
+                    connStr += ":" + password;
+                }
+                connStr += "@";
+            }
+            connStr += host + ":" + std::to_string(port);
+            if (!dbName.empty()) {
+                connStr += "/" + dbName;
+            } else if (!database.empty()) {
+                connStr += "/" + database;
+            }
+            return connStr;
+        }
 
         default:
             return "";

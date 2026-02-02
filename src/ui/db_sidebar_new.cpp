@@ -3,6 +3,7 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
@@ -516,6 +517,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     case DatabaseType::MYSQL:
         icon = ICON_FK_MYSQL;
         break;
+    case DatabaseType::MONGODB:
+        icon = ICON_FK_DATABASE;
+        break;
     case DatabaseType::REDIS:
         icon = ICON_FK_DATABASE;
         break;
@@ -544,6 +548,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     case DatabaseType::MYSQL:
         iconColor = ImGui::GetColorU32(colors.peach);
         break;
+    case DatabaseType::MONGODB:
+        iconColor = ImGui::GetColorU32(colors.green);
+        break;
     case DatabaseType::REDIS:
         iconColor = ImGui::GetColorU32(colors.red);
         break;
@@ -567,17 +574,18 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     db->checkConnectionStatusAsync();
 
-    // Check refresh workflow status for PostgreSQL
+    // Check refresh workflow status
     if (type == DatabaseType::POSTGRESQL) {
         if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
             pgDb->checkRefreshWorkflowAsync();
         }
-    }
-
-    // Check refresh workflow status for MySQL
-    else if (type == DatabaseType::MYSQL) {
+    } else if (type == DatabaseType::MYSQL) {
         if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
             mysqlDb->checkRefreshWorkflowAsync();
+        }
+    } else if (type == DatabaseType::MONGODB) {
+        if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
+            mongoDb->checkRefreshWorkflowAsync();
         }
     }
 

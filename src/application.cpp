@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "config.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -361,13 +362,15 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
+            db = std::make_shared<MongoDBDatabase>(conn.connectionInfo);
         }
 
         if (db) {
             // Store the saved connection ID in the database instance
             db->setConnectionId(conn.id);
-            Logger::debug(std::format("Added connection (will connect when expanded): {}",
-                                      conn.connectionInfo.name));
+            Logger::debug(std::format("Added connection (will connect when expanded): {} {}",
+                                      conn.connectionInfo.name, conn.connectionInfo.database));
             databases.push_back(db);
         }
     }

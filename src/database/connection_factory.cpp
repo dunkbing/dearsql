@@ -1,4 +1,5 @@
 #include "database/connection_factory.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -55,6 +56,23 @@ std::string ConnectionConfig::buildConnectionString() const {
         return connStr;
     }
 
+    case DatabaseType::MONGODB: {
+        std::string connStr = "mongodb://";
+        if (!username.empty()) {
+            connStr += username;
+            if (!password.empty()) {
+                connStr += ":" + password;
+            }
+            connStr += "@";
+        }
+        connStr += (host.empty() ? "127.0.0.1" : host);
+        connStr += ":" + std::to_string(port > 0 ? port : 27017);
+        if (!database.empty()) {
+            connStr += "/" + database;
+        }
+        return connStr;
+    }
+
     default:
         return "";
     }
@@ -107,6 +125,9 @@ std::shared_ptr<DatabaseInterface> ConnectionFactory::create(const DatabaseConne
 
     case DatabaseType::REDIS:
         return std::make_shared<RedisDatabase>(info);
+
+    case DatabaseType::MONGODB:
+        return std::make_shared<MongoDBDatabase>(info);
 
     default:
         return nullptr;

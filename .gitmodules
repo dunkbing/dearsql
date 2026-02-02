@@ -32,3 +32,7 @@
 [submodule "external/googletest"]
 	path = external/googletest
 	url = https://github.com/google/googletest.git
+[submodule "external/mongo-cxx-driver"]
+	path = external/mongo-cxx-driver
+	url = https://github.com/mongodb/mongo-cxx-driver.git
+	branch = releases/stable

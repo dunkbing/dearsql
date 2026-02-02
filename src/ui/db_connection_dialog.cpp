@@ -1,5 +1,6 @@
 #include "ui/db_connection_dialog.hpp"
 #include "application.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -17,7 +18,8 @@ namespace {
     constexpr const char* CONNECTION_NAME = "Connection Name";
 
     constexpr const char* DEFAULT_NAMES[] = {"SQLite Connection", "PostgreSQL Connection",
-                                             "MySQL Connection", "Redis Connection"};
+                                             "MySQL Connection", "MongoDB Connection",
+                                             "Redis Connection"};
 
     bool isDefaultName(const char* name) {
         for (const auto* defaultName : DEFAULT_NAMES) {
@@ -30,10 +32,17 @@ namespace {
 
 void DatabaseConnectionDialog::showDialog() {
     if (!isOpen) {
+        Logger::debug(std::format("showDialog: Opening dialog, editingDatabase={}, currentState={}",
+                                  editingDatabase ? "set" : "null",
+                                  static_cast<int>(currentState)));
         isOpen = true;
         if (!editingDatabase) {
+            Logger::debug("showDialog: No editingDatabase, resetting to TypeSelection");
             currentState = DialogState::TypeSelection;
             result = nullptr;
+        } else {
+            Logger::debug(std::format("showDialog: editingDatabase set, keeping currentState={}",
+                                      static_cast<int>(currentState)));
         }
         loadSavedConnections();
         ImGui::OpenPopup(DIALOG_TITLE);
@@ -51,6 +60,9 @@ void DatabaseConnectionDialog::showDialog() {
         break;
     case DialogState::MySQLConnection:
         renderSqlConnectionDialog(DatabaseType::MYSQL);
+        break;
+    case DialogState::MongoDBConnection:
+        renderMongoDBConnection();
         break;
     case DialogState::RedisConnection:
         renderRedisConnection();
@@ -99,6 +111,9 @@ void DatabaseConnectionDialog::renderTypeSelection() {
         ImGui::RadioButton("MySQL", &selectedType, static_cast<int>(DatabaseType::MYSQL));
         ImGui::Spacing();
 
+        ImGui::RadioButton("MongoDB", &selectedType, static_cast<int>(DatabaseType::MONGODB));
+        ImGui::Spacing();
+
         ImGui::RadioButton("Redis", &selectedType, static_cast<int>(DatabaseType::REDIS));
         ImGui::Spacing();
 
@@ -131,6 +146,13 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 port = 3306;
                 if (shouldSetDefault) {
                     strncpy(connectionName, "MySQL Connection", sizeof(connectionName) - 1);
+                }
+                break;
+            case DatabaseType::MONGODB:
+                currentState = DialogState::MongoDBConnection;
+                port = 27017;
+                if (shouldSetDefault) {
+                    strncpy(connectionName, "MongoDB Connection", sizeof(connectionName) - 1);
                 }
                 break;
             case DatabaseType::REDIS:
@@ -446,6 +468,138 @@ void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
     }
 }
 
+void DatabaseConnectionDialog::renderMongoDBConnection() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Always);
+
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (editingDatabase) {
+            ImGui::Text("Edit MongoDB connection:");
+        } else {
+            ImGui::Text("Enter MongoDB connection details:");
+        }
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
+
+        ImGui::InputText(CONNECTION_NAME, connectionName, sizeof(connectionName));
+        ImGui::InputText("Host", host, sizeof(host));
+        ImGui::InputInt("Port", &port);
+        ImGui::InputText("Database (optional)", database, sizeof(database));
+
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+
+        ImGui::Spacing();
+        ImGui::Text("Authentication:");
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+
+        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("Username & Password", &authType, 0);
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+
+        ImGui::Spacing();
+
+        if (authType == 0) {
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+
+            ImGui::InputText("Username", username, sizeof(username));
+            ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar();
+        } else {
+            username[0] = '\0';
+            password[0] = '\0';
+        }
+
+        ImGui::Spacing();
+        ImGui::Checkbox("Show all databases", &showAllDatabases);
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
+                        "unchecked, only shows the specified database.");
+            ImGui::EndTooltip();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::Spacing();
+
+        if (!errorMessage.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            ImGui::TextWrapped("%s", errorMessage.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy")) {
+                ImGui::SetClipboardText(errorMessage.c_str());
+            }
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+
+        ImGui::Separator();
+
+        if (isConnecting) {
+            checkAsyncConnectionStatus();
+        }
+
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+            ImGui::Button("Connecting...", ImVec2(100, 0));
+            ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            ImGui::Text("%c", "|/-\\"[static_cast<int>(ImGui::GetTime() / 0.1f) & 3]);
+        } else {
+            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
+            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
+                startAsyncConnection();
+            }
+        }
+        ImGui::SameLine();
+
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        if (ImGui::Button("Back", ImVec2(100, 0))) {
+            currentState = DialogState::TypeSelection;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+            ImGui::CloseCurrentPopup();
+            reset();
+        }
+
+        if (isConnecting) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 void DatabaseConnectionDialog::renderRedisConnection() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
@@ -596,8 +750,13 @@ void DatabaseConnectionDialog::reset() {
 
 void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
+        Logger::warn("editConnection called with null db");
         return;
     }
+
+    Logger::info(std::format(
+        "editConnection: name='{}', type={}, connectionId={}", db->getConnectionInfo().name,
+        static_cast<int>(db->getConnectionInfo().type), db->getConnectionId()));
 
     // Clear previous state
     reset();
@@ -608,6 +767,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
 
     editingConnectionId = db->getConnectionId();
     auto const type = db->getConnectionInfo().type;
+    Logger::debug(std::format("editConnection: After reset, type={}", static_cast<int>(type)));
 
     if (type == DatabaseType::SQLITE) {
         selectedDatabaseType = DatabaseType::SQLITE;
@@ -641,6 +801,19 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
+    } else if (type == DatabaseType::MONGODB) {
+        selectedDatabaseType = DatabaseType::MONGODB;
+        currentState = DialogState::MongoDBConnection;
+
+        const auto mongoDb = std::dynamic_pointer_cast<MongoDBDatabase>(db);
+        const auto& connInfo = mongoDb->getConnectionInfo();
+        strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
+        port = connInfo.port;
+        strncpy(database, connInfo.database.c_str(), sizeof(database) - 1);
+        strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
+        strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
+        showAllDatabases = connInfo.showAllDatabases;
+        authType = connInfo.username.empty() ? 1 : 0;
     } else if (type == DatabaseType::REDIS) {
         selectedDatabaseType = DatabaseType::REDIS;
         currentState = DialogState::RedisConnection;
@@ -653,9 +826,14 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         authType = (connInfo.password.empty() && connInfo.username.empty()) ? 1 : 0;
+    } else {
+        Logger::warn(
+            std::format("editConnection: Unhandled database type {}", static_cast<int>(type)));
     }
 
     editingDatabase = db;
+    Logger::info(std::format("editConnection complete: currentState={}, editingDatabase={}",
+                             static_cast<int>(currentState), editingDatabase ? "set" : "null"));
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
@@ -728,6 +906,33 @@ DatabaseConnectionDialog::createMySQLDatabase(const std::optional<std::string>& 
                              });
 }
 
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDatabase(
+    const std::optional<std::string>& passwordOverride) {
+    if (strlen(connectionName) == 0) {
+        return nullptr;
+    }
+
+    std::string usernameStr;
+    std::string passwordStr;
+
+    if (authType == 0) {
+        usernameStr = std::string(username);
+        passwordStr = passwordOverride.has_value() ? *passwordOverride : std::string(password);
+    }
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::MONGODB;
+    info.name = std::string(connectionName);
+    info.host = std::string(host);
+    info.port = port;
+    info.database = std::string(database);
+    info.username = usernameStr;
+    info.password = passwordStr;
+    info.showAllDatabases = showAllDatabases;
+
+    return std::make_shared<MongoDBDatabase>(info);
+}
+
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase() {
     if (strlen(connectionName) == 0) {
         std::cout << "Redis connection failed: Connection name is empty" << std::endl;
@@ -793,6 +998,13 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                                     conn.connectionInfo.port);
                         ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
                         ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
+                    } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
+                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
+                                    conn.connectionInfo.port);
+                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
+                        if (!conn.connectionInfo.username.empty()) {
+                            ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
+                        }
                     } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
                         ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
                                     conn.connectionInfo.port);
@@ -865,6 +1077,33 @@ void DatabaseConnectionDialog::renderSavedConnections() {
                     auto [success, error] = db->connect();
                     if (success) {
                         // Update last used timestamp
+                        const auto& app = Application::getInstance();
+                        app.getAppState()->updateLastUsed(conn.id);
+
+                        result = db;
+                        ImGui::CloseCurrentPopup();
+                        reset();
+                    } else {
+                        errorMessage = "Failed to connect: " + error;
+                    }
+                }
+            } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
+                // Fill in the MongoDB fields and connect
+                strncpy(connectionName, conn.connectionInfo.name.c_str(),
+                        sizeof(connectionName) - 1);
+                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
+                port = conn.connectionInfo.port;
+                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
+                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
+                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
+                showAllDatabases = conn.connectionInfo.showAllDatabases;
+                authType = conn.connectionInfo.username.empty() ? 1 : 0;
+
+                auto db = createMongoDBDatabase();
+                if (db) {
+                    db->setConnectionId(conn.id);
+                    auto [success, error] = db->connect();
+                    if (success) {
                         const auto& app = Application::getInstance();
                         app.getAppState()->updateLastUsed(conn.id);
 
@@ -987,6 +1226,9 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         case DialogState::MySQLConnection:
             updatedInfo.type = DatabaseType::MYSQL;
             break;
+        case DialogState::MongoDBConnection:
+            updatedInfo.type = DatabaseType::MONGODB;
+            break;
         case DialogState::RedisConnection:
             updatedInfo.type = DatabaseType::REDIS;
             break;
@@ -1012,6 +1254,11 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(editingDatabase);
             if (mysqlDb) {
                 mysqlDb->setConnectionInfo(updatedInfo);
+            }
+        } else if (type == DatabaseType::MONGODB) {
+            auto mongoDb = std::dynamic_pointer_cast<MongoDBDatabase>(editingDatabase);
+            if (mongoDb) {
+                mongoDb->setConnectionInfo(updatedInfo);
             }
         }
 
@@ -1054,6 +1301,9 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 break;
             case DialogState::MySQLConnection:
                 db = createMySQLDatabase(passwordOverride);
+                break;
+            case DialogState::MongoDBConnection:
+                db = createMongoDBDatabase(passwordOverride);
                 break;
             case DialogState::RedisConnection:
                 std::cout << "Creating Redis database connection..." << std::endl;
@@ -1103,6 +1353,9 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
                 break;
             case DialogState::MySQLConnection:
                 conn.connectionInfo.type = DatabaseType::MYSQL;
+                break;
+            case DialogState::MongoDBConnection:
+                conn.connectionInfo.type = DatabaseType::MONGODB;
                 break;
             case DialogState::RedisConnection:
                 conn.connectionInfo.type = DatabaseType::REDIS;

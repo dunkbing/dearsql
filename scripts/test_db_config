@@ -5,16 +5,19 @@
 export POSTGRES_CONTAINER="dearsql-postgres-test"
 export MYSQL_CONTAINER="dearsql-mysql-test"
 export REDIS_CONTAINER="dearsql-redis-test"
+export MONGODB_CONTAINER="dearsql-mongodb-test"
 
 # Docker images
 export POSTGRES_IMAGE="postgres:15-alpine"
 export MYSQL_IMAGE="mysql:8.0"
 export REDIS_IMAGE="redis:7-alpine"
+export MONGODB_IMAGE="mongo:7.0"
 
 # Ports (host ports mapped to container ports)
 export POSTGRES_PORT="${POSTGRES_PORT:-55432}"
 export MYSQL_PORT="${MYSQL_PORT:-53306}"
 export REDIS_PORT="${REDIS_PORT:-56379}"
+export MONGODB_PORT="${MONGODB_PORT:-57017}"
 
 # PostgreSQL test config
 export DEARSQL_TEST_PG_HOST="127.0.0.1"
@@ -36,3 +39,9 @@ export DEARSQL_TEST_MYSQL_NAME="MySQLDocker"
 export DEARSQL_TEST_REDIS_HOST="127.0.0.1"
 export DEARSQL_TEST_REDIS_PORT="$REDIS_PORT"
 export DEARSQL_TEST_REDIS_NAME="RedisDocker"
+
+# MongoDB test config
+export DEARSQL_TEST_MONGODB_HOST="127.0.0.1"
+export DEARSQL_TEST_MONGODB_PORT="$MONGODB_PORT"
+export DEARSQL_TEST_MONGODB_DB="test"
+export DEARSQL_TEST_MONGODB_NAME="MongoDBDocker"

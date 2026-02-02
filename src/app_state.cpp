@@ -1,7 +1,9 @@
 #include "app_state.hpp"
 #include "database/db.hpp"
 #include "utils/crypto.hpp"
+#include "utils/logger.hpp"
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <soci/sqlite3/soci-sqlite3.h>
 
@@ -159,6 +161,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::REDIS:
         typeStr = "redis";
         break;
+    case DatabaseType::MONGODB:
+        typeStr = "mongodb";
+        break;
     }
 
     std::string saltBase64 =
@@ -217,6 +222,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     case DatabaseType::REDIS:
         typeStr = "redis";
         break;
+    case DatabaseType::MONGODB:
+        typeStr = "mongodb";
+        break;
     }
 
     std::string saltBase64 =
@@ -238,6 +246,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
 }
 
 std::vector<SavedConnection> AppState::getSavedConnections() const {
+    Logger::info("AppState::getSavedConnections() - Loading saved connections...");
     std::vector<SavedConnection> connections;
 
     const std::string sql = R"(
@@ -258,6 +267,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
 
             // Convert type string to DatabaseType
             std::string typeStr = row.get<std::string>(2);
+            Logger::debug(std::format("Loading connection '{}' with type string: '{}'",
+                                      conn.connectionInfo.name, typeStr));
             if (typeStr == "sqlite") {
                 conn.connectionInfo.type = DatabaseType::SQLITE;
             } else if (typeStr == "postgresql") {
@@ -266,6 +277,11 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                 conn.connectionInfo.type = DatabaseType::MYSQL;
             } else if (typeStr == "redis") {
                 conn.connectionInfo.type = DatabaseType::REDIS;
+            } else if (typeStr == "mongodb") {
+                conn.connectionInfo.type = DatabaseType::MONGODB;
+            } else {
+                Logger::warn(std::format("Unknown database type '{}' for connection '{}'", typeStr,
+                                         conn.connectionInfo.name));
             }
 
             // Use convertRowValue for type-safe column access
@@ -350,12 +366,18 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
             conn.connectionInfo.showAllDatabases =
                 (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
+            Logger::info(std::format(
+                "Loaded connection: id={}, name='{}', type={}, host='{}', port={}", conn.id,
+                conn.connectionInfo.name, static_cast<int>(conn.connectionInfo.type),
+                conn.connectionInfo.host, conn.connectionInfo.port));
             connections.push_back(conn);
         }
     } catch (const std::exception& e) {
-        std::cerr << "Failed to fetch connections: " << e.what() << std::endl;
+        Logger::error(std::format("Failed to fetch connections: {}", e.what()));
     }
 
+    Logger::info(
+        std::format("AppState::getSavedConnections() - Loaded {} connections", connections.size()));
     return connections;
 }
 
@@ -526,9 +548,10 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 conn.connectionInfo.type = DatabaseType::MYSQL;
             } else if (typeStr == "redis") {
                 conn.connectionInfo.type = DatabaseType::REDIS;
+            } else if (typeStr == "mongodb") {
+                conn.connectionInfo.type = DatabaseType::MONGODB;
             }
 
-            // Use convertRowValue for type-safe column access
             std::string hostStr = convertRowValue(row, 3);
             conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
 

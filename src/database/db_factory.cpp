@@ -1,4 +1,5 @@
 #include "database/db_interface.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -15,6 +16,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "mysql";
     case DatabaseType::REDIS:
         return "redis";
+    case DatabaseType::MONGODB:
+        return "mongodb";
     }
     return "unknown";
 }
@@ -28,6 +31,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::MYSQL;
     if (typeStr == "redis")
         return DatabaseType::REDIS;
+    if (typeStr == "mongodb")
+        return DatabaseType::MONGODB;
     return DatabaseType::SQLITE; // default
 }
 
@@ -45,6 +50,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::REDIS:
         return std::make_shared<RedisDatabase>(info);
+
+    case DatabaseType::MONGODB:
+        return std::make_shared<MongoDBDatabase>(info);
 
     default:
         return nullptr;

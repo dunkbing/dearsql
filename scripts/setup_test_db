@@ -51,7 +51,7 @@ wait_for_port() {
 # Function to seed PostgreSQL
 seed_postgres() {
     echo "Seeding PostgreSQL..."
-    $DOCKER exec -i "$POSTGRES_CONTAINER" psql -U postgres -d "$DEARSQL_TEST_PG_DB" <<'EOF'
+    $DOCKER exec -i "$POSTGRES_CONTAINER" psql -h localhost -U postgres -d "$DEARSQL_TEST_PG_DB" <<'EOF'
 -- Drop existing tables if they exist
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
@@ -126,7 +126,7 @@ seed_mysql() {
     echo "Seeding MySQL..."
     # Wait a bit more for MySQL to be fully ready
     sleep 5
-    $DOCKER exec -i "$MYSQL_CONTAINER" mysql -u"$DEARSQL_TEST_MYSQL_USER" -p"$DEARSQL_TEST_MYSQL_PASSWORD" "$DEARSQL_TEST_MYSQL_DB" <<'EOF'
+    $DOCKER exec -i "$MYSQL_CONTAINER" mysql -h localhost -u"$DEARSQL_TEST_MYSQL_USER" -p"$DEARSQL_TEST_MYSQL_PASSWORD" "$DEARSQL_TEST_MYSQL_DB" <<'EOF'
 -- Drop existing tables if they exist
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
@@ -220,6 +220,40 @@ EOF
     echo "Redis seeded!"
 }
 
+# Function to seed MongoDB
+seed_mongodb() {
+    echo "Seeding MongoDB..."
+    # Wait a bit more for MongoDB to be fully ready
+    sleep 5
+    $DOCKER exec -i "$MONGODB_CONTAINER" mongosh --quiet <<'EOF'
+use test
+db.users.drop()
+db.products.drop()
+db.orders.drop()
+
+db.users.insertMany([
+    { username: "alice", email: "alice@example.com", created_at: new Date() },
+    { username: "bob", email: "bob@example.com", created_at: new Date() },
+    { username: "charlie", email: "charlie@example.com", created_at: new Date() }
+])
+
+db.products.insertMany([
+    { name: "Widget", price: 19.99, stock: 100 },
+    { name: "Gadget", price: 49.99, stock: 50 },
+    { name: "Gizmo", price: 29.99, stock: 75 }
+])
+
+db.orders.insertMany([
+    { user: "alice", total_amount: 99.99, status: "completed", created_at: new Date() },
+    { user: "alice", total_amount: 149.50, status: "pending", created_at: new Date() },
+    { user: "bob", total_amount: 75.00, status: "completed", created_at: new Date() }
+])
+
+print("MongoDB collections created and seeded")
+EOF
+    echo "MongoDB seeded!"
+}
+
 # Start PostgreSQL
 echo ""
 echo "--- PostgreSQL ---"
@@ -283,13 +317,32 @@ fi
 wait_for_port "127.0.0.1" "$REDIS_PORT" "Redis"
 seed_redis
 
+# Start MongoDB
+echo ""
+echo "--- MongoDB ---"
+if $DOCKER ps --format '{{.Names}}' | grep -qw "$MONGODB_CONTAINER"; then
+    echo "Container '$MONGODB_CONTAINER' is already running"
+else
+    if $DOCKER ps -a --format '{{.Names}}' | grep -qw "$MONGODB_CONTAINER"; then
+        echo "Starting existing container '$MONGODB_CONTAINER'..."
+        $DOCKER start "$MONGODB_CONTAINER"
+    else
+        echo "Creating new container '$MONGODB_CONTAINER'..."
+        $DOCKER run -d --name "$MONGODB_CONTAINER" \
+            -p "127.0.0.1:${MONGODB_PORT}:27017" \
+            "$MONGODB_IMAGE"
+    fi
+fi
+wait_for_port "127.0.0.1" "$MONGODB_PORT" "MongoDB"
+seed_mongodb
+
 echo ""
 echo "=== All test databases are ready and seeded! ==="
 echo ""
 echo "Run tests with: ./scripts/run_tests"
 echo ""
 echo "To stop containers later:"
-echo "  sudo docker stop $POSTGRES_CONTAINER $MYSQL_CONTAINER $REDIS_CONTAINER"
+echo "  sudo docker stop $POSTGRES_CONTAINER $MYSQL_CONTAINER $REDIS_CONTAINER $MONGODB_CONTAINER"
 echo ""
 echo "To remove containers:"
-echo "  sudo docker rm $POSTGRES_CONTAINER $MYSQL_CONTAINER $REDIS_CONTAINER"
+echo "  sudo docker rm $POSTGRES_CONTAINER $MYSQL_CONTAINER $REDIS_CONTAINER $MONGODB_CONTAINER"

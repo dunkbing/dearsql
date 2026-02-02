@@ -13,6 +13,7 @@ enum class DialogState {
     SQLiteConnection,
     PostgreSQLConnection,
     MySQLConnection,
+    MongoDBConnection,
     RedisConnection,
     SavedConnections
 };
@@ -80,6 +81,7 @@ private:
     void renderTypeSelection();
     void renderSQLiteConnection();
     void renderSqlConnectionDialog(DatabaseType type);
+    void renderMongoDBConnection();
     void renderRedisConnection();
     void renderSavedConnections();
     void loadSavedConnections();
@@ -90,6 +92,8 @@ private:
     createPostgreSQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
     std::shared_ptr<DatabaseInterface>
     createMySQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
+    std::shared_ptr<DatabaseInterface>
+    createMongoDBDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
     std::shared_ptr<DatabaseInterface>
     createSqlDatabase(const std::string& defaultDatabase,
                       const std::optional<std::string>& passwordOverride,

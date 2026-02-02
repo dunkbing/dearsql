@@ -3,6 +3,7 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -39,7 +40,8 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
     const float itemWidth = ImGui::GetContentRegionAvail().x;
     const ImVec2 itemMin = cursorPos;
     const ImVec2 itemMax = ImVec2(cursorPos.x + itemWidth, cursorPos.y + itemHeight);
-    const bool anyPopupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    const bool anyPopupOpen =
+        ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool willBeHovered = !anyPopupOpen && ImGui::IsMouseHoveringRect(itemMin, itemMax);
 
     // Animate hover alpha
@@ -132,6 +134,31 @@ void DatabaseHierarchy::renderRootNode() {
             for (const auto& dbDataPtr : databases) {
                 if (dbDataPtr) {
                     renderMySQLDatabaseNode(dbDataPtr.get());
+                }
+            }
+        }
+    } else if (dbType == DatabaseType::MONGODB) {
+        auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get());
+        if (!mongoDb) {
+            return;
+        }
+
+        if (!mongoDb->areDatabasesLoaded() && !mongoDb->isLoadingDatabases()) {
+            mongoDb->refreshDatabaseNames();
+        }
+
+        if (mongoDb->isLoadingDatabases()) {
+            mongoDb->checkDatabasesStatusAsync();
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::Text("  Loading databases...");
+            ImGui::SameLine();
+            UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            ImGui::PopStyleColor();
+        } else if (mongoDb->areDatabasesLoaded()) {
+            const auto& databases = mongoDb->getDatabaseDataMap() | std::views::values;
+            for (const auto& dbDataPtr : databases) {
+                if (dbDataPtr) {
+                    renderMongoDBDatabaseNode(dbDataPtr.get());
                 }
             }
         }
@@ -1394,6 +1421,215 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
+    }
+}
+
+void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
+    if (!dbData) {
+        return;
+    }
+
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
+    const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
+                                               ImGui::GetColorU32(colors.green));
+
+    if (ImGui::IsItemToggledOpen()) {
+        dbData->expanded = isOpen;
+    }
+
+    // Context menu
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        if (ImGui::MenuItem("New SQL Editor")) {
+            app.getTabManager()->createSQLEditorTab("", dbData);
+        }
+        if (ImGui::MenuItem("Refresh")) {
+            dbData->startCollectionsLoadAsync(true);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Delete...")) {
+            const std::string dbName = dbData->name;
+            ConfirmDialog::instance().show(
+                "Delete Database", std::format("You are about to delete the database: {}", dbName),
+                {"Permanently delete the database and ALL its data",
+                 "Remove all collections and documents", "This operation is IRREVERSIBLE"},
+                "Delete Database", [this, dbName]() {
+                    auto [success, error] = db->dropDatabase(dbName);
+                    if (success) {
+                        Logger::info(std::format("Database '{}' deleted successfully", dbName));
+                        if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
+                            mongoDb->refreshDatabaseNames();
+                        }
+                    } else {
+                        Logger::error(std::format("Failed to delete database: {}", error));
+                        ConfirmDialog::instance().setError(error);
+                    }
+                });
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (isOpen) {
+        // Render Collections section
+        {
+            const std::string collectionsNodeId = std::format(
+                "collections_{}_{:p}", dbData->name, static_cast<void*>(&dbData->collections));
+            const bool collectionsOpen = renderTreeNodeWithIcon(
+                "Collections", collectionsNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
+
+            // Context menu for Collections node
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                if (ImGui::MenuItem("Refresh")) {
+                    dbData->startCollectionsLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (collectionsOpen) {
+                if (!dbData->collectionsLoaded && !dbData->collectionsLoader.isRunning()) {
+                    dbData->startCollectionsLoadAsync();
+                }
+
+                if (dbData->collectionsLoader.isRunning()) {
+                    dbData->checkCollectionsStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading collections...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##loading_collections", 6.0f, 2,
+                                     ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (dbData->collectionsLoaded) {
+                    if (dbData->collections.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No collections");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& collection : dbData->collections) {
+                            renderMongoDBCollectionNode(collection, dbData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
+                                                    MongoDBDatabaseNode* dbData) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    constexpr ImGuiTreeNodeFlags collectionFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+    const std::string collectionNodeId =
+        std::format("mongo_coll_{}_{:p}", collection.name, static_cast<const void*>(&collection));
+    const bool collectionOpen =
+        renderTreeNodeWithIcon(collection.name, collectionNodeId, ICON_FK_TABLE,
+                               ImGui::GetColorU32(colors.green), collectionFlags);
+
+    // Check if collection is refreshing
+    const bool isRefreshing = dbData->isTableRefreshing(collection.name);
+
+    if (isRefreshing) {
+        constexpr float spinnerRadius = 6.0f;
+        const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
+        const float itemCenterY = ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);
+        const float spinnerY = itemCenterY - spinnerRadius - ImGui::GetStyle().FramePadding.y;
+        ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
+
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        UIUtils::Spinner(std::format("##refreshing_coll_{}", collection.name).c_str(),
+                         spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+        ImGui::PopStyleColor();
+
+        dbData->checkTableRefreshStatusAsync(collection.name);
+    }
+
+    // Double-click to open collection viewer
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+        app.getTabManager()->createTableViewerTab(dbData, collection.name);
+    }
+
+    // Context menu
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        if (ImGui::MenuItem("View Data")) {
+            app.getTabManager()->createTableViewerTab(dbData, collection.name);
+        }
+        if (ImGui::MenuItem("Refresh")) {
+            dbData->startTableRefreshAsync(collection.name);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Delete...")) {
+            const std::string collName = collection.name;
+            ConfirmDialog::instance().show(
+                "Delete Collection",
+                std::format("You are about to delete the collection: {}", collName),
+                {"Permanently delete the collection and ALL its documents",
+                 "Remove all indexes on this collection", "This operation is IRREVERSIBLE"},
+                "Delete Collection", [dbData, collName]() {
+                    const std::string query = std::format(
+                        R"({{"database": "{}", "collection": "{}", "command": "dropCollection"}})",
+                        dbData->name, collName);
+                    auto [success, error] = dbData->executeQuery(query);
+                    if (success) {
+                        dbData->startCollectionsLoadAsync(true);
+                    } else {
+                        ConfirmDialog::instance().setError(error);
+                    }
+                });
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (collectionOpen) {
+        // Fields section (inferred schema)
+        {
+            const std::string fieldsNodeId = std::format("mongo_fields_{}_{:p}", collection.name,
+                                                         static_cast<void*>(&collection.columns));
+            const bool fieldsOpen = renderTreeNodeWithIcon(
+                "Fields", fieldsNodeId, ICON_FA_TABLE_COLUMNS, ImGui::GetColorU32(colors.green));
+
+            if (fieldsOpen) {
+                if (collection.columns.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                    ImGui::Text("  No fields detected");
+                    ImGui::PopStyleColor();
+                } else {
+                    for (const auto& column : collection.columns) {
+                        ImGuiTreeNodeFlags fieldFlags = ImGuiTreeNodeFlags_Leaf |
+                                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                        ImGuiTreeNodeFlags_FramePadding;
+
+                        std::string fieldDisplay = std::format("{} ({})", column.name, column.type);
+                        if (column.isPrimaryKey) {
+                            fieldDisplay += ", PK";
+                        }
+
+                        const std::string fieldNodeId =
+                            std::format("mongo_field_{}_{}_{:p}", collection.name, column.name,
+                                        static_cast<const void*>(&column));
+                        const std::string fieldLabel =
+                            std::format("   {}###{}", fieldDisplay, fieldNodeId);
+                        ImGui::TreeNodeEx(fieldLabel.c_str(), fieldFlags);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::TreePop();
     }
 }
 

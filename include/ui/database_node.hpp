@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include "database/mongodb/mongodb_database_node.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
@@ -45,6 +46,7 @@ private:
     void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,
                                   PostgresSchemaNode* schemaData);
     void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
+    void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
     void renderSQLiteNode();
 
     // Table/view rendering (shared across database types)
@@ -52,6 +54,7 @@ private:
     void renderViewNode(Table& view, PostgresSchemaNode* schemaNode);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
+    void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
     void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);
     void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);
 

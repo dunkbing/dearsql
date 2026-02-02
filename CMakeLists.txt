@@ -19,8 +19,13 @@ configure_file(
 # Dependencies
 add_subdirectory(external/json)
 add_subdirectory(external/soci)
+#redis
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 add_subdirectory(external/hiredis)
+# mongo
+set(ENABLE_TESTS OFF CACHE BOOL "Disable mongocxx tests" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libs" FORCE)
+add_subdirectory(external/mongo-cxx-driver)
 
 # GoogleTest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -130,6 +135,8 @@ set(APP_SOURCES
     src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
+    src/database/mongodb.cpp
+    src/database/mongodb/mongodb_database_node.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
@@ -203,6 +210,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
     external/nativefiledialog-extended/src/include
+    external/mongo-cxx-driver/src
 )
 
 # Platform-specific include directories
@@ -220,6 +228,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     hiredis
+    mongocxx_shared
+    bsoncxx_shared
 )
 
 # Platform-specific linking
@@ -269,6 +279,7 @@ add_executable(database_tests
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
     tests/database/redis_database_test.cpp
+    tests/database/mongodb_database_test.cpp
     tests/database/sql_builder_test.cpp
     tests/database/connection_factory_test.cpp
     src/database/sqlite.cpp
@@ -278,6 +289,8 @@ add_executable(database_tests
     src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
+    src/database/mongodb.cpp
+    src/database/mongodb/mongodb_database_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/connection_factory.cpp
@@ -288,6 +301,7 @@ target_include_directories(database_tests PRIVATE
     include
     external/soci/include
     external/hiredis
+    external/mongo-cxx-driver/src
     tests/database
 )
 
@@ -298,6 +312,8 @@ target_link_libraries(database_tests PRIVATE
     soci_mysql
     PostgreSQL::PostgreSQL
     hiredis
+    mongocxx_shared
+    bsoncxx_shared
 )
 
 add_test(NAME database_tests COMMAND database_tests)

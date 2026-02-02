@@ -12,7 +12,6 @@
 #include "ui/confirm_dialog.hpp"
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
-#include "ui/license_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
@@ -60,10 +59,6 @@ void DatabaseSidebarNew::renderEmpty() {
         if (ImGui::MenuItem("Add Database Connection")) {
             Logger::info("Opening database connection dialog");
             showConnectionDialog();
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("License...")) {
-            LicenseDialog::instance().show();
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -265,8 +260,7 @@ void DatabaseSidebarNew::render() {
     ImGui::PopStyleColor();
 
     // Calculate available height for the sections
-    constexpr float settingsBarHeight = 32.0f;
-    const float availableHeight = ImGui::GetContentRegionAvail().y - settingsBarHeight;
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
     constexpr float historyHeight = 300.0f;
 
     // Structure section (top) - scrollbar visible only on hover
@@ -309,37 +303,14 @@ void DatabaseSidebarNew::render() {
     ImGui::Spacing();
 
     // History list section (scrollable) - scrollbar visible only on hover
-    const float historyActualHeight = ImGui::GetContentRegionAvail().y - settingsBarHeight;
     const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
     const bool historyHovered = ImGui::IsMouseHoveringRect(
         historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
-                                 historyCursorPos.y + historyActualHeight));
+                                 historyCursorPos.y + ImGui::GetContentRegionAvail().y));
     ImGuiWindowFlags historyFlags = historyHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
-    ImGui::BeginChild("HistorySection", ImVec2(0, historyActualHeight), false, historyFlags);
+    ImGui::BeginChild("HistorySection", ImVec2(0, 0), false, historyFlags);
     renderHistory();
     ImGui::EndChild();
-
-    // Settings bar at bottom
-    ImGui::PushStyleColor(ImGuiCol_Separator,
-                          ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.3f));
-    ImGui::Separator();
-    ImGui::PopStyleColor();
-
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 4.0f));
-
-    if (ImGui::Button(ICON_FA_GEAR "##settings")) {
-        LicenseDialog::instance().show();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Settings");
-    }
-
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(3);
 
     // Handle delete confirmation dialog
     if (shouldShowDeleteConfirmation) {

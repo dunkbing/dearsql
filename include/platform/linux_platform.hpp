@@ -54,6 +54,15 @@ public:
     static void onAddConnection(GtkButton* button, gpointer userData);
     static gboolean onClose(GtkWindow* window, gpointer userData);
 
+    // Menu callbacks
+    static void onMenuButtonClicked(GtkButton* button, gpointer userData);
+    static void onThemeLightClicked(GtkButton* button, gpointer userData);
+    static void onThemeDarkClicked(GtkButton* button, gpointer userData);
+    static void onThemeAutoClicked(GtkButton* button, gpointer userData);
+    static void onLicenseClicked(GtkButton* button, gpointer userData);
+
+    void showLicenseDialog();
+
 private:
     Application* app_;
     GtkWidget* window_;
@@ -62,7 +71,16 @@ private:
     GtkWidget* sidebarButton_;
     GtkWidget* workspaceDropdown_;
     GtkWidget* addButton_;
+    GtkWidget* menuButton_;
+    GtkWidget* menuPopover_;
+    GtkWidget* themeLightButton_;
+    GtkWidget* themeDarkButton_;
+    GtkWidget* themeAutoButton_;
+    GtkWidget* licenseButton_;
     GtkStringList* workspaceModel_;
+
+    void updateThemeButtons();
+    void updateLicenseButton();
 
     bool shouldClose_;
     bool realized_;

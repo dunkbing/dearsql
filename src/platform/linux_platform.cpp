@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "config.hpp"
 #include "imgui_impl_opengl3.h"
+#include "license/license_manager.hpp"
 #include "platform/linux_platform.hpp"
 #include <iostream>
 
@@ -23,9 +24,10 @@ static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_da
 
 LinuxPlatform::LinuxPlatform(Application* app)
     : app_(app), window_(nullptr), glArea_(nullptr), headerBar_(nullptr), sidebarButton_(nullptr),
-      workspaceDropdown_(nullptr), addButton_(nullptr), workspaceModel_(nullptr),
-      shouldClose_(false), realized_(false), fbWidth_(1280), fbHeight_(720), mouseX_(0),
-      mouseY_(0) {}
+      workspaceDropdown_(nullptr), addButton_(nullptr), menuButton_(nullptr), menuPopover_(nullptr),
+      themeLightButton_(nullptr), themeDarkButton_(nullptr), themeAutoButton_(nullptr),
+      licenseButton_(nullptr), workspaceModel_(nullptr), shouldClose_(false), realized_(false),
+      fbWidth_(1280), fbHeight_(720), mouseX_(0), mouseY_(0) {}
 
 LinuxPlatform::~LinuxPlatform() {
     cleanup();
@@ -139,6 +141,74 @@ void LinuxPlatform::setupTitlebar() {
     gtk_widget_set_tooltip_text(workspaceDropdown_, "Select Workspace");
     g_signal_connect(workspaceDropdown_, "notify::selected", G_CALLBACK(onWorkspaceChanged), this);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
+
+    // Main menu button (hamburger menu)
+    menuButton_ = gtk_menu_button_new();
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menuButton_), "open-menu-symbolic");
+    gtk_widget_set_tooltip_text(menuButton_, "Main Menu");
+
+    // Create popover content
+    menuPopover_ = gtk_popover_new();
+    GtkWidget* menuBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_start(menuBox, 12);
+    gtk_widget_set_margin_end(menuBox, 12);
+    gtk_widget_set_margin_top(menuBox, 12);
+    gtk_widget_set_margin_bottom(menuBox, 12);
+    gtk_widget_set_size_request(menuBox, 180, -1);
+
+    // Theme section
+    GtkWidget* themeLabel = gtk_label_new("Theme");
+    gtk_widget_set_halign(themeLabel, GTK_ALIGN_START);
+    gtk_widget_add_css_class(themeLabel, "dim-label");
+    gtk_box_append(GTK_BOX(menuBox), themeLabel);
+
+    // Theme buttons in a horizontal box with linked style
+    GtkWidget* themeButtonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_halign(themeButtonBox, GTK_ALIGN_FILL);
+    gtk_widget_add_css_class(themeButtonBox, "linked");
+
+    themeLightButton_ = gtk_button_new_from_icon_name("weather-clear-symbolic");
+    gtk_widget_set_tooltip_text(themeLightButton_, "Light");
+    gtk_widget_set_hexpand(themeLightButton_, TRUE);
+    g_signal_connect(themeLightButton_, "clicked", G_CALLBACK(onThemeLightClicked), this);
+    gtk_box_append(GTK_BOX(themeButtonBox), themeLightButton_);
+
+    themeDarkButton_ = gtk_button_new_from_icon_name("weather-clear-night-symbolic");
+    gtk_widget_set_tooltip_text(themeDarkButton_, "Dark");
+    gtk_widget_set_hexpand(themeDarkButton_, TRUE);
+    g_signal_connect(themeDarkButton_, "clicked", G_CALLBACK(onThemeDarkClicked), this);
+    gtk_box_append(GTK_BOX(themeButtonBox), themeDarkButton_);
+
+    themeAutoButton_ = gtk_button_new_from_icon_name("emblem-system-symbolic");
+    gtk_widget_set_tooltip_text(themeAutoButton_, "System");
+    gtk_widget_set_hexpand(themeAutoButton_, TRUE);
+    g_signal_connect(themeAutoButton_, "clicked", G_CALLBACK(onThemeAutoClicked), this);
+    gtk_box_append(GTK_BOX(themeButtonBox), themeAutoButton_);
+
+    gtk_box_append(GTK_BOX(menuBox), themeButtonBox);
+
+    // Separator
+    GtkWidget* separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_append(GTK_BOX(menuBox), separator);
+
+    // License button
+    licenseButton_ = gtk_button_new_with_label("Manage License...");
+    gtk_widget_set_halign(licenseButton_, GTK_ALIGN_FILL);
+    g_signal_connect(licenseButton_, "clicked", G_CALLBACK(onLicenseClicked), this);
+    gtk_box_append(GTK_BOX(menuBox), licenseButton_);
+
+    gtk_popover_set_child(GTK_POPOVER(menuPopover_), menuBox);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(menuButton_), menuPopover_);
+
+    // Update theme and license button on popover show
+    g_signal_connect(menuPopover_, "show", G_CALLBACK(+[](GtkWidget*, gpointer userData) {
+                         auto* platform = static_cast<LinuxPlatform*>(userData);
+                         platform->updateThemeButtons();
+                         platform->updateLicenseButton();
+                     }),
+                     this);
+
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), menuButton_);
 
     gtk_window_set_titlebar(GTK_WINDOW(window_), headerBar_);
 
@@ -369,7 +439,6 @@ void LinuxPlatform::onRealize(GtkGLArea* area, gpointer userData) {
     io.GetClipboardTextFn = ImGui_ImplGtk_GetClipboardText;
     io.SetClipboardTextFn = ImGui_ImplGtk_SetClipboardText;
 
-    std::cout << "OpenGL context realized" << std::endl;
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
 }
 
@@ -521,6 +590,278 @@ gboolean LinuxPlatform::onClose(GtkWindow* window, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->shouldClose_ = true;
     return FALSE;
+}
+
+void LinuxPlatform::updateThemeButtons() {
+    if (!app_ || !themeLightButton_ || !themeDarkButton_ || !themeAutoButton_) {
+        return;
+    }
+
+    bool isDark = app_->isDarkTheme();
+
+    // Remove suggested-action from all buttons first
+    gtk_widget_remove_css_class(themeLightButton_, "suggested-action");
+    gtk_widget_remove_css_class(themeDarkButton_, "suggested-action");
+    gtk_widget_remove_css_class(themeAutoButton_, "suggested-action");
+
+    // Add suggested-action to the currently selected theme
+    if (isDark) {
+        gtk_widget_add_css_class(themeDarkButton_, "suggested-action");
+    } else {
+        gtk_widget_add_css_class(themeLightButton_, "suggested-action");
+    }
+}
+
+void LinuxPlatform::updateLicenseButton() {
+    // License button text is always "Manage License..."
+}
+
+void LinuxPlatform::onThemeLightClicked(GtkButton* button, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    if (platform->app_) {
+        platform->app_->setDarkTheme(false);
+    }
+    platform->updateThemeButtons();
+}
+
+void LinuxPlatform::onThemeDarkClicked(GtkButton* button, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    if (platform->app_) {
+        platform->app_->setDarkTheme(true);
+    }
+    platform->updateThemeButtons();
+}
+
+void LinuxPlatform::onThemeAutoClicked(GtkButton* button, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    // For now, auto defaults to dark theme
+    // TODO: Detect system theme preference
+    if (platform->app_) {
+        platform->app_->setDarkTheme(true);
+    }
+    platform->updateThemeButtons();
+}
+
+void LinuxPlatform::onLicenseClicked(GtkButton* button, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
+    platform->showLicenseDialog();
+}
+
+void LinuxPlatform::showLicenseDialog() {
+    auto& licenseManager = LicenseManager::instance();
+
+    // Create the dialog window
+    GtkWidget* dialog = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(dialog), "Manage License");
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window_));
+    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, -1);
+    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
+
+    GtkWidget* mainBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+    gtk_widget_set_margin_start(mainBox, 24);
+    gtk_widget_set_margin_end(mainBox, 24);
+    gtk_widget_set_margin_top(mainBox, 24);
+    gtk_widget_set_margin_bottom(mainBox, 24);
+
+    // Status label for messages
+    GtkWidget* statusLabel = gtk_label_new("");
+    gtk_widget_set_halign(statusLabel, GTK_ALIGN_START);
+
+    if (licenseManager.hasValidLicense()) {
+        // Licensed view
+        const auto& info = licenseManager.getLicenseInfo();
+
+        std::string maskedKey = info.licenseKey;
+        if (maskedKey.length() > 8) {
+            maskedKey = maskedKey.substr(0, 4) + "..." + maskedKey.substr(maskedKey.length() - 4);
+        }
+
+        // Status indicator
+        GtkWidget* statusBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        GtkWidget* statusIcon = gtk_image_new_from_icon_name("emblem-ok-symbolic");
+        gtk_widget_add_css_class(statusIcon, "success");
+        GtkWidget* statusText = gtk_label_new("License Active");
+        gtk_widget_add_css_class(statusText, "title-3");
+        gtk_box_append(GTK_BOX(statusBox), statusIcon);
+        gtk_box_append(GTK_BOX(statusBox), statusText);
+        gtk_box_append(GTK_BOX(mainBox), statusBox);
+
+        // License info
+        GtkWidget* infoGrid = gtk_grid_new();
+        gtk_grid_set_row_spacing(GTK_GRID(infoGrid), 8);
+        gtk_grid_set_column_spacing(GTK_GRID(infoGrid), 12);
+
+        GtkWidget* emailLabel = gtk_label_new("Email:");
+        gtk_widget_add_css_class(emailLabel, "dim-label");
+        gtk_widget_set_halign(emailLabel, GTK_ALIGN_END);
+        GtkWidget* emailValue =
+            gtk_label_new(info.customerEmail.empty() ? "N/A" : info.customerEmail.c_str());
+        gtk_widget_set_halign(emailValue, GTK_ALIGN_START);
+        gtk_label_set_selectable(GTK_LABEL(emailValue), TRUE);
+        gtk_grid_attach(GTK_GRID(infoGrid), emailLabel, 0, 0, 1, 1);
+        gtk_grid_attach(GTK_GRID(infoGrid), emailValue, 1, 0, 1, 1);
+
+        GtkWidget* keyLabel = gtk_label_new("Key:");
+        gtk_widget_add_css_class(keyLabel, "dim-label");
+        gtk_widget_set_halign(keyLabel, GTK_ALIGN_END);
+        GtkWidget* keyValue = gtk_label_new(maskedKey.c_str());
+        gtk_widget_set_halign(keyValue, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(infoGrid), keyLabel, 0, 1, 1, 1);
+        gtk_grid_attach(GTK_GRID(infoGrid), keyValue, 1, 1, 1, 1);
+
+        gtk_box_append(GTK_BOX(mainBox), infoGrid);
+
+        // Status message
+        gtk_box_append(GTK_BOX(mainBox), statusLabel);
+
+        // Buttons
+        GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
+        gtk_widget_set_margin_top(buttonBox, 8);
+
+        GtkWidget* deactivateButton = gtk_button_new_with_label("Deactivate");
+        gtk_widget_add_css_class(deactivateButton, "destructive-action");
+        GtkWidget* closeButton = gtk_button_new_with_label("Close");
+
+        gtk_box_append(GTK_BOX(buttonBox), deactivateButton);
+        gtk_box_append(GTK_BOX(buttonBox), closeButton);
+        gtk_box_append(GTK_BOX(mainBox), buttonBox);
+
+        g_object_set_data(G_OBJECT(dialog), "status", statusLabel);
+        g_object_set_data(G_OBJECT(dialog), "deactivate_btn", deactivateButton);
+
+        g_signal_connect(closeButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
+                             gtk_window_destroy(GTK_WINDOW(dlg));
+                         }),
+                         dialog);
+
+        g_signal_connect(
+            deactivateButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer dlg) {
+                GtkWidget* status = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "status"));
+                gtk_label_set_text(GTK_LABEL(status), "Deactivating...");
+                gtk_widget_set_sensitive(GTK_WIDGET(btn), FALSE);
+
+                GtkWidget* dialogRef = GTK_WIDGET(dlg);
+                LicenseManager::instance().deactivateLicense([dialogRef](
+                                                                 const LicenseInfo& result) {
+                    g_idle_add(
+                        +[](gpointer data) -> gboolean {
+                            auto* info = static_cast<std::pair<GtkWidget*, LicenseInfo>*>(data);
+                            if (GTK_IS_WINDOW(info->first)) {
+                                if (info->second.error.empty()) {
+                                    gtk_window_destroy(GTK_WINDOW(info->first));
+                                } else {
+                                    GtkWidget* st = GTK_WIDGET(
+                                        g_object_get_data(G_OBJECT(info->first), "status"));
+                                    GtkWidget* btn = GTK_WIDGET(
+                                        g_object_get_data(G_OBJECT(info->first), "deactivate_btn"));
+                                    gtk_label_set_text(GTK_LABEL(st), info->second.error.c_str());
+                                    gtk_widget_set_sensitive(btn, TRUE);
+                                }
+                            }
+                            delete info;
+                            return G_SOURCE_REMOVE;
+                        },
+                        new std::pair<GtkWidget*, LicenseInfo>(dialogRef, result));
+                });
+            }),
+            dialog);
+
+    } else {
+        // Unlicensed view
+        GtkWidget* titleLabel = gtk_label_new("Register License");
+        gtk_widget_add_css_class(titleLabel, "title-3");
+        gtk_widget_set_halign(titleLabel, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(mainBox), titleLabel);
+
+        GtkWidget* descLabel = gtk_label_new("Enter your license key to activate DearSQL:");
+        gtk_widget_set_halign(descLabel, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(mainBox), descLabel);
+
+        GtkWidget* entry = gtk_entry_new();
+        gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "XXXX-XXXX-XXXX-XXXX");
+        gtk_box_append(GTK_BOX(mainBox), entry);
+
+        // Status message
+        gtk_box_append(GTK_BOX(mainBox), statusLabel);
+
+        GtkWidget* linkLabel = gtk_label_new("Don't have a license? Purchase one at dearsql.com");
+        gtk_widget_add_css_class(linkLabel, "dim-label");
+        gtk_widget_set_halign(linkLabel, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(mainBox), linkLabel);
+
+        // Buttons
+        GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
+        gtk_widget_set_margin_top(buttonBox, 8);
+
+        GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
+        GtkWidget* activateButton = gtk_button_new_with_label("Activate");
+        gtk_widget_add_css_class(activateButton, "suggested-action");
+
+        gtk_box_append(GTK_BOX(buttonBox), cancelButton);
+        gtk_box_append(GTK_BOX(buttonBox), activateButton);
+        gtk_box_append(GTK_BOX(mainBox), buttonBox);
+
+        g_object_set_data(G_OBJECT(dialog), "entry", entry);
+        g_object_set_data(G_OBJECT(dialog), "status", statusLabel);
+        g_object_set_data(G_OBJECT(dialog), "activate_btn", activateButton);
+
+        g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
+                             gtk_window_destroy(GTK_WINDOW(dlg));
+                         }),
+                         dialog);
+
+        g_signal_connect(
+            activateButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer dlg) {
+                GtkWidget* entry = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "entry"));
+                GtkWidget* status = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "status"));
+
+                const char* key = gtk_editable_get_text(GTK_EDITABLE(entry));
+                if (!key || strlen(key) == 0) {
+                    gtk_label_set_text(GTK_LABEL(status), "Please enter a license key");
+                    return;
+                }
+
+                gtk_label_set_text(GTK_LABEL(status), "Activating...");
+                gtk_widget_set_sensitive(GTK_WIDGET(btn), FALSE);
+
+                std::string licenseKey = key;
+                GtkWidget* dialogRef = GTK_WIDGET(dlg);
+
+                LicenseManager::instance().activateLicense(
+                    licenseKey, [dialogRef](const LicenseInfo& result) {
+                        g_idle_add(
+                            +[](gpointer data) -> gboolean {
+                                auto* info = static_cast<std::pair<GtkWidget*, LicenseInfo>*>(data);
+                                if (GTK_IS_WINDOW(info->first)) {
+                                    if (info->second.valid) {
+                                        gtk_window_destroy(GTK_WINDOW(info->first));
+                                    } else {
+                                        GtkWidget* st = GTK_WIDGET(
+                                            g_object_get_data(G_OBJECT(info->first), "status"));
+                                        GtkWidget* btn = GTK_WIDGET(g_object_get_data(
+                                            G_OBJECT(info->first), "activate_btn"));
+                                        std::string err = info->second.error.empty()
+                                                              ? "Activation failed"
+                                                              : info->second.error;
+                                        gtk_label_set_text(GTK_LABEL(st), err.c_str());
+                                        gtk_widget_set_sensitive(btn, TRUE);
+                                    }
+                                }
+                                delete info;
+                                return G_SOURCE_REMOVE;
+                            },
+                            new std::pair<GtkWidget*, LicenseInfo>(dialogRef, result));
+                    });
+            }),
+            dialog);
+    }
+
+    gtk_window_set_child(GTK_WINDOW(dialog), mainBox);
+    gtk_window_present(GTK_WINDOW(dialog));
 }
 
 void LinuxPlatform::updateImGuiKeyMods(GdkModifierType state) {

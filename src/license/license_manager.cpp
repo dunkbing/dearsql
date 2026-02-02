@@ -9,6 +9,14 @@
 
 #include <fstream>
 
+namespace {
+constexpr const char* kSettingLicenseKey = "license_key";
+constexpr const char* kSettingInstanceId = "license_instance_id";
+constexpr const char* kSettingStatus = "license_status";
+constexpr const char* kSettingEmail = "license_email";
+constexpr const char* kSettingActivatedAt = "license_activated_at";
+}  // namespace
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -89,11 +97,11 @@ std::string LicenseManager::getInstanceId() const {
 void LicenseManager::loadStoredLicense() {
     auto* appState = Application::getInstance().getAppState();
 
-    std::string storedKey = appState->getSetting("license_key", "");
-    std::string storedInstanceId = appState->getSetting("license_instance_id", "");
-    std::string storedStatus = appState->getSetting("license_status", "");
-    std::string storedEmail = appState->getSetting("license_email", "");
-    std::string storedActivatedAt = appState->getSetting("license_activated_at", "");
+    std::string storedKey = appState->getSetting(kSettingLicenseKey, "");
+    std::string storedInstanceId = appState->getSetting(kSettingInstanceId, "");
+    std::string storedStatus = appState->getSetting(kSettingStatus, "");
+    std::string storedEmail = appState->getSetting(kSettingEmail, "");
+    std::string storedActivatedAt = appState->getSetting(kSettingActivatedAt, "");
 
     if (!storedKey.empty() && storedStatus == "active") {
         currentLicense.valid = true;
@@ -110,11 +118,11 @@ void LicenseManager::loadStoredLicense() {
 void LicenseManager::storeLicense(const LicenseInfo& license) {
     auto* appState = Application::getInstance().getAppState();
 
-    appState->setSetting("license_key", license.licenseKey);
-    appState->setSetting("license_instance_id", license.instanceId);
-    appState->setSetting("license_status", license.status);
-    appState->setSetting("license_email", license.customerEmail);
-    appState->setSetting("license_activated_at", license.activatedAt);
+    appState->setSetting(kSettingLicenseKey, license.licenseKey);
+    appState->setSetting(kSettingInstanceId, license.instanceId);
+    appState->setSetting(kSettingStatus, license.status);
+    appState->setSetting(kSettingEmail, license.customerEmail);
+    appState->setSetting(kSettingActivatedAt, license.activatedAt);
 
     Logger::info("Stored license");
 }
@@ -122,11 +130,11 @@ void LicenseManager::storeLicense(const LicenseInfo& license) {
 void LicenseManager::clearStoredLicense() {
     auto* appState = Application::getInstance().getAppState();
 
-    appState->setSetting("license_key", "");
-    appState->setSetting("license_instance_id", "");
-    appState->setSetting("license_status", "");
-    appState->setSetting("license_email", "");
-    appState->setSetting("license_activated_at", "");
+    appState->setSetting(kSettingLicenseKey, "");
+    appState->setSetting(kSettingInstanceId, "");
+    appState->setSetting(kSettingStatus, "");
+    appState->setSetting(kSettingEmail, "");
+    appState->setSetting(kSettingActivatedAt, "");
 
     currentLicense = LicenseInfo{};
     Logger::info("Cleared stored license");

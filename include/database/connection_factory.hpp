@@ -1,6 +1,5 @@
 #pragma once
 
-#include "connection_config.hpp"
 #include "db_interface.hpp"
 #include <memory>
 
@@ -13,14 +12,7 @@
 class ConnectionFactory {
 public:
     /**
-     * @brief Create a database interface based on config
-     * @param config Connection configuration
-     * @return Shared pointer to database interface, or nullptr on failure
-     */
-    static std::shared_ptr<DatabaseInterface> create(const ConnectionConfig& config);
-
-    /**
-     * @brief Create a database interface based on legacy connection info
+     * @brief Create a database interface based on connection info
      * @param info Database connection information
      * @return Shared pointer to database interface, or nullptr on failure
      */
@@ -28,8 +20,8 @@ public:
 
     /**
      * @brief Test a connection without fully establishing it
-     * @param config Connection configuration
+     * @param info Database connection information
      * @return pair<success, error_message>
      */
-    static std::pair<bool, std::string> testConnection(const ConnectionConfig& config);
+    static std::pair<bool, std::string> testConnection(const DatabaseConnectionInfo& info);
 };

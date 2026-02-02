@@ -4,13 +4,13 @@ set -euo pipefail
 # Configuration
 APP_NAME="dearsql"
 APP_DISPLAY_NAME="DearSQL"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-0.1.0}"
 ARCH="${ARCH:-amd64}"
 MAINTAINER="${MAINTAINER:-dunkbing <bing@db99.dev>}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="${PROJECT_DIR}/build"
+BUILD_DIR="${PROJECT_DIR}/build_release"
 DEB_DIR="${BUILD_DIR}/deb-package"
 OUTPUT_FILE="${BUILD_DIR}/${APP_NAME}_${VERSION}_${ARCH}.deb"
 

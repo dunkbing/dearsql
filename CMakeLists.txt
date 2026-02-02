@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Application metadata
 set(APP_NAME "DearSQL")
-set(APP_VERSION "1.0.0")
+set(APP_VERSION "0.1.0")
 set(APP_IDENTIFIER "dearsql.db99.dev")
 
 configure_file(

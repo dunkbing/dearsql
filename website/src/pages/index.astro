@@ -50,6 +50,11 @@ const databases = [
     description: "Key-value browsing and editing",
     icon: "/icons/redis.svg",
   },
+  {
+    name: "MongoDB",
+    description: "Document database support",
+    icon: "/icons/mongodb.svg",
+  },
 ];
 
 const currentYear = new Date().getFullYear();
@@ -82,7 +87,7 @@ const currentYear = new Date().getFullYear();
 
     <main>
       <!-- Hero -->
-      <section class="pt-32 pb-16 px-6">
+      <section class="pt-32 pb-10 px-6">
         <div class="max-w-5xl mx-auto text-center">
           <div class="flex justify-center mb-8">
             <img
@@ -99,22 +104,46 @@ const currentYear = new Date().getFullYear();
             Simple, powerful database manager
           </h1>
           <p class="text-xl text-subtext0 max-w-2xl mx-auto mb-10">
-            A native desktop SQL client for SQLite, PostgreSQL, MySQL, and
-            Redis. Fast, intuitive, and built for developers who value
+            A native desktop SQL client for SQLite, PostgreSQL, MySQL, MongoDB,
+            and Redis. Fast, intuitive, and built for developers who value
             simplicity.
           </p>
-          <div
-            class="inline-flex items-center gap-2 bg-surface0 text-subtext0 px-6 py-3 rounded-lg text-lg"
-          >
-            <span class="relative flex h-2 w-2">
-              <span
-                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue opacity-75"
-              ></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-blue"
-              ></span>
-            </span>
-            Coming soon for macOS and Linux
+          <div class="flex flex-col sm:flex-row gap-4 justify-center mb-4">
+            <a
+              href="https://pub-29493441e7d647038e2f777e7cac5cce.r2.dev/dearsql_0.1.0_amd64.deb"
+              class="inline-flex items-center gap-2 bg-blue hover:bg-blue/90 text-crust px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                ></path>
+              </svg>
+              Download for Linux (.deb, 1.84 MB)
+            </a>
+            <div
+              class="inline-flex items-center gap-2 bg-surface0 text-subtext0 px-6 py-3 rounded-lg"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"
+                ></path>
+              </svg>
+              macOS coming soon
+            </div>
           </div>
+          <p class="text-subtext0 text-sm">
+            Windows planned for future release.
+          </p>
         </div>
       </section>
 
@@ -225,7 +254,7 @@ const currentYear = new Date().getFullYear();
           <h2 class="text-3xl font-semibold text-center mb-12 text-text">
             All your databases, one app
           </h2>
-          <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div class="flex flex-wrap justify-center gap-6">
             {
               databases.map((db) => (
                 <div class="text-center p-6 border border-surface1 rounded-xl bg-surface0">
@@ -240,28 +269,6 @@ const currentYear = new Date().getFullYear();
               ))
             }
           </div>
-        </div>
-      </section>
-
-      <!-- Coming Soon -->
-      <section id="download" class="py-20 px-6 bg-crust">
-        <div class="max-w-5xl mx-auto text-center">
-          <h2 class="text-3xl font-semibold mb-4 text-text">Coming Soon</h2>
-          <p class="text-subtext0 mb-8 max-w-xl mx-auto">
-            DearSQL is currently in development. Sign up to get notified when
-            it's ready.
-          </p>
-          <div class="max-w-md mx-auto">
-            <iframe
-              src="https://tally.so/embed/eqMqGo?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1"
-              width="100%"
-              height="200"
-              frameborder="0"
-              title="Waitlist signup form"></iframe>
-          </div>
-          <p class="text-subtext0 text-sm mt-6">
-            Available for macOS and Linux. Windows planned.
-          </p>
         </div>
       </section>
     </main>

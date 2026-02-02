@@ -6,10 +6,12 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "im_anim.h"
+#include "license/license_manager.hpp"
 #include "platform/default_platform.hpp"
 #include "platform/linux_platform.hpp"
 #include "platform/macos_platform.hpp"
 #include "themes.hpp"
+#include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
@@ -158,6 +160,9 @@ bool Application::initialize() {
     // Restore current workspace from settings
     const std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
     currentWorkspaceId = std::stoi(workspaceIdStr);
+
+    // Load stored license
+    LicenseManager::instance().loadStoredLicense();
 
     // Restore previous connections for current workspace
     restorePreviousConnections();
@@ -699,7 +704,9 @@ void Application::renderMainUI() {
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
         ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
-        ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+        ImGui::Begin("Databases", nullptr,
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
+                         ImGuiWindowFlags_NoScrollbar);
 
         databaseSidebar->render();
         ImGui::End();
@@ -743,6 +750,10 @@ void Application::renderMainUI() {
         ImGui::PopStyleColor(1);
         ImGui::PopStyleVar(1);
     }
+
+    // Render license dialog
+    LicenseDialog::instance().render();
+
     ImGui::End();
 }
 

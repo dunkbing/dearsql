@@ -165,6 +165,10 @@ set(APP_SOURCES
     src/utils/spinner.cpp
     src/utils/crypto.cpp
     src/utils/logger.cpp
+
+    # License
+    src/license/license_manager.cpp
+    src/ui/license_dialog.cpp
 )
 
 # Add application.cpp and platform-specific files
@@ -207,6 +211,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/soci/include
     external/IconFontCppHeaders
     external/hiredis
+    external/cpp-httplib
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
     external/nativefiledialog-extended/src/include

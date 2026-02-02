@@ -135,12 +135,11 @@ void LinuxPlatform::setupTitlebar() {
     g_signal_connect(addButton_, "clicked", G_CALLBACK(onAddConnection), this);
     gtk_header_bar_pack_start(GTK_HEADER_BAR(headerBar_), addButton_);
 
-    // Workspace dropdown
+    // Workspace dropdown (packed later, after menu button)
     workspaceModel_ = gtk_string_list_new(nullptr);
     workspaceDropdown_ = gtk_drop_down_new(G_LIST_MODEL(workspaceModel_), nullptr);
     gtk_widget_set_tooltip_text(workspaceDropdown_, "Select Workspace");
     g_signal_connect(workspaceDropdown_, "notify::selected", G_CALLBACK(onWorkspaceChanged), this);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
 
     // Main menu button (hamburger menu)
     menuButton_ = gtk_menu_button_new();
@@ -209,6 +208,7 @@ void LinuxPlatform::setupTitlebar() {
                      this);
 
     gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), menuButton_);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
 
     gtk_window_set_titlebar(GTK_WINDOW(window_), headerBar_);
 

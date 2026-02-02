@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(__linux__)
+
 // Forward declare GLFWwindow since we don't use it on Linux
 struct GLFWwindow;
 
@@ -94,3 +96,5 @@ private:
     void updateImGuiKeyMods(GdkModifierType state);
     ImGuiKey gtkKeyToImGuiKey(guint keyval);
 };
+
+#endif // defined(__linux__)

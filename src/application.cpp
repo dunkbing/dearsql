@@ -7,9 +7,13 @@
 #include "database/sqlite.hpp"
 #include "im_anim.h"
 #include "license/license_manager.hpp"
-#include "platform/default_platform.hpp"
-#include "platform/linux_platform.hpp"
+#if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
+#elif defined(__linux__)
+#include "platform/linux_platform.hpp"
+#else
+#include "platform/default_platform.hpp"
+#endif
 #include "themes.hpp"
 #include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"

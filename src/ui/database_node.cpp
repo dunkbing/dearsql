@@ -39,7 +39,8 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
     const float itemWidth = ImGui::GetContentRegionAvail().x;
     const ImVec2 itemMin = cursorPos;
     const ImVec2 itemMax = ImVec2(cursorPos.x + itemWidth, cursorPos.y + itemHeight);
-    const bool willBeHovered = ImGui::IsMouseHoveringRect(itemMin, itemMax);
+    const bool anyPopupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    const bool willBeHovered = !anyPopupOpen && ImGui::IsMouseHoveringRect(itemMin, itemMax);
 
     // Animate hover alpha
     const float hoverAlpha =
@@ -202,9 +203,11 @@ void DatabaseHierarchy::renderRootNode() {
 
                 // Context menu
                 if (ImGui::BeginPopupContextItem(keyGroupId.c_str())) {
+                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                     if (ImGui::MenuItem("Refresh Keys")) {
                         redisDb->startKeysLoadAsync(true);
                     }
+                    ImGui::PopStyleVar();
                     ImGui::EndPopup();
                 }
             }
@@ -229,12 +232,14 @@ void DatabaseHierarchy::renderSQLiteNode() {
 
         // Context menu for Tables node
         if (ImGui::BeginPopupContextItem(nullptr)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
             if (ImGui::MenuItem("Create Table...")) {
                 TableDialog::instance().showCreate(sqliteDb);
             }
             if (ImGui::MenuItem("Refresh")) {
                 sqliteDb->startTablesLoadAsync();
             }
+            ImGui::PopStyleVar();
             ImGui::EndPopup();
         }
 
@@ -276,9 +281,11 @@ void DatabaseHierarchy::renderSQLiteNode() {
 
         // Context menu for Views node
         if (ImGui::BeginPopupContextItem(nullptr)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
             if (ImGui::MenuItem("Refresh")) {
                 sqliteDb->startViewsLoadAsync();
             }
+            ImGui::PopStyleVar();
             ImGui::EndPopup();
         }
 
@@ -331,6 +338,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("New SQL Editor")) {
             // For PostgreSQL, we need to use a schema node (which implements IDatabaseNode)
             if (dbData->schemasLoaded && !dbData->schemas.empty()) {
@@ -381,6 +389,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -424,6 +433,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
     // Context menu for schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("New SQL Editor")) {
             // schemaData implements IDatabaseNode, so we can pass it directly
             app.getTabManager()->createSQLEditorTab("", schemaData);
@@ -478,6 +488,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -491,12 +502,14 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                 if (ImGui::MenuItem("Create Table...")) {
                     TableDialog::instance().showCreate(schemaData, schemaData->name);
                 }
                 if (ImGui::MenuItem("Refresh")) {
                     schemaData->startTablesLoadAsync(true);
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
@@ -536,9 +549,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                 if (ImGui::MenuItem("Refresh")) {
                     schemaData->startViewsLoadAsync(true); // Force refresh
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
@@ -578,9 +593,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Sequences node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                 if (ImGui::MenuItem("Refresh")) {
                     schemaData->startSequencesLoadAsync(true);
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
@@ -635,6 +652,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("New SQL Editor")) {
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
@@ -675,6 +693,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -688,12 +707,14 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                 if (ImGui::MenuItem("Create Table...")) {
                     TableDialog::instance().showCreate(dbData);
                 }
                 if (ImGui::MenuItem("Refresh")) {
                     dbData->startTablesLoadAsync(true);
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
@@ -733,9 +754,11 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                 if (ImGui::MenuItem("Refresh")) {
                     dbData->startViewsLoadAsync(true);
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
@@ -808,6 +831,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(schemaNode, table.name);
         }
@@ -864,6 +888,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -898,6 +923,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
 
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                         if (ImGui::MenuItem("Delete...")) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -922,6 +948,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                     }
                                 });
                         }
+                        ImGui::PopStyleVar();
                         ImGui::EndPopup();
                     }
                 }
@@ -1059,12 +1086,14 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(schemaData, view.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show view structure in a tab
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 }
@@ -1107,6 +1136,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
@@ -1159,6 +1189,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -1193,6 +1224,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 
                     // Context menu for column (MySQL)
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                         if (ImGui::MenuItem("Delete...")) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -1215,6 +1247,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                     }
                                 });
                         }
+                        ImGui::PopStyleVar();
                         ImGui::EndPopup();
                     }
                 }
@@ -1352,12 +1385,14 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(dbData, view.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show view structure in a tab
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 }
@@ -1381,6 +1416,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
@@ -1430,6 +1466,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     }
                 });
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -1464,6 +1501,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
 
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
                         if (ImGui::MenuItem("Delete...")) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -1487,6 +1525,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                                     }
                                 });
                         }
+                        ImGui::PopStyleVar();
                         ImGui::EndPopup();
                     }
                 }
@@ -1624,12 +1663,14 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqlite
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("View Data")) {
             app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show view structure in a tab
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 }

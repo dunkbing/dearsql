@@ -54,10 +54,12 @@ void DatabaseSidebarNew::renderEmpty() {
     }
 
     if (ImGui::BeginPopup("AddDatabasePopup")) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         if (ImGui::MenuItem("Add Database Connection")) {
             Logger::info("Opening database connection dialog");
             showConnectionDialog();
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 }
@@ -179,9 +181,11 @@ void DatabaseSidebarNew::renderHistory() {
 
         // Context menu
         if (ImGui::BeginPopupContextItem("history_entry_menu")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
             if (ImGui::MenuItem("Copy to clipboard")) {
                 ImGui::SetClipboardText(entry.query.c_str());
             }
+            ImGui::PopStyleVar();
             ImGui::EndPopup();
         }
 
@@ -614,6 +618,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     }
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
         // SQLite-specific menu items (only when connected)
         if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
@@ -649,6 +654,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                                      db->getConnectionInfo().name));
             db->refreshConnection();
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 }

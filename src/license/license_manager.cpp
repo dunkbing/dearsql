@@ -10,12 +10,12 @@
 #include <fstream>
 
 namespace {
-constexpr const char* kSettingLicenseKey = "license_key";
-constexpr const char* kSettingInstanceId = "license_instance_id";
-constexpr const char* kSettingStatus = "license_status";
-constexpr const char* kSettingEmail = "license_email";
-constexpr const char* kSettingActivatedAt = "license_activated_at";
-}  // namespace
+    constexpr const char* kSettingLicenseKey = "license_key";
+    constexpr const char* kSettingInstanceId = "license_instance_id";
+    constexpr const char* kSettingStatus = "license_status";
+    constexpr const char* kSettingEmail = "license_email";
+    constexpr const char* kSettingActivatedAt = "license_activated_at";
+} // namespace
 
 #ifdef _WIN32
 #include <windows.h>
@@ -144,6 +144,8 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
                                          const std::string& instanceId) {
     LicenseInfo result;
 
+    Logger::info("License activation: starting for instance: " + instanceId);
+
     httplib::Client cli("https://api.lemonsqueezy.com");
     cli.set_connection_timeout(10);
     cli.set_read_timeout(30);
@@ -152,12 +154,19 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
     body["license_key"] = licenseKey;
     body["instance_name"] = instanceId;
 
+    Logger::info("License activation: sending request to /v1/licenses/activate");
+    Logger::info("License activation: request body: " + body.dump());
+
     auto res = cli.Post("/v1/licenses/activate", body.dump(), "application/json");
 
     if (!res) {
+        Logger::error("License activation: network error - could not connect");
         result.error = "Network error: could not connect to license server";
         return result;
     }
+
+    Logger::info("License activation: HTTP status: " + std::to_string(res->status));
+    Logger::info("License activation: response body: " + res->body);
 
     if (res->status != 200) {
         try {
@@ -170,6 +179,7 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
         } catch (...) {
             result.error = "Activation failed (HTTP " + std::to_string(res->status) + ")";
         }
+        Logger::error("License activation: failed - " + result.error);
         return result;
     }
 
@@ -197,11 +207,14 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
             }
 
             result.activatedAt = respJson.value("instance", json::object()).value("created_at", "");
+            Logger::info("License activation: success - status: " + result.status);
         } else {
             result.error = respJson.value("error", "Activation failed");
+            Logger::error("License activation: API returned failure - " + result.error);
         }
     } catch (const std::exception& e) {
         result.error = std::string("Failed to parse response: ") + e.what();
+        Logger::error("License activation: parse error - " + result.error);
     }
 
     return result;
@@ -211,6 +224,8 @@ LicenseInfo LicenseManager::doDeactivation(const std::string& licenseKey,
                                            const std::string& instanceId) {
     LicenseInfo result;
 
+    Logger::info("License deactivation: starting for instance: " + instanceId);
+
     httplib::Client cli("https://api.lemonsqueezy.com");
     cli.set_connection_timeout(10);
     cli.set_read_timeout(30);
@@ -219,18 +234,36 @@ LicenseInfo LicenseManager::doDeactivation(const std::string& licenseKey,
     body["license_key"] = licenseKey;
     body["instance_id"] = instanceId;
 
+    Logger::info("License deactivation: sending request to /v1/licenses/deactivate");
+    Logger::info("License deactivation: request body: " + body.dump());
+
     auto res = cli.Post("/v1/licenses/deactivate", body.dump(), "application/json");
 
     if (!res) {
+        Logger::error("License deactivation: network error - could not connect");
         result.error = "Network error: could not connect to license server";
         return result;
     }
 
+    Logger::info("License deactivation: HTTP status: " + std::to_string(res->status));
+    Logger::info("License deactivation: response body: " + res->body);
+
     if (res->status == 200) {
         result.valid = false;
         result.status = "deactivated";
+        Logger::info("License deactivation: success");
     } else {
-        result.error = "Deactivation failed (HTTP " + std::to_string(res->status) + ")";
+        try {
+            auto respJson = json::parse(res->body);
+            if (respJson.contains("error")) {
+                result.error = respJson["error"].get<std::string>();
+            } else {
+                result.error = "Deactivation failed (HTTP " + std::to_string(res->status) + ")";
+            }
+        } catch (...) {
+            result.error = "Deactivation failed (HTTP " + std::to_string(res->status) + ")";
+        }
+        Logger::error("License deactivation: failed - " + result.error);
     }
 
     return result;

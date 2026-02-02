@@ -1,6 +1,7 @@
 #include "platform/macos_platform.hpp"
 #include "application.hpp"
 #include "imgui_impl_glfw.h"
+#include "license/license_manager.hpp"
 #include "themes.hpp"
 #include <iostream>
 
@@ -9,6 +10,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 #define GLFW_EXPOSE_NATIVE_COCOA
 #import "imgui_impl_metal.h"
 #import <GLFW/glfw3native.h>
@@ -17,15 +19,21 @@
 @interface ToolbarDelegate : NSObject <NSToolbarDelegate>
 @property(nonatomic, assign) Application* app;
 @property(nonatomic, strong) NSPopUpButton* workspaceDropdown;
+@property(nonatomic, strong) NSPopover* menuPopover;
+@property(nonatomic, strong) NSButton* themeLightButton;
+@property(nonatomic, strong) NSButton* themeDarkButton;
+@property(nonatomic, strong) NSButton* themeAutoButton;
+- (void)showMenuPopover:(NSButton*)sender;
+- (void)updateThemeButtons;
 @end
 
 @implementation ToolbarDelegate
 - (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:(NSToolbar*)toolbar {
-    return @[ NSToolbarFlexibleSpaceItemIdentifier, @"WorkspaceSelector" ];
+    return @[ NSToolbarFlexibleSpaceItemIdentifier, @"WorkspaceSelector", @"MenuButton" ];
 }
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarAllowedItemIdentifiers:(NSToolbar*)toolbar {
-    return @[ @"WorkspaceSelector", NSToolbarFlexibleSpaceItemIdentifier ];
+    return @[ @"WorkspaceSelector", @"MenuButton", NSToolbarFlexibleSpaceItemIdentifier ];
 }
 
 - (NSToolbarItem*)toolbar:(NSToolbar*)toolbar
@@ -46,6 +54,24 @@
         [self.workspaceDropdown sizeToFit];
 
         item.view = self.workspaceDropdown;
+        return item;
+    } else if ([itemIdentifier isEqualToString:@"MenuButton"]) {
+        NSToolbarItem* item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
+        item.label = @"Menu";
+        item.paletteLabel = @"Menu";
+        item.toolTip = @"Main Menu";
+
+        NSButton* menuButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 32, 32)];
+        [menuButton setImage:[NSImage imageWithSystemSymbolName:@"line.3.horizontal"
+                                       accessibilityDescription:@"Menu"]];
+        [menuButton setButtonType:NSButtonTypeMomentaryPushIn];
+        [menuButton setBezelStyle:NSBezelStyleTexturedRounded];
+        [menuButton setBordered:NO];
+        [menuButton setTarget:self];
+        [menuButton setAction:@selector(showMenuPopover:)];
+        [menuButton sizeToFit];
+
+        item.view = menuButton;
         return item;
     }
     return nil;
@@ -175,6 +201,534 @@
     }
 }
 
+- (void)showMenuPopover:(NSButton*)sender {
+    @try {
+        if (!self.menuPopover) {
+            [self createMenuPopover];
+        }
+        [self updateThemeButtons];
+        [self.menuPopover showRelativeToRect:sender.bounds
+                                      ofView:sender
+                               preferredEdge:NSRectEdgeMaxY];
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in showMenuPopover: %@", exception);
+    }
+}
+
+- (void)createMenuPopover {
+    self.menuPopover = [[NSPopover alloc] init];
+    self.menuPopover.behavior = NSPopoverBehaviorTransient;
+
+    // Create content view controller
+    NSViewController* contentVC = [[NSViewController alloc] init];
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 180, 130)];
+
+    // Theme section label
+    NSTextField* themeLabel = [NSTextField labelWithString:@"Theme"];
+    themeLabel.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
+    themeLabel.textColor = [NSColor secondaryLabelColor];
+    themeLabel.frame = NSMakeRect(12, 95, 156, 16);
+    [contentView addSubview:themeLabel];
+
+    // Theme buttons container
+    CGFloat buttonWidth = 50;
+    CGFloat buttonHeight = 28;
+    CGFloat buttonY = 60;
+    CGFloat startX = 12;
+    CGFloat spacing = 4;
+
+    // Light theme button
+    self.themeLightButton =
+        [[NSButton alloc] initWithFrame:NSMakeRect(startX, buttonY, buttonWidth, buttonHeight)];
+    [self.themeLightButton setImage:[NSImage imageWithSystemSymbolName:@"sun.max"
+                                              accessibilityDescription:@"Light Theme"]];
+    [self.themeLightButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [self.themeLightButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [self.themeLightButton setTarget:self];
+    [self.themeLightButton setAction:@selector(themeLightClicked:)];
+    [self.themeLightButton setToolTip:@"Light"];
+    [contentView addSubview:self.themeLightButton];
+
+    // Dark theme button
+    self.themeDarkButton =
+        [[NSButton alloc] initWithFrame:NSMakeRect(startX + buttonWidth + spacing, buttonY,
+                                                   buttonWidth, buttonHeight)];
+    [self.themeDarkButton setImage:[NSImage imageWithSystemSymbolName:@"moon"
+                                             accessibilityDescription:@"Dark Theme"]];
+    [self.themeDarkButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [self.themeDarkButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [self.themeDarkButton setTarget:self];
+    [self.themeDarkButton setAction:@selector(themeDarkClicked:)];
+    [self.themeDarkButton setToolTip:@"Dark"];
+    [contentView addSubview:self.themeDarkButton];
+
+    // Auto theme button
+    self.themeAutoButton =
+        [[NSButton alloc] initWithFrame:NSMakeRect(startX + 2 * (buttonWidth + spacing), buttonY,
+                                                   buttonWidth, buttonHeight)];
+    [self.themeAutoButton setImage:[NSImage imageWithSystemSymbolName:@"circle.lefthalf.filled"
+                                             accessibilityDescription:@"Auto Theme"]];
+    [self.themeAutoButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [self.themeAutoButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [self.themeAutoButton setTarget:self];
+    [self.themeAutoButton setAction:@selector(themeAutoClicked:)];
+    [self.themeAutoButton setToolTip:@"System"];
+    [contentView addSubview:self.themeAutoButton];
+
+    // Separator line
+    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(12, 48, 156, 1)];
+    separator.boxType = NSBoxSeparator;
+    [contentView addSubview:separator];
+
+    // License button
+    NSButton* licenseButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 12, 156, 28)];
+    [licenseButton setTitle:@"Manage License..."];
+    [licenseButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [licenseButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [licenseButton setTarget:self];
+    [licenseButton setAction:@selector(licenseClicked:)];
+    [contentView addSubview:licenseButton];
+
+    contentVC.view = contentView;
+    self.menuPopover.contentViewController = contentVC;
+}
+
+- (void)updateThemeButtons {
+    if (!self.app || !self.themeLightButton || !self.themeDarkButton || !self.themeAutoButton) {
+        return;
+    }
+
+    bool isDark = self.app->isDarkTheme();
+
+    // Reset all buttons to default appearance
+    [self.themeLightButton setContentTintColor:nil];
+    [self.themeDarkButton setContentTintColor:nil];
+    [self.themeAutoButton setContentTintColor:nil];
+
+    // Highlight the currently selected theme
+    if (isDark) {
+        [self.themeDarkButton setContentTintColor:[NSColor controlAccentColor]];
+    } else {
+        [self.themeLightButton setContentTintColor:[NSColor controlAccentColor]];
+    }
+}
+
+- (void)themeLightClicked:(id)sender {
+    @try {
+        if (self.app) {
+            self.app->setDarkTheme(false);
+        }
+        [self updateThemeButtons];
+        [self.menuPopover close];
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in themeLightClicked: %@", exception);
+    }
+}
+
+- (void)themeDarkClicked:(id)sender {
+    @try {
+        if (self.app) {
+            self.app->setDarkTheme(true);
+        }
+        [self updateThemeButtons];
+        [self.menuPopover close];
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in themeDarkClicked: %@", exception);
+    }
+}
+
+- (void)themeAutoClicked:(id)sender {
+    @try {
+        // Detect system appearance and set accordingly
+        if (self.app) {
+            NSAppearance* appearance = [NSApp effectiveAppearance];
+            NSAppearanceName appearanceName = [appearance bestMatchFromAppearancesWithNames:@[
+                NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+            ]];
+            bool systemIsDark = [appearanceName isEqualToString:NSAppearanceNameDarkAqua];
+            self.app->setDarkTheme(systemIsDark);
+        }
+        [self updateThemeButtons];
+        [self.menuPopover close];
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in themeAutoClicked: %@", exception);
+    }
+}
+
+- (void)licenseClicked:(id)sender {
+    @try {
+        [self.menuPopover close];
+        [self showLicenseDialog];
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in licenseClicked: %@", exception);
+    }
+}
+
+- (void)ensureEditMenu {
+    // Check if Edit menu already exists
+    NSMenu* mainMenu = [NSApp mainMenu];
+    if (!mainMenu) {
+        mainMenu = [[NSMenu alloc] init];
+        [NSApp setMainMenu:mainMenu];
+    }
+
+    // Look for existing Edit menu
+    NSMenuItem* editMenuItem = nil;
+    for (NSMenuItem* item in mainMenu.itemArray) {
+        if ([item.title isEqualToString:@"Edit"]) {
+            editMenuItem = item;
+            break;
+        }
+    }
+
+    if (!editMenuItem) {
+        // Create Edit menu
+        editMenuItem = [[NSMenuItem alloc] init];
+        editMenuItem.title = @"Edit";
+        NSMenu* editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+        // Undo
+        NSMenuItem* undoItem = [[NSMenuItem alloc] initWithTitle:@"Undo"
+                                                          action:@selector(undo:)
+                                                   keyEquivalent:@"z"];
+        [editMenu addItem:undoItem];
+
+        // Redo
+        NSMenuItem* redoItem = [[NSMenuItem alloc] initWithTitle:@"Redo"
+                                                          action:@selector(redo:)
+                                                   keyEquivalent:@"Z"];
+        [editMenu addItem:redoItem];
+
+        [editMenu addItem:[NSMenuItem separatorItem]];
+
+        // Cut
+        NSMenuItem* cutItem = [[NSMenuItem alloc] initWithTitle:@"Cut"
+                                                         action:@selector(cut:)
+                                                  keyEquivalent:@"x"];
+        [editMenu addItem:cutItem];
+
+        // Copy
+        NSMenuItem* copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy"
+                                                          action:@selector(copy:)
+                                                   keyEquivalent:@"c"];
+        [editMenu addItem:copyItem];
+
+        // Paste
+        NSMenuItem* pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste"
+                                                           action:@selector(paste:)
+                                                    keyEquivalent:@"v"];
+        [editMenu addItem:pasteItem];
+
+        // Select All
+        NSMenuItem* selectAllItem = [[NSMenuItem alloc] initWithTitle:@"Select All"
+                                                               action:@selector(selectAll:)
+                                                        keyEquivalent:@"a"];
+        [editMenu addItem:selectAllItem];
+
+        editMenuItem.submenu = editMenu;
+        [mainMenu addItem:editMenuItem];
+    }
+}
+
+- (void)showLicenseDialog {
+    // Ensure Edit menu exists for copy/paste support
+    [self ensureEditMenu];
+
+    auto& licenseManager = LicenseManager::instance();
+
+    // Get the main window
+    NSWindow* mainWindow = nil;
+    if (self.app) {
+        GLFWwindow* glfwWindow = self.app->getWindow();
+        if (glfwWindow) {
+            mainWindow = glfwGetCocoaWindow(glfwWindow);
+        }
+    }
+
+    // Create dialog window
+    NSWindow* dialog =
+        [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 200)
+                                    styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                                      backing:NSBackingStoreBuffered
+                                        defer:NO];
+    [dialog setTitle:@"Manage License"];
+    [dialog center];
+
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 200)];
+
+    if (licenseManager.hasValidLicense()) {
+        // Licensed view
+        const auto& info = licenseManager.getLicenseInfo();
+
+        std::string maskedKey = info.licenseKey;
+        if (maskedKey.length() > 8) {
+            maskedKey = maskedKey.substr(0, 4) + "..." + maskedKey.substr(maskedKey.length() - 4);
+        }
+
+        // Status indicator
+        NSImageView* statusIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(24, 150, 20, 20)];
+        statusIcon.image = [NSImage imageWithSystemSymbolName:@"checkmark.circle.fill"
+                                     accessibilityDescription:@"Active"];
+        statusIcon.contentTintColor = [NSColor systemGreenColor];
+        [contentView addSubview:statusIcon];
+
+        NSTextField* statusLabel = [NSTextField labelWithString:@"License Active"];
+        statusLabel.frame = NSMakeRect(48, 148, 200, 24);
+        statusLabel.font = [NSFont boldSystemFontOfSize:16];
+        [contentView addSubview:statusLabel];
+
+        // Email label
+        NSTextField* emailLabel = [NSTextField labelWithString:@"Email:"];
+        emailLabel.frame = NSMakeRect(24, 110, 60, 20);
+        emailLabel.textColor = [NSColor secondaryLabelColor];
+        emailLabel.alignment = NSTextAlignmentRight;
+        [contentView addSubview:emailLabel];
+
+        NSString* emailValue = info.customerEmail.empty()
+                                   ? @"N/A"
+                                   : [NSString stringWithUTF8String:info.customerEmail.c_str()];
+        NSTextField* emailValueLabel = [NSTextField labelWithString:emailValue];
+        emailValueLabel.frame = NSMakeRect(92, 110, 280, 20);
+        emailValueLabel.selectable = YES;
+        [contentView addSubview:emailValueLabel];
+
+        // Key label
+        NSTextField* keyLabel = [NSTextField labelWithString:@"Key:"];
+        keyLabel.frame = NSMakeRect(24, 85, 60, 20);
+        keyLabel.textColor = [NSColor secondaryLabelColor];
+        keyLabel.alignment = NSTextAlignmentRight;
+        [contentView addSubview:keyLabel];
+
+        NSTextField* keyValueLabel =
+            [NSTextField labelWithString:[NSString stringWithUTF8String:maskedKey.c_str()]];
+        keyValueLabel.frame = NSMakeRect(92, 85, 280, 20);
+        [contentView addSubview:keyValueLabel];
+
+        // Status message label (for errors)
+        NSTextField* statusMessageLabel = [NSTextField labelWithString:@""];
+        statusMessageLabel.frame = NSMakeRect(24, 55, 352, 20);
+        statusMessageLabel.textColor = [NSColor systemRedColor];
+        [contentView addSubview:statusMessageLabel];
+
+        // Buttons
+        NSButton* closeButton = [[NSButton alloc] initWithFrame:NSMakeRect(290, 16, 90, 32)];
+        closeButton.title = @"Close";
+        closeButton.bezelStyle = NSBezelStyleRounded;
+        closeButton.target = dialog;
+        closeButton.action = @selector(close);
+        [contentView addSubview:closeButton];
+
+        NSButton* deactivateButton = [[NSButton alloc] initWithFrame:NSMakeRect(180, 16, 100, 32)];
+        deactivateButton.title = @"Deactivate";
+        deactivateButton.bezelStyle = NSBezelStyleRounded;
+        deactivateButton.hasDestructiveAction = YES;
+        [contentView addSubview:deactivateButton];
+
+        // Store context in the button using associated objects
+        objc_setAssociatedObject(deactivateButton, "dialog", dialog, OBJC_ASSOCIATION_RETAIN);
+        objc_setAssociatedObject(deactivateButton, "statusLabel", statusMessageLabel,
+                                 OBJC_ASSOCIATION_RETAIN);
+
+        [deactivateButton setTarget:self];
+        [deactivateButton setAction:@selector(deactivateLicenseFromDialog:)];
+
+    } else {
+        // Unlicensed view
+        NSTextField* titleLabel = [NSTextField labelWithString:@"Register License"];
+        titleLabel.frame = NSMakeRect(24, 155, 352, 24);
+        titleLabel.font = [NSFont boldSystemFontOfSize:16];
+        [contentView addSubview:titleLabel];
+
+        NSTextField* descLabel =
+            [NSTextField labelWithString:@"Enter your license key to activate DearSQL:"];
+        descLabel.frame = NSMakeRect(24, 130, 352, 20);
+        [contentView addSubview:descLabel];
+
+        // License key text field
+        NSTextField* keyField = [[NSTextField alloc] initWithFrame:NSMakeRect(24, 95, 352, 28)];
+        keyField.placeholderString = @"XXXX-XXXX-XXXX-XXXX";
+        keyField.editable = YES;
+        keyField.selectable = YES;
+        keyField.bezeled = YES;
+        keyField.bezelStyle = NSTextFieldRoundedBezel;
+        [contentView addSubview:keyField];
+
+        // Store keyField to make it first responder later
+        objc_setAssociatedObject(dialog, "keyField", keyField, OBJC_ASSOCIATION_RETAIN);
+
+        // Status message label
+        NSTextField* statusMessageLabel = [NSTextField labelWithString:@""];
+        statusMessageLabel.frame = NSMakeRect(24, 70, 352, 20);
+        statusMessageLabel.textColor = [NSColor systemRedColor];
+        [contentView addSubview:statusMessageLabel];
+
+        // Purchase link
+        NSTextField* linkText = [NSTextField labelWithString:@"Don't have a license?"];
+        linkText.frame = NSMakeRect(24, 45, 130, 20);
+        linkText.textColor = [NSColor secondaryLabelColor];
+        [contentView addSubview:linkText];
+
+        NSButton* purchaseLink = [[NSButton alloc] initWithFrame:NSMakeRect(154, 43, 100, 24)];
+        purchaseLink.title = @"Purchase one";
+        purchaseLink.bezelStyle = NSBezelStyleInline;
+        purchaseLink.bordered = NO;
+        NSMutableAttributedString* attrTitle = [[NSMutableAttributedString alloc]
+            initWithString:@"Purchase one"
+                attributes:@{
+                    NSForegroundColorAttributeName : [NSColor linkColor],
+                    NSUnderlineStyleAttributeName : @(NSUnderlineStyleSingle)
+                }];
+        purchaseLink.attributedTitle = attrTitle;
+        purchaseLink.target = self;
+        purchaseLink.action = @selector(openPurchaseLink:);
+        [contentView addSubview:purchaseLink];
+
+        // Buttons
+        NSButton* cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(200, 16, 90, 32)];
+        cancelButton.title = @"Cancel";
+        cancelButton.bezelStyle = NSBezelStyleRounded;
+        cancelButton.target = dialog;
+        cancelButton.action = @selector(close);
+        [contentView addSubview:cancelButton];
+
+        NSButton* activateButton = [[NSButton alloc] initWithFrame:NSMakeRect(295, 16, 90, 32)];
+        activateButton.title = @"Activate";
+        activateButton.bezelStyle = NSBezelStyleRounded;
+        activateButton.keyEquivalent = @"\r"; // Enter key
+        [contentView addSubview:activateButton];
+
+        // Store references for the callback
+        objc_setAssociatedObject(activateButton, "dialog", dialog, OBJC_ASSOCIATION_RETAIN);
+        objc_setAssociatedObject(activateButton, "keyField", keyField, OBJC_ASSOCIATION_RETAIN);
+        objc_setAssociatedObject(activateButton, "statusLabel", statusMessageLabel,
+                                 OBJC_ASSOCIATION_RETAIN);
+
+        activateButton.target = self;
+        activateButton.action = @selector(activateLicenseFromDialog:);
+    }
+
+    dialog.contentView = contentView;
+
+    // Get the keyField if we're in unlicensed mode
+    NSTextField* keyFieldToFocus = objc_getAssociatedObject(dialog, "keyField");
+
+    // Set initial first responder
+    if (keyFieldToFocus) {
+        dialog.initialFirstResponder = keyFieldToFocus;
+    }
+
+    // Use modal window instead of sheet for proper keyboard support (Cmd+V paste)
+    if (mainWindow) {
+        [dialog setLevel:NSModalPanelWindowLevel];
+        NSRect mainFrame = mainWindow.frame;
+        NSRect dialogFrame = dialog.frame;
+        CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
+        CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
+        [dialog setFrameOrigin:NSMakePoint(x, y)];
+    }
+
+    [dialog makeKeyAndOrderFront:nil];
+    if (keyFieldToFocus) {
+        [dialog makeFirstResponder:keyFieldToFocus];
+    }
+}
+
+- (void)openPurchaseLink:(id)sender {
+    NSURL* url = [NSURL
+        URLWithString:
+            @"https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"];
+    [[NSWorkspace sharedWorkspace] openURL:url];
+}
+
+- (void)activateLicenseFromDialog:(NSButton*)sender {
+    NSWindow* dialog = objc_getAssociatedObject(sender, "dialog");
+    NSTextField* keyField = objc_getAssociatedObject(sender, "keyField");
+    NSTextField* statusLabel = objc_getAssociatedObject(sender, "statusLabel");
+
+    NSString* key = keyField.stringValue;
+    if (key.length == 0) {
+        statusLabel.stringValue = @"Please enter a license key";
+        return;
+    }
+
+    statusLabel.stringValue = @"Activating...";
+    statusLabel.textColor = [NSColor secondaryLabelColor];
+    sender.enabled = NO;
+
+    std::string licenseKey = [key UTF8String];
+
+    // Retain objects for async operation (MRC)
+    [dialog retain];
+    [sender retain];
+    [statusLabel retain];
+
+    LicenseManager::instance().activateLicense(
+        licenseKey, [dialog, sender, statusLabel](const LicenseInfo& result) {
+            NSLog(@"License activation callback: valid=%d, status=%s, error=%s", result.valid,
+                  result.status.c_str(), result.error.c_str());
+
+            // Capture result values before dispatch since result may go out of scope
+            bool isValid = result.valid;
+            std::string errorMsg = result.error;
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+              NSLog(@"License activation main thread: isValid=%d", isValid);
+              if (isValid) {
+                  // Success - close dialog
+                  NSLog(@"License activation: closing dialog");
+                  [dialog close];
+              } else {
+                  // Error
+                  std::string err = errorMsg.empty() ? "Activation failed" : errorMsg;
+                  NSLog(@"License activation: showing error - %s", err.c_str());
+                  statusLabel.stringValue = [NSString stringWithUTF8String:err.c_str()];
+                  statusLabel.textColor = [NSColor systemRedColor];
+                  sender.enabled = YES;
+              }
+              // Release retained objects
+              [dialog release];
+              [sender release];
+              [statusLabel release];
+            });
+        });
+}
+
+- (void)deactivateLicenseFromDialog:(NSButton*)sender {
+    NSWindow* dialog = objc_getAssociatedObject(sender, "dialog");
+    NSTextField* statusLabel = objc_getAssociatedObject(sender, "statusLabel");
+
+    statusLabel.stringValue = @"Deactivating...";
+    statusLabel.textColor = [NSColor secondaryLabelColor];
+    sender.enabled = NO;
+
+    // Retain objects for async operation (MRC)
+    [dialog retain];
+    [sender retain];
+    [statusLabel retain];
+
+    LicenseManager::instance().deactivateLicense(
+        [dialog, sender, statusLabel](const LicenseInfo& result) {
+            // Capture result values before dispatch since result may go out of scope
+            std::string errorMsg = result.error;
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+              if (errorMsg.empty()) {
+                  // Success - close dialog
+                  [dialog close];
+              } else {
+                  // Error
+                  statusLabel.stringValue = [NSString stringWithUTF8String:errorMsg.c_str()];
+                  statusLabel.textColor = [NSColor systemRedColor];
+                  sender.enabled = YES;
+              }
+              // Release retained objects
+              [dialog release];
+              [sender release];
+              [statusLabel release];
+            });
+        });
+}
+
 @end
 
 MacOSPlatform::MacOSPlatform(Application* app) : app_(app), window_(nullptr) {
@@ -243,8 +797,8 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
 
-    // Create custom title bar accessory view with sidebar and plus buttons
-    NSView* buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
+    // Create custom title bar accessory view with sidebar, plus, and menu buttons
+    NSView* buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 105, 0)];
 
     // Sidebar toggle button
     NSButton* sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
@@ -268,6 +822,17 @@ void MacOSPlatform::setupTitlebar() {
     [plusButton setBordered:NO];
     [buttonContainer addSubview:plusButton];
 
+    // Hamburger menu button
+    NSButton* menuButton = [[NSButton alloc] initWithFrame:NSMakeRect(64, 10, 30, 30)];
+    [menuButton setImage:[NSImage imageWithSystemSymbolName:@"line.3.horizontal"
+                                   accessibilityDescription:@"Menu"]];
+    [menuButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [menuButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [menuButton setTarget:toolbarDelegate_];
+    [menuButton setAction:@selector(showMenuPopover:)];
+    [menuButton setBordered:NO];
+    [buttonContainer addSubview:menuButton];
+
     NSTitlebarAccessoryViewController* accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];
     accessoryController.view = buttonContainer;
@@ -275,7 +840,7 @@ void MacOSPlatform::setupTitlebar() {
 
     [nsWindow addTitlebarAccessoryViewController:accessoryController];
 
-    // Connect button
+    // Toolbar for workspace selector and menu button
     NSToolbar* toolbar = [[NSToolbar alloc] initWithIdentifier:@"MainToolbar"];
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
     toolbar.allowsUserCustomization = NO;
@@ -283,8 +848,7 @@ void MacOSPlatform::setupTitlebar() {
 
     [nsWindow setToolbar:toolbar];
 
-    std::cout << "Custom titlebar accessory view created for sidebar and log panel toggles"
-              << std::endl;
+    std::cout << "Custom titlebar and toolbar configured" << std::endl;
 
     // Set background color to match app theme
     const auto& colors = app_->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;

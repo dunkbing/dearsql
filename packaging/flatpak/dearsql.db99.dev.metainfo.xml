@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <component type="desktop-application">
   <id>dearsql.db99.dev</id>
   <name>DearSQL</name>
@@ -15,13 +15,20 @@
 
   <launchable type="desktop-id">dearsql.db99.dev.desktop</launchable>
 
-  <url type="homepage">https://db99.dev</url>
+  <url type="homepage">https://dearsql.db99.dev</url>
 
   <provides>
     <binary>dear-sql</binary>
   </provides>
 
   <content_rating type="oars-1.1" />
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://dearsql.db99.dev/sc_gtk.webp</image>
+      <caption>DearSQL main interface</caption>
+    </screenshot>
+  </screenshots>
 
   <releases>
     <release version="0.1.0" date="2026-02-03">

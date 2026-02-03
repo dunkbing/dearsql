@@ -71,7 +71,6 @@ private:
     void startQueryExecutionAsync(const std::string& query);
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
-    void populateAutoCompleteKeywords();
 
     // Render component helper methods
     void renderConnectionInfo();

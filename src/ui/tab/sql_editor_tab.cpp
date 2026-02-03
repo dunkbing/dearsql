@@ -8,17 +8,13 @@
 #include <chrono>
 #include <format>
 #include <future>
-#include <ranges>
-#include <set>
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
                            const std::string& schemaName)
     : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName) {
-    sqlEditor.SetLanguageDefinition(TextEditor::LanguageDefinitionId::Sql);
+    sqlEditor.SetLanguage(TextEditor::Language::Sql());
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
-
-    populateAutoCompleteKeywords();
 }
 
 SQLEditorTab::~SQLEditorTab() {
@@ -38,7 +34,7 @@ void SQLEditorTab::render() {
 
     if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                           ImGuiWindowFlags_NoScrollbar)) {
-        sqlEditor.Render("##SQL", true, ImVec2(-1, -1), true);
+        sqlEditor.Render("##SQL", ImVec2(-1, -1), true);
         sqlQuery = sqlEditor.GetText();
     }
     ImGui::EndChild();
@@ -229,36 +225,6 @@ void SQLEditorTab::cancelQueryExecution() {
     queryTableData.clear();
 }
 
-void SQLEditorTab::populateAutoCompleteKeywords() {
-    if (!node_) {
-        return;
-    }
-
-    std::set<std::string> uniqueKeywords;
-
-    // Add table names and column names from the node
-    if (node_->isTablesLoaded()) {
-        for (const auto& table : node_->getTables()) {
-            uniqueKeywords.insert(table.name);
-            for (const auto& column : table.columns) {
-                uniqueKeywords.insert(column.name);
-            }
-        }
-    }
-
-    // Add view names and column names
-    if (node_->isViewsLoaded()) {
-        for (const auto& view : node_->getViews()) {
-            uniqueKeywords.insert(view.name);
-            for (const auto& column : view.columns) {
-                uniqueKeywords.insert(column.name);
-            }
-        }
-    }
-
-    const std::vector extraKeywords(uniqueKeywords.begin(), uniqueKeywords.end());
-    sqlEditor.SetExtraKeywords(extraKeywords);
-}
 
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,
                                           float minSize2) const {

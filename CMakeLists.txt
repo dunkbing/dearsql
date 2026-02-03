@@ -47,7 +47,14 @@ set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for hiredis" FORCE)
 add_subdirectory(external/hiredis)
 
-# mongo
+# mongo-c-driver (must be before mongo-cxx-driver)
+set(ENABLE_AUTOMATIC_INIT_AND_CLEANUP OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTS OFF CACHE BOOL "Disable mongo-c tests" FORCE)
+set(ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
+add_subdirectory(external/mongo-c-driver)
+
+# mongo-cxx-driver
 set(ENABLE_TESTS OFF CACHE BOOL "Disable mongocxx tests" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for mongo" FORCE)
 add_subdirectory(external/mongo-cxx-driver)
@@ -88,8 +95,7 @@ set(IMGUI_SOURCES
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
-    external/ImGuiColorTextEdit/TextEditor.cpp
-    external/ImGuiColorTextEdit/LanguageDefinitions.cpp
+    external/ImGuiPack/3rdparty/imgui_imguicolortextedit/TextEditor.cpp
 )
 
 # Platform-specific ImGui backend
@@ -228,7 +234,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     include
     external/imgui
     external/imgui/backends
-    external/ImGuiColorTextEdit
+    external/ImGuiPack/3rdparty/imgui_imguicolortextedit
     external/imgui-node-editor
     external/ImAnim
     external/json/include
@@ -348,3 +354,15 @@ target_link_libraries(database_tests PRIVATE
 )
 
 add_test(NAME database_tests COMMAND database_tests)
+
+# Install rules for Linux packaging
+if(UNIX AND NOT APPLE)
+    install(TARGETS ${PROJECT_NAME} DESTINATION bin)
+    install(FILES packaging/flatpak/dearsql.db99.dev.desktop
+            DESTINATION share/applications)
+    install(FILES packaging/flatpak/dearsql.db99.dev.metainfo.xml
+            DESTINATION share/metainfo)
+    install(FILES assets/appicon.png
+            DESTINATION share/icons/hicolor/256x256/apps
+            RENAME dearsql.db99.dev.png)
+endif()

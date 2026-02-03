@@ -18,13 +18,38 @@ configure_file(
 
 # Dependencies
 add_subdirectory(external/json)
+
+# SQLite3 - use embedded amalgamation for portable builds (must be before SOCI)
+add_library(sqlite3_static STATIC external/sqlite3/sqlite3.c)
+target_include_directories(sqlite3_static PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external/sqlite3>
+)
+target_compile_definitions(sqlite3_static PRIVATE
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_ENABLE_RTREE
+)
+# Create SQLite::SQLite3 alias that SOCI/CMake expects
+add_library(SQLite::SQLite3 ALIAS sqlite3_static)
+
+# SOCI - build as static for portable app bundle
+set(SOCI_SHARED OFF CACHE BOOL "Build SOCI as static library" FORCE)
+set(SOCI_TESTS OFF CACHE BOOL "Disable SOCI tests" FORCE)
+set(SOCI_SQLITE3 ON CACHE BOOL "Build SOCI SQLite3 backend" FORCE)
+# Tell SOCI we already have SQLite3
+set(SQLite3_FOUND TRUE CACHE BOOL "" FORCE)
+set(SQLite3_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/sqlite3 CACHE PATH "" FORCE)
+set(SQLite3_LIBRARIES sqlite3_static CACHE STRING "" FORCE)
 add_subdirectory(external/soci)
-#redis
+
+# hiredis
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for hiredis" FORCE)
 add_subdirectory(external/hiredis)
+
 # mongo
 set(ENABLE_TESTS OFF CACHE BOOL "Disable mongocxx tests" FORCE)
-set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libs" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for mongo" FORCE)
 add_subdirectory(external/mongo-cxx-driver)
 
 # GoogleTest
@@ -42,7 +67,6 @@ add_subdirectory(external/nativefiledialog-extended)
 enable_testing()
 
 # Find system packages
-find_package(SQLite3 REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
 
@@ -225,6 +249,7 @@ endif()
 
 # Link libraries (common)
 target_link_libraries(${PROJECT_NAME} PRIVATE
+    sqlite3_static
     soci_sqlite3
     soci_postgresql
     soci_mysql
@@ -233,8 +258,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     hiredis
-    mongocxx_shared
-    bsoncxx_shared
+    mongocxx_static
+    bsoncxx_static
 )
 
 # Platform-specific linking
@@ -312,13 +337,14 @@ target_include_directories(database_tests PRIVATE
 
 target_link_libraries(database_tests PRIVATE
     gtest_main
+    sqlite3_static
     soci_sqlite3
     soci_postgresql
     soci_mysql
     PostgreSQL::PostgreSQL
     hiredis
-    mongocxx_shared
-    bsoncxx_shared
+    mongocxx_static
+    bsoncxx_static
 )
 
 add_test(NAME database_tests COMMAND database_tests)

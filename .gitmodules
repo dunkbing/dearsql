@@ -14,9 +14,6 @@
 [submodule "external/IconFontCppHeaders"]
 	path = external/IconFontCppHeaders
 	url = https://github.com/juliettef/IconFontCppHeaders.git
-[submodule "external/ImGuiColorTextEdit"]
-	path = external/ImGuiColorTextEdit
-	url = https://github.com/dunkbing/ImGuiColorTextEdit.git
 [submodule "external/hiredis"]
 	path = external/hiredis
 	url = https://github.com/redis/hiredis.git
@@ -39,3 +36,9 @@
 [submodule "external/cpp-httplib"]
 	path = external/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
+[submodule "external/mongo-c-driver"]
+	path = external/mongo-c-driver
+	url = https://github.com/mongodb/mongo-c-driver.git
+[submodule "external/ImGuiPack"]
+	path = external/ImGuiPack
+	url = https://github.com/aiekick/ImGuiPack

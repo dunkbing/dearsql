@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dearsql.db99.dev</id>
+  <name>DearSQL</name>
+  <summary>SQL Database Client</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+
+  <description>
+    <p>
+      DearSQL is a desktop SQL client for connecting to SQLite, PostgreSQL,
+      MySQL, Redis, and MongoDB databases.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">dearsql.db99.dev.desktop</launchable>
+
+  <url type="homepage">https://db99.dev</url>
+
+  <provides>
+    <binary>dear-sql</binary>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-02-03">
+      <description>
+        <p>Initial release</p>
+      </description>
+    </release>
+  </releases>
+</component>

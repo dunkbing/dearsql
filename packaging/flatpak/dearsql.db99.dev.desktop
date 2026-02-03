@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=DearSQL
+Comment=SQL Database Client
+Exec=dear-sql
+Icon=dearsql.db99.dev
+Terminal=false
+Type=Application
+Categories=Development;Database;IDE;
+Keywords=sql;database;sqlite;postgresql;mysql;redis;mongodb;

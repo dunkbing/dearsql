@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+SQLITE_DIR="$PROJECT_DIR/external/sqlite3"
+
+# SQLite version
+SQLITE_YEAR="2026"
+SQLITE_VERSION="3510200"  # 3.51.2
+
+echo "=== DearSQL Setup ==="
+
+# Install system dependencies based on platform
+install_dependencies() {
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command -v apt &> /dev/null; then
+            echo "Installing Ubuntu/Debian dependencies..."
+            sudo apt update
+            sudo apt install -y \
+                build-essential \
+                cmake \
+                libsqlite3-dev \
+                libpq-dev \
+                libgtk-4-dev \
+                libepoxy-dev \
+                libssl-dev \
+                libmysqlclient-dev \
+                libboost-regex-dev \
+                libdbus-1-dev \
+                unzip
+        elif command -v dnf &> /dev/null; then
+            echo "Installing Fedora dependencies..."
+            sudo dnf install -y \
+                gcc-c++ \
+                cmake \
+                sqlite-devel \
+                libpq-devel \
+                gtk4-devel \
+                libepoxy-devel \
+                openssl-devel \
+                mysql-devel \
+                boost-devel \
+                dbus-devel \
+                unzip
+        else
+            echo "Warning: Unknown Linux distro, skipping system dependencies"
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        if command -v brew &> /dev/null; then
+            echo "Installing macOS dependencies via Homebrew..."
+            brew install cmake openssl postgresql mysql glfw
+        else
+            echo "Warning: Homebrew not found, skipping system dependencies"
+        fi
+    else
+        echo "Warning: Unknown platform, skipping system dependencies"
+    fi
+}
+
+# Download SQLite amalgamation
+download_sqlite() {
+    if [ -f "$SQLITE_DIR/sqlite3.c" ]; then
+        echo "SQLite amalgamation already exists, skipping download"
+        return
+    fi
+
+    echo "Downloading SQLite amalgamation..."
+
+    SQLITE_URL="https://www.sqlite.org/${SQLITE_YEAR}/sqlite-amalgamation-${SQLITE_VERSION}.zip"
+    TMP_ZIP="/tmp/sqlite3-$$.zip"
+    TMP_DIR="/tmp/sqlite3-$$"
+
+    mkdir -p "$SQLITE_DIR"
+
+    if command -v curl &> /dev/null; then
+        curl -L "$SQLITE_URL" -o "$TMP_ZIP"
+    elif command -v wget &> /dev/null; then
+        wget "$SQLITE_URL" -O "$TMP_ZIP"
+    else
+        echo "Error: curl or wget required" >&2
+        exit 1
+    fi
+
+    unzip -q "$TMP_ZIP" -d "$TMP_DIR"
+    mv "$TMP_DIR"/sqlite-amalgamation-*/* "$SQLITE_DIR/"
+    rm -rf "$TMP_ZIP" "$TMP_DIR"
+
+    echo "SQLite amalgamation installed to external/sqlite3"
+}
+
+# Initialize submodules
+init_submodules() {
+    if [ ! -f "$PROJECT_DIR/external/imgui/imgui.cpp" ]; then
+        echo "Initializing git submodules..."
+        cd "$PROJECT_DIR"
+        git submodule update --init --recursive
+    else
+        echo "Git submodules already initialized"
+    fi
+}
+
+# Parse arguments
+SKIP_DEPS=false
+for arg in "$@"; do
+    case $arg in
+        --skip-deps)
+            SKIP_DEPS=true
+            ;;
+    esac
+done
+
+# Run setup steps
+if [ "$SKIP_DEPS" = false ]; then
+    install_dependencies
+fi
+init_submodules
+download_sqlite
+
+echo "=== Setup complete ==="

@@ -63,7 +63,7 @@ Version: ${VERSION}
 Section: database
 Priority: optional
 Architecture: ${ARCH}
-Depends: libpq5, libmariadb3 | libmysqlclient21, libsqlite3-0, libgl1, libx11-6
+Depends: libgtk-4-1, libpq5, libmariadb3 | libmysqlclient21, libssl3
 Maintainer: ${MAINTAINER}
 Description: Desktop SQL client
  A modern GUI SQL client for SQLite, PostgreSQL, MySQL, and Redis databases.

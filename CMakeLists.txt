@@ -393,11 +393,11 @@ add_test(NAME database_tests COMMAND database_tests)
 # Install rules for Linux packaging
 if(UNIX AND NOT APPLE)
     install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-    install(FILES packaging/flatpak/dearsql.db99.dev.desktop
+    install(FILES packaging/flatpak/io.gitlab.dunkbing.dearsql.desktop
             DESTINATION share/applications)
-    install(FILES packaging/flatpak/dearsql.db99.dev.metainfo.xml
+    install(FILES packaging/flatpak/io.gitlab.dunkbing.dearsql.metainfo.xml
             DESTINATION share/metainfo)
     install(FILES assets/appicon.png
             DESTINATION share/icons/hicolor/256x256/apps
-            RENAME dearsql.db99.dev.png)
+            RENAME io.gitlab.dunkbing.dearsql.png)
 endif()

@@ -2,7 +2,7 @@
 Name=DearSQL
 Comment=SQL Database Client
 Exec=dear-sql
-Icon=dearsql.db99.dev
+Icon=io.gitlab.dunkbing.dearsql
 Terminal=false
 Type=Application
 Categories=Development;Database;IDE;

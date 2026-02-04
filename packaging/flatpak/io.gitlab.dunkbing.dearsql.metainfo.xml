@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <component type="desktop-application">
-  <id>dearsql.db99.dev</id>
+  <id>io.gitlab.dunkbing.dearsql</id>
   <name>DearSQL</name>
   <summary>SQL Database Client</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -13,7 +13,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">dearsql.db99.dev.desktop</launchable>
+  <launchable type="desktop-id">io.gitlab.dunkbing.dearsql.desktop</launchable>
 
   <url type="homepage">https://dearsql.db99.dev</url>
 

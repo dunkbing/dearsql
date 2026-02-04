@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
+
+override_dh_auto_build:
+	dh_auto_build -- dear-sql
+
+override_dh_auto_install:
+	install -Dm755 obj-*/dear-sql debian/dearsql/usr/bin/dearsql
+	install -Dm644 packaging/flatpak/dearsql.db99.dev.desktop debian/dearsql/usr/share/applications/dearsql.db99.dev.desktop
+	install -Dm644 assets/appicon.png debian/dearsql/usr/share/icons/hicolor/256x256/apps/dearsql.db99.dev.png

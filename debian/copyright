@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: dearsql
+Upstream-Contact: bing@db99.dev
+Source: https://gitlab.com/dunkbing/dearsql
+
+Files: *
+Copyright: 2026 Bing Bui
+License: Proprietary
+ All rights reserved.

@@ -373,6 +373,11 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
             db = std::make_shared<MongoDBDatabase>(conn.connectionInfo);
+        } else {
+            Logger::warn(std::format("Unknown database type {} for connection '{}', skipping",
+                                     static_cast<int>(conn.connectionInfo.type),
+                                     conn.connectionInfo.name));
+            continue;
         }
 
         if (db) {

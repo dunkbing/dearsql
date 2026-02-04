@@ -42,3 +42,6 @@
 [submodule "external/ImGuiPack"]
 	path = external/ImGuiPack
 	url = https://github.com/aiekick/ImGuiPack
+[submodule "external/mariadb-connector-c"]
+	path = external/mariadb-connector-c
+	url = https://github.com/mariadb-corporation/mariadb-connector-c.git

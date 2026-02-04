@@ -17,7 +17,7 @@
 enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS, MONGODB };
 
 struct DatabaseConnectionInfo {
-    DatabaseType type;
+    DatabaseType type = DatabaseType::SQLITE;
     std::string name;
     std::string path; // for SQLite file path
     std::string host;

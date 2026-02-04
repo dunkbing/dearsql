@@ -280,8 +280,9 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
             } else if (typeStr == "mongodb") {
                 conn.connectionInfo.type = DatabaseType::MONGODB;
             } else {
-                Logger::warn(std::format("Unknown database type '{}' for connection '{}'", typeStr,
-                                         conn.connectionInfo.name));
+                Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
+                                         typeStr, conn.connectionInfo.name));
+                continue;
             }
 
             // Use convertRowValue for type-safe column access
@@ -550,6 +551,10 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                 conn.connectionInfo.type = DatabaseType::REDIS;
             } else if (typeStr == "mongodb") {
                 conn.connectionInfo.type = DatabaseType::MONGODB;
+            } else {
+                Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
+                                         typeStr, conn.connectionInfo.name));
+                continue;
             }
 
             std::string hostStr = convertRowValue(row, 3);

@@ -32,6 +32,31 @@ target_compile_definitions(sqlite3_static PRIVATE
 # Create SQLite::SQLite3 alias that SOCI/CMake expects
 add_library(SQLite::SQLite3 ALIAS sqlite3_static)
 
+# MariaDB Connector/C - build as static for portable builds (must be before SOCI)
+set(WITH_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(WITH_SSL "OPENSSL" CACHE STRING "" FORCE)
+set(WITH_CURL OFF CACHE BOOL "" FORCE)
+set(WITH_EXTERNAL_ZLIB OFF CACHE BOOL "" FORCE)
+# Disable dynamic plugins - use static only
+set(CLIENT_PLUGIN_PVIO_SOCKET STATIC CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_PVIO_NPIPE OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_PVIO_SHMEM OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_MYSQL_NATIVE_PASSWORD STATIC CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD STATIC CACHE STRING "" FORCE)
+# Disable problematic plugins
+set(CLIENT_PLUGIN_DIALOG OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_CLIENT_ED25519 OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_PARSEC OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_ZSTD OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_REMOTE_IO OFF CACHE STRING "" FORCE)
+set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF CACHE STRING "" FORCE)
+set(WITH_GSSAPI OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static mariadb connector" FORCE)
+set(INSTALL_PLUGINDIR "" CACHE STRING "" FORCE)
+add_subdirectory(external/mariadb-connector-c)
+
 # SOCI - build as static for portable app bundle
 set(SOCI_SHARED OFF CACHE BOOL "Build SOCI as static library" FORCE)
 set(SOCI_TESTS OFF CACHE BOOL "Disable SOCI tests" FORCE)
@@ -40,7 +65,17 @@ set(SOCI_SQLITE3 ON CACHE BOOL "Build SOCI SQLite3 backend" FORCE)
 set(SQLite3_FOUND TRUE CACHE BOOL "" FORCE)
 set(SQLite3_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/sqlite3 CACHE PATH "" FORCE)
 set(SQLite3_LIBRARIES sqlite3_static CACHE STRING "" FORCE)
+# Tell SOCI to use our static MariaDB client for MySQL backend
+set(MYSQL_FOUND TRUE CACHE BOOL "" FORCE)
+# Include both source and build dirs (mariadb_version.h is generated in build dir)
+set(MYSQL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include;${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include" CACHE PATH "" FORCE)
+set(MYSQL_LIBRARIES mariadbclient CACHE STRING "" FORCE)
 add_subdirectory(external/soci)
+
+# Ensure SOCI MySQL backend waits for MariaDB to build (for generated headers)
+if(TARGET soci_mysql)
+    add_dependencies(soci_mysql mariadbclient)
+endif()
 
 # hiredis
 set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)

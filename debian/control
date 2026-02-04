@@ -9,7 +9,8 @@ Build-Depends: debhelper-compat (= 13),
                libepoxy-dev,
                libssl-dev,
                libpq-dev,
-               libmysqlclient-dev,
+               default-libmysqlclient-dev,
+               libsqlite3-dev,
                libdbus-1-dev,
                libx11-dev
 Standards-Version: 4.6.0

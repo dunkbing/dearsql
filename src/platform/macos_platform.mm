@@ -836,8 +836,8 @@ void MacOSPlatform::setupTitlebar() {
     toolbarDelegate_ = [[ToolbarDelegate alloc] init];
     toolbarDelegate_.app = app_;
 
-    // Create custom title bar accessory view with sidebar, plus, and menu buttons
-    NSView* buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 105, 0)];
+    // Create custom title bar accessory view with sidebar and plus buttons
+    NSView* buttonContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 70, 0)];
 
     // Sidebar toggle button
     NSButton* sidebarButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 10, 30, 30)];
@@ -860,17 +860,6 @@ void MacOSPlatform::setupTitlebar() {
     [plusButton setAction:@selector(connectButtonClicked:)];
     [plusButton setBordered:NO];
     [buttonContainer addSubview:plusButton];
-
-    // Hamburger menu button
-    NSButton* menuButton = [[NSButton alloc] initWithFrame:NSMakeRect(64, 10, 30, 30)];
-    [menuButton setImage:[NSImage imageWithSystemSymbolName:@"line.3.horizontal"
-                                   accessibilityDescription:@"Menu"]];
-    [menuButton setButtonType:NSButtonTypeMomentaryPushIn];
-    [menuButton setBezelStyle:NSBezelStyleTexturedRounded];
-    [menuButton setTarget:toolbarDelegate_];
-    [menuButton setAction:@selector(showMenuPopover:)];
-    [menuButton setBordered:NO];
-    [buttonContainer addSubview:menuButton];
 
     NSTitlebarAccessoryViewController* accessoryController =
         [[NSTitlebarAccessoryViewController alloc] init];

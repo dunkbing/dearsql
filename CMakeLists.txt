@@ -1,4 +1,25 @@
 cmake_minimum_required(VERSION 3.23)
+
+# vcpkg toolchain (for static libpq without Kerberos)
+# Must be set before project() call
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
+    elseif(EXISTS "$ENV{HOME}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{HOME}/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
+    endif()
+endif()
+
+# Auto-detect vcpkg triplet based on architecture
+if(APPLE AND NOT DEFINED VCPKG_TARGET_TRIPLET)
+    execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(ARCH STREQUAL "arm64")
+        set(VCPKG_TARGET_TRIPLET "arm64-osx" CACHE STRING "vcpkg triplet" FORCE)
+    else()
+        set(VCPKG_TARGET_TRIPLET "x64-osx" CACHE STRING "vcpkg triplet" FORCE)
+    endif()
+endif()
+
 project(dear-sql)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -71,10 +92,20 @@ set(SQLite3_FOUND TRUE CACHE BOOL "" FORCE)
 set(SQLite3_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/sqlite3 CACHE PATH "" FORCE)
 set(SQLite3_LIBRARIES sqlite3_static CACHE STRING "" FORCE)
 # Tell SOCI to use our static MariaDB client for MySQL backend
+# Add include directories to mariadbclient target
+target_include_directories(mariadbclient PUBLIC
+    ${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include
+    ${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include
+)
+# Create MySQL::MySQL target that SOCI expects
+add_library(MySQL::MySQL ALIAS mariadbclient)
+# Set variables for compatibility
 set(MYSQL_FOUND TRUE CACHE BOOL "" FORCE)
-# Include both source and build dirs (mariadb_version.h is generated in build dir)
+set(MySQL_FOUND TRUE CACHE BOOL "" FORCE)
 set(MYSQL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include;${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include" CACHE PATH "" FORCE)
+set(MySQL_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include;${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include" CACHE PATH "" FORCE)
 set(MYSQL_LIBRARIES mariadbclient CACHE STRING "" FORCE)
+set(MySQL_LIBRARIES mariadbclient CACHE STRING "" FORCE)
 add_subdirectory(external/soci)
 
 # Ensure SOCI MySQL backend waits for MariaDB to build (for generated headers)

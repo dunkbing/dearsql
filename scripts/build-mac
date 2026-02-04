@@ -1,0 +1,175 @@
+#!/bin/bash
+set -e
+
+# Configuration
+TEAM_ID="2SY55TFJ22"
+DEVELOPER_NAME="Binh Bui"
+IDENTITY="Developer ID Application: ${DEVELOPER_NAME} (${TEAM_ID})"
+KEYCHAIN_PROFILE="notarytool-dearsql"
+APP_NAME="DearSQL"
+
+# Paths
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+BUILD_DIR="${PROJECT_DIR}/build_release"
+APP_PATH="${BUILD_DIR}/${APP_NAME}.app"
+EXECUTABLE="${APP_PATH}/Contents/MacOS/${APP_NAME}"
+FRAMEWORKS_DIR="${APP_PATH}/Contents/Frameworks"
+DMG_PATH="${BUILD_DIR}/${APP_NAME}.dmg"
+ZIP_PATH="${BUILD_DIR}/${APP_NAME}.zip"
+
+# =============================================================================
+# Build
+# =============================================================================
+echo "==> Building ${APP_NAME}..."
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j$(sysctl -n hw.ncpu)
+
+# =============================================================================
+# Bundle Homebrew dylibs
+# =============================================================================
+echo ""
+echo "==> Bundling Homebrew dylibs..."
+
+mkdir -p "$FRAMEWORKS_DIR"
+
+# Temp file to track dylibs
+DYLIB_LIST=$(mktemp)
+trap "rm -f $DYLIB_LIST" EXIT
+
+# Function to collect homebrew dylib dependencies recursively
+collect_deps() {
+    local binary="$1"
+    local deps=$(otool -L "$binary" 2>/dev/null | grep "/opt/homebrew" | awk '{print $1}')
+
+    for dep in $deps; do
+        if [ -f "$dep" ]; then
+            if ! grep -q "^$dep$" "$DYLIB_LIST" 2>/dev/null; then
+                echo "$dep" >> "$DYLIB_LIST"
+                echo "    Found: $dep"
+                collect_deps "$dep"
+            fi
+        fi
+    done
+}
+
+echo "    Collecting dependencies..."
+collect_deps "$EXECUTABLE"
+
+echo "    Copying dylibs to Frameworks..."
+while IFS= read -r dylib; do
+    lib_name=$(basename "$dylib")
+    dest="$FRAMEWORKS_DIR/$lib_name"
+
+    if [ ! -f "$dest" ]; then
+        cp "$dylib" "$dest"
+        chmod u+w "$dest"
+    fi
+done < "$DYLIB_LIST"
+
+echo "    Fixing library paths in executable..."
+while IFS= read -r dylib; do
+    lib_name=$(basename "$dylib")
+    new_path="@executable_path/../Frameworks/$lib_name"
+    install_name_tool -change "$dylib" "$new_path" "$EXECUTABLE"
+done < "$DYLIB_LIST"
+
+echo "    Fixing library paths in bundled dylibs..."
+while IFS= read -r dylib; do
+    lib_name=$(basename "$dylib")
+    bundled_lib="$FRAMEWORKS_DIR/$lib_name"
+
+    # Fix the library's own ID
+    install_name_tool -id "@executable_path/../Frameworks/$lib_name" "$bundled_lib" 2>/dev/null || true
+
+    # Fix references to other homebrew libs within this lib
+    while IFS= read -r other_dylib; do
+        other_lib_name=$(basename "$other_dylib")
+        new_path="@executable_path/../Frameworks/$other_lib_name"
+        install_name_tool -change "$other_dylib" "$new_path" "$bundled_lib" 2>/dev/null || true
+    done < "$DYLIB_LIST"
+done < "$DYLIB_LIST"
+
+# Verify no Homebrew references remain
+remaining=$(otool -L "$EXECUTABLE" | grep "/opt/homebrew" || true)
+if [ -n "$remaining" ]; then
+    echo "ERROR: Still have Homebrew references:"
+    echo "$remaining"
+    exit 1
+fi
+echo "    All Homebrew dependencies bundled successfully"
+
+# =============================================================================
+# Sign with Developer ID
+# =============================================================================
+echo ""
+echo "==> Signing with Developer ID..."
+
+# Sign frameworks first (inside-out signing)
+echo "    Signing bundled dylibs..."
+for lib in "$FRAMEWORKS_DIR"/*.dylib; do
+    codesign --force --sign "$IDENTITY" --options runtime "$lib"
+done
+
+# Sign the main app bundle
+echo "    Signing app bundle..."
+codesign --force --deep --sign "$IDENTITY" --options runtime "$APP_PATH"
+
+echo ""
+echo "==> Verifying signature..."
+codesign -dv "$APP_PATH" 2>&1 | grep -E "Authority|Identifier"
+
+# =============================================================================
+# Notarize
+# =============================================================================
+echo ""
+echo "==> Creating ZIP for notarization..."
+rm -f "$ZIP_PATH"
+ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+echo ""
+echo "==> Notarizing app..."
+xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+
+echo ""
+echo "==> Stapling app..."
+xcrun stapler staple "$APP_PATH"
+
+# =============================================================================
+# Create DMG
+# =============================================================================
+echo ""
+echo "==> Creating DMG with Applications shortcut..."
+rm -f "$DMG_PATH"
+create-dmg \
+  --volname "$APP_NAME" \
+  --volicon "${PROJECT_DIR}/assets/AppIcon.icns" \
+  --window-pos 200 120 \
+  --window-size 600 400 \
+  --icon-size 100 \
+  --icon "$APP_NAME.app" 150 190 \
+  --hide-extension "$APP_NAME.app" \
+  --app-drop-link 450 190 \
+  "$DMG_PATH" \
+  "$APP_PATH"
+
+echo ""
+echo "==> Notarizing DMG..."
+xcrun notarytool submit "$DMG_PATH" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+
+echo ""
+echo "==> Stapling DMG..."
+xcrun stapler staple "$DMG_PATH"
+
+# =============================================================================
+# Final verification
+# =============================================================================
+echo ""
+echo "==> Verifying..."
+spctl --assess --verbose "$APP_PATH"
+
+echo ""
+echo "==> Done! Release ready at:"
+echo "    ${DMG_PATH}"

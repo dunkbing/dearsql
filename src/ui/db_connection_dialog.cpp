@@ -204,11 +204,7 @@ void DatabaseConnectionDialog::renderAuthFields(bool defaultNoAuth) {
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
-            if (editingDatabase) {
-                ImGui::Text("Leave empty to keep existing password");
-            } else {
-                ImGui::Text("Password can be left empty if not required");
-            }
+            ImGui::Text("Password can be left empty if not required");
             ImGui::EndTooltip();
         }
     } else {
@@ -612,16 +608,6 @@ void DatabaseConnectionDialog::startAsyncConnection() {
     if (editingDatabase && editingConnectionId != -1) {
         const auto& app = Application::getInstance();
 
-        // Get the old connection to preserve password if needed
-        const auto savedConnections = app.getAppState()->getSavedConnections();
-        std::string oldPassword;
-        for (const auto& conn : savedConnections) {
-            if (conn.id == editingConnectionId) {
-                oldPassword = conn.connectionInfo.password;
-                break;
-            }
-        }
-
         // Build updated connection info
         DatabaseConnectionInfo updatedInfo;
         updatedInfo.name = std::string(connectionName);
@@ -630,8 +616,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         updatedInfo.port = port;
         updatedInfo.database = std::string(database);
         updatedInfo.username = std::string(username);
-        // If password is empty, keep the old one
-        updatedInfo.password = strlen(password) > 0 ? std::string(password) : oldPassword;
+        updatedInfo.password = std::string(password);
         updatedInfo.showAllDatabases = showAllDatabases;
 
         // Update the database object with new connection info
@@ -674,18 +659,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             std::optional<std::string> passwordOverride;
             if (authType == 0) {
                 std::string providedPassword(password);
-                if (providedPassword.empty() && editingConnectionId != -1) {
-                    const auto& app = Application::getInstance();
-                    const auto savedConnections = app.getAppState()->getSavedConnections();
-                    for (const auto& conn : savedConnections) {
-                        if (conn.id == editingConnectionId) {
-                            providedPassword = conn.connectionInfo.password;
-                            break;
-                        }
-                    }
-                }
-
-                if (editingConnectionId != -1 || !providedPassword.empty()) {
+                if (!providedPassword.empty()) {
                     passwordOverride = providedPassword;
                 }
             }

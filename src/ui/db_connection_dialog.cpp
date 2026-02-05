@@ -15,18 +15,10 @@
 
 namespace {
     constexpr const char* DIALOG_TITLE = "Connect to Database";
-    constexpr const char* CONNECTION_NAME = "Connection Name";
-
-    constexpr const char* DEFAULT_NAMES[] = {"SQLite Connection", "PostgreSQL Connection",
-                                             "MySQL Connection", "MongoDB Connection",
-                                             "Redis Connection"};
+    constexpr const char* DEFAULT_CONNECTION_NAME = "Untitled connection";
 
     bool isDefaultName(const char* name) {
-        for (const auto* defaultName : DEFAULT_NAMES) {
-            if (strcmp(name, defaultName) == 0)
-                return true;
-        }
-        return false;
+        return strcmp(name, DEFAULT_CONNECTION_NAME) == 0;
     }
 } // namespace
 
@@ -37,516 +29,273 @@ void DatabaseConnectionDialog::showDialog() {
                                   static_cast<int>(currentState)));
         isOpen = true;
         if (!editingDatabase) {
-            Logger::debug("showDialog: No editingDatabase, resetting to TypeSelection");
-            currentState = DialogState::TypeSelection;
+            Logger::debug("showDialog: No editingDatabase, resetting to NewConnection");
+            currentState = DialogState::NewConnection;
             result = nullptr;
+            strncpy(connectionName, DEFAULT_CONNECTION_NAME, sizeof(connectionName) - 1);
         } else {
             Logger::debug(std::format("showDialog: editingDatabase set, keeping currentState={}",
                                       static_cast<int>(currentState)));
         }
-        loadSavedConnections();
         ImGui::OpenPopup(DIALOG_TITLE);
     }
 
-    switch (currentState) {
-    case DialogState::TypeSelection:
-        renderTypeSelection();
-        break;
-    case DialogState::SQLiteConnection:
-        renderSQLiteConnection();
-        break;
-    case DialogState::PostgreSQLConnection:
-        renderSqlConnectionDialog(DatabaseType::POSTGRESQL);
-        break;
-    case DialogState::MySQLConnection:
-        renderSqlConnectionDialog(DatabaseType::MYSQL);
-        break;
-    case DialogState::MongoDBConnection:
-        renderMongoDBConnection();
-        break;
-    case DialogState::RedisConnection:
-        renderRedisConnection();
-        break;
-    case DialogState::SavedConnections:
-        renderSavedConnections();
-        break;
-    }
+    renderConnectionDialog();
 }
 
-void DatabaseConnectionDialog::renderTypeSelection() {
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_Always);
+void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
+    const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "MongoDB", "Redis"};
+    int currentType = static_cast<int>(selectedDatabaseType);
 
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Choose how to connect to a database:");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (!savedConnections.empty()) {
-            if (ImGui::Button("Saved Connections", ImVec2(-1, 30))) {
-                currentState = DialogState::SavedConnections;
-            }
-            ImGui::Spacing();
-            ImGui::Text("Or create a new connection:");
-            ImGui::Spacing();
-        }
-
-        // radio buttons colors
-        const auto& colors = Application::getInstance().getCurrentColors();
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface2);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.overlay0);
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
-
-        int selectedType = static_cast<int>(selectedDatabaseType);
-        ImGui::RadioButton("SQLite File", &selectedType, static_cast<int>(DatabaseType::SQLITE));
-        ImGui::Spacing();
-
-        ImGui::RadioButton("PostgreSQL", &selectedType, static_cast<int>(DatabaseType::POSTGRESQL));
-        ImGui::Spacing();
-
-        ImGui::RadioButton("MySQL", &selectedType, static_cast<int>(DatabaseType::MYSQL));
-        ImGui::Spacing();
-
-        ImGui::RadioButton("MongoDB", &selectedType, static_cast<int>(DatabaseType::MONGODB));
-        ImGui::Spacing();
-
-        ImGui::RadioButton("Redis", &selectedType, static_cast<int>(DatabaseType::REDIS));
-        ImGui::Spacing();
-
-        ImGui::PopStyleColor(5);
-        ImGui::PopStyleVar();
-
-        selectedDatabaseType = static_cast<DatabaseType>(selectedType);
-
-        ImGui::Separator();
-
-        if (ImGui::Button("Next", ImVec2(100, 0))) {
-            bool shouldSetDefault = strlen(connectionName) == 0 || isDefaultName(connectionName);
-
-            switch (selectedDatabaseType) {
-            case DatabaseType::SQLITE:
-                currentState = DialogState::SQLiteConnection;
-                if (shouldSetDefault) {
-                    strncpy(connectionName, "SQLite Connection", sizeof(connectionName) - 1);
-                }
-                break;
-            case DatabaseType::POSTGRESQL:
-                currentState = DialogState::PostgreSQLConnection;
-                port = 5432;
-                if (shouldSetDefault) {
-                    strncpy(connectionName, "PostgreSQL Connection", sizeof(connectionName) - 1);
-                }
-                break;
-            case DatabaseType::MYSQL:
-                currentState = DialogState::MySQLConnection;
-                port = 3306;
-                if (shouldSetDefault) {
-                    strncpy(connectionName, "MySQL Connection", sizeof(connectionName) - 1);
-                }
-                break;
-            case DatabaseType::MONGODB:
-                currentState = DialogState::MongoDBConnection;
-                port = 27017;
-                if (shouldSetDefault) {
-                    strncpy(connectionName, "MongoDB Connection", sizeof(connectionName) - 1);
-                }
-                break;
-            case DatabaseType::REDIS:
-                currentState = DialogState::RedisConnection;
-                port = 6379;
-                if (shouldSetDefault) {
-                    strncpy(connectionName, "Redis Connection", sizeof(connectionName) - 1);
-                }
-                break;
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        ImGui::EndPopup();
-    }
-}
-
-void DatabaseConnectionDialog::renderSQLiteConnection() {
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(550, 280), ImGuiCond_Always);
-
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Connect to SQLite Database:");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        const auto& colors = Application::getInstance().getCurrentColors();
-
-        // Connection name
-        ImGui::Text(CONNECTION_NAME);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
-        ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
-        ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-
-        // Database file path with file picker button
-        ImGui::Text("Database File Path:");
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
-
-        // Path input - takes most of the width
-        ImGui::SetNextItemWidth(400.0); // Leave space for button
-        ImGui::InputText("##sqlite_path", sqlitePath, sizeof(sqlitePath));
-
-        ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar();
-
-        // Browse button on the same line
-        ImGui::SameLine();
-        if (ImGui::Button("Browse...", ImVec2(80, 0))) {
-            auto db = FileDialog::openSQLiteFile();
-            if (db) {
-                auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
-                if (sqliteDb) {
-                    // Fill in the path from the selected file
-                    strncpy(sqlitePath, sqliteDb->getPath().c_str(), sizeof(sqlitePath) - 1);
-                    sqlitePath[sizeof(sqlitePath) - 1] = '\0';
-
-                    // Use filename as connection name if not set
-                    if (strlen(connectionName) == 0 ||
-                        strcmp(connectionName, "SQLite Connection") == 0) {
-                        strncpy(connectionName, sqliteDb->getConnectionInfo().name.c_str(),
-                                sizeof(connectionName) - 1);
-                        connectionName[sizeof(connectionName) - 1] = '\0';
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("Type", typeNames[currentType])) {
+        for (int i = 0; i < 5; i++) {
+            bool isSelected = (currentType == i);
+            if (ImGui::Selectable(typeNames[i], isSelected)) {
+                DatabaseType newType = static_cast<DatabaseType>(i);
+                if (newType != selectedDatabaseType) {
+                    selectedDatabaseType = newType;
+                    // Update default port and connection name
+                    bool shouldSetDefault = strlen(connectionName) == 0 || isDefaultName(connectionName);
+                    switch (selectedDatabaseType) {
+                    case DatabaseType::SQLITE:
+                        break;
+                    case DatabaseType::POSTGRESQL:
+                        port = 5432;
+                        break;
+                    case DatabaseType::MYSQL:
+                        port = 3306;
+                        break;
+                    case DatabaseType::MONGODB:
+                        port = 27017;
+                        break;
+                    case DatabaseType::REDIS:
+                        port = 6379;
+                        break;
                     }
+                    if (shouldSetDefault)
+                        strncpy(connectionName, DEFAULT_CONNECTION_NAME, sizeof(connectionName) - 1);
                 }
             }
+            if (isSelected)
+                ImGui::SetItemDefaultFocus();
         }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        // Connect button
-        if (ImGui::Button("Connect", ImVec2(100, 0))) {
-            if (strlen(sqlitePath) > 0) {
-                // Create SQLite database with the provided path
-                DatabaseConnectionInfo connInfo;
-                connInfo.type = DatabaseType::SQLITE;
-                connInfo.name = std::string(connectionName);
-                connInfo.path = std::string(sqlitePath);
-
-                auto db = std::make_shared<SQLiteDatabase>(connInfo);
-                if (db) {
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        // Save SQLite connection to app state
-                        SavedConnection conn;
-                        conn.connectionInfo = connInfo;
-                        conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
-
-                        const auto& app = Application::getInstance();
-                        int newConnectionId = app.getAppState()->saveConnection(conn);
-                        if (newConnectionId != -1) {
-                            db->setConnectionId(newConnectionId);
-                        }
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                }
-            } else {
-                errorMessage = "Please select a database file";
-            }
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(100, 0))) {
-            currentState = DialogState::TypeSelection;
-            errorMessage.clear();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        // Show error message if there is one
-        if (!errorMessage.empty()) {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            ImGui::TextWrapped("%s", errorMessage.c_str());
-            ImGui::PopStyleColor();
-        }
-
-        ImGui::EndPopup();
+        ImGui::EndCombo();
     }
 }
 
-void DatabaseConnectionDialog::renderSqlConnectionDialog(DatabaseType type) {
-    const bool isPostgres = type == DatabaseType::POSTGRESQL;
-    const char* typeLabel = isPostgres ? "Postgres" : "MySQL";
+void DatabaseConnectionDialog::renderSQLiteFields() {
+    const auto& colors = Application::getInstance().getCurrentColors();
 
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(450, 500), ImGuiCond_Always);
+    ImGui::Text("Database File Path:");
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
 
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (editingDatabase) {
-            ImGui::Text("Edit %s connection:", typeLabel);
-        } else {
-            ImGui::Text("Enter %s connection details:", typeLabel);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90);
+    ImGui::InputText("##sqlite_path", sqlitePath, sizeof(sqlitePath));
+
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...", ImVec2(80, 0))) {
+        auto db = FileDialog::openSQLiteFile();
+        if (db) {
+            auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
+            if (sqliteDb) {
+                strncpy(sqlitePath, sqliteDb->getPath().c_str(), sizeof(sqlitePath) - 1);
+                sqlitePath[sizeof(sqlitePath) - 1] = '\0';
+
+                if (strlen(connectionName) == 0 || isDefaultName(connectionName)) {
+                    strncpy(connectionName, sqliteDb->getConnectionInfo().name.c_str(),
+                            sizeof(connectionName) - 1);
+                    connectionName[sizeof(connectionName) - 1] = '\0';
+                }
+            }
         }
-        ImGui::Separator();
-        ImGui::Spacing();
+    }
+    ImGui::Spacing();
+}
 
-        const auto& colors = Application::getInstance().getCurrentColors();
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
+void DatabaseConnectionDialog::renderServerFields(bool showDatabase, const char* databaseTooltip) {
+    const auto& colors = Application::getInstance().getCurrentColors();
 
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
 
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    // Host and Port on same line
+    ImGui::SetNextItemWidth(300);
+    ImGui::InputText("Host", host, sizeof(host));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80);
+    char portStr[16];
+    snprintf(portStr, sizeof(portStr), "%d", port);
+    if (ImGui::InputText("Port", portStr, sizeof(portStr), ImGuiInputTextFlags_CharsDecimal)) {
+        port = atoi(portStr);
+        if (port <= 0) port = 1;
+        if (port > 65535) port = 65535;
+    }
 
-        ImGui::InputText(CONNECTION_NAME, connectionName, sizeof(connectionName));
-        ImGui::InputText("Host", host, sizeof(host));
-        ImGui::InputInt("Port", &port);
-
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
-
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-
-        if (isPostgres) {
+    if (showDatabase) {
+        if (databaseTooltip) {
             ImGui::InputText("Database (?)", database, sizeof(database));
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
-                ImGui::Text("Leave empty to use the default 'postgres' database");
+                ImGui::Text("%s", databaseTooltip);
                 ImGui::EndTooltip();
             }
         } else {
             ImGui::InputText("Database (optional)", database, sizeof(database));
         }
+    }
 
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
+    ImGui::Spacing();
+}
 
-        ImGui::Spacing();
-        ImGui::Text("Authentication:");
+void DatabaseConnectionDialog::renderAuthFields(bool defaultNoAuth) {
+    const auto& colors = Application::getInstance().getCurrentColors();
 
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+    ImGui::Text("Authentication:");
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
 
+    if (defaultNoAuth) {
+        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("Username & Password", &authType, 0);
+    } else {
         ImGui::RadioButton("Username & Password", &authType, 0);
         ImGui::SameLine();
         ImGui::RadioButton("No Authentication", &authType, 1);
-
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-
-        ImGui::Spacing();
-
-        if (authType == 0) {
-            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-
-            ImGui::InputText("Username", username, sizeof(username));
-            ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
-
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor();
-
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                if (editingDatabase) {
-                    ImGui::Text("Leave empty to keep existing password");
-                } else {
-                    ImGui::Text("Password can be left empty if not required");
-                }
-                ImGui::EndTooltip();
-            }
-        } else {
-            username[0] = '\0';
-            password[0] = '\0';
-        }
-
-        ImGui::PopStyleColor(4);
-        ImGui::PopStyleVar();
-
-        ImGui::Spacing();
-        ImGui::Checkbox("Show all databases", &showAllDatabases);
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
-                        "unchecked, only shows the specified database.");
-            ImGui::EndTooltip();
-        }
-
-        if (isConnecting) {
-            ImGui::EndDisabled();
-        }
-
-        ImGui::Spacing();
-
-        if (!errorMessage.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            ImGui::TextWrapped("%s", errorMessage.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Copy")) {
-                ImGui::SetClipboardText(errorMessage.c_str());
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::Text("Copy error message to clipboard");
-                ImGui::EndTooltip();
-            }
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
-        }
-
-        ImGui::Separator();
-
-        if (isConnecting) {
-            checkAsyncConnectionStatus();
-        }
-
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-            ImGui::Button("Connecting...", ImVec2(100, 0));
-            ImGui::EndDisabled();
-
-            ImGui::SameLine();
-            ImGui::Text("%c", "|/-\\"[static_cast<int>(ImGui::GetTime() / 0.1f) & 3]);
-        } else {
-            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
-            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
-                startAsyncConnection();
-            }
-        }
-        ImGui::SameLine();
-
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
-
-        if (ImGui::Button("Back", ImVec2(100, 0))) {
-            currentState = DialogState::TypeSelection;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        if (isConnecting) {
-            ImGui::EndDisabled();
-        }
-
-        ImGui::EndPopup();
     }
-}
 
-void DatabaseConnectionDialog::renderMongoDBConnection() {
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(450, 450), ImGuiCond_Always);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    ImGui::Spacing();
 
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (editingDatabase) {
-            ImGui::Text("Edit MongoDB connection:");
-        } else {
-            ImGui::Text("Enter MongoDB connection details:");
-        }
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
-
-        const auto& colors = Application::getInstance().getCurrentColors();
+    if (authType == 0) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
 
-        ImGui::InputText(CONNECTION_NAME, connectionName, sizeof(connectionName));
-        ImGui::InputText("Host", host, sizeof(host));
-        ImGui::InputInt("Port", &port);
-        ImGui::InputText("Database (optional)", database, sizeof(database));
-
-        ImGui::PopStyleColor(4);
-        ImGui::PopStyleVar();
-
-        ImGui::Spacing();
-        ImGui::Text("Authentication:");
-
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-
-        ImGui::RadioButton("No Authentication", &authType, 1);
+        // Username and Password on same line
+        ImGui::SetNextItemWidth(180);
+        ImGui::InputText("Username", username, sizeof(username));
         ImGui::SameLine();
-        ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::SetNextItemWidth(180);
+        ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
 
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(3);
         ImGui::PopStyleVar();
 
-        ImGui::Spacing();
-
-        if (authType == 0) {
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
-
-            ImGui::InputText("Username", username, sizeof(username));
-            ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
-
-            ImGui::PopStyleColor(3);
-            ImGui::PopStyleVar();
-        } else {
-            username[0] = '\0';
-            password[0] = '\0';
-        }
-
-        ImGui::Spacing();
-        ImGui::Checkbox("Show all databases", &showAllDatabases);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
-            ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
-                        "unchecked, only shows the specified database.");
+            if (editingDatabase) {
+                ImGui::Text("Leave empty to keep existing password");
+            } else {
+                ImGui::Text("Password can be left empty if not required");
+            }
             ImGui::EndTooltip();
+        }
+    } else {
+        username[0] = '\0';
+        password[0] = '\0';
+    }
+    ImGui::Spacing();
+}
+
+void DatabaseConnectionDialog::renderShowAllDatabasesCheckbox() {
+    ImGui::Checkbox("Show all databases", &showAllDatabases);
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("When checked, shows all databases from the server in the sidebar.\nWhen "
+                    "unchecked, only shows the specified database.");
+        ImGui::EndTooltip();
+    }
+    ImGui::Spacing();
+}
+
+void DatabaseConnectionDialog::renderConnectionDialog() {
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(580, 0), ImGuiCond_Always);
+
+    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+
+        if (isConnecting) {
+            ImGui::BeginDisabled();
+        }
+
+        // Connection name and database type on same line
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+
+        ImGui::SetNextItemWidth(300);
+        ImGui::InputText("Name", connectionName, sizeof(connectionName));
+
+        ImGui::SameLine();
+        if (editingDatabase) {
+            ImGui::BeginDisabled();
+        }
+        renderDatabaseTypeSelector();
+        if (editingDatabase) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Type-specific fields
+        switch (selectedDatabaseType) {
+        case DatabaseType::SQLITE:
+            renderSQLiteFields();
+            break;
+
+        case DatabaseType::POSTGRESQL:
+            renderServerFields(true, "Leave empty to use the default 'postgres' database");
+            renderAuthFields(false);
+            renderShowAllDatabasesCheckbox();
+            break;
+
+        case DatabaseType::MYSQL:
+            renderServerFields(true, nullptr);
+            renderAuthFields(false);
+            renderShowAllDatabasesCheckbox();
+            break;
+
+        case DatabaseType::MONGODB:
+            renderServerFields(true, nullptr);
+            renderAuthFields(true);
+            renderShowAllDatabasesCheckbox();
+            break;
+
+        case DatabaseType::REDIS:
+            renderServerFields(false, nullptr);
+            renderAuthFields(true);
+            break;
         }
 
         if (isConnecting) {
             ImGui::EndDisabled();
         }
 
-        ImGui::Spacing();
-
+        // Error message
         if (!errorMessage.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
             ImGui::TextWrapped("%s", errorMessage.c_str());
@@ -560,33 +309,65 @@ void DatabaseConnectionDialog::renderMongoDBConnection() {
 
         ImGui::Separator();
 
+        // Check async connection status
         if (isConnecting) {
             checkAsyncConnectionStatus();
         }
 
+        // Buttons
         if (isConnecting) {
             ImGui::BeginDisabled();
             ImGui::Button("Connecting...", ImVec2(100, 0));
             ImGui::EndDisabled();
-
             ImGui::SameLine();
             ImGui::Text("%c", "|/-\\"[static_cast<int>(ImGui::GetTime() / 0.1f) & 3]);
         } else {
             const char* buttonLabel = editingDatabase ? "Update" : "Connect";
             if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
-                startAsyncConnection();
+                if (selectedDatabaseType == DatabaseType::SQLITE) {
+                    // Handle SQLite synchronously
+                    if (strlen(sqlitePath) > 0) {
+                        DatabaseConnectionInfo connInfo;
+                        connInfo.type = DatabaseType::SQLITE;
+                        connInfo.name = std::string(connectionName);
+                        connInfo.path = std::string(sqlitePath);
+
+                        auto db = std::make_shared<SQLiteDatabase>(connInfo);
+                        if (db) {
+                            auto [success, error] = db->connect();
+                            if (success) {
+                                SavedConnection conn;
+                                conn.connectionInfo = connInfo;
+                                conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
+
+                                const auto& app = Application::getInstance();
+                                int newConnectionId = app.getAppState()->saveConnection(conn);
+                                if (newConnectionId != -1) {
+                                    db->setConnectionId(newConnectionId);
+                                }
+
+                                result = db;
+                                ImGui::CloseCurrentPopup();
+                                reset();
+                            } else {
+                                errorMessage = "Failed to connect: " + error;
+                            }
+                        }
+                    } else {
+                        errorMessage = "Please select a database file";
+                    }
+                } else {
+                    startAsyncConnection();
+                }
             }
         }
+
         ImGui::SameLine();
 
         if (isConnecting) {
             ImGui::BeginDisabled();
         }
 
-        if (ImGui::Button("Back", ImVec2(100, 0))) {
-            currentState = DialogState::TypeSelection;
-        }
-        ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
             ImGui::CloseCurrentPopup();
             reset();
@@ -600,135 +381,6 @@ void DatabaseConnectionDialog::renderMongoDBConnection() {
     }
 }
 
-void DatabaseConnectionDialog::renderRedisConnection() {
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        if (editingDatabase) {
-            ImGui::Text("Edit Redis connection:");
-        } else {
-            ImGui::Text("Enter Redis connection details:");
-        }
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Disable input fields during connection
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
-
-        const auto& colors = Application::getInstance().getCurrentColors();
-
-        ImGui::Text(CONNECTION_NAME);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::InputText("##connection_name", connectionName, sizeof(connectionName));
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-
-        ImGui::Text("Host:");
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::InputText("##host", host, sizeof(host));
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-
-        ImGui::Text("Port:");
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::InputInt("##port", &port);
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-
-        ImGui::Text("Authentication:");
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::RadioButton("No Authentication", &authType, 1);
-        ImGui::RadioButton("Username & Password", &authType, 0);
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-
-        if (authType == 0) {
-            ImGui::Text("Username:");
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-            ImGui::InputText("##username", username, sizeof(username));
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            ImGui::Spacing();
-
-            ImGui::Text("Password:");
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-            ImGui::InputText("##password", password, sizeof(password),
-                             ImGuiInputTextFlags_Password);
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            ImGui::Spacing();
-        }
-
-        if (isConnecting) {
-            ImGui::EndDisabled();
-        }
-
-        // Check for async connection completion
-        if (isConnecting) {
-            checkAsyncConnectionStatus();
-        }
-
-        if (!errorMessage.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            ImGui::TextWrapped("Error: %s", errorMessage.c_str());
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
-        }
-
-        ImGui::Separator();
-
-        if (isConnecting) {
-            // Show disabled connect button with spinner
-            ImGui::BeginDisabled();
-            ImGui::Button("Connecting...", ImVec2(100, 0));
-            ImGui::EndDisabled();
-
-            // Improved spinner animation
-            ImGui::SameLine();
-            UIUtils::Spinner("##connecting_spinner", 8.0f, 3,
-                             ImGui::GetColorU32(ImVec4(0.0f, 0.8f, 1.0f, 1.0f)));
-        } else {
-            const char* buttonLabel = editingDatabase ? "Update" : "Connect";
-            if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
-                startAsyncConnection();
-            }
-        }
-
-        // Disable Back and Cancel buttons during connection
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(100, 0))) {
-            currentState = DialogState::TypeSelection;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        if (isConnecting) {
-            ImGui::EndDisabled();
-        }
-
-        ImGui::EndPopup();
-    }
-}
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
     auto temp = result;
@@ -738,10 +390,9 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
 
 void DatabaseConnectionDialog::reset() {
     isOpen = false;
-    currentState = DialogState::TypeSelection;
+    currentState = DialogState::NewConnection;
     isConnecting = false;
     errorMessage.clear();
-    selectedSavedConnection = -1;
     authType = 0;
     editingDatabase = nullptr;
     editingConnectionId = -1;
@@ -767,17 +418,15 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
 
     editingConnectionId = db->getConnectionId();
     auto const type = db->getConnectionInfo().type;
+    selectedDatabaseType = type;
+    currentState = DialogState::NewConnection;
+
     Logger::debug(std::format("editConnection: After reset, type={}", static_cast<int>(type)));
 
     if (type == DatabaseType::SQLITE) {
-        selectedDatabaseType = DatabaseType::SQLITE;
-        // SQLite doesn't need a connection dialog, just show type selection
-        currentState = DialogState::TypeSelection;
+        strncpy(sqlitePath, db->getConnectionInfo().path.c_str(), sizeof(sqlitePath) - 1);
+        sqlitePath[sizeof(sqlitePath) - 1] = '\0';
     } else if (type == DatabaseType::POSTGRESQL) {
-        selectedDatabaseType = DatabaseType::POSTGRESQL;
-        currentState = DialogState::PostgreSQLConnection;
-
-        // Get connection details from the database
         const auto pgDb = std::dynamic_pointer_cast<PostgresDatabase>(db);
         const auto& connInfo = pgDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
@@ -788,10 +437,6 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
     } else if (type == DatabaseType::MYSQL) {
-        selectedDatabaseType = DatabaseType::MYSQL;
-        currentState = DialogState::MySQLConnection;
-
-        // Get connection details from the database
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
         const auto& connInfo = mysqlDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
@@ -802,9 +447,6 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
     } else if (type == DatabaseType::MONGODB) {
-        selectedDatabaseType = DatabaseType::MONGODB;
-        currentState = DialogState::MongoDBConnection;
-
         const auto mongoDb = std::dynamic_pointer_cast<MongoDBDatabase>(db);
         const auto& connInfo = mongoDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
@@ -815,13 +457,9 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? 1 : 0;
     } else if (type == DatabaseType::REDIS) {
-        selectedDatabaseType = DatabaseType::REDIS;
-        currentState = DialogState::RedisConnection;
-
-        // Get connection details from the database
         const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         const auto& connInfo = redisDb->getConnectionInfo();
-        strncpy(host, connInfo.name.c_str(), sizeof(host) - 1);
+        strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
         port = connInfo.port;
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
@@ -956,247 +594,6 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
     return std::make_shared<RedisDatabase>(info);
 }
 
-void DatabaseConnectionDialog::loadSavedConnections() {
-    auto& app = Application::getInstance();
-    savedConnections = app.getAppState()->getSavedConnections();
-}
-
-void DatabaseConnectionDialog::renderSavedConnections() {
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(500, 450), ImGuiCond_Always);
-
-    if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Saved Database Connections:");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        if (savedConnections.empty()) {
-            ImGui::Text("No saved connections found.");
-        } else {
-            // List saved connections
-            for (size_t i = 0; i < savedConnections.size(); i++) {
-                const auto& conn = savedConnections[i];
-
-                bool isSelected = (selectedSavedConnection == static_cast<int>(i));
-                if (ImGui::Selectable((conn.connectionInfo.name + " (" +
-                                       databaseTypeToString(conn.connectionInfo.type) + ")")
-                                          .c_str(),
-                                      &isSelected)) {
-                    selectedSavedConnection = static_cast<int>(i);
-                }
-
-                if (isSelected && ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
-                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
-                                    conn.connectionInfo.port);
-                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
-                        ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
-                    } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
-                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
-                                    conn.connectionInfo.port);
-                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
-                        ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
-                    } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
-                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
-                                    conn.connectionInfo.port);
-                        ImGui::Text("Database: %s", conn.connectionInfo.database.c_str());
-                        if (!conn.connectionInfo.username.empty()) {
-                            ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
-                        }
-                    } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
-                        ImGui::Text("Host: %s:%d", conn.connectionInfo.host.c_str(),
-                                    conn.connectionInfo.port);
-                        if (conn.connectionInfo.password.empty()) {
-                            ImGui::Text("Auth: None");
-                        } else {
-                            ImGui::Text("Auth: %s", conn.connectionInfo.username.empty()
-                                                        ? "Password only"
-                                                        : "Username & Password");
-                            if (!conn.connectionInfo.username.empty()) {
-                                ImGui::Text("Username: %s", conn.connectionInfo.username.c_str());
-                            }
-                        }
-                    } else {
-                        ImGui::Text("Path: %s", conn.connectionInfo.path.c_str());
-                    }
-                    ImGui::Text("Last used: %s", conn.lastUsed.c_str());
-                    ImGui::EndTooltip();
-                }
-            }
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        if (ImGui::Button("Connect", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
-            const auto& conn = savedConnections[selectedSavedConnection];
-
-            if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
-                // Fill in the PostgreSQL fields and connect
-                strncpy(connectionName, conn.connectionInfo.name.c_str(),
-                        sizeof(connectionName) - 1);
-                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
-                port = conn.connectionInfo.port;
-                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
-                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-                showAllDatabases = conn.connectionInfo.showAllDatabases;
-
-                const auto db = createPostgreSQLDatabase();
-                if (db) {
-                    db->setConnectionId(conn.id);
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        // Update last used timestamp
-                        const auto& app = Application::getInstance();
-                        app.getAppState()->updateLastUsed(conn.id);
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                }
-            } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
-                // Fill in the MySQL fields and connect
-                strncpy(connectionName, conn.connectionInfo.name.c_str(),
-                        sizeof(connectionName) - 1);
-                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
-                port = conn.connectionInfo.port;
-                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
-                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-                showAllDatabases = conn.connectionInfo.showAllDatabases;
-
-                auto db = createMySQLDatabase();
-                if (db) {
-                    db->setConnectionId(conn.id);
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        // Update last used timestamp
-                        const auto& app = Application::getInstance();
-                        app.getAppState()->updateLastUsed(conn.id);
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                }
-            } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
-                // Fill in the MongoDB fields and connect
-                strncpy(connectionName, conn.connectionInfo.name.c_str(),
-                        sizeof(connectionName) - 1);
-                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
-                port = conn.connectionInfo.port;
-                strncpy(database, conn.connectionInfo.database.c_str(), sizeof(database) - 1);
-                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-                showAllDatabases = conn.connectionInfo.showAllDatabases;
-                authType = conn.connectionInfo.username.empty() ? 1 : 0;
-
-                auto db = createMongoDBDatabase();
-                if (db) {
-                    db->setConnectionId(conn.id);
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        const auto& app = Application::getInstance();
-                        app.getAppState()->updateLastUsed(conn.id);
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                }
-            } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
-                // Fill in the Redis fields and connect
-                strncpy(connectionName, conn.connectionInfo.name.c_str(),
-                        sizeof(connectionName) - 1);
-                strncpy(host, conn.connectionInfo.host.c_str(), sizeof(host) - 1);
-                port = conn.connectionInfo.port;
-                authType = conn.connectionInfo.password.empty() ? 1 : 0;
-                strncpy(username, conn.connectionInfo.username.c_str(), sizeof(username) - 1);
-                strncpy(password, conn.connectionInfo.password.c_str(), sizeof(password) - 1);
-
-                const auto db = createRedisDatabase();
-                if (db) {
-                    db->setConnectionId(conn.id);
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = error;
-                    }
-                }
-            } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
-                // Create SQLite database from saved path
-                const auto db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
-                if (db) {
-                    db->setConnectionId(conn.id);
-                    auto [success, error] = db->connect();
-                    if (success) {
-                        // Update last used timestamp
-                        const auto& app = Application::getInstance();
-                        app.getAppState()->updateLastUsed(conn.id);
-
-                        result = db;
-                        ImGui::CloseCurrentPopup();
-                        reset();
-                    } else {
-                        errorMessage = "Failed to connect: " + error;
-                    }
-                }
-            }
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Delete", ImVec2(100, 0)) && selectedSavedConnection >= 0) {
-            const auto& app = Application::getInstance();
-            app.getAppState()->deleteConnection(savedConnections[selectedSavedConnection].id);
-            loadSavedConnections(); // Refresh list
-            selectedSavedConnection = -1;
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(100, 0))) {
-            currentState = DialogState::TypeSelection;
-        }
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        // Show error message if there is one
-        if (!errorMessage.empty()) {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            ImGui::TextWrapped("%s", errorMessage.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Copy")) {
-                ImGui::SetClipboardText(errorMessage.c_str());
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::Text("Copy error message to clipboard");
-                ImGui::EndTooltip();
-            }
-            ImGui::PopStyleColor();
-        }
-
-        ImGui::EndPopup();
-    }
-}
-
 void DatabaseConnectionDialog::startAsyncConnection() {
     // Clear previous error
     errorMessage.clear();
@@ -1219,22 +616,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         // Build updated connection info
         DatabaseConnectionInfo updatedInfo;
         updatedInfo.name = std::string(connectionName);
-        switch (currentState) {
-        case DialogState::PostgreSQLConnection:
-            updatedInfo.type = DatabaseType::POSTGRESQL;
-            break;
-        case DialogState::MySQLConnection:
-            updatedInfo.type = DatabaseType::MYSQL;
-            break;
-        case DialogState::MongoDBConnection:
-            updatedInfo.type = DatabaseType::MONGODB;
-            break;
-        case DialogState::RedisConnection:
-            updatedInfo.type = DatabaseType::REDIS;
-            break;
-        default:
-            break;
-        }
+        updatedInfo.type = selectedDatabaseType;
         updatedInfo.host = std::string(host);
         updatedInfo.port = port;
         updatedInfo.database = std::string(database);
@@ -1295,21 +677,22 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 }
             }
 
-            switch (currentState) {
-            case DialogState::PostgreSQLConnection:
+            switch (selectedDatabaseType) {
+            case DatabaseType::POSTGRESQL:
                 db = createPostgreSQLDatabase(passwordOverride);
                 break;
-            case DialogState::MySQLConnection:
+            case DatabaseType::MYSQL:
                 db = createMySQLDatabase(passwordOverride);
                 break;
-            case DialogState::MongoDBConnection:
+            case DatabaseType::MONGODB:
                 db = createMongoDBDatabase(passwordOverride);
                 break;
-            case DialogState::RedisConnection:
+            case DatabaseType::REDIS:
                 std::cout << "Creating Redis database connection..." << std::endl;
                 db = createRedisDatabase();
                 break;
-            default:
+            case DatabaseType::SQLITE:
+                // SQLite is handled synchronously, not here
                 break;
             }
 
@@ -1347,22 +730,7 @@ void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
             // Save successful connection for new connections
             SavedConnection conn;
             conn.connectionInfo.name = std::string(connectionName);
-            switch (currentState) {
-            case DialogState::PostgreSQLConnection:
-                conn.connectionInfo.type = DatabaseType::POSTGRESQL;
-                break;
-            case DialogState::MySQLConnection:
-                conn.connectionInfo.type = DatabaseType::MYSQL;
-                break;
-            case DialogState::MongoDBConnection:
-                conn.connectionInfo.type = DatabaseType::MONGODB;
-                break;
-            case DialogState::RedisConnection:
-                conn.connectionInfo.type = DatabaseType::REDIS;
-                break;
-            default:
-                break;
-            }
+            conn.connectionInfo.type = selectedDatabaseType;
             conn.connectionInfo.host = std::string(host);
             conn.connectionInfo.port = port;
             conn.connectionInfo.database = std::string(database);

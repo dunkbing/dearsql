@@ -9,13 +9,7 @@
 #include <optional>
 
 enum class DialogState {
-    TypeSelection,
-    SQLiteConnection,
-    PostgreSQLConnection,
-    MySQLConnection,
-    MongoDBConnection,
-    RedisConnection,
-    SavedConnections
+    NewConnection
 };
 
 class DatabaseInterface;
@@ -45,7 +39,7 @@ public:
 private:
     // Dialog state
     bool isOpen = false;
-    DialogState currentState = DialogState::TypeSelection;
+    DialogState currentState = DialogState::NewConnection;
     std::atomic<bool> isConnecting = false;
     std::string errorMessage;
     std::shared_ptr<DatabaseInterface> editingDatabase = nullptr;
@@ -53,10 +47,6 @@ private:
 
     // Async connection
     std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;
-
-    // Saved connections
-    std::vector<SavedConnection> savedConnections;
-    int selectedSavedConnection = -1;
 
     // Selected database type
     DatabaseType selectedDatabaseType = DatabaseType::SQLITE;
@@ -78,13 +68,14 @@ private:
     std::shared_ptr<DatabaseInterface> result = nullptr;
 
     // Dialog rendering functions
-    void renderTypeSelection();
-    void renderSQLiteConnection();
-    void renderSqlConnectionDialog(DatabaseType type);
-    void renderMongoDBConnection();
-    void renderRedisConnection();
-    void renderSavedConnections();
-    void loadSavedConnections();
+    void renderConnectionDialog();
+
+    // Form rendering helpers
+    void renderDatabaseTypeSelector();
+    void renderSQLiteFields();
+    void renderServerFields(bool showDatabase = true, const char* databaseTooltip = nullptr);
+    void renderAuthFields(bool defaultNoAuth = false);
+    void renderShowAllDatabasesCheckbox();
 
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();

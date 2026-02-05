@@ -31,6 +31,16 @@ void TableViewerTab::render() {
     ImGui::Text("Table: %s", tableName.c_str());
     ImGui::Separator();
 
+    // Style for buttons and inputs in this tab
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+
     // Filter input with auto-completion
     ImGui::AlignTextToFramePadding(); // Center the label vertically with the input field
     ImGui::Text("Filters:");
@@ -42,11 +52,29 @@ void TableViewerTab::render() {
         applyFilter();
     }
 
+    // Apply Filter button with green tint
     ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.green.x * 0.3f, colors.green.y * 0.3f,
+                                                  colors.green.z * 0.3f, 1.0f));
+    ImGui::PushStyleColor(
+        ImGuiCol_ButtonHovered,
+        ImVec4(colors.green.x * 0.5f, colors.green.y * 0.5f, colors.green.z * 0.5f, 1.0f));
+    ImGui::PushStyleColor(
+        ImGuiCol_ButtonActive,
+        ImVec4(colors.green.x * 0.7f, colors.green.y * 0.7f, colors.green.z * 0.7f, 1.0f));
     if (ImGui::Button("Apply Filter")) {
         applyFilter();
     }
+    ImGui::PopStyleColor(3);
+
+    // Clear Filter button with red tint
     ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x * 0.3f, colors.red.y * 0.3f,
+                                                  colors.red.z * 0.3f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.red.x * 0.5f, colors.red.y * 0.5f,
+                                                         colors.red.z * 0.5f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors.red.x * 0.7f, colors.red.y * 0.7f,
+                                                        colors.red.z * 0.7f, 1.0f));
     if (ImGui::Button("Clear Filter")) {
         memset(filterBuffer, 0, sizeof(filterBuffer));
         if (filterAutoComplete) {
@@ -73,6 +101,7 @@ void TableViewerTab::render() {
             loadDataAsync();
         }
     }
+    ImGui::PopStyleColor(3);
 
     // Show current filter if active
     if (!currentFilter.empty()) {
@@ -82,9 +111,71 @@ void TableViewerTab::render() {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%d rows)", totalRows);
     }
 
+    // Pop button/input styles
+    ImGui::PopStyleColor(7);
+    ImGui::PopStyleVar();
+
+    // Show loading error if any
+    if (hasLoadingError) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::TextWrapped("Error loading data: %s", loadingError.c_str());
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Copy")) {
+            const std::string errorText = "Error loading data: " + loadingError;
+            ImGui::SetClipboardText(errorText.c_str());
+        }
+    }
+
+    // Reserve space for bottom controls (pagination + action buttons)
+    const float bottomControlsHeight =
+        ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+    const float availableHeight = ImGui::GetContentRegionAvail().y - bottomControlsHeight;
+
+    // Table display in a child window to prevent cutoff
+    if (ImGui::BeginChild("TableArea", ImVec2(0, availableHeight), ImGuiChildFlags_None)) {
+        if (isLoadingData) {
+            ImGui::Text("Loading table data...");
+        } else if (!columnNames.empty() && !tableData.empty()) {
+            // Update table renderer with current data
+            tableRenderer->setColumns(columnNames);
+            tableRenderer->setData(tableData);
+            tableRenderer->setCellEditedStatus(editedCells);
+            tableRenderer->setSelectedCell(selectedRow, selectedCol);
+            tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
+            tableRenderer->setSortColumn(sortColumn, sortDirection);
+
+            tableRenderer->render("TableData");
+
+            // Handle keyboard navigation - check if we have a selection and the tab is active
+            if (selectedRow >= 0 && selectedCol >= 0) {
+                handleKeyboardNavigation();
+            }
+        } else {
+            if (!currentFilter.empty()) {
+                ImGui::Text("No rows match the filter: %s", currentFilter.c_str());
+                ImGui::TextColored(
+                    ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                    "Try a different filter condition or click 'Clear Filter' to see all data.");
+            } else if (hasLoadingError) {
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Error loading data");
+            } else {
+                ImGui::Text("No data to display. Execute a query to see results here.");
+            }
+        }
+    }
+    ImGui::EndChild();
+
+    // Pagination controls at the bottom
     ImGui::Separator();
 
-    // Pagination controls
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
     if (ImGui::Button("<<") && currentPage > 0) {
@@ -166,7 +257,7 @@ void TableViewerTab::render() {
         ImGui::EndCombo();
     }
 
-    // Action buttons next to pagination
+    // Action buttons
     ImGui::SameLine();
     ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
     ImGui::SameLine();
@@ -232,53 +323,8 @@ void TableViewerTab::render() {
         ImGui::TextColored(colors.peach, "Unsaved changes");
     }
 
-    ImGui::Separator();
-
-    // Show loading error if any
-    if (hasLoadingError) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        ImGui::TextWrapped("Error loading data: %s", loadingError.c_str());
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Copy")) {
-            const std::string errorText = "Error loading data: " + loadingError;
-            ImGui::SetClipboardText(errorText.c_str());
-        }
-
-        ImGui::Separator();
-    }
-
-    // Table display
-    if (isLoadingData) {
-        ImGui::Text("Loading table data...");
-    } else if (!columnNames.empty() && !tableData.empty()) {
-        // Update table renderer with current data
-        tableRenderer->setColumns(columnNames);
-        tableRenderer->setData(tableData);
-        tableRenderer->setCellEditedStatus(editedCells);
-        tableRenderer->setSelectedCell(selectedRow, selectedCol);
-        tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
-        tableRenderer->setSortColumn(sortColumn, sortDirection);
-
-        tableRenderer->render("TableData");
-
-        // Handle keyboard navigation - check if we have a selection and the tab is active
-        if (selectedRow >= 0 && selectedCol >= 0) {
-            handleKeyboardNavigation();
-        }
-    } else {
-        if (!currentFilter.empty()) {
-            ImGui::Text("No rows match the filter: %s", currentFilter.c_str());
-            ImGui::TextColored(
-                ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-                "Try a different filter condition or click 'Clear Filter' to see all data.");
-        } else if (hasLoadingError) {
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Error loading data");
-        } else {
-            ImGui::Text("No data to display. Execute a query to see results here.");
-        }
-    }
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
 
     // Check async SQL execution status
     checkSQLExecutionStatus();

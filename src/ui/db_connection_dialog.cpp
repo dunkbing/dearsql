@@ -484,7 +484,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabas
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
-    const std::string& defaultDatabase, const std::optional<std::string>& passwordOverride,
+    const std::string& defaultDatabase,
     const std::function<std::shared_ptr<DatabaseInterface>(
         const std::string&, const std::string&, int, const std::string&, const std::string&,
         const std::string&, bool)>& factory) {
@@ -500,7 +500,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
             return nullptr;
         }
         usernameStr = std::string(username);
-        passwordStr = passwordOverride.has_value() ? *passwordOverride : std::string(password);
+        passwordStr = std::string(password);
     }
 
     std::string databaseStr = strlen(database) > 0 ? std::string(database) : defaultDatabase;
@@ -509,48 +509,43 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
                    passwordStr, showAllDatabases);
 }
 
-std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase(
-    const std::optional<std::string>& passwordOverride) {
-    return createSqlDatabase("postgres", passwordOverride,
-                             [](const std::string& name, const std::string& hostValue,
-                                int portValue, const std::string& databaseValue,
-                                const std::string& usernameValue, const std::string& passwordValue,
-                                bool showAll) {
-                                 DatabaseConnectionInfo info;
-                                 info.type = DatabaseType::POSTGRESQL;
-                                 info.name = name;
-                                 info.host = hostValue;
-                                 info.port = portValue;
-                                 info.database = databaseValue;
-                                 info.username = usernameValue;
-                                 info.password = passwordValue;
-                                 info.showAllDatabases = showAll;
-                                 return std::make_shared<PostgresDatabase>(info);
-                             });
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase() {
+    return createSqlDatabase("postgres", [](const std::string& name, const std::string& hostValue,
+                                            int portValue, const std::string& databaseValue,
+                                            const std::string& usernameValue,
+                                            const std::string& passwordValue, bool showAll) {
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::POSTGRESQL;
+        info.name = name;
+        info.host = hostValue;
+        info.port = portValue;
+        info.database = databaseValue;
+        info.username = usernameValue;
+        info.password = passwordValue;
+        info.showAllDatabases = showAll;
+        return std::make_shared<PostgresDatabase>(info);
+    });
 }
 
-std::shared_ptr<DatabaseInterface>
-DatabaseConnectionDialog::createMySQLDatabase(const std::optional<std::string>& passwordOverride) {
-    return createSqlDatabase("mysql", passwordOverride,
-                             [](const std::string& name, const std::string& hostValue,
-                                int portValue, const std::string& databaseValue,
-                                const std::string& usernameValue, const std::string& passwordValue,
-                                bool showAll) {
-                                 DatabaseConnectionInfo info;
-                                 info.type = DatabaseType::MYSQL;
-                                 info.name = name;
-                                 info.host = hostValue;
-                                 info.port = portValue;
-                                 info.database = databaseValue;
-                                 info.username = usernameValue;
-                                 info.password = passwordValue;
-                                 info.showAllDatabases = showAll;
-                                 return std::make_shared<MySQLDatabase>(info);
-                             });
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase() {
+    return createSqlDatabase("mysql", [](const std::string& name, const std::string& hostValue,
+                                         int portValue, const std::string& databaseValue,
+                                         const std::string& usernameValue,
+                                         const std::string& passwordValue, bool showAll) {
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::MYSQL;
+        info.name = name;
+        info.host = hostValue;
+        info.port = portValue;
+        info.database = databaseValue;
+        info.username = usernameValue;
+        info.password = passwordValue;
+        info.showAllDatabases = showAll;
+        return std::make_shared<MySQLDatabase>(info);
+    });
 }
 
-std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDatabase(
-    const std::optional<std::string>& passwordOverride) {
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDatabase() {
     if (strlen(connectionName) == 0) {
         return nullptr;
     }
@@ -560,7 +555,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDataba
 
     if (authType == 0) {
         usernameStr = std::string(username);
-        passwordStr = passwordOverride.has_value() ? *passwordOverride : std::string(password);
+        passwordStr = std::string(password);
     }
 
     DatabaseConnectionInfo info;
@@ -656,23 +651,15 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             // Try to create and connect to database based on current state
             std::shared_ptr<DatabaseInterface> db;
 
-            std::optional<std::string> passwordOverride;
-            if (authType == 0) {
-                std::string providedPassword(password);
-                if (!providedPassword.empty()) {
-                    passwordOverride = providedPassword;
-                }
-            }
-
             switch (selectedDatabaseType) {
             case DatabaseType::POSTGRESQL:
-                db = createPostgreSQLDatabase(passwordOverride);
+                db = createPostgreSQLDatabase();
                 break;
             case DatabaseType::MYSQL:
-                db = createMySQLDatabase(passwordOverride);
+                db = createMySQLDatabase();
                 break;
             case DatabaseType::MONGODB:
-                db = createMongoDBDatabase(passwordOverride);
+                db = createMongoDBDatabase();
                 break;
             case DatabaseType::REDIS:
                 std::cout << "Creating Redis database connection..." << std::endl;

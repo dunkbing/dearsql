@@ -5,7 +5,6 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <optional>
 
 enum class DialogState { NewConnection };
 
@@ -76,15 +75,11 @@ private:
 
     // Helper functions
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
-    std::shared_ptr<DatabaseInterface>
-    createPostgreSQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
-    std::shared_ptr<DatabaseInterface>
-    createMySQLDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
-    std::shared_ptr<DatabaseInterface>
-    createMongoDBDatabase(const std::optional<std::string>& passwordOverride = std::nullopt);
+    std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
+    std::shared_ptr<DatabaseInterface> createMySQLDatabase();
+    std::shared_ptr<DatabaseInterface> createMongoDBDatabase();
     std::shared_ptr<DatabaseInterface>
     createSqlDatabase(const std::string& defaultDatabase,
-                      const std::optional<std::string>& passwordOverride,
                       const std::function<std::shared_ptr<DatabaseInterface>(
                           const std::string&, const std::string&, int, const std::string&,
                           const std::string&, const std::string&, bool)>& factory);

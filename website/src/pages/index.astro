@@ -81,7 +81,7 @@ const currentYear = new Date().getFullYear();
         </a>
         <div class="flex items-center gap-6 text-sm">
           <a href="#features" class="text-subtext0 hover:text-text">Features</a>
-          <a href="#pricing" class="text-subtext0 hover:text-text">Pricing</a>
+          <!-- <a href="#pricing" class="text-subtext0 hover:text-text">Pricing</a> -->
           <!-- <a
             href="https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"
             target="_blank"
@@ -94,8 +94,15 @@ const currentYear = new Date().getFullYear();
     </header>
 
     <main>
+      <!-- In Development Banner -->
+      <div class="fixed top-14 left-0 right-0 z-40 bg-peach/10 border-b border-peach/20 py-2 px-6 text-center">
+        <p class="text-sm text-peach font-medium">
+          DearSQL is currently in development. Features and availability may change.
+        </p>
+      </div>
+
       <!-- Hero -->
-      <section class="pt-32 pb-10 px-6">
+      <section class="pt-42 pb-10 px-6">
         <div class="max-w-5xl mx-auto text-center">
           <div class="flex justify-center mb-8">
             <img
@@ -274,7 +281,7 @@ const currentYear = new Date().getFullYear();
         </div>
       </section>
 
-      <!-- Pricing -->
+      <!-- Pricing (commented out)
       <section id="pricing" class="py-20 px-6">
         <div class="max-w-5xl mx-auto">
           <h2 class="text-3xl font-semibold text-center mb-4 text-text">
@@ -349,17 +356,11 @@ const currentYear = new Date().getFullYear();
                   All supported databases
                 </li>
               </ul>
-              <!-- <a
-                href="https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"
-                target="_blank"
-                class="block w-full bg-green hover:bg-green/90 text-crust px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Purchase License
-              </a> -->
             </div>
           </div>
         </div>
       </section>
+      -->
 
       <!-- Databases -->
       <section class="py-20 px-6 bg-mantle">
@@ -395,6 +396,19 @@ const currentYear = new Date().getFullYear();
           &copy; {currentYear} DearSQL.
         </p>
         <div class="flex gap-6 text-sm">
+          <a
+            href="mailto:bing@db99.dev"
+            class="text-subtext0 hover:text-text"
+          >
+            Contact
+          </a>
+          <a
+            href="https://instagram.com/dunkbingg"
+            target="_blank"
+            class="text-subtext0 hover:text-text"
+          >
+            Instagram
+          </a>
           <a
             href="https://x.com/dunkbingg"
             target="_blank"

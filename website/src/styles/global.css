@@ -16,6 +16,8 @@
   --blue: #007aff;
   --sky: #66b8ff;
   --green: #a6e6ab;
+  --peach: #fab387;
+  --mauve: #cba6f7;
 }
 
 @theme inline {
@@ -34,6 +36,8 @@
   --color-blue: var(--blue);
   --color-sky: var(--sky);
   --color-green: var(--green);
+  --color-peach: var(--peach);
+  --color-mauve: var(--mauve);
 }
 
 body {

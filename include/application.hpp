@@ -110,6 +110,7 @@ public:
     [[nodiscard]] float getTitlebarHeight() const;
     void updateWorkspaceDropdown() const;
 #endif
+    [[nodiscard]] bool isShutdownRequested() const;
 
 private:
     Application() = default;

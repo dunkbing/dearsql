@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "config.hpp"
+#include "database/async_helper.hpp"
 #include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
@@ -20,6 +21,7 @@
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <csignal>
+#include <cstdlib>
 #include <format>
 #include <imgui_internal.h>
 #include <iostream>
@@ -35,12 +37,18 @@
 
 #include "embedded_fonts.hpp"
 
-static void signal_handler(const int signal) {
-    if (signal == SIGTERM || signal == SIGINT) {
-        Application::getInstance().cleanup();
-        exit(0);
+namespace {
+    volatile sig_atomic_t g_shutdownRequested = 0;
+
+    void signal_handler(const int signal) {
+        if (signal == SIGTERM || signal == SIGINT) {
+            if (g_shutdownRequested != 0) {
+                _Exit(130);
+            }
+            g_shutdownRequested = 1;
+        }
     }
-}
+} // namespace
 
 Application& Application::getInstance() {
     static Application instance;
@@ -213,6 +221,9 @@ void Application::run() {
     double lastInteractionTime = glfwGetTime();
 
     while (!glfwWindowShouldClose(window)) {
+        if (isShutdownRequested()) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
         const double frameStart = glfwGetTime();
         const double timeSinceInteraction = frameStart - lastInteractionTime;
         const bool hadAsyncWork = hasPendingAsyncWork();
@@ -247,6 +258,9 @@ void Application::run() {
 
 void Application::cleanup() {
     std::cout << "Cleaning up " << APP_NAME << "..." << std::endl;
+    if (isShutdownRequested()) {
+        AsyncOperationControl::skipWaitOnDestroy().store(true);
+    }
 
     // Cleanup databases
     for (auto& db : databases) {
@@ -300,6 +314,10 @@ bool Application::hasPendingAsyncWork() const {
     return std::ranges::any_of(databases, [](const std::shared_ptr<DatabaseInterface>& db) {
         return db && db->hasPendingAsyncWork();
     });
+}
+
+bool Application::isShutdownRequested() const {
+    return g_shutdownRequested != 0;
 }
 
 const Theme::Colors& Application::getCurrentColors() const {

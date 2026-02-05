@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source shared config
-source "$SCRIPT_DIR/test_db_config"
+source "$SCRIPT_DIR/test-db-config"
 
 # Use sudo for docker if not running as root and user not in docker group
 DOCKER="docker"
@@ -51,6 +51,23 @@ wait_for_port() {
 # Function to seed PostgreSQL
 seed_postgres() {
     echo "Seeding PostgreSQL..."
+    # Wait for PostgreSQL to be fully ready inside the container
+    echo -n "Waiting for PostgreSQL to accept connections..."
+    local max_attempts=30
+    local attempt=0
+    while (( attempt < max_attempts )); do
+        if $DOCKER exec "$POSTGRES_CONTAINER" pg_isready -h localhost -U postgres &>/dev/null; then
+            echo " Ready!"
+            break
+        fi
+        echo -n "."
+        sleep 1
+        ((attempt++))
+    done
+    if (( attempt >= max_attempts )); then
+        echo " Timeout waiting for PostgreSQL!"
+        return 1
+    fi
     $DOCKER exec -i "$POSTGRES_CONTAINER" psql -h localhost -U postgres -d "$DEARSQL_TEST_PG_DB" <<'EOF'
 -- Drop existing tables if they exist
 DROP TABLE IF EXISTS order_items CASCADE;

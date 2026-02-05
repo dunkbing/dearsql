@@ -1125,6 +1125,10 @@ void LinuxPlatform::runMainLoop() {
     gtk_window_present(GTK_WINDOW(window_));
 
     while (!shouldClose_) {
+        if (app_ && app_->isShutdownRequested()) {
+            shouldClose_ = true;
+        }
+
         // Process GTK events
         while (g_main_context_pending(nullptr)) {
             g_main_context_iteration(nullptr, FALSE);

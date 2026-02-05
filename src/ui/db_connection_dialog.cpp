@@ -44,7 +44,7 @@ void DatabaseConnectionDialog::showDialog() {
 }
 
 void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
-    const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "MongoDB", "Redis"};
+    const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "Redis", "MongoDB"};
     int currentType = static_cast<int>(selectedDatabaseType);
 
     ImGui::SetNextItemWidth(150);
@@ -56,7 +56,8 @@ void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
                 if (newType != selectedDatabaseType) {
                     selectedDatabaseType = newType;
                     // Update default port and connection name
-                    bool shouldSetDefault = strlen(connectionName) == 0 || isDefaultName(connectionName);
+                    bool shouldSetDefault =
+                        strlen(connectionName) == 0 || isDefaultName(connectionName);
                     switch (selectedDatabaseType) {
                     case DatabaseType::SQLITE:
                         break;
@@ -74,7 +75,8 @@ void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
                         break;
                     }
                     if (shouldSetDefault)
-                        strncpy(connectionName, DEFAULT_CONNECTION_NAME, sizeof(connectionName) - 1);
+                        strncpy(connectionName, DEFAULT_CONNECTION_NAME,
+                                sizeof(connectionName) - 1);
                 }
             }
             if (isSelected)
@@ -90,8 +92,8 @@ void DatabaseConnectionDialog::renderSQLiteFields() {
     ImGui::Text("Database File Path:");
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
 
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90);
     ImGui::InputText("##sqlite_path", sqlitePath, sizeof(sqlitePath));
@@ -124,8 +126,8 @@ void DatabaseConnectionDialog::renderServerFields(bool showDatabase, const char*
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface2);
 
     // Host and Port on same line
@@ -137,8 +139,10 @@ void DatabaseConnectionDialog::renderServerFields(bool showDatabase, const char*
     snprintf(portStr, sizeof(portStr), "%d", port);
     if (ImGui::InputText("Port", portStr, sizeof(portStr), ImGuiInputTextFlags_CharsDecimal)) {
         port = atoi(portStr);
-        if (port <= 0) port = 1;
-        if (port > 65535) port = 65535;
+        if (port <= 0)
+            port = 1;
+        if (port > 65535)
+            port = 65535;
     }
 
     if (showDatabase) {
@@ -183,8 +187,8 @@ void DatabaseConnectionDialog::renderAuthFields(bool defaultNoAuth) {
     if (authType == 0) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
 
         // Username and Password on same line
         ImGui::SetNextItemWidth(180);
@@ -230,8 +234,14 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
     ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(580, 0), ImGuiCond_Always);
 
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // Square corners for window and child elements
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
+
     if (ImGui::BeginPopupModal(DIALOG_TITLE, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        const auto& colors = Application::getInstance().getCurrentColors();
 
         if (isConnecting) {
             ImGui::BeginDisabled();
@@ -240,8 +250,8 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
         // Connection name and database type on same line
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
 
         ImGui::SetNextItemWidth(300);
         ImGui::InputText("Name", connectionName, sizeof(connectionName));
@@ -315,12 +325,16 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
         }
 
         // Buttons
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-            ImGui::Button("Connecting...", ImVec2(100, 0));
-            ImGui::EndDisabled();
+        if (connectionOp.isRunning()) {
+            UIUtils::Spinner("##connecting", 8.0f, 3, ImGui::GetColorU32(colors.blue));
             ImGui::SameLine();
-            ImGui::Text("%c", "|/-\\"[static_cast<int>(ImGui::GetTime() / 0.1f) & 3]);
+            ImGui::Text("Connecting...");
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+                connectionOp.cancel();
+                isConnecting = false;
+                errorMessage = "Connection cancelled";
+            }
         } else {
             const char* buttonLabel = editingDatabase ? "Update" : "Connect";
             if (ImGui::Button(buttonLabel, ImVec2(100, 0))) {
@@ -338,7 +352,8 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
                             if (success) {
                                 SavedConnection conn;
                                 conn.connectionInfo = connInfo;
-                                conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
+                                conn.workspaceId =
+                                    Application::getInstance().getCurrentWorkspaceId();
 
                                 const auto& app = Application::getInstance();
                                 int newConnectionId = app.getAppState()->saveConnection(conn);
@@ -362,25 +377,19 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
             }
         }
 
-        ImGui::SameLine();
-
-        if (isConnecting) {
-            ImGui::BeginDisabled();
-        }
-
-        if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-            ImGui::CloseCurrentPopup();
-            reset();
-        }
-
-        if (isConnecting) {
-            ImGui::EndDisabled();
+        if (!isConnecting) {
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                ImGui::CloseCurrentPopup();
+                reset();
+            }
         }
 
         ImGui::EndPopup();
     }
-}
 
+    ImGui::PopStyleVar(3); // WindowRounding, FrameRounding, PopupRounding
+}
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::getResult() {
     auto temp = result;
@@ -652,9 +661,13 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         app.getAppState()->updateConnection(updatedConn);
     }
 
-    // Start connection using std::async
-    connectionFuture = std::async(std::launch::async, [this]() {
+    // Start connection using AsyncOperation
+    connectionOp.startCancellable([this](const auto& cancelFlag) {
         try {
+            if (cancelFlag->load()) {
+                return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                      std::string("Connection cancelled"));
+            }
             // Try to create and connect to database based on current state
             std::shared_ptr<DatabaseInterface> db;
 
@@ -696,8 +709,18 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 break;
             }
 
+            if (cancelFlag->load()) {
+                return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                      std::string("Connection cancelled"));
+            }
+
             if (db) {
                 auto [success, error] = db->connect();
+                if (cancelFlag->load()) {
+                    db->disconnect();
+                    return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
+                                          std::string("Connection cancelled"));
+                }
                 if (success) {
                     return std::make_pair(db, std::string(""));
                 } else {
@@ -716,58 +739,58 @@ void DatabaseConnectionDialog::startAsyncConnection() {
 }
 
 void DatabaseConnectionDialog::checkAsyncConnectionStatus() {
-    if (connectionFuture.valid() &&
-        connectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        auto [db, error] = connectionFuture.get();
+    connectionOp.check(
+        [this](std::pair<std::shared_ptr<DatabaseInterface>, std::string> result_pair) {
+            auto [db, error] = result_pair;
 
-        if (!db) {
-            isConnecting = false;
-            errorMessage = error;
-            return;
-        }
-
-        if (!editingDatabase) {
-            // Save successful connection for new connections
-            SavedConnection conn;
-            conn.connectionInfo.name = std::string(connectionName);
-            conn.connectionInfo.type = selectedDatabaseType;
-            conn.connectionInfo.host = std::string(host);
-            conn.connectionInfo.port = port;
-            conn.connectionInfo.database = std::string(database);
-            conn.connectionInfo.username = std::string(username);
-            conn.connectionInfo.password = std::string(password);
-            conn.connectionInfo.showAllDatabases = showAllDatabases;
-            conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
-
-            const auto& app = Application::getInstance();
-            int newConnectionId = app.getAppState()->saveConnection(conn);
-            if (newConnectionId != -1) {
-                db->setConnectionId(newConnectionId);
+            if (!db) {
+                isConnecting = false;
+                errorMessage = error;
+                return;
             }
 
-            result = db;
-        } else {
-            auto& app = Application::getInstance();
+            if (!editingDatabase) {
+                // Save successful connection for new connections
+                SavedConnection conn;
+                conn.connectionInfo.name = std::string(connectionName);
+                conn.connectionInfo.type = selectedDatabaseType;
+                conn.connectionInfo.host = std::string(host);
+                conn.connectionInfo.port = port;
+                conn.connectionInfo.database = std::string(database);
+                conn.connectionInfo.username = std::string(username);
+                conn.connectionInfo.password = std::string(password);
+                conn.connectionInfo.showAllDatabases = showAllDatabases;
+                conn.workspaceId = Application::getInstance().getCurrentWorkspaceId();
 
-            if (editingConnectionId != -1) {
-                db->setConnectionId(editingConnectionId);
-            }
-
-            // Update the database in the application
-            auto& databases = app.getDatabases();
-            for (size_t i = 0; i < databases.size(); i++) {
-                if (databases[i] == editingDatabase) {
-                    // Disconnect old database
-                    databases[i]->disconnect();
-                    // Replace with new database
-                    databases[i] = db;
-                    break;
+                const auto& app = Application::getInstance();
+                int newConnectionId = app.getAppState()->saveConnection(conn);
+                if (newConnectionId != -1) {
+                    db->setConnectionId(newConnectionId);
                 }
-            }
 
-            result = nullptr; // Don't return a new database in edit mode
-        }
-        ImGui::CloseCurrentPopup();
-        reset();
-    }
+                result = db;
+            } else {
+                auto& app = Application::getInstance();
+
+                if (editingConnectionId != -1) {
+                    db->setConnectionId(editingConnectionId);
+                }
+
+                // Update the database in the application
+                auto& databases = app.getDatabases();
+                for (size_t i = 0; i < databases.size(); i++) {
+                    if (databases[i] == editingDatabase) {
+                        // Disconnect old database
+                        databases[i]->disconnect();
+                        // Replace with new database
+                        databases[i] = db;
+                        break;
+                    }
+                }
+
+                result = nullptr; // Don't return a new database in edit mode
+            }
+            ImGui::CloseCurrentPopup();
+            reset();
+        });
 }

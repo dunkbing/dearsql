@@ -1,16 +1,13 @@
 #pragma once
 
-#include "app_state.hpp"
+#include "database/async_helper.hpp"
 #include "database/db_interface.hpp"
 #include <atomic>
 #include <functional>
-#include <future>
 #include <memory>
 #include <optional>
 
-enum class DialogState {
-    NewConnection
-};
+enum class DialogState { NewConnection };
 
 class DatabaseInterface;
 
@@ -46,7 +43,7 @@ private:
     int editingConnectionId = -1;
 
     // Async connection
-    std::future<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionFuture;
+    AsyncOperation<std::pair<std::shared_ptr<DatabaseInterface>, std::string>> connectionOp;
 
     // Selected database type
     DatabaseType selectedDatabaseType = DatabaseType::SQLITE;

@@ -114,28 +114,16 @@ namespace Theme {
         style.ChildBorderSize = 0.0f;  // No child borders
         style.PopupBorderSize = 1.0f;  // Subtle popup borders
         style.FrameBorderSize = 0.0f;  // No frame borders for clean look
-        style.TabBorderSize = 0.0f;    // No tab borders
+        style.TabBorderSize = 1.0f;    // Tab borders
 
-        // Platform-appropriate rounding
-#ifdef __APPLE__
-        // macOS likes more rounded corners
-        style.WindowRounding = 10.0f;
-        style.ChildRounding = 8.0f;
-        style.FrameRounding = 6.0f;
-        style.PopupRounding = 8.0f;
-        style.ScrollbarRounding = 8.0f;
-        style.GrabRounding = 6.0f;
-        style.TabRounding = 6.0f;
-#else
-        // Windows/Linux prefers less rounding
-        style.WindowRounding = 4.0f;
-        style.ChildRounding = 4.0f;
-        style.FrameRounding = 3.0f;
-        style.PopupRounding = 4.0f;
-        style.ScrollbarRounding = 4.0f;
-        style.GrabRounding = 3.0f;
-        style.TabRounding = 3.0f;
-#endif
+        // Sharp corners throughout
+        style.WindowRounding = 0.0f;
+        style.ChildRounding = 0.0f;
+        style.FrameRounding = 0.0f;
+        style.PopupRounding = 0.0f;
+        style.ScrollbarRounding = 0.0f;
+        style.GrabRounding = 0.0f;
+        style.TabRounding = 0.0f;
 
         // Native-like alignment
         style.WindowTitleAlign = ImVec2(0.5f, 0.5f);    // Centered title

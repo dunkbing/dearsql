@@ -725,8 +725,8 @@ void Application::renderMainUI() {
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
 
     if (shouldShowSidebar) {
-        ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
+        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
         ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
@@ -743,8 +743,8 @@ void Application::renderMainUI() {
     }
 
     // Main workspace area - positioning depends on sidebar visibility
-    ImGui::PushStyleColor(ImGuiCol_Tab, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
+    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 

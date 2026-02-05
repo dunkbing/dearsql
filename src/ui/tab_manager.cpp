@@ -108,6 +108,22 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(IDatabaseNode* node,
 }
 
 void TabManager::renderTabs() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // Square tab corners and style tabs (selected = lighter, unselected = darker)
+    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_TabBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_TabSelected, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_TabSelectedOverline, ImVec4(0, 0, 0, 0)); // transparent
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface0);
+    // Keep same colors when unfocused
+    ImGui::PushStyleColor(ImGuiCol_TabDimmed, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelectedOverline, ImVec4(0, 0, 0, 0));
+
     // Render each tab as a separate dockable window
     for (auto it = tabs.begin(); it != tabs.end();) {
         const auto& tab = *it;
@@ -139,6 +155,9 @@ void TabManager::renderTabs() {
             ++it;
         }
     }
+
+    ImGui::PopStyleColor(8);
+    ImGui::PopStyleVar(3);
 }
 
 void TabManager::renderEmptyState() {

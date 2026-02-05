@@ -64,6 +64,11 @@ void TableDialog::render() {
     // Set popup size - make it larger for the new layout
     ImGui::SetNextWindowSize(ImVec2(900, 600), ImGuiCond_FirstUseEver);
 
+    // Square corners
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+
     if (ImGui::BeginPopupModal(title, &isDialogOpen, ImGuiWindowFlags_NoScrollbar)) {
         // Show table context
         if (dialogMode == TableDialogMode::Edit) {
@@ -119,6 +124,8 @@ void TableDialog::render() {
 
         ImGui::EndPopup();
     }
+
+    ImGui::PopStyleVar(3); // WindowRounding, PopupRounding, FrameRounding
 
     if (!isDialogOpen) {
         // Dialog was closed without saving

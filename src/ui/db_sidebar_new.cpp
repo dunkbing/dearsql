@@ -212,6 +212,9 @@ void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
+    // Square popup corners
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar();
@@ -313,46 +316,28 @@ void DatabaseSidebarNew::render() {
     ImGui::EndChild();
 
     // Handle delete confirmation dialog
-    if (shouldShowDeleteConfirmation) {
-        ImGui::OpenPopup("Confirm Delete Database");
-        shouldShowDeleteConfirmation = false;
-    }
-
-    if (ImGui::BeginPopupModal("Confirm Delete Database", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (shouldShowDeleteConfirmation && databasePendingDeletion) {
         const auto db = databasePendingDeletion;
-        if (db) {
-            auto const connectionInfo = db->getConnectionInfo();
-            ImGui::Text("Are you sure you want to remove this database connection?");
-            ImGui::Text("Database: %s", connectionInfo.name.c_str());
-            ImGui::Spacing();
-            ImGui::Text("This will:");
-            ImGui::BulletText("Remove the database from the current session");
-            ImGui::BulletText("Delete the saved connection (if any)");
-            ImGui::BulletText("Close any open tabs for this database");
-            ImGui::Spacing();
-            ImGui::Separator();
+        auto const connectionInfo = db->getConnectionInfo();
 
-            if (ImGui::Button("Remove", ImVec2(100, 0))) {
+        ConfirmDialog::instance().show(
+            "Remove Database",
+            std::format("Are you sure you want to remove '{}'?", connectionInfo.name),
+            {"Remove the database from the current session", "Delete the saved connection (if any)",
+             "Close any open tabs for this database"},
+            "Remove",
+            [this, db, &app, connectionInfo]() {
                 if (app.getAppState()->deleteConnection(db->getConnectionId())) {
                     Logger::info(std::format("Removed saved connection: {}", connectionInfo.name));
                 }
                 Logger::info(std::format("Database removed: {}", connectionInfo.name));
-                // Remove from hierarchy cache before removing database
                 hierarchyCache.erase(db.get());
                 app.removeDatabase(db);
                 databasePendingDeletion.reset();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-                databasePendingDeletion.reset();
-                ImGui::CloseCurrentPopup();
-            }
-        } else {
-            ImGui::Text("No database selected for removal.");
-        }
-        ImGui::EndPopup();
+            },
+            [this]() { databasePendingDeletion.reset(); });
+
+        shouldShowDeleteConfirmation = false;
     }
 
     // dialogs
@@ -486,6 +471,8 @@ void DatabaseSidebarNew::render() {
 
     ImGui::PopStyleColor(3);
     ImGui::End();
+
+    ImGui::PopStyleVar(); // PopupRounding
 }
 
 void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db) {

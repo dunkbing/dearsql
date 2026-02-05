@@ -225,7 +225,6 @@ void SQLEditorTab::cancelQueryExecution() {
     queryTableData.clear();
 }
 
-
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,
                                           float minSize2) const {
     constexpr float hoverThickness = 6.0f;

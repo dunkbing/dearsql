@@ -32,6 +32,11 @@ void ConfirmDialog::render() {
 
     ImGui::SetNextWindowSize(ImVec2(450, 0), ImGuiCond_FirstUseEver);
 
+    // Square corners
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+
     if (ImGui::BeginPopupModal(dialogTitle.c_str(), &isDialogOpen,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         const auto& theme = Application::getInstance().getCurrentColors();
@@ -74,6 +79,7 @@ void ConfirmDialog::render() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.maroon);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(theme.red.x * 0.8f, theme.red.y * 0.8f,
                                                             theme.red.z * 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, theme.crust);
 
         if (ImGui::Button(confirmText.c_str(), ImVec2(120, 0))) {
             if (confirmCallback) {
@@ -82,7 +88,7 @@ void ConfirmDialog::render() {
             isDialogOpen = false;
         }
 
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(4);
 
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
@@ -94,6 +100,8 @@ void ConfirmDialog::render() {
 
         ImGui::EndPopup();
     }
+
+    ImGui::PopStyleVar(3); // WindowRounding, PopupRounding, FrameRounding
 
     if (!isDialogOpen) {
         reset();

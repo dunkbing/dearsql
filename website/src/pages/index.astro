@@ -3,56 +3,41 @@ import Layout from "../layouts/Layout.astro";
 
 const features = [
   {
-    title: "Multiple database support",
+    title: "Hand-crafted querying experience",
     description:
-      "Connect to SQLite, PostgreSQL, MySQL, and Redis from a single app. Switch between databases effortlessly.",
+      "Syntax highlighting, autocomplete, and query history. Write SQL with less friction and more confidence.",
   },
   {
-    title: "Native performance",
+    title: "Effortless table editing",
     description:
-      "Built with C++ using Metal on macOS and OpenGL on Linux. No Electron, no bloat. Just fast, responsive UI.",
+      "Browse, filter, and edit table data inline. Changes are staged and generate proper SQL before committing.",
   },
   {
-    title: "SQL editor",
+    title: "Built for performance",
     description:
-      "Syntax highlighting, autocomplete, and query history. Write SQL faster with less friction.",
-  },
-  {
-    title: "Visual table editing",
-    description:
-      "Browse, filter, and edit table data inline. Changes generate proper SQL statements.",
-  },
-  {
-    title: "ER diagrams",
-    description:
-      "Visualize table relationships with auto-generated entity-relationship diagrams.",
+      "Native C++ with Metal on macOS and OpenGL on Linux. No Electron, no bloat. Just fast, responsive UI.",
   },
 ];
 
 const databases = [
   {
     name: "SQLite",
-    description: "Local file-based databases",
     icon: "/icons/sqlite.svg",
   },
   {
     name: "PostgreSQL",
-    description: "Full schema and pool support",
     icon: "/icons/postgresql.svg",
   },
   {
     name: "MySQL",
-    description: "Complete MySQL compatibility",
     icon: "/icons/mysql.svg",
   },
   {
     name: "Redis",
-    description: "Key-value browsing and editing",
     icon: "/icons/redis.svg",
   },
   {
     name: "MongoDB",
-    description: "Document database support",
     icon: "/icons/mongodb.svg",
   },
 ];
@@ -67,7 +52,7 @@ const currentYear = new Date().getFullYear();
       class="fixed top-0 left-0 right-0 z-50 bg-base/80 backdrop-blur-sm border-b border-surface1"
     >
       <nav
-        class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between"
+        class="max-w-2xl mx-auto px-6 h-14 flex items-center justify-between"
       >
         <a href="/" class="flex items-center gap-2 font-semibold text-lg">
           <img
@@ -80,151 +65,98 @@ const currentYear = new Date().getFullYear();
           DearSQL
         </a>
         <div class="flex items-center gap-6 text-sm">
-          <a href="#features" class="text-subtext0 hover:text-text">Features</a>
-          <!-- <a href="#pricing" class="text-subtext0 hover:text-text">Pricing</a> -->
-          <!-- <a
-            href="https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"
-            target="_blank"
-            class="text-subtext0 hover:text-text"
-          >
-            Purchase License
-          </a> -->
+          <a href="#features" class="text-subtext0 hover:text-text transition-colors">Features</a>
+          <a href="#pricing" class="text-subtext0 hover:text-text transition-colors">Pricing</a>
         </div>
       </nav>
     </header>
 
-    <main>
-      <!-- In Development Banner -->
-      <div class="fixed top-14 left-0 right-0 z-40 bg-peach/10 border-b border-peach/20 py-2 px-6 text-center">
-        <p class="text-sm text-peach font-medium">
-          DearSQL is currently in development. Features and availability may change.
-        </p>
-      </div>
-
+    <main class="max-w-2xl mx-auto px-6">
       <!-- Hero -->
-      <section class="pt-42 pb-10 px-6">
-        <div class="max-w-5xl mx-auto text-center">
-          <div class="flex justify-center mb-8">
-            <img
-              src="/icon-hero.webp"
-              alt="DearSQL"
-              width="96"
-              height="96"
-              class="rounded-2xl"
-            />
-          </div>
-          <h1
-            class="text-4xl md:text-5xl font-semibold tracking-tight mb-6 text-text"
+      <section class="pt-36 pb-16 text-center">
+        <p class="text-sm text-peach font-medium mb-6 tracking-wide uppercase">
+          Currently in development
+        </p>
+        <h1 class="text-5xl md:text-6xl font-bold tracking-tight mb-6 text-text leading-tight">
+          A simple, powerful<br />database manager
+        </h1>
+        <p class="text-lg md:text-xl text-subtext0 max-w-xl mx-auto mb-10 leading-relaxed">
+          Fast, native, and designed for developers who care about their tools.
+        </p>
+        <p class="text-subtext0 text-sm">Free and open source. macOS & Linux.</p>
+
+        <div class="flex flex-col sm:flex-row gap-4 justify-center mt-10 mb-8">
+          <a
+            href="https://pub-29493441e7d647038e2f777e7cac5cce.r2.dev/DearSQL.dmg"
+            class="inline-flex items-center justify-center gap-2 bg-surface0 hover:bg-surface1 border border-surface1 text-text px-6 py-3 rounded-lg font-medium transition-colors"
           >
-            Simple, powerful database manager
-          </h1>
-          <p class="text-xl text-subtext0 max-w-2xl mx-auto mb-10">
-            A native desktop SQL client for SQLite, PostgreSQL, MySQL, MongoDB,
-            and Redis. Fast, intuitive, and built for developers who value
-            simplicity.
-          </p>
-          <div class="flex flex-col sm:flex-row gap-4 justify-center mb-4">
-            <a
-              href="https://pub-29493441e7d647038e2f777e7cac5cce.r2.dev/dearsql_0.1.0_amd64.deb"
-              class="inline-flex items-center gap-2 bg-peach hover:bg-peach/90 text-crust px-6 py-3 rounded-lg font-medium transition-colors"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
-                ></path>
-              </svg>
-              Download for Linux (.deb, 3.7 MB)
-            </a>
-            <!-- <a
-              href="https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"
-              target="_blank"
-              class="inline-flex items-center gap-2 bg-green hover:bg-green/90 text-crust px-6 py-3 rounded-lg font-medium transition-colors"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path
-                  d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"
-                ></path>
-              </svg>
-              Purchase License
-            </a> -->
-            <a
-              href="https://pub-29493441e7d647038e2f777e7cac5cce.r2.dev/DearSQL.dmg"
-              class="inline-flex items-center gap-2 bg-mauve hover:bg-mauve/90 text-crust px-6 py-3 rounded-lg font-medium transition-colors"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path
-                  d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"
-                ></path>
-              </svg>
-              Download for macOS (.dmg, 9.4 MB)
-            </a>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"></path>
+            </svg>
+            macOS (.dmg)
+          </a>
+          <a
+            href="https://pub-29493441e7d647038e2f777e7cac5cce.r2.dev/dearsql_0.1.0_amd64.deb"
+            class="inline-flex items-center justify-center gap-2 bg-surface0 hover:bg-surface1 border border-surface1 text-text px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"></path>
+            </svg>
+            Linux (.deb)
+          </a>
+        </div>
+        <div class="max-w-md mx-auto">
+          <p class="text-subtext0 text-sm mb-3">Or install via PPA (Ubuntu/Debian):</p>
+          <div class="bg-crust rounded-lg p-4 text-left font-mono text-sm border border-surface1">
+            <p class="text-subtext0"><span class="text-green select-none">$ </span><span class="text-text select-all">sudo add-apt-repository ppa:dunkbing/dearsql</span></p>
+            <p class="text-subtext0"><span class="text-green select-none">$ </span><span class="text-text select-all">sudo apt update && sudo apt install dearsql</span></p>
           </div>
-          <p class="text-subtext0 text-sm">
-            Windows planned for future release.
-          </p>
         </div>
       </section>
 
-      <!-- Screenshots -->
-      <section class="pb-20 px-6">
-        <div class="max-w-5xl mx-auto">
-          <div class="flex justify-center gap-2 mb-6">
-            <button
-              id="tab-macos"
-              class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface1 text-text"
-              data-tab="macos"
-            >
-              macOS
-            </button>
-            <button
-              id="tab-linux"
-              class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface0 text-subtext0 hover:bg-surface1 hover:text-text transition-colors"
-              data-tab="linux"
-            >
-              Linux
-            </button>
-          </div>
-          <div
-            id="screenshot-macos"
-            class="screenshot-panel bg-surface0 rounded-xl p-2 shadow-2xl shadow-black/50"
+      <!-- Screenshot -->
+      <section class="pb-24">
+        <div class="flex justify-center gap-2 mb-6">
+          <button
+            id="tab-macos"
+            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface1 text-text"
+            data-tab="macos"
           >
-            <img
-              src="/sc.webp"
-              alt="DearSQL on macOS"
-              width="1400"
-              height="913"
-              fetchpriority="high"
-              class="rounded-lg w-full h-auto"
-            />
-          </div>
-          <div
-            id="screenshot-linux"
-            class="screenshot-panel hidden bg-surface0 rounded-xl p-2 shadow-2xl shadow-black/50"
+            macOS
+          </button>
+          <button
+            id="tab-linux"
+            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium bg-surface0 text-subtext0 hover:bg-surface1 hover:text-text transition-colors"
+            data-tab="linux"
           >
-            <img
-              src="/sc_gtk.webp"
-              alt="DearSQL on Linux"
-              width="1400"
-              height="783"
-              fetchpriority="high"
-              class="rounded-lg w-full h-auto"
-            />
-          </div>
+            Linux
+          </button>
+        </div>
+        <div
+          id="screenshot-macos"
+          class="screenshot-panel rounded-xl overflow-hidden shadow-2xl shadow-black/50 border border-surface1"
+        >
+          <img
+            src="/sc.webp"
+            alt="DearSQL on macOS"
+            width="1400"
+            height="913"
+            fetchpriority="high"
+            class="w-full h-auto"
+          />
+        </div>
+        <div
+          id="screenshot-linux"
+          class="screenshot-panel hidden rounded-xl overflow-hidden shadow-2xl shadow-black/50 border border-surface1"
+        >
+          <img
+            src="/sc_gtk.webp"
+            alt="DearSQL on Linux"
+            width="1400"
+            height="783"
+            fetchpriority="high"
+            class="w-full h-auto"
+          />
         </div>
       </section>
 
@@ -255,164 +187,156 @@ const currentYear = new Date().getFullYear();
       </script>
 
       <!-- Features -->
-      <section id="features" class="py-20 px-6 bg-mantle">
-        <div class="max-w-5xl mx-auto">
-          <h2 class="text-3xl font-semibold text-center mb-4 text-text">
-            Best at the basics
-          </h2>
-          <p class="text-subtext0 text-center mb-12 max-w-2xl mx-auto">
-            DearSQL focuses on what matters: connecting to databases, writing
-            queries, and managing data. No unnecessary complexity.
-          </p>
-          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {
-              features.map((feature) => (
-                <div class="bg-surface0 p-6 rounded-xl border border-surface1">
-                  <h3 class="font-semibold text-lg mb-2 text-text">
-                    {feature.title}
-                  </h3>
-                  <p class="text-subtext0 text-sm leading-relaxed">
-                    {feature.description}
-                  </p>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      </section>
-
-      <!-- Pricing (commented out)
-      <section id="pricing" class="py-20 px-6">
-        <div class="max-w-5xl mx-auto">
-          <h2 class="text-3xl font-semibold text-center mb-4 text-text">
-            Simple pricing
-          </h2>
-          <p class="text-subtext0 text-center mb-4 max-w-2xl mx-auto">
-            One-time purchase. No subscriptions, no recurring fees.
-          </p>
-          <p class="text-subtext1 text-center text-sm mb-12 max-w-2xl mx-auto">
-            DearSQL is in active development. New features and improvements are
-            released regularly.
-          </p>
-          <div class="max-w-sm mx-auto">
-            <div
-              class="bg-surface0 rounded-xl border border-surface1 p-8 text-center"
-            >
-              <div class="mb-6">
-                <span class="text-5xl font-bold text-text">$30</span>
-                <span class="text-subtext0 ml-1">USD</span>
+      <section id="features" class="py-24">
+        <h2 class="text-3xl md:text-4xl font-bold text-center mb-4 text-text">
+          Best at the basics
+        </h2>
+        <p class="text-subtext0 text-center mb-16 max-w-xl mx-auto">
+          No unnecessary complexity. Just what matters for working with databases.
+        </p>
+        <div class="grid md:grid-cols-3 gap-8">
+          {
+            features.map((feature) => (
+              <div class="text-center md:text-left">
+                <h3 class="font-semibold text-lg mb-3 text-text">
+                  {feature.title}
+                </h3>
+                <p class="text-subtext0 text-sm leading-relaxed">
+                  {feature.description}
+                </p>
               </div>
-              <ul class="text-left space-y-3 mb-8">
-                <li class="flex items-center gap-3 text-subtext0">
-                  <svg
-                    class="w-5 h-5 text-green shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                  Lifetime license
-                </li>
-                <li class="flex items-center gap-3 text-subtext0">
-                  <svg
-                    class="w-5 h-5 text-green shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                  Up to 3 devices
-                </li>
-                <li class="flex items-center gap-3 text-subtext0">
-                  <svg
-                    class="w-5 h-5 text-green shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                  All future updates
-                </li>
-                <li class="flex items-center gap-3 text-subtext0">
-                  <svg
-                    class="w-5 h-5 text-green shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                  All supported databases
-                </li>
-              </ul>
-            </div>
-          </div>
+            ))
+          }
         </div>
       </section>
-      -->
 
       <!-- Databases -->
-      <section class="py-20 px-6 bg-mantle">
-        <div class="max-w-5xl mx-auto">
-          <h2 class="text-3xl font-semibold text-center mb-12 text-text">
-            All your databases, one app
-          </h2>
-          <div class="flex flex-wrap justify-center gap-6">
-            {
-              databases.map((db) => (
-                <div class="text-center p-6 border border-surface1 rounded-xl bg-surface0">
-                  <img
-                    src={db.icon}
-                    alt={db.name}
-                    class="w-12 h-12 mx-auto mb-4"
-                  />
-                  <h3 class="font-semibold mb-1 text-text">{db.name}</h3>
-                  <p class="text-subtext0 text-sm">{db.description}</p>
-                </div>
-              ))
-            }
+      <section id="databases" class="py-24 border-t border-surface1">
+        <h2 class="text-3xl md:text-4xl font-bold text-center mb-4 text-text">
+          All your databases, one app
+        </h2>
+        <p class="text-subtext0 text-center mb-16 max-w-xl mx-auto">
+          Connect to SQLite, PostgreSQL, MySQL, MongoDB, and Redis from a single interface.
+        </p>
+        <div class="grid grid-cols-3 sm:grid-cols-5 gap-6">
+          {
+            databases.map((db) => (
+              <div class="text-center p-5 rounded-xl border border-surface1 bg-surface0">
+                <img
+                  src={db.icon}
+                  alt={db.name}
+                  class="w-10 h-10 mx-auto mb-3"
+                />
+                <h3 class="font-medium text-sm text-text">{db.name}</h3>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <!-- Pricing -->
+      <section id="pricing" class="py-24 border-t border-surface1">
+        <h2 class="text-3xl md:text-4xl font-bold text-center mb-4 text-text">
+          Simple pricing
+        </h2>
+        <p class="text-subtext0 text-center mb-12">
+          One-time purchase. No subscriptions, no recurring fees.
+        </p>
+        <div class="grid sm:grid-cols-2 gap-6">
+          <!-- Free -->
+          <div class="rounded-xl border border-surface1 bg-surface0 p-8">
+            <h3 class="font-semibold text-lg text-text mb-1">Free</h3>
+            <p class="text-subtext0 text-sm mb-6">For getting started</p>
+            <div class="mb-6">
+              <span class="text-4xl font-bold text-text">$0</span>
+            </div>
+            <ul class="space-y-3 text-sm">
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                SQLite support
+              </li>
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                Table editor
+              </li>
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                Query editor
+              </li>
+            </ul>
+          </div>
+          <!-- License -->
+          <div class="rounded-xl border border-peach/30 bg-surface0 p-8 relative">
+            <h3 class="font-semibold text-lg text-text mb-1">License</h3>
+            <p class="text-subtext0 text-sm mb-6">For professionals</p>
+            <div class="mb-6">
+              <span class="text-4xl font-bold text-text">$30</span>
+              <span class="text-subtext0 text-sm ml-1">USD</span>
+            </div>
+            <ul class="space-y-3 text-sm">
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                All databases
+              </li>
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                Up to 3 devices
+              </li>
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                All future updates
+              </li>
+              <li class="flex items-center gap-2 text-subtext0">
+                <svg class="w-4 h-4 text-green shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                ER diagrams
+              </li>
+            </ul>
           </div>
         </div>
       </section>
+
     </main>
 
     <!-- Footer -->
     <footer class="py-8 px-6 border-t border-surface1">
       <div
-        class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4"
+        class="max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4"
       >
         <p class="text-subtext0 text-sm">
-          &copy; {currentYear} DearSQL.
+          &copy; {currentYear} DearSQL
         </p>
         <div class="flex gap-6 text-sm">
           <a
             href="mailto:bing@db99.dev"
-            class="text-subtext0 hover:text-text"
+            class="text-subtext0 hover:text-text transition-colors"
           >
             Contact
           </a>
           <a
             href="https://instagram.com/dunkbingg"
             target="_blank"
-            class="text-subtext0 hover:text-text"
+            class="text-subtext0 hover:text-text transition-colors"
           >
             Instagram
           </a>
           <a
             href="https://x.com/dunkbingg"
             target="_blank"
-            class="text-subtext0 hover:text-text"
+            class="text-subtext0 hover:text-text transition-colors"
           >
             X
           </a>

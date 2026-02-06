@@ -123,7 +123,8 @@ public:
         }
 
         if (activeOperation.has_value() && activeOperation->future.valid() &&
-            activeOperation->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            activeOperation->future.wait_for(std::chrono::seconds(0)) ==
+                std::future_status::ready) {
             running = false;
             waitForOperation(*activeOperation);
             if (callback) {

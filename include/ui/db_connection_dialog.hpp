@@ -8,6 +8,8 @@
 
 enum class DialogState { NewConnection };
 
+enum AuthType { AUTH_USERNAME_PASSWORD = 0, AUTH_NONE = 1 };
+
 class DatabaseInterface;
 
 class DatabaseConnectionDialog {
@@ -58,7 +60,7 @@ private:
     char username[256] = "";
     char password[256] = "";
     bool showAllDatabases = false;
-    int authType = 0; // 0 = Username & Password, 1 = No Auth
+    int authType = AUTH_USERNAME_PASSWORD;
 
     // Result
     std::shared_ptr<DatabaseInterface> result = nullptr;

@@ -171,20 +171,20 @@ void DatabaseConnectionDialog::renderAuthFields(bool defaultNoAuth) {
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
 
     if (defaultNoAuth) {
-        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::RadioButton("No Authentication", &authType, AUTH_NONE);
         ImGui::SameLine();
-        ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::RadioButton("Username & Password", &authType, AUTH_USERNAME_PASSWORD);
     } else {
-        ImGui::RadioButton("Username & Password", &authType, 0);
+        ImGui::RadioButton("Username & Password", &authType, AUTH_USERNAME_PASSWORD);
         ImGui::SameLine();
-        ImGui::RadioButton("No Authentication", &authType, 1);
+        ImGui::RadioButton("No Authentication", &authType, AUTH_NONE);
     }
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     ImGui::Spacing();
 
-    if (authType == 0) {
+    if (authType == AUTH_USERNAME_PASSWORD) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
@@ -398,7 +398,7 @@ void DatabaseConnectionDialog::reset() {
     currentState = DialogState::NewConnection;
     isConnecting = false;
     errorMessage.clear();
-    authType = 0;
+    authType = AUTH_USERNAME_PASSWORD;
     editingDatabase = nullptr;
     editingConnectionId = -1;
     sqlitePath[0] = '\0';
@@ -440,7 +440,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
-        authType = connInfo.username.empty() ? 1 : 0;
+        authType = connInfo.username.empty() ? AUTH_NONE : AUTH_USERNAME_PASSWORD;
     } else if (type == DatabaseType::MYSQL) {
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
         const auto& connInfo = mysqlDb->getConnectionInfo();
@@ -450,7 +450,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
-        authType = connInfo.username.empty() ? 1 : 0;
+        authType = connInfo.username.empty() ? AUTH_NONE : AUTH_USERNAME_PASSWORD;
     } else if (type == DatabaseType::MONGODB) {
         const auto mongoDb = std::dynamic_pointer_cast<MongoDBDatabase>(db);
         const auto& connInfo = mongoDb->getConnectionInfo();
@@ -460,7 +460,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
-        authType = connInfo.username.empty() ? 1 : 0;
+        authType = connInfo.username.empty() ? AUTH_NONE : AUTH_USERNAME_PASSWORD;
     } else if (type == DatabaseType::REDIS) {
         const auto redisDb = std::dynamic_pointer_cast<RedisDatabase>(db);
         const auto& connInfo = redisDb->getConnectionInfo();
@@ -468,7 +468,9 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         port = connInfo.port;
         strncpy(username, connInfo.username.c_str(), sizeof(username) - 1);
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
-        authType = (connInfo.password.empty() && connInfo.username.empty()) ? 1 : 0;
+        authType = (connInfo.password.empty() && connInfo.username.empty())
+                       ? AUTH_NONE
+                       : AUTH_USERNAME_PASSWORD;
     } else {
         Logger::warn(
             std::format("editConnection: Unhandled database type {}", static_cast<int>(type)));
@@ -495,7 +497,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
     std::string usernameStr;
     std::string passwordStr;
 
-    if (authType == 0) {
+    if (authType == AUTH_USERNAME_PASSWORD) {
         if (strlen(username) == 0) {
             return nullptr;
         }
@@ -553,7 +555,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDataba
     std::string usernameStr;
     std::string passwordStr;
 
-    if (authType == 0) {
+    if (authType == AUTH_USERNAME_PASSWORD) {
         usernameStr = std::string(username);
         passwordStr = std::string(password);
     }
@@ -578,8 +580,9 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
     }
 
     std::cout << "Creating RedisDatabase: " << connectionName << " -> " << host << ":" << port
-              << " (auth: " << (authType == 0 ? "username & password" : "none") << ")" << std::endl;
-    if (authType == 0 && strlen(username) > 0) {
+              << " (auth: " << (authType == AUTH_USERNAME_PASSWORD ? "username & password" : "none")
+              << ")" << std::endl;
+    if (authType == AUTH_USERNAME_PASSWORD && strlen(username) > 0) {
         std::cout << "Using username: " << username << std::endl;
     }
 
@@ -588,8 +591,8 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createRedisDatabase
     info.name = std::string(connectionName);
     info.host = std::string(host);
     info.port = port;
-    info.username = (authType == 0) ? std::string(username) : "";
-    info.password = (authType == 0) ? std::string(password) : "";
+    info.username = (authType == AUTH_USERNAME_PASSWORD) ? std::string(username) : "";
+    info.password = (authType == AUTH_USERNAME_PASSWORD) ? std::string(password) : "";
 
     return std::make_shared<RedisDatabase>(info);
 }

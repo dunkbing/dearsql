@@ -642,9 +642,9 @@ void DatabaseConnectionDialog::startAsyncConnection() {
     }
 
     // Start connection using AsyncOperation
-    connectionOp.startCancellable([this](const auto& cancelFlag) {
+    connectionOp.startCancellable([this](std::stop_token stopToken) {
         try {
-            if (cancelFlag->load()) {
+            if (stopToken.stop_requested()) {
                 return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
                                       std::string("Connection cancelled"));
             }
@@ -670,14 +670,14 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 break;
             }
 
-            if (cancelFlag->load()) {
+            if (stopToken.stop_requested()) {
                 return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
                                       std::string("Connection cancelled"));
             }
 
             if (db) {
                 auto [success, error] = db->connect();
-                if (cancelFlag->load()) {
+                if (stopToken.stop_requested()) {
                     db->disconnect();
                     return std::make_pair(std::shared_ptr<DatabaseInterface>(nullptr),
                                           std::string("Connection cancelled"));

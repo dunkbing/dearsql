@@ -2,10 +2,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <exception>
 #include <functional>
 #include <future>
-#include <memory>
+#include <optional>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "utils/logger.hpp"
@@ -14,6 +18,19 @@ namespace AsyncOperationControl {
     inline std::atomic<bool>& skipWaitOnDestroy() {
         static std::atomic<bool> skipWait{false};
         return skipWait;
+    }
+
+    inline std::atomic<std::uint64_t>& cancelledTaskCount() {
+        static std::atomic<std::uint64_t> count{0};
+        return count;
+    }
+
+    inline std::uint64_t getCancelledTaskCount() {
+        return cancelledTaskCount().load(std::memory_order_relaxed);
+    }
+
+    inline void resetCancelledTaskCount() {
+        cancelledTaskCount().store(0, std::memory_order_relaxed);
     }
 } // namespace AsyncOperationControl
 
@@ -25,24 +42,32 @@ template <typename ResultType> class AsyncOperation {
 public:
     using Task = std::function<ResultType()>;
     using Callback = std::function<void(ResultType)>;
-    using CancelFlag = std::shared_ptr<std::atomic<bool>>;
-    using CancellableTask = std::function<ResultType(const CancelFlag&)>;
+    using CancellableTask = std::function<ResultType(std::stop_token)>;
 
     AsyncOperation() = default;
     ~AsyncOperation() {
+        running = false;
+
+        if (activeOperation.has_value()) {
+            activeOperation->worker.request_stop();
+        }
+        for (auto& zombie : zombieOperations) {
+            zombie.worker.request_stop();
+        }
+
         if (AsyncOperationControl::skipWaitOnDestroy().load()) {
-            leakFuture(std::move(future));
-            for (auto& zombie : zombieFutures) {
-                leakFuture(std::move(zombie));
+            releaseOperation(activeOperation);
+            for (auto& zombie : zombieOperations) {
+                releaseOperation(zombie);
             }
             return;
         }
-        if (future.valid() || !zombieFutures.empty()) {
+        if (activeOperation.has_value() || !zombieOperations.empty()) {
             Logger::debug("AsyncOperation: waiting for pending futures on destruction");
         }
-        waitForFuture(future);
-        for (auto& zombie : zombieFutures) {
-            waitForFuture(zombie);
+        waitForOperation(activeOperation);
+        for (auto& zombie : zombieOperations) {
+            waitForOperation(zombie);
         }
     }
 
@@ -56,22 +81,35 @@ public:
      * Start an async operation. Returns false if already running.
      */
     bool start(Task task) {
-        return startCancellable([task = std::move(task)](const CancelFlag&) { return task(); });
+        return startCancellable([task = std::move(task)](std::stop_token) { return task(); });
     }
 
     /**
-     * Start an async operation with a shared cancellation flag.
+     * Start an async operation with a cooperative cancellation token.
      */
     bool startCancellable(CancellableTask task) {
         if (isRunning()) {
             return false;
         }
         running = true;
-        cancelFlag = std::make_shared<std::atomic<bool>>(false);
-        stashFuture(std::move(future));
+        stashOperation(std::move(activeOperation));
         reapZombies();
-        future = std::async(std::launch::async,
-                            [task = std::move(task), flag = cancelFlag]() { return task(flag); });
+
+        std::promise<ResultType> resultPromise;
+        auto resultFuture = resultPromise.get_future();
+        std::jthread worker([task = std::move(task), promise = std::move(resultPromise)](
+                                std::stop_token stopToken) mutable {
+            try {
+                promise.set_value(task(stopToken));
+            } catch (...) {
+                try {
+                    promise.set_exception(std::current_exception());
+                } catch (...) {
+                }
+            }
+        });
+
+        activeOperation = OperationState{std::move(worker), std::move(resultFuture)};
         return true;
     }
 
@@ -84,11 +122,13 @@ public:
             return false;
         }
 
-        if (future.valid() &&
-            future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        if (activeOperation.has_value() && activeOperation->future.valid() &&
+            activeOperation->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             running = false;
+            waitForOperation(*activeOperation);
             if (callback) {
-                callback(future.get());
+                callback(activeOperation->future.get());
+                activeOperation.reset();
             }
             reapZombies();
             return true;
@@ -107,9 +147,15 @@ public:
      * Cancel the operation (doesn't actually stop the thread, just marks as not running).
      */
     void cancel() {
-        running = false;
-        if (cancelFlag) {
-            cancelFlag->store(true);
+        const bool wasRunning = running.exchange(false);
+        if (activeOperation.has_value()) {
+            activeOperation->worker.request_stop();
+        }
+        for (auto& zombie : zombieOperations) {
+            zombie.worker.request_stop();
+        }
+        if (wasRunning) {
+            AsyncOperationControl::cancelledTaskCount().fetch_add(1, std::memory_order_relaxed);
         }
         reapZombies();
     }
@@ -118,52 +164,81 @@ public:
      * Wait for the operation to complete and return the result.
      */
     ResultType waitAndGet() {
-        if (future.valid()) {
+        if (activeOperation.has_value() && activeOperation->future.valid()) {
             running = false;
-            return future.get();
+            waitForOperation(*activeOperation);
+            ResultType result = activeOperation->future.get();
+            activeOperation.reset();
+            reapZombies();
+            return result;
         }
         return ResultType{};
     }
 
 private:
-    static void waitForFuture(std::future<ResultType>& target) {
-        if (target.valid()) {
-            target.wait();
+    struct OperationState {
+        std::jthread worker;
+        std::future<ResultType> future;
+    };
+
+    static void waitForOperation(OperationState& operation) {
+        if (operation.worker.joinable()) {
+            operation.worker.join();
         }
     }
 
-    static void leakFuture(std::future<ResultType>&& target) {
-        if (!target.valid()) {
+    static void waitForOperation(std::optional<OperationState>& operation) {
+        if (!operation.has_value()) {
             return;
         }
-        static auto* leakedFutures = new std::vector<std::future<ResultType>>();
-        leakedFutures->emplace_back(std::move(target));
+        waitForOperation(*operation);
     }
 
-    void stashFuture(std::future<ResultType>&& target) {
-        if (!target.valid()) {
+    static void releaseOperation(OperationState& operation) {
+        if (operation.worker.joinable()) {
+            operation.worker.detach();
+        }
+    }
+
+    static void releaseOperation(std::optional<OperationState>& operation) {
+        if (!operation.has_value()) {
+            return;
+        }
+        releaseOperation(*operation);
+        operation.reset();
+    }
+
+    static bool isReady(std::future<ResultType>& target) {
+        return target.valid() &&
+               target.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    }
+
+    void stashOperation(std::optional<OperationState>&& target) {
+        if (!target.has_value()) {
             return;
         }
 
-        if (target.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        if (target->future.valid() && !isReady(target->future)) {
             Logger::debug("AsyncOperation: stashing running future");
-            zombieFutures.emplace_back(std::move(target));
+            zombieOperations.emplace_back(std::move(*target));
+        } else {
+            waitForOperation(*target);
         }
     }
 
     void reapZombies() {
         Logger::debug(std::string("AsyncOperation: reapZombies ") +
-                      std::to_string(zombieFutures.size()) + " completed futures");
-        if (zombieFutures.empty()) {
+                      std::to_string(zombieOperations.size()) + " completed futures");
+        if (zombieOperations.empty()) {
             return;
         }
 
         size_t reaped = 0;
-        auto it = zombieFutures.begin();
-        while (it != zombieFutures.end()) {
-            if (!it->valid() ||
-                it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                it = zombieFutures.erase(it);
+        auto it = zombieOperations.begin();
+        while (it != zombieOperations.end()) {
+            if (!it->future.valid() || isReady(it->future)) {
+                waitForOperation(*it);
+                it = zombieOperations.erase(it);
                 ++reaped;
             } else {
                 ++it;
@@ -176,7 +251,6 @@ private:
     }
 
     std::atomic<bool> running{false};
-    std::future<ResultType> future;
-    CancelFlag cancelFlag;
-    std::vector<std::future<ResultType>> zombieFutures;
+    std::optional<OperationState> activeOperation;
+    std::vector<OperationState> zombieOperations;
 };

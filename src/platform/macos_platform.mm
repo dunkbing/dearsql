@@ -25,6 +25,7 @@
 @property(nonatomic, strong) NSButton* themeAutoButton;
 - (void)showMenuPopover:(NSButton*)sender;
 - (void)updateThemeButtons;
+- (void)updateWindowBackgroundColor;
 @end
 
 @implementation ToolbarDelegate
@@ -322,12 +323,38 @@
     selectedButton.layer.masksToBounds = YES;
 }
 
+- (void)updateWindowBackgroundColor {
+    if (!self.app)
+        return;
+
+    GLFWwindow* glfwWindow = self.app->getWindow();
+    if (!glfwWindow)
+        return;
+
+    NSWindow* nsWindow = glfwGetCocoaWindow(glfwWindow);
+    if (!nsWindow)
+        return;
+
+    const auto& colors = self.app->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    NSColor* bgColor = [NSColor colorWithRed:colors.base.x
+                                       green:colors.base.y
+                                        blue:colors.base.z
+                                       alpha:colors.base.w];
+    [nsWindow setBackgroundColor:bgColor];
+
+    // Update window appearance so native titlebar controls match the theme
+    NSAppearanceName appearanceName =
+        self.app->isDarkTheme() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+    nsWindow.appearance = [NSAppearance appearanceNamed:appearanceName];
+}
+
 - (void)themeLightClicked:(id)sender {
     @try {
         if (self.app) {
             self.app->setDarkTheme(false);
         }
         [self updateThemeButtons];
+        [self updateWindowBackgroundColor];
         [self.menuPopover close];
     } @catch (NSException* exception) {
         NSLog(@"Exception in themeLightClicked: %@", exception);
@@ -340,6 +367,7 @@
             self.app->setDarkTheme(true);
         }
         [self updateThemeButtons];
+        [self updateWindowBackgroundColor];
         [self.menuPopover close];
     } @catch (NSException* exception) {
         NSLog(@"Exception in themeDarkClicked: %@", exception);
@@ -358,6 +386,7 @@
             self.app->setDarkTheme(systemIsDark);
         }
         [self updateThemeButtons];
+        [self updateWindowBackgroundColor];
         [self.menuPopover close];
     } @catch (NSException* exception) {
         NSLog(@"Exception in themeAutoClicked: %@", exception);
@@ -885,6 +914,11 @@ void MacOSPlatform::setupTitlebar() {
                                         blue:colors.base.z
                                        alpha:colors.base.w];
     [nsWindow setBackgroundColor:bgColor];
+
+    // Set window appearance to match app theme
+    NSAppearanceName appearanceName =
+        app_->isDarkTheme() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+    nsWindow.appearance = [NSAppearance appearanceNamed:appearanceName];
 
     std::cout << "Titlebar configured successfully" << std::endl;
 }

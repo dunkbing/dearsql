@@ -173,6 +173,11 @@ bool Application::initialize() {
     const std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
     currentWorkspaceId = std::stoi(workspaceIdStr);
 
+    // Restore theme from settings
+    const std::string themeStr = appState->getSetting("theme", "dark");
+    darkTheme = (themeStr != "light");
+    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+
     // Load stored license
     LicenseManager::instance().loadStoredLicense();
 
@@ -308,6 +313,9 @@ void Application::cleanup() {
 void Application::setDarkTheme(const bool dark) {
     darkTheme = dark;
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+    if (appState) {
+        appState->setSetting("theme", darkTheme ? "dark" : "light");
+    }
 }
 
 bool Application::hasPendingAsyncWork() const {

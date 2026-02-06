@@ -7,8 +7,6 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include <fstream>
-
 namespace {
     constexpr const char* kSettingLicenseKey = "license_key";
     constexpr const char* kSettingInstanceId = "license_instance_id";

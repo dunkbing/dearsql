@@ -11,7 +11,9 @@ override_dh_auto_configure:
 override_dh_auto_build:
 	dh_auto_build -- dear-sql
 
+override_dh_auto_test:
+
 override_dh_auto_install:
 	install -Dm755 obj-*/dear-sql debian/dearsql/usr/bin/dearsql
-	install -Dm644 packaging/flatpak/dearsql.db99.dev.desktop debian/dearsql/usr/share/applications/dearsql.db99.dev.desktop
-	install -Dm644 assets/appicon.png debian/dearsql/usr/share/icons/hicolor/256x256/apps/dearsql.db99.dev.png
+	install -Dm644 packaging/flatpak/io.gitlab.dunkbing.dearsql.desktop debian/dearsql/usr/share/applications/io.gitlab.dunkbing.dearsql.desktop
+	install -Dm644 assets/appicon.png debian/dearsql/usr/share/icons/hicolor/256x256/apps/io.gitlab.dunkbing.dearsql.png

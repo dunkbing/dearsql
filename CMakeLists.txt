@@ -128,6 +128,7 @@ add_subdirectory(external/mongo-c-driver)
 # mongo-cxx-driver
 set(ENABLE_TESTS OFF CACHE BOOL "Disable mongocxx tests" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for mongo" FORCE)
+set(BUILD_VERSION "4.1.4" CACHE STRING "mongo-cxx-driver version" FORCE)
 add_subdirectory(external/mongo-cxx-driver)
 
 # GoogleTest

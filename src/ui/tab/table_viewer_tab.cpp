@@ -997,11 +997,13 @@ void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availab
                           1.0f);
 
         // Draw rotated text centered in the button area
+        // Push full-screen clip rect so text isn't clipped before rotation
         const float cx = stripPos.x + buttonW * 0.5f;
         const float cy = stripPos.y + buttonH * 0.5f;
         const float textX = cx - textSize.x * 0.5f;
         const float textY = cy - textSize.y * 0.5f;
 
+        drawList->PushClipRectFullScreen();
         const int vtxBegin = drawList->VtxBuffer.Size;
         drawList->AddText(ImVec2(textX, textY),
                           ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label);
@@ -1012,12 +1014,10 @@ void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availab
             ImDrawVert& v = drawList->VtxBuffer[i];
             const float dx = v.pos.x - cx;
             const float dy = v.pos.y - cy;
-            // cos(90) = 0, sin(90) = 1
-            // x' = cx + (0*dx - 1*dy) = cx - dy
-            // y' = cy + (1*dx + 0*dy) = cy + dx
             v.pos.x = cx - dy;
             v.pos.y = cy + dx;
         }
+        drawList->PopClipRect();
     }
     ImGui::EndChild();
     ImGui::PopStyleVar();
@@ -1031,6 +1031,27 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     if (ImGui::BeginChild("RightPanel", ImVec2(panelWidth, availableHeight),
                           ImGuiChildFlags_Borders)) {
+        // Resize handle on the left edge of the panel
+        {
+            const float handleWidth = 4.0f;
+            const ImVec2 panelPos = ImGui::GetWindowPos();
+            const ImVec2 handleMin(panelPos.x, panelPos.y);
+            const ImVec2 handleMax(panelPos.x + handleWidth, panelPos.y + availableHeight);
+
+            ImGui::SetCursorScreenPos(handleMin);
+            ImGui::InvisibleButton("##resizeHandle", ImVec2(handleWidth, availableHeight));
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                rightPanelWidth -= ImGui::GetIO().MouseDelta.x;
+                rightPanelWidth = std::clamp(rightPanelWidth, 200.0f, 600.0f);
+            }
+
+            // Reset cursor to after the handle for normal content
+            ImGui::SetCursorPos(ImVec2(0, 0));
+        }
+
         if (ImGui::BeginTabBar("##PanelTabs")) {
             if (ImGui::BeginTabItem("Value")) {
                 activeRightPanelTab = 0;

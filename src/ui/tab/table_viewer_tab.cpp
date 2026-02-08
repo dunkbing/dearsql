@@ -9,6 +9,8 @@
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstring>
 #include <format>
 #include <future>
 #include <iostream>
@@ -133,8 +135,16 @@ void TableViewerTab::render() {
         ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
     const float availableHeight = ImGui::GetContentRegionAvail().y - bottomControlsHeight;
 
+    // Horizontal layout: table area | panel content (when open) | toggle strip (always)
+    const float toggleStripWidth = 28.0f;
+    const float panelContentWidth = rightPanelOpen ? rightPanelWidth : 0.0f;
+    const float totalAvailableWidth = ImGui::GetContentRegionAvail().x;
+    float tableAreaWidth = totalAvailableWidth - toggleStripWidth - panelContentWidth;
+    tableAreaWidth = std::max(200.0f, tableAreaWidth);
+
     // Table display in a child window to prevent cutoff
-    if (ImGui::BeginChild("TableArea", ImVec2(0, availableHeight), ImGuiChildFlags_None)) {
+    if (ImGui::BeginChild("TableArea", ImVec2(tableAreaWidth, availableHeight),
+                          ImGuiChildFlags_None)) {
         if (isLoadingData) {
             ImGui::Text("Loading table data...");
         } else if (!columnNames.empty() && !tableData.empty()) {
@@ -166,6 +176,16 @@ void TableViewerTab::render() {
         }
     }
     ImGui::EndChild();
+
+    // Panel content (when open)
+    if (rightPanelOpen) {
+        ImGui::SameLine(0, 0);
+        renderRightPanel(panelContentWidth, availableHeight);
+    }
+
+    // Toggle strip on the far right (always visible)
+    ImGui::SameLine(0, 0);
+    renderRightPanelToggleStrip(toggleStripWidth, availableHeight);
 
     // Pagination controls at the bottom
     ImGui::Separator();
@@ -931,4 +951,293 @@ void TableViewerTab::initializeFilterAutoComplete() {
     }
 
     filterAutoComplete = std::make_unique<AutoCompleteInput>(config);
+}
+
+void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availableHeight) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::BeginChild("PanelToggleStrip", ImVec2(stripWidth, availableHeight),
+                          ImGuiChildFlags_None)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
+
+        // Draw left border line for the strip
+        drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
+                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+        // "Panels" rotated label as a compact clickable tab at the top
+        const char* label = "Panels";
+        const ImVec2 textSize = ImGui::CalcTextSize(label);
+        const float padding = 6.0f;
+        // After rotation, text width becomes button height, text height becomes button width
+        const float buttonW = stripWidth;
+        const float buttonH = textSize.x + padding * 2.0f;
+
+        // Clickable area for the "Panels" button
+        ImGui::SetCursorScreenPos(ImVec2(stripPos.x, stripPos.y));
+        ImGui::InvisibleButton("##togglePanel", ImVec2(buttonW, buttonH));
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) {
+            rightPanelOpen = !rightPanelOpen;
+        }
+
+        // Button background
+        const ImVec2 btnMin = stripPos;
+        const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
+        if (rightPanelOpen) {
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        } else if (hovered) {
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        }
+
+        // Bottom border of the button area
+        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+                          1.0f);
+
+        // Draw rotated text centered in the button area
+        const float cx = stripPos.x + buttonW * 0.5f;
+        const float cy = stripPos.y + buttonH * 0.5f;
+        const float textX = cx - textSize.x * 0.5f;
+        const float textY = cy - textSize.y * 0.5f;
+
+        const int vtxBegin = drawList->VtxBuffer.Size;
+        drawList->AddText(ImVec2(textX, textY),
+                          ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label);
+        const int vtxEnd = drawList->VtxBuffer.Size;
+
+        // Rotate all text vertices 90 degrees (top-to-bottom reading) around center
+        for (int i = vtxBegin; i < vtxEnd; i++) {
+            ImDrawVert& v = drawList->VtxBuffer[i];
+            const float dx = v.pos.x - cx;
+            const float dy = v.pos.y - cy;
+            // cos(90) = 0, sin(90) = 1
+            // x' = cx + (0*dx - 1*dy) = cx - dy
+            // y' = cy + (1*dx + 0*dy) = cy + dx
+            v.pos.x = cx - dy;
+            v.pos.y = cy + dx;
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
+    if (ImGui::BeginChild("RightPanel", ImVec2(panelWidth, availableHeight),
+                          ImGuiChildFlags_Borders)) {
+        if (ImGui::BeginTabBar("##PanelTabs")) {
+            if (ImGui::BeginTabItem("Value")) {
+                activeRightPanelTab = 0;
+                renderValueTab();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Metadata")) {
+                activeRightPanelTab = 1;
+                renderMetadataTab();
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+void TableViewerTab::syncValuePanelBuffer() {
+    // Check if selection changed
+    bool selectionChanged = (selectedRow != lastSyncedRow || selectedCol != lastSyncedCol);
+
+    // Also detect if the cell value was edited externally (e.g., inline editing in table)
+    bool valueChanged = false;
+    if (!selectionChanged && selectedRow >= 0 && selectedCol >= 0 &&
+        selectedRow < static_cast<int>(tableData.size()) &&
+        selectedCol < static_cast<int>(columnNames.size())) {
+        const std::string& currentValue = tableData[selectedRow][selectedCol];
+        if (!valuePanelBufferDirty && std::string(valuePanelBuffer) != currentValue) {
+            valueChanged = true;
+        }
+    }
+
+    if (selectionChanged || valueChanged) {
+        lastSyncedRow = selectedRow;
+        lastSyncedCol = selectedCol;
+        valuePanelBufferDirty = false;
+
+        if (selectedRow >= 0 && selectedCol >= 0 &&
+            selectedRow < static_cast<int>(tableData.size()) &&
+            selectedCol < static_cast<int>(columnNames.size())) {
+            const std::string& value = tableData[selectedRow][selectedCol];
+            std::strncpy(valuePanelBuffer, value.c_str(), sizeof(valuePanelBuffer) - 1);
+            valuePanelBuffer[sizeof(valuePanelBuffer) - 1] = '\0';
+        } else {
+            valuePanelBuffer[0] = '\0';
+        }
+    }
+}
+
+void TableViewerTab::renderValueTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    syncValuePanelBuffer();
+
+    if (selectedRow < 0 || selectedCol < 0 || selectedRow >= static_cast<int>(tableData.size()) ||
+        selectedCol >= static_cast<int>(columnNames.size())) {
+        ImGui::TextColored(colors.subtext0, "Select a cell to view its value.");
+        return;
+    }
+
+    // Header: column name and row info
+    ImGui::TextColored(colors.blue, "%s", columnNames[selectedCol].c_str());
+    ImGui::SameLine();
+    ImGui::TextColored(colors.subtext0, "(Row %d)", currentPage * rowsPerPage + selectedRow + 1);
+    ImGui::Separator();
+
+    // Multiline text editor for the cell value
+    const float availH = ImGui::GetContentRegionAvail().y -
+                         (valuePanelBufferDirty ? ImGui::GetFrameHeightWithSpacing() + 4.0f : 0.0f);
+    if (ImGui::InputTextMultiline("##valuePanelEdit", valuePanelBuffer, sizeof(valuePanelBuffer),
+                                  ImVec2(-1, availH))) {
+        // Check if user modified the buffer
+        const std::string& currentValue = tableData[selectedRow][selectedCol];
+        valuePanelBufferDirty = (std::string(valuePanelBuffer) != currentValue);
+    }
+
+    // Apply / Revert buttons when buffer is dirty
+    if (valuePanelBufferDirty) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.green.x * 0.3f, colors.green.y * 0.3f,
+                                                      colors.green.z * 0.3f, 1.0f));
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonHovered,
+            ImVec4(colors.green.x * 0.5f, colors.green.y * 0.5f, colors.green.z * 0.5f, 1.0f));
+        if (ImGui::Button("Apply")) {
+            tableData[selectedRow][selectedCol] = std::string(valuePanelBuffer);
+            if (selectedRow < static_cast<int>(editedCells.size()) &&
+                selectedCol < static_cast<int>(editedCells[selectedRow].size())) {
+                editedCells[selectedRow][selectedCol] = true;
+            }
+            hasChanges = true;
+            valuePanelBufferDirty = false;
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x * 0.3f, colors.red.y * 0.3f,
+                                                      colors.red.z * 0.3f, 1.0f));
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonHovered,
+            ImVec4(colors.red.x * 0.5f, colors.red.y * 0.5f, colors.red.z * 0.5f, 1.0f));
+        if (ImGui::Button("Revert")) {
+            // Restore from current cell value
+            const std::string& currentValue = tableData[selectedRow][selectedCol];
+            std::strncpy(valuePanelBuffer, currentValue.c_str(), sizeof(valuePanelBuffer) - 1);
+            valuePanelBuffer[sizeof(valuePanelBuffer) - 1] = '\0';
+            valuePanelBufferDirty = false;
+        }
+        ImGui::PopStyleColor(2);
+    }
+}
+
+void TableViewerTab::renderMetadataTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // Find the table metadata
+    const Table* foundTable = nullptr;
+    for (const auto& table : node_->getTables()) {
+        if (table.name == tableName || table.fullName.ends_with("." + tableName)) {
+            foundTable = &table;
+            break;
+        }
+    }
+    if (!foundTable) {
+        for (const auto& view : node_->getViews()) {
+            if (view.name == tableName || view.fullName.ends_with("." + tableName)) {
+                foundTable = &view;
+                break;
+            }
+        }
+    }
+
+    if (!foundTable) {
+        ImGui::TextColored(colors.subtext0, "No metadata available.");
+        return;
+    }
+
+    // Filter input
+    ImGui::SetNextItemWidth(-1);
+    char filterBuf[128];
+    std::strncpy(filterBuf, metadataFilter.c_str(), sizeof(filterBuf) - 1);
+    filterBuf[sizeof(filterBuf) - 1] = '\0';
+    if (ImGui::InputTextWithHint("##metaFilter", "Filter columns...", filterBuf,
+                                 sizeof(filterBuf))) {
+        metadataFilter = filterBuf;
+    }
+
+    ImGui::Separator();
+
+    // Column metadata table
+    if (ImGui::BeginTable("##MetadataColumns", 4,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                              ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Null", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+        ImGui::TableSetupColumn("PK", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+        ImGui::TableHeadersRow();
+
+        // Convert filter to lowercase for case-insensitive matching
+        std::string filterLower = metadataFilter;
+        std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+
+        for (const auto& col : foundTable->columns) {
+            // Apply filter
+            if (!filterLower.empty()) {
+                std::string nameLower = col.name;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                if (nameLower.find(filterLower) == std::string::npos) {
+                    continue;
+                }
+            }
+
+            ImGui::TableNextRow();
+
+            // Name column - highlight if it matches selected column
+            ImGui::TableSetColumnIndex(0);
+            bool isSelectedColumn =
+                (selectedCol >= 0 && selectedCol < static_cast<int>(columnNames.size()) &&
+                 columnNames[selectedCol] == col.name);
+            if (isSelectedColumn) {
+                ImGui::TextColored(colors.blue, "%s", col.name.c_str());
+            } else {
+                ImGui::Text("%s", col.name.c_str());
+            }
+
+            // Type column
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextColored(colors.subtext0, "%s", col.type.c_str());
+
+            // Nullable column
+            ImGui::TableSetColumnIndex(2);
+            if (col.isNotNull) {
+                ImGui::TextColored(colors.red, "NOT NULL");
+            } else {
+                ImGui::TextColored(colors.green, "NULL");
+            }
+
+            // PK column
+            ImGui::TableSetColumnIndex(3);
+            if (col.isPrimaryKey) {
+                ImGui::TextColored(colors.yellow, "PK");
+            }
+        }
+
+        ImGui::EndTable();
+    }
 }

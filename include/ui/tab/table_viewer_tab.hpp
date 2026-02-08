@@ -90,10 +90,27 @@ private:
     std::string sortColumnName;
     SortDirection sortDirection = SortDirection::None;
 
+    // Right panel state
+    bool rightPanelOpen = false;
+    float rightPanelWidth = 300.0f;
+    int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata
+    char valuePanelBuffer[4096] = {0};
+    bool valuePanelBufferDirty = false;
+    int lastSyncedRow = -1;
+    int lastSyncedCol = -1;
+    std::string metadataFilter;
+
     // Helper methods
     void initializeTableRenderer();
     void selectCell(int row, int col);
     void handleKeyboardNavigation();
     void applyFilter();
     void initializeFilterAutoComplete();
+
+    // Right panel methods
+    void renderRightPanelToggleStrip(float stripWidth, float availableHeight);
+    void renderRightPanel(float panelWidth, float availableHeight);
+    void renderValueTab();
+    void renderMetadataTab();
+    void syncValuePanelBuffer();
 };

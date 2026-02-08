@@ -101,10 +101,25 @@ public:
                                 std::stop_token stopToken) mutable {
             try {
                 promise.set_value(task(stopToken));
+            } catch (const std::exception& e) {
+                Logger::error(std::string("AsyncOperation: task threw exception: ") + e.what());
+                try {
+                    promise.set_exception(std::current_exception());
+                } catch (const std::exception& e2) {
+                    Logger::error(
+                        std::string("AsyncOperation: failed to set exception on promise: ") +
+                        e2.what());
+                } catch (...) {
+                    Logger::error(
+                        "AsyncOperation: failed to set exception on promise (unknown error)");
+                }
             } catch (...) {
+                Logger::error("AsyncOperation: task threw unknown exception");
                 try {
                     promise.set_exception(std::current_exception());
                 } catch (...) {
+                    Logger::error(
+                        "AsyncOperation: failed to set exception on promise (unknown error)");
                 }
             }
         });

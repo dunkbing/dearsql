@@ -1,5 +1,6 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/db.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/mysql.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
@@ -570,6 +571,47 @@ std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& 
             return {false, "Failed to get database session"};
         }
         *session << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
+std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) {
+    try {
+        const auto session = getSession();
+        if (!session) {
+            return {false, "Failed to get database session"};
+        }
+
+        soci::ddl_type ddl = session->create_table(table.name);
+        ddl.set_tail(") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        std::vector<std::string> primaryKeyColumns;
+        for (const auto& column : table.columns) {
+            const auto ddlType = ddl_utils::inferColumnType(column.type);
+            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
+
+            if (column.isNotNull && !column.isPrimaryKey) {
+                ddlRef("not null");
+            }
+
+            if (!column.comment.empty()) {
+                ddlRef("comment '" + ddl_utils::escapeSingleQuotes(column.comment) + "'");
+            }
+
+            if (column.isPrimaryKey) {
+                primaryKeyColumns.push_back(column.name);
+            }
+        }
+
+        if (!primaryKeyColumns.empty()) {
+            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
+                            ddl_utils::joinColumnNames(primaryKeyColumns));
+        }
+
         return {true, ""};
     } catch (const soci::soci_error& e) {
         return {false, std::string(e.what())};

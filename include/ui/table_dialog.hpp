@@ -104,7 +104,6 @@ private:
     char defaultValue[256] = "";
 
     // Callbacks
-    SaveCallback saveCallback;
     CancelCallback cancelCallback;
 
     // Error handling

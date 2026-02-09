@@ -181,6 +181,15 @@ public:
     // ========== Table Operations ==========
 
     /**
+     * @brief Create a table using the node's database connection
+     * @param table Table definition
+     * @return pair<success, error_message>
+     */
+    virtual std::pair<bool, std::string> createTable(const Table& table) {
+        return {false, "Create table not supported for this database type"};
+    }
+
+    /**
      * @brief Start async refresh of a single table's metadata
      * @param tableName Name of the table to refresh
      */

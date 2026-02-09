@@ -143,27 +143,6 @@ std::string PostgreSQLBuilder::deleteFrom(
     return sql;
 }
 
-std::string PostgreSQLBuilder::createTable(const Table& table) const {
-    std::string sql = "CREATE TABLE " + quoteIdentifier(table.name) + " (\n";
-
-    for (size_t i = 0; i < table.columns.size(); ++i) {
-        const auto& col = table.columns[i];
-        if (i > 0) {
-            sql += ",\n";
-        }
-        sql += "    " + quoteIdentifier(col.name) + " " + col.type;
-        if (col.isPrimaryKey) {
-            sql += " PRIMARY KEY";
-        }
-        if (col.isNotNull && !col.isPrimaryKey) {
-            sql += " NOT NULL";
-        }
-    }
-
-    sql += "\n)";
-    return sql;
-}
-
 std::string PostgreSQLBuilder::dropTable(const std::string& table, bool ifExists) const {
     if (ifExists) {
         return "DROP TABLE IF EXISTS " + quoteIdentifier(table);
@@ -311,27 +290,6 @@ std::string MySQLBuilder::deleteFrom(
     return sql;
 }
 
-std::string MySQLBuilder::createTable(const Table& table) const {
-    std::string sql = "CREATE TABLE " + quoteIdentifier(table.name) + " (\n";
-
-    for (size_t i = 0; i < table.columns.size(); ++i) {
-        const auto& col = table.columns[i];
-        if (i > 0) {
-            sql += ",\n";
-        }
-        sql += "    " + quoteIdentifier(col.name) + " " + col.type;
-        if (col.isPrimaryKey) {
-            sql += " PRIMARY KEY";
-        }
-        if (col.isNotNull && !col.isPrimaryKey) {
-            sql += " NOT NULL";
-        }
-    }
-
-    sql += "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-    return sql;
-}
-
 std::string MySQLBuilder::dropTable(const std::string& table, bool ifExists) const {
     if (ifExists) {
         return "DROP TABLE IF EXISTS " + quoteIdentifier(table);
@@ -475,27 +433,6 @@ std::string SQLiteBuilder::deleteFrom(
             }
         }
     }
-    return sql;
-}
-
-std::string SQLiteBuilder::createTable(const Table& table) const {
-    std::string sql = "CREATE TABLE " + quoteIdentifier(table.name) + " (\n";
-
-    for (size_t i = 0; i < table.columns.size(); ++i) {
-        const auto& col = table.columns[i];
-        if (i > 0) {
-            sql += ",\n";
-        }
-        sql += "    " + quoteIdentifier(col.name) + " " + col.type;
-        if (col.isPrimaryKey) {
-            sql += " PRIMARY KEY";
-        }
-        if (col.isNotNull && !col.isPrimaryKey) {
-            sql += " NOT NULL";
-        }
-    }
-
-    sql += "\n)";
     return sql;
 }
 

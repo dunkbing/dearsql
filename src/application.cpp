@@ -274,6 +274,16 @@ void Application::cleanup() {
         }
     }
     databases.clear();
+
+    for (auto& cacheEntry : workspaceDatabaseCache) {
+        auto& cachedDatabases = cacheEntry.second;
+        for (auto& db : cachedDatabases) {
+            if (db) {
+                db->disconnect();
+            }
+        }
+    }
+    workspaceDatabaseCache.clear();
     std::cout << "Databases disconnected" << std::endl;
 
     // Cleanup components
@@ -538,6 +548,9 @@ void Application::setCurrentWorkspace(const int workspaceId) {
         return;
     }
 
+    // Keep current workspace connections in memory so we only load each workspace once.
+    workspaceDatabaseCache[currentWorkspaceId] = std::move(databases);
+
     currentWorkspaceId = workspaceId;
 
     // Save current workspace to settings
@@ -601,25 +614,29 @@ bool Application::deleteWorkspace(const int workspaceId) {
 
     bool success = appState->deleteWorkspace(workspaceId);
 
-    // If we deleted the current workspace, switch to default
-    if (success && currentWorkspaceId == workspaceId) {
-        setCurrentWorkspace(1);
+    if (success) {
+        // If we deleted the current workspace, switch to default
+        if (currentWorkspaceId == workspaceId) {
+            setCurrentWorkspace(1);
+        }
+        workspaceDatabaseCache.erase(workspaceId);
     }
 
     return success;
 }
 
 void Application::refreshWorkspaceConnections() {
-    // Clear current connections
-    for (auto& db : databases) {
-        if (db) {
-            db->disconnect();
-        }
-    }
     databases.clear();
 
-    // Restore connections for current workspace
-    restorePreviousConnections();
+    // First switch to cached connections if this workspace was loaded before.
+    if (auto cacheIt = workspaceDatabaseCache.find(currentWorkspaceId);
+        cacheIt != workspaceDatabaseCache.end()) {
+        databases = std::move(cacheIt->second);
+        workspaceDatabaseCache.erase(cacheIt);
+    } else {
+        // First time visiting this workspace in this session: load from app state.
+        restorePreviousConnections();
+    }
 
     // Reset UI state
     clearSelectedDatabase();

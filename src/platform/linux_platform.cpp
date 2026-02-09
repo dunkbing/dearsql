@@ -6,6 +6,7 @@
 #include "imgui_impl_opengl3.h"
 #include "license/license_manager.hpp"
 #include "platform/linux_platform.hpp"
+#include "themes.hpp"
 #include <iostream>
 
 #ifdef GDK_WINDOWING_X11
@@ -139,7 +140,8 @@ void LinuxPlatform::setupTitlebar() {
     workspaceModel_ = gtk_string_list_new(nullptr);
     workspaceDropdown_ = gtk_drop_down_new(G_LIST_MODEL(workspaceModel_), nullptr);
     gtk_widget_set_tooltip_text(workspaceDropdown_, "Select Workspace");
-    g_signal_connect(workspaceDropdown_, "notify::selected", G_CALLBACK(onWorkspaceChanged), this);
+    workspaceSignalId_ = g_signal_connect(workspaceDropdown_, "notify::selected",
+                                          G_CALLBACK(onWorkspaceChanged), this);
 
     // Main menu button (hamburger menu)
     menuButton_ = gtk_menu_button_new();
@@ -211,6 +213,7 @@ void LinuxPlatform::setupTitlebar() {
     gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
 
     gtk_window_set_titlebar(GTK_WINDOW(window_), headerBar_);
+    updateGtkTheme();
 
     std::cout << "GTK HeaderBar configured" << std::endl;
 }
@@ -220,14 +223,18 @@ void LinuxPlatform::updateWorkspaceDropdown() {
         return;
     }
 
-    // Block signal during update
-    g_signal_handlers_block_by_func(workspaceDropdown_, (gpointer)onWorkspaceChanged, this);
+    // Disconnect signal to prevent spurious notifications during model rebuild
+    if (workspaceSignalId_) {
+        g_signal_handler_disconnect(workspaceDropdown_, workspaceSignalId_);
+        workspaceSignalId_ = 0;
+    }
 
     // Clear existing items
     guint n = g_list_model_get_n_items(G_LIST_MODEL(workspaceModel_));
     for (guint i = 0; i < n; i++) {
         gtk_string_list_remove(workspaceModel_, 0);
     }
+    workspaceIdsByIndex_.clear();
 
     // Add workspaces
     auto workspaces = app_->getWorkspaces();
@@ -236,15 +243,20 @@ void LinuxPlatform::updateWorkspaceDropdown() {
 
     for (size_t i = 0; i < workspaces.size(); i++) {
         gtk_string_list_append(workspaceModel_, workspaces[i].name.c_str());
+        workspaceIdsByIndex_.push_back(workspaces[i].id);
         if (workspaces[i].id == currentWorkspaceId) {
             selectedIndex = static_cast<guint>(i);
         }
     }
 
+    // Add "New Workspace..." option at the end
+    gtk_string_list_append(workspaceModel_, "New Workspace...");
+
     gtk_drop_down_set_selected(GTK_DROP_DOWN(workspaceDropdown_), selectedIndex);
 
-    // Unblock signal
-    g_signal_handlers_unblock_by_func(workspaceDropdown_, (gpointer)onWorkspaceChanged, this);
+    // Reconnect signal after model is stable
+    workspaceSignalId_ = g_signal_connect(workspaceDropdown_, "notify::selected",
+                                          G_CALLBACK(onWorkspaceChanged), this);
 }
 
 float LinuxPlatform::getTitlebarHeight() const {
@@ -571,10 +583,28 @@ void LinuxPlatform::onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec,
         return;
 
     guint selected = gtk_drop_down_get_selected(dropdown);
-    auto workspaces = platform->app_->getWorkspaces();
+    if (selected == GTK_INVALID_LIST_POSITION)
+        return;
 
-    if (selected < workspaces.size()) {
-        platform->app_->setCurrentWorkspace(workspaces[selected].id);
+    if (selected < platform->workspaceIdsByIndex_.size()) {
+        int workspaceId = platform->workspaceIdsByIndex_[selected];
+
+        // Disconnect signal before calling setCurrentWorkspace to prevent
+        // any re-entrant signals from reverting the change
+        if (platform->workspaceSignalId_) {
+            g_signal_handler_disconnect(dropdown, platform->workspaceSignalId_);
+            platform->workspaceSignalId_ = 0;
+        }
+
+        platform->app_->setCurrentWorkspace(workspaceId);
+
+        // Reconnect after workspace change is fully applied
+        platform->workspaceSignalId_ = g_signal_connect(dropdown, "notify::selected",
+                                                        G_CALLBACK(onWorkspaceChanged), platform);
+    } else {
+        // "New Workspace..." selected - revert dropdown and show dialog
+        platform->updateWorkspaceDropdown();
+        platform->showCreateWorkspaceDialog();
     }
 }
 
@@ -584,6 +614,80 @@ void LinuxPlatform::onAddConnection(GtkButton* button, gpointer userData) {
     if (platform->app_ && platform->app_->getDatabaseSidebar()) {
         platform->app_->getDatabaseSidebar()->showConnectionDialog();
     }
+}
+
+void LinuxPlatform::showCreateWorkspaceDialog() {
+    GtkWidget* dialog = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(dialog), "Create New Workspace");
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window_));
+    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
+    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
+
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(box, 24);
+    gtk_widget_set_margin_end(box, 24);
+    gtk_widget_set_margin_top(box, 24);
+    gtk_widget_set_margin_bottom(box, 24);
+
+    GtkWidget* label = gtk_label_new("Enter a name for the new workspace:");
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(box), label);
+
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Workspace name");
+    gtk_box_append(GTK_BOX(box), entry);
+
+    GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
+    gtk_widget_set_margin_top(buttonBox, 8);
+
+    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
+    GtkWidget* createButton = gtk_button_new_with_label("Create");
+    gtk_widget_add_css_class(createButton, "suggested-action");
+
+    gtk_box_append(GTK_BOX(buttonBox), cancelButton);
+    gtk_box_append(GTK_BOX(buttonBox), createButton);
+    gtk_box_append(GTK_BOX(box), buttonBox);
+
+    g_object_set_data(G_OBJECT(dialog), "entry", entry);
+    g_object_set_data(G_OBJECT(dialog), "platform", this);
+
+    g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
+                         auto* platform = static_cast<LinuxPlatform*>(
+                             g_object_get_data(G_OBJECT(dlg), "platform"));
+                         // Revert dropdown to current workspace
+                         platform->updateWorkspaceDropdown();
+                         gtk_window_destroy(GTK_WINDOW(dlg));
+                     }),
+                     dialog);
+
+    g_signal_connect(dialog, "close-request", G_CALLBACK(+[](GtkWindow* win, gpointer) -> gboolean {
+                         auto* platform = static_cast<LinuxPlatform*>(
+                             g_object_get_data(G_OBJECT(win), "platform"));
+                         platform->updateWorkspaceDropdown();
+                         return FALSE;
+                     }),
+                     nullptr);
+
+    g_signal_connect(createButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
+                         auto* platform = static_cast<LinuxPlatform*>(
+                             g_object_get_data(G_OBJECT(dlg), "platform"));
+                         GtkWidget* entry = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "entry"));
+
+                         const char* name = gtk_editable_get_text(GTK_EDITABLE(entry));
+                         if (name && strlen(name) > 0 && platform->app_) {
+                             int newId = platform->app_->createWorkspace(std::string(name));
+                             if (newId > 0) {
+                                 platform->updateWorkspaceDropdown();
+                             }
+                         }
+                         gtk_window_destroy(GTK_WINDOW(dlg));
+                     }),
+                     dialog);
+
+    gtk_window_set_child(GTK_WINDOW(dialog), box);
+    gtk_window_present(GTK_WINDOW(dialog));
 }
 
 gboolean LinuxPlatform::onClose(GtkWindow* window, gpointer userData) {
@@ -612,6 +716,184 @@ void LinuxPlatform::updateThemeButtons() {
     }
 }
 
+void LinuxPlatform::updateGtkTheme() {
+    if (!app_ || !window_)
+        return;
+
+    bool isDark = app_->isDarkTheme();
+
+    GtkSettings* settings = gtk_settings_get_default();
+    g_object_set(settings, "gtk-application-prefer-dark-theme", isDark ? TRUE : FALSE, nullptr);
+
+    static GtkCssProvider* themeProvider = nullptr;
+    if (!themeProvider) {
+        themeProvider = gtk_css_provider_new();
+        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                                   GTK_STYLE_PROVIDER(themeProvider),
+                                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+
+    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+
+    auto toHex = [](const ImVec4& c) -> std::string {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "#%02x%02x%02x", (int)(c.x * 255), (int)(c.y * 255),
+                 (int)(c.z * 255));
+        return buf;
+    };
+
+    std::string mantle = toHex(colors.mantle);
+    std::string base = toHex(colors.base);
+    std::string text = toHex(colors.text);
+    std::string surface0 = toHex(colors.surface0);
+    std::string surface1 = toHex(colors.surface1);
+    std::string overlay0 = toHex(colors.overlay0);
+
+    std::string css = "window { background: " + base +
+                      "; }\n"
+
+                      /* headerbar background and text */
+                      "headerbar { background: " +
+                      mantle + "; color: " + text +
+                      "; }\n"
+
+                      /* headerbar buttons (flat style) */
+                      "headerbar button:not(.titlebutton) {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "  background: transparent;"
+                      "  border-color: transparent;"
+                      "  box-shadow: none;"
+                      "}\n"
+                      "headerbar button:not(.titlebutton):hover {"
+                      "  background: " +
+                      surface0 +
+                      ";"
+                      "}\n"
+                      "headerbar button:not(.titlebutton):active,"
+                      "headerbar button:not(.titlebutton):checked {"
+                      "  background: " +
+                      surface1 +
+                      ";"
+                      "}\n"
+
+                      /* icons inside headerbar buttons */
+                      "headerbar button image { color: " +
+                      text +
+                      "; -gtk-icon-filter: none; }\n"
+
+                      /* dropdown in headerbar */
+                      "headerbar dropdown > button {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "  background: " +
+                      surface0 +
+                      ";"
+                      "  border: 1px solid " +
+                      overlay0 +
+                      ";"
+                      "}\n"
+                      "headerbar dropdown > button:hover {"
+                      "  background: " +
+                      surface1 +
+                      ";"
+                      "}\n"
+
+                      /* window control buttons (min/max/close) */
+                      "headerbar windowcontrols button.titlebutton {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "}\n"
+                      "headerbar windowcontrols button.titlebutton image {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "  -gtk-icon-filter: none;"
+                      "}\n"
+
+                      /* popover background and arrow */
+                      "popover > contents {"
+                      "  background: " +
+                      surface0 +
+                      ";"
+                      "  color: " +
+                      text +
+                      ";"
+                      "}\n"
+                      "popover > arrow {"
+                      "  background: " +
+                      surface0 +
+                      ";"
+                      "}\n"
+                      "popover label { color: " +
+                      text +
+                      "; }\n"
+                      "popover button {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "  background: transparent;"
+                      "  border-color: " +
+                      overlay0 +
+                      ";"
+                      "}\n"
+                      "popover button:hover { background: " +
+                      surface1 +
+                      "; }\n"
+                      "popover button.suggested-action {"
+                      "  background: " +
+                      toHex(colors.blue) +
+                      ";"
+                      "  color: " +
+                      base +
+                      ";"
+                      "}\n"
+                      "popover button.suggested-action:hover {"
+                      "  background: " +
+                      toHex(colors.sky) +
+                      ";"
+                      "  color: " +
+                      base +
+                      ";"
+                      "}\n"
+                      "popover separator { background: " +
+                      overlay0 +
+                      "; }\n"
+
+                      /* dropdown popup list */
+                      "dropdown popover > contents { background: " +
+                      surface0 +
+                      "; }\n"
+                      "dropdown popover > arrow { background: " +
+                      surface0 +
+                      "; }\n"
+                      "dropdown popover listview { background: transparent; }\n"
+                      "dropdown popover listview row {"
+                      "  color: " +
+                      text +
+                      ";"
+                      "  background: transparent;"
+                      "}\n"
+                      "dropdown popover listview row:hover {"
+                      "  background: " +
+                      surface1 +
+                      ";"
+                      "}\n"
+                      "dropdown popover listview row:selected {"
+                      "  background: " +
+                      surface1 +
+                      ";"
+                      "  color: " +
+                      text +
+                      ";"
+                      "}\n";
+
+    gtk_css_provider_load_from_string(themeProvider, css.c_str());
+}
+
 void LinuxPlatform::updateLicenseButton() {
     // License button text is always "Manage License..."
 }
@@ -622,6 +904,7 @@ void LinuxPlatform::onThemeLightClicked(GtkButton* button, gpointer userData) {
         platform->app_->setDarkTheme(false);
     }
     platform->updateThemeButtons();
+    platform->updateGtkTheme();
 }
 
 void LinuxPlatform::onThemeDarkClicked(GtkButton* button, gpointer userData) {
@@ -630,16 +913,22 @@ void LinuxPlatform::onThemeDarkClicked(GtkButton* button, gpointer userData) {
         platform->app_->setDarkTheme(true);
     }
     platform->updateThemeButtons();
+    platform->updateGtkTheme();
 }
 
 void LinuxPlatform::onThemeAutoClicked(GtkButton* button, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
-    // For now, auto defaults to dark theme
-    // TODO: Detect system theme preference
     if (platform->app_) {
-        platform->app_->setDarkTheme(true);
+        // Detect system theme preference via GTK settings
+        GtkSettings* settings = gtk_settings_get_default();
+        gchar* themeName = nullptr;
+        g_object_get(settings, "gtk-theme-name", &themeName, nullptr);
+        bool systemIsDark = themeName && g_str_has_suffix(themeName, "-dark");
+        g_free(themeName);
+        platform->app_->setDarkTheme(systemIsDark);
     }
     platform->updateThemeButtons();
+    platform->updateGtkTheme();
 }
 
 void LinuxPlatform::onLicenseClicked(GtkButton* button, gpointer userData) {

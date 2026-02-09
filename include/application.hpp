@@ -8,6 +8,7 @@
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #if defined(__APPLE__) || defined(_WIN32)
@@ -140,6 +141,7 @@ private:
 
     // Data
     std::vector<std::shared_ptr<DatabaseInterface>> databases;
+    std::unordered_map<int, std::vector<std::shared_ptr<DatabaseInterface>>> workspaceDatabaseCache;
     int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods

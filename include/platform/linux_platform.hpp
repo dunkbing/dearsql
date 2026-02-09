@@ -8,6 +8,7 @@ struct GLFWwindow;
 #include "imgui.h"
 #include "platform_interface.hpp"
 #include <gtk/gtk.h>
+#include <vector>
 
 class Application;
 struct Workspace;
@@ -64,6 +65,7 @@ public:
     static void onLicenseClicked(GtkButton* button, gpointer userData);
 
     void showLicenseDialog();
+    void showCreateWorkspaceDialog();
 
 private:
     Application* app_;
@@ -80,12 +82,15 @@ private:
     GtkWidget* themeAutoButton_;
     GtkWidget* licenseButton_;
     GtkStringList* workspaceModel_;
+    std::vector<int> workspaceIdsByIndex_;
 
     void updateThemeButtons();
     void updateLicenseButton();
+    void updateGtkTheme();
 
     bool shouldClose_;
     bool realized_;
+    gulong workspaceSignalId_ = 0;
     int fbWidth_;
     int fbHeight_;
     double mouseX_;

@@ -8,7 +8,6 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "im_anim.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "ui/confirm_dialog.hpp"
@@ -44,17 +43,11 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
         ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool willBeHovered = !anyPopupOpen && ImGui::IsMouseHoveringRect(itemMin, itemMax);
 
-    // Animate hover alpha
-    const float hoverAlpha =
-        iam_tween_float(id, ImHashStr("hover_alpha"), willBeHovered ? 1.0f : 0.0f,
-                        0.2f, // duration
-                        iam_ease_preset(iam_ease_out_cubic), iam_policy_crossfade, dt);
-
-    // Draw animated hover background if animating
-    if (hoverAlpha > 0.01f) {
+    // Draw hover background
+    if (willBeHovered) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImVec4 hoverColor = colors.surface2;
-        hoverColor.w = hoverAlpha * 0.8f;
+        hoverColor.w = 0.8f;
         ImGui::GetWindowDrawList()->AddRectFilled(itemMin, itemMax,
                                                   ImGui::ColorConvertFloat4ToU32(hoverColor),
                                                   6.0f // rounding

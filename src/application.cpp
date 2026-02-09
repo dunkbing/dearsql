@@ -6,7 +6,6 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "im_anim.h"
 #include "license/license_manager.hpp"
 #if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
@@ -701,9 +700,6 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
 }
 
 void Application::renderMainUI() {
-    // Update ImAnim at the start of each frame
-    iam_update_begin_frame();
-
     // DockSpace setup
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 

@@ -23,9 +23,6 @@
 [submodule "external/imgui_test_engine"]
 	path = external/imgui_test_engine
 	url = https://github.com/ocornut/imgui_test_engine.git
-[submodule "external/ImAnim"]
-	path = external/ImAnim
-	url = https://github.com/soufianekhiat/ImAnim
 [submodule "external/googletest"]
 	path = external/googletest
 	url = https://github.com/google/googletest.git

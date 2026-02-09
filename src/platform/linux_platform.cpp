@@ -259,6 +259,10 @@ void LinuxPlatform::updateWorkspaceDropdown() {
                                           G_CALLBACK(onWorkspaceChanged), this);
 }
 
+void LinuxPlatform::applyCurrentTheme() {
+    updateGtkTheme();
+}
+
 float LinuxPlatform::getTitlebarHeight() const {
     return 0.0f; // HeaderBar is outside the GL area
 }

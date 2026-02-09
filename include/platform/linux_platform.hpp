@@ -27,6 +27,7 @@ public:
     void renderFrame() override;
     void shutdownImGui() override;
     void updateWorkspaceDropdown() override;
+    void applyCurrentTheme();
 
     // GTK-specific methods
     bool initializeGTK(int* argc, char*** argv);

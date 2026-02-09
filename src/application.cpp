@@ -20,6 +20,7 @@
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <format>
@@ -177,6 +178,9 @@ bool Application::initialize() {
     const std::string themeStr = appState->getSetting("theme", "dark");
     darkTheme = (themeStr != "light");
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+#if defined(__linux__)
+    static_cast<LinuxPlatform*>(platform_.get())->applyCurrentTheme();
+#endif
 
     // Load stored license
     LicenseManager::instance().loadStoredLicense();
@@ -392,9 +396,11 @@ void Application::restorePreviousConnections() {
         return;
     }
 
+    const auto restoreStart = std::chrono::steady_clock::now();
     const auto savedConnections = appState->getConnectionsForWorkspace(currentWorkspaceId);
     Logger::info(
         std::format("Restoring {} connections for current workspace", savedConnections.size()));
+    std::size_t restoredCount = 0;
 
     for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
@@ -422,8 +428,15 @@ void Application::restorePreviousConnections() {
             Logger::debug(std::format("Added connection (will connect when expanded): {} {}",
                                       conn.connectionInfo.name, conn.connectionInfo.database));
             databases.push_back(db);
+            ++restoredCount;
         }
     }
+
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - restoreStart)
+                               .count();
+    Logger::info(std::format("Restored {} connections for workspace {} in {} ms", restoredCount,
+                             currentWorkspaceId, elapsedMs));
 }
 
 #if defined(__APPLE__) || defined(_WIN32)

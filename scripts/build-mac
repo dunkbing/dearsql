@@ -38,11 +38,13 @@ TEAM_ID="2SY55TFJ22"
 DEVELOPER_NAME="Binh Bui"
 IDENTITY="Developer ID Application: ${DEVELOPER_NAME} (${TEAM_ID})"
 KEYCHAIN_PROFILE="notarytool-dearsql"
-APP_NAME="DearSQL"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load app metadata
+source "$PROJECT_DIR/APP_METADATA"
 BUILD_DIR="${PROJECT_DIR}/build_release"
 APP_PATH="${BUILD_DIR}/${APP_NAME}.app"
 DMG_PATH="${BUILD_DIR}/${APP_NAME}.dmg"

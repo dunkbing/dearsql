@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configuration
-APP_NAME="dearsql"
-APP_DISPLAY_NAME="DearSQL"
-VERSION="${VERSION:-0.1.7}"
-ARCH="${ARCH:-amd64}"
-MAINTAINER="${MAINTAINER:-dunkbing <bing@db99.dev>}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Configuration — load from APP_METADATA
+source "$PROJECT_DIR/APP_METADATA"
+APP_DISPLAY_NAME="$APP_NAME"
+APP_NAME="$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')"
+VERSION="${VERSION:-$APP_VERSION}"
+ARCH="${ARCH:-amd64}"
+MAINTAINER="${MAINTAINER:-dunkbing <bing@db99.dev>}"
 BUILD_DIR="${PROJECT_DIR}/build_release"
 DEB_DIR="${BUILD_DIR}/deb-package"
 OUTPUT_FILE="${BUILD_DIR}/${APP_NAME}_${VERSION}_${ARCH}.deb"

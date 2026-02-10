@@ -31,10 +31,13 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
 endif()
 
-# Application metadata
-set(APP_NAME "DearSQL")
-set(APP_VERSION "0.1.7")
-set(APP_IDENTIFIER "io.gitlab.dunkbing.dearsql")
+# APP_METADATA
+file(STRINGS "${CMAKE_SOURCE_DIR}/APP_METADATA" _metadata_lines)
+foreach(_line IN LISTS _metadata_lines)
+    if(_line MATCHES "^([A-Z_]+)=(.+)$")
+        set(${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+    endif()
+endforeach()
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/include/config.hpp.in

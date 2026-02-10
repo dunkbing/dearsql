@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build_flatpak}"
 
+source "$PROJECT_DIR/APP_METADATA"
+
 echo "=== Building Flatpak ==="
 
 # Add Flathub remote if not present

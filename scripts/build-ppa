@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-VERSION="${VERSION:-0.1.0}"
+source "$PROJECT_DIR/APP_METADATA"
+VERSION="${VERSION:-$APP_VERSION}"
 PPA="${PPA:-ppa:dunkbing/dearsql}"
 DISTRO="${DISTRO:-noble}"  # Ubuntu 24.04
 

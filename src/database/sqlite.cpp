@@ -1,4 +1,5 @@
 #include "database/sqlite.hpp"
+#include "database/ddl_utils.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
@@ -596,6 +597,41 @@ std::pair<bool, std::string> SQLiteDatabase::executeQuery(const std::string& que
     }
     try {
         *session << query;
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
+}
+
+std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
+    if (!connected || !session) {
+        return {false, "Database not connected"};
+    }
+
+    try {
+        soci::ddl_type ddl = session->create_table(table.name);
+
+        std::vector<std::string> primaryKeyColumns;
+        for (const auto& column : table.columns) {
+            const auto ddlType = ddl_utils::inferColumnType(column.type);
+            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
+
+            if (column.isNotNull && !column.isPrimaryKey) {
+                ddlRef("not null");
+            }
+
+            if (column.isPrimaryKey) {
+                primaryKeyColumns.push_back(column.name);
+            }
+        }
+
+        if (!primaryKeyColumns.empty()) {
+            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
+                            ddl_utils::joinColumnNames(primaryKeyColumns));
+        }
+
         return {true, ""};
     } catch (const soci::soci_error& e) {
         return {false, std::string(e.what())};

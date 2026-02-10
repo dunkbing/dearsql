@@ -9,7 +9,6 @@
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstring>
 #include <format>
 #include <future>

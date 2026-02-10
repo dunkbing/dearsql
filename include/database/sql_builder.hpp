@@ -105,13 +105,6 @@ public:
     // ========== DDL Statements ==========
 
     /**
-     * @brief Generate CREATE TABLE statement
-     * @param table Table structure with columns
-     * @return CREATE TABLE SQL statement
-     */
-    [[nodiscard]] virtual std::string createTable(const Table& table) const = 0;
-
-    /**
      * @brief Generate DROP TABLE statement
      * @param table Table name
      * @param ifExists Add IF EXISTS clause
@@ -172,7 +165,6 @@ public:
         const std::string& table,
         const std::vector<std::pair<std::string, std::string>>& whereConditions) const override;
 
-    [[nodiscard]] std::string createTable(const Table& table) const override;
     [[nodiscard]] std::string dropTable(const std::string& table,
                                         bool ifExists = true) const override;
     [[nodiscard]] std::string addColumn(const std::string& table,
@@ -205,7 +197,6 @@ public:
         const std::string& table,
         const std::vector<std::pair<std::string, std::string>>& whereConditions) const override;
 
-    [[nodiscard]] std::string createTable(const Table& table) const override;
     [[nodiscard]] std::string dropTable(const std::string& table,
                                         bool ifExists = true) const override;
     [[nodiscard]] std::string addColumn(const std::string& table,
@@ -238,7 +229,6 @@ public:
         const std::string& table,
         const std::vector<std::pair<std::string, std::string>>& whereConditions) const override;
 
-    [[nodiscard]] std::string createTable(const Table& table) const override;
     [[nodiscard]] std::string dropTable(const std::string& table,
                                         bool ifExists = true) const override;
     [[nodiscard]] std::string addColumn(const std::string& table,

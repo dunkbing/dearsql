@@ -18,9 +18,10 @@ void TableDialog::showCreate(IDatabaseNode* node, const std::string& schema) {
     reset();
     dialogMode = TableDialogMode::Create;
     dbNode = node;
-    databaseType = node ? node->getDatabaseType() : DatabaseType::SQLITE;
+    if (node) {
+        databaseType = node->getDatabaseType();
+    }
     schemaName = schema;
-    saveCallback = nullptr;
     cancelCallback = nullptr;
 
     editingTable = Table{};
@@ -36,7 +37,6 @@ void TableDialog::showEdit(IDatabaseNode* node, const Table& table, const std::s
     dbNode = node;
     databaseType = node ? node->getDatabaseType() : DatabaseType::SQLITE;
     schemaName = schema;
-    saveCallback = nullptr;
     cancelCallback = nullptr;
 
     editingTable = table;
@@ -503,14 +503,8 @@ void TableDialog::renderButtons() {
             // Direct execution mode (dbNode set)
             if (dbNode) {
                 if (dialogMode == TableDialogMode::Create) {
-                    auto builder = createSQLBuilder(databaseType);
-                    // Qualify table name with schema for PostgreSQL
-                    if (databaseType == DatabaseType::POSTGRESQL && !schemaName.empty()) {
-                        resultTable.name = schemaName + "." + resultTable.name;
-                    }
-                    const std::string sql = builder->createTable(resultTable);
-                    Logger::info("Executing: " + sql);
-                    auto [success, error] = dbNode->executeQuery(sql);
+                    Logger::info("Creating table: " + resultTable.name);
+                    auto [success, error] = dbNode->createTable(resultTable);
                     if (success) {
                         dbNode->startTablesLoadAsync(true);
                     } else {
@@ -531,15 +525,11 @@ void TableDialog::renderButtons() {
                         dbNode->startTablesLoadAsync(true);
                     }
                 }
-            } else if (saveCallback) {
-                // Callback mode
-                saveCallback(resultTable);
             }
 
             // Only close if no error was set
             if (errorMessage.empty()) {
                 isDialogOpen = false;
-                saveCallback = nullptr;
                 cancelCallback = nullptr;
                 dbNode = nullptr;
                 reset();
@@ -1050,7 +1040,6 @@ void TableDialog::reset() {
     previewSQL.clear();
     showPreview = false;
 
-    saveCallback = nullptr;
     cancelCallback = nullptr;
     dbNode = nullptr;
 }

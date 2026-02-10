@@ -1,5 +1,6 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/db.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
@@ -625,6 +626,47 @@ std::pair<bool, std::string> PostgresSchemaNode::executeQuery(const std::string&
         return {false, "No database connection"};
     }
     return parentDbNode->executeQuery(query);
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table) {
+    if (!parentDbNode) {
+        return {false, "No database connection"};
+    }
+
+    try {
+        const auto session = parentDbNode->getSession();
+        if (!session) {
+            return {false, "Failed to get database session"};
+        }
+
+        const std::string qualifiedName = name.empty() ? table.name : (name + "." + table.name);
+        soci::ddl_type ddl = session->create_table(qualifiedName);
+
+        std::vector<std::string> primaryKeyColumns;
+        for (const auto& column : table.columns) {
+            const auto ddlType = ddl_utils::inferColumnType(column.type);
+            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
+
+            if (column.isNotNull && !column.isPrimaryKey) {
+                ddlRef("not null");
+            }
+
+            if (column.isPrimaryKey) {
+                primaryKeyColumns.push_back(column.name);
+            }
+        }
+
+        if (!primaryKeyColumns.empty()) {
+            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
+                            ddl_utils::joinColumnNames(primaryKeyColumns));
+        }
+
+        return {true, ""};
+    } catch (const soci::soci_error& e) {
+        return {false, std::string(e.what())};
+    } catch (const std::exception& e) {
+        return {false, std::string(e.what())};
+    }
 }
 
 std::string PostgresSchemaNode::getFullPath() const {

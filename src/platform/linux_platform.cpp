@@ -198,6 +198,27 @@ void LinuxPlatform::setupTitlebar() {
     g_signal_connect(licenseButton_, "clicked", G_CALLBACK(onLicenseClicked), this);
     gtk_box_append(GTK_BOX(menuBox), licenseButton_);
 
+    // Report Bug button
+    GtkWidget* reportBugButton = gtk_button_new_with_label("Report Bug...");
+    gtk_widget_set_halign(reportBugButton, GTK_ALIGN_FILL);
+    g_signal_connect(reportBugButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
+                         auto* platform = static_cast<LinuxPlatform*>(userData);
+                         gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
+                         std::string url =
+                             "https://github.com/dunkbing/dearsql-website/issues/new?labels=bug"
+                             "&title=%5BBug%5D+&body=%23%23+Description%0A%0A%23%23+Steps+"
+                             "to+Reproduce%0A1.+%0A2.+%0A3.+%0A%0A%23%23+Expected+Behavior"
+                             "%0A%0A%23%23+Actual+Behavior%0A%0A%23%23+Environment%0A-+**OS"
+                             "**%3A+Linux%0A-+**DearSQL+version**%3A+" APP_VERSION
+                             "%0A-+**Database**%3A+";
+                         GtkUriLauncher* launcher = gtk_uri_launcher_new(url.c_str());
+                         gtk_uri_launcher_launch(launcher, GTK_WINDOW(platform->window_),
+                                                 nullptr, nullptr, nullptr);
+                         g_object_unref(launcher);
+                     }),
+                     this);
+    gtk_box_append(GTK_BOX(menuBox), reportBugButton);
+
     gtk_popover_set_child(GTK_POPOVER(menuPopover_), menuBox);
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(menuButton_), menuPopover_);
 

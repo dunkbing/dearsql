@@ -222,19 +222,19 @@
 
     // Create content view controller
     NSViewController* contentVC = [[NSViewController alloc] init];
-    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 180, 130)];
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 180, 166)];
 
     // Theme section label
     NSTextField* themeLabel = [NSTextField labelWithString:@"Theme"];
     themeLabel.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
     themeLabel.textColor = [NSColor secondaryLabelColor];
-    themeLabel.frame = NSMakeRect(12, 95, 156, 16);
+    themeLabel.frame = NSMakeRect(12, 131, 156, 16);
     [contentView addSubview:themeLabel];
 
     // Theme buttons container
     CGFloat buttonWidth = 50;
     CGFloat buttonHeight = 28;
-    CGFloat buttonY = 60;
+    CGFloat buttonY = 96;
     CGFloat startX = 12;
     CGFloat spacing = 4;
 
@@ -277,18 +277,27 @@
     [contentView addSubview:self.themeAutoButton];
 
     // Separator line
-    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(12, 48, 156, 1)];
+    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(12, 84, 156, 1)];
     separator.boxType = NSBoxSeparator;
     [contentView addSubview:separator];
 
     // License button
-    NSButton* licenseButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 12, 156, 28)];
+    NSButton* licenseButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 48, 156, 28)];
     [licenseButton setTitle:@"Manage License..."];
     [licenseButton setButtonType:NSButtonTypeMomentaryPushIn];
     [licenseButton setBezelStyle:NSBezelStyleTexturedRounded];
     [licenseButton setTarget:self];
     [licenseButton setAction:@selector(licenseClicked:)];
     [contentView addSubview:licenseButton];
+
+    // Report Bug button
+    NSButton* reportBugButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 12, 156, 28)];
+    [reportBugButton setTitle:@"Report Bug..."];
+    [reportBugButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [reportBugButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [reportBugButton setTarget:self];
+    [reportBugButton setAction:@selector(reportBugClicked:)];
+    [contentView addSubview:reportBugButton];
 
     contentVC.view = contentView;
     self.menuPopover.contentViewController = contentVC;
@@ -699,6 +708,18 @@
     if (keyFieldToFocus) {
         [dialog makeFirstResponder:keyFieldToFocus];
     }
+}
+
+- (void)reportBugClicked:(id)sender {
+    [self.menuPopover close];
+    NSString* version = @APP_VERSION;
+    NSString* urlStr = [NSString stringWithFormat:
+        @"https://github.com/dunkbing/dearsql-website/issues/new?labels=bug"
+         "&title=%%5BBug%%5D+&body=%%23%%23+Description%%0A%%0A%%23%%23+Steps+"
+         "to+Reproduce%%0A1.+%%0A2.+%%0A3.+%%0A%%0A%%23%%23+Expected+Behavior"
+         "%%0A%%0A%%23%%23+Actual+Behavior%%0A%%0A%%23%%23+Environment%%0A-+**OS"
+         "**%%3A+macOS%%0A-+**DearSQL+version**%%3A+%@%%0A-+**Database**%%3A+", version];
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:urlStr]];
 }
 
 - (void)openPurchaseLink:(id)sender {

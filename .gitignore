@@ -36,3 +36,5 @@ compile_commands.json
 # zed
 .cache
 .env
+.flatpak-builder
+*.log

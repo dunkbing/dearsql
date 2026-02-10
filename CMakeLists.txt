@@ -33,8 +33,8 @@ endif()
 
 # Application metadata
 set(APP_NAME "DearSQL")
-set(APP_VERSION "0.1.0")
-set(APP_IDENTIFIER "dearsql.db99.dev")
+set(APP_VERSION "0.1.7")
+set(APP_IDENTIFIER "io.gitlab.dunkbing.dearsql")
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/include/config.hpp.in

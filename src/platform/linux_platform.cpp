@@ -40,8 +40,8 @@ bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
         return false;
     }
 
-    // Set application name for WM_CLASS matching with .desktop file
-    g_set_prgname(APP_NAME);
+    // Set runtime application ID for desktop entry / dock matching
+    g_set_prgname(APP_IDENTIFIER);
     g_set_application_name(APP_NAME);
 
     // Create main window

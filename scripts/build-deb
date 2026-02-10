@@ -4,7 +4,7 @@ set -euo pipefail
 # Configuration
 APP_NAME="dearsql"
 APP_DISPLAY_NAME="DearSQL"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.7}"
 ARCH="${ARCH:-amd64}"
 MAINTAINER="${MAINTAINER:-dunkbing <bing@db99.dev>}"
 
@@ -83,7 +83,7 @@ Terminal=false
 Type=Application
 Categories=Development;Database;
 Keywords=sql;database;postgresql;mysql;sqlite;redis;query;
-StartupWMClass=DearSQL
+StartupWMClass=io.gitlab.dunkbing.dearsql
 EOF
 }
 

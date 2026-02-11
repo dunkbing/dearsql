@@ -212,8 +212,8 @@ void LinuxPlatform::setupTitlebar() {
                              "**%3A+Linux%0A-+**DearSQL+version**%3A+" APP_VERSION
                              "%0A-+**Database**%3A+";
                          GtkUriLauncher* launcher = gtk_uri_launcher_new(url.c_str());
-                         gtk_uri_launcher_launch(launcher, GTK_WINDOW(platform->window_),
-                                                 nullptr, nullptr, nullptr);
+                         gtk_uri_launcher_launch(launcher, GTK_WINDOW(platform->window_), nullptr,
+                                                 nullptr, nullptr);
                          g_object_unref(launcher);
                      }),
                      this);

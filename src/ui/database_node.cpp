@@ -9,7 +9,6 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
-#include "imgui_internal.h"
 #include "ui/confirm_dialog.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"
@@ -17,6 +16,18 @@
 #include "utils/spinner.hpp"
 #include <format>
 #include <ranges>
+
+namespace {
+    constexpr const char* CREATE_TABLE_LABEL = "Create Table";
+    constexpr const char* REFRESH_LABEL = "Refresh";
+    constexpr const char* DELETE_LABEL = "Delete";
+    constexpr const char* RENAME_LABEL = "Rename";
+    constexpr const char* VIEW_DATA_LABEL = "View Data";
+    constexpr const char* EDIT_TABLE_LABEL = "Edit Table";
+    constexpr const char* SHOW_STRUCTURE_LABEL = "Show Structure";
+    constexpr const char* NEW_SQL_EDITOR_LABEL = "New SQL Editor";
+    constexpr const char* SHOW_DIAGRAM_LABEL = "Show Diagram";
+} // namespace
 
 DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface)
     : db(std::move(dbInterface)) {}
@@ -49,9 +60,7 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
         ImVec4 hoverColor = colors.surface2;
         hoverColor.w = 0.8f;
         ImGui::GetWindowDrawList()->AddRectFilled(itemMin, itemMax,
-                                                  ImGui::ColorConvertFloat4ToU32(hoverColor),
-                                                  6.0f // rounding
-        );
+                                                  ImGui::ColorConvertFloat4ToU32(hoverColor), 0);
     }
 
     const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
@@ -253,10 +262,10 @@ void DatabaseHierarchy::renderSQLiteNode() {
         // Context menu for Tables node
         if (ImGui::BeginPopupContextItem(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-            if (ImGui::MenuItem("Create Table...")) {
+            if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                 TableDialog::instance().showCreate(sqliteDb);
             }
-            if (ImGui::MenuItem("Refresh")) {
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
                 sqliteDb->startTablesLoadAsync();
             }
             ImGui::PopStyleVar();
@@ -302,7 +311,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
         // Context menu for Views node
         if (ImGui::BeginPopupContextItem(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-            if (ImGui::MenuItem("Refresh")) {
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
                 sqliteDb->startViewsLoadAsync();
             }
             ImGui::PopStyleVar();
@@ -359,18 +368,18 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("New SQL Editor")) {
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             // For PostgreSQL, we need to use a schema node (which implements IDatabaseNode)
             if (dbData->schemasLoaded && !dbData->schemas.empty()) {
                 auto* schemaNode = dbData->schemas[0].get();
                 app.getTabManager()->createSQLEditorTab("", schemaNode);
             }
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startSchemasLoadAsync(true, true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = dbData->name;
             InputDialog::instance().showWithValidation(
                 "Rename Database", "New name:", oldName, "Rename",
@@ -390,7 +399,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                     }
                 });
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
             ConfirmDialog::instance().show(
                 "Delete Database", std::format("You are about to delete the database: {}", dbName),
@@ -454,20 +463,20 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
     // Context menu for schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("New SQL Editor")) {
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             // schemaData implements IDatabaseNode, so we can pass it directly
             app.getTabManager()->createSQLEditorTab("", schemaData);
         }
-        if (ImGui::MenuItem("Show Diagram")) {
+        if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(schemaData);
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaData->startTablesLoadAsync(true);
             schemaData->startViewsLoadAsync(true);
             schemaData->startSequencesLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = schemaData->name;
             InputDialog::instance().showWithValidation(
                 "Rename Schema", "New name:", oldName, "Rename",
@@ -490,7 +499,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     }
                 });
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string schemaName = schemaData->name;
             ConfirmDialog::instance().show(
                 "Delete Schema", std::format("You are about to delete the schema: {}", schemaName),
@@ -523,10 +532,10 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Create Table...")) {
+                if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                     TableDialog::instance().showCreate(schemaData, schemaData->name);
                 }
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startTablesLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
@@ -570,7 +579,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startViewsLoadAsync(true); // Force refresh
                 }
                 ImGui::PopStyleVar();
@@ -614,7 +623,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             // Context menu for Sequences node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startSequencesLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
@@ -673,18 +682,18 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("New SQL Editor")) {
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
-        if (ImGui::MenuItem("Show Diagram")) {
+        if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(dbData);
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = dbData->name;
             InputDialog::instance().showWithValidation(
                 "Rename Database", "New name:", oldName, "Rename",
@@ -694,7 +703,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 },
                 [](const std::string&) {});
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
             ConfirmDialog::instance().show(
                 "Delete Database", std::format("You are about to delete the database: {}", dbName),
@@ -728,10 +737,10 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Create Table...")) {
+                if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                     TableDialog::instance().showCreate(dbData);
                 }
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     dbData->startTablesLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
@@ -775,7 +784,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     dbData->startViewsLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
@@ -852,20 +861,20 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(schemaNode, table.name);
         }
-        if (ImGui::MenuItem("Edit Table")) {
+        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             TableDialog::instance().showEdit(schemaNode, table, schemaNode->name);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show table structure in a tab
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaNode->startTableRefreshAsync(table.name);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = table.name;
             const std::string schemaNameCopy = schemaNode->name;
             InputDialog::instance().showWithValidation(
@@ -887,7 +896,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     }
                 });
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
             const std::string schemaNameCopy = schemaNode->name;
             ConfirmDialog::instance().show(
@@ -944,7 +953,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                        if (ImGui::MenuItem("Delete...")) {
+                        if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             const std::string& schemaNameCopy = schemaNode->name;
@@ -1107,10 +1116,10 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(schemaData, view.name);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show view structure in a tab
         }
         ImGui::PopStyleVar();
@@ -1157,20 +1166,20 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
-        if (ImGui::MenuItem("Edit Table")) {
+        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             TableDialog::instance().showEdit(dbData, table);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show table structure in a tab
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTableRefreshAsync(table.name);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = table.name;
             InputDialog::instance().showWithValidation(
                 "Rename Table", "New name:", oldName, "Rename",
@@ -1191,7 +1200,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     }
                 });
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
             ConfirmDialog::instance().show(
                 "Delete Table", std::format("You are about to delete the table: {}", tableName),
@@ -1245,7 +1254,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     // Context menu for column (MySQL)
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                        if (ImGui::MenuItem("Delete...")) {
+                        if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             ConfirmDialog::instance().show(
@@ -1406,10 +1415,10 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, view.name);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show view structure in a tab
         }
         ImGui::PopStyleVar();
@@ -1436,14 +1445,14 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("New SQL Editor")) {
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startCollectionsLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
             ConfirmDialog::instance().show(
                 "Delete Database", std::format("You are about to delete the database: {}", dbName),
@@ -1477,7 +1486,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
             // Context menu for Collections node
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                if (ImGui::MenuItem("Refresh")) {
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
                     dbData->startCollectionsLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
@@ -1556,14 +1565,14 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, collection.name);
         }
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTableRefreshAsync(collection.name);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string collName = collection.name;
             ConfirmDialog::instance().show(
                 "Delete Collection",
@@ -1646,17 +1655,17 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
-        if (ImGui::MenuItem("Edit Table")) {
+        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             TableDialog::instance().showEdit(sqliteDb, table);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show table structure in a tab
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Rename...")) {
+        if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = table.name;
             InputDialog::instance().showWithValidation(
                 "Rename Table", "New name:", oldName, "Rename",
@@ -1677,7 +1686,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     }
                 });
         }
-        if (ImGui::MenuItem("Delete...")) {
+        if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
             ConfirmDialog::instance().show(
                 "Delete", std::format("You are about to delete the table: {}", tableName),
@@ -1731,7 +1740,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-                        if (ImGui::MenuItem("Delete...")) {
+                        if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             ConfirmDialog::instance().show(
@@ -1893,10 +1902,10 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqlite
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-        if (ImGui::MenuItem("View Data")) {
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
         }
-        if (ImGui::MenuItem("Show Structure")) {
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show view structure in a tab
         }
         ImGui::PopStyleVar();

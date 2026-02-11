@@ -713,12 +713,13 @@
 - (void)reportBugClicked:(id)sender {
     [self.menuPopover close];
     NSString* version = @APP_VERSION;
-    NSString* urlStr = [NSString stringWithFormat:
-        @"https://github.com/dunkbing/dearsql-website/issues/new?labels=bug"
-         "&title=%%5BBug%%5D+&body=%%23%%23+Description%%0A%%0A%%23%%23+Steps+"
-         "to+Reproduce%%0A1.+%%0A2.+%%0A3.+%%0A%%0A%%23%%23+Expected+Behavior"
-         "%%0A%%0A%%23%%23+Actual+Behavior%%0A%%0A%%23%%23+Environment%%0A-+**OS"
-         "**%%3A+macOS%%0A-+**DearSQL+version**%%3A+%@%%0A-+**Database**%%3A+", version];
+    NSString* urlStr = [NSString
+        stringWithFormat:@"https://github.com/dunkbing/dearsql-website/issues/new?labels=bug"
+                          "&title=%%5BBug%%5D+&body=%%23%%23+Description%%0A%%0A%%23%%23+Steps+"
+                          "to+Reproduce%%0A1.+%%0A2.+%%0A3.+%%0A%%0A%%23%%23+Expected+Behavior"
+                          "%%0A%%0A%%23%%23+Actual+Behavior%%0A%%0A%%23%%23+Environment%%0A-+**OS"
+                          "**%%3A+macOS%%0A-+**DearSQL+version**%%3A+%@%%0A-+**Database**%%3A+",
+                         version];
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:urlStr]];
 }
 

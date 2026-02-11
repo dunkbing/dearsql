@@ -310,7 +310,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
         }
 
         if (viewsOpen) {
-            if (!sqliteDb->loadingViews.load() && sqliteDb->getViews().empty()) {
+            if (!sqliteDb->viewsLoaded && !sqliteDb->loadingViews.load()) {
                 sqliteDb->startViewsLoadAsync();
             }
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Load app metadata
+source "$ROOT_DIR/APP_METADATA"
 
 # Check for vcpkg
 if [[ -z "${VCPKG_ROOT:-}" ]]; then
@@ -17,25 +19,76 @@ if [[ -z "${VCPKG_ROOT:-}" ]]; then
 fi
 echo "Using vcpkg at: $VCPKG_ROOT"
 
-# check if release flag is passed
+# Parse arguments
+BUILD_TYPE="Debug"
+BUILD_DIR="$ROOT_DIR/build"
 if [[ "${1:-}" == "release" ]]; then
     BUILD_TYPE="Release"
-    BUILD_DIR="${BUILD_DIR:-"$ROOT_DIR/build_release"}"
-else
-    BUILD_TYPE="Debug"
-    BUILD_DIR="${BUILD_DIR:-"$ROOT_DIR/build"}"
+    BUILD_DIR="$ROOT_DIR/build_release"
 fi
-
+BUILD_DIR="${BUILD_DIR_OVERRIDE:-$BUILD_DIR}"
 GENERATOR="${CMAKE_GENERATOR:-Unix Makefiles}"
 
-echo "Configuring CMake project (build type: ${BUILD_TYPE}, generator: ${GENERATOR})..."
-cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
+echo "Configuring CMake (${BUILD_TYPE}, ${GENERATOR})..."
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
 
-echo "Building DearSQL application..."
+echo "Building DearSQL..."
 cmake --build "$BUILD_DIR" --target dear-sql
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    echo "Build complete. Binary located at: $BUILD_DIR/DearSQL.app"
-else
-    echo "Build complete. Binary located at: $BUILD_DIR/dear-sql"
+    echo "Build complete: $BUILD_DIR/DearSQL.app"
+    exit 0
 fi
+
+echo "Build complete: $BUILD_DIR/dear-sql"
+
+# On Linux release builds, also produce .deb
+if [[ "$BUILD_TYPE" != "Release" ]]; then
+    exit 0
+fi
+
+if ! command -v dpkg-deb &>/dev/null; then
+    echo "dpkg-deb not found, skipping .deb packaging"
+    exit 0
+fi
+
+VERSION="$APP_VERSION"
+ARCH="$(dpkg --print-architecture)"
+PKG_NAME="$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')"
+DEB_NAME="${PKG_NAME}_${VERSION}_${ARCH}"
+DEB_DIR="$BUILD_DIR/$DEB_NAME"
+DEB_FILE="$BUILD_DIR/${DEB_NAME}.deb"
+
+echo "Packaging ${DEB_NAME}.deb..."
+
+rm -rf "$DEB_DIR"
+mkdir -p "$DEB_DIR"/{DEBIAN,usr/bin,usr/share/applications}
+mkdir -p "$DEB_DIR/usr/share/icons/hicolor/256x256/apps"
+
+install -m755 "$BUILD_DIR/dear-sql" "$DEB_DIR/usr/bin/$PKG_NAME"
+install -m644 "$ROOT_DIR/packaging/flatpak/$APP_IDENTIFIER.desktop" \
+    "$DEB_DIR/usr/share/applications/$APP_IDENTIFIER.desktop"
+install -m644 "$ROOT_DIR/assets/appicon.png" \
+    "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png"
+
+cat > "$DEB_DIR/DEBIAN/control" <<EOF
+Package: ${PKG_NAME}
+Version: ${VERSION}
+Section: database
+Priority: optional
+Architecture: ${ARCH}
+Depends: libgtk-4-1, libssl3
+Maintainer: Bing Bui <bing@db99.dev>
+Homepage: https://dearsql.db99.dev
+Description: SQL Database Client
+ DearSQL is a desktop SQL client for connecting to SQLite,
+ PostgreSQL, MySQL, Redis, and MongoDB databases.
+ .
+ Features include syntax highlighting, query history,
+ ER diagrams, and table editing.
+EOF
+
+dpkg-deb --build --root-owner-group "$DEB_DIR" "$DEB_FILE"
+sha256sum "$DEB_FILE" > "${DEB_FILE}.sha256"
+
+echo "Package created: $DEB_FILE"

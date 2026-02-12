@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "dear-sql",
+  "version": "0.1.7",
+  "description": "Cross-platform SQL database client",
+  "dependencies": [
+    "sqlite3",
+    "nlohmann-json",
+    {
+      "name": "libpq",
+      "features": ["openssl"],
+      "default-features": false
+    },
+    "openssl",
+    {
+      "name": "soci",
+      "features": ["sqlite3", "postgresql", "mysql"]
+    },
+    "hiredis",
+    "mongo-cxx-driver",
+    "gtest",
+    "nativefiledialog-extended",
+    {
+      "name": "glfw3",
+      "platform": "!linux"
+    }
+  ]
+}

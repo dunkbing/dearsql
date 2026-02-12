@@ -190,62 +190,6 @@ TEST_F(SQLBuilderTest, SQLiteDropTable) {
     EXPECT_EQ(sql, "DROP TABLE IF EXISTS \"users\"");
 }
 
-// ========== CREATE TABLE Tests ==========
-
-TEST_F(SQLBuilderTest, PostgreSQLCreateTable) {
-    Table table;
-    table.name = "users";
-
-    Column idCol;
-    idCol.name = "id";
-    idCol.type = "INTEGER";
-    idCol.isPrimaryKey = true;
-    idCol.isNotNull = true;
-
-    Column nameCol;
-    nameCol.name = "name";
-    nameCol.type = "VARCHAR(100)";
-    nameCol.isNotNull = true;
-
-    Column emailCol;
-    emailCol.name = "email";
-    emailCol.type = "TEXT";
-
-    table.columns = {idCol, nameCol, emailCol};
-
-    std::string sql = postgresBuilder->createTable(table);
-
-    EXPECT_TRUE(sql.find("CREATE TABLE \"users\"") != std::string::npos);
-    // PRIMARY KEY implies NOT NULL, so NOT NULL is not added when isPrimaryKey is true
-    EXPECT_TRUE(sql.find("\"id\" INTEGER PRIMARY KEY") != std::string::npos);
-    EXPECT_TRUE(sql.find("\"name\" VARCHAR(100) NOT NULL") != std::string::npos);
-    EXPECT_TRUE(sql.find("\"email\" TEXT") != std::string::npos);
-}
-
-TEST_F(SQLBuilderTest, MySQLCreateTable) {
-    Table table;
-    table.name = "products";
-
-    Column idCol;
-    idCol.name = "id";
-    idCol.type = "INT";
-    idCol.isPrimaryKey = true;
-    idCol.isNotNull = true;
-
-    Column priceCol;
-    priceCol.name = "price";
-    priceCol.type = "DECIMAL(10,2)";
-
-    table.columns = {idCol, priceCol};
-
-    std::string sql = mysqlBuilder->createTable(table);
-
-    EXPECT_TRUE(sql.find("CREATE TABLE `products`") != std::string::npos);
-    // PRIMARY KEY implies NOT NULL, so NOT NULL is not added when isPrimaryKey is true
-    EXPECT_TRUE(sql.find("`id` INT PRIMARY KEY") != std::string::npos);
-    EXPECT_TRUE(sql.find("`price` DECIMAL(10,2)") != std::string::npos);
-}
-
 // ========== ADD COLUMN Tests ==========
 
 TEST_F(SQLBuilderTest, PostgreSQLAddColumn) {

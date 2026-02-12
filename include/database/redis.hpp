@@ -4,7 +4,7 @@
 #include "query_executor.hpp"
 #include <atomic>
 #include <future>
-#include <hiredis.h>
+#include <hiredis/hiredis.h>
 
 struct RedisKey {
     std::string name;

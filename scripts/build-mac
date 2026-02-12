@@ -13,24 +13,7 @@ if [ ! -f "$VCPKG_ROOT/vcpkg" ]; then
     exit 1
 fi
 
-# Check required packages
-ARCH=$(uname -m)
-if [ "$ARCH" = "arm64" ]; then
-    TRIPLET="arm64-osx"
-else
-    TRIPLET="x64-osx"
-fi
-
-REQUIRED_PACKAGES="libpq glfw3 boost-date-time zstd"
-for pkg in $REQUIRED_PACKAGES; do
-    if [ ! -d "$VCPKG_ROOT/installed/$TRIPLET/share/$pkg" ]; then
-        echo "ERROR: vcpkg package '$pkg' not installed"
-        echo "Install with:"
-        echo "  $VCPKG_ROOT/vcpkg install \"libpq[core,openssl]:$TRIPLET\" glfw3:$TRIPLET boost-date-time:$TRIPLET zstd:$TRIPLET"
-        exit 1
-    fi
-done
-echo "==> vcpkg packages verified"
+echo "==> vcpkg packages managed via vcpkg.json manifest"
 export VCPKG_ROOT
 
 # Configuration

@@ -1,5 +1,6 @@
 #include "platform/macos_platform.hpp"
 #include "application.hpp"
+#include "config.hpp"
 #include "imgui_impl_glfw.h"
 #include "license/license_manager.hpp"
 #include "themes.hpp"

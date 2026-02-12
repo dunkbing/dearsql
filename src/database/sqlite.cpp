@@ -503,32 +503,31 @@ SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset
                     continue;
                 }
                 soci::column_properties cp = row.get_properties(i);
-                const auto dt = cp.get_db_type();
+                const auto dt = cp.get_data_type();
                 switch (dt) {
-                case soci::db_string:
+                case soci::dt_string:
                     rowData.emplace_back(row.get<std::string>(i));
                     break;
-                case soci::db_wstring: {
-                    auto ws = row.get<std::wstring>(i);
-                    std::string utf8_str(ws.begin(), ws.end());
-                    rowData.emplace_back(utf8_str);
-                } break;
-                case soci::db_int8:
-                    rowData.emplace_back(std::to_string(row.get<int8_t>(i)));
+                case soci::dt_integer:
+                    rowData.emplace_back(std::to_string(row.get<int>(i)));
                     break;
-                case soci::db_int16:
-                    rowData.emplace_back(std::to_string(row.get<int16_t>(i)));
+                case soci::dt_long_long:
+                    rowData.emplace_back(std::to_string(row.get<long long>(i)));
                     break;
-                case soci::db_int32:
-                    rowData.emplace_back(std::to_string(row.get<int32_t>(i)));
+                case soci::dt_unsigned_long_long:
+                    rowData.emplace_back(std::to_string(row.get<unsigned long long>(i)));
                     break;
-                case soci::db_int64:
-                    rowData.emplace_back(std::to_string(row.get<int64_t>(i)));
-                    break;
-                case soci::db_double:
+                case soci::dt_double:
                     rowData.emplace_back(std::to_string(row.get<double>(i)));
                     break;
-                case soci::db_blob:
+                case soci::dt_date: {
+                    const auto date = row.get<std::tm>(i);
+                    char buffer[32];
+                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
+                    rowData.emplace_back(buffer);
+                    break;
+                }
+                case soci::dt_blob:
                     rowData.emplace_back("[BINARY DATA]");
                     break;
                 default:

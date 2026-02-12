@@ -4,6 +4,19 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Check for vcpkg
+if [[ -z "${VCPKG_ROOT:-}" ]]; then
+    if [[ -d "$HOME/vcpkg" ]]; then
+        export VCPKG_ROOT="$HOME/vcpkg"
+    else
+        echo "Error: vcpkg not found. Install it with:"
+        echo "  git clone https://github.com/microsoft/vcpkg.git ~/vcpkg"
+        echo "  ~/vcpkg/bootstrap-vcpkg.sh"
+        exit 1
+    fi
+fi
+echo "Using vcpkg at: $VCPKG_ROOT"
+
 # check if release flag is passed
 if [[ "${1:-}" == "release" ]]; then
     BUILD_TYPE="Release"

@@ -2,43 +2,18 @@
 	path = external/imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
-[submodule "external/json"]
-	path = external/json
-	url = https://github.com/nlohmann/json.git
-[submodule "external/nativefiledialog-extended"]
-	path = external/nativefiledialog-extended
-	url = https://github.com/btzy/nativefiledialog-extended.git
-[submodule "external/soci"]
-	path = external/soci
-	url = https://github.com/SOCI/soci
 [submodule "external/IconFontCppHeaders"]
 	path = external/IconFontCppHeaders
 	url = https://github.com/juliettef/IconFontCppHeaders.git
-[submodule "external/hiredis"]
-	path = external/hiredis
-	url = https://github.com/redis/hiredis.git
 [submodule "external/imgui-node-editor"]
 	path = external/imgui-node-editor
 	url = https://github.com/dunkbing/imgui-node-editor.git
 [submodule "external/imgui_test_engine"]
 	path = external/imgui_test_engine
 	url = https://github.com/ocornut/imgui_test_engine.git
-[submodule "external/googletest"]
-	path = external/googletest
-	url = https://github.com/google/googletest.git
-[submodule "external/mongo-cxx-driver"]
-	path = external/mongo-cxx-driver
-	url = https://github.com/mongodb/mongo-cxx-driver.git
-	branch = releases/stable
 [submodule "external/cpp-httplib"]
 	path = external/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
-[submodule "external/mongo-c-driver"]
-	path = external/mongo-c-driver
-	url = https://github.com/mongodb/mongo-c-driver.git
 [submodule "external/ImGuiPack"]
 	path = external/ImGuiPack
 	url = https://github.com/aiekick/ImGuiPack
-[submodule "external/mariadb-connector-c"]
-	path = external/mariadb-connector-c
-	url = https://github.com/mariadb-corporation/mariadb-connector-c.git

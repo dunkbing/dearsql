@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
 
-# vcpkg toolchain (for static libpq without Kerberos)
-# Must be set before project() call
+# vcpkg toolchain - must be set before project() call
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     if(DEFINED ENV{VCPKG_ROOT})
         set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "" FORCE)
@@ -10,13 +9,24 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     endif()
 endif()
 
-# Auto-detect vcpkg triplet based on architecture
-if(APPLE AND NOT DEFINED VCPKG_TARGET_TRIPLET)
-    execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(ARCH STREQUAL "arm64")
-        set(VCPKG_TARGET_TRIPLET "arm64-osx" CACHE STRING "vcpkg triplet" FORCE)
-    else()
-        set(VCPKG_TARGET_TRIPLET "x64-osx" CACHE STRING "vcpkg triplet" FORCE)
+# Auto-detect vcpkg triplet based on platform and architecture
+if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+    if(APPLE)
+        execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(ARCH STREQUAL "arm64")
+            set(VCPKG_TARGET_TRIPLET "arm64-osx" CACHE STRING "vcpkg triplet" FORCE)
+        else()
+            set(VCPKG_TARGET_TRIPLET "x64-osx" CACHE STRING "vcpkg triplet" FORCE)
+        endif()
+    elseif(UNIX)
+        execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(ARCH STREQUAL "x86_64")
+            set(VCPKG_TARGET_TRIPLET "x64-linux" CACHE STRING "vcpkg triplet" FORCE)
+        else()
+            set(VCPKG_TARGET_TRIPLET "arm64-linux" CACHE STRING "vcpkg triplet" FORCE)
+        endif()
+    elseif(WIN32)
+        set(VCPKG_TARGET_TRIPLET "x64-windows-static" CACHE STRING "vcpkg triplet" FORCE)
     endif()
 endif()
 
@@ -29,6 +39,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # macOS deployment target (minimum supported version)
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
+    # Enable experimental C++20 features (jthread, stop_token) in libc++
+    add_compile_options(-fexperimental-library)
+    add_link_options(-fexperimental-library)
 endif()
 
 # APP_METADATA
@@ -45,112 +58,21 @@ configure_file(
     @ONLY
 )
 
-# Dependencies
-add_subdirectory(external/json)
-
-# SQLite3 - use embedded amalgamation for portable builds (must be before SOCI)
-add_library(sqlite3_static STATIC external/sqlite3/sqlite3.c)
-target_include_directories(sqlite3_static PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external/sqlite3>
-)
-target_compile_definitions(sqlite3_static PRIVATE
-    SQLITE_ENABLE_FTS5
-    SQLITE_ENABLE_JSON1
-    SQLITE_ENABLE_RTREE
-)
-# Create SQLite::SQLite3 alias that SOCI/CMake expects
-add_library(SQLite::SQLite3 ALIAS sqlite3_static)
-
-# MariaDB Connector/C - build as static for portable builds (must be before SOCI)
-set(WITH_UNIT_TESTS OFF CACHE BOOL "" FORCE)
-set(WITH_SSL "OPENSSL" CACHE STRING "" FORCE)
-set(WITH_CURL OFF CACHE BOOL "" FORCE)
-set(WITH_EXTERNAL_ZLIB OFF CACHE BOOL "" FORCE)
-# Disable dynamic plugins - use static only
-set(CLIENT_PLUGIN_PVIO_SOCKET STATIC CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_PVIO_NPIPE OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_PVIO_SHMEM OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_MYSQL_NATIVE_PASSWORD STATIC CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD STATIC CACHE STRING "" FORCE)
-# Disable problematic plugins
-set(CLIENT_PLUGIN_DIALOG OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_CLIENT_ED25519 OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_PARSEC OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_ZSTD OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_REMOTE_IO OFF CACHE STRING "" FORCE)
-set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF CACHE STRING "" FORCE)
-set(WITH_GSSAPI OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static mariadb connector" FORCE)
-set(INSTALL_PLUGINDIR "" CACHE STRING "" FORCE)
-add_subdirectory(external/mariadb-connector-c)
-
-# SOCI - build as static for portable app bundle
-set(SOCI_SHARED OFF CACHE BOOL "Build SOCI as static library" FORCE)
-set(SOCI_TESTS OFF CACHE BOOL "Disable SOCI tests" FORCE)
-set(SOCI_SQLITE3 ON CACHE BOOL "Build SOCI SQLite3 backend" FORCE)
-# Tell SOCI we already have SQLite3
-set(SQLite3_FOUND TRUE CACHE BOOL "" FORCE)
-set(SQLite3_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/external/sqlite3 CACHE PATH "" FORCE)
-set(SQLite3_LIBRARIES sqlite3_static CACHE STRING "" FORCE)
-# Tell SOCI to use our static MariaDB client for MySQL backend
-# Add include directories to mariadbclient target
-target_include_directories(mariadbclient PUBLIC
-    ${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include
-    ${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include
-)
-# Create MySQL::MySQL target that SOCI expects
-add_library(MySQL::MySQL ALIAS mariadbclient)
-# Set variables for compatibility
-set(MYSQL_FOUND TRUE CACHE BOOL "" FORCE)
-set(MySQL_FOUND TRUE CACHE BOOL "" FORCE)
-set(MYSQL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include;${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include" CACHE PATH "" FORCE)
-set(MySQL_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/external/mariadb-connector-c/include;${CMAKE_BINARY_DIR}/external/mariadb-connector-c/include" CACHE PATH "" FORCE)
-set(MYSQL_LIBRARIES mariadbclient CACHE STRING "" FORCE)
-set(MySQL_LIBRARIES mariadbclient CACHE STRING "" FORCE)
-add_subdirectory(external/soci)
-
-# Ensure SOCI MySQL backend waits for MariaDB to build (for generated headers)
-if(TARGET soci_mysql)
-    add_dependencies(soci_mysql mariadbclient)
-endif()
-
-# hiredis
-set(DISABLE_TESTS ON CACHE BOOL "Disable hiredis tests" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for hiredis" FORCE)
-add_subdirectory(external/hiredis)
-
-# mongo-c-driver (must be before mongo-cxx-driver)
-set(ENABLE_AUTOMATIC_INIT_AND_CLEANUP OFF CACHE BOOL "" FORCE)
-set(ENABLE_TESTS OFF CACHE BOOL "Disable mongo-c tests" FORCE)
-set(ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
-add_subdirectory(external/mongo-c-driver)
-
-# mongo-cxx-driver
-set(ENABLE_TESTS OFF CACHE BOOL "Disable mongocxx tests" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs for mongo" FORCE)
-set(BUILD_VERSION "4.1.4" CACHE STRING "mongo-cxx-driver version" FORCE)
-add_subdirectory(external/mongo-cxx-driver)
-
-# GoogleTest
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-add_subdirectory(external/googletest)
-
-# Use xdg-desktop-portal on Linux to avoid GTK3/GTK4 conflict
-if(UNIX AND NOT APPLE)
-    set(NFD_PORTAL ON CACHE BOOL "Use xdg-desktop-portal instead of GTK" FORCE)
-endif()
-add_subdirectory(external/nativefiledialog-extended)
-
-enable_testing()
-
-# Find system packages
+# =============================================================================
+# vcpkg packages (cross-platform)
+# =============================================================================
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(SOCI CONFIG REQUIRED)
+find_package(hiredis CONFIG REQUIRED)
+find_package(mongocxx CONFIG REQUIRED)
+find_package(bsoncxx CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
+find_package(nfd CONFIG REQUIRED)
+
+enable_testing()
 
 # Platform-specific windowing
 if(UNIX AND NOT APPLE)
@@ -161,10 +83,12 @@ if(UNIX AND NOT APPLE)
     find_package(X11 REQUIRED)
 else()
     # macOS and Windows use GLFW
-    find_package(glfw3 3.3 REQUIRED)
+    find_package(glfw3 CONFIG REQUIRED)
 endif()
 
-# Common ImGui sources
+# =============================================================================
+# ImGui (from submodule - tightly integrated with platform backends)
+# =============================================================================
 set(IMGUI_SOURCES
     external/imgui/imgui.cpp
     external/imgui/imgui_draw.cpp
@@ -175,14 +99,12 @@ set(IMGUI_SOURCES
 
 # Platform-specific ImGui backend
 if(UNIX AND NOT APPLE)
-    # Linux uses GTK4, no GLFW backend needed
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 else()
-    # macOS and Windows use GLFW
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
 endif()
 
-# ImGui Node Editor sources
+# ImGui Node Editor sources (from submodule - custom fork)
 set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
     external/imgui-node-editor/imgui_node_editor_api.cpp
@@ -192,35 +114,24 @@ set(IMGUI_NODE_EDITOR_SOURCES
 
 # Platform-specific backend configuration
 if(APPLE)
-    # Metal backend for macOS
     find_library(METAL_LIBRARY Metal REQUIRED)
     find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
     find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
 
-    if(NOT METAL_LIBRARY)
-        message(FATAL_ERROR "Metal framework not found. Make sure you're building on macOS 10.11 or later.")
-    endif()
-
     message(STATUS "Using Metal backend for macOS")
-    message(STATUS "Found Metal framework: ${METAL_LIBRARY}")
-    message(STATUS "Found QuartzCore framework: ${QUARTZCORE_LIBRARY}")
-    message(STATUS "Found Foundation framework: ${FOUNDATION_LIBRARY}")
-    message(STATUS "Found AppKit framework: ${APPKIT_LIBRARY}")
-
-    # Add Metal backend source
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
 elseif(UNIX AND NOT APPLE)
-    # Linux uses GTK4 + OpenGL via libepoxy
     message(STATUS "Using GTK4 + OpenGL backend for Linux")
 else()
-    # Windows uses OpenGL
     find_package(OpenGL REQUIRED)
     message(STATUS "Using OpenGL backend for ${CMAKE_SYSTEM_NAME}")
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 endif()
 
+# =============================================================================
 # Application source files
+# =============================================================================
 set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
@@ -292,7 +203,9 @@ embed_images()
 
 list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
-# Main application
+# =============================================================================
+# Main application target
+# =============================================================================
 add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
@@ -305,15 +218,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui/backends
     external/ImGuiPack/3rdparty/imgui_imguicolortextedit
     external/imgui-node-editor
-    external/json/include
-    external/soci/include
     external/IconFontCppHeaders
-    external/hiredis
     external/cpp-httplib
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
-    external/nativefiledialog-extended/src/include
-    external/mongo-cxx-driver/src
 )
 
 # Platform-specific include directories
@@ -321,19 +229,20 @@ if(UNIX AND NOT APPLE)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
 endif()
 
-# Link libraries (common)
+# Link libraries (common - vcpkg packages)
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    sqlite3_static
-    soci_sqlite3
-    soci_postgresql
-    soci_mysql
+    unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
-    nfd
+    $<IF:$<TARGET_EXISTS:SOCI::soci_core>,SOCI::soci_core,SOCI::soci_core_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_sqlite3>,SOCI::soci_sqlite3,SOCI::soci_sqlite3_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_postgresql>,SOCI::soci_postgresql,SOCI::soci_postgresql_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_mysql>,SOCI::soci_mysql,SOCI::soci_mysql_static>
+    hiredis::hiredis
+    $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
+    $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
+    nfd::nfd
     OpenSSL::SSL
     OpenSSL::Crypto
-    hiredis
-    mongocxx_static
-    bsoncxx_static
 )
 
 # Platform-specific linking
@@ -378,6 +287,9 @@ if(APPLE)
     target_sources(${PROJECT_NAME} PRIVATE assets/AppIcon.icns)
 endif()
 
+# =============================================================================
+# Test target
+# =============================================================================
 add_executable(database_tests
     tests/database/sqlite_database_test.cpp
     tests/database/postgres_database_test.cpp
@@ -403,27 +315,27 @@ add_executable(database_tests
 
 target_include_directories(database_tests PRIVATE
     include
-    external/soci/include
-    external/hiredis
-    external/mongo-cxx-driver/src
     tests/database
 )
 
 target_link_libraries(database_tests PRIVATE
-    gtest_main
-    sqlite3_static
-    soci_sqlite3
-    soci_postgresql
-    soci_mysql
+    GTest::gtest_main
+    unofficial::sqlite3::sqlite3
+    $<IF:$<TARGET_EXISTS:SOCI::soci_core>,SOCI::soci_core,SOCI::soci_core_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_sqlite3>,SOCI::soci_sqlite3,SOCI::soci_sqlite3_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_postgresql>,SOCI::soci_postgresql,SOCI::soci_postgresql_static>
+    $<IF:$<TARGET_EXISTS:SOCI::soci_mysql>,SOCI::soci_mysql,SOCI::soci_mysql_static>
     PostgreSQL::PostgreSQL
-    hiredis
-    mongocxx_static
-    bsoncxx_static
+    hiredis::hiredis
+    $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
+    $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
 )
 
 add_test(NAME database_tests COMMAND database_tests)
 
+# =============================================================================
 # Install rules for Linux packaging
+# =============================================================================
 if(UNIX AND NOT APPLE)
     install(TARGETS ${PROJECT_NAME} DESTINATION bin)
     install(FILES packaging/flatpak/io.gitlab.dunkbing.dearsql.desktop

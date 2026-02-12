@@ -1,5 +1,6 @@
 #include "ui/auto_complete_input.hpp"
 #include "application.hpp"
+#include <algorithm>
 #include <cstring>
 
 AutoCompleteInput::AutoCompleteInput(Config config) : config(std::move(config)) {}

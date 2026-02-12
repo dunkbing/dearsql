@@ -11,7 +11,7 @@
 namespace ddl_utils {
 
     struct ColumnType {
-        soci::db_type type = soci::db_string;
+        soci::data_type type = soci::dt_string;
         int precision = 0;
         int scale = 0;
     };
@@ -68,28 +68,26 @@ namespace ddl_utils {
             return normalized.find(token) != std::string::npos;
         };
 
-        if (has("TINYINT")) {
-            result.type = isUnsigned ? soci::db_uint8 : soci::db_int8;
-        } else if (has("SMALLINT")) {
-            result.type = isUnsigned ? soci::db_uint16 : soci::db_int16;
+        if (has("TINYINT") || has("SMALLINT")) {
+            result.type = soci::dt_integer;
         } else if (has("BIGINT")) {
-            result.type = isUnsigned ? soci::db_uint64 : soci::db_int64;
+            result.type = isUnsigned ? soci::dt_unsigned_long_long : soci::dt_long_long;
         } else if (has("INT") || has("INTEGER")) {
-            result.type = isUnsigned ? soci::db_uint32 : soci::db_int32;
+            result.type = soci::dt_integer;
         } else if (has("BOOL") || has("BOOLEAN")) {
-            result.type = soci::db_int32;
+            result.type = soci::dt_integer;
         } else if (has("DOUBLE") || has("FLOAT") || has("REAL")) {
-            result.type = soci::db_double;
+            result.type = soci::dt_double;
         } else if (has("DECIMAL") || has("NUMERIC")) {
-            result.type = soci::db_double;
+            result.type = soci::dt_double;
         } else if (has("DATE") || has("TIME")) {
-            result.type = soci::db_date;
+            result.type = soci::dt_date;
         } else if (has("BLOB") || has("BYTEA") || has("BINARY")) {
-            result.type = soci::db_blob;
+            result.type = soci::dt_blob;
         } else if (has("CHAR") || has("TEXT") || has("CLOB") || has("UUID") || has("JSON")) {
-            result.type = soci::db_string;
+            result.type = soci::dt_string;
         } else {
-            result.type = soci::db_string;
+            result.type = soci::dt_string;
         }
 
         result.precision = precision;

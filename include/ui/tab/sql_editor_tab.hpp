@@ -80,4 +80,8 @@ private:
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,
                                 float minSize2) const;
+
+    // Autocomplete
+    void updateCompletionKeywords();
+    bool completionKeywordsSet_ = false;
 };

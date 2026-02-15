@@ -6,8 +6,24 @@
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
-#include <format>
 #include <future>
+
+namespace {
+    constexpr const char* LABEL_EXECUTING = "Executing...";
+    constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
+    constexpr const char* LABEL_CANCEL = "Cancel";
+    constexpr const char* LABEL_EXECUTE_QUERY = "Execute Query";
+    constexpr const char* LABEL_CLEAR = "Clear";
+    constexpr const char* LABEL_NO_DATABASE = "SQL Editor (No database selected)";
+    constexpr const char* LABEL_NO_ROWS = "No rows returned.";
+    constexpr const char* LABEL_ROW_LIMIT = "(limited to 1000 rows)";
+    constexpr const char* LABEL_QUERY_SUCCESS = "Query executed successfully.";
+    constexpr const char* LABEL_NO_RESULTS =
+        "No results to display. Execute a query to see results here.";
+    constexpr const char* LABEL_QUERY_CANCELLED = "Query execution cancelled by user";
+    constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
+    constexpr int MAX_QUERY_ROWS = 1000;
+} // namespace
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
                            const std::string& schemaName)
@@ -24,6 +40,10 @@ SQLEditorTab::~SQLEditorTab() {
 }
 
 void SQLEditorTab::render() {
+    if (node_ && !completionKeywordsSet_ && node_->isTablesLoaded()) {
+        updateCompletionKeywords();
+    }
+
     checkQueryExecutionStatus();
 
     renderConnectionInfo();
@@ -53,7 +73,7 @@ void SQLEditorTab::renderConnectionInfo() {
     if (node_) {
         ImGui::Text("Database: %s", node_->getFullPath().c_str());
     } else {
-        ImGui::Text("SQL Editor (No database selected)");
+        ImGui::Text("%s", LABEL_NO_DATABASE);
     }
     ImGui::Separator();
 }
@@ -61,27 +81,27 @@ void SQLEditorTab::renderConnectionInfo() {
 void SQLEditorTab::renderToolbar() {
     if (isExecutingQuery) {
         ImGui::BeginDisabled();
-        ImGui::Button("Executing...");
+        ImGui::Button(LABEL_EXECUTING);
         ImGui::EndDisabled();
 
         ImGui::SameLine();
         UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
 
         ImGui::SameLine();
-        ImGui::Text("Running query...");
+        ImGui::Text("%s", LABEL_RUNNING_QUERY);
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
+        if (ImGui::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
     } else {
-        if (ImGui::Button("Execute Query")) {
+        if (ImGui::Button(LABEL_EXECUTE_QUERY)) {
             startQueryExecutionAsync(sqlQuery);
         }
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
+    if (ImGui::Button(LABEL_CLEAR)) {
         sqlEditor.SetText("");
         sqlQuery.clear();
         hasStructuredResults = false;
@@ -98,7 +118,7 @@ void SQLEditorTab::renderQueryResults() const {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
     } else if (hasStructuredResults && !queryColumnNames.empty()) {
         if (queryTableData.empty()) {
-            ImGui::Text("No rows returned.");
+            ImGui::Text("%s", LABEL_NO_ROWS);
             if (lastQueryDuration.count() > 0) {
                 ImGui::SameLine();
                 ImGui::Text("| Execution time: %ld ms",
@@ -106,9 +126,9 @@ void SQLEditorTab::renderQueryResults() const {
             }
         } else {
             ImGui::Text("Rows: %zu", queryTableData.size());
-            if (queryTableData.size() >= 1000) {
+            if (queryTableData.size() >= MAX_QUERY_ROWS) {
                 ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "(limited to 1000 rows)");
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
             }
             if (lastQueryDuration.count() > 0) {
                 ImGui::SameLine();
@@ -132,13 +152,13 @@ void SQLEditorTab::renderQueryResults() const {
             tableRenderer.render("QueryResults");
         }
     } else if (hasStructuredResults && queryColumnNames.empty()) {
-        ImGui::Text("Query executed successfully.");
+        ImGui::Text("%s", LABEL_QUERY_SUCCESS);
         if (lastQueryDuration.count() > 0) {
             ImGui::SameLine();
             ImGui::Text("| Execution time: %ld ms", static_cast<long>(lastQueryDuration.count()));
         }
     } else {
-        ImGui::Text("No results to display. Execute a query to see results here.");
+        ImGui::Text("%s", LABEL_NO_RESULTS);
     }
 }
 
@@ -168,7 +188,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             result = executor->executeQueryWithResult(query);
         } else {
             result.success = false;
-            result.errorMessage = "No database selected";
+            result.errorMessage = LABEL_NO_DATABASE_SELECTED;
         }
 
         if (shouldCancelQuery) {
@@ -218,7 +238,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 
 void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
-    queryResult = "Query execution cancelled by user";
+    queryResult = LABEL_QUERY_CANCELLED;
     queryError = queryResult;
     hasStructuredResults = false;
     queryColumnNames.clear();
@@ -269,4 +289,34 @@ bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float
     drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 2.0f);
 
     return changed;
+}
+
+void SQLEditorTab::updateCompletionKeywords() {
+    if (!node_)
+        return;
+
+    std::vector<std::string> keywords;
+
+    for (const auto& table : node_->getTables()) {
+        keywords.push_back(table.name);
+        for (const auto& col : table.columns) {
+            keywords.push_back(col.name);
+        }
+    }
+
+    if (node_->isViewsLoaded()) {
+        for (const auto& view : node_->getViews()) {
+            keywords.push_back(view.name);
+        }
+    }
+
+    for (const auto& seq : node_->getSequences()) {
+        keywords.push_back(seq);
+    }
+
+    std::sort(keywords.begin(), keywords.end());
+    keywords.erase(std::unique(keywords.begin(), keywords.end()), keywords.end());
+
+    sqlEditor.SetCompletionKeywords(keywords);
+    completionKeywordsSet_ = true;
 }

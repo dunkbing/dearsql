@@ -151,5 +151,5 @@ private:
 
     // Query execution
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query);
+    executeQueryStructured(const std::string& query, int rowLimit = 1000);
 };

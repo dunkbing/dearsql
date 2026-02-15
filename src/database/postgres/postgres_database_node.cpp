@@ -7,11 +7,15 @@
 #include <soci/soci.h>
 
 void PostgresDatabaseNode::checkSchemasStatusAsync() {
-    schemasLoader.check([this](const std::vector<std::unique_ptr<PostgresSchemaNode>>& result) {
-        schemas = std::move(const_cast<std::vector<std::unique_ptr<PostgresSchemaNode>>&>(result));
+    schemasLoader.check([this](std::vector<std::unique_ptr<PostgresSchemaNode>> result) {
+        schemas = std::move(result);
         Logger::info(std::format("Async schema loading completed for database {}. Found {} schemas",
                                  name, schemas.size()));
         schemasLoaded = true;
+        if (refreshChildrenAfterSchemasLoad) {
+            refreshChildrenAfterSchemasLoad = false;
+            triggerChildSchemaRefresh();
+        }
     });
 }
 
@@ -34,6 +38,7 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
         schemasLoaded = false;
         lastSchemasError.clear();
     }
+    refreshChildrenAfterSchemasLoad = refreshChildren;
 
     // Don't start if already loaded (unless force refresh)
     if (!forceRefresh && schemasLoaded) {
@@ -103,10 +108,6 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
             std::cerr << "Error getting schemas for database " << name << ": " << e.what()
                       << std::endl;
         }
-        if (refreshChildren) {
-            this->triggerChildSchemaRefresh();
-        }
-
         return result;
     });
 }

@@ -410,7 +410,8 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession() const {
     auto it = databaseDataCache.find(targetDb);
     if (it == databaseDataCache.end() || !it->second || !it->second->connectionPool) {
         throw std::runtime_error(
-            "MySQLDatabase::getSession: Connection pool not available for database: " + targetDb);
+            "PostgresDatabase::getSession: Connection pool not available for database: " +
+            targetDb);
     }
 
     auto res = std::make_unique<soci::session>(*it->second->connectionPool);

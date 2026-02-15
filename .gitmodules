@@ -16,4 +16,4 @@
 	url = https://github.com/yhirose/cpp-httplib.git
 [submodule "external/ImGuiPack"]
 	path = external/ImGuiPack
-	url = https://github.com/aiekick/ImGuiPack
+	url = https://github.com/dunkbing/ImGuiPack

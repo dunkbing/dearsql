@@ -111,13 +111,13 @@ void RedisDatabase::disconnect() {
     if (context) {
         redisFree(context);
         context = nullptr;
+        std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString()
+                  << std::endl;
     }
     connected = false;
 
     // Reset loading states
     loadingKeys = false;
-
-    std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString() << std::endl;
 }
 
 void RedisDatabase::refreshConnection() {

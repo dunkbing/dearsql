@@ -7,7 +7,6 @@
 #include <future>
 #include <iostream>
 #include <memory>
-#include <typeinfo>
 #include <utility>
 
 SQLiteDatabase::SQLiteDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -47,7 +46,7 @@ const std::string& SQLiteDatabase::getPath() const {
 }
 
 std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-SQLiteDatabase::executeQueryStructured(const std::string& query) {
+SQLiteDatabase::executeQueryStructured(const std::string& query, const int rowLimit) {
     std::vector<std::string> columnNames;
     std::vector<std::vector<std::string>> data;
 
@@ -69,7 +68,7 @@ SQLiteDatabase::executeQueryStructured(const std::string& query) {
 
         int rowCount = 0;
         for (const auto& row : rs) {
-            if (rowCount >= 1000)
+            if (rowCount >= rowLimit)
                 break;
 
             std::vector<std::string> rowData;
@@ -496,48 +495,9 @@ SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset
 
         for (const auto& row : rs) {
             std::vector<std::string> rowData;
-
+            rowData.reserve(row.size());
             for (std::size_t i = 0; i < row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                    continue;
-                }
-                soci::column_properties cp = row.get_properties(i);
-                const auto dt = cp.get_data_type();
-                switch (dt) {
-                case soci::dt_string:
-                    rowData.emplace_back(row.get<std::string>(i));
-                    break;
-                case soci::dt_integer:
-                    rowData.emplace_back(std::to_string(row.get<int>(i)));
-                    break;
-                case soci::dt_long_long:
-                    rowData.emplace_back(std::to_string(row.get<long long>(i)));
-                    break;
-                case soci::dt_unsigned_long_long:
-                    rowData.emplace_back(std::to_string(row.get<unsigned long long>(i)));
-                    break;
-                case soci::dt_double:
-                    rowData.emplace_back(std::to_string(row.get<double>(i)));
-                    break;
-                case soci::dt_date: {
-                    const auto date = row.get<std::tm>(i);
-                    char buffer[32];
-                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-                    rowData.emplace_back(buffer);
-                    break;
-                }
-                case soci::dt_blob:
-                    rowData.emplace_back("[BINARY DATA]");
-                    break;
-                default:
-                    try {
-                        rowData.emplace_back(row.get<std::string>(i));
-                    } catch (const std::bad_cast&) {
-                        rowData.emplace_back("[UNKNOWN DATA TYPE]");
-                    }
-                    break;
-                }
+                rowData.push_back(convertRowValue(row, i));
             }
             data.push_back(rowData);
         }
@@ -577,11 +537,11 @@ QueryResult SQLiteDatabase::executeQueryWithResult(const std::string& query, int
     }
 
     try {
-        auto [columns, data] = executeQueryStructured(query);
+        auto [columns, data] = executeQueryStructured(query, rowLimit);
         result.success = true;
         result.columnNames = columns;
         result.tableData = data;
-        result.errorMessage = "Query executed successfully";
+        result.message = "Query executed successfully";
     } catch (const std::exception& e) {
         result.success = false;
         result.errorMessage = std::string("Error: ") + e.what();

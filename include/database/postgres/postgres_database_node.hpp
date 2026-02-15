@@ -62,6 +62,8 @@ public:
                     const std::string& whereClause = "");
 
 private:
+    bool refreshChildrenAfterSchemasLoad = false;
+
     // cached aggregated tables/views across all schemas
     mutable std::vector<Table> allTables;
     mutable std::vector<Table> allViews;

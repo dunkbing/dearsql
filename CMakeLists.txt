@@ -151,7 +151,6 @@ set(APP_SOURCES
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
-    src/database/connection_factory.cpp
 
     # UI
     src/ui/db_connection_dialog.cpp
@@ -297,7 +296,6 @@ add_executable(database_tests
     tests/database/redis_database_test.cpp
     tests/database/mongodb_database_test.cpp
     tests/database/sql_builder_test.cpp
-    tests/database/connection_factory_test.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
@@ -309,7 +307,6 @@ add_executable(database_tests
     src/database/mongodb/mongodb_database_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
-    src/database/connection_factory.cpp
     src/utils/logger.cpp
 )
 

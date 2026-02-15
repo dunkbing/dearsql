@@ -275,7 +275,8 @@ protected:
         }
 
         for (auto& future : connectionFutures) {
-            future.wait();
+            // Propagate exceptions from async connection setup.
+            future.get();
         }
 
         return pool;

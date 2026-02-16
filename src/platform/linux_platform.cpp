@@ -1,3 +1,4 @@
+#if defined(__linux__)
 // Must include epoxy BEFORE any other GL headers
 #include <epoxy/gl.h>
 
@@ -1457,3 +1458,5 @@ void LinuxPlatform::runMainLoop() {
         g_usleep(1000); // 1ms
     }
 }
+
+#endif // defined(__linux__)

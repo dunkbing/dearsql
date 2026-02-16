@@ -1,7 +1,6 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/db.hpp"
 #include "database/ddl_builder.hpp"
-#include "database/ddl_utils.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>

@@ -7,7 +7,6 @@
 #include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <map>
-#include <memory>
 #include <string>
 #include <vector>
 

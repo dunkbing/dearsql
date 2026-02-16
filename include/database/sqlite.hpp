@@ -7,7 +7,6 @@
 #include <atomic>
 #include <future>
 #include <map>
-#include <memory>
 #include <set>
 #include <sqlite3.h>
 

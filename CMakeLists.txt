@@ -188,6 +188,7 @@ list(APPEND APP_SOURCES src/application.cpp)
 # Add platform-specific files
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
+    list(APPEND APP_SOURCES src/platform/macos_connection_dialog.mm)
 elseif(UNIX AND NOT APPLE)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
 else()

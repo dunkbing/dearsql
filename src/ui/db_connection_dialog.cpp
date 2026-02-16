@@ -227,8 +227,8 @@ void DatabaseConnectionDialog::renderShowAllDatabasesCheckbox() {
 
 void DatabaseConnectionDialog::renderConnectionDialog() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(580, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(580, 0), ImVec2(580, FLT_MAX));
 
     const auto& colors = Application::getInstance().getCurrentColors();
 

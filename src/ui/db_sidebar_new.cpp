@@ -16,6 +16,9 @@
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
+#ifdef __APPLE__
+#include "platform/macos_connection_dialog.hpp"
+#endif
 #include <chrono>
 #include <format>
 #include <memory>
@@ -228,6 +231,16 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
+#ifdef __APPLE__
+    if (shouldShowConnectionDialog) {
+        showMacOSConnectionDialog(&app);
+        shouldShowConnectionDialog = false;
+    }
+    if (databaseToEdit) {
+        showMacOSEditConnectionDialog(&app, databaseToEdit, databaseToEdit->getConnectionId());
+        databaseToEdit = nullptr;
+    }
+#else
     if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
         shouldShowConnectionDialog = false;
@@ -256,6 +269,7 @@ void DatabaseSidebarNew::render() {
                                       db->getConnectionInfo().name, error));
         }
     }
+#endif
 
     ImGui::PushStyleColor(ImGuiCol_Separator,
                           ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.2f));

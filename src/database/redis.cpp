@@ -141,8 +141,7 @@ void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
 }
 
-std::vector<QueryResult> RedisDatabase::executeQueryWithResult(const std::string& command,
-                                                               int rowLimit) {
+std::vector<QueryResult> RedisDatabase::executeQuery(const std::string& command, int rowLimit) {
     QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -194,35 +193,6 @@ std::vector<QueryResult> RedisDatabase::executeQueryWithResult(const std::string
         std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
     return {result};
-}
-
-std::pair<bool, std::string> RedisDatabase::executeQuery(const std::string& command) {
-    if (!isConnected()) {
-        return {false, "Not connected to Redis server"};
-    }
-
-    try {
-        auto commandParts = parseRedisCommand(command);
-        if (commandParts.empty()) {
-            return {false, "Empty command"};
-        }
-
-        redisReply* reply = executeRedisCommandParsed(commandParts);
-        if (!reply) {
-            return {false, "Failed to execute command"};
-        }
-
-        if (reply->type == REDIS_REPLY_ERROR) {
-            std::string error = reply->str;
-            freeReplyObject(reply);
-            return {false, error};
-        }
-
-        freeReplyObject(reply);
-        return {true, ""};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
-    }
 }
 
 std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::string& keyPattern,

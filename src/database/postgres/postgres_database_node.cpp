@@ -233,26 +233,8 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
         [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
 }
 
-std::pair<bool, std::string> PostgresDatabaseNode::executeQuery(const std::string& query) {
-    try {
-        auto session = getSession();
-        PGconn* conn = session.get();
-        PgResultPtr res(PQexec(conn, query.c_str()));
-        if (!res) {
-            return {false, PQerrorMessage(conn)};
-        }
-        ExecStatusType status = PQresultStatus(res.get());
-        if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
-            return {false, PQresultErrorMessage(res.get())};
-        }
-        return {true, ""};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
-    }
-}
-
-std::vector<QueryResult> PostgresDatabaseNode::executeQueryWithResult(const std::string& query,
-                                                                      int rowLimit) {
+std::vector<QueryResult> PostgresDatabaseNode::executeQuery(const std::string& query,
+                                                            int rowLimit) {
     std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 

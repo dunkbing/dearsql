@@ -2,6 +2,7 @@
 
 #include "db.hpp"
 #include "db_interface.hpp"
+#include "query_executor.hpp"
 #include <string>
 #include <vector>
 
@@ -17,7 +18,7 @@
  * - MySQL: Connection -> Database (implements IDatabaseNode)
  * - SQLite: Connection (implements IDatabaseNode)
  */
-class IDatabaseNode {
+class IDatabaseNode : public IQueryExecutor {
 public:
     virtual ~IDatabaseNode() = default;
 
@@ -41,23 +42,8 @@ public:
      */
     [[nodiscard]] virtual DatabaseType getDatabaseType() const = 0;
 
-    // ========== Query Execution ==========
-
-    /**
-     * @brief Execute a SQL query (DDL/DML without result set)
-     * @param sql The SQL statement to execute
-     * @return pair<success, error_message>
-     */
-    virtual std::pair<bool, std::string> executeQuery(const std::string& sql) = 0;
-
-    /**
-     * @brief Execute a SQL query and return results
-     * @param sql The SQL statement to execute
-     * @param limit Maximum rows to return (default: 1000)
-     * @return QueryResult with data or error
-     */
-    virtual std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
-                                                            int limit = 1000) = 0;
+    // Query execution inherited from IQueryExecutor:
+    //   executeQuery(sql, rowLimit) → vector<QueryResult>
 
     // ========== Schema Information ==========
 

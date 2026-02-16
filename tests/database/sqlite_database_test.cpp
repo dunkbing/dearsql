@@ -35,7 +35,9 @@ TEST_F(SQLiteDatabaseFixture, ConnectsToInMemoryDatabase) {
 TEST_F(SQLiteDatabaseFixture, RefreshTablesDetectsCreatedTable) {
     const std::string createTableSql =
         "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)";
-    const auto [success, error] = database_->executeQuery(createTableSql);
+    auto r = database_->executeQuery(createTableSql);
+    auto success = !r.empty() && r[0].success;
+    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
     ASSERT_TRUE(success) << error;
 
     // Load tables asynchronously
@@ -58,12 +60,16 @@ TEST_F(SQLiteDatabaseFixture, RefreshTablesDetectsCreatedTable) {
 }
 
 TEST_F(SQLiteDatabaseFixture, RetrievesInsertedTableData) {
-    const auto [createSuccess, createError] = database_->executeQuery(
+    auto r1 = database_->executeQuery(
         "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT)");
+    auto createSuccess = !r1.empty() && r1[0].success;
+    auto createError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
     ASSERT_TRUE(createSuccess) << createError;
 
-    const auto [insertSuccess, insertError] = database_->executeQuery(
+    auto r2 = database_->executeQuery(
         "INSERT INTO messages(body) VALUES ('Hello'), ('World'), ('Test');");
+    auto insertSuccess = !r2.empty() && r2[0].success;
+    auto insertError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
     ASSERT_TRUE(insertSuccess) << insertError;
 
     const auto rows = database_->getTableData("messages", 10, 0);
@@ -84,7 +90,7 @@ TEST_F(SQLiteDatabaseFixture, ExecuteQueryWithResultReturnsData) {
     database_->executeQuery("CREATE TABLE test (id INTEGER, value TEXT)");
     database_->executeQuery("INSERT INTO test VALUES (1, 'one'), (2, 'two'), (3, 'three')");
 
-    auto results = database_->executeQueryWithResult("SELECT * FROM test ORDER BY id");
+    auto results = database_->executeQuery("SELECT * FROM test ORDER BY id");
     ASSERT_FALSE(results.empty());
     auto& result = results[0];
     EXPECT_TRUE(result.success);

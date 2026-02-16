@@ -5,7 +5,6 @@
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <map>
 #include <memory>
@@ -23,7 +22,7 @@ class MySQLDatabase;
  * Each MySQLDatabaseNode represents one database within the MySQL server.
  * Note: MySQL doesn't have schemas, so tables/views are directly under database.
  */
-class MySQLDatabaseNode : public IDatabaseNode, public ITableDataProvider, public IQueryExecutor {
+class MySQLDatabaseNode : public IDatabaseNode, public ITableDataProvider {
 public:
     MySQLDatabase* parentDb = nullptr;
 
@@ -68,9 +67,7 @@ public:
         return DatabaseType::MYSQL;
     }
 
-    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
-                                                    int limit = 1000) override;
+    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

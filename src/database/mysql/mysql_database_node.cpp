@@ -641,8 +641,7 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
     return count;
 }
 
-std::vector<QueryResult> MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
-                                                                   int rowLimit) {
+std::vector<QueryResult> MySQLDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
     std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -677,36 +676,14 @@ std::vector<QueryResult> MySQLDatabaseNode::executeQueryWithResult(const std::st
     return results;
 }
 
-std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& query) {
-    try {
-        auto session = getSession();
-        MYSQL* conn = session.get();
-        if (mysql_query(conn, query.c_str()) != 0) {
-            return {false, mysql_error(conn)};
-        }
-        // Consume result set if any
-        MYSQL_RES* res = mysql_store_result(conn);
-        if (res)
-            mysql_free_result(res);
-        while (mysql_next_result(conn) == 0) {
-            res = mysql_store_result(conn);
-            if (res)
-                mysql_free_result(res);
-        }
-        return {true, ""};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
-    }
-}
-
 std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) {
     try {
         DDLBuilder builder(DatabaseType::MYSQL);
         std::string sql = builder.createTable(table);
 
-        auto [success, error] = executeQuery(sql);
-        if (!success) {
-            return {false, error};
+        auto results = executeQuery(sql);
+        if (results.empty() || !results.front().success) {
+            return {false, results.empty() ? "Unknown error" : results.front().errorMessage};
         }
         return {true, ""};
     } catch (const std::exception& e) {

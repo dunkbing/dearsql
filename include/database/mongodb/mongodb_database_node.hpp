@@ -4,7 +4,6 @@
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <map>
 #include <string>
@@ -20,7 +19,7 @@ class MongoDBDatabase;
  * Each MongoDBDatabaseNode represents one database within the MongoDB server.
  * Collections are mapped to the "tables" concept for UI consistency.
  */
-class MongoDBDatabaseNode : public IDatabaseNode, public ITableDataProvider, public IQueryExecutor {
+class MongoDBDatabaseNode : public IDatabaseNode, public ITableDataProvider {
 public:
     MongoDBDatabase* parentDb = nullptr;
 
@@ -60,9 +59,7 @@ public:
         return DatabaseType::MONGODB;
     }
 
-    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
-                                                    int limit = 1000) override;
+    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
 
     std::vector<Table>& getTables() override {
         return collections;

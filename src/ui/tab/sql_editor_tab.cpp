@@ -221,7 +221,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
         std::vector<QueryResult> results;
 
         if (executor) {
-            results = executor->executeQueryWithResult(query);
+            results = executor->executeQuery(query);
         } else {
             QueryResult r;
             r.success = false;

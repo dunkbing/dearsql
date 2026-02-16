@@ -144,21 +144,25 @@ TEST_F(MongoDBDatabaseIntegrationTest, InsertAndFindDocuments) {
     std::string insertQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "test1", "value": 42}}}})",
         collectionName);
-    auto [insertSuccess, insertError] = database->executeQuery(insertQuery);
+    auto r1 = database->executeQuery(insertQuery);
+    auto insertSuccess = !r1.empty() && r1[0].success;
+    auto insertError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
     ASSERT_TRUE(insertSuccess) << insertError;
 
     // Insert another document
     insertQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "test2", "value": 100}}}})",
         collectionName);
-    auto [insertSuccess2, insertError2] = database->executeQuery(insertQuery);
+    auto r2 = database->executeQuery(insertQuery);
+    auto insertSuccess2 = !r2.empty() && r2[0].success;
+    auto insertError2 = r2.empty() ? std::string("No result") : r2[0].errorMessage;
     ASSERT_TRUE(insertSuccess2) << insertError2;
 
     // Find documents
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{}}}})",
         collectionName);
-    auto results = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQuery(findQuery, 100);
     ASSERT_FALSE(results.empty());
     auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
@@ -174,21 +178,25 @@ TEST_F(MongoDBDatabaseIntegrationTest, UpdateDocuments) {
     std::string insertQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "update_test", "value": 1}}}})",
         collectionName);
-    auto [insertSuccess, insertError] = database->executeQuery(insertQuery);
+    auto r1 = database->executeQuery(insertQuery);
+    auto insertSuccess = !r1.empty() && r1[0].success;
+    auto insertError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
     ASSERT_TRUE(insertSuccess) << insertError;
 
     // Update the document
     std::string updateQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "update", "filter": {{"name": "update_test"}}, "update": {{"$set": {{"value": 999}}}}}})",
         collectionName);
-    auto [updateSuccess, updateError] = database->executeQuery(updateQuery);
+    auto r2 = database->executeQuery(updateQuery);
+    auto updateSuccess = !r2.empty() && r2[0].success;
+    auto updateError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
     ASSERT_TRUE(updateSuccess) << updateError;
 
     // Verify update
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "update_test"}}}})",
         collectionName);
-    auto results = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQuery(findQuery, 100);
     ASSERT_FALSE(results.empty());
     auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
@@ -212,14 +220,16 @@ TEST_F(MongoDBDatabaseIntegrationTest, DeleteDocuments) {
     std::string deleteQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "delete", "filter": {{"name": "delete_me"}}}})",
         collectionName);
-    auto [deleteSuccess, deleteError] = database->executeQuery(deleteQuery);
+    auto r1 = database->executeQuery(deleteQuery);
+    auto deleteSuccess = !r1.empty() && r1[0].success;
+    auto deleteError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
     ASSERT_TRUE(deleteSuccess) << deleteError;
 
     // Verify deletion
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "delete_me"}}}})",
         collectionName);
-    auto results = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQuery(findQuery, 100);
     ASSERT_FALSE(results.empty());
     auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;

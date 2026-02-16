@@ -489,7 +489,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     const std::string sql =
                         std::format(R"(ALTER SCHEMA "{}" RENAME TO "{}")", oldName, newName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaData->executeQuery(sql);
+                    auto r = schemaData->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         if (schemaData->parentDbNode) {
                             schemaData->parentDbNode->startSchemasLoadAsync(true, false);
@@ -509,7 +511,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 "Delete Schema", [schemaData, schemaName]() {
                     const std::string sql = std::format("DROP SCHEMA \"{}\" CASCADE", schemaName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaData->executeQuery(sql);
+                    auto r = schemaData->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success && schemaData->parentDbNode) {
                         schemaData->parentDbNode->startSchemasLoadAsync(true, false);
                     } else if (!success) {
@@ -888,7 +892,9 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     const std::string sql = std::format(R"(ALTER TABLE "{}"."{}" RENAME TO "{}")",
                                                         schemaNameCopy, oldName, newName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaNode->executeQuery(sql);
+                    auto r = schemaNode->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         schemaNode->startTablesLoadAsync(true);
                     } else {
@@ -909,7 +915,9 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     const std::string sql =
                         std::format(R"(DROP TABLE "{}"."{}")", schemaNameCopy, tableName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = schemaNode->executeQuery(sql);
+                    auto r = schemaNode->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         schemaNode->startTablesLoadAsync(true);
                     } else {
@@ -969,7 +977,10 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                         std::format(R"(ALTER TABLE "{}"."{}" DROP COLUMN "{}")",
                                                     schemaNameCopy, tblName, colName);
                                     Logger::info("Executing: " + sql);
-                                    auto [success, error] = schemaNode->executeQuery(sql);
+                                    auto r = schemaNode->executeQuery(sql);
+                                    auto success = !r.empty() && r[0].success;
+                                    auto error =
+                                        r.empty() ? std::string("No result") : r[0].errorMessage;
                                     if (success) {
                                         schemaNode->startTablesLoadAsync(true);
                                     } else {
@@ -1192,7 +1203,9 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     const std::string sql =
                         std::format("RENAME TABLE `{}` TO `{}`", oldName, newName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = dbData->executeQuery(sql);
+                    auto r = dbData->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         dbData->startTablesLoadAsync(true);
                     } else {
@@ -1210,7 +1223,9 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                 "Delete Table", [dbData, tableName]() {
                     const std::string sql = std::format("DROP TABLE `{}`", tableName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = dbData->executeQuery(sql);
+                    auto r = dbData->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         dbData->startTablesLoadAsync(true);
                     } else {
@@ -1268,7 +1283,10 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                     const std::string sql = std::format(
                                         "ALTER TABLE `{}` DROP COLUMN `{}`", tblName, colName);
                                     Logger::info("Executing: " + sql);
-                                    auto [success, error] = dbData->executeQuery(sql);
+                                    auto r = dbData->executeQuery(sql);
+                                    auto success = !r.empty() && r[0].success;
+                                    auto error =
+                                        r.empty() ? std::string("No result") : r[0].errorMessage;
                                     if (success) {
                                         dbData->startTablesLoadAsync(true);
                                     } else {
@@ -1583,7 +1601,9 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                     const std::string query = std::format(
                         R"({{"database": "{}", "collection": "{}", "command": "dropCollection"}})",
                         dbData->name, collName);
-                    auto [success, error] = dbData->executeQuery(query);
+                    auto r = dbData->executeQuery(query);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         dbData->startCollectionsLoadAsync(true);
                     } else {
@@ -1678,7 +1698,9 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     const std::string sql =
                         std::format(R"(ALTER TABLE "{}" RENAME TO "{}")", oldName, newName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = sqliteDb->executeQuery(sql);
+                    auto r = sqliteDb->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         sqliteDb->startTablesLoadAsync(true);
                     } else {
@@ -1696,7 +1718,9 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                 "Delete Table", [sqliteDb, tableName]() {
                     const std::string sql = std::format("DROP TABLE \"{}\"", tableName);
                     Logger::info("Executing: " + sql);
-                    auto [success, error] = sqliteDb->executeQuery(sql);
+                    auto r = sqliteDb->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
                     if (success) {
                         sqliteDb->startTablesLoadAsync(true);
                     } else {
@@ -1755,7 +1779,10 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                                     const std::string sql = std::format(
                                         R"(ALTER TABLE "{}" DROP COLUMN "{}")", tblName, colName);
                                     Logger::info("Executing: " + sql);
-                                    auto [success, error] = sqliteDb->executeQuery(sql);
+                                    auto r = sqliteDb->executeQuery(sql);
+                                    auto success = !r.empty() && r[0].success;
+                                    auto error =
+                                        r.empty() ? std::string("No result") : r[0].errorMessage;
                                     if (success) {
                                         sqliteDb->startTablesLoadAsync(true);
                                     } else {

@@ -3,7 +3,6 @@
 #include "database/async_helper.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
-#include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
 #include <map>
 #include <string>
@@ -18,7 +17,7 @@ class PostgresDatabaseNode;
  * PostgreSQL hierarchy: Database → Schema → Tables/Views/Sequences
  * Each PostgresSchemaNode represents one schema (e.g., "public", "analytics")
  */
-class PostgresSchemaNode : public IDatabaseNode, public ITableDataProvider, public IQueryExecutor {
+class PostgresSchemaNode : public IDatabaseNode, public ITableDataProvider {
 public:
     PostgresDatabaseNode* parentDbNode = nullptr;
     std::string name;
@@ -56,9 +55,7 @@ public:
         return DatabaseType::POSTGRESQL;
     }
 
-    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
-                                                    int limit = 1000) override;
+    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

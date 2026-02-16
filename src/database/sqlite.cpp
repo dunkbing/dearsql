@@ -518,8 +518,7 @@ int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string&
     }
 }
 
-std::vector<QueryResult> SQLiteDatabase::executeQueryWithResult(const std::string& query,
-                                                                int rowLimit) {
+std::vector<QueryResult> SQLiteDatabase::executeQuery(const std::string& query, int rowLimit) {
     std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -608,20 +607,6 @@ std::vector<QueryResult> SQLiteDatabase::executeQueryWithResult(const std::strin
     return results;
 }
 
-std::pair<bool, std::string> SQLiteDatabase::executeQuery(const std::string& query) {
-    if (!connected || !db_) {
-        return {false, "Database not connected"};
-    }
-    char* errmsg = nullptr;
-    int rc = sqlite3_exec(db_, query.c_str(), nullptr, nullptr, &errmsg);
-    if (rc != SQLITE_OK) {
-        std::string error = errmsg ? errmsg : "Unknown error";
-        sqlite3_free(errmsg);
-        return {false, error};
-    }
-    return {true, ""};
-}
-
 std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
     if (!connected || !db_) {
         return {false, "Database not connected"};
@@ -630,7 +615,11 @@ std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
     try {
         DDLBuilder builder(DatabaseType::SQLITE);
         std::string sql = builder.createTable(table);
-        return executeQuery(sql);
+        auto results = executeQuery(sql);
+        if (results.empty() || !results[0].success) {
+            return {false, results.empty() ? "No result" : results[0].errorMessage};
+        }
+        return {true, ""};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }

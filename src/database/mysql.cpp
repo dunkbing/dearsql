@@ -247,8 +247,7 @@ void MySQLDatabase::refreshConnection() {
     });
 }
 
-std::vector<QueryResult> MySQLDatabase::executeQueryWithResult(const std::string& query,
-                                                               int rowLimit) {
+std::vector<QueryResult> MySQLDatabase::executeQuery(const std::string& query, int rowLimit) {
     std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -289,32 +288,6 @@ std::vector<QueryResult> MySQLDatabase::executeQueryWithResult(const std::string
     }
 
     return results;
-}
-
-std::pair<bool, std::string> MySQLDatabase::executeQuery(const std::string& query) {
-    if (!connect().first) {
-        return {false, "Not connected to database"};
-    }
-    try {
-        auto session = getSession();
-        MYSQL* conn = session.get();
-        if (mysql_query(conn, query.c_str()) != 0) {
-            return {false, mysql_error(conn)};
-        }
-        // Consume result set if any
-        MYSQL_RES* res = mysql_store_result(conn);
-        if (res)
-            mysql_free_result(res);
-        // Consume any remaining results
-        while (mysql_next_result(conn) == 0) {
-            res = mysql_store_result(conn);
-            if (res)
-                mysql_free_result(res);
-        }
-        return {true, ""};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
-    }
 }
 
 std::unordered_map<std::string, std::unique_ptr<MySQLDatabaseNode>>&

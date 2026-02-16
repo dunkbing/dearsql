@@ -236,8 +236,7 @@ void PostgresDatabase::refreshConnection() {
     });
 }
 
-std::vector<QueryResult> PostgresDatabase::executeQueryWithResult(const std::string& query,
-                                                                  int rowLimit) {
+std::vector<QueryResult> PostgresDatabase::executeQuery(const std::string& query, int rowLimit) {
     std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -283,30 +282,6 @@ std::vector<QueryResult> PostgresDatabase::executeQueryWithResult(const std::str
     }
 
     return results;
-}
-
-std::pair<bool, std::string> PostgresDatabase::executeQuery(const std::string& query) {
-    if (!isConnected()) {
-        auto [success, error] = connect();
-        if (!success) {
-            return {false, "Failed to connect to database: " + error};
-        }
-    }
-    try {
-        auto session = getSession();
-        PGconn* conn = session.get();
-        PgResultPtr res(PQexec(conn, query.c_str()));
-        if (!res) {
-            return {false, PQerrorMessage(conn)};
-        }
-        ExecStatusType status = PQresultStatus(res.get());
-        if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
-            return {false, PQresultErrorMessage(res.get())};
-        }
-        return {true, ""};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
-    }
 }
 
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&

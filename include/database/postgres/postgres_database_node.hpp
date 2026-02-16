@@ -50,9 +50,7 @@ public:
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
     // query execution with comprehensive result
-    std::vector<QueryResult> executeQueryWithResult(const std::string& query,
-                                                    int rowLimit = 1000) override;
-    std::pair<bool, std::string> executeQuery(const std::string& query) override;
+    std::vector<QueryResult> executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     // database operations (schema-aware)
     std::vector<std::vector<std::string>>

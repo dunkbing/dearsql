@@ -111,16 +111,20 @@ TEST_F(MySQLDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows) {
     ASSERT_NE(database, nullptr);
     ASSERT_FALSE(tableName.empty());
 
-    auto [createSuccess, createError] = database->executeQuery(std::format(
+    auto r1 = database->executeQuery(std::format(
         "CREATE TABLE `{}` (id INT PRIMARY KEY AUTO_INCREMENT, value TEXT NOT NULL)", tableName));
+    auto createSuccess = !r1.empty() && r1[0].success;
+    auto createError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
     ASSERT_TRUE(createSuccess) << createError;
 
-    auto [insertSuccess, insertError] = database->executeQuery(
+    auto r2 = database->executeQuery(
         std::format("INSERT INTO `{}`(value) VALUES ('delta'), ('epsilon'), ('zeta')", tableName));
+    auto insertSuccess = !r2.empty() && r2[0].success;
+    auto insertError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
     ASSERT_TRUE(insertSuccess) << insertError;
 
-    auto results = database->executeQueryWithResult(
-        std::format("SELECT value FROM `{}` ORDER BY id", tableName));
+    auto results =
+        database->executeQuery(std::format("SELECT value FROM `{}` ORDER BY id", tableName));
     ASSERT_FALSE(results.empty());
     auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;

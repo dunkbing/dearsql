@@ -2,7 +2,6 @@
 
 #include "database_node.hpp"
 #include "db_interface.hpp"
-#include "query_executor.hpp"
 #include "table_data_provider.hpp"
 #include <atomic>
 #include <future>
@@ -12,8 +11,7 @@
 
 class SQLiteDatabase final : public IDatabaseNode,
                              public DatabaseInterface,
-                             public ITableDataProvider,
-                             public IQueryExecutor {
+                             public ITableDataProvider {
 public:
     SQLiteDatabase(const DatabaseConnectionInfo& connInfo);
     ~SQLiteDatabase() override;
@@ -41,9 +39,7 @@ public:
         return DatabaseType::SQLITE;
     }
 
-    std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
-                                                    int limit = 1000) override;
+    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

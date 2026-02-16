@@ -667,22 +667,14 @@ int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::str
     return parentDbNode->getRowCount(name, tableName, whereClause);
 }
 
-std::vector<QueryResult> PostgresSchemaNode::executeQueryWithResult(const std::string& query,
-                                                                    int rowLimit) {
+std::vector<QueryResult> PostgresSchemaNode::executeQuery(const std::string& query, int rowLimit) {
     if (!parentDbNode) {
         QueryResult result;
         result.success = false;
         result.errorMessage = "No database connection";
         return {result};
     }
-    return parentDbNode->executeQueryWithResult(query, rowLimit);
-}
-
-std::pair<bool, std::string> PostgresSchemaNode::executeQuery(const std::string& query) {
-    if (!parentDbNode) {
-        return {false, "No database connection"};
-    }
-    return parentDbNode->executeQuery(query);
+    return parentDbNode->executeQuery(query, rowLimit);
 }
 
 std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table) {
@@ -694,7 +686,9 @@ std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table)
         DDLBuilder builder(DatabaseType::POSTGRESQL);
         std::string sql = builder.createTable(table, name);
 
-        auto [success, error] = parentDbNode->executeQuery(sql);
+        auto results = parentDbNode->executeQuery(sql);
+        bool success = !results.empty() && results[0].success;
+        std::string error = results.empty() ? "No result" : results[0].errorMessage;
         if (!success) {
             return {false, error};
         }

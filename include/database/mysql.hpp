@@ -1,13 +1,11 @@
 #pragma once
 
 #include "async_helper.hpp"
+#include "connection_pool.hpp"
 #include "db_interface.hpp"
 #include "mysql/mysql_database_node.hpp"
 #include "query_executor.hpp"
 #include <mutex>
-#include <soci/connection-pool.h>
-#include <soci/mysql/soci-mysql.h>
-#include <soci/soci.h>
 #include <unordered_map>
 
 class MySQLDatabase final : public DatabaseInterface, public IQueryExecutor {
@@ -28,7 +26,8 @@ public:
     std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;
 
     // IQueryExecutor implementation
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& query,
+                                                    int rowLimit = 1000) override;
     std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
     // Database list methods
@@ -81,5 +80,5 @@ private:
 
     // Helper methods for connection pool and session management
     void ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info);
-    std::unique_ptr<soci::session> getSession() const;
+    ConnectionPool<MYSQL*>::Session getSession() const;
 };

@@ -26,7 +26,8 @@ public:
      * @param rowLimit Maximum number of rows to return for SELECT queries (default: 1000)
      * @return QueryResult containing execution results, errors, and metadata
      */
-    virtual QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) = 0;
+    virtual std::vector<QueryResult> executeQueryWithResult(const std::string& query,
+                                                            int rowLimit = 1000) = 0;
 
     /**
      * @brief Execute a DDL/DML query that doesn't return rows

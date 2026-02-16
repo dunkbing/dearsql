@@ -118,8 +118,10 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
         std::format(R"(INSERT INTO "{}"(value) VALUES ('alpha'), ('beta'), ('gamma'))", tableName));
     ASSERT_TRUE(insertSuccess) << insertError;
 
-    auto result = database->executeQueryWithResult(
+    auto results = database->executeQueryWithResult(
         std::format(R"(SELECT value FROM "{}" ORDER BY id)", tableName));
+    ASSERT_FALSE(results.empty());
+    auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
     ASSERT_EQ(result.columnNames.size(), 1u);
     EXPECT_EQ(result.columnNames[0], "value");

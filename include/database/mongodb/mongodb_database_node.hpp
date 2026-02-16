@@ -62,7 +62,8 @@ public:
     }
 
     std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
+                                                    int limit = 1000) override;
 
     std::vector<Table>& getTables() override {
         return collections;

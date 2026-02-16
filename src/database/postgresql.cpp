@@ -8,6 +8,86 @@
 #include <unordered_map>
 #include <vector>
 
+namespace {
+
+    struct PgResultDeleter {
+        void operator()(PGresult* r) const {
+            if (r)
+                PQclear(r);
+        }
+    };
+    using PgResultPtr = std::unique_ptr<PGresult, PgResultDeleter>;
+
+    std::string pgValue(PGresult* res, int row, int col) {
+        if (PQgetisnull(res, row, col)) {
+            return "NULL";
+        }
+        return PQgetvalue(res, row, col);
+    }
+
+    // Build a libpq connection string from DatabaseConnectionInfo
+    std::string buildPqConnStr(const DatabaseConnectionInfo& info) {
+        std::string connStr = "host=" + info.host + " port=" + std::to_string(info.port);
+        if (!info.database.empty()) {
+            connStr += " dbname=" + info.database;
+        } else {
+            connStr += " dbname=postgres";
+        }
+        if (!info.username.empty()) {
+            connStr += " user=" + info.username;
+        }
+        if (!info.password.empty()) {
+            connStr += " password=" + info.password;
+        }
+        return connStr;
+    }
+
+    // Extract a single QueryResult from a PGresult
+    QueryResult extractPgResult(PGresult* res, int rowLimit) {
+        QueryResult result;
+        ExecStatusType status = PQresultStatus(res);
+
+        if (status == PGRES_TUPLES_OK) {
+            int nFields = PQnfields(res);
+            int nRows = PQntuples(res);
+
+            for (int col = 0; col < nFields; col++) {
+                result.columnNames.emplace_back(PQfname(res, col));
+            }
+
+            int limit = std::min(nRows, rowLimit);
+            for (int row = 0; row < limit; row++) {
+                std::vector<std::string> rowData;
+                rowData.reserve(nFields);
+                for (int col = 0; col < nFields; col++) {
+                    rowData.push_back(pgValue(res, row, col));
+                }
+                result.tableData.push_back(std::move(rowData));
+            }
+
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            if (nRows >= rowLimit) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+            result.success = true;
+        } else if (status == PGRES_COMMAND_OK) {
+            const char* affected = PQcmdTuples(res);
+            if (affected && *affected) {
+                result.message = std::format("{} row(s) affected", affected);
+            } else {
+                result.message = "Query executed successfully";
+            }
+            result.success = true;
+        } else {
+            result.success = false;
+            result.errorMessage = PQresultErrorMessage(res);
+        }
+        return result;
+    }
+
+} // namespace
+
 PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
     if (connectionInfo.database.empty()) {
@@ -77,10 +157,9 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
         }
 
         return {true, ""};
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
-        // Clear connection pool from DatabaseData
         auto it = databaseDataCache.find(connectionInfo.database);
         if (it != databaseDataCache.end() && it->second) {
             it->second->connectionPool.reset();
@@ -118,7 +197,7 @@ void PostgresDatabase::refreshConnection() {
                          connectionInfo.database);
             connected = true;
             setLastConnectionError("");
-        } catch (const soci::soci_error& e) {
+        } catch (const std::exception& e) {
             Logger::error("Reconnection failed: " + std::string(e.what()));
             setLastConnectionError(e.what());
             return false;
@@ -157,71 +236,53 @@ void PostgresDatabase::refreshConnection() {
     });
 }
 
-QueryResult PostgresDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
-    QueryResult result;
+std::vector<QueryResult> PostgresDatabase::executeQueryWithResult(const std::string& query,
+                                                                  int rowLimit) {
+    std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!isConnected()) {
         auto [success, error] = connect();
         if (!success) {
-            result.success = false;
-            result.errorMessage = "Failed to connect to database: " + error;
-            return result;
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = "Failed to connect to database: " + error;
+            results.push_back(r);
+            return results;
         }
     }
 
     try {
-        auto sql = getSession();
+        auto session = getSession();
+        PGconn* conn = session.get();
 
-        const soci::rowset rs = sql->prepare << query;
-
-        // Get column names if available
-        const auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                result.columnNames.push_back(firstRow.get_properties(i).get_name());
-            }
+        if (!PQsendQuery(conn, query.c_str())) {
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = PQerrorMessage(conn);
+            results.push_back(r);
+            return results;
         }
 
-        // Fetch rows (up to rowLimit)
-        int rowCount = 0;
-        for (const auto& row : rs) {
-            if (rowCount >= rowLimit) {
-                break;
+        while (PGresult* raw = PQgetResult(conn)) {
+            PgResultPtr res(raw);
+            auto r = extractPgResult(res.get(), rowLimit);
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            r.executionTimeMs =
+                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+            // Only add meaningful results (skip empty pipeline results)
+            if (r.success || !r.errorMessage.empty()) {
+                results.push_back(std::move(r));
             }
-
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(convertRowValue(row, i));
-            }
-            result.tableData.push_back(rowData);
-            rowCount++;
         }
-
-        // Set message based on result
-        if (!result.columnNames.empty()) {
-            result.message = std::format("Returned {} row{}", result.tableData.size(),
-                                         result.tableData.size() == 1 ? "" : "s");
-            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
-                result.message += std::format(" (limited to {})", rowLimit);
-            }
-        } else {
-            result.message = "Query executed successfully";
-        }
-
-        result.success = true;
-    } catch (const soci::soci_error& e) {
-        result.success = false;
-        result.errorMessage = e.what();
+    } catch (const std::exception& e) {
+        QueryResult r;
+        r.success = false;
+        r.errorMessage = e.what();
+        results.push_back(r);
     }
 
-    const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-
-    return result;
+    return results;
 }
 
 std::pair<bool, std::string> PostgresDatabase::executeQuery(const std::string& query) {
@@ -232,11 +293,17 @@ std::pair<bool, std::string> PostgresDatabase::executeQuery(const std::string& q
         }
     }
     try {
-        auto sql = getSession();
-        *sql << query;
+        auto session = getSession();
+        PGconn* conn = session.get();
+        PgResultPtr res(PQexec(conn, query.c_str()));
+        if (!res) {
+            return {false, PQerrorMessage(conn)};
+        }
+        ExecStatusType status = PQresultStatus(res.get());
+        if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
+            return {false, PQresultErrorMessage(res.get())};
+        }
         return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }
@@ -353,19 +420,25 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
             std::format("SELECT datname FROM pg_database WHERE {} ORDER BY datname", whereClause);
 
         std::cout << "Executing async query to get database names..." << std::endl;
-        const auto session = getSession();
-        const soci::rowset rs = session->prepare << sqlQuery;
+        auto session = getSession();
+        PGconn* conn = session.get();
+        PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
+        if (!res || PQresultStatus(res.get()) != PGRES_TUPLES_OK) {
+            std::cerr << "Failed to execute async database query: " << PQerrorMessage(conn)
+                      << std::endl;
+            return result;
+        }
 
-        for (const auto& row : rs) {
+        int nRows = PQntuples(res.get());
+        for (int i = 0; i < nRows; i++) {
             if (!databasesLoader.isRunning()) {
                 break;
             }
-
-            auto dbName = row.get<std::string>(0);
+            auto dbName = std::string(PQgetvalue(res.get(), i, 0));
             std::cout << "Found database: " << dbName << std::endl;
             result.push_back(dbName);
         }
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Failed to execute async database query: " << e.what() << std::endl;
     }
 
@@ -373,7 +446,7 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
     return result;
 }
 
-soci::connection_pool*
+ConnectionPool<PGconn*>*
 PostgresDatabase::getConnectionPoolForDatabase(const std::string& dbName) const {
     std::lock_guard lock(sessionMutex);
 
@@ -398,10 +471,27 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
     }
 
     constexpr size_t poolSize = 3;
-    dbData->connectionPool = DatabaseInterface::initializeConnectionPool(info, poolSize);
+    std::string connStr = buildPqConnStr(info);
+
+    dbData->connectionPool = std::make_unique<ConnectionPool<PGconn*>>(
+        poolSize,
+        // factory
+        [connStr]() -> PGconn* {
+            PGconn* conn = PQconnectdb(connStr.c_str());
+            if (PQstatus(conn) != CONNECTION_OK) {
+                std::string err = PQerrorMessage(conn);
+                PQfinish(conn);
+                throw std::runtime_error("PostgreSQL connection failed: " + err);
+            }
+            return conn;
+        },
+        // closer
+        [](PGconn* conn) { PQfinish(conn); },
+        // validator
+        [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
 }
 
-std::unique_ptr<soci::session> PostgresDatabase::getSession() const {
+ConnectionPool<PGconn*>::Session PostgresDatabase::getSession() const {
     std::lock_guard lock(sessionMutex);
 
     const std::string targetDb = connectionInfo.database;
@@ -414,11 +504,7 @@ std::unique_ptr<soci::session> PostgresDatabase::getSession() const {
             targetDb);
     }
 
-    auto res = std::make_unique<soci::session>(*it->second->connectionPool);
-    if (!res->is_connected()) {
-        res->reconnect();
-    }
-    return res;
+    return it->second->connectionPool->acquire();
 }
 
 void PostgresDatabase::triggerChildDbRefresh() {
@@ -444,13 +530,17 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
     }
 
     try {
-        // PostgreSQL requires that no one is connected to the database being renamed
-        // We need to connect to a different database (like postgres) to execute this
         const std::string sql =
             std::format("ALTER DATABASE \"{}\" RENAME TO \"{}\"", oldName, newName);
 
         auto session = getSession();
-        *session << sql;
+        PGconn* conn = session.get();
+        PgResultPtr res(PQexec(conn, sql.c_str()));
+        if (!res || PQresultStatus(res.get()) != PGRES_COMMAND_OK) {
+            std::string err = res ? PQresultErrorMessage(res.get()) : PQerrorMessage(conn);
+            Logger::error(std::format("Failed to rename database: {}", err));
+            return {false, err};
+        }
 
         // Update the cache if the renamed database exists in it
         auto it = databaseDataCache.find(oldName);
@@ -463,7 +553,7 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
 
         Logger::info(std::format("Database '{}' renamed to '{}'", oldName, newName));
         return {true, ""};
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Failed to rename database: {}", e.what()));
         return {false, e.what()};
     }
@@ -480,26 +570,31 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
     }
 
     try {
-        // PostgreSQL requires that no one is connected to the database being dropped
-        // First, terminate all connections to the target database
         const std::string terminateSql =
             std::format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
                         "WHERE datname = '{}' AND pid <> pg_backend_pid()",
                         dbName);
 
         auto session = getSession();
-        *session << terminateSql;
+        PGconn* conn = session.get();
 
-        // Now drop the database
+        PgResultPtr termRes(PQexec(conn, terminateSql.c_str()));
+        // Ignore result of terminate - proceed with drop
+
         const std::string dropSql = std::format("DROP DATABASE \"{}\"", dbName);
-        *session << dropSql;
+        PgResultPtr dropRes(PQexec(conn, dropSql.c_str()));
+        if (!dropRes || PQresultStatus(dropRes.get()) != PGRES_COMMAND_OK) {
+            std::string err = dropRes ? PQresultErrorMessage(dropRes.get()) : PQerrorMessage(conn);
+            Logger::error(std::format("Failed to drop database: {}", err));
+            return {false, err};
+        }
 
         // Remove from cache
         databaseDataCache.erase(dbName);
 
         Logger::info(std::format("Database '{}' dropped successfully", dbName));
         return {true, ""};
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Failed to drop database: {}", e.what()));
         return {false, e.what()};
     }

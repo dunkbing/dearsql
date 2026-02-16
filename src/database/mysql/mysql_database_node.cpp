@@ -1,15 +1,100 @@
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/db.hpp"
-#include "database/ddl_utils.hpp"
+#include "database/ddl_builder.hpp"
 #include "database/mysql.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
 #include <map>
+#include <mysql/mysql.h>
 #include <ranges>
-#include <soci/mysql/soci-mysql.h>
-#include <soci/soci.h>
+
+namespace {
+
+    struct MysqlResDeleter {
+        void operator()(MYSQL_RES* r) const {
+            if (r)
+                mysql_free_result(r);
+        }
+    };
+    using MysqlResPtr = std::unique_ptr<MYSQL_RES, MysqlResDeleter>;
+
+    std::function<MYSQL*()> makeMysqlFactory(const DatabaseConnectionInfo& info) {
+        return [info]() -> MYSQL* {
+            MYSQL* conn = mysql_init(nullptr);
+            if (!conn) {
+                throw std::runtime_error("mysql_init failed");
+            }
+            unsigned long flags = CLIENT_MULTI_STATEMENTS;
+            if (!mysql_real_connect(conn, info.host.c_str(), info.username.c_str(),
+                                    info.password.c_str(), info.database.c_str(), info.port,
+                                    nullptr, flags)) {
+                std::string err = mysql_error(conn);
+                mysql_close(conn);
+                throw std::runtime_error("MySQL connection failed: " + err);
+            }
+            mysql_set_character_set(conn, "utf8mb4");
+            return conn;
+        };
+    }
+
+    QueryResult extractMysqlResult(MYSQL* conn, int rowLimit) {
+        QueryResult result;
+
+        MYSQL_RES* rawRes = mysql_store_result(conn);
+        if (rawRes) {
+            MysqlResPtr res(rawRes);
+            unsigned int nFields = mysql_num_fields(res.get());
+            MYSQL_FIELD* fields = mysql_fetch_fields(res.get());
+
+            for (unsigned int i = 0; i < nFields; i++) {
+                result.columnNames.emplace_back(fields[i].name);
+            }
+
+            int rowCount = 0;
+            MYSQL_ROW row;
+            while ((row = mysql_fetch_row(res.get())) != nullptr && rowCount < rowLimit) {
+                unsigned long* lengths = mysql_fetch_lengths(res.get());
+                std::vector<std::string> rowData;
+                rowData.reserve(nFields);
+                for (unsigned int i = 0; i < nFields; i++) {
+                    if (row[i] == nullptr) {
+                        rowData.emplace_back("NULL");
+                    } else {
+                        rowData.emplace_back(row[i], lengths[i]);
+                    }
+                }
+                result.tableData.push_back(std::move(rowData));
+                rowCount++;
+            }
+
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            my_ulonglong totalRows = mysql_num_rows(res.get());
+            if (static_cast<int>(totalRows) >= rowLimit) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+            result.success = true;
+        } else {
+            if (mysql_field_count(conn) == 0) {
+                my_ulonglong affected = mysql_affected_rows(conn);
+                if (affected != (my_ulonglong)-1) {
+                    result.message = std::format("{} row(s) affected", affected);
+                } else {
+                    result.message = "Query executed successfully";
+                }
+                result.success = true;
+            } else {
+                result.success = false;
+                result.errorMessage = mysql_error(conn);
+            }
+        }
+
+        return result;
+    }
+
+} // namespace
 
 void MySQLDatabaseNode::ensureConnectionPool() {
     if (!connectionPool && parentDb) {
@@ -35,33 +120,28 @@ void MySQLDatabaseNode::startTablesLoadAsync(bool forceRefresh) {
         return;
     }
 
-    // Don't start if already loading or already loaded (unless force refresh)
     if (tablesLoader.isRunning()) {
         return;
     }
 
-    // If force refresh, clear existing tables and reset state
     if (forceRefresh) {
         tables.clear();
         tablesLoaded = false;
         lastTablesError.clear();
     }
 
-    // Don't start if already loaded (unless force refresh)
     if (!forceRefresh && tablesLoaded) {
         return;
     }
 
     tables.clear();
 
-    // Start async loading using AsyncOperation
     tablesLoader.start([this]() { return getTablesAsync(); });
 }
 
 std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
     std::vector<Table> result;
 
-    // Check if we're still supposed to be loading
     if (!tablesLoader.isRunning()) {
         return result;
     }
@@ -70,19 +150,23 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
         if (!tablesLoader.isRunning()) {
             return result;
         }
-        Logger::info("getTablesAsync_getSession");
-        const auto session = getSession();
+
+        auto session = getSession();
+        MYSQL* conn = session.get();
 
         // Get table names
         std::vector<std::string> tableNames;
-        const std::string tableNamesQuery = "SHOW TABLES";
-        {
-            const soci::rowset tableRs = session->prepare << tableNamesQuery;
-            for (const auto& row : tableRs) {
-                if (!tablesLoader.isRunning()) {
-                    return result;
+        if (mysql_query(conn, "SHOW TABLES") == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    if (!tablesLoader.isRunning()) {
+                        return result;
+                    }
+                    if (row[0])
+                        tableNames.emplace_back(row[0]);
                 }
-                tableNames.push_back(row.get<std::string>(0));
             }
         }
 
@@ -102,23 +186,30 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
             table.name = tableName;
             table.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
-            // Get table columns
+            // Get table columns via DESCRIBE
             const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
-            {
-                const soci::rowset columnsRs = session->prepare << columnsQuery;
-
-                for (const auto& colRow : columnsRs) {
-                    if (!tablesLoader.isRunning()) {
-                        break;
+            if (mysql_query(conn, columnsQuery.c_str()) == 0) {
+                MysqlResPtr res(mysql_store_result(conn));
+                if (res) {
+                    MYSQL_ROW row;
+                    while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                        if (!tablesLoader.isRunning()) {
+                            break;
+                        }
+                        Column col;
+                        col.name = row[0] ? row[0] : "";                           // Field
+                        col.type = row[1] ? row[1] : "";                           // Type
+                        col.isNotNull = row[2] && std::string(row[2]) == "NO";     // Null
+                        col.isPrimaryKey = row[3] && std::string(row[3]) == "PRI"; // Key
+                        table.columns.push_back(col);
                     }
-
-                    Column col;
-                    col.name = colRow.get<std::string>(0);                  // Field
-                    col.type = colRow.get<std::string>(1);                  // Type
-                    col.isNotNull = colRow.get<std::string>(2) == "NO";     // Null
-                    col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
-                    table.columns.push_back(col);
                 }
+            }
+            // Consume any remaining results
+            while (mysql_next_result(conn) == 0) {
+                MYSQL_RES* extra = mysql_store_result(conn);
+                if (extra)
+                    mysql_free_result(extra);
             }
 
             // Get foreign keys
@@ -129,26 +220,32 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
                 "WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' AND REFERENCED_TABLE_NAME IS NOT "
                 "NULL",
                 name, tableName);
-            {
-                const soci::rowset fkRs = session->prepare << fkQuery;
-
-                for (const auto& fkRow : fkRs) {
-                    if (!tablesLoader.isRunning()) {
-                        break;
+            if (mysql_query(conn, fkQuery.c_str()) == 0) {
+                MysqlResPtr res(mysql_store_result(conn));
+                if (res) {
+                    MYSQL_ROW row;
+                    while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                        if (!tablesLoader.isRunning()) {
+                            break;
+                        }
+                        ForeignKey fk;
+                        fk.sourceColumn = row[0] ? row[0] : "";
+                        fk.targetTable = row[1] ? row[1] : "";
+                        fk.targetColumn = row[2] ? row[2] : "";
+                        fk.name = row[3] ? row[3] : "";
+                        table.foreignKeys.push_back(fk);
                     }
-
-                    ForeignKey fk;
-                    fk.sourceColumn = fkRow.get<std::string>(0);
-                    fk.targetTable = fkRow.get<std::string>(1);
-                    fk.targetColumn = fkRow.get<std::string>(2);
-                    fk.name = fkRow.get<std::string>(3);
-                    table.foreignKeys.push_back(fk);
                 }
+            }
+            while (mysql_next_result(conn) == 0) {
+                MYSQL_RES* extra = mysql_store_result(conn);
+                if (extra)
+                    mysql_free_result(extra);
             }
 
             result.push_back(table);
         }
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error getting tables for database {}: {}", name, e.what()));
         lastTablesError = e.what();
     }
@@ -171,32 +268,27 @@ void MySQLDatabaseNode::startViewsLoadAsync(bool forceRefresh) {
         return;
     }
 
-    // Don't start if already loading or already loaded (unless force refresh)
     if (viewsLoader.isRunning() || (viewsLoaded && !forceRefresh)) {
         return;
     }
 
-    // Clear previous results on force refresh
     if (forceRefresh) {
         views.clear();
         viewsLoaded = false;
         lastViewsError.clear();
     }
 
-    // Start async loading using AsyncOperation
     viewsLoader.start([this]() { return getViewsForDatabaseAsync(); });
 }
 
 std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
     std::vector<Table> result;
 
-    // Check if we're still supposed to be loading
     if (!viewsLoader.isRunning()) {
         return result;
     }
 
     try {
-        // Ensure we have a connection pool for the specific database
         if (!connectionPool) {
             auto nodeInfo = parentDb->getConnectionInfo();
             nodeInfo.database = name;
@@ -207,19 +299,22 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             return result;
         }
 
-        Logger::info("getViewsForDatabaseAsync_getSession");
-        const auto session = getSession();
+        auto session = getSession();
+        MYSQL* conn = session.get();
 
         // Get view names
         std::vector<std::string> viewNames;
-        const std::string viewNamesQuery = "SHOW FULL TABLES WHERE Table_type = 'VIEW'";
-        {
-            const soci::rowset viewRs = session->prepare << viewNamesQuery;
-            for (const auto& row : viewRs) {
-                if (!viewsLoader.isRunning()) {
-                    return result;
+        if (mysql_query(conn, "SHOW FULL TABLES WHERE Table_type = 'VIEW'") == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    if (!viewsLoader.isRunning()) {
+                        return result;
+                    }
+                    if (row[0])
+                        viewNames.emplace_back(row[0]);
                 }
-                viewNames.push_back(row.get<std::string>(0));
             }
         }
 
@@ -239,27 +334,32 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
             view.name = viewName;
             view.fullName = parentDb->getConnectionInfo().name + "." + name + "." + viewName;
 
-            // Get view columns (same as table columns for MySQL)
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
-            {
-                const soci::rowset columnsRs = session->prepare << columnsQuery;
-
-                for (const auto& colRow : columnsRs) {
-                    if (!viewsLoader.isRunning()) {
-                        break;
+            if (mysql_query(conn, columnsQuery.c_str()) == 0) {
+                MysqlResPtr res(mysql_store_result(conn));
+                if (res) {
+                    MYSQL_ROW row;
+                    while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                        if (!viewsLoader.isRunning()) {
+                            break;
+                        }
+                        Column col;
+                        col.name = row[0] ? row[0] : "";
+                        col.type = row[1] ? row[1] : "";
+                        col.isNotNull = row[2] && std::string(row[2]) == "NO";
+                        view.columns.push_back(col);
                     }
-
-                    Column col;
-                    col.name = colRow.get<std::string>(0);              // Field
-                    col.type = colRow.get<std::string>(1);              // Type
-                    col.isNotNull = colRow.get<std::string>(2) == "NO"; // Null
-                    view.columns.push_back(col);
                 }
+            }
+            while (mysql_next_result(conn) == 0) {
+                MYSQL_RES* extra = mysql_store_result(conn);
+                if (extra)
+                    mysql_free_result(extra);
             }
 
             result.push_back(view);
         }
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error getting views for database {}: {}", name, e.what()));
         lastViewsError = e.what();
     }
@@ -270,16 +370,12 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
 void MySQLDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
     Logger::debug(std::format("Starting async refresh for table: {}", tableName));
 
-    // Check if already refreshing
     if (tableRefreshLoaders.contains(tableName) && tableRefreshLoaders[tableName].isRunning()) {
-        Logger::debug(std::format("Table {} is already being refreshed", tableName));
         return;
     }
 
-    // Start async loading
     tableRefreshLoaders[tableName].start(
         [this, tableName]() { return refreshTableAsync(tableName); });
-    Logger::debug(std::format("Async refresh started for table: {}", tableName));
 }
 
 void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableName) {
@@ -289,7 +385,6 @@ void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableNam
     }
 
     it->second.check([this, tableName](const Table& refreshedTable) {
-        // Find the table in the tables vector and update it
         const auto tableIt = std::ranges::find_if(
             tables, [&tableName](const Table& t) { return t.name == tableName; });
 
@@ -298,7 +393,6 @@ void MySQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableNam
             Logger::info(std::format("Table {} refreshed successfully", tableName));
         }
 
-        // Clean up the loader
         tableRefreshLoaders.erase(tableName);
     });
 }
@@ -311,49 +405,61 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
     refreshedTable.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
     try {
-        const auto session = getSession();
+        auto session = getSession();
+        MYSQL* conn = session.get();
 
         // Reload columns
         const std::string columnsQuery = std::format("DESCRIBE `{}`", tableName);
-        {
-            const soci::rowset columnsRs = session->prepare << columnsQuery;
-
-            for (const auto& colRow : columnsRs) {
-                Column col;
-                col.name = colRow.get<std::string>(0);                  // Field
-                col.type = colRow.get<std::string>(1);                  // Type
-                col.isNotNull = colRow.get<std::string>(2) == "NO";     // Null
-                col.isPrimaryKey = colRow.get<std::string>(3) == "PRI"; // Key
-                refreshedTable.columns.push_back(col);
+        if (mysql_query(conn, columnsQuery.c_str()) == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    Column col;
+                    col.name = row[0] ? row[0] : "";
+                    col.type = row[1] ? row[1] : "";
+                    col.isNotNull = row[2] && std::string(row[2]) == "NO";
+                    col.isPrimaryKey = row[3] && std::string(row[3]) == "PRI";
+                    refreshedTable.columns.push_back(col);
+                }
             }
+        }
+        while (mysql_next_result(conn) == 0) {
+            MYSQL_RES* extra = mysql_store_result(conn);
+            if (extra)
+                mysql_free_result(extra);
         }
 
         // Reload indexes
         const std::string indexQuery =
             std::format("SHOW INDEX FROM `{}` WHERE Key_name != 'PRIMARY'", tableName);
-        {
-            const soci::rowset indexRs = session->prepare << indexQuery;
+        if (mysql_query(conn, indexQuery.c_str()) == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                std::map<std::string, Index> indexMap;
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    std::string indexName = row[2] ? row[2] : "";
+                    std::string columnName = row[4] ? row[4] : "";
+                    int nonUnique = row[1] ? std::atoi(row[1]) : 1;
 
-            // Collect indexes by name
-            std::map<std::string, Index> indexMap;
-            for (const auto& idxRow : indexRs) {
-                const auto indexName = idxRow.get<std::string>(2);  // Key_name
-                const auto columnName = idxRow.get<std::string>(4); // Column_name
-                const int nonUnique = idxRow.get<int>(1);           // Non_unique
-
-                if (!indexMap.contains(indexName)) {
-                    Index idx;
-                    idx.name = indexName;
-                    idx.isUnique = (nonUnique == 0);
-                    indexMap[indexName] = idx;
+                    if (!indexMap.contains(indexName)) {
+                        Index idx;
+                        idx.name = indexName;
+                        idx.isUnique = (nonUnique == 0);
+                        indexMap[indexName] = idx;
+                    }
+                    indexMap[indexName].columns.push_back(columnName);
                 }
-                indexMap[indexName].columns.push_back(columnName);
+                for (auto& idx : indexMap | std::views::values) {
+                    refreshedTable.indexes.push_back(idx);
+                }
             }
-
-            // Add indexes to table
-            for (auto& idx : indexMap | std::views::values) {
-                refreshedTable.indexes.push_back(idx);
-            }
+        }
+        while (mysql_next_result(conn) == 0) {
+            MYSQL_RES* extra = mysql_store_result(conn);
+            if (extra)
+                mysql_free_result(extra);
         }
 
         // Reload foreign keys
@@ -362,19 +468,26 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
             "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE "
             "WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' AND REFERENCED_TABLE_NAME IS NOT NULL",
             name, tableName);
-        {
-            const soci::rowset fkRs = session->prepare << fkQuery;
-
-            for (const auto& fkRow : fkRs) {
-                ForeignKey fk;
-                fk.sourceColumn = fkRow.get<std::string>(0);
-                fk.targetTable = fkRow.get<std::string>(1);
-                fk.targetColumn = fkRow.get<std::string>(2);
-                fk.name = fkRow.get<std::string>(3);
-                refreshedTable.foreignKeys.push_back(fk);
+        if (mysql_query(conn, fkQuery.c_str()) == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    ForeignKey fk;
+                    fk.sourceColumn = row[0] ? row[0] : "";
+                    fk.targetTable = row[1] ? row[1] : "";
+                    fk.targetColumn = row[2] ? row[2] : "";
+                    fk.name = row[3] ? row[3] : "";
+                    refreshedTable.foreignKeys.push_back(fk);
+                }
             }
         }
-    } catch (const soci::soci_error& e) {
+        while (mysql_next_result(conn) == 0) {
+            MYSQL_RES* extra = mysql_store_result(conn);
+            if (extra)
+                mysql_free_result(extra);
+        }
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error refreshing table {}: {}", tableName, e.what()));
         throw;
     }
@@ -384,23 +497,15 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
 
 bool MySQLDatabaseNode::isTableRefreshing(const std::string& tableName) const {
     auto it = tableRefreshLoaders.find(tableName);
-    bool isRefreshing = it != tableRefreshLoaders.end() && it->second.isRunning();
-    if (isRefreshing) {
-        Logger::debug(std::format("Table {} is currently refreshing", tableName));
-    }
-    return isRefreshing;
+    return it != tableRefreshLoaders.end() && it->second.isRunning();
 }
 
-std::unique_ptr<soci::session> MySQLDatabaseNode::getSession() const {
+ConnectionPool<MYSQL*>::Session MySQLDatabaseNode::getSession() const {
     if (!connectionPool) {
         throw std::runtime_error(
             "MySQLDatabaseNode::getSession: Connection pool not available for database: " + name);
     }
-    auto res = std::make_unique<soci::session>(*connectionPool);
-    if (!res->is_connected()) {
-        res->reconnect();
-    }
-    return res;
+    return connectionPool->acquire();
 }
 
 void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& info) {
@@ -414,7 +519,12 @@ void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& i
     }
 
     constexpr size_t poolSize = 2;
-    connectionPool = parentDb->initializeConnectionPool(info, poolSize);
+    connectionPool = std::make_unique<ConnectionPool<MYSQL*>>(
+        poolSize, makeMysqlFactory(info),
+        // closer
+        [](MYSQL* conn) { mysql_close(conn); },
+        // validator
+        [](MYSQL* conn) { return mysql_ping(conn) == 0; });
 }
 
 std::vector<std::vector<std::string>>
@@ -423,8 +533,8 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
     std::vector<std::vector<std::string>> result;
 
     try {
-        Logger::info("getTableData_getSession");
-        const auto session = getSession();
+        auto session = getSession();
+        MYSQL* conn = session.get();
         std::string query = std::format("SELECT * FROM `{}` ", tableName);
 
         if (!whereClause.empty()) {
@@ -436,17 +546,32 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
 
         query += std::format(" LIMIT {} OFFSET {}", limit, offset);
 
-        const soci::rowset rs = session->prepare << query;
-
-        for (const auto& row : rs) {
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(convertRowValue(row, i));
-            }
-            result.push_back(rowData);
+        if (mysql_query(conn, query.c_str()) != 0) {
+            Logger::error(
+                std::format("Error getting table data for {}: {}", tableName, mysql_error(conn)));
+            return result;
         }
-    } catch (const soci::soci_error& e) {
+
+        MysqlResPtr res(mysql_store_result(conn));
+        if (!res)
+            return result;
+
+        unsigned int nFields = mysql_num_fields(res.get());
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res.get())) != nullptr) {
+            unsigned long* lengths = mysql_fetch_lengths(res.get());
+            std::vector<std::string> rowData;
+            rowData.reserve(nFields);
+            for (unsigned int i = 0; i < nFields; i++) {
+                if (row[i] == nullptr) {
+                    rowData.emplace_back("NULL");
+                } else {
+                    rowData.emplace_back(row[i], lengths[i]);
+                }
+            }
+            result.push_back(std::move(rowData));
+        }
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error getting table data for {}: {}", tableName, e.what()));
     }
 
@@ -457,15 +582,26 @@ std::vector<std::string> MySQLDatabaseNode::getColumnNames(const std::string& ta
     std::vector<std::string> columnNames;
 
     try {
-        Logger::info("getColumnNames_getSession");
-        const auto session = getSession();
+        auto session = getSession();
+        MYSQL* conn = session.get();
         const std::string query = std::format("DESCRIBE `{}`", tableName);
-        const soci::rowset rs = session->prepare << query;
 
-        for (const auto& row : rs) {
-            columnNames.push_back(row.get<std::string>(0)); // Field name is first column
+        if (mysql_query(conn, query.c_str()) == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row;
+                while ((row = mysql_fetch_row(res.get())) != nullptr) {
+                    if (row[0])
+                        columnNames.emplace_back(row[0]);
+                }
+            }
         }
-    } catch (const soci::soci_error& e) {
+        while (mysql_next_result(conn) == 0) {
+            MYSQL_RES* extra = mysql_store_result(conn);
+            if (extra)
+                mysql_free_result(extra);
+        }
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error getting column names for {}: {}", tableName, e.what()));
     }
 
@@ -476,104 +612,88 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
     int count = 0;
 
     try {
-        Logger::info("getRowCount_getSession");
-        const auto session = getSession();
+        auto session = getSession();
+        MYSQL* conn = session.get();
         std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
 
         if (!whereClause.empty()) {
             query += " WHERE " + whereClause;
         }
 
-        *session << query, soci::into(count);
-    } catch (const soci::soci_error& e) {
+        if (mysql_query(conn, query.c_str()) == 0) {
+            MysqlResPtr res(mysql_store_result(conn));
+            if (res) {
+                MYSQL_ROW row = mysql_fetch_row(res.get());
+                if (row && row[0]) {
+                    count = std::atoi(row[0]);
+                }
+            }
+        }
+        while (mysql_next_result(conn) == 0) {
+            MYSQL_RES* extra = mysql_store_result(conn);
+            if (extra)
+                mysql_free_result(extra);
+        }
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error getting row count for {}: {}", tableName, e.what()));
     }
 
     return count;
 }
 
-QueryResult MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
-                                                      const int rowLimit) {
-    QueryResult result;
+std::vector<QueryResult> MySQLDatabaseNode::executeQueryWithResult(const std::string& query,
+                                                                   int rowLimit) {
+    std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
-        Logger::info("executeQueryWithResult_getSession");
-        const auto session = getSession();
-        if (!session) {
-            result.success = false;
-            result.errorMessage = "Failed to get database session";
-            return result;
+        auto session = getSession();
+        MYSQL* conn = session.get();
+
+        if (mysql_query(conn, query.c_str()) != 0) {
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = mysql_error(conn);
+            results.push_back(r);
+            return results;
         }
 
-        const soci::rowset rs = session->prepare << query;
-
-        // get column names if available
-        const auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                result.columnNames.push_back(firstRow.get_properties(i).get_name());
+        do {
+            auto r = extractMysqlResult(conn, rowLimit);
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            r.executionTimeMs =
+                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+            if (r.success || !r.errorMessage.empty()) {
+                results.push_back(std::move(r));
             }
-        }
-
-        // fetch rows (up to rowLimit)
-        int rowCount = 0;
-        for (const auto& row : rs) {
-            if (rowCount >= rowLimit) {
-                break;
-            }
-
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(convertRowValue(row, i));
-            }
-            result.tableData.push_back(rowData);
-            rowCount++;
-        }
-
-        // set message based on result
-        if (!result.columnNames.empty()) {
-            result.message = std::format("Returned {} row{}", result.tableData.size(),
-                                         result.tableData.size() == 1 ? "" : "s");
-            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
-                result.message += std::format(" (limited to {})", rowLimit);
-            }
-        } else {
-            result.message = "Query executed successfully";
-        }
-
-        result.success = true;
-    } catch (const soci::soci_error& e) {
-        result.success = false;
-        result.errorMessage = "Database error: " + std::string(e.what());
-        result.columnNames.clear();
-        result.tableData.clear();
+        } while (mysql_next_result(conn) == 0);
     } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = "Error executing query: " + std::string(e.what());
-        result.columnNames.clear();
-        result.tableData.clear();
+        QueryResult r;
+        r.success = false;
+        r.errorMessage = e.what();
+        results.push_back(r);
     }
 
-    const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-
-    return result;
+    return results;
 }
 
 std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& query) {
     try {
-        const auto session = getSession();
-        if (!session) {
-            return {false, "Failed to get database session"};
+        auto session = getSession();
+        MYSQL* conn = session.get();
+        if (mysql_query(conn, query.c_str()) != 0) {
+            return {false, mysql_error(conn)};
         }
-        *session << query;
+        // Consume result set if any
+        MYSQL_RES* res = mysql_store_result(conn);
+        if (res)
+            mysql_free_result(res);
+        while (mysql_next_result(conn) == 0) {
+            res = mysql_store_result(conn);
+            if (res)
+                mysql_free_result(res);
+        }
         return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }
@@ -581,40 +701,14 @@ std::pair<bool, std::string> MySQLDatabaseNode::executeQuery(const std::string& 
 
 std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) {
     try {
-        const auto session = getSession();
-        if (!session) {
-            return {false, "Failed to get database session"};
+        DDLBuilder builder(DatabaseType::MYSQL);
+        std::string sql = builder.createTable(table);
+
+        auto [success, error] = executeQuery(sql);
+        if (!success) {
+            return {false, error};
         }
-
-        soci::ddl_type ddl = session->create_table(table.name);
-        ddl.set_tail(") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        std::vector<std::string> primaryKeyColumns;
-        for (const auto& column : table.columns) {
-            const auto ddlType = ddl_utils::inferColumnType(column.type);
-            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
-
-            if (column.isNotNull && !column.isPrimaryKey) {
-                ddlRef("not null");
-            }
-
-            if (!column.comment.empty()) {
-                ddlRef("comment '" + ddl_utils::escapeSingleQuotes(column.comment) + "'");
-            }
-
-            if (column.isPrimaryKey) {
-                primaryKeyColumns.push_back(column.name);
-            }
-        }
-
-        if (!primaryKeyColumns.empty()) {
-            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
-                            ddl_utils::joinColumnNames(primaryKeyColumns));
-        }
-
         return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }

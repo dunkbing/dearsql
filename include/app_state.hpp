@@ -1,8 +1,7 @@
 #pragma once
 
 #include "database/db_interface.hpp"
-#include <memory>
-#include <soci/soci.h>
+#include <sqlite3.h>
 #include <string>
 #include <vector>
 
@@ -51,7 +50,7 @@ public:
     bool ensureDefaultWorkspace() const;
 
 private:
-    std::unique_ptr<soci::session> session;
+    sqlite3* db_ = nullptr;
     std::string dbPath;
 
     bool createTables();

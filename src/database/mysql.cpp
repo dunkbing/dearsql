@@ -2,9 +2,107 @@
 #include "utils/logger.hpp"
 #include <format>
 #include <iostream>
+#include <mysql/mysql.h>
 #include <ranges>
 #include <unordered_map>
 #include <vector>
+
+namespace {
+
+    struct MysqlResDeleter {
+        void operator()(MYSQL_RES* r) const {
+            if (r)
+                mysql_free_result(r);
+        }
+    };
+    using MysqlResPtr = std::unique_ptr<MYSQL_RES, MysqlResDeleter>;
+
+    // Build a MySQL connection factory from DatabaseConnectionInfo
+    std::function<MYSQL*()> makeMysqlFactory(const DatabaseConnectionInfo& info) {
+        return [info]() -> MYSQL* {
+            MYSQL* conn = mysql_init(nullptr);
+            if (!conn) {
+                throw std::runtime_error("mysql_init failed");
+            }
+
+            // Enable multi-statement support
+            unsigned long flags = CLIENT_MULTI_STATEMENTS;
+
+            if (!mysql_real_connect(conn, info.host.c_str(), info.username.c_str(),
+                                    info.password.c_str(), info.database.c_str(), info.port,
+                                    nullptr, flags)) {
+                std::string err = mysql_error(conn);
+                mysql_close(conn);
+                throw std::runtime_error("MySQL connection failed: " + err);
+            }
+
+            // Set character set
+            mysql_set_character_set(conn, "utf8mb4");
+
+            return conn;
+        };
+    }
+
+    // Extract a single QueryResult from the current result set on a MYSQL* connection
+    QueryResult extractMysqlResult(MYSQL* conn, int rowLimit) {
+        QueryResult result;
+
+        MYSQL_RES* rawRes = mysql_store_result(conn);
+        if (rawRes) {
+            MysqlResPtr res(rawRes);
+            unsigned int nFields = mysql_num_fields(res.get());
+            MYSQL_FIELD* fields = mysql_fetch_fields(res.get());
+
+            for (unsigned int i = 0; i < nFields; i++) {
+                result.columnNames.emplace_back(fields[i].name);
+            }
+
+            int rowCount = 0;
+            MYSQL_ROW row;
+            while ((row = mysql_fetch_row(res.get())) != nullptr && rowCount < rowLimit) {
+                unsigned long* lengths = mysql_fetch_lengths(res.get());
+                std::vector<std::string> rowData;
+                rowData.reserve(nFields);
+                for (unsigned int i = 0; i < nFields; i++) {
+                    if (row[i] == nullptr) {
+                        rowData.emplace_back("NULL");
+                    } else {
+                        rowData.emplace_back(row[i], lengths[i]);
+                    }
+                }
+                result.tableData.push_back(std::move(rowData));
+                rowCount++;
+            }
+
+            result.message = std::format("Returned {} row{}", result.tableData.size(),
+                                         result.tableData.size() == 1 ? "" : "s");
+            my_ulonglong totalRows = mysql_num_rows(res.get());
+            if (static_cast<int>(totalRows) >= rowLimit) {
+                result.message += std::format(" (limited to {})", rowLimit);
+            }
+            result.success = true;
+        } else {
+            // No result set - could be DML/DDL or error
+            if (mysql_field_count(conn) == 0) {
+                // DML/DDL statement
+                my_ulonglong affected = mysql_affected_rows(conn);
+                if (affected != (my_ulonglong)-1) {
+                    result.message = std::format("{} row(s) affected", affected);
+                } else {
+                    result.message = "Query executed successfully";
+                }
+                result.success = true;
+            } else {
+                // Error
+                result.success = false;
+                result.errorMessage = mysql_error(conn);
+            }
+        }
+
+        return result;
+    }
+
+} // namespace
 
 MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
@@ -67,7 +165,7 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         }
 
         return {true, ""};
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
         // Clear connection pool from DatabaseData
@@ -107,7 +205,7 @@ void MySQLDatabase::refreshConnection() {
             Logger::info("Successfully reconnected to MySQL database: " + connectionInfo.database);
             connected = true;
             setLastConnectionError("");
-        } catch (const soci::soci_error& e) {
+        } catch (const std::exception& e) {
             Logger::error("MySQL reconnection failed: " + std::string(e.what()));
             setLastConnectionError(e.what());
             return false;
@@ -149,74 +247,48 @@ void MySQLDatabase::refreshConnection() {
     });
 }
 
-QueryResult MySQLDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
-    QueryResult result;
+std::vector<QueryResult> MySQLDatabase::executeQueryWithResult(const std::string& query,
+                                                               int rowLimit) {
+    std::vector<QueryResult> results;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!connect().first) {
-        result.success = false;
-        result.errorMessage = "Not connected to database";
-        return result;
+        QueryResult r;
+        r.success = false;
+        r.errorMessage = "Not connected to database";
+        results.push_back(r);
+        return results;
     }
 
     try {
-        const auto sql = getSession();
-        const soci::rowset rs = (sql->prepare << query);
+        auto session = getSession();
+        MYSQL* conn = session.get();
 
-        // Get column names and fetch rows
-        bool firstRow = true;
-        int rowCount = 0;
-
-        for (auto& row : rs) {
-            if (firstRow) {
-                for (std::size_t i = 0; i != row.size(); ++i) {
-                    result.columnNames.push_back(row.get_properties(i).get_name());
-                }
-                firstRow = false;
-            }
-
-            if (rowCount >= rowLimit) {
-                break;
-            }
-
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i != row.size(); ++i) {
-                if (row.get_indicator(i) == soci::i_null) {
-                    rowData.emplace_back("NULL");
-                } else {
-                    rowData.push_back(row.get<std::string>(i, ""));
-                }
-            }
-            result.tableData.push_back(rowData);
-            rowCount++;
+        if (mysql_query(conn, query.c_str()) != 0) {
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = mysql_error(conn);
+            results.push_back(r);
+            return results;
         }
 
-        // Set message based on result
-        if (!result.columnNames.empty()) {
-            result.message = std::format("Returned {} row{}", result.tableData.size(),
-                                         result.tableData.size() == 1 ? "" : "s");
-            if (result.tableData.size() >= static_cast<size_t>(rowLimit)) {
-                result.message += std::format(" (limited to {})", rowLimit);
+        do {
+            auto r = extractMysqlResult(conn, rowLimit);
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            r.executionTimeMs =
+                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+            if (r.success || !r.errorMessage.empty()) {
+                results.push_back(std::move(r));
             }
-        } else {
-            result.message = "Query executed successfully";
-        }
-
-        result.success = true;
-    } catch (const soci::soci_error& e) {
-        result.success = false;
-        result.errorMessage = e.what();
+        } while (mysql_next_result(conn) == 0);
     } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = e.what();
+        QueryResult r;
+        r.success = false;
+        r.errorMessage = e.what();
+        results.push_back(r);
     }
 
-    const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-
-    return result;
+    return results;
 }
 
 std::pair<bool, std::string> MySQLDatabase::executeQuery(const std::string& query) {
@@ -224,11 +296,22 @@ std::pair<bool, std::string> MySQLDatabase::executeQuery(const std::string& quer
         return {false, "Not connected to database"};
     }
     try {
-        const auto sql = getSession();
-        *sql << query;
+        auto session = getSession();
+        MYSQL* conn = session.get();
+        if (mysql_query(conn, query.c_str()) != 0) {
+            return {false, mysql_error(conn)};
+        }
+        // Consume result set if any
+        MYSQL_RES* res = mysql_store_result(conn);
+        if (res)
+            mysql_free_result(res);
+        // Consume any remaining results
+        while (mysql_next_result(conn) == 0) {
+            res = mysql_store_result(conn);
+            if (res)
+                mysql_free_result(res);
+        }
         return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }
@@ -310,44 +393,44 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
     std::vector<std::string> result;
 
     try {
-        // Check if we have a valid connection pool before trying to query
         if (!isConnected()) {
             std::cerr << "Cannot load databases: not connected" << std::endl;
             return result;
         }
 
-        std::cout << "DEBUG: isConnected() = true, attempting to get session for database: "
-                  << connectionInfo.database << std::endl;
-
         // If showAllDatabases is false, only return the current database
         if (!connectionInfo.showAllDatabases) {
             result.push_back(connectionInfo.database);
-            std::cout << "showAllDatabases is false, returning only current database: "
-                      << connectionInfo.database << std::endl;
             return result;
         }
 
-        const std::string sqlQuery = "SHOW DATABASES";
+        auto session = getSession();
+        MYSQL* conn = session.get();
 
-        std::cout << "Executing async query to get database names..." << std::endl;
-        const auto sql = getSession();
-        std::cout << "DEBUG: Session obtained successfully" << std::endl;
-        const soci::rowset rs = sql->prepare << sqlQuery;
+        if (mysql_query(conn, "SHOW DATABASES") != 0) {
+            std::cerr << "Failed to get databases: " << mysql_error(conn) << std::endl;
+            return result;
+        }
 
-        for (const auto& row : rs) {
-            auto dbName = row.get<std::string>(0);
+        MysqlResPtr res(mysql_store_result(conn));
+        if (!res) {
+            return result;
+        }
+
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res.get())) != nullptr) {
+            std::string dbName = row[0] ? row[0] : "";
             // Filter out system databases
             if (dbName != "information_schema" && dbName != "performance_schema" &&
                 dbName != "mysql" && dbName != "sys") {
-                std::cout << "Found database: " << dbName << std::endl;
                 result.push_back(dbName);
             }
         }
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Failed to execute async database query: " << e.what() << std::endl;
     }
 
-    std::cout << "Async query completed. Found " << result.size() << " databases." << std::endl;
+    Logger::info(std::format("Async query completed. Found {} databases", result.size()));
     return result;
 }
 
@@ -364,10 +447,15 @@ void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo
     }
 
     constexpr size_t poolSize = 10;
-    dbData->connectionPool = DatabaseInterface::initializeConnectionPool(info, poolSize);
+    dbData->connectionPool = std::make_unique<ConnectionPool<MYSQL*>>(
+        poolSize, makeMysqlFactory(info),
+        // closer
+        [](MYSQL* conn) { mysql_close(conn); },
+        // validator
+        [](MYSQL* conn) { return mysql_ping(conn) == 0; });
 }
 
-std::unique_ptr<soci::session> MySQLDatabase::getSession() const {
+ConnectionPool<MYSQL*>::Session MySQLDatabase::getSession() const {
     std::lock_guard lock(sessionMutex);
 
     const std::string targetDb = connectionInfo.database;
@@ -379,17 +467,12 @@ std::unique_ptr<soci::session> MySQLDatabase::getSession() const {
             "MySQLDatabase::getSession: Connection pool not available for database: " + targetDb);
     }
 
-    auto res = std::make_unique<soci::session>(*it->second->connectionPool);
-    if (!res->is_connected()) {
-        res->reconnect();
-    }
-    return res;
+    return it->second->connectionPool->acquire();
 }
 
 std::pair<bool, std::string> MySQLDatabase::renameDatabase(const std::string& oldName,
                                                            const std::string& newName) {
     // MySQL does not support direct database renaming
-    // This would require creating a new database, copying all tables, and dropping the old one
     return {false, "MySQL does not support direct database renaming. "
                    "You need to create a new database, copy all data, and drop the old one."};
 }
@@ -408,14 +491,19 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
         const std::string sql = std::format("DROP DATABASE `{}`", dbName);
 
         auto session = getSession();
-        *session << sql;
+        MYSQL* conn = session.get();
+        if (mysql_query(conn, sql.c_str()) != 0) {
+            std::string err = mysql_error(conn);
+            Logger::error(std::format("Failed to drop database: {}", err));
+            return {false, err};
+        }
 
         // Remove from cache
         databaseDataCache.erase(dbName);
 
         Logger::info(std::format("Database '{}' dropped successfully", dbName));
         return {true, ""};
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Failed to drop database: {}", e.what()));
         return {false, e.what()};
     }

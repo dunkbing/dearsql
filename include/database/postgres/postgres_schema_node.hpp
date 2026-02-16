@@ -5,6 +5,7 @@
 #include "database/db.hpp"
 #include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -56,7 +57,8 @@ public:
     }
 
     std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
+                                                    int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

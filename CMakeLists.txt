@@ -65,7 +65,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(SOCI CONFIG REQUIRED)
+find_package(unofficial-libmysql CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
 find_package(mongocxx CONFIG REQUIRED)
 find_package(bsoncxx CONFIG REQUIRED)
@@ -151,6 +151,7 @@ set(APP_SOURCES
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
+    src/database/ddl_builder.cpp
 
     # UI
     src/ui/db_connection_dialog.cpp
@@ -232,10 +233,8 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
-    $<IF:$<TARGET_EXISTS:SOCI::soci_core>,SOCI::soci_core,SOCI::soci_core_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_sqlite3>,SOCI::soci_sqlite3,SOCI::soci_sqlite3_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_postgresql>,SOCI::soci_postgresql,SOCI::soci_postgresql_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_mysql>,SOCI::soci_mysql,SOCI::soci_mysql_static>
+    PostgreSQL::PostgreSQL
+    unofficial::libmysql::libmysql
     hiredis::hiredis
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
@@ -307,6 +306,7 @@ add_executable(database_tests
     src/database/mongodb/mongodb_database_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
+    src/database/ddl_builder.cpp
     src/utils/logger.cpp
 )
 
@@ -318,11 +318,8 @@ target_include_directories(database_tests PRIVATE
 target_link_libraries(database_tests PRIVATE
     GTest::gtest_main
     unofficial::sqlite3::sqlite3
-    $<IF:$<TARGET_EXISTS:SOCI::soci_core>,SOCI::soci_core,SOCI::soci_core_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_sqlite3>,SOCI::soci_sqlite3,SOCI::soci_sqlite3_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_postgresql>,SOCI::soci_postgresql,SOCI::soci_postgresql_static>
-    $<IF:$<TARGET_EXISTS:SOCI::soci_mysql>,SOCI::soci_mysql,SOCI::soci_mysql_static>
     PostgreSQL::PostgreSQL
+    unofficial::libmysql::libmysql
     hiredis::hiredis
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>

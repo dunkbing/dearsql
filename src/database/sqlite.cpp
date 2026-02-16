@@ -1,5 +1,5 @@
 #include "database/sqlite.hpp"
-#include "database/ddl_utils.hpp"
+#include "database/ddl_builder.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
@@ -8,6 +8,54 @@
 #include <iostream>
 #include <memory>
 #include <utility>
+
+namespace {
+    // RAII wrapper for sqlite3_stmt
+    struct StmtDeleter {
+        void operator()(sqlite3_stmt* stmt) const {
+            if (stmt)
+                sqlite3_finalize(stmt);
+        }
+    };
+    using StmtPtr = std::unique_ptr<sqlite3_stmt, StmtDeleter>;
+
+    // Helper to get column value as string
+    std::string columnText(sqlite3_stmt* stmt, int col) {
+        if (sqlite3_column_type(stmt, col) == SQLITE_NULL) {
+            return "NULL";
+        }
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
+        return text ? text : "";
+    }
+
+    // Helper to execute a query and iterate rows with a callback
+    template <typename RowCallback>
+    void queryRows(sqlite3* db, const std::string& sql, RowCallback&& callback) {
+        sqlite3_stmt* raw = nullptr;
+        int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            throw std::runtime_error(sqlite3_errmsg(db));
+        }
+        StmtPtr stmt(raw);
+        while (sqlite3_step(raw) == SQLITE_ROW) {
+            callback(raw);
+        }
+    }
+
+    // Helper to get a single integer result
+    int queryInt(sqlite3* db, const std::string& sql) {
+        sqlite3_stmt* raw = nullptr;
+        int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            throw std::runtime_error(sqlite3_errmsg(db));
+        }
+        StmtPtr stmt(raw);
+        if (sqlite3_step(raw) == SQLITE_ROW) {
+            return sqlite3_column_int(raw, 0);
+        }
+        return 0;
+    }
+} // namespace
 
 SQLiteDatabase::SQLiteDatabase(const DatabaseConnectionInfo& connInfo) {
     connectionInfo = connInfo;
@@ -18,25 +66,32 @@ SQLiteDatabase::~SQLiteDatabase() {
 }
 
 std::pair<bool, std::string> SQLiteDatabase::connect() {
-    if (connected && session) {
+    if (connected && db_) {
         return {true, ""};
     }
 
-    try {
-        session = std::make_unique<soci::session>(soci::sqlite3, connectionInfo.path);
-        std::cout << "Successfully connected to database: " << connectionInfo.path << std::endl;
-        connected = true;
-        return {true, ""};
-    } catch (const soci::soci_error& e) {
-        std::string error = e.what();
+    int rc = sqlite3_open_v2(connectionInfo.path.c_str(), &db_,
+                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+                             nullptr);
+    if (rc != SQLITE_OK) {
+        std::string error = db_ ? sqlite3_errmsg(db_) : "Unable to open database";
         std::cerr << "Can't open database: " << error << std::endl;
+        if (db_) {
+            sqlite3_close(db_);
+            db_ = nullptr;
+        }
         return {false, error};
     }
+
+    std::cout << "Successfully connected to database: " << connectionInfo.path << std::endl;
+    connected = true;
+    return {true, ""};
 }
 
 void SQLiteDatabase::disconnect() {
-    if (session) {
-        session.reset();
+    if (db_) {
+        sqlite3_close(db_);
+        db_ = nullptr;
     }
     connected = false;
 }
@@ -50,57 +105,48 @@ SQLiteDatabase::executeQueryStructured(const std::string& query, const int rowLi
     std::vector<std::string> columnNames;
     std::vector<std::vector<std::string>> data;
 
-    if (!connected) {
+    if (!connected || !db_) {
         return {columnNames, data};
     }
 
-    try {
-        const soci::rowset rs = session->prepare << query;
-
-        // Get column names if available
-        auto it = rs.begin();
-        if (it != rs.end()) {
-            const soci::row& firstRow = *it;
-            for (std::size_t i = 0; i < firstRow.size(); ++i) {
-                columnNames.push_back(firstRow.get_properties(i).get_name());
-            }
-        }
-
-        int rowCount = 0;
-        for (const auto& row : rs) {
-            if (rowCount >= rowLimit)
-                break;
-
-            std::vector<std::string> rowData;
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(convertRowValue(row, i));
-            }
-            data.push_back(rowData);
-            rowCount++;
-        }
-
-        return {columnNames, data};
-    } catch (const soci::soci_error& e) {
-        // Return empty result on error
-        std::cerr << "executeQueryStructured error: " << e.what() << std::endl;
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, query.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "executeQueryStructured error: " << sqlite3_errmsg(db_) << std::endl;
         return {columnNames, data};
     }
+    StmtPtr stmt(raw);
+
+    int colCount = sqlite3_column_count(raw);
+    for (int i = 0; i < colCount; ++i) {
+        columnNames.emplace_back(sqlite3_column_name(raw, i));
+    }
+
+    int rowCount = 0;
+    while (sqlite3_step(raw) == SQLITE_ROW && rowCount < rowLimit) {
+        std::vector<std::string> rowData;
+        rowData.reserve(colCount);
+        for (int i = 0; i < colCount; ++i) {
+            rowData.push_back(columnText(raw, i));
+        }
+        data.push_back(std::move(rowData));
+        ++rowCount;
+    }
+
+    return {columnNames, data};
 }
 
 std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& tableName) {
     std::vector<std::string> columnNames;
-    if (!connected) {
+    if (!connected || !db_) {
         return columnNames;
     }
 
     try {
         const std::string sql = "PRAGMA table_info(" + tableName + ");";
-        soci::rowset<soci::row> rs = session->prepare << sql;
-
-        for (const auto& row : rs) {
-            columnNames.emplace_back(row.get<std::string>(1));
-        }
-    } catch (const soci::soci_error& e) {
+        queryRows(db_, sql,
+                  [&](sqlite3_stmt* stmt) { columnNames.emplace_back(columnText(stmt, 1)); });
+    } catch (const std::exception& e) {
         std::cerr << "Error getting column names: " << e.what() << std::endl;
     }
     return columnNames;
@@ -118,14 +164,12 @@ std::vector<std::string> SQLiteDatabase::getTableNames() const {
     std::cout << "Executing query to get table names..." << std::endl;
     try {
         const auto sql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
-        const soci::rowset rs = session->prepare << sql;
-
-        for (const auto& row : rs) {
-            auto tableName = row.get<std::string>(0);
-            std::cout << "Found table: " << tableName << std::endl;
-            tableNames.emplace_back(tableName);
-        }
-    } catch (const soci::soci_error& e) {
+        queryRows(db_, sql, [&](sqlite3_stmt* stmt) {
+            auto name = columnText(stmt, 0);
+            std::cout << "Found table: " << name << std::endl;
+            tableNames.push_back(std::move(name));
+        });
+    } catch (const std::exception& e) {
         std::cerr << "Failed to execute SQL statement: " << e.what() << std::endl;
     }
     std::cout << "Query completed. Found " << tableNames.size() << " tables." << std::endl;
@@ -136,38 +180,28 @@ std::vector<Index> SQLiteDatabase::getTableIndexes(const std::string& tableName)
     std::vector<Index> indexes;
 
     try {
-        // Get list of indexes for the table
         const std::string indexListSql = std::format("PRAGMA index_list('{}');", tableName);
-        const soci::rowset indexList = session->prepare << indexListSql;
-
-        for (const auto& indexRow : indexList) {
+        queryRows(db_, indexListSql, [&](sqlite3_stmt* stmt) {
             Index idx;
-            idx.name = convertRowValue(indexRow, 1); // name
+            idx.name = columnText(stmt, 1);
 
-            // Handle unique column (can be int or string)
-            std::string uniqueStr = convertRowValue(indexRow, 2);
+            std::string uniqueStr = columnText(stmt, 2);
             idx.isUnique = (uniqueStr == "1" || uniqueStr == "true");
 
-            // Determine if this is a primary key index
             if (idx.name.find("sqlite_autoindex") != std::string::npos) {
                 idx.isPrimary = true;
             }
 
             // Get columns for this index
             const std::string indexInfoSql = std::format("PRAGMA index_info('{}');", idx.name);
-            const soci::rowset indexInfo = session->prepare << indexInfoSql;
+            queryRows(db_, indexInfoSql, [&](sqlite3_stmt* infoStmt) {
+                idx.columns.push_back(columnText(infoStmt, 2));
+            });
 
-            for (const auto& colRow : indexInfo) {
-                std::string colName = convertRowValue(colRow, 2); // name
-                idx.columns.push_back(colName);
-            }
-
-            // Default type for SQLite is BTREE
             idx.type = "BTREE";
-
-            indexes.push_back(idx);
-        }
-    } catch (const soci::soci_error& e) {
+            indexes.push_back(std::move(idx));
+        });
+    } catch (const std::exception& e) {
         std::cerr << "Error getting table indexes: " << e.what() << std::endl;
     }
 
@@ -179,25 +213,17 @@ std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& t
 
     try {
         const std::string fkSql = std::format("PRAGMA foreign_key_list('{}');", tableName);
-        const soci::rowset fkList = session->prepare << fkSql;
-
-        for (const auto& fkRow : fkList) {
+        queryRows(db_, fkSql, [&](sqlite3_stmt* stmt) {
             ForeignKey fk;
-            // SQLite PRAGMA foreign_key_list columns:
-            // 0: id, 1: seq, 2: table (target), 3: from, 4: to, 5: on_update, 6: on_delete, 7:
-            // match
-            fk.targetTable = fkRow.get<std::string>(2);
-            fk.sourceColumn = fkRow.get<std::string>(3);
-            fk.targetColumn = fkRow.get<std::string>(4);
-            fk.onUpdate = fkRow.get<std::string>(5);
-            fk.onDelete = fkRow.get<std::string>(6);
-
-            // Generate a name if not provided
+            fk.targetTable = columnText(stmt, 2);
+            fk.sourceColumn = columnText(stmt, 3);
+            fk.targetColumn = columnText(stmt, 4);
+            fk.onUpdate = columnText(stmt, 5);
+            fk.onDelete = columnText(stmt, 6);
             fk.name = std::format("fk_{}_{}", tableName, fk.sourceColumn);
-
-            foreignKeys.push_back(fk);
-        }
-    } catch (const soci::soci_error& e) {
+            foreignKeys.push_back(std::move(fk));
+        });
+    } catch (const std::exception& e) {
         std::cerr << "Error getting table foreign keys: " << e.what() << std::endl;
     }
 
@@ -226,19 +252,16 @@ void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
     Logger::debug("startTablesLoadAsync for SQLite database" +
                   std::string(forceRefresh ? " (force refresh)" : ""));
 
-    // Don't start if already loading
     if (loadingTables.load()) {
         return;
     }
 
-    // If force refresh, clear existing tables and reset state
     if (forceRefresh) {
         tables.clear();
         tablesLoaded = false;
         lastTablesError.clear();
     }
 
-    // Don't start if already loaded (unless force refresh)
     if (!forceRefresh && tablesLoaded) {
         return;
     }
@@ -246,21 +269,18 @@ void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
     loadingTables = true;
     tables.clear();
 
-    // Start async loading
     tablesFuture = std::async(std::launch::async, [this]() { return getTablesAsync(); });
 }
 
 std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     std::vector<Table> result;
 
-    // Check if we're still supposed to be loading
     if (!loadingTables.load()) {
         return result;
     }
 
     try {
-        // Check connection
-        if (!connected) {
+        if (!connected || !db_) {
             Logger::error("Database not connected");
             return result;
         }
@@ -269,15 +289,11 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
         std::vector<std::string> tableNames;
         const std::string tableNamesQuery =
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-        {
-            const soci::rowset tableRs = session->prepare << tableNamesQuery;
-            for (const auto& row : tableRs) {
-                if (!loadingTables.load()) {
-                    return result;
-                }
-                tableNames.push_back(convertRowValue(row, 0));
-            }
-        }
+        queryRows(db_, tableNamesQuery, [&](sqlite3_stmt* stmt) {
+            if (!loadingTables.load())
+                return;
+            tableNames.push_back(columnText(stmt, 0));
+        });
 
         Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in database");
 
@@ -297,61 +313,45 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
 
             // Get table columns
             const std::string columnsQuery = std::format("PRAGMA table_info({})", tableName);
-            {
-                const soci::rowset colRs = session->prepare << columnsQuery;
-                for (const auto& row : colRs) {
-                    Column col;
-                    col.name = convertRowValue(row, 1);                // name
-                    col.type = convertRowValue(row, 2);                // type
-                    col.isNotNull = convertRowValue(row, 3) == "1";    // notnull
-                    col.isPrimaryKey = convertRowValue(row, 5) == "1"; // pk
-
-                    table.columns.push_back(col);
-                }
-            }
+            queryRows(db_, columnsQuery, [&](sqlite3_stmt* stmt) {
+                Column col;
+                col.name = columnText(stmt, 1);
+                col.type = columnText(stmt, 2);
+                col.isNotNull = columnText(stmt, 3) == "1";
+                col.isPrimaryKey = columnText(stmt, 5) == "1";
+                table.columns.push_back(std::move(col));
+            });
 
             // Get foreign keys
             const std::string fkQuery = std::format("PRAGMA foreign_key_list({})", tableName);
-            {
-                const soci::rowset fkRs = session->prepare << fkQuery;
-                for (const auto& row : fkRs) {
-                    ForeignKey fk;
-                    fk.name = "";                              // SQLite doesn't name FKs
-                    fk.targetTable = convertRowValue(row, 2);  // table
-                    fk.sourceColumn = convertRowValue(row, 3); // from
-                    fk.targetColumn = convertRowValue(row, 4); // to
-
-                    table.foreignKeys.push_back(fk);
-                }
-            }
+            queryRows(db_, fkQuery, [&](sqlite3_stmt* stmt) {
+                ForeignKey fk;
+                fk.name = "";
+                fk.targetTable = columnText(stmt, 2);
+                fk.sourceColumn = columnText(stmt, 3);
+                fk.targetColumn = columnText(stmt, 4);
+                table.foreignKeys.push_back(std::move(fk));
+            });
 
             // Get indexes
             const std::string indexQuery = std::format("PRAGMA index_list({})", tableName);
-            {
-                const soci::rowset idxRs = session->prepare << indexQuery;
-                for (const auto& row : idxRs) {
-                    Index idx;
-                    idx.name = convertRowValue(row, 1);            // name
-                    idx.isUnique = convertRowValue(row, 2) == "1"; // unique
+            queryRows(db_, indexQuery, [&](sqlite3_stmt* stmt) {
+                Index idx;
+                idx.name = columnText(stmt, 1);
+                idx.isUnique = columnText(stmt, 2) == "1";
 
-                    // Get index columns
-                    const std::string idxInfoQuery = std::format("PRAGMA index_info({})", idx.name);
-                    const soci::rowset idxInfoRs = session->prepare << idxInfoQuery;
-                    for (const auto& infoRow : idxInfoRs) {
-                        idx.columns.push_back(convertRowValue(infoRow, 2)); // name
-                    }
+                const std::string idxInfoQuery = std::format("PRAGMA index_info({})", idx.name);
+                queryRows(db_, idxInfoQuery, [&](sqlite3_stmt* infoStmt) {
+                    idx.columns.push_back(columnText(infoStmt, 2));
+                });
 
-                    table.indexes.push_back(idx);
-                }
-            }
+                table.indexes.push_back(std::move(idx));
+            });
 
-            // Build foreign key lookup
             buildForeignKeyLookup(table);
-
-            result.push_back(table);
+            result.push_back(std::move(table));
         }
 
-        // Populate incoming foreign keys
         populateIncomingForeignKeys(result);
 
         Logger::info("Finished loading tables. Total tables: " + std::to_string(result.size()));
@@ -384,19 +384,16 @@ void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
     Logger::debug("startViewsLoadAsync for SQLite database" +
                   std::string(forceRefresh ? " (force refresh)" : ""));
 
-    // Don't start if already loading
     if (loadingViews.load()) {
         return;
     }
 
-    // If force refresh, clear existing views and reset state
     if (forceRefresh) {
         views.clear();
         viewsLoaded = false;
         lastViewsError.clear();
     }
 
-    // Don't start if already loaded (unless force refresh)
     if (!forceRefresh && viewsLoaded) {
         return;
     }
@@ -404,7 +401,6 @@ void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
     loadingViews = true;
     views.clear();
 
-    // Start async loading
     viewsFuture = std::async(std::launch::async, [this]() { return getViewsAsync(); });
 }
 
@@ -416,27 +412,21 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     }
 
     try {
-        if (!connected) {
+        if (!connected || !db_) {
             Logger::error("Database not connected");
             return result;
         }
 
-        // Get view names
         std::vector<std::string> viewNames;
         const std::string viewNamesQuery = "SELECT name FROM sqlite_master WHERE type='view'";
-        {
-            const soci::rowset viewRs = session->prepare << viewNamesQuery;
-            for (const auto& row : viewRs) {
-                if (!loadingViews.load()) {
-                    return result;
-                }
-                viewNames.push_back(convertRowValue(row, 0));
-            }
-        }
+        queryRows(db_, viewNamesQuery, [&](sqlite3_stmt* stmt) {
+            if (!loadingViews.load())
+                return;
+            viewNames.push_back(columnText(stmt, 0));
+        });
 
         Logger::debug("Found " + std::to_string(viewNames.size()) + " views in database");
 
-        // Load view details
         for (const auto& viewName : viewNames) {
             if (!loadingViews.load()) {
                 break;
@@ -446,22 +436,17 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
             view.name = viewName;
             view.fullName = connectionInfo.name + "." + viewName;
 
-            // Get view columns
             const std::string columnsQuery = std::format("PRAGMA table_info({})", viewName);
-            {
-                const soci::rowset colRs = session->prepare << columnsQuery;
-                for (const auto& row : colRs) {
-                    Column col;
-                    col.name = convertRowValue(row, 1);             // name
-                    col.type = convertRowValue(row, 2);             // type
-                    col.isNotNull = convertRowValue(row, 3) == "1"; // notnull
-                    col.isPrimaryKey = false;                       // views don't have PKs
+            queryRows(db_, columnsQuery, [&](sqlite3_stmt* stmt) {
+                Column col;
+                col.name = columnText(stmt, 1);
+                col.type = columnText(stmt, 2);
+                col.isNotNull = columnText(stmt, 3) == "1";
+                col.isPrimaryKey = false;
+                view.columns.push_back(std::move(col));
+            });
 
-                    view.columns.push_back(col);
-                }
-            }
-
-            result.push_back(view);
+            result.push_back(std::move(view));
         }
 
         Logger::info("Finished loading views. Total views: " + std::to_string(result.size()));
@@ -472,12 +457,12 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     return result;
 }
 
-// ITableDataProvider implementation (with whereClause and orderByClause support)
+// ITableDataProvider implementation
 std::vector<std::vector<std::string>>
 SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset,
                              const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> data;
-    if (!connected) {
+    if (!connected || !db_) {
         return data;
     }
 
@@ -491,24 +476,31 @@ SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset
         }
         sql += std::format(" LIMIT {} OFFSET {}", limit, offset);
 
-        const soci::rowset rs = session->prepare << sql;
-
-        for (const auto& row : rs) {
-            std::vector<std::string> rowData;
-            rowData.reserve(row.size());
-            for (std::size_t i = 0; i < row.size(); ++i) {
-                rowData.push_back(convertRowValue(row, i));
-            }
-            data.push_back(rowData);
+        sqlite3_stmt* raw = nullptr;
+        int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Error getting table data: " << sqlite3_errmsg(db_) << std::endl;
+            return data;
         }
-    } catch (const soci::soci_error& e) {
+        StmtPtr stmt(raw);
+
+        int colCount = sqlite3_column_count(raw);
+        while (sqlite3_step(raw) == SQLITE_ROW) {
+            std::vector<std::string> rowData;
+            rowData.reserve(colCount);
+            for (int i = 0; i < colCount; ++i) {
+                rowData.push_back(columnText(raw, i));
+            }
+            data.push_back(std::move(rowData));
+        }
+    } catch (const std::exception& e) {
         std::cerr << "Error getting table data: " << e.what() << std::endl;
     }
     return data;
 }
 
 int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string& whereClause) {
-    if (!connected) {
+    if (!connected || !db_) {
         return 0;
     }
 
@@ -519,95 +511,139 @@ int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string&
         } else {
             sql = std::format("SELECT COUNT(*) FROM {} WHERE {}", tableName, whereClause);
         }
-        int count = 0;
-        *session << sql, soci::into(count);
-        return count;
-    } catch (const soci::soci_error& e) {
+        return queryInt(db_, sql);
+    } catch (const std::exception& e) {
         std::cerr << "Error getting row count: " << e.what() << std::endl;
         return 0;
     }
 }
 
-QueryResult SQLiteDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
-    QueryResult result;
-    if (!connected) {
-        result.success = false;
-        result.message = "Error: Database not connected";
-        return result;
+std::vector<QueryResult> SQLiteDatabase::executeQueryWithResult(const std::string& query,
+                                                                int rowLimit) {
+    std::vector<QueryResult> results;
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
+    if (!connected || !db_) {
+        QueryResult r;
+        r.success = false;
+        r.errorMessage = "Database not connected";
+        results.push_back(r);
+        return results;
     }
 
-    try {
-        auto [columns, data] = executeQueryStructured(query, rowLimit);
-        result.success = true;
-        result.columnNames = columns;
-        result.tableData = data;
-        result.message = "Query executed successfully";
-    } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = std::string("Error: ") + e.what();
+    const char* remaining = query.c_str();
+    while (remaining && *remaining) {
+        // Skip whitespace
+        while (*remaining && (*remaining == ' ' || *remaining == '\n' || *remaining == '\r' ||
+                              *remaining == '\t')) {
+            ++remaining;
+        }
+        if (!*remaining)
+            break;
+
+        sqlite3_stmt* raw = nullptr;
+        const char* tail = nullptr;
+        int rc = sqlite3_prepare_v2(db_, remaining, -1, &raw, &tail);
+
+        if (rc != SQLITE_OK) {
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = sqlite3_errmsg(db_);
+            results.push_back(r);
+            break;
+        }
+
+        if (!raw) {
+            remaining = tail;
+            continue;
+        }
+
+        StmtPtr stmt(raw);
+        QueryResult r;
+
+        int colCount = sqlite3_column_count(raw);
+        if (colCount > 0) {
+            // SELECT-like statement
+            for (int i = 0; i < colCount; ++i) {
+                r.columnNames.emplace_back(sqlite3_column_name(raw, i));
+            }
+
+            int rowCount = 0;
+            while (sqlite3_step(raw) == SQLITE_ROW && rowCount < rowLimit) {
+                std::vector<std::string> rowData;
+                rowData.reserve(colCount);
+                for (int i = 0; i < colCount; ++i) {
+                    rowData.push_back(columnText(raw, i));
+                }
+                r.tableData.push_back(std::move(rowData));
+                ++rowCount;
+            }
+            r.success = true;
+            r.message = std::format("Returned {} row{}", r.tableData.size(),
+                                    r.tableData.size() == 1 ? "" : "s");
+        } else {
+            // DML/DDL statement
+            rc = sqlite3_step(raw);
+            if (rc == SQLITE_DONE || rc == SQLITE_ROW) {
+                r.success = true;
+                r.affectedRows = sqlite3_changes(db_);
+                r.message = "Query executed successfully";
+            } else {
+                r.success = false;
+                r.errorMessage = sqlite3_errmsg(db_);
+            }
+        }
+
+        results.push_back(std::move(r));
+        remaining = tail;
     }
 
-    return result;
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    auto totalMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    if (!results.empty()) {
+        results.back().executionTimeMs = totalMs;
+    }
+
+    return results;
 }
 
 std::pair<bool, std::string> SQLiteDatabase::executeQuery(const std::string& query) {
-    if (!connected || !session) {
+    if (!connected || !db_) {
         return {false, "Database not connected"};
     }
-    try {
-        *session << query;
-        return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
-    } catch (const std::exception& e) {
-        return {false, std::string(e.what())};
+    char* errmsg = nullptr;
+    int rc = sqlite3_exec(db_, query.c_str(), nullptr, nullptr, &errmsg);
+    if (rc != SQLITE_OK) {
+        std::string error = errmsg ? errmsg : "Unknown error";
+        sqlite3_free(errmsg);
+        return {false, error};
     }
+    return {true, ""};
 }
 
 std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
-    if (!connected || !session) {
+    if (!connected || !db_) {
         return {false, "Database not connected"};
     }
 
     try {
-        soci::ddl_type ddl = session->create_table(table.name);
-
-        std::vector<std::string> primaryKeyColumns;
-        for (const auto& column : table.columns) {
-            const auto ddlType = ddl_utils::inferColumnType(column.type);
-            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
-
-            if (column.isNotNull && !column.isPrimaryKey) {
-                ddlRef("not null");
-            }
-
-            if (column.isPrimaryKey) {
-                primaryKeyColumns.push_back(column.name);
-            }
-        }
-
-        if (!primaryKeyColumns.empty()) {
-            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
-                            ddl_utils::joinColumnNames(primaryKeyColumns));
-        }
-
-        return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
+        DDLBuilder builder(DatabaseType::SQLITE);
+        std::string sql = builder.createTable(table);
+        return executeQuery(sql);
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }
 }
 
-soci::session* SQLiteDatabase::getSession() const {
-    if (!connected || !session) {
+sqlite3* SQLiteDatabase::getSession() const {
+    if (!connected || !db_) {
         return nullptr;
     }
-    return session.get();
+    return db_;
 }
 
 std::string SQLiteDatabase::getName() const {
-    // Return just the filename from the path
     const auto& path = connectionInfo.path;
     auto pos = path.find_last_of("/\\");
     if (pos != std::string::npos) {
@@ -639,20 +675,16 @@ void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
         try {
             // Get columns
             const std::string columnsQuery = std::format("PRAGMA table_info(\"{}\")", tableName);
-            const soci::rowset columnsRs = session->prepare << columnsQuery;
-            for (const auto& row : columnsRs) {
+            queryRows(db_, columnsQuery, [&](sqlite3_stmt* stmt) {
                 Column col;
-                col.name = convertRowValue(row, 1);
-                col.type = convertRowValue(row, 2);
-                col.isNotNull = row.get<int>(3) != 0;
-                col.isPrimaryKey = row.get<int>(5) != 0;
-                refreshedTable.columns.push_back(col);
-            }
+                col.name = columnText(stmt, 1);
+                col.type = columnText(stmt, 2);
+                col.isNotNull = sqlite3_column_int(stmt, 3) != 0;
+                col.isPrimaryKey = sqlite3_column_int(stmt, 5) != 0;
+                refreshedTable.columns.push_back(std::move(col));
+            });
 
-            // Get indexes
             refreshedTable.indexes = getTableIndexes(tableName);
-
-            // Get foreign keys
             refreshedTable.foreignKeys = getTableForeignKeys(tableName);
             buildForeignKeyLookup(refreshedTable);
 
@@ -679,7 +711,6 @@ void SQLiteDatabase::checkTableRefreshStatusAsync(const std::string& tableName) 
         try {
             Table refreshedTable = it->second.get();
 
-            // Find and update the table in our tables vector
             auto tableIt = std::find_if(tables.begin(), tables.end(), [&tableName](const Table& t) {
                 return t.name == tableName;
             });

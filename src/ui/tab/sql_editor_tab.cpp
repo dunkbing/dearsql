@@ -6,6 +6,7 @@
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
+#include <format>
 #include <future>
 
 namespace {
@@ -104,9 +105,7 @@ void SQLEditorTab::renderToolbar() {
     if (ImGui::Button(LABEL_CLEAR)) {
         sqlEditor.SetText("");
         sqlQuery.clear();
-        hasStructuredResults = false;
-        queryColumnNames.clear();
-        queryTableData.clear();
+        queryResults.clear();
         queryError.clear();
     }
 
@@ -114,51 +113,90 @@ void SQLEditorTab::renderToolbar() {
 }
 
 void SQLEditorTab::renderQueryResults() const {
-    if (!queryError.empty()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", queryError.c_str());
-    } else if (hasStructuredResults && !queryColumnNames.empty()) {
-        if (queryTableData.empty()) {
-            ImGui::Text("%s", LABEL_NO_ROWS);
-            if (lastQueryDuration.count() > 0) {
-                ImGui::SameLine();
-                ImGui::Text("| Execution time: %ld ms",
-                            static_cast<long>(lastQueryDuration.count()));
-            }
-        } else {
-            ImGui::Text("Rows: %zu", queryTableData.size());
-            if (queryTableData.size() >= MAX_QUERY_ROWS) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
-            }
-            if (lastQueryDuration.count() > 0) {
-                ImGui::SameLine();
-                ImGui::Text("| Execution time: %ld ms",
-                            static_cast<long>(lastQueryDuration.count()));
-            }
-
-            float tableAvailableHeight = ImGui::GetContentRegionAvail().y - 20.0f;
-            tableAvailableHeight = std::max(tableAvailableHeight, 50.0f);
-
-            TableRenderer::Config config;
-            config.allowEditing = false;
-            config.allowSelection = true;
-            config.showRowNumbers = false;
-            config.minHeight = tableAvailableHeight;
-
-            TableRenderer tableRenderer(config);
-            tableRenderer.setColumns(queryColumnNames);
-            tableRenderer.setData(queryTableData);
-
-            tableRenderer.render("QueryResults");
-        }
-    } else if (hasStructuredResults && queryColumnNames.empty()) {
-        ImGui::Text("%s", LABEL_QUERY_SUCCESS);
-        if (lastQueryDuration.count() > 0) {
-            ImGui::SameLine();
-            ImGui::Text("| Execution time: %ld ms", static_cast<long>(lastQueryDuration.count()));
-        }
-    } else {
+    if (queryResults.empty()) {
         ImGui::Text("%s", LABEL_NO_RESULTS);
+        return;
+    }
+
+    // Single result — render directly without tabs
+    if (queryResults.size() == 1) {
+        const auto& r = queryResults[0];
+        renderSingleResult(r, 0);
+        return;
+    }
+
+    // Multiple results — render as tabs
+    if (ImGui::BeginTabBar("##QueryResultTabs")) {
+        int tabIndex = 0;
+        for (size_t i = 0; i < queryResults.size(); ++i) {
+            const auto& r = queryResults[i];
+
+            std::string tabLabel;
+            if (!r.success) {
+                tabLabel = std::format("Error##{}", i);
+            } else if (r.columnNames.empty()) {
+                tabLabel = std::format("Result {}##{}", tabIndex + 1, i);
+            } else {
+                tabLabel = std::format("Result {}##{}", tabIndex + 1, i);
+            }
+            ++tabIndex;
+
+            if (ImGui::BeginTabItem(tabLabel.c_str())) {
+                renderSingleResult(r, i);
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+}
+
+void SQLEditorTab::renderSingleResult(const QueryResult& r, size_t index) const {
+    if (!r.success) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", r.errorMessage.c_str());
+        return;
+    }
+
+    if (r.columnNames.empty()) {
+        // DML/DDL result
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
+        if (r.executionTimeMs > 0) {
+            ImGui::SameLine();
+            ImGui::Text("| Execution time: %lld ms", r.executionTimeMs);
+        }
+        return;
+    }
+
+    // SELECT result
+    if (r.tableData.empty()) {
+        ImGui::Text("%s", LABEL_NO_ROWS);
+    } else {
+        ImGui::Text("Rows: %zu", r.tableData.size());
+        if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
+        }
+    }
+
+    if (r.executionTimeMs > 0) {
+        ImGui::SameLine();
+        ImGui::Text("| Execution time: %lld ms", r.executionTimeMs);
+    }
+
+    if (!r.tableData.empty()) {
+        float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 20.0f, 50.0f);
+
+        TableRenderer::Config config;
+        config.allowEditing = false;
+        config.allowSelection = true;
+        config.showRowNumbers = false;
+        config.minHeight = tableHeight;
+
+        TableRenderer tableRenderer(config);
+        tableRenderer.setColumns(r.columnNames);
+        tableRenderer.setData(r.tableData);
+
+        std::string tableId = "QueryResults_" + std::to_string(index);
+        tableRenderer.render(tableId.c_str());
     }
 }
 
@@ -169,10 +207,8 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
 
     isExecutingQuery = true;
     shouldCancelQuery = false;
-    hasStructuredResults = false;
     queryError.clear();
-    queryColumnNames.clear();
-    queryTableData.clear();
+    queryResults.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
 
     IDatabaseNode* executor = node_;
@@ -182,34 +218,34 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             return;
         }
 
-        QueryResult result;
+        std::vector<QueryResult> results;
 
         if (executor) {
-            result = executor->executeQueryWithResult(query);
+            results = executor->executeQueryWithResult(query);
         } else {
-            result.success = false;
-            result.errorMessage = LABEL_NO_DATABASE_SELECTED;
+            QueryResult r;
+            r.success = false;
+            r.errorMessage = LABEL_NO_DATABASE_SELECTED;
+            results.push_back(r);
         }
 
         if (shouldCancelQuery) {
             return;
         }
 
-        lastQueryDuration = std::chrono::milliseconds{result.executionTimeMs};
-
-        if (result.success) {
-            queryColumnNames = result.columnNames;
-            queryTableData = result.tableData;
-            hasStructuredResults = true;
-            queryError.clear();
-            queryResult.clear();
-        } else {
-            queryResult = result.errorMessage;
-            queryError = result.errorMessage;
-            hasStructuredResults = false;
-            queryColumnNames.clear();
-            queryTableData.clear();
+        // Check for any errors
+        for (const auto& r : results) {
+            if (!r.success) {
+                queryError = r.errorMessage;
+                break;
+            }
         }
+
+        if (!results.empty()) {
+            lastQueryDuration = std::chrono::milliseconds{results.back().executionTimeMs};
+        }
+
+        queryResults = std::move(results);
     });
 }
 
@@ -226,9 +262,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
             if (!shouldCancelQuery) {
                 queryResult = "Error in async query execution: " + std::string(e.what());
                 queryError = queryResult;
-                hasStructuredResults = false;
-                queryColumnNames.clear();
-                queryTableData.clear();
+                queryResults.clear();
             }
         }
 
@@ -240,9 +274,7 @@ void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
     queryResult = LABEL_QUERY_CANCELLED;
     queryError = queryResult;
-    hasStructuredResults = false;
-    queryColumnNames.clear();
-    queryTableData.clear();
+    queryResults.clear();
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,

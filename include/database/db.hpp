@@ -1,7 +1,5 @@
 #pragma once
 
-#include "soci/row.h"
-
 #include <atomic>
 #include <future>
 #include <string>
@@ -84,9 +82,6 @@ struct QueryResult {
     // execution time in milliseconds
     long long executionTimeMs = 0;
 };
-
-// Utility function for converting SOCI row values to strings
-std::string convertRowValue(const soci::row& row, std::size_t columnIndex);
 
 // Utility helpers shared across database implementations
 void buildForeignKeyLookup(Table& table);

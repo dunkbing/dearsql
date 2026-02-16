@@ -1,14 +1,13 @@
 #pragma once
 
 #include "async_helper.hpp"
+#include "connection_pool.hpp"
 #include "db_interface.hpp"
 #include "postgres/postgres_database_node.hpp"
 #include "postgres/postgres_schema_node.hpp"
 #include "query_executor.hpp"
+#include <libpq-fe.h>
 #include <mutex>
-#include <soci/connection-pool.h>
-#include <soci/postgresql/soci-postgresql.h>
-#include <soci/soci.h>
 #include <unordered_map>
 
 class PostgresDatabase final : public DatabaseInterface, public IQueryExecutor {
@@ -46,7 +45,8 @@ public:
     [[nodiscard]] bool hasPendingAsyncWork() const override;
 
     // IQueryExecutor implementation
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& query,
+                                                    int rowLimit = 1000) override;
     std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
 protected:
@@ -78,10 +78,10 @@ private:
     mutable std::mutex sessionMutex;
 
     // Helper methods for connection pool
-    soci::connection_pool* getConnectionPoolForDatabase(const std::string& dbName) const;
+    ConnectionPool<PGconn*>* getConnectionPoolForDatabase(const std::string& dbName) const;
     void ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info);
 
     // Helper method for session management
-    std::unique_ptr<soci::session> getSession() const;
+    ConnectionPool<PGconn*>::Session getSession() const;
     void triggerChildDbRefresh();
 };

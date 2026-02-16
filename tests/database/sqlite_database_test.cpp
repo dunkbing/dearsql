@@ -84,7 +84,9 @@ TEST_F(SQLiteDatabaseFixture, ExecuteQueryWithResultReturnsData) {
     database_->executeQuery("CREATE TABLE test (id INTEGER, value TEXT)");
     database_->executeQuery("INSERT INTO test VALUES (1, 'one'), (2, 'two'), (3, 'three')");
 
-    auto result = database_->executeQueryWithResult("SELECT * FROM test ORDER BY id");
+    auto results = database_->executeQueryWithResult("SELECT * FROM test ORDER BY id");
+    ASSERT_FALSE(results.empty());
+    auto& result = results[0];
     EXPECT_TRUE(result.success);
     ASSERT_EQ(result.columnNames.size(), 2u);
     EXPECT_EQ(result.columnNames[0], "id");

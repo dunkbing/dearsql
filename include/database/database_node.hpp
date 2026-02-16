@@ -56,7 +56,8 @@ public:
      * @param limit Maximum rows to return (default: 1000)
      * @return QueryResult with data or error
      */
-    virtual QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) = 0;
+    virtual std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
+                                                            int limit = 1000) = 0;
 
     // ========== Schema Information ==========
 

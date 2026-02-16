@@ -141,14 +141,15 @@ void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
 }
 
-QueryResult RedisDatabase::executeQueryWithResult(const std::string& command, int rowLimit) {
+std::vector<QueryResult> RedisDatabase::executeQueryWithResult(const std::string& command,
+                                                               int rowLimit) {
     QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!isConnected()) {
         result.success = false;
         result.errorMessage = "Not connected to Redis server";
-        return result;
+        return {result};
     }
 
     try {
@@ -157,14 +158,14 @@ QueryResult RedisDatabase::executeQueryWithResult(const std::string& command, in
         if (commandParts.empty()) {
             result.success = false;
             result.errorMessage = "Empty command";
-            return result;
+            return {result};
         }
 
         redisReply* reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
             result.success = false;
             result.errorMessage = "Failed to execute command";
-            return result;
+            return {result};
         }
 
         // Check for Redis errors
@@ -172,7 +173,7 @@ QueryResult RedisDatabase::executeQueryWithResult(const std::string& command, in
             result.success = false;
             result.errorMessage = reply->str;
             freeReplyObject(reply);
-            return result;
+            return {result};
         }
 
         // Format result as a single-column table for consistency
@@ -192,7 +193,7 @@ QueryResult RedisDatabase::executeQueryWithResult(const std::string& command, in
     result.executionTimeMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
-    return result;
+    return {result};
 }
 
 std::pair<bool, std::string> RedisDatabase::executeQuery(const std::string& command) {

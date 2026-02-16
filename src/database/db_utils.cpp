@@ -1,50 +1,9 @@
 #include "database/db.hpp"
-#include <soci/soci.h>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-std::string convertRowValue(const soci::row& row, const std::size_t columnIndex) {
-    if (row.get_indicator(columnIndex) == soci::i_null) {
-        return "NULL";
-    }
-
-    switch (const soci::column_properties& cp = row.get_properties(columnIndex);
-            cp.get_data_type()) {
-    case soci::dt_string:
-        return row.get<std::string>(columnIndex);
-    case soci::dt_integer:
-        return std::to_string(row.get<int>(columnIndex));
-    case soci::dt_long_long:
-        return std::to_string(row.get<long long>(columnIndex));
-    case soci::dt_unsigned_long_long:
-        return std::to_string(row.get<unsigned long long>(columnIndex));
-    case soci::dt_double:
-        return std::to_string(row.get<double>(columnIndex));
-    case soci::dt_date: {
-        const auto date = row.get<std::tm>(columnIndex);
-        char buffer[32];
-        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &date);
-        return {buffer};
-    }
-    case soci::dt_blob:
-        return "[BINARY DATA]";
-    case soci::dt_xml:
-        try {
-            return row.get<std::string>(columnIndex);
-        } catch (const std::bad_cast&) {
-            return "[XML DATA]";
-        }
-    default:
-        try {
-            return row.get<std::string>(columnIndex);
-        } catch (const std::bad_cast&) {
-            return "[UNKNOWN DATA TYPE]";
-        }
-    }
-}
 
 void buildForeignKeyLookup(Table& table) {
     table.foreignKeysByColumn.clear();

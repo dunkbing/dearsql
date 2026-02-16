@@ -9,8 +9,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <soci/soci.h>
-#include <soci/sqlite3/soci-sqlite3.h>
+#include <sqlite3.h>
 
 class SQLiteDatabase final : public IDatabaseNode,
                              public DatabaseInterface,
@@ -44,7 +43,8 @@ public:
     }
 
     std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
+                                                    int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {
@@ -107,7 +107,7 @@ public:
     std::vector<Table> getViewsAsync() const;
 
     // Session access
-    soci::session* getSession() const;
+    sqlite3* getSession() const;
 
     // Async operation status
     [[nodiscard]] bool hasPendingAsyncWork() const override {
@@ -139,7 +139,7 @@ protected:
     std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;
 
 private:
-    std::unique_ptr<soci::session> session;
+    sqlite3* db_ = nullptr;
 
     // Async futures
     std::future<std::vector<Table>> tablesFuture;

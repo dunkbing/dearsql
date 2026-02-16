@@ -1,15 +1,35 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/db.hpp"
+#include "database/ddl_builder.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <format>
 #include <iostream>
+#include <libpq-fe.h>
 #include <map>
 #include <ranges>
-#include <soci/soci.h>
 #include <unordered_map>
+
+namespace {
+
+    struct PgResultDeleter {
+        void operator()(PGresult* r) const {
+            if (r)
+                PQclear(r);
+        }
+    };
+    using PgResultPtr = std::unique_ptr<PGresult, PgResultDeleter>;
+
+    std::string pgValue(PGresult* res, int row, int col) {
+        if (PQgetisnull(res, row, col)) {
+            return "NULL";
+        }
+        return PQgetvalue(res, row, col);
+    }
+
+} // namespace
 
 void PostgresSchemaNode::checkTablesStatusAsync() {
     tablesLoader.check([this](const std::vector<Table>& result) {
@@ -70,12 +90,16 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
 
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset tableRs = session->prepare << tableNamesQuery;
-            for (const auto& row : tableRs) {
-                if (!tablesLoader.isRunning()) {
-                    return result;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, tableNamesQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!tablesLoader.isRunning()) {
+                        return result;
+                    }
+                    tableNames.emplace_back(PQgetvalue(res.get(), i, 0));
                 }
-                tableNames.push_back(row.get<std::string>(0));
             }
         }
 
@@ -116,21 +140,25 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
         std::unordered_map<std::string, std::vector<Column>> tableColumns;
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
 
-            for (const auto& row : rs) {
-                if (!tablesLoader.isRunning()) {
-                    break;
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!tablesLoader.isRunning()) {
+                        break;
+                    }
+
+                    auto tableName = std::string(PQgetvalue(res.get(), i, 0));
+                    Column col;
+                    col.name = PQgetvalue(res.get(), i, 1);
+                    col.type = PQgetvalue(res.get(), i, 2);
+                    col.isNotNull = std::string(PQgetvalue(res.get(), i, 3)) == "NO";
+                    col.isPrimaryKey = std::string(PQgetvalue(res.get(), i, 4)) == "true";
+
+                    tableColumns[tableName].push_back(col);
                 }
-
-                auto tableName = row.get<std::string>(0);
-                Column col;
-                col.name = row.get<std::string>(1);
-                col.type = row.get<std::string>(2);
-                col.isNotNull = row.get<std::string>(3) == "NO";
-                col.isPrimaryKey = row.get<std::string>(4) == "true";
-
-                tableColumns[tableName].push_back(col);
             }
         }
 
@@ -162,21 +190,25 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
         std::unordered_map<std::string, std::vector<ForeignKey>> tableForeignKeys;
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset fkRs = session->prepare << fkQuery;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, fkQuery.c_str()));
 
-            for (const auto& row : fkRs) {
-                if (!tablesLoader.isRunning()) {
-                    break;
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!tablesLoader.isRunning()) {
+                        break;
+                    }
+
+                    auto tableName = std::string(PQgetvalue(res.get(), i, 0));
+                    ForeignKey fk;
+                    fk.sourceColumn = PQgetvalue(res.get(), i, 1);
+                    fk.targetTable = PQgetvalue(res.get(), i, 2);
+                    fk.targetColumn = PQgetvalue(res.get(), i, 3);
+                    fk.name = PQgetvalue(res.get(), i, 4);
+
+                    tableForeignKeys[tableName].push_back(fk);
                 }
-
-                auto tableName = row.get<std::string>(0);
-                ForeignKey fk;
-                fk.sourceColumn = row.get<std::string>(1);
-                fk.targetTable = row.get<std::string>(2);
-                fk.targetColumn = row.get<std::string>(3);
-                fk.name = row.get<std::string>(4);
-
-                tableForeignKeys[tableName].push_back(fk);
             }
         }
 
@@ -198,7 +230,7 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
                           std::to_string(table.foreignKeys.size()) + " foreign keys");
         }
 
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting tables with columns for schema " << name << ": " << e.what()
                   << std::endl;
         lastTablesError = e.what();
@@ -266,12 +298,16 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset viewRs = session->prepare << viewNamesQuery;
-            for (const auto& row : viewRs) {
-                if (!viewsLoader.isRunning()) {
-                    return result;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, viewNamesQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!viewsLoader.isRunning()) {
+                        return result;
+                    }
+                    viewNames.emplace_back(PQgetvalue(res.get(), i, 0));
                 }
-                viewNames.push_back(row.get<std::string>(0));
             }
         }
 
@@ -304,21 +340,25 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
         std::unordered_map<std::string, std::vector<Column>> viewColumns;
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset rs = session->prepare << sqlQuery;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
 
-            for (const auto& row : rs) {
-                if (!viewsLoader.isRunning()) {
-                    break;
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!viewsLoader.isRunning()) {
+                        break;
+                    }
+
+                    auto viewName = std::string(PQgetvalue(res.get(), i, 0));
+                    Column col;
+                    col.name = PQgetvalue(res.get(), i, 1);
+                    col.type = PQgetvalue(res.get(), i, 2);
+                    col.isNotNull = std::string(PQgetvalue(res.get(), i, 3)) == "NO";
+                    col.isPrimaryKey = false; // Views don't have primary keys
+
+                    viewColumns[viewName].push_back(col);
                 }
-
-                auto viewName = row.get<std::string>(0);
-                Column col;
-                col.name = row.get<std::string>(1);
-                col.type = row.get<std::string>(2);
-                col.isNotNull = row.get<std::string>(3) == "NO";
-                col.isPrimaryKey = false; // Views don't have primary keys
-
-                viewColumns[viewName].push_back(col);
             }
         }
 
@@ -338,7 +378,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
                           std::to_string(view.columns.size()) + " columns");
         }
 
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting views with columns for schema " << name << ": " << e.what()
                   << std::endl;
         lastViewsError = e.what();
@@ -407,18 +447,22 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
 
         {
             auto session = parentDbNode->getSession();
-            const soci::rowset sequenceRs = session->prepare << sequencesQuery;
-            for (const auto& row : sequenceRs) {
-                if (!sequencesLoader.isRunning()) {
-                    return result;
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, sequencesQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!sequencesLoader.isRunning()) {
+                        return result;
+                    }
+                    result.emplace_back(PQgetvalue(res.get(), i, 0));
                 }
-                result.push_back(row.get<std::string>(0));
             }
         }
 
         Logger::debug("Found " + std::to_string(result.size()) + " sequences in schema " + name);
 
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         std::cerr << "Error getting sequences for schema " << name << ": " << e.what() << std::endl;
         lastSequencesError = e.what();
     }
@@ -472,7 +516,8 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
     }
 
     try {
-        const auto session = parentDbNode->getSession();
+        auto session = parentDbNode->getSession();
+        PGconn* conn = session.get();
 
         // Get table columns
         const std::string columnsQuery =
@@ -483,13 +528,16 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
                         name, tableName);
 
         {
-            const soci::rowset columnsRs = session->prepare << columnsQuery;
-            for (const auto& colRow : columnsRs) {
-                Column col;
-                col.name = colRow.get<std::string>(0);
-                col.type = colRow.get<std::string>(1);
-                col.isNotNull = colRow.get<std::string>(2) == "NO";
-                refreshedTable.columns.push_back(col);
+            PgResultPtr res(PQexec(conn, columnsQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    Column col;
+                    col.name = PQgetvalue(res.get(), i, 0);
+                    col.type = PQgetvalue(res.get(), i, 1);
+                    col.isNotNull = std::string(PQgetvalue(res.get(), i, 2)) == "NO";
+                    refreshedTable.columns.push_back(col);
+                }
             }
         }
 
@@ -502,10 +550,13 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
             name, tableName);
 
         {
-            const soci::rowset pkRs = session->prepare << pkQuery;
+            PgResultPtr res(PQexec(conn, pkQuery.c_str()));
             std::vector<std::string> pkColumns;
-            for (const auto& pkRow : pkRs) {
-                pkColumns.push_back(pkRow.get<std::string>(0));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    pkColumns.emplace_back(PQgetvalue(res.get(), i, 0));
+                }
             }
 
             // Mark columns as primary key
@@ -529,21 +580,24 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
                         name, tableName);
 
         {
-            const soci::rowset indexRs = session->prepare << indexQuery;
+            PgResultPtr res(PQexec(conn, indexQuery.c_str()));
             std::unordered_map<std::string, Index> indexMap;
 
-            for (const auto& idxRow : indexRs) {
-                const auto indexName = idxRow.get<std::string>(0);
-                const auto columnName = idxRow.get<std::string>(1);
-                const bool isUnique = idxRow.get<int>(2) != 0;
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    auto indexName = std::string(PQgetvalue(res.get(), i, 0));
+                    auto columnName = std::string(PQgetvalue(res.get(), i, 1));
+                    bool isUnique = std::string(PQgetvalue(res.get(), i, 2)) == "t";
 
-                if (!indexMap.contains(indexName)) {
-                    Index idx;
-                    idx.name = indexName;
-                    idx.isUnique = isUnique;
-                    indexMap[indexName] = idx;
+                    if (!indexMap.contains(indexName)) {
+                        Index idx;
+                        idx.name = indexName;
+                        idx.isUnique = isUnique;
+                        indexMap[indexName] = idx;
+                    }
+                    indexMap[indexName].columns.push_back(columnName);
                 }
-                indexMap[indexName].columns.push_back(columnName);
             }
 
             for (auto& idx : indexMap | std::views::values) {
@@ -564,18 +618,21 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
             name, tableName);
 
         {
-            const soci::rowset fkRs = session->prepare << fkQuery;
-            for (const auto& fkRow : fkRs) {
-                ForeignKey fk;
-                fk.sourceColumn = fkRow.get<std::string>(0);
-                fk.targetTable = fkRow.get<std::string>(1);
-                fk.targetColumn = fkRow.get<std::string>(2);
-                fk.name = fkRow.get<std::string>(3);
-                refreshedTable.foreignKeys.push_back(fk);
+            PgResultPtr res(PQexec(conn, fkQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    ForeignKey fk;
+                    fk.sourceColumn = PQgetvalue(res.get(), i, 0);
+                    fk.targetTable = PQgetvalue(res.get(), i, 1);
+                    fk.targetColumn = PQgetvalue(res.get(), i, 2);
+                    fk.name = PQgetvalue(res.get(), i, 3);
+                    refreshedTable.foreignKeys.push_back(fk);
+                }
             }
         }
 
-    } catch (const soci::soci_error& e) {
+    } catch (const std::exception& e) {
         Logger::error(std::format("Error refreshing table {}.{}: {}", name, tableName, e.what()));
         throw;
     }
@@ -611,12 +668,13 @@ int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::str
     return parentDbNode->getRowCount(name, tableName, whereClause);
 }
 
-QueryResult PostgresSchemaNode::executeQueryWithResult(const std::string& query, int rowLimit) {
+std::vector<QueryResult> PostgresSchemaNode::executeQueryWithResult(const std::string& query,
+                                                                    int rowLimit) {
     if (!parentDbNode) {
         QueryResult result;
         result.success = false;
         result.errorMessage = "No database connection";
-        return result;
+        return {result};
     }
     return parentDbNode->executeQueryWithResult(query, rowLimit);
 }
@@ -634,36 +692,14 @@ std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table)
     }
 
     try {
-        const auto session = parentDbNode->getSession();
-        if (!session) {
-            return {false, "Failed to get database session"};
+        DDLBuilder builder(DatabaseType::POSTGRESQL);
+        std::string sql = builder.createTable(table, name);
+
+        auto [success, error] = parentDbNode->executeQuery(sql);
+        if (!success) {
+            return {false, error};
         }
-
-        const std::string qualifiedName = name.empty() ? table.name : (name + "." + table.name);
-        soci::ddl_type ddl = session->create_table(qualifiedName);
-
-        std::vector<std::string> primaryKeyColumns;
-        for (const auto& column : table.columns) {
-            const auto ddlType = ddl_utils::inferColumnType(column.type);
-            auto& ddlRef = ddl.column(column.name, ddlType.type, ddlType.precision, ddlType.scale);
-
-            if (column.isNotNull && !column.isPrimaryKey) {
-                ddlRef("not null");
-            }
-
-            if (column.isPrimaryKey) {
-                primaryKeyColumns.push_back(column.name);
-            }
-        }
-
-        if (!primaryKeyColumns.empty()) {
-            ddl.primary_key(ddl_utils::makeConstraintName("pk_", table.name),
-                            ddl_utils::joinColumnNames(primaryKeyColumns));
-        }
-
         return {true, ""};
-    } catch (const soci::soci_error& e) {
-        return {false, std::string(e.what())};
     } catch (const std::exception& e) {
         return {false, std::string(e.what())};
     }

@@ -27,7 +27,8 @@ public:
     void checkTablesStatusAsync();
 
     // IQueryExecutor implementation
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& query,
+                                                    int rowLimit = 1000) override;
     std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
     // Key data viewing (adapted to table interface)

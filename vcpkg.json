@@ -12,10 +12,7 @@
       "default-features": false
     },
     "openssl",
-    {
-      "name": "soci",
-      "features": ["sqlite3", "postgresql", "mysql"]
-    },
+    "libmysql",
     "hiredis",
     "mongo-cxx-driver",
     "gtest",

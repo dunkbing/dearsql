@@ -5,9 +5,124 @@
 #include <filesystem>
 #include <format>
 #include <iostream>
-#include <soci/sqlite3/soci-sqlite3.h>
+#include <sqlite3.h>
 
 namespace fs = std::filesystem;
+
+namespace {
+
+    // RAII wrapper for sqlite3_stmt
+    struct StmtDeleter {
+        void operator()(sqlite3_stmt* stmt) const {
+            if (stmt)
+                sqlite3_finalize(stmt);
+        }
+    };
+    using StmtPtr = std::unique_ptr<sqlite3_stmt, StmtDeleter>;
+
+    // Return column text as string, or "NULL" if the column is null
+    std::string columnText(sqlite3_stmt* stmt, int col) {
+        if (sqlite3_column_type(stmt, col) == SQLITE_NULL) {
+            return "NULL";
+        }
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
+        return text ? std::string(text) : "NULL";
+    }
+
+    // Parse a row from the saved_connections query into a SavedConnection
+    bool parseConnectionRow(sqlite3_stmt* stmt, SavedConnection& conn) {
+        conn.id = sqlite3_column_int(stmt, 0);
+        conn.connectionInfo.name = columnText(stmt, 1);
+
+        std::string typeStr = columnText(stmt, 2);
+        if (typeStr == "sqlite") {
+            conn.connectionInfo.type = DatabaseType::SQLITE;
+        } else if (typeStr == "postgresql") {
+            conn.connectionInfo.type = DatabaseType::POSTGRESQL;
+        } else if (typeStr == "mysql") {
+            conn.connectionInfo.type = DatabaseType::MYSQL;
+        } else if (typeStr == "redis") {
+            conn.connectionInfo.type = DatabaseType::REDIS;
+        } else if (typeStr == "mongodb") {
+            conn.connectionInfo.type = DatabaseType::MONGODB;
+        } else {
+            Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
+                                     typeStr, conn.connectionInfo.name));
+            return false;
+        }
+
+        std::string hostStr = columnText(stmt, 3);
+        conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
+
+        std::string portStr = columnText(stmt, 4);
+        conn.connectionInfo.port = (portStr == "NULL" || portStr.empty()) ? 0 : std::stoi(portStr);
+
+        std::string dbStr = columnText(stmt, 5);
+        conn.connectionInfo.database = (dbStr == "NULL") ? "" : dbStr;
+
+        std::string encryptedUsername = columnText(stmt, 6);
+        if (encryptedUsername == "NULL")
+            encryptedUsername = "";
+
+        std::string encryptedPassword = columnText(stmt, 7);
+        if (encryptedPassword == "NULL")
+            encryptedPassword = "";
+
+        std::string saltStr = columnText(stmt, 9);
+        if (saltStr == "NULL")
+            saltStr = "";
+
+        try {
+            if (!saltStr.empty()) {
+                auto saltData = CryptoUtils::base64Decode(saltStr);
+                std::string salt(saltData.begin(), saltData.end());
+                std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+
+                if (!encryptedUsername.empty()) {
+                    try {
+                        conn.connectionInfo.username =
+                            CryptoUtils::decrypt(encryptedUsername, encryptionKey);
+                    } catch (...) {
+                        conn.connectionInfo.username = "";
+                    }
+                }
+
+                if (!encryptedPassword.empty()) {
+                    try {
+                        conn.connectionInfo.password =
+                            CryptoUtils::decrypt(encryptedPassword, encryptionKey);
+                    } catch (...) {
+                        conn.connectionInfo.password = "";
+                    }
+                }
+            } else {
+                conn.connectionInfo.username = encryptedUsername;
+                conn.connectionInfo.password = encryptedPassword;
+            }
+        } catch (...) {
+            conn.connectionInfo.username = "";
+            conn.connectionInfo.password = "";
+        }
+
+        std::string pathStr = columnText(stmt, 8);
+        conn.connectionInfo.path = (pathStr == "NULL") ? "" : pathStr;
+
+        conn.lastUsed = columnText(stmt, 10);
+        if (conn.lastUsed == "NULL")
+            conn.lastUsed = "";
+
+        std::string workspaceIdStr = columnText(stmt, 11);
+        conn.workspaceId =
+            (workspaceIdStr == "NULL" || workspaceIdStr.empty()) ? 1 : std::stoi(workspaceIdStr);
+
+        std::string showAllStr = columnText(stmt, 12);
+        conn.connectionInfo.showAllDatabases =
+            (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
+
+        return true;
+    }
+
+} // namespace
 
 AppState::AppState() {
     fs::path dbPath_;
@@ -28,7 +143,12 @@ AppState::AppState() {
     std::cout << dbPath << "\n";
 }
 
-AppState::~AppState() = default;
+AppState::~AppState() {
+    if (db_) {
+        sqlite3_close(db_);
+        db_ = nullptr;
+    }
+}
 
 bool AppState::initialize() {
     // Create directory if it doesn't exist
@@ -36,10 +156,13 @@ bool AppState::initialize() {
         fs::create_directories(dir);
     }
 
-    try {
-        session = std::make_unique<soci::session>(soci::sqlite3, dbPath);
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to open app state database: " << e.what() << std::endl;
+    int rc = sqlite3_open_v2(dbPath.c_str(), &db_,
+                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+                             nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to open app state database: " << sqlite3_errmsg(db_) << std::endl;
+        sqlite3_close(db_);
+        db_ = nullptr;
         return false;
     }
 
@@ -89,13 +212,19 @@ bool AppState::createTables() {
 
     auto ensureColumnExists = [this](const std::string& columnName, const std::string& alterSql) {
         try {
-            int count = 0;
-            *session
-                << "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name = :name",
-                soci::into(count), soci::use(columnName);
-
-            if (count == 0) {
-                executeSQL(alterSql);
+            const std::string checkSql =
+                "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name = ?";
+            sqlite3_stmt* raw = nullptr;
+            int rc = sqlite3_prepare_v2(db_, checkSql.c_str(), -1, &raw, nullptr);
+            if (rc != SQLITE_OK)
+                return;
+            StmtPtr stmt(raw);
+            sqlite3_bind_text(stmt.get(), 1, columnName.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+                int count = sqlite3_column_int(stmt.get(), 0);
+                if (count == 0) {
+                    executeSQL(alterSql);
+                }
             }
         } catch (const std::exception& e) {
             std::cerr << "Failed to check column existence: " << e.what() << std::endl;
@@ -117,13 +246,14 @@ bool AppState::createTables() {
 }
 
 bool AppState::executeSQL(const std::string& sql) const {
-    try {
-        *session << sql;
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "SQL error: " << e.what() << std::endl;
+    char* errmsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errmsg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "SQL error: " << (errmsg ? errmsg : "unknown") << std::endl;
+        sqlite3_free(errmsg);
         return false;
     }
+    return true;
 }
 
 int AppState::saveConnection(const SavedConnection& connection) const {
@@ -131,7 +261,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
          show_all_databases)
-        VALUES (:name, :type, :host, :port, :db, :user, :pass, :path, :salt, CURRENT_TIMESTAMP, :ws, :show);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?);
     )";
 
     // Encrypt sensitive data
@@ -146,7 +276,6 @@ int AppState::saveConnection(const SavedConnection& connection) const {
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
 
-    // Convert DatabaseType to string
     std::string typeStr;
     switch (connection.connectionInfo.type) {
     case DatabaseType::SQLITE:
@@ -170,29 +299,43 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end()));
     int showAll = connection.connectionInfo.showAllDatabases ? 1 : 0;
 
-    try {
-        *session << sql, soci::use(connection.connectionInfo.name), soci::use(typeStr),
-            soci::use(connection.connectionInfo.host), soci::use(connection.connectionInfo.port),
-            soci::use(connection.connectionInfo.database), soci::use(encryptedUsername),
-            soci::use(encryptedPassword), soci::use(connection.connectionInfo.path),
-            soci::use(saltBase64), soci::use(connection.workspaceId), soci::use(showAll);
-
-        long long id = 0;
-        *session << "select last_insert_rowid()", soci::into(id);
-        return static_cast<int>(id);
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to save connection: " << e.what() << std::endl;
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to save connection: " << sqlite3_errmsg(db_) << std::endl;
         return -1;
     }
+    StmtPtr stmt(raw);
+
+    sqlite3_bind_text(stmt.get(), 1, connection.connectionInfo.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, typeStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, connection.connectionInfo.host.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 4, connection.connectionInfo.port);
+    sqlite3_bind_text(stmt.get(), 5, connection.connectionInfo.database.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 8, connection.connectionInfo.path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
+    sqlite3_bind_int(stmt.get(), 11, showAll);
+
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to save connection: " << sqlite3_errmsg(db_) << std::endl;
+        return -1;
+    }
+
+    return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
 bool AppState::updateConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         UPDATE saved_connections
-        SET name = :name, type = :type, host = :host, port = :port, database_name = :db,
-            username = :user, password = :pass, path = :path, salt = :salt, last_used = CURRENT_TIMESTAMP,
-            workspace_id = :ws, show_all_databases = :show
-        WHERE id = :id;
+        SET name = ?, type = ?, host = ?, port = ?, database_name = ?,
+            username = ?, password = ?, path = ?, salt = ?, last_used = CURRENT_TIMESTAMP,
+            workspace_id = ?, show_all_databases = ?
+        WHERE id = ?;
     )";
 
     // Encrypt sensitive data
@@ -207,7 +350,6 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
 
-    // Convert DatabaseType to string
     std::string typeStr;
     switch (connection.connectionInfo.type) {
     case DatabaseType::SQLITE:
@@ -231,18 +373,34 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end()));
     int showAll = connection.connectionInfo.showAllDatabases ? 1 : 0;
 
-    try {
-        *session << sql, soci::use(connection.connectionInfo.name), soci::use(typeStr),
-            soci::use(connection.connectionInfo.host), soci::use(connection.connectionInfo.port),
-            soci::use(connection.connectionInfo.database), soci::use(encryptedUsername),
-            soci::use(encryptedPassword), soci::use(connection.connectionInfo.path),
-            soci::use(saltBase64), soci::use(connection.workspaceId), soci::use(showAll),
-            soci::use(connection.id);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to update connection: " << e.what() << std::endl;
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to update connection: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+
+    sqlite3_bind_text(stmt.get(), 1, connection.connectionInfo.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, typeStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, connection.connectionInfo.host.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 4, connection.connectionInfo.port);
+    sqlite3_bind_text(stmt.get(), 5, connection.connectionInfo.database.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 6, encryptedUsername.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 7, encryptedPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 8, connection.connectionInfo.path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
+    sqlite3_bind_int(stmt.get(), 11, showAll);
+    sqlite3_bind_int(stmt.get(), 12, connection.id);
+
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to update connection: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 std::vector<SavedConnection> AppState::getSavedConnections() const {
@@ -257,124 +415,24 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         ORDER BY last_used DESC;
     )";
 
-    try {
-        soci::rowset<soci::row> rs = (session->prepare << sql);
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        Logger::error(std::format("Failed to fetch connections: {}", sqlite3_errmsg(db_)));
+        return connections;
+    }
+    StmtPtr stmt(raw);
 
-        for (const auto& row : rs) {
-            SavedConnection conn;
-            conn.id = row.get<int>(0);
-            conn.connectionInfo.name = row.get<std::string>(1);
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        SavedConnection conn;
+        if (!parseConnectionRow(stmt.get(), conn))
+            continue;
 
-            // Convert type string to DatabaseType
-            std::string typeStr = row.get<std::string>(2);
-            Logger::debug(std::format("Loading connection '{}' with type string: '{}'",
-                                      conn.connectionInfo.name, typeStr));
-            if (typeStr == "sqlite") {
-                conn.connectionInfo.type = DatabaseType::SQLITE;
-            } else if (typeStr == "postgresql") {
-                conn.connectionInfo.type = DatabaseType::POSTGRESQL;
-            } else if (typeStr == "mysql") {
-                conn.connectionInfo.type = DatabaseType::MYSQL;
-            } else if (typeStr == "redis") {
-                conn.connectionInfo.type = DatabaseType::REDIS;
-            } else if (typeStr == "mongodb") {
-                conn.connectionInfo.type = DatabaseType::MONGODB;
-            } else {
-                Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
-                                         typeStr, conn.connectionInfo.name));
-                continue;
-            }
-
-            // Use convertRowValue for type-safe column access
-            std::string hostStr = convertRowValue(row, 3);
-            conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
-
-            std::string portStr = convertRowValue(row, 4);
-            conn.connectionInfo.port =
-                (portStr == "NULL" || portStr.empty()) ? 0 : std::stoi(portStr);
-
-            std::string dbStr = convertRowValue(row, 5);
-            conn.connectionInfo.database = (dbStr == "NULL") ? "" : dbStr;
-
-            // Decrypt sensitive data
-            std::string usernameStr = convertRowValue(row, 6);
-            std::string encryptedUsername = (usernameStr == "NULL") ? "" : usernameStr;
-
-            std::string passwordStr = convertRowValue(row, 7);
-            std::string encryptedPassword = (passwordStr == "NULL") ? "" : passwordStr;
-
-            std::string saltStr = convertRowValue(row, 9);
-            if (saltStr == "NULL")
-                saltStr = "";
-
-            try {
-                if (!saltStr.empty()) {
-                    auto saltData = CryptoUtils::base64Decode(saltStr);
-                    std::string salt(saltData.begin(), saltData.end());
-                    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
-
-                    // Decrypt username
-                    if (!encryptedUsername.empty()) {
-                        try {
-                            conn.connectionInfo.username =
-                                CryptoUtils::decrypt(encryptedUsername, encryptionKey);
-                        } catch (const std::exception& e) {
-                            std::cerr << "Failed to decrypt username for connection "
-                                      << conn.connectionInfo.name << ": " << e.what() << std::endl;
-                            conn.connectionInfo.username = "";
-                        }
-                    } else {
-                        conn.connectionInfo.username = "";
-                    }
-
-                    // Decrypt password
-                    if (!encryptedPassword.empty()) {
-                        try {
-                            conn.connectionInfo.password =
-                                CryptoUtils::decrypt(encryptedPassword, encryptionKey);
-                        } catch (const std::exception& e) {
-                            std::cerr << "Failed to decrypt password for connection "
-                                      << conn.connectionInfo.name << ": " << e.what() << std::endl;
-                            conn.connectionInfo.password = "";
-                        }
-                    } else {
-                        conn.connectionInfo.password = "";
-                    }
-                } else {
-                    conn.connectionInfo.username = encryptedUsername;
-                    conn.connectionInfo.password = encryptedPassword;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to process credentials for connection "
-                          << conn.connectionInfo.name << ": " << e.what() << std::endl;
-                conn.connectionInfo.username = "";
-                conn.connectionInfo.password = "";
-            }
-
-            std::string pathStr = convertRowValue(row, 8);
-            conn.connectionInfo.path = (pathStr == "NULL") ? "" : pathStr;
-
-            conn.lastUsed = convertRowValue(row, 10);
-            if (conn.lastUsed == "NULL")
-                conn.lastUsed = "";
-
-            std::string workspaceIdStr = convertRowValue(row, 11);
-            conn.workspaceId = (workspaceIdStr == "NULL" || workspaceIdStr.empty())
-                                   ? 1
-                                   : std::stoi(workspaceIdStr);
-
-            std::string showAllStr = convertRowValue(row, 12);
-            conn.connectionInfo.showAllDatabases =
-                (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
-
-            Logger::info(std::format(
-                "Loaded connection: id={}, name='{}', type={}, host='{}', port={}", conn.id,
-                conn.connectionInfo.name, static_cast<int>(conn.connectionInfo.type),
-                conn.connectionInfo.host, conn.connectionInfo.port));
-            connections.push_back(conn);
-        }
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to fetch connections: {}", e.what()));
+        Logger::info(std::format("Loaded connection: id={}, name='{}', type={}, host='{}', port={}",
+                                 conn.id, conn.connectionInfo.name,
+                                 static_cast<int>(conn.connectionInfo.type),
+                                 conn.connectionInfo.host, conn.connectionInfo.port));
+        connections.push_back(conn);
     }
 
     Logger::info(
@@ -383,53 +441,78 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
 }
 
 bool AppState::deleteConnection(const int connectionId) const {
-    const std::string sql = "DELETE FROM saved_connections WHERE id = :id";
-    try {
-        *session << sql, soci::use(connectionId);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to delete connection: " << e.what() << std::endl;
+    const std::string sql = "DELETE FROM saved_connections WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to delete connection: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, connectionId);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to delete connection: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 bool AppState::updateLastUsed(const int connectionId) const {
     const std::string sql =
-        "UPDATE saved_connections SET last_used = CURRENT_TIMESTAMP WHERE id = :id";
-    try {
-        *session << sql, soci::use(connectionId);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to update last used: " << e.what() << std::endl;
+        "UPDATE saved_connections SET last_used = CURRENT_TIMESTAMP WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to update last used: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, connectionId);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to update last used: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 bool AppState::setSetting(const std::string& key, const std::string& value) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO app_settings (key, value, updated_at)
-        VALUES (:key, :value, CURRENT_TIMESTAMP);
+        VALUES (?, ?, CURRENT_TIMESTAMP);
     )";
-    try {
-        *session << sql, soci::use(key), soci::use(value);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to save setting: " << e.what() << std::endl;
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to save setting: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_text(stmt.get(), 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, value.c_str(), -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to save setting: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 std::string AppState::getSetting(const std::string& key, const std::string& defaultValue) const {
-    const std::string sql = "SELECT value FROM app_settings WHERE key = :key";
-    std::string value;
-    soci::indicator ind;
-    try {
-        *session << sql, soci::use(key), soci::into(value, ind);
-        if (session->got_data() && ind != soci::i_null) {
-            return value;
+    const std::string sql = "SELECT value FROM app_settings WHERE key = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK)
+        return defaultValue;
+    StmtPtr stmt(raw);
+    sqlite3_bind_text(stmt.get(), 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        if (sqlite3_column_type(stmt.get(), 0) != SQLITE_NULL) {
+            const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 0));
+            if (text)
+                return std::string(text);
         }
-    } catch (const std::exception& e) {
-        // Just return default if not found or error
     }
     return defaultValue;
 }
@@ -437,18 +520,23 @@ std::string AppState::getSetting(const std::string& key, const std::string& defa
 int AppState::saveWorkspace(const Workspace& workspace) const {
     const std::string sql = R"(
         INSERT INTO workspaces (name, description, last_used)
-        VALUES (:name, :desc, CURRENT_TIMESTAMP);
+        VALUES (?, ?, CURRENT_TIMESTAMP);
     )";
-    try {
-        *session << sql, soci::use(workspace.name), soci::use(workspace.description);
-
-        long long id = 0;
-        *session << "select last_insert_rowid()", soci::into(id);
-        return static_cast<int>(id);
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to save workspace: " << e.what() << std::endl;
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to save workspace: " << sqlite3_errmsg(db_) << std::endl;
         return -1;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_text(stmt.get(), 1, workspace.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, workspace.description.c_str(), -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to save workspace: " << sqlite3_errmsg(db_) << std::endl;
+        return -1;
+    }
+    return static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
 std::vector<Workspace> AppState::getWorkspaces() const {
@@ -459,29 +547,31 @@ std::vector<Workspace> AppState::getWorkspaces() const {
         ORDER BY last_used DESC;
     )";
 
-    try {
-        soci::rowset<soci::row> rs = (session->prepare << sql);
-        for (const auto& row : rs) {
-            Workspace workspace;
-            workspace.id = row.get<int>(0);
-            workspace.name = row.get<std::string>(1);
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to fetch workspaces: " << sqlite3_errmsg(db_) << std::endl;
+        return workspaces;
+    }
+    StmtPtr stmt(raw);
 
-            workspace.description = convertRowValue(row, 2);
-            if (workspace.description == "NULL")
-                workspace.description = "";
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        Workspace workspace;
+        workspace.id = sqlite3_column_int(stmt.get(), 0);
 
-            workspace.createdAt = convertRowValue(row, 3);
-            if (workspace.createdAt == "NULL")
-                workspace.createdAt = "";
+        const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 1));
+        workspace.name = name ? std::string(name) : "";
 
-            workspace.lastUsed = convertRowValue(row, 4);
-            if (workspace.lastUsed == "NULL")
-                workspace.lastUsed = "";
+        std::string desc = columnText(stmt.get(), 2);
+        workspace.description = (desc == "NULL") ? "" : desc;
 
-            workspaces.push_back(workspace);
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to fetch workspaces: " << e.what() << std::endl;
+        std::string createdAt = columnText(stmt.get(), 3);
+        workspace.createdAt = (createdAt == "NULL") ? "" : createdAt;
+
+        std::string lastUsed = columnText(stmt.get(), 4);
+        workspace.lastUsed = (lastUsed == "NULL") ? "" : lastUsed;
+
+        workspaces.push_back(workspace);
     }
 
     return workspaces;
@@ -491,34 +581,75 @@ bool AppState::deleteWorkspace(const int workspaceId) const {
     if (workspaceId == 1)
         return false;
 
-    // Transaction? SOCI supports transactions.
-    soci::transaction tr(*session);
-    try {
-        // Move connections
-        *session << "UPDATE saved_connections SET workspace_id = 1 WHERE workspace_id = :id",
-            soci::use(workspaceId);
-
-        // Delete workspace
-        *session << "DELETE FROM workspaces WHERE id = :id", soci::use(workspaceId);
-
-        tr.commit();
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to delete workspace: " << e.what() << std::endl;
-        // Transaction rolled back automatically on destruction if not committed
+    char* errmsg = nullptr;
+    int rc = sqlite3_exec(db_, "BEGIN TRANSACTION", nullptr, nullptr, &errmsg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to begin transaction: " << (errmsg ? errmsg : "unknown") << std::endl;
+        sqlite3_free(errmsg);
         return false;
     }
+
+    // Move connections to default workspace
+    {
+        const std::string sql =
+            "UPDATE saved_connections SET workspace_id = 1 WHERE workspace_id = ?";
+        sqlite3_stmt* raw = nullptr;
+        rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            std::cerr << "Failed to delete workspace: " << sqlite3_errmsg(db_) << std::endl;
+            return false;
+        }
+        StmtPtr stmt(raw);
+        sqlite3_bind_int(stmt.get(), 1, workspaceId);
+        rc = sqlite3_step(stmt.get());
+        if (rc != SQLITE_DONE) {
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            std::cerr << "Failed to delete workspace: " << sqlite3_errmsg(db_) << std::endl;
+            return false;
+        }
+    }
+
+    // Delete workspace
+    {
+        const std::string sql = "DELETE FROM workspaces WHERE id = ?";
+        sqlite3_stmt* raw = nullptr;
+        rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            std::cerr << "Failed to delete workspace: " << sqlite3_errmsg(db_) << std::endl;
+            return false;
+        }
+        StmtPtr stmt(raw);
+        sqlite3_bind_int(stmt.get(), 1, workspaceId);
+        rc = sqlite3_step(stmt.get());
+        if (rc != SQLITE_DONE) {
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            std::cerr << "Failed to delete workspace: " << sqlite3_errmsg(db_) << std::endl;
+            return false;
+        }
+    }
+
+    sqlite3_exec(db_, "COMMIT", nullptr, nullptr, nullptr);
+    return true;
 }
 
 bool AppState::updateWorkspaceLastUsed(const int workspaceId) const {
-    const std::string sql = "UPDATE workspaces SET last_used = CURRENT_TIMESTAMP WHERE id = :id";
-    try {
-        *session << sql, soci::use(workspaceId);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to update workspace usage: " << e.what() << std::endl;
+    const std::string sql = "UPDATE workspaces SET last_used = CURRENT_TIMESTAMP WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to update workspace usage: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, workspaceId);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to update workspace usage: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int workspaceId) const {
@@ -528,138 +659,77 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
                show_all_databases
         FROM saved_connections
-        WHERE workspace_id = :id
+        WHERE workspace_id = ?
         ORDER BY last_used DESC;
     )";
 
-    try {
-        soci::rowset<soci::row> rs = (session->prepare << sql, soci::use(workspaceId));
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to fetch workspace connections: " << sqlite3_errmsg(db_) << std::endl;
+        return connections;
+    }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, workspaceId);
 
-        for (const auto& row : rs) {
-            SavedConnection conn;
-            conn.id = row.get<int>(0);
-            conn.connectionInfo.name = row.get<std::string>(1);
-
-            std::string typeStr = row.get<std::string>(2);
-            if (typeStr == "sqlite") {
-                conn.connectionInfo.type = DatabaseType::SQLITE;
-            } else if (typeStr == "postgresql") {
-                conn.connectionInfo.type = DatabaseType::POSTGRESQL;
-            } else if (typeStr == "mysql") {
-                conn.connectionInfo.type = DatabaseType::MYSQL;
-            } else if (typeStr == "redis") {
-                conn.connectionInfo.type = DatabaseType::REDIS;
-            } else if (typeStr == "mongodb") {
-                conn.connectionInfo.type = DatabaseType::MONGODB;
-            } else {
-                Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
-                                         typeStr, conn.connectionInfo.name));
-                continue;
-            }
-
-            std::string hostStr = convertRowValue(row, 3);
-            conn.connectionInfo.host = (hostStr == "NULL") ? "" : hostStr;
-
-            std::string portStr = convertRowValue(row, 4);
-            conn.connectionInfo.port =
-                (portStr == "NULL" || portStr.empty()) ? 0 : std::stoi(portStr);
-
-            std::string dbStr = convertRowValue(row, 5);
-            conn.connectionInfo.database = (dbStr == "NULL") ? "" : dbStr;
-
-            std::string usernameStr = convertRowValue(row, 6);
-            std::string encryptedUsername = (usernameStr == "NULL") ? "" : usernameStr;
-
-            std::string passwordStr = convertRowValue(row, 7);
-            std::string encryptedPassword = (passwordStr == "NULL") ? "" : passwordStr;
-
-            std::string saltStr = convertRowValue(row, 9);
-            if (saltStr == "NULL")
-                saltStr = "";
-
-            try {
-                if (!saltStr.empty()) {
-                    auto saltData = CryptoUtils::base64Decode(saltStr);
-                    std::string salt(saltData.begin(), saltData.end());
-                    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
-
-                    if (!encryptedUsername.empty()) {
-                        try {
-                            conn.connectionInfo.username =
-                                CryptoUtils::decrypt(encryptedUsername, encryptionKey);
-                        } catch (...) {
-                            conn.connectionInfo.username = "";
-                        }
-                    }
-
-                    if (!encryptedPassword.empty()) {
-                        try {
-                            conn.connectionInfo.password =
-                                CryptoUtils::decrypt(encryptedPassword, encryptionKey);
-                        } catch (...) {
-                            conn.connectionInfo.password = "";
-                        }
-                    }
-                } else {
-                    conn.connectionInfo.username = encryptedUsername;
-                    conn.connectionInfo.password = encryptedPassword;
-                }
-            } catch (...) {
-                conn.connectionInfo.username = "";
-                conn.connectionInfo.password = "";
-            }
-
-            std::string pathStr = convertRowValue(row, 8);
-            conn.connectionInfo.path = (pathStr == "NULL") ? "" : pathStr;
-
-            conn.lastUsed = convertRowValue(row, 10);
-            if (conn.lastUsed == "NULL")
-                conn.lastUsed = "";
-
-            std::string workspaceIdStr = convertRowValue(row, 11);
-            conn.workspaceId = (workspaceIdStr == "NULL" || workspaceIdStr.empty())
-                                   ? 1
-                                   : std::stoi(workspaceIdStr);
-
-            std::string showAllStr = convertRowValue(row, 12);
-            conn.connectionInfo.showAllDatabases =
-                (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
-
-            connections.push_back(conn);
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to fetch workspace connections: " << e.what() << std::endl;
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        SavedConnection conn;
+        if (!parseConnectionRow(stmt.get(), conn))
+            continue;
+        connections.push_back(conn);
     }
 
     return connections;
 }
 
 bool AppState::moveConnectionToWorkspace(const int connectionId, const int workspaceId) const {
-    const std::string sql = "UPDATE saved_connections SET workspace_id = :ws WHERE id = :id";
-    try {
-        *session << sql, soci::use(workspaceId), soci::use(connectionId);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to move connection: " << e.what() << std::endl;
+    const std::string sql = "UPDATE saved_connections SET workspace_id = ? WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to move connection: " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, workspaceId);
+    sqlite3_bind_int(stmt.get(), 2, connectionId);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to move connection: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
 }
 
 bool AppState::ensureDefaultWorkspace() const {
-    try {
-        int count = 0;
-        *session << "SELECT COUNT(*) FROM workspaces WHERE id = 1", soci::into(count);
-        if (count > 0)
-            return true;
+    // Check if default workspace exists
+    {
+        const std::string sql = "SELECT COUNT(*) FROM workspaces WHERE id = 1";
+        sqlite3_stmt* raw = nullptr;
+        int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "Failed to ensure default workspace: " << sqlite3_errmsg(db_) << std::endl;
+            return false;
+        }
+        StmtPtr stmt(raw);
+        if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+            int count = sqlite3_column_int(stmt.get(), 0);
+            if (count > 0)
+                return true;
+        }
+    }
 
-        const std::string insertSql = R"(
-            INSERT INTO workspaces (id, name, description, created_at, last_used)
-            VALUES (1, 'Default', 'Default workspace for all connections', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-        )";
-        *session << insertSql;
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to ensure default workspace: " << e.what() << std::endl;
+    const std::string insertSql = R"(
+        INSERT INTO workspaces (id, name, description, created_at, last_used)
+        VALUES (1, 'Default', 'Default workspace for all connections', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+    )";
+    char* errmsg = nullptr;
+    int rc = sqlite3_exec(db_, insertSql.c_str(), nullptr, nullptr, &errmsg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to ensure default workspace: " << (errmsg ? errmsg : "unknown")
+                  << std::endl;
+        sqlite3_free(errmsg);
         return false;
     }
+    return true;
 }

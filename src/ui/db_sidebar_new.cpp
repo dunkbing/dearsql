@@ -424,7 +424,9 @@ void DatabaseSidebarNew::render() {
                     if (!executor) {
                         errorMessage = "Database does not support query execution";
                     } else {
-                        const auto queryResult = executor->executeQueryWithResult(sql);
+                        const auto queryResults = executor->executeQueryWithResult(sql);
+                        const auto& queryResult =
+                            queryResults.empty() ? QueryResult{} : queryResults.back();
                         if (!queryResult.success) {
                             errorMessage = queryResult.errorMessage;
                         } else {

@@ -1,12 +1,13 @@
 #pragma once
 
 #include "database/async_helper.hpp"
+#include "database/connection_pool.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "database/query_executor.hpp"
 #include "postgres_schema_node.hpp"
+#include <libpq-fe.h>
 #include <memory>
-#include <soci/connection-pool.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,7 +28,7 @@ public:
     std::string name;
 
     // Connection pool (one per database)
-    std::unique_ptr<soci::connection_pool> connectionPool;
+    std::unique_ptr<ConnectionPool<PGconn*>> connectionPool;
 
     // PostgreSQL: Database → Schemas → Tables/Views/Sequences
     std::vector<std::unique_ptr<PostgresSchemaNode>> schemas;
@@ -45,11 +46,12 @@ public:
     // Methods
     void startSchemasLoadAsync(bool forceRefresh = false, bool refreshChildren = false);
     void checkSchemasStatusAsync();
-    std::unique_ptr<soci::session> getSession() const;
+    ConnectionPool<PGconn*>::Session getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
     // query execution with comprehensive result
-    QueryResult executeQueryWithResult(const std::string& query, int rowLimit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& query,
+                                                    int rowLimit = 1000) override;
     std::pair<bool, std::string> executeQuery(const std::string& query) override;
 
     // database operations (schema-aware)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TextEditor.h"
+#include "database/db.hpp"
 #include "ui/tab/tab.hpp"
 #include <atomic>
 #include <chrono>
@@ -50,10 +51,8 @@ private:
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
     TextEditor sqlEditor;
 
-    // Structured query results for table display
-    std::vector<std::string> queryColumnNames;
-    std::vector<std::vector<std::string>> queryTableData;
-    bool hasStructuredResults = false;
+    // Structured query results for table display (one per statement)
+    std::vector<QueryResult> queryResults;
     std::string queryError;
     std::chrono::milliseconds lastQueryDuration{0};
 
@@ -76,6 +75,7 @@ private:
     void renderConnectionInfo();
     void renderToolbar();
     void renderQueryResults() const;
+    void renderSingleResult(const QueryResult& r, size_t index) const;
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,

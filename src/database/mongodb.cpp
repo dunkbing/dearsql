@@ -132,14 +132,15 @@ void MongoDBDatabase::refreshConnection() {
     });
 }
 
-QueryResult MongoDBDatabase::executeQueryWithResult(const std::string& query, int rowLimit) {
+std::vector<QueryResult> MongoDBDatabase::executeQueryWithResult(const std::string& query,
+                                                                 int rowLimit) {
     QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!connect().first) {
         result.success = false;
         result.errorMessage = "Not connected to database";
-        return result;
+        return {result};
     }
 
     try {
@@ -233,7 +234,7 @@ QueryResult MongoDBDatabase::executeQueryWithResult(const std::string& query, in
         } else {
             result.success = false;
             result.errorMessage = "Unknown command or missing collection name";
-            return result;
+            return {result};
         }
 
         result.success = true;
@@ -246,7 +247,7 @@ QueryResult MongoDBDatabase::executeQueryWithResult(const std::string& query, in
     result.executionTimeMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
-    return result;
+    return {result};
 }
 
 std::pair<bool, std::string> MongoDBDatabase::executeQuery(const std::string& query) {

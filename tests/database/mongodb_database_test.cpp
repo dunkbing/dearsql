@@ -158,7 +158,9 @@ TEST_F(MongoDBDatabaseIntegrationTest, InsertAndFindDocuments) {
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{}}}})",
         collectionName);
-    auto result = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQueryWithResult(findQuery, 100);
+    ASSERT_FALSE(results.empty());
+    auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
 
     EXPECT_EQ(result.tableData.size(), 2u);
@@ -186,7 +188,9 @@ TEST_F(MongoDBDatabaseIntegrationTest, UpdateDocuments) {
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "update_test"}}}})",
         collectionName);
-    auto result = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQueryWithResult(findQuery, 100);
+    ASSERT_FALSE(results.empty());
+    auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
 
     ASSERT_EQ(result.tableData.size(), 1u);
@@ -215,7 +219,9 @@ TEST_F(MongoDBDatabaseIntegrationTest, DeleteDocuments) {
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "delete_me"}}}})",
         collectionName);
-    auto result = database->executeQueryWithResult(findQuery, 100);
+    auto results = database->executeQueryWithResult(findQuery, 100);
+    ASSERT_FALSE(results.empty());
+    auto& result = results[0];
     ASSERT_TRUE(result.success) << result.errorMessage;
     EXPECT_EQ(result.tableData.size(), 0u);
 }

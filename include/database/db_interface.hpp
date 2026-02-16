@@ -5,11 +5,6 @@
 #include "utils/logger.hpp"
 #include <future>
 #include <memory>
-#include <soci/connection-pool.h>
-#include <soci/mysql/soci-mysql.h>
-#include <soci/postgresql/soci-postgresql.h>
-#include <soci/soci.h>
-#include <soci/sqlite3/soci-sqlite3.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -239,48 +234,6 @@ protected:
     AsyncOperation<std::vector<Table>> tablesOp;
     AsyncOperation<std::vector<Table>> viewsOp;
     AsyncOperation<std::vector<std::string>> sequencesOp;
-
-    std::unique_ptr<soci::connection_pool>
-    initializeConnectionPool(const DatabaseConnectionInfo& info, size_t poolSize = 2) const {
-        if (poolSize == 0) {
-            throw std::invalid_argument("poolSize must be greater than zero");
-        }
-
-        auto pool = std::make_unique<soci::connection_pool>(poolSize);
-        auto* poolPtr = pool.get();
-        const auto type = info.type;
-        const std::string connStr = info.buildConnectionString();
-
-        std::vector<std::future<void>> connectionFutures;
-        connectionFutures.reserve(poolSize);
-
-        for (size_t i = 0; i != poolSize; ++i) {
-            connectionFutures.emplace_back(std::async(std::launch::async, [poolPtr, i, connStr,
-                                                                           type]() {
-                soci::session& session = poolPtr->at(i);
-                switch (type) {
-                case DatabaseType::POSTGRESQL:
-                    session.open(soci::postgresql, connStr);
-                    break;
-                case DatabaseType::MYSQL:
-                    session.open(soci::mysql, connStr);
-                    break;
-                case DatabaseType::SQLITE:
-                    session.open(soci::sqlite3, connStr);
-                    break;
-                default:
-                    throw std::runtime_error("initializeConnectionPool: unsupported database type");
-                }
-            }));
-        }
-
-        for (auto& future : connectionFutures) {
-            // Propagate exceptions from async connection setup.
-            future.get();
-        }
-
-        return pool;
-    }
 };
 
 // Helper functions to convert between DatabaseType enum and strings

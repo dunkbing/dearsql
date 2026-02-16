@@ -1,13 +1,15 @@
 #pragma once
 
 #include "database/async_helper.hpp"
+#include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "database/query_executor.hpp"
 #include "database/table_data_provider.hpp"
+#include <map>
 #include <memory>
-#include <soci/connection-pool.h>
+#include <mysql/mysql.h>
 #include <string>
 #include <vector>
 
@@ -28,7 +30,7 @@ public:
     std::string name;
 
     // Connection pool (one per database)
-    std::unique_ptr<soci::connection_pool> connectionPool;
+    std::unique_ptr<ConnectionPool<MYSQL*>> connectionPool;
 
     // MySQL: Database → Tables/Views (no schema layer)
     std::vector<Table> tables;
@@ -67,7 +69,8 @@ public:
     }
 
     std::pair<bool, std::string> executeQuery(const std::string& sql) override;
-    QueryResult executeQueryWithResult(const std::string& sql, int limit = 1000) override;
+    std::vector<QueryResult> executeQueryWithResult(const std::string& sql,
+                                                    int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {
@@ -128,6 +131,6 @@ public:
     std::vector<Table> getViewsForDatabaseAsync();
     Table refreshTableAsync(const std::string& tableName);
 
-    std::unique_ptr<soci::session> getSession() const;
+    ConnectionPool<MYSQL*>::Session getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 };

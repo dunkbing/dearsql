@@ -6,12 +6,10 @@
 #include <string_view>
 #include <vector>
 
-#include <soci/soci-backend.h>
-
 namespace ddl_utils {
 
     struct ColumnType {
-        soci::data_type type = soci::dt_string;
+        std::string type = "TEXT";
         int precision = 0;
         int scale = 0;
     };
@@ -61,7 +59,6 @@ namespace ddl_utils {
     inline ColumnType inferColumnType(const std::string& rawType) {
         ColumnType result;
         std::string normalized = toUpper(trim(rawType));
-        const bool isUnsigned = normalized.find("UNSIGNED") != std::string::npos;
         const auto [precision, scale] = parsePrecisionScale(normalized);
 
         auto has = [&normalized](std::string_view token) {
@@ -69,25 +66,25 @@ namespace ddl_utils {
         };
 
         if (has("TINYINT") || has("SMALLINT")) {
-            result.type = soci::dt_integer;
+            result.type = "INTEGER";
         } else if (has("BIGINT")) {
-            result.type = isUnsigned ? soci::dt_unsigned_long_long : soci::dt_long_long;
+            result.type = "BIGINT";
         } else if (has("INT") || has("INTEGER")) {
-            result.type = soci::dt_integer;
+            result.type = "INTEGER";
         } else if (has("BOOL") || has("BOOLEAN")) {
-            result.type = soci::dt_integer;
+            result.type = "INTEGER";
         } else if (has("DOUBLE") || has("FLOAT") || has("REAL")) {
-            result.type = soci::dt_double;
+            result.type = "REAL";
         } else if (has("DECIMAL") || has("NUMERIC")) {
-            result.type = soci::dt_double;
+            result.type = "REAL";
         } else if (has("DATE") || has("TIME")) {
-            result.type = soci::dt_date;
+            result.type = "TEXT";
         } else if (has("BLOB") || has("BYTEA") || has("BINARY")) {
-            result.type = soci::dt_blob;
+            result.type = "BLOB";
         } else if (has("CHAR") || has("TEXT") || has("CLOB") || has("UUID") || has("JSON")) {
-            result.type = soci::dt_string;
+            result.type = "TEXT";
         } else {
-            result.type = soci::dt_string;
+            result.type = "TEXT";
         }
 
         result.precision = precision;

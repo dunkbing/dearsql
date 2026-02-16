@@ -419,8 +419,8 @@ int MongoDBDatabaseNode::getRowCount(const std::string& collectionName, const st
     }
 }
 
-QueryResult MongoDBDatabaseNode::executeQueryWithResult(const std::string& query,
-                                                        const int rowLimit) {
+std::vector<QueryResult> MongoDBDatabaseNode::executeQueryWithResult(const std::string& query,
+                                                                     const int rowLimit) {
     // Delegate to parent for JSON command execution
     if (parentDb) {
         return parentDb->executeQueryWithResult(query, rowLimit);
@@ -429,7 +429,7 @@ QueryResult MongoDBDatabaseNode::executeQueryWithResult(const std::string& query
     QueryResult result;
     result.success = false;
     result.errorMessage = "No parent database connection";
-    return result;
+    return {result};
 }
 
 std::pair<bool, std::string> MongoDBDatabaseNode::executeQuery(const std::string& query) {

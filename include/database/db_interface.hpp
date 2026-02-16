@@ -19,6 +19,7 @@ struct DatabaseConnectionInfo {
     std::string username;
     std::string password;
     bool showAllDatabases = false;
+    std::string sslmode = "prefer"; // PostgreSQL SSL mode
 
     // Build database-specific connection string
     [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
@@ -43,6 +44,10 @@ struct DatabaseConnectionInfo {
 
             if (!password.empty()) {
                 connStr += " password=" + password;
+            }
+
+            if (!sslmode.empty()) {
+                connStr += " sslmode=" + sslmode;
             }
 
             return connStr;

@@ -61,6 +61,7 @@ private:
     char password[256] = "";
     bool showAllDatabases = false;
     int authType = AUTH_USERNAME_PASSWORD;
+    int sslModeIndex = 2; // default "prefer"
 
     // Result
     std::shared_ptr<DatabaseInterface> result = nullptr;

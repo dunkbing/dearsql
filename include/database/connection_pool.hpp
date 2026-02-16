@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -27,10 +28,12 @@ public:
 
     ~ConnectionPool() {
         {
-            std::lock_guard lock(mutex_);
+            std::unique_lock lock(mutex_);
             shutdown_ = true;
+            cv_.notify_all();
+            // Wait for all acquired sessions to return before closing handles.
+            cv_.wait(lock, [this] { return inUse_ == 0; });
         }
-        cv_.notify_all();
 
         for (auto conn : all_) {
             if (closer_) {
@@ -99,21 +102,28 @@ public:
 
         ConnHandle conn = available_.front();
         available_.pop();
+        ++inUse_;
 
         // Validate connection, replace if dead
-        if (validator_ && !validator_(conn)) {
-            if (closer_) {
-                closer_(conn);
+        try {
+            if (validator_ && !validator_(conn)) {
+                if (closer_) {
+                    closer_(conn);
+                }
+                // Remove from all_ and create a replacement
+                auto it = std::find(all_.begin(), all_.end(), conn);
+                if (it != all_.end()) {
+                    *it = factory_();
+                    conn = *it;
+                } else {
+                    conn = factory_();
+                    all_.push_back(conn);
+                }
             }
-            // Remove from all_ and create a replacement
-            auto it = std::find(all_.begin(), all_.end(), conn);
-            if (it != all_.end()) {
-                *it = factory_();
-                conn = *it;
-            } else {
-                conn = factory_();
-                all_.push_back(conn);
-            }
+        } catch (...) {
+            --inUse_;
+            cv_.notify_all();
+            throw;
         }
 
         return Session(*this, conn);
@@ -123,11 +133,14 @@ private:
     void release(ConnHandle conn) {
         {
             std::lock_guard lock(mutex_);
+            if (inUse_ > 0) {
+                --inUse_;
+            }
             if (!shutdown_) {
                 available_.push(conn);
             }
         }
-        cv_.notify_one();
+        cv_.notify_all();
     }
 
     std::mutex mutex_;
@@ -137,5 +150,6 @@ private:
     ConnFactory factory_;
     ConnCloser closer_;
     ConnValidator validator_;
+    size_t inUse_ = 0;
     bool shutdown_ = false;
 };

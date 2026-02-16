@@ -39,6 +39,9 @@ namespace {
         if (!info.password.empty()) {
             connStr += " password=" + info.password;
         }
+        if (!info.sslmode.empty()) {
+            connStr += " sslmode=" + info.sslmode;
+        }
         return connStr;
     }
 

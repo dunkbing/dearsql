@@ -273,11 +273,27 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
             renderSQLiteFields();
             break;
 
-        case DatabaseType::POSTGRESQL:
+        case DatabaseType::POSTGRESQL: {
             renderServerFields(true, "Leave empty to use the default 'postgres' database");
+
+            // SSL Mode selector
+            const auto& sslColors = Application::getInstance().getCurrentColors();
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, sslColors.overlay1);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, sslColors.mantle);
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, sslColors.surface0);
+            static const char* sslModes[] = {"disable", "allow",     "prefer",
+                                             "require", "verify-ca", "verify-full"};
+            ImGui::SetNextItemWidth(150);
+            ImGui::Combo("SSL Mode", &sslModeIndex, sslModes, IM_ARRAYSIZE(sslModes));
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar();
+            ImGui::Spacing();
+
             renderAuthFields(false);
             renderShowAllDatabasesCheckbox();
             break;
+        }
 
         case DatabaseType::MYSQL:
             renderServerFields(true, nullptr);
@@ -399,6 +415,7 @@ void DatabaseConnectionDialog::reset() {
     isConnecting = false;
     errorMessage.clear();
     authType = AUTH_USERNAME_PASSWORD;
+    sslModeIndex = 2; // "prefer"
     editingDatabase = nullptr;
     editingConnectionId = -1;
     sqlitePath[0] = '\0';
@@ -441,6 +458,16 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? AUTH_NONE : AUTH_USERNAME_PASSWORD;
+        // Map sslmode string to index
+        static const char* sslModes[] = {"disable", "allow",     "prefer",
+                                         "require", "verify-ca", "verify-full"};
+        sslModeIndex = 2; // default "prefer"
+        for (int i = 0; i < 6; ++i) {
+            if (connInfo.sslmode == sslModes[i]) {
+                sslModeIndex = i;
+                break;
+            }
+        }
     } else if (type == DatabaseType::MYSQL) {
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
         const auto& connInfo = mysqlDb->getConnectionInfo();
@@ -512,21 +539,31 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSqlDatabase(
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase() {
-    return createSqlDatabase("postgres", [](const std::string& name, const std::string& hostValue,
-                                            int portValue, const std::string& databaseValue,
-                                            const std::string& usernameValue,
-                                            const std::string& passwordValue, bool showAll) {
-        DatabaseConnectionInfo info;
-        info.type = DatabaseType::POSTGRESQL;
-        info.name = name;
-        info.host = hostValue;
-        info.port = portValue;
-        info.database = databaseValue;
-        info.username = usernameValue;
-        info.password = passwordValue;
-        info.showAllDatabases = showAll;
-        return std::make_shared<PostgresDatabase>(info);
-    });
+    if (strlen(connectionName) == 0) {
+        return nullptr;
+    }
+
+    static const char* sslModes[] = {"disable", "allow",     "prefer",
+                                     "require", "verify-ca", "verify-full"};
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::POSTGRESQL;
+    info.name = std::string(connectionName);
+    info.host = std::string(host);
+    info.port = port;
+    info.database = strlen(database) > 0 ? std::string(database) : "postgres";
+    info.showAllDatabases = showAllDatabases;
+    info.sslmode = sslModes[sslModeIndex];
+
+    if (authType == AUTH_USERNAME_PASSWORD) {
+        if (strlen(username) == 0) {
+            return nullptr;
+        }
+        info.username = std::string(username);
+        info.password = std::string(password);
+    }
+
+    return std::make_shared<PostgresDatabase>(info);
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase() {
@@ -616,6 +653,11 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         updatedInfo.username = std::string(username);
         updatedInfo.password = std::string(password);
         updatedInfo.showAllDatabases = showAllDatabases;
+        if (selectedDatabaseType == DatabaseType::POSTGRESQL) {
+            static const char* sslModes[] = {"disable", "allow",     "prefer",
+                                             "require", "verify-ca", "verify-full"};
+            updatedInfo.sslmode = sslModes[sslModeIndex];
+        }
 
         // Update the database object with new connection info
         auto const type = editingDatabase->getConnectionInfo().type;

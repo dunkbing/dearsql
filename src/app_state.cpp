@@ -119,6 +119,10 @@ namespace {
         conn.connectionInfo.showAllDatabases =
             (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
+        std::string sslmodeStr = columnText(stmt, 13);
+        conn.connectionInfo.sslmode =
+            (sslmodeStr == "NULL" || sslmodeStr.empty()) ? "prefer" : sslmodeStr;
+
         return true;
     }
 
@@ -236,6 +240,8 @@ bool AppState::createTables() {
     ensureColumnExists(
         "show_all_databases",
         "ALTER TABLE saved_connections ADD COLUMN show_all_databases INTEGER DEFAULT 0;");
+    ensureColumnExists("sslmode",
+                       "ALTER TABLE saved_connections ADD COLUMN sslmode TEXT DEFAULT 'prefer';");
 
     // Ensure default workspace exists
     if (success) {
@@ -260,8 +266,8 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
-         show_all_databases)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?);
+         show_all_databases, sslmode)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?);
     )";
 
     // Encrypt sensitive data
@@ -319,6 +325,8 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
     sqlite3_bind_int(stmt.get(), 11, showAll);
+    sqlite3_bind_text(stmt.get(), 12, connection.connectionInfo.sslmode.c_str(), -1,
+                      SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -334,7 +342,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         UPDATE saved_connections
         SET name = ?, type = ?, host = ?, port = ?, database_name = ?,
             username = ?, password = ?, path = ?, salt = ?, last_used = CURRENT_TIMESTAMP,
-            workspace_id = ?, show_all_databases = ?
+            workspace_id = ?, show_all_databases = ?, sslmode = ?
         WHERE id = ?;
     )";
 
@@ -393,7 +401,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
     sqlite3_bind_int(stmt.get(), 11, showAll);
-    sqlite3_bind_int(stmt.get(), 12, connection.id);
+    sqlite3_bind_text(stmt.get(), 12, connection.connectionInfo.sslmode.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 13, connection.id);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -410,7 +420,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
     const std::string sql = R"(
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used,
                COALESCE(workspace_id, 1) as workspace_id,
-               COALESCE(show_all_databases, 0) as show_all_databases
+               COALESCE(show_all_databases, 0) as show_all_databases,
+               COALESCE(sslmode, 'prefer') as sslmode
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -657,7 +668,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
 
     const std::string sql = R"(
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
-               show_all_databases
+               show_all_databases,
+               COALESCE(sslmode, 'prefer') as sslmode
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;

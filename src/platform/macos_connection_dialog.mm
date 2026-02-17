@@ -166,6 +166,13 @@ static NSWindow* sActiveConnectionDialog = nil;
         [self.dialogWindow setFrameOrigin:NSMakePoint(x, y)];
     }
 
+    // Match app theme
+    if (self.app) {
+        NSAppearanceName appearanceName =
+            self.app->isDarkTheme() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+        self.dialogWindow.appearance = [NSAppearance appearanceNamed:appearanceName];
+    }
+
     [self.dialogWindow makeKeyAndOrderFront:nil];
 }
 

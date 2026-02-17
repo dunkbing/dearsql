@@ -658,7 +658,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                         ImGui::PopStyleColor();
                     } else {
                         for (auto& mv : schemaData->materializedViews) {
-                            renderViewNode(mv, schemaData);
+                            renderViewNode(mv, schemaData, true);
                         }
                     }
                 }
@@ -1148,7 +1148,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     }
 }
 
-void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaData) {
+void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaData,
+                                       bool isMaterializedView) {
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -1181,6 +1182,36 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
         }
         if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show view structure in a tab
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(DELETE_LABEL)) {
+            const std::string viewName = view.name;
+            const std::string schemaName = schemaData->name;
+            const std::string typeLabel = isMaterializedView ? "Materialized View" : "View";
+            const std::string dropKeyword = isMaterializedView ? "MATERIALIZED VIEW" : "VIEW";
+            ConfirmDialog::instance().show(
+                std::format("Delete {}", typeLabel),
+                std::format("You are about to delete the {}: {}.{}", typeLabel, schemaName,
+                            viewName),
+                {std::format("Permanently delete the {}", typeLabel),
+                 "Any dependent objects may break", "This operation is IRREVERSIBLE"},
+                "Delete", [schemaData, schemaName, viewName, dropKeyword, isMaterializedView]() {
+                    const std::string sql =
+                        std::format(R"(DROP {} "{}"."{}")", dropKeyword, schemaName, viewName);
+                    Logger::info("Executing: " + sql);
+                    auto r = schemaData->executeQuery(sql);
+                    auto success = !r.empty() && r[0].success;
+                    auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
+                    if (success) {
+                        if (isMaterializedView) {
+                            schemaData->startMaterializedViewsLoadAsync(true);
+                        } else {
+                            schemaData->startViewsLoadAsync(true);
+                        }
+                    } else {
+                        ConfirmDialog::instance().setError(error);
+                    }
+                });
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

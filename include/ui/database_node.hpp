@@ -51,7 +51,8 @@ private:
 
     // Table/view rendering (shared across database types)
     void renderTableNode(Table& table, PostgresSchemaNode* schemaNode);
-    void renderViewNode(Table& view, PostgresSchemaNode* schemaNode);
+    void renderViewNode(Table& view, PostgresSchemaNode* schemaNode,
+                        bool isMaterializedView = false);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);

@@ -473,6 +473,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaData->startTablesLoadAsync(true);
             schemaData->startViewsLoadAsync(true);
+            schemaData->startMaterializedViewsLoadAsync(true);
             schemaData->startSequencesLoadAsync(true);
         }
         ImGui::Separator();
@@ -610,6 +611,54 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     } else {
                         for (auto& view : schemaData->views) {
                             renderViewNode(view, schemaData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // Render Materialized Views section
+        {
+            const std::string matViewsNodeId =
+                std::format("matviews_{}_{:p}", schemaData->name,
+                            static_cast<void*>(&schemaData->materializedViews));
+            const bool matViewsOpen =
+                renderTreeNodeWithIcon("Materialized Views", matViewsNodeId, ICON_FK_EYE,
+                                       ImGui::GetColorU32(colors.lavender));
+
+            // Context menu for Materialized Views node
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
+                    schemaData->startMaterializedViewsLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (matViewsOpen) {
+                if (!schemaData->materializedViewsLoaded &&
+                    !schemaData->materializedViewsLoader.isRunning()) {
+                    schemaData->startMaterializedViewsLoadAsync();
+                }
+
+                if (schemaData->materializedViewsLoader.isRunning()) {
+                    schemaData->checkMaterializedViewsStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading materialized views...");
+                    ImGui::SameLine();
+                    UIUtils::Spinner("##loading_matviews", 6.0f, 2,
+                                     ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (schemaData->materializedViewsLoaded) {
+                    if (schemaData->materializedViews.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No materialized views");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& mv : schemaData->materializedViews) {
+                            renderViewNode(mv, schemaData);
                         }
                     }
                 }

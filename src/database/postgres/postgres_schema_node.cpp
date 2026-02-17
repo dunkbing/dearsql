@@ -386,6 +386,151 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
     return result;
 }
 
+void PostgresSchemaNode::checkMaterializedViewsStatusAsync() {
+    materializedViewsLoader.check([this](const std::vector<Table>& result) {
+        materializedViews = result;
+        Logger::info(std::format(
+            "Async materialized view loading completed for schema {}. Found {} materialized views",
+            name, materializedViews.size()));
+        materializedViewsLoaded = true;
+    });
+}
+
+void PostgresSchemaNode::startMaterializedViewsLoadAsync(bool forceRefresh) {
+    Logger::debug("startMaterializedViewsLoadAsync for schema: " + name +
+                  (forceRefresh ? " (force refresh)" : ""));
+    if (!parentDbNode) {
+        return;
+    }
+
+    if (materializedViewsLoader.isRunning()) {
+        return;
+    }
+
+    if (forceRefresh) {
+        materializedViews.clear();
+        materializedViewsLoaded = false;
+        lastMaterializedViewsError.clear();
+    }
+
+    if (!forceRefresh && materializedViewsLoaded) {
+        return;
+    }
+
+    materializedViews.clear();
+    materializedViewsLoader.start([this]() { return getMaterializedViewsWithColumnsAsync(); });
+}
+
+std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
+    std::vector<Table> result;
+
+    if (!materializedViewsLoader.isRunning()) {
+        return result;
+    }
+
+    try {
+        if (!parentDbNode) {
+            return result;
+        }
+
+        std::vector<std::string> matviewNames;
+        const std::string matviewNamesQuery = std::format(
+            "SELECT matviewname FROM pg_matviews WHERE schemaname = '{}' ORDER BY matviewname",
+            name);
+
+        {
+            auto session = parentDbNode->getSession();
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, matviewNamesQuery.c_str()));
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!materializedViewsLoader.isRunning()) {
+                        return result;
+                    }
+                    matviewNames.emplace_back(PQgetvalue(res.get(), i, 0));
+                }
+            }
+        }
+
+        Logger::debug("Found " + std::to_string(matviewNames.size()) +
+                      " materialized views in schema " + name);
+
+        if (matviewNames.empty() || !materializedViewsLoader.isRunning()) {
+            return result;
+        }
+
+        // Get columns for materialized views using pg_attribute (information_schema doesn't include
+        // them)
+        std::string sqlQuery = "SELECT c.relname AS table_name, a.attname AS column_name, "
+                               "pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type, "
+                               "a.attnotnull AS is_not_null "
+                               "FROM pg_catalog.pg_attribute a "
+                               "JOIN pg_catalog.pg_class c ON a.attrelid = c.oid "
+                               "JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
+                               "WHERE n.nspname = '" +
+                               name +
+                               "' AND c.relkind = 'm' "
+                               "AND a.attnum > 0 AND NOT a.attisdropped "
+                               "AND c.relname IN (";
+
+        for (size_t i = 0; i < matviewNames.size(); ++i) {
+            sqlQuery += "'" + matviewNames[i] + "'";
+            if (i < matviewNames.size() - 1) {
+                sqlQuery += ", ";
+            }
+        }
+        sqlQuery += ") ORDER BY c.relname, a.attnum";
+
+        std::unordered_map<std::string, std::vector<Column>> matviewColumns;
+        {
+            auto session = parentDbNode->getSession();
+            PGconn* conn = session.get();
+            PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
+
+            if (res && PQresultStatus(res.get()) == PGRES_TUPLES_OK) {
+                int nRows = PQntuples(res.get());
+                for (int i = 0; i < nRows; i++) {
+                    if (!materializedViewsLoader.isRunning()) {
+                        break;
+                    }
+
+                    auto mvName = std::string(PQgetvalue(res.get(), i, 0));
+                    Column col;
+                    col.name = PQgetvalue(res.get(), i, 1);
+                    col.type = PQgetvalue(res.get(), i, 2);
+                    col.isNotNull = std::string(PQgetvalue(res.get(), i, 3)) == "t";
+                    col.isPrimaryKey = false;
+
+                    matviewColumns[mvName].push_back(col);
+                }
+            }
+        }
+
+        for (const auto& mvName : matviewNames) {
+            if (!materializedViewsLoader.isRunning()) {
+                break;
+            }
+
+            Table mv;
+            mv.name = mvName;
+            mv.fullName = parentDbNode->name + "." + name + "." + mvName;
+            mv.columns = matviewColumns[mvName];
+
+            result.push_back(mv);
+            Logger::debug("Loaded materialized view: " + mvName + " with " +
+                          std::to_string(mv.columns.size()) + " columns");
+        }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error getting materialized views for schema " << name << ": " << e.what()
+                  << std::endl;
+        lastMaterializedViewsError = e.what();
+    }
+
+    return result;
+}
+
 void PostgresSchemaNode::checkSequencesStatusAsync() {
     sequencesLoader.check([this](const std::vector<std::string>& result) {
         sequences = result;
@@ -708,5 +853,6 @@ std::string PostgresSchemaNode::getFullPath() const {
 void PostgresSchemaNode::checkLoadingStatus() {
     checkTablesStatusAsync();
     checkViewsStatusAsync();
+    checkMaterializedViewsStatusAsync();
     checkSequencesStatusAsync();
 }

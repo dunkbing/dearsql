@@ -22,25 +22,29 @@ public:
     PostgresDatabaseNode* parentDbNode = nullptr;
     std::string name;
 
-    // Schema contents (only tables, views, sequences for now)
+    // Schema contents
     std::vector<Table> tables;
     std::vector<Table> views;
+    std::vector<Table> materializedViews;
     std::vector<std::string> sequences;
 
     // Loading state flags
     bool tablesLoaded = false;
     bool viewsLoaded = false;
+    bool materializedViewsLoaded = false;
     bool sequencesLoaded = false;
 
     // Async operations
     AsyncOperation<std::vector<Table>> tablesLoader;
     AsyncOperation<std::vector<Table>> viewsLoader;
+    AsyncOperation<std::vector<Table>> materializedViewsLoader;
     AsyncOperation<std::vector<std::string>> sequencesLoader;
     std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
     // Error tracking
     std::string lastTablesError;
     std::string lastViewsError;
+    std::string lastMaterializedViewsError;
     std::string lastSequencesError;
 
     // ========== IDatabaseNode Implementation ==========
@@ -96,8 +100,6 @@ public:
         return viewsLoader.isRunning();
     }
 
-    void startTablesLoadAsync(bool force = false) override;
-    void startViewsLoadAsync(bool force = false) override;
     void checkLoadingStatus() override;
 
     [[nodiscard]] const std::string& getLastTablesError() const override {
@@ -111,13 +113,17 @@ public:
     [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
     void checkTableRefreshStatusAsync(const std::string& tableName) override;
 
-    // ========== Internal Methods ==========
-
+    void startTablesLoadAsync(bool force = false) override;
     void checkTablesStatusAsync();
     std::vector<Table> getTablesAsync();
 
+    void startViewsLoadAsync(bool force = false) override;
     void checkViewsStatusAsync();
     std::vector<Table> getViewsWithColumnsAsync();
+
+    void startMaterializedViewsLoadAsync(bool forceRefresh = false);
+    void checkMaterializedViewsStatusAsync();
+    std::vector<Table> getMaterializedViewsWithColumnsAsync();
 
     void startSequencesLoadAsync(bool forceRefresh = false);
     void checkSequencesStatusAsync();

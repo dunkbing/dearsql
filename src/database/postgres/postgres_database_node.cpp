@@ -318,10 +318,14 @@ std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string&
     std::vector<std::string> result;
 
     try {
-        const std::string query = std::format(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema = '{}' AND "
-            "table_name = '{}' ORDER BY ordinal_position",
-            schemaName, tableName);
+        const std::string query =
+            std::format("SELECT a.attname FROM pg_catalog.pg_attribute a "
+                        "JOIN pg_catalog.pg_class c ON a.attrelid = c.oid "
+                        "JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
+                        "WHERE n.nspname = '{}' AND c.relname = '{}' "
+                        "AND a.attnum > 0 AND NOT a.attisdropped "
+                        "ORDER BY a.attnum",
+                        schemaName, tableName);
 
         auto session = getSession();
         PGconn* conn = session.get();
@@ -366,14 +370,9 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     for (auto& schema : schemas) {
         if (schema) {
             Logger::debug(std::format("Refreshing schema: {}", schema->name));
-
-            // trigger refresh for tables
             schema->startTablesLoadAsync(true);
-
-            // trigger refresh for views
             schema->startViewsLoadAsync(true);
-
-            // trigger refresh for sequences
+            schema->startMaterializedViewsLoadAsync(true);
             schema->startSequencesLoadAsync(true);
         }
     }

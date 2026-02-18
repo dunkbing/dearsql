@@ -17,3 +17,6 @@
 [submodule "external/ImGuiPack"]
 	path = external/ImGuiPack
 	url = https://github.com/dunkbing/ImGuiPack
+[submodule "website"]
+	path = website
+	url = https://github.com/dunkbing/dearsql-website

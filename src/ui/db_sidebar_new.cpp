@@ -211,6 +211,60 @@ void DatabaseSidebarNew::renderHistory() {
     ImGui::PopStyleVar(2);
 }
 
+float DatabaseSidebarNew::getHistoryButtonHeight() const {
+    constexpr float historyButtonPadding = 6.0f;
+    const ImVec2 historyLabelSize = ImGui::CalcTextSize("History");
+    return historyLabelSize.x + historyButtonPadding * 2.0f;
+}
+
+void DatabaseSidebarNew::renderHistoryToggleButton(const ImVec2& btnMin, float buttonW,
+                                                   float buttonH, bool drawRightBorder) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImVec2 btnMax(btnMin.x + buttonW, btnMin.y + buttonH);
+
+    ImGui::SetCursorScreenPos(btnMin);
+    ImGui::InvisibleButton("##toggleHistory", ImVec2(buttonW, buttonH));
+    const bool hovered = ImGui::IsItemHovered();
+    if (ImGui::IsItemClicked()) {
+        historyPanelOpen = !historyPanelOpen;
+    }
+
+    if (hovered) {
+        drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+    }
+
+    drawList->AddLine(btnMin, ImVec2(btnMax.x, btnMin.y), ImGui::GetColorU32(colors.overlay0),
+                      1.0f);
+    if (drawRightBorder) {
+        drawList->AddLine(ImVec2(btnMax.x, btnMin.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+                          1.0f);
+    }
+
+    const char* label = "History";
+    const ImVec2 textSize = ImGui::CalcTextSize(label);
+    const float cx = btnMin.x + buttonW * 0.5f;
+    const float cy = btnMin.y + buttonH * 0.5f;
+    const float textX = cx - textSize.x * 0.5f;
+    const float textY = cy - textSize.y * 0.5f;
+
+    drawList->PushClipRectFullScreen();
+    const int vtxBegin = drawList->VtxBuffer.Size;
+    drawList->AddText(ImVec2(textX, textY),
+                      ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label);
+    const int vtxEnd = drawList->VtxBuffer.Size;
+
+    for (int i = vtxBegin; i < vtxEnd; i++) {
+        ImDrawVert& v = drawList->VtxBuffer[i];
+        const float dx = v.pos.x - cx;
+        const float dy = v.pos.y - cy;
+        v.pos.x = cx + dy;
+        v.pos.y = cy - dx;
+    }
+    drawList->PopClipRect();
+}
+
 void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -278,56 +332,123 @@ void DatabaseSidebarNew::render() {
 
     // Calculate available height for the sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
+    const float sidebarWidth = ImGui::GetContentRegionAvail().x;
     constexpr float historyHeight = 300.0f;
+    constexpr float stripWidth = 22.0f;
+    const float historyButtonH = getHistoryButtonHeight();
+
+    // Structure section height depends on whether history is open
+    const float structureSectionHeight =
+        historyPanelOpen ? availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y
+                         : availableHeight - historyButtonH;
 
     // Structure section (top) - scrollbar visible only on hover
-    const float structureSectionHeight =
-        availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y;
-    const bool structureHovered = ImGui::IsMouseHoveringRect(
-        ImGui::GetCursorScreenPos(),
-        ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x,
-               ImGui::GetCursorScreenPos().y + structureSectionHeight));
-    ImGuiWindowFlags structureFlags = structureHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
-    ImGui::BeginChild("StructureSection", ImVec2(0, structureSectionHeight), false, structureFlags);
-    renderStructure();
-    ImGui::EndChild();
-
-    ImGui::PushStyleColor(ImGuiCol_Separator,
-                          ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.3f));
-    ImGui::Separator();
-    ImGui::PopStyleColor();
-
-    auto& history = QueryHistory::instance();
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-    ImGui::TextUnformatted("HISTORY");
-    ImGui::PopStyleColor();
-
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
-    if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
-        history.clear();
+    {
+        const bool structureHovered = ImGui::IsMouseHoveringRect(
+            ImGui::GetCursorScreenPos(),
+            ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x,
+                   ImGui::GetCursorScreenPos().y + structureSectionHeight));
+        ImGuiWindowFlags structureFlags = structureHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
+        ImGui::BeginChild("StructureSection", ImVec2(0, structureSectionHeight), false,
+                          structureFlags);
+        renderStructure();
+        ImGui::EndChild();
     }
-    ImGui::PopStyleVar();
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Clear history");
-    }
-    ImGui::PopStyleColor(3);
-    ImGui::Spacing();
 
-    // History list section (scrollable) - scrollbar visible only on hover
-    const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
-    const bool historyHovered = ImGui::IsMouseHoveringRect(
-        historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
-                                 historyCursorPos.y + ImGui::GetContentRegionAvail().y));
-    ImGuiWindowFlags historyFlags = historyHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
-    ImGui::BeginChild("HistorySection", ImVec2(0, 0), false, historyFlags);
-    renderHistory();
-    ImGui::EndChild();
+    // Bottom area: strip on the left + history content on the right (when open)
+    if (historyPanelOpen) {
+        const float bottomHeight = ImGui::GetContentRegionAvail().y;
+
+        // Vertical toggle strip on the left
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        if (ImGui::BeginChild("HistoryToggleStrip", ImVec2(stripWidth, bottomHeight),
+                              ImGuiChildFlags_None)) {
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            const ImVec2 stripPos = ImGui::GetCursorScreenPos();
+
+            // Draw right border
+            drawList->AddLine(ImVec2(stripPos.x + stripWidth, stripPos.y),
+                              ImVec2(stripPos.x + stripWidth, stripPos.y + bottomHeight),
+                              ImGui::GetColorU32(colors.overlay0), 1.0f);
+            // Draw top border
+            drawList->AddLine(stripPos, ImVec2(stripPos.x + stripWidth, stripPos.y),
+                              ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+            // Rotated "History" button at the bottom of the strip
+            const float buttonW = stripWidth;
+            const float buttonH = historyButtonH;
+            const float buttonY = stripPos.y + bottomHeight - buttonH;
+            const ImVec2 btnMin(stripPos.x, buttonY);
+            renderHistoryToggleButton(btnMin, buttonW, buttonH, false);
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        // History content to the right of the strip
+        ImGui::SameLine(0, 0);
+
+        const float contentWidth = sidebarWidth - stripWidth;
+        ImGui::BeginChild("HistoryContent", ImVec2(contentWidth, bottomHeight), false,
+                          ImGuiWindowFlags_NoScrollbar);
+        {
+            ImDrawList* historyDrawList = ImGui::GetWindowDrawList();
+            const ImVec2 historyPanelPos = ImGui::GetWindowPos();
+            const ImVec2 historyPanelSize = ImGui::GetWindowSize();
+            historyDrawList->AddLine(
+                historyPanelPos, ImVec2(historyPanelPos.x + historyPanelSize.x, historyPanelPos.y),
+                ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+            auto& history = QueryHistory::instance();
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::TextUnformatted("HISTORY");
+            ImGui::PopStyleColor();
+
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(
+                ImGuiCol_ButtonHovered,
+                ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+            if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
+                history.clear();
+            }
+            ImGui::PopStyleVar();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Clear history");
+            }
+            ImGui::PopStyleColor(3);
+            ImGui::Spacing();
+
+            // Scrollable history list
+            const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
+            const bool historyHovered = ImGui::IsMouseHoveringRect(
+                historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
+                                         historyCursorPos.y + ImGui::GetContentRegionAvail().y));
+            ImGuiWindowFlags historyFlags = historyHovered ? 0 : ImGuiWindowFlags_NoScrollbar;
+            ImGui::BeginChild("HistoryList", ImVec2(0, 0), false, historyFlags);
+            renderHistory();
+            ImGui::EndChild();
+        }
+        ImGui::EndChild();
+    } else {
+        // When closed, draw the toggle button using absolute positioning at the bottom-left
+        // via the parent window's draw list (no child window needed)
+        const ImVec2 windowPos = ImGui::GetWindowPos();
+        const ImVec2 contentMin(windowPos.x + ImGui::GetWindowContentRegionMin().x,
+                                windowPos.y + ImGui::GetWindowContentRegionMin().y);
+        const ImVec2 contentMax(windowPos.x + ImGui::GetWindowContentRegionMax().x,
+                                windowPos.y + ImGui::GetWindowContentRegionMax().y);
+
+        const float buttonW = stripWidth;
+        const float buttonH = historyButtonH;
+
+        const ImVec2 btnMin(contentMin.x, contentMax.y - buttonH);
+        renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
+    }
 
     // Handle delete confirmation dialog
     if (shouldShowDeleteConfirmation && databasePendingDeletion) {

@@ -2,6 +2,7 @@
 
 #include "database/db_interface.hpp"
 #include "database_node.hpp"
+#include "imgui.h"
 #include "ui/db_connection_dialog.hpp"
 #include <memory>
 #include <unordered_map>
@@ -27,6 +28,9 @@ private:
     void renderStructure();
     void renderHistory();
     void renderEmpty();
+    float getHistoryButtonHeight() const;
+    void renderHistoryToggleButton(const ImVec2& btnMin, float buttonW, float buttonH,
+                                   bool drawRightBorder);
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
 
@@ -42,6 +46,8 @@ private:
     // Create database dialog
     bool shouldShowCreateDatabaseDialog = false;
     std::shared_ptr<DatabaseInterface> createDatabaseTarget;
+
+    bool historyPanelOpen = true;
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer for fast lookup)
     std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;

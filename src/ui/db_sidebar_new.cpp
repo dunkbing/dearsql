@@ -545,43 +545,28 @@ void DatabaseSidebarNew::render() {
                 if (strlen(dbName) == 0) {
                     errorMessage = "Database name cannot be empty";
                 } else {
-                    std::string sql;
-                    if (dbType == DatabaseType::POSTGRESQL) {
-                        sql = std::format(R"(CREATE DATABASE "{}")", dbName);
-                    } else if (dbType == DatabaseType::MYSQL) {
-                        sql = std::format("CREATE DATABASE `{}`", dbName);
-                        if (strlen(dbComment) > 0) {
-                            sql += std::format(" COMMENT '{}'", dbComment);
-                        }
-                    }
-
-                    auto executor = std::dynamic_pointer_cast<IQueryExecutor>(db);
-                    if (!executor) {
-                        errorMessage = "Database does not support query execution";
+                    const std::string comment = dbType == DatabaseType::MYSQL ? dbComment : "";
+                    auto [success, createError] = db->createDatabase(dbName, comment);
+                    if (!success) {
+                        errorMessage =
+                            createError.empty() ? "Failed to create database" : createError;
                     } else {
-                        const auto queryResults = executor->executeQuery(sql);
-                        const auto& queryResult =
-                            queryResults.empty() ? QueryResult{} : queryResults.back();
-                        if (!queryResult.success) {
-                            errorMessage = queryResult.errorMessage;
-                        } else {
-                            Logger::info(std::format("Database '{}' created successfully", dbName));
-                            memset(dbName, 0, sizeof(dbName));
-                            memset(dbComment, 0, sizeof(dbComment));
-                            errorMessage.clear();
-                            ImGui::CloseCurrentPopup();
+                        Logger::info(std::format("Database '{}' created successfully", dbName));
+                        memset(dbName, 0, sizeof(dbName));
+                        memset(dbComment, 0, sizeof(dbComment));
+                        errorMessage.clear();
+                        ImGui::CloseCurrentPopup();
 
-                            if (dbType == DatabaseType::POSTGRESQL) {
-                                if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                                    pgDb->refreshDatabaseNames();
-                                }
-                            } else if (dbType == DatabaseType::MYSQL) {
-                                if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                                    mysqlDb->refreshDatabaseNames();
-                                }
+                        if (dbType == DatabaseType::POSTGRESQL) {
+                            if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+                                pgDb->refreshDatabaseNames();
                             }
-                            createDatabaseTarget.reset();
+                        } else if (dbType == DatabaseType::MYSQL) {
+                            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+                                mysqlDb->refreshDatabaseNames();
+                            }
                         }
+                        createDatabaseTarget.reset();
                     }
                 }
             }

@@ -137,3 +137,36 @@ TEST_F(MySQLDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows) {
     EXPECT_EQ(result.tableData[1][0], "epsilon");
     EXPECT_EQ(result.tableData[2][0], "zeta");
 }
+
+TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMysqlDatabase) {
+    ASSERT_NE(database, nullptr);
+
+    const std::string tempDb = TestHelpers::makeUniqueIdentifier("dearsql_mysql_drop_active_");
+
+    auto [created, createErr] = database->createDatabase(tempDb);
+    if (!created) {
+        const std::string& err = createErr;
+        if (err.find("Access denied") != std::string::npos ||
+            err.find("denied") != std::string::npos) {
+            GTEST_SKIP() << "Skipping: CREATE DATABASE privilege is required for this test. Error: "
+                         << err;
+        }
+    }
+    ASSERT_TRUE(created) << createErr;
+
+    DatabaseConnectionInfo tempConnInfo = database->getConnectionInfo();
+    tempConnInfo.database = tempDb;
+    auto activeDb = std::make_shared<MySQLDatabase>(tempConnInfo);
+
+    const auto [connected, connectErr] = activeDb->connect();
+    ASSERT_TRUE(connected) << connectErr;
+
+    const auto [dropped, dropErr] = activeDb->dropDatabase(tempDb);
+    ASSERT_TRUE(dropped) << dropErr;
+    EXPECT_EQ(activeDb->getConnectionInfo().database, "mysql");
+
+    auto verifyResult = database->executeQuery(std::format("SHOW DATABASES LIKE '{}'", tempDb));
+    ASSERT_FALSE(verifyResult.empty());
+    ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
+    EXPECT_TRUE(verifyResult[0].tableData.empty());
+}

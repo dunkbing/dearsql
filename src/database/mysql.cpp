@@ -102,6 +102,18 @@ namespace {
         return result;
     }
 
+    std::string escapeSingleQuotes(const std::string& input) {
+        std::string escaped;
+        escaped.reserve(input.size());
+        for (char ch : input) {
+            escaped.push_back(ch);
+            if (ch == '\'') {
+                escaped.push_back('\'');
+            }
+        }
+        return escaped;
+    }
+
 } // namespace
 
 MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -450,29 +462,120 @@ std::pair<bool, std::string> MySQLDatabase::renameDatabase(const std::string& ol
                    "You need to create a new database, copy all data, and drop the old one."};
 }
 
-std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbName) {
+std::pair<bool, std::string> MySQLDatabase::createDatabase(const std::string& dbName,
+                                                           const std::string& comment) {
     if (!isConnected()) {
         return {false, "Not connected to database"};
     }
 
-    // Prevent dropping the currently connected database
-    if (dbName == connectionInfo.database) {
-        return {false, "Cannot drop the currently connected database"};
+    if (dbName.empty()) {
+        return {false, "Database name cannot be empty"};
     }
 
     try {
-        const std::string sql = std::format("DROP DATABASE `{}`", dbName);
+        std::string sql = std::format("CREATE DATABASE `{}`", dbName);
+        if (!comment.empty()) {
+            sql += std::format(" COMMENT '{}'", escapeSingleQuotes(comment));
+        }
 
         auto session = getSession();
         MYSQL* conn = session.get();
         if (mysql_query(conn, sql.c_str()) != 0) {
             std::string err = mysql_error(conn);
-            Logger::error(std::format("Failed to drop database: {}", err));
+            Logger::error(std::format("Failed to create database: {}", err));
             return {false, err};
+        }
+
+        Logger::info(std::format("Database '{}' created successfully", dbName));
+        return {true, ""};
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Failed to create database: {}", e.what()));
+        return {false, e.what()};
+    }
+}
+
+std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbName) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    try {
+        const std::string sql = std::format("DROP DATABASE `{}`", dbName);
+        const std::string originalDb = connectionInfo.database;
+        const bool isDroppingConnectedDb = (dbName == originalDb);
+
+        if (isDroppingConnectedDb) {
+            // Open a temporary connection to the 'mysql' system database first.
+            // Keep the current pool intact until this succeeds so failure paths
+            // do not leave the object disconnected.
+            auto tempInfo = connectionInfo;
+            tempInfo.database = "mysql";
+            MYSQL* tempConn = mysql_init(nullptr);
+            if (!tempConn) {
+                return {false, "mysql_init failed"};
+            }
+            if (!mysql_real_connect(tempConn, tempInfo.host.c_str(), tempInfo.username.c_str(),
+                                    tempInfo.password.c_str(), tempInfo.database.c_str(),
+                                    tempInfo.port, nullptr, CLIENT_MULTI_STATEMENTS)) {
+                std::string err = mysql_error(tempConn);
+                mysql_close(tempConn);
+                return {false, std::format("Failed to connect to system database: {}", err)};
+            }
+
+            // Destroy the connection pool for the target database so active
+            // sessions are closed before DROP DATABASE.
+            {
+                std::lock_guard lock(sessionMutex);
+                auto it = databaseDataCache.find(dbName);
+                if (it != databaseDataCache.end() && it->second) {
+                    it->second->connectionPool.reset();
+                }
+            }
+
+            if (mysql_query(tempConn, sql.c_str()) != 0) {
+                std::string err = mysql_error(tempConn);
+                Logger::error(std::format("Failed to drop database: {}", err));
+                mysql_close(tempConn);
+
+                // Best-effort recovery: restore the original active pool.
+                try {
+                    ensureConnectionPoolForDatabase(connectionInfo);
+                } catch (const std::exception& restoreErr) {
+                    Logger::warn(std::format("Failed to restore connection pool for '{}': {}",
+                                             originalDb, restoreErr.what()));
+                }
+                return {false, err};
+            }
+            mysql_close(tempConn);
+        } else {
+            auto session = getSession();
+            MYSQL* conn = session.get();
+            if (mysql_query(conn, sql.c_str()) != 0) {
+                std::string err = mysql_error(conn);
+                Logger::error(std::format("Failed to drop database: {}", err));
+                return {false, err};
+            }
         }
 
         // Remove from cache
         databaseDataCache.erase(dbName);
+
+        if (isDroppingConnectedDb) {
+            connectionInfo.database = "mysql";
+            try {
+                ensureConnectionPoolForDatabase(connectionInfo);
+                connected = true;
+                setLastConnectionError("");
+            } catch (const std::exception& switchErr) {
+                connected = false;
+                const std::string switchError = std::format(
+                    "Database dropped, but failed to switch active connection to mysql: {}",
+                    switchErr.what());
+                setLastConnectionError(switchError);
+                Logger::warn(switchError);
+                return {true, switchError};
+            }
+        }
 
         Logger::info(std::format("Database '{}' dropped successfully", dbName));
         return {true, ""};

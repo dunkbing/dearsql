@@ -117,6 +117,12 @@ public:
 
     // ========== Database operations (with default unsupported implementations) ==========
 
+    // Create a database (optional backend-specific comment/description)
+    virtual std::pair<bool, std::string> createDatabase(const std::string& dbName,
+                                                        const std::string& comment = "") {
+        return {false, "Create database not supported for this database type"};
+    }
+
     // Rename a database (returns success, error message)
     virtual std::pair<bool, std::string> renameDatabase(const std::string& oldName,
                                                         const std::string& newName) {

@@ -141,9 +141,24 @@ EOF
 # Function to seed MySQL
 seed_mysql() {
     echo "Seeding MySQL..."
-    # Wait a bit more for MySQL to be fully ready
-    sleep 5
-    $DOCKER exec -i "$MYSQL_CONTAINER" mysql -h localhost -u"$DEARSQL_TEST_MYSQL_USER" -p"$DEARSQL_TEST_MYSQL_PASSWORD" "$DEARSQL_TEST_MYSQL_DB" <<'EOF'
+    # Wait for MySQL to be fully ready inside the container
+    echo -n "Waiting for MySQL to accept connections..."
+    local max_attempts=30
+    local attempt=0
+    while (( attempt < max_attempts )); do
+        if $DOCKER exec "$MYSQL_CONTAINER" mysqladmin ping -h 127.0.0.1 -u"$DEARSQL_TEST_MYSQL_USER" -p"$DEARSQL_TEST_MYSQL_PASSWORD" &>/dev/null; then
+            echo " Ready!"
+            break
+        fi
+        echo -n "."
+        sleep 2
+        ((attempt++))
+    done
+    if (( attempt >= max_attempts )); then
+        echo " Timeout waiting for MySQL!"
+        return 1
+    fi
+    $DOCKER exec -i "$MYSQL_CONTAINER" mysql -h 127.0.0.1 -u"$DEARSQL_TEST_MYSQL_USER" -p"$DEARSQL_TEST_MYSQL_PASSWORD" "$DEARSQL_TEST_MYSQL_DB" <<'EOF'
 -- Drop existing tables if they exist
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
@@ -214,6 +229,29 @@ CREATE OR REPLACE VIEW active_users AS
 SELECT id, username, email FROM users;
 EOF
     echo "MySQL seeded!"
+}
+
+configure_mysql_test_user_privileges() {
+    echo "Configuring MySQL test user privileges..."
+    local max_attempts=30
+    local attempt=0
+    while (( attempt < max_attempts )); do
+        if $DOCKER exec "$MYSQL_CONTAINER" mysqladmin ping -uroot -pmysql &>/dev/null; then
+            break
+        fi
+        sleep 2
+        ((attempt++))
+    done
+    if (( attempt >= max_attempts )); then
+        echo "Error: root MySQL user not ready for privilege grants"
+        return 1
+    fi
+
+    $DOCKER exec -i "$MYSQL_CONTAINER" mysql -uroot -pmysql <<EOF
+GRANT CREATE, DROP ON *.* TO '${DEARSQL_TEST_MYSQL_USER}'@'%';
+FLUSH PRIVILEGES;
+EOF
+    echo "MySQL test user privileges configured!"
 }
 
 # Function to seed Redis
@@ -313,6 +351,7 @@ else
     fi
 fi
 wait_for_port "127.0.0.1" "$MYSQL_PORT" "MySQL"
+configure_mysql_test_user_privileges
 seed_mysql
 
 # Start Redis
@@ -356,7 +395,7 @@ seed_mongodb
 echo ""
 echo "=== All test databases are ready and seeded! ==="
 echo ""
-echo "Run tests with: ./scripts/run_tests"
+echo "Run tests with: ./scripts/run-tests"
 echo ""
 echo "To stop containers later:"
 echo "  sudo docker stop $POSTGRES_CONTAINER $MYSQL_CONTAINER $REDIS_CONTAINER $MONGODB_CONTAINER"

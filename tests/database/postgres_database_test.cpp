@@ -133,3 +133,38 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
     // Verify we got data back
     EXPECT_FALSE(result.tableData.empty());
 }
+
+TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToPostgresDatabase) {
+    ASSERT_NE(database, nullptr);
+
+    const std::string tempDb = TestHelpers::makeUniqueIdentifier("dearsql_pg_drop_active_");
+
+    auto [created, createErr] = database->createDatabase(tempDb);
+    if (!created) {
+        const std::string& err = createErr;
+        if (err.find("permission denied") != std::string::npos ||
+            err.find("must be superuser") != std::string::npos ||
+            err.find("not enough privileges") != std::string::npos) {
+            GTEST_SKIP() << "Skipping: CREATE DATABASE privilege is required for this test. Error: "
+                         << err;
+        }
+    }
+    ASSERT_TRUE(created) << createErr;
+
+    DatabaseConnectionInfo tempConnInfo = database->getConnectionInfo();
+    tempConnInfo.database = tempDb;
+    auto activeDb = std::make_shared<PostgresDatabase>(tempConnInfo);
+
+    const auto [connected, connectErr] = activeDb->connect();
+    ASSERT_TRUE(connected) << connectErr;
+
+    const auto [dropped, dropErr] = activeDb->dropDatabase(tempDb);
+    ASSERT_TRUE(dropped) << dropErr;
+    EXPECT_EQ(activeDb->getConnectionInfo().database, "postgres");
+
+    auto verifyResult = database->executeQuery(
+        std::format("SELECT datname FROM pg_database WHERE datname = '{}'", tempDb));
+    ASSERT_FALSE(verifyResult.empty());
+    ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
+    EXPECT_TRUE(verifyResult[0].tableData.empty());
+}

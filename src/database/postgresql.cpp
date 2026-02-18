@@ -89,6 +89,18 @@ namespace {
         return result;
     }
 
+    std::string escapeSingleQuotes(const std::string& input) {
+        std::string escaped;
+        escaped.reserve(input.size());
+        for (char ch : input) {
+            escaped.push_back(ch);
+            if (ch == '\'') {
+                escaped.push_back('\'');
+            }
+        }
+        return escaped;
+    }
+
 } // namespace
 
 PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -537,38 +549,146 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
     }
 }
 
+std::pair<bool, std::string> PostgresDatabase::createDatabase(const std::string& dbName,
+                                                              const std::string& comment) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    if (dbName.empty()) {
+        return {false, "Database name cannot be empty"};
+    }
+
+    try {
+        auto session = getSession();
+        PGconn* conn = session.get();
+
+        const std::string sql = std::format("CREATE DATABASE \"{}\"", dbName);
+        PgResultPtr createRes(PQexec(conn, sql.c_str()));
+        if (!createRes || PQresultStatus(createRes.get()) != PGRES_COMMAND_OK) {
+            std::string err =
+                createRes ? PQresultErrorMessage(createRes.get()) : PQerrorMessage(conn);
+            Logger::error(std::format("Failed to create database: {}", err));
+            return {false, err};
+        }
+
+        if (!comment.empty()) {
+            const std::string commentSql = std::format("COMMENT ON DATABASE \"{}\" IS '{}'", dbName,
+                                                       escapeSingleQuotes(comment));
+            PgResultPtr commentRes(PQexec(conn, commentSql.c_str()));
+            if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
+                std::string err =
+                    commentRes ? PQresultErrorMessage(commentRes.get()) : PQerrorMessage(conn);
+                Logger::warn(std::format("Database '{}' created, but failed to set comment: {}",
+                                         dbName, err));
+                return {true, std::format("Created database, but failed to set comment: {}", err)};
+            }
+        }
+
+        Logger::info(std::format("Database '{}' created successfully", dbName));
+        return {true, ""};
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Failed to create database: {}", e.what()));
+        return {false, e.what()};
+    }
+}
+
 std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& dbName) {
     if (!isConnected()) {
         return {false, "Not connected to database"};
     }
 
-    // Prevent dropping the currently connected database
-    if (dbName == connectionInfo.database) {
-        return {false, "Cannot drop the currently connected database"};
-    }
-
     try {
-        const std::string terminateSql =
-            std::format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = '{}' AND pid <> pg_backend_pid()",
-                        dbName);
+        // If dropping the currently connected database, we need a temporary
+        // connection to the 'postgres' maintenance database since PostgreSQL
+        // won't allow dropping a database with active connections.
+        const std::string originalDb = connectionInfo.database;
+        const bool isDroppingConnectedDb = (dbName == originalDb);
 
-        auto session = getSession();
-        PGconn* conn = session.get();
+        // Helper lambda: terminate backends + drop, using a given connection
+        auto execDrop = [&](PGconn* conn) -> std::pair<bool, std::string> {
+            const std::string terminateSql =
+                std::format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                            "WHERE datname = '{}' AND pid <> pg_backend_pid()",
+                            dbName);
+            PgResultPtr termRes(PQexec(conn, terminateSql.c_str()));
 
-        PgResultPtr termRes(PQexec(conn, terminateSql.c_str()));
-        // Ignore result of terminate - proceed with drop
+            const std::string dropSql = std::format("DROP DATABASE \"{}\"", dbName);
+            PgResultPtr dropRes(PQexec(conn, dropSql.c_str()));
+            if (!dropRes || PQresultStatus(dropRes.get()) != PGRES_COMMAND_OK) {
+                std::string err =
+                    dropRes ? PQresultErrorMessage(dropRes.get()) : PQerrorMessage(conn);
+                return {false, err};
+            }
+            return {true, ""};
+        };
 
-        const std::string dropSql = std::format("DROP DATABASE \"{}\"", dbName);
-        PgResultPtr dropRes(PQexec(conn, dropSql.c_str()));
-        if (!dropRes || PQresultStatus(dropRes.get()) != PGRES_COMMAND_OK) {
-            std::string err = dropRes ? PQresultErrorMessage(dropRes.get()) : PQerrorMessage(conn);
-            Logger::error(std::format("Failed to drop database: {}", err));
-            return {false, err};
+        std::pair<bool, std::string> dropResult;
+
+        if (isDroppingConnectedDb) {
+            // Connect to maintenance DB first so failure paths do not leave
+            // the object with a destroyed active pool.
+            auto tempInfo = connectionInfo;
+            tempInfo.database = "postgres";
+            std::string tempConnStr = buildPqConnStr(tempInfo);
+            PGconn* tempConn = PQconnectdb(tempConnStr.c_str());
+            if (PQstatus(tempConn) != CONNECTION_OK) {
+                std::string err = PQerrorMessage(tempConn);
+                PQfinish(tempConn);
+                return {false, std::format("Failed to connect to maintenance database: {}", err)};
+            }
+
+            // Destroy the target DB pool so active sessions are closed before DROP.
+            {
+                std::lock_guard lock(sessionMutex);
+                auto it = databaseDataCache.find(dbName);
+                if (it != databaseDataCache.end() && it->second) {
+                    it->second->connectionPool.reset();
+                }
+            }
+
+            dropResult = execDrop(tempConn);
+            PQfinish(tempConn);
+
+            if (!dropResult.first) {
+                // Best-effort recovery: recreate original active pool.
+                try {
+                    ensureConnectionPoolForDatabase(connectionInfo);
+                } catch (const std::exception& restoreErr) {
+                    Logger::warn(std::format("Failed to restore connection pool for '{}': {}",
+                                             originalDb, restoreErr.what()));
+                }
+            }
+        } else {
+            auto session = getSession();
+            dropResult = execDrop(session.get());
+        }
+
+        if (!dropResult.first) {
+            Logger::error(std::format("Failed to drop database: {}", dropResult.second));
+            return dropResult;
         }
 
         // Remove from cache
         databaseDataCache.erase(dbName);
+
+        // If we dropped the connected database, switch to 'postgres'
+        if (isDroppingConnectedDb) {
+            connectionInfo.database = "postgres";
+            try {
+                ensureConnectionPoolForDatabase(connectionInfo);
+                connected = true;
+                setLastConnectionError("");
+            } catch (const std::exception& switchErr) {
+                connected = false;
+                const std::string switchError = std::format(
+                    "Database dropped, but failed to switch active connection to postgres: {}",
+                    switchErr.what());
+                setLastConnectionError(switchError);
+                Logger::warn(switchError);
+                return {true, switchError};
+            }
+        }
 
         Logger::info(std::format("Database '{}' dropped successfully", dbName));
         return {true, ""};

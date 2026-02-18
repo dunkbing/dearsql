@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-"$ROOT_DIR/build"}"
 
 # Source shared config (sets all DEARSQL_TEST_* env vars)
-source "$SCRIPT_DIR/test_db_config"
+source "$SCRIPT_DIR/test-db-config"
 
 # Ensure build directory exists and build tests
 mkdir -p "$BUILD_DIR"

@@ -47,7 +47,7 @@ private:
     bool shouldShowCreateDatabaseDialog = false;
     std::shared_ptr<DatabaseInterface> createDatabaseTarget;
 
-    bool historyPanelOpen = true;
+    bool historyPanelOpen = false;
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer for fast lookup)
     std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;

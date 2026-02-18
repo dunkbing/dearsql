@@ -44,7 +44,11 @@ public:
     static void renderEmptyState();
 
 private:
+    enum class CloseAction { None, CloseAll, CloseOthers, CloseLeft, CloseRight };
+
     std::vector<std::shared_ptr<Tab>> tabs;
+    CloseAction pendingCloseAction = CloseAction::None;
+    std::string pendingCloseTarget;
 
     std::string generateSQLEditorName() const;
 };

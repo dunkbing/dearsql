@@ -7,6 +7,7 @@
 #include "ui/tab/table_viewer_tab.hpp"
 #include <algorithm>
 #include <iostream>
+#include <iterator>
 
 void TabManager::addTab(const std::shared_ptr<Tab>& tab) {
     tabs.push_back(tab);
@@ -141,9 +142,51 @@ void TabManager::renderTabs() {
                                                  ImGuiWindowFlags_NoScrollbar |
                                                  ImGuiWindowFlags_NoScrollWithMouse;
 
-        if (ImGui::Begin(tab->getName().c_str(), &isOpen, windowFlags)) {
+        // Docked tabs copy tab item data into LastItemData on Begin(), so right-click on
+        // the tab label can open a popup reliably from here.
+        const bool beginOpen = ImGui::Begin(tab->getName().c_str(), &isOpen, windowFlags);
+        ImGui::PushID(tab->getName().c_str());
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+        ImGui::OpenPopupOnItemClick("TabContextMenu", ImGuiPopupFlags_MouseButtonRight);
+        if (ImGui::BeginPopup("TabContextMenu")) {
+            const bool hasOthers = tabs.size() > 1;
+            const auto targetIt = std::ranges::find_if(
+                tabs, [&](const auto& t) { return t->getName() == tab->getName(); });
+            const bool hasLeft = targetIt != tabs.end() && targetIt != tabs.begin();
+            const bool hasRight = targetIt != tabs.end() && std::next(targetIt) != tabs.end();
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+            if (ImGui::MenuItem("Close")) {
+                isOpen = false;
+            }
+            if (ImGui::MenuItem("Close Others", nullptr, false, hasOthers)) {
+                pendingCloseAction = CloseAction::CloseOthers;
+                pendingCloseTarget = tab->getName();
+            }
+            if (ImGui::MenuItem("Close All", nullptr, false, !tabs.empty())) {
+                pendingCloseAction = CloseAction::CloseAll;
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Close to the Left", nullptr, false, hasLeft)) {
+                pendingCloseAction = CloseAction::CloseLeft;
+                pendingCloseTarget = tab->getName();
+            }
+            if (ImGui::MenuItem("Close to the Right", nullptr, false, hasRight)) {
+                pendingCloseAction = CloseAction::CloseRight;
+                pendingCloseTarget = tab->getName();
+            }
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        ImGui::PopID();
+
+        if (beginOpen) {
             tab->render();
         }
+
         ImGui::End();
 
         // Update tab open state
@@ -154,6 +197,38 @@ void TabManager::renderTabs() {
         } else {
             ++it;
         }
+    }
+
+    // Process pending close actions after the loop to avoid iterator invalidation
+    if (pendingCloseAction != CloseAction::None) {
+        switch (pendingCloseAction) {
+        case CloseAction::CloseAll:
+            tabs.clear();
+            break;
+        case CloseAction::CloseOthers:
+            std::erase_if(tabs, [&](const auto& t) { return t->getName() != pendingCloseTarget; });
+            break;
+        case CloseAction::CloseLeft: {
+            auto targetIt = std::ranges::find_if(
+                tabs, [&](const auto& t) { return t->getName() == pendingCloseTarget; });
+            if (targetIt != tabs.end()) {
+                tabs.erase(tabs.begin(), targetIt);
+            }
+            break;
+        }
+        case CloseAction::CloseRight: {
+            auto targetIt = std::ranges::find_if(
+                tabs, [&](const auto& t) { return t->getName() == pendingCloseTarget; });
+            if (targetIt != tabs.end()) {
+                tabs.erase(targetIt + 1, tabs.end());
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        pendingCloseAction = CloseAction::None;
+        pendingCloseTarget.clear();
     }
 
     ImGui::PopStyleColor(8);

@@ -30,7 +30,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 source "$PROJECT_DIR/APP_METADATA"
 BUILD_DIR="${PROJECT_DIR}/build_release"
 APP_PATH="${BUILD_DIR}/${APP_NAME}.app"
-DMG_PATH="${BUILD_DIR}/${APP_NAME}.dmg"
+DMG_PATH="${BUILD_DIR}/${APP_NAME}-${APP_VERSION}.dmg"
 ZIP_PATH="${BUILD_DIR}/${APP_NAME}.zip"
 
 # =============================================================================

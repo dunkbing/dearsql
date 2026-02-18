@@ -9,6 +9,7 @@
 #include "license/license_manager.hpp"
 #if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
+#include "platform/macos_updater.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
 #else
@@ -183,6 +184,10 @@ bool Application::initialize() {
 
     // Load stored license
     LicenseManager::instance().loadStoredLicense();
+
+#ifdef __APPLE__
+    initializeSparkleUpdater();
+#endif
 
     // Restore previous connections for current workspace
     restorePreviousConnections();

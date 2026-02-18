@@ -38,3 +38,4 @@ compile_commands.json
 .env
 .flatpak-builder
 *.log
+external/Sparkle/

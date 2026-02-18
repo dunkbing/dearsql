@@ -6,6 +6,7 @@
 #include "themes.hpp"
 #include <iostream>
 
+#include "platform/macos_updater.hpp"
 #import <AppKit/AppKit.h>
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
@@ -223,19 +224,21 @@
 
     // Create content view controller
     NSViewController* contentVC = [[NSViewController alloc] init];
-    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 180, 166)];
+
+    CGFloat extraHeight = 36;
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 180, 166 + extraHeight)];
 
     // Theme section label
     NSTextField* themeLabel = [NSTextField labelWithString:@"Theme"];
     themeLabel.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
     themeLabel.textColor = [NSColor secondaryLabelColor];
-    themeLabel.frame = NSMakeRect(12, 131, 156, 16);
+    themeLabel.frame = NSMakeRect(12, 131 + extraHeight, 156, 16);
     [contentView addSubview:themeLabel];
 
     // Theme buttons container
     CGFloat buttonWidth = 50;
     CGFloat buttonHeight = 28;
-    CGFloat buttonY = 96;
+    CGFloat buttonY = 96 + extraHeight;
     CGFloat startX = 12;
     CGFloat spacing = 4;
 
@@ -278,18 +281,28 @@
     [contentView addSubview:self.themeAutoButton];
 
     // Separator line
-    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(12, 84, 156, 1)];
+    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(12, 84 + extraHeight, 156, 1)];
     separator.boxType = NSBoxSeparator;
     [contentView addSubview:separator];
 
     // License button
-    NSButton* licenseButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 48, 156, 28)];
+    NSButton* licenseButton =
+        [[NSButton alloc] initWithFrame:NSMakeRect(12, 48 + extraHeight, 156, 28)];
     [licenseButton setTitle:@"Manage License..."];
     [licenseButton setButtonType:NSButtonTypeMomentaryPushIn];
     [licenseButton setBezelStyle:NSBezelStyleTexturedRounded];
     [licenseButton setTarget:self];
     [licenseButton setAction:@selector(licenseClicked:)];
     [contentView addSubview:licenseButton];
+
+    // Check for Updates button
+    NSButton* updateButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 48, 156, 28)];
+    [updateButton setTitle:@"Check for Updates..."];
+    [updateButton setButtonType:NSButtonTypeMomentaryPushIn];
+    [updateButton setBezelStyle:NSBezelStyleTexturedRounded];
+    [updateButton setTarget:self];
+    [updateButton setAction:@selector(checkForUpdatesClicked:)];
+    [contentView addSubview:updateButton];
 
     // Report Bug button
     NSButton* reportBugButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 12, 156, 28)];
@@ -722,6 +735,11 @@
                           "**%%3A+macOS%%0A-+**DearSQL+version**%%3A+%@%%0A-+**Database**%%3A+",
                          version];
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:urlStr]];
+}
+
+- (void)checkForUpdatesClicked:(id)sender {
+    [self.menuPopover close];
+    checkForUpdates();
 }
 
 - (void)openPurchaseLink:(id)sender {

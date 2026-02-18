@@ -22,15 +22,23 @@ echo "Using vcpkg at: $VCPKG_ROOT"
 # Parse arguments
 BUILD_TYPE="Debug"
 BUILD_DIR="$ROOT_DIR/build"
-if [[ "${1:-}" == "release" ]]; then
-    BUILD_TYPE="Release"
-    BUILD_DIR="$ROOT_DIR/build_release"
-fi
+RECONFIGURE=false
+for arg in "$@"; do
+    case "$arg" in
+        release) BUILD_TYPE="Release"; BUILD_DIR="$ROOT_DIR/build_release" ;;
+        --reconfigure) RECONFIGURE=true ;;
+    esac
+done
 BUILD_DIR="${BUILD_DIR_OVERRIDE:-$BUILD_DIR}"
 GENERATOR="${CMAKE_GENERATOR:-Unix Makefiles}"
 
-echo "Configuring CMake (${BUILD_TYPE}, ${GENERATOR})..."
-cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+# Only run cmake configure if build dir doesn't exist or CMakeCache is missing
+if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]] || [[ "$RECONFIGURE" == true ]]; then
+    echo "Configuring CMake (${BUILD_TYPE}, ${GENERATOR})..."
+    cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+else
+    echo "Skipping CMake configure (already configured). Use --reconfigure to force."
+fi
 
 echo "Building DearSQL..."
 cmake --build "$BUILD_DIR" --target dear-sql

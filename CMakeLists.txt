@@ -30,15 +30,21 @@ if(NOT DEFINED VCPKG_TARGET_TRIPLET)
     endif()
 endif()
 
+# macOS deployment target
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
+# Use project-local triplet overlay for deployment target
+set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/cmake/triplets" CACHE STRING "" FORCE)
+
 project(dear-sql)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# macOS deployment target (minimum supported version)
 if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
     # Enable experimental C++20 features (jthread, stop_token) in libc++
     add_compile_options(-fexperimental-library)
     add_link_options(-fexperimental-library)
@@ -84,6 +90,18 @@ if(UNIX AND NOT APPLE)
 else()
     # macOS and Windows use GLFW
     find_package(glfw3 CONFIG REQUIRED)
+endif()
+
+# Sparkle auto-update (macOS only)
+if(APPLE)
+    set(SPARKLE_FRAMEWORK_PATH "${CMAKE_SOURCE_DIR}/external/Sparkle/Sparkle.framework")
+    if(NOT EXISTS "${SPARKLE_FRAMEWORK_PATH}")
+        message(FATAL_ERROR "Sparkle.framework not found at ${SPARKLE_FRAMEWORK_PATH}. "
+            "Download from https://sparkle-project.org and extract into external/Sparkle/")
+    endif()
+    if(NOT DEFINED SPARKLE_ED_PUBLIC_KEY)
+        set(SPARKLE_ED_PUBLIC_KEY "" CACHE STRING "Sparkle EdDSA public key for update verification")
+    endif()
 endif()
 
 # =============================================================================
@@ -189,6 +207,7 @@ list(APPEND APP_SOURCES src/application.cpp)
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
     list(APPEND APP_SOURCES src/platform/macos_connection_dialog.mm)
+    list(APPEND APP_SOURCES src/platform/macos_updater.mm)
 elseif(UNIX AND NOT APPLE)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
 else()
@@ -230,6 +249,11 @@ if(UNIX AND NOT APPLE)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
 endif()
 
+# Sparkle includes (macOS)
+if(APPLE)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}/Headers")
+endif()
+
 # Link libraries (common - vcpkg packages)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
@@ -253,6 +277,7 @@ if(APPLE)
         ${FOUNDATION_LIBRARY}
         ${APPKIT_LIBRARY}
     )
+    target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
 elseif(UNIX AND NOT APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         ${GTK4_LIBRARIES}
@@ -271,12 +296,15 @@ endif()
 if(APPLE)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_IDENTIFIER}"
         MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${APP_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${APP_VERSION}"
         MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
         OUTPUT_NAME "${APP_NAME}"
+        BUILD_RPATH "@loader_path/../Frameworks"
+        INSTALL_RPATH "@loader_path/../Frameworks"
     )
 
     # Copy the icon file to the Resources directory
@@ -284,6 +312,16 @@ if(APPLE)
         MACOSX_PACKAGE_LOCATION "Resources"
     )
     target_sources(${PROJECT_NAME} PRIVATE assets/AppIcon.icns)
+
+    # Embed Sparkle.framework into the app bundle
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${SPARKLE_FRAMEWORK_PATH}"
+            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/Sparkle.framework"
+        COMMENT "Embedding Sparkle.framework into app bundle"
+    )
 endif()
 
 # =============================================================================

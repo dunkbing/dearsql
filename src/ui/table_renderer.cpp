@@ -440,6 +440,10 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     ImGui::PopStyleColor(3);
 
     // Sort popup menu
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
     if (ImGui::BeginPopup(popupId.c_str())) {
         // Order by ASC option
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
@@ -481,6 +485,8 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
         ImGui::EndPopup();
     }
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor();
 
     ImGui::PopID();
 }

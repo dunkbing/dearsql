@@ -702,8 +702,23 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                         ImGui::Text("  No sequences");
                         ImGui::PopStyleColor();
                     } else {
+                        constexpr ImGuiTreeNodeFlags seqFlags =
+                            ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                            ImGuiTreeNodeFlags_FramePadding;
                         for (const auto& seq : schemaData->sequences) {
-                            ImGui::Text("    %s", seq.c_str());
+                            const std::string seqItemId =
+                                std::format("seq_{}_{:p}", seq, static_cast<const void*>(&seq));
+                            const std::string seqLabel = std::format("   {}###{}", seq, seqItemId);
+                            ImGui::TreeNodeEx(seqLabel.c_str(), seqFlags);
+
+                            const auto iconPos = ImVec2(
+                                ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                                ImGui::GetItemRectMin().y +
+                                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) *
+                                        0.5f);
+                            ImGui::GetWindowDrawList()->AddText(iconPos,
+                                                                ImGui::GetColorU32(colors.mauve),
+                                                                ICON_FK_SORT_NUMERIC_ASC);
                         }
                     }
                 }

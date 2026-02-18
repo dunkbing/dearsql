@@ -7,6 +7,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
+
 #if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
 #include "platform/macos_updater.hpp"
@@ -15,6 +16,7 @@
 #else
 #include "platform/default_platform.hpp"
 #endif
+
 #include "themes.hpp"
 #include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"
@@ -57,7 +59,7 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 0.25; // time after last activity before idling
+    constexpr double kIdleActivationDelaySeconds = 15.0; // time after last activity before idling
     constexpr double kMinimumWaitSeconds = 1.0 / 120.0;  // keep responsive when active
     constexpr double kMaximumWaitSeconds = 0.2;          // cap sleep to keep UI responsive
 

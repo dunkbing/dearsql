@@ -333,19 +333,6 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
         COMMENT "Embedding sentry dylib into app bundle"
     )
-
-    # Copy crashpad_handler into the app bundle (next to the executable)
-    find_program(CRASHPAD_HANDLER crashpad_handler
-        PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/sentry-native"
-        NO_DEFAULT_PATH)
-    if(CRASHPAD_HANDLER)
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CRASHPAD_HANDLER}"
-                "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/MacOS/"
-            COMMENT "Embedding crashpad_handler into app bundle"
-        )
-    endif()
 endif()
 
 # =============================================================================

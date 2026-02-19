@@ -1,12 +1,8 @@
 #include "utils/sentry_init.hpp"
 #include "config.hpp"
 #include <cstdlib>
-#include <filesystem>
+#include <string>
 #include <sentry.h>
-
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
 
 namespace {
     std::string getSentryDbPath() {
@@ -27,26 +23,6 @@ namespace {
 #endif
         return ".sentry-native";
     }
-
-    std::string getCrashpadHandlerPath() {
-        namespace fs = std::filesystem;
-#ifdef __APPLE__
-        char buf[PATH_MAX];
-        uint32_t size = sizeof(buf);
-        if (_NSGetExecutablePath(buf, &size) == 0) {
-            auto handler = fs::path(buf).parent_path() / "crashpad_handler";
-            if (fs::exists(handler)) {
-                return handler.string();
-            }
-        }
-#elif defined(__linux__)
-        auto handler = fs::read_symlink("/proc/self/exe").parent_path() / "crashpad_handler";
-        if (fs::exists(handler)) {
-            return handler.string();
-        }
-#endif
-        return "crashpad_handler";
-    }
 } // namespace
 
 void SentryInit::initialize() {
@@ -54,7 +30,6 @@ void SentryInit::initialize() {
     sentry_options_set_dsn(options, SENTRY_DSN);
     sentry_options_set_release(options, APP_NAME "@" APP_VERSION);
     sentry_options_set_database_path(options, getSentryDbPath().c_str());
-    sentry_options_set_handler_path(options, getCrashpadHandlerPath().c_str());
     sentry_init(options);
 }
 

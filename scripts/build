@@ -87,7 +87,7 @@ Priority: optional
 Architecture: ${ARCH}
 Depends: libgtk-4-1, libssl3
 Maintainer: Bing Bui <bing@db99.dev>
-Homepage: https://dearsql.db99.dev
+Homepage: https://dearsql.dev
 Description: SQL Database Client
  DearSQL is a desktop SQL client for connecting to SQLite,
  PostgreSQL, MySQL, Redis, and MongoDB databases.

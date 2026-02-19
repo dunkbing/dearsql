@@ -15,7 +15,7 @@ Build-Depends: debhelper-compat (= 13),
                libdbus-1-dev,
                libx11-dev
 Standards-Version: 4.6.0
-Homepage: https://dearsql.db99.dev
+Homepage: https://dearsql.dev
 Vcs-Git: https://gitlab.com/dunkbing/dearsql.git
 Vcs-Browser: https://gitlab.com/dunkbing/dearsql
 

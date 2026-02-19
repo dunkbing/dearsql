@@ -19,7 +19,7 @@
 
   <launchable type="desktop-id">io.gitlab.dunkbing.dearsql.desktop</launchable>
 
-  <url type="homepage">https://dearsql.db99.dev</url>
+  <url type="homepage">https://dearsql.dev</url>
 
   <provides>
     <binary>dear-sql</binary>
@@ -29,7 +29,7 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://dearsql.db99.dev/sc_gtk.webp</image>
+      <image>https://dearsql.dev/sc_gtk.webp</image>
       <caption>DearSQL main interface</caption>
     </screenshot>
   </screenshots>

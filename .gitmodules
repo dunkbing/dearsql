@@ -17,6 +17,7 @@
 [submodule "external/ImGuiPack"]
 	path = external/ImGuiPack
 	url = https://github.com/dunkbing/ImGuiPack
+	branch = bing
 [submodule "website"]
 	path = website
 	url = https://github.com/dunkbing/dearsql-website

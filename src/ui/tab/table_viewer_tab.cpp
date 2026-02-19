@@ -205,10 +205,10 @@ void TableViewerTab::render() {
     if (ImGui::Button("<") && currentPage > 0) {
         previousPage();
     }
-    ImGui::SameLine();
+    ImGui::SameLine(0, Theme::Spacing::M);
 
     ImGui::Text("Page %d of %d (%d rows total)", currentPage + 1, totalPages, totalRows);
-    ImGui::SameLine();
+    ImGui::SameLine(0, Theme::Spacing::M);
 
     if (ImGui::Button(">") && currentPage < totalPages - 1) {
         nextPage();
@@ -326,14 +326,14 @@ void TableViewerTab::render() {
         }
         ImGui::PopStyleColor();
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Cancel");
+            ImGui::SetTooltip("Reject changes");
         }
     } else {
         ImGui::BeginDisabled();
         ImGui::Button(ICON_FA_XMARK);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Cancel");
+            ImGui::SetTooltip("Reject changes");
         }
     }
 

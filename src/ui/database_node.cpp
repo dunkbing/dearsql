@@ -232,7 +232,8 @@ void DatabaseHierarchy::renderRootNode() {
 
                 // Context menu
                 if (ImGui::BeginPopupContextItem(keyGroupId.c_str())) {
-                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                        ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                     if (ImGui::MenuItem("Refresh Keys")) {
                         redisDb->startKeysLoadAsync(true);
                     }
@@ -261,7 +262,8 @@ void DatabaseHierarchy::renderSQLiteNode() {
 
         // Context menu for Tables node
         if (ImGui::BeginPopupContextItem(nullptr)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                 TableDialog::instance().showCreate(sqliteDb);
             }
@@ -310,7 +312,8 @@ void DatabaseHierarchy::renderSQLiteNode() {
 
         // Context menu for Views node
         if (ImGui::BeginPopupContextItem(nullptr)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 sqliteDb->startViewsLoadAsync();
             }
@@ -367,7 +370,8 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             // For PostgreSQL, we need to use a schema node (which implements IDatabaseNode)
             if (dbData->schemasLoaded && !dbData->schemas.empty()) {
@@ -462,7 +466,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
     // Context menu for schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             // schemaData implements IDatabaseNode, so we can pass it directly
             app.getTabManager()->createSQLEditorTab("", schemaData);
@@ -536,7 +541,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                     TableDialog::instance().showCreate(schemaData, schemaData->name);
                 }
@@ -583,7 +589,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startViewsLoadAsync(true); // Force refresh
                 }
@@ -629,7 +636,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Materialized Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startMaterializedViewsLoadAsync(true);
                 }
@@ -675,7 +683,8 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             // Context menu for Sequences node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startSequencesLoadAsync(true);
                 }
@@ -749,7 +758,8 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
@@ -804,7 +814,8 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
             // Context menu for Tables node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
                     TableDialog::instance().showCreate(dbData);
                 }
@@ -851,7 +862,8 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
 
             // Context menu for Views node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     dbData->startViewsLoadAsync(true);
                 }
@@ -928,7 +940,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(schemaNode, table.name);
         }
@@ -1024,7 +1037,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
 
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
-                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -1191,7 +1205,8 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(schemaData, view.name);
         }
@@ -1271,7 +1286,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, table.name);
         }
@@ -1363,7 +1379,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 
                     // Context menu for column (MySQL)
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
-                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -1527,7 +1544,8 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, view.name);
         }
@@ -1557,7 +1575,8 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
@@ -1598,7 +1617,8 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
 
             // Context menu for Collections node
             if (ImGui::BeginPopupContextItem(nullptr)) {
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     dbData->startCollectionsLoadAsync(true);
                 }
@@ -1677,7 +1697,8 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, collection.name);
         }
@@ -1769,7 +1790,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
         }
@@ -1858,7 +1880,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
 
                     // Context menu for column
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
-                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
@@ -2023,7 +2046,8 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqlite
 
     // Context menu
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
         }

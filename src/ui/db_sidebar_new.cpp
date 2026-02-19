@@ -58,7 +58,8 @@ void DatabaseSidebarNew::renderEmpty() {
     }
 
     if (ImGui::BeginPopup("AddDatabasePopup")) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
             Logger::info("Opening database connection dialog");
             showConnectionDialog();
@@ -141,7 +142,7 @@ void DatabaseSidebarNew::renderHistory() {
         }
     };
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
     for (size_t i = 0; i < entries.size(); ++i) {
@@ -185,7 +186,8 @@ void DatabaseSidebarNew::renderHistory() {
 
         // Context menu
         if (ImGui::BeginPopupContextItem("history_entry_menu")) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Copy to clipboard")) {
                 ImGui::SetClipboardText(entry.query.c_str());
             }
@@ -272,7 +274,7 @@ void DatabaseSidebarNew::render() {
     // Square popup corners
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, 0.0f));
     ImGui::Begin("Databases", nullptr, ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar();
 
@@ -417,7 +419,8 @@ void DatabaseSidebarNew::render() {
                 ImGuiCol_ButtonHovered,
                 ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                                ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
             if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
                 history.clear();
             }
@@ -740,7 +743,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     }
 
     if (ImGui::BeginPopupContextItem(nullptr)) {
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         // SQLite-specific menu items (only when connected)
         if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());

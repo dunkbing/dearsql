@@ -205,4 +205,13 @@ namespace Theme {
     inline void ApplyTheme(const Colors& colors) {
         ApplyNativeTheme(colors);
     }
+
+    // App-wide spacing constants
+    namespace Spacing {
+        constexpr float XS = 2.0f;
+        constexpr float S = 4.0f;
+        constexpr float M = 8.0f;
+        constexpr float L = 16.0f;
+        constexpr float XL = 20.0f;
+    } // namespace Spacing
 } // namespace Theme

@@ -297,9 +297,15 @@ endif()
 
 # Set macOS specific properties
 if(APPLE)
+    # Pre-process Info.plist to substitute SPARKLE_ED_PUBLIC_KEY
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/cmake/Info.plist.in"
+        "${CMAKE_BINARY_DIR}/Info.plist.in"
+        @ONLY
+    )
     set_target_properties(${PROJECT_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/Info.plist.in"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_BINARY_DIR}/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER "${APP_IDENTIFIER}"
         MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${APP_VERSION}"
@@ -316,13 +322,16 @@ if(APPLE)
     )
     target_sources(${PROJECT_NAME} PRIVATE assets/AppIcon.icns)
 
-    # Embed Sparkle.framework into the app bundle
+    # Embed Sparkle.framework into the app bundle and fix framework symlink structure
+    set(_SPARKLE_DEST "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/Sparkle.framework")
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${SPARKLE_FRAMEWORK_PATH}"
-            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/Sparkle.framework"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${_SPARKLE_DEST}"
+        COMMAND ditto "${SPARKLE_FRAMEWORK_PATH}" "${_SPARKLE_DEST}"
+        # Fix Versions/Current: must be a symlink to B, not a directory copy
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${_SPARKLE_DEST}/Versions/Current"
+        COMMAND ln -s B "${_SPARKLE_DEST}/Versions/Current"
         COMMENT "Embedding Sparkle.framework into app bundle"
     )
 

@@ -35,6 +35,6 @@
 	<key>SUFeedURL</key>
 	<string>https://dearsql.dev/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>${SPARKLE_ED_PUBLIC_KEY}</string>
+	<string>@SPARKLE_ED_PUBLIC_KEY@</string>
 </dict>
 </plist>

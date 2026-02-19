@@ -294,6 +294,11 @@ void DatabaseSidebarNew::render() {
         showMacOSEditConnectionDialog(&app, databaseToEdit, databaseToEdit->getConnectionId());
         databaseToEdit = nullptr;
     }
+    if (shouldShowNativeCreateDatabaseDialog && nativeCreateDatabaseTarget) {
+        showMacOSCreateDatabaseDialog(&app, nativeCreateDatabaseTarget);
+        shouldShowNativeCreateDatabaseDialog = false;
+        nativeCreateDatabaseTarget = nullptr;
+    }
 #else
     if (shouldShowConnectionDialog) {
         connectionDialog.showDialog();
@@ -745,6 +750,23 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 }
                 if (ImGui::MenuItem("Show Diagram")) {
                     Application::getInstance().getTabManager()->createDiagramTab(sqliteDb);
+                }
+                ImGui::Separator();
+            }
+        }
+
+        // Create New Database (PostgreSQL and MySQL only, when connected)
+        if (db->isConnected()) {
+            auto dbType = db->getConnectionInfo().type;
+            if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL) {
+                if (ImGui::MenuItem("Create New Database")) {
+#ifdef __APPLE__
+                    nativeCreateDatabaseTarget = db;
+                    shouldShowNativeCreateDatabaseDialog = true;
+#else
+                    createDatabaseTarget = db;
+                    shouldShowCreateDatabaseDialog = true;
+#endif
                 }
                 ImGui::Separator();
             }

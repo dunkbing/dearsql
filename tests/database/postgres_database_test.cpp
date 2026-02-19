@@ -168,3 +168,51 @@ TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesTo
     ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
     EXPECT_TRUE(verifyResult[0].tableData.empty());
 }
+
+TEST_F(PostgresDatabaseIntegrationTest, CreateDatabaseWithOptionsCreatesDatabaseAndComment) {
+    ASSERT_NE(database, nullptr);
+
+    const std::string tempDb = TestHelpers::makeUniqueIdentifier("dearsql_pg_create_opts_");
+
+    CreateDatabaseOptions options;
+    options.name = tempDb;
+    options.owner = "";
+    options.templateDb = "template1";
+    options.encoding = "UTF8";
+    options.tablespace = "pg_default";
+    options.comment = "dearsql option test's comment";
+
+    auto [created, createErr] = database->createDatabaseWithOptions(options);
+    if (!created) {
+        const std::string& err = createErr;
+        if (err.find("permission denied") != std::string::npos ||
+            err.find("must be superuser") != std::string::npos ||
+            err.find("not enough privileges") != std::string::npos ||
+            err.find("must be member of role") != std::string::npos) {
+            GTEST_SKIP() << "Skipping: CREATE DATABASE privilege is required for this test. Error: "
+                         << err;
+        }
+    }
+    ASSERT_TRUE(created) << createErr;
+
+    auto dbResult = database->executeQuery(
+        std::format("SELECT datname, pg_catalog.pg_encoding_to_char(encoding) "
+                    "FROM pg_database WHERE datname = '{}'",
+                    tempDb));
+    ASSERT_FALSE(dbResult.empty());
+    ASSERT_TRUE(dbResult[0].success) << dbResult[0].errorMessage;
+    ASSERT_EQ(dbResult[0].tableData.size(), 1u);
+    EXPECT_EQ(dbResult[0].tableData[0][0], tempDb);
+    EXPECT_EQ(dbResult[0].tableData[0][1], "UTF8");
+
+    auto commentResult = database->executeQuery(std::format(
+        "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = '{}'",
+        tempDb));
+    ASSERT_FALSE(commentResult.empty());
+    ASSERT_TRUE(commentResult[0].success) << commentResult[0].errorMessage;
+    ASSERT_EQ(commentResult[0].tableData.size(), 1u);
+    EXPECT_EQ(commentResult[0].tableData[0][0], options.comment);
+
+    const auto [dropped, dropErr] = database->dropDatabase(tempDb);
+    ASSERT_TRUE(dropped) << dropErr;
+}

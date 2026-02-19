@@ -21,6 +21,7 @@
 #include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
+#include "utils/sentry_utils.hpp"
 #include <algorithm>
 #include <chrono>
 #include <csignal>
@@ -218,6 +219,8 @@ bool Application::initialize() {
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
 #endif
+
+    SentryUtils::addBreadcrumb("app", "Application initialized");
     return true;
 }
 
@@ -336,6 +339,7 @@ void Application::setDarkTheme(const bool dark) {
     if (appState) {
         appState->setSetting("theme", darkTheme ? "dark" : "light");
     }
+    SentryUtils::addBreadcrumb("app", "Theme changed", "theme", darkTheme ? "dark" : "light");
 }
 
 bool Application::hasPendingAsyncWork() const {
@@ -577,6 +581,9 @@ void Application::setCurrentWorkspace(const int workspaceId) {
         appState->setSetting("current_workspace", std::to_string(currentWorkspaceId));
         appState->updateWorkspaceLastUsed(currentWorkspaceId);
     }
+
+    SentryUtils::addBreadcrumb("app", "Workspace switched", "workspace_id",
+                               std::to_string(workspaceId));
 
     // Refresh connections for new workspace
     refreshWorkspaceConnections();

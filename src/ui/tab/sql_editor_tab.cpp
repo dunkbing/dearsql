@@ -1,8 +1,10 @@
 #include "ui/tab/sql_editor_tab.hpp"
+#include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "imgui.h"
 #include "ui/table_renderer.hpp"
+#include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <chrono>
@@ -41,6 +43,10 @@ SQLEditorTab::~SQLEditorTab() {
 }
 
 void SQLEditorTab::render() {
+    // Sync editor palette with current app theme
+    const bool dark = Application::getInstance().isDarkTheme();
+    sqlEditor.SetPalette(dark ? TextEditor::GetDarkPalette() : TextEditor::GetLightPalette());
+
     if (node_ && !completionKeywordsSet_ && node_->isTablesLoaded()) {
         updateCompletionKeywords();
     }
@@ -237,6 +243,8 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
         for (const auto& r : results) {
             if (!r.success) {
                 queryError = r.errorMessage;
+                SentryUtils::addBreadcrumb("query", "Query error", "error", r.errorMessage,
+                                           "error");
                 break;
             }
         }

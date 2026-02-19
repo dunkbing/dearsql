@@ -5,6 +5,7 @@
 #include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
+#include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "utils/file_dialog.hpp"
@@ -965,6 +966,593 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 @end
 
+// MARK: - CreateDatabaseDialogController
+
+@interface CreateDatabaseDialogController : NSObject <NSWindowDelegate> {
+    std::shared_ptr<DatabaseInterface> _db;
+}
+
+@property(nonatomic, assign) Application* app;
+@property(nonatomic, strong) NSWindow* dialogWindow;
+
+// Common fields
+@property(nonatomic, strong) NSTextField* nameLabel;
+@property(nonatomic, strong) NSTextField* nameField;
+@property(nonatomic, strong) NSTextField* commentLabel;
+@property(nonatomic, strong) NSTextField* commentField;
+
+// PostgreSQL fields
+@property(nonatomic, strong) NSTextField* ownerLabel;
+@property(nonatomic, strong) NSPopUpButton* ownerPopup;
+@property(nonatomic, strong) NSTextField* templateLabel;
+@property(nonatomic, strong) NSPopUpButton* templatePopup;
+@property(nonatomic, strong) NSTextField* encodingLabel;
+@property(nonatomic, strong) NSPopUpButton* encodingPopup;
+@property(nonatomic, strong) NSTextField* tablespaceLabel;
+@property(nonatomic, strong) NSPopUpButton* tablespacePopup;
+
+// MySQL fields
+@property(nonatomic, strong) NSTextField* charsetLabel;
+@property(nonatomic, strong) NSPopUpButton* charsetPopup;
+@property(nonatomic, strong) NSTextField* collationLabel;
+@property(nonatomic, strong) NSPopUpButton* collationPopup;
+
+// Bottom controls
+@property(nonatomic, strong) NSBox* bottomSeparator;
+@property(nonatomic, strong) NSTextField* statusLabel;
+@property(nonatomic, strong) NSProgressIndicator* spinner;
+@property(nonatomic, strong) NSButton* createButton;
+@property(nonatomic, strong) NSButton* cancelButton;
+
+- (void)showDialogForDatabase:(std::shared_ptr<DatabaseInterface>)db;
+
+@end
+
+static NSWindow* sActiveCreateDatabaseDialog = nil;
+
+@implementation CreateDatabaseDialogController
+
+- (instancetype)init {
+    self = [super init];
+    return self;
+}
+
+- (void)dealloc {
+    _db.reset();
+    [super dealloc];
+}
+
+- (NSTextField*)makeLabel:(NSString*)text {
+    NSTextField* label = [NSTextField labelWithString:text];
+    label.alignment = NSTextAlignmentRight;
+    label.textColor = [NSColor secondaryLabelColor];
+    label.font = [NSFont systemFontOfSize:13];
+    return label;
+}
+
+- (NSTextField*)makeTextField:(NSString*)placeholder {
+    NSTextField* field = [[NSTextField alloc] init];
+    field.placeholderString = placeholder;
+    field.bezeled = YES;
+    field.bezelStyle = NSTextFieldRoundedBezel;
+    field.editable = YES;
+    field.selectable = YES;
+    return field;
+}
+
+- (NSPopUpButton*)makePopup:(NSArray<NSString*>*)items defaultIndex:(NSInteger)defaultIdx {
+    NSPopUpButton* popup = [[NSPopUpButton alloc] init];
+    for (NSString* item in items) {
+        [popup addItemWithTitle:item];
+    }
+    if (defaultIdx >= 0 && defaultIdx < (NSInteger)items.count) {
+        [popup selectItemAtIndex:defaultIdx];
+    }
+    return popup;
+}
+
+- (void)ensureEditMenu {
+    NSMenu* mainMenu = [NSApp mainMenu];
+    if (!mainMenu) {
+        mainMenu = [[NSMenu alloc] init];
+        [NSApp setMainMenu:mainMenu];
+    }
+
+    for (NSMenuItem* item in mainMenu.itemArray) {
+        if ([item.title isEqualToString:@"Edit"])
+            return;
+    }
+
+    NSMenuItem* editMenuItem = [[NSMenuItem alloc] init];
+    editMenuItem.title = @"Edit";
+    NSMenu* editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Undo"
+                                                 action:@selector(undo:)
+                                          keyEquivalent:@"z"]];
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Redo"
+                                                 action:@selector(redo:)
+                                          keyEquivalent:@"Z"]];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Cut"
+                                                 action:@selector(cut:)
+                                          keyEquivalent:@"x"]];
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Copy"
+                                                 action:@selector(copy:)
+                                          keyEquivalent:@"c"]];
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Paste"
+                                                 action:@selector(paste:)
+                                          keyEquivalent:@"v"]];
+    [editMenu addItem:[[NSMenuItem alloc] initWithTitle:@"Select All"
+                                                 action:@selector(selectAll:)
+                                          keyEquivalent:@"a"]];
+
+    editMenuItem.submenu = editMenu;
+    [mainMenu addItem:editMenuItem];
+}
+
+- (void)showDialogForDatabase:(std::shared_ptr<DatabaseInterface>)db {
+    _db = db;
+    [self ensureEditMenu];
+    [self buildControls];
+    [self layoutFields];
+
+    // Center on main window
+    NSWindow* mainWindow = nil;
+    if (self.app) {
+        GLFWwindow* glfwWindow = self.app->getWindow();
+        if (glfwWindow) {
+            mainWindow = glfwGetCocoaWindow(glfwWindow);
+        }
+    }
+
+    if (mainWindow) {
+        [self.dialogWindow setLevel:NSModalPanelWindowLevel];
+        NSRect mainFrame = mainWindow.frame;
+        NSRect dialogFrame = self.dialogWindow.frame;
+        CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
+        CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
+        [self.dialogWindow setFrameOrigin:NSMakePoint(x, y)];
+    }
+
+    // Match app theme
+    if (self.app) {
+        NSAppearanceName appearanceName =
+            self.app->isDarkTheme() ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
+        self.dialogWindow.appearance = [NSAppearance appearanceNamed:appearanceName];
+    }
+
+    [self.dialogWindow makeKeyAndOrderFront:nil];
+}
+
+- (DatabaseType)databaseType {
+    return _db ? _db->getConnectionInfo().type : DatabaseType::SQLITE;
+}
+
+- (void)buildControls {
+    DatabaseType type = [self databaseType];
+    bool isPostgres = (type == DatabaseType::POSTGRESQL);
+
+    self.dialogWindow =
+        [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, kDialogWidth, 320)
+                                    styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                              NSWindowStyleMaskFullSizeContentView
+                                      backing:NSBackingStoreBuffered
+                                        defer:NO];
+    self.dialogWindow.titlebarAppearsTransparent = YES;
+    self.dialogWindow.titleVisibility = NSWindowTitleHidden;
+    [self.dialogWindow standardWindowButton:NSWindowMiniaturizeButton].hidden = YES;
+    [self.dialogWindow standardWindowButton:NSWindowZoomButton].hidden = YES;
+    self.dialogWindow.delegate = self;
+
+    objc_setAssociatedObject(self.dialogWindow, "controller", self, OBJC_ASSOCIATION_RETAIN);
+
+    NSView* cv = self.dialogWindow.contentView;
+
+    // Name
+    self.nameLabel = [self makeLabel:@"Name"];
+    [cv addSubview:self.nameLabel];
+    self.nameField = [self makeTextField:@"new_database"];
+    [cv addSubview:self.nameField];
+
+    if (isPostgres) {
+        // Owner
+        self.ownerLabel = [self makeLabel:@"Owner"];
+        [cv addSubview:self.ownerLabel];
+        self.ownerPopup = [self makePopup:@[ @"postgres" ] defaultIndex:0];
+        [cv addSubview:self.ownerPopup];
+
+        // Template
+        self.templateLabel = [self makeLabel:@"Template"];
+        [cv addSubview:self.templateLabel];
+        self.templatePopup = [self makePopup:@[ @"template1", @"template0" ] defaultIndex:0];
+        [cv addSubview:self.templatePopup];
+
+        // Encoding
+        self.encodingLabel = [self makeLabel:@"Encoding"];
+        [cv addSubview:self.encodingLabel];
+        self.encodingPopup = [self makePopup:@[
+            @"UTF8", @"LATIN1", @"LATIN2", @"LATIN9", @"WIN1252", @"SQL_ASCII", @"EUC_JP",
+            @"EUC_KR", @"EUC_CN", @"SJIS", @"BIG5", @"WIN1251", @"ISO_8859_5"
+        ]
+                                defaultIndex:0];
+        [cv addSubview:self.encodingPopup];
+
+        // Tablespace
+        self.tablespaceLabel = [self makeLabel:@"Tablespace"];
+        [cv addSubview:self.tablespaceLabel];
+        self.tablespacePopup = [self makePopup:@[ @"pg_default" ] defaultIndex:0];
+        [cv addSubview:self.tablespacePopup];
+
+        // Populate dynamic options from database
+        [self populatePostgresOptions];
+    } else {
+        // MySQL: Charset
+        self.charsetLabel = [self makeLabel:@"Charset"];
+        [cv addSubview:self.charsetLabel];
+        self.charsetPopup = [self makePopup:@[
+            @"utf8mb4", @"utf8mb3", @"utf8", @"latin1", @"ascii", @"binary", @"utf16", @"utf32",
+            @"cp1251", @"gbk", @"big5", @"euckr", @"sjis"
+        ]
+                               defaultIndex:0];
+        [self.charsetPopup setTarget:self];
+        [self.charsetPopup setAction:@selector(charsetChanged:)];
+        [cv addSubview:self.charsetPopup];
+
+        // Collation
+        self.collationLabel = [self makeLabel:@"Collation"];
+        [cv addSubview:self.collationLabel];
+        self.collationPopup = [self makePopup:@[
+            @"utf8mb4_unicode_ci", @"utf8mb4_0900_ai_ci", @"utf8mb4_general_ci", @"utf8mb4_bin"
+        ]
+                                 defaultIndex:0];
+        [cv addSubview:self.collationPopup];
+    }
+
+    // Comment
+    self.commentLabel = [self makeLabel:@"Comment"];
+    [cv addSubview:self.commentLabel];
+    self.commentField = [self makeTextField:@"(optional)"];
+    [cv addSubview:self.commentField];
+
+    // Bottom separator
+    self.bottomSeparator = [[NSBox alloc] init];
+    self.bottomSeparator.boxType = NSBoxSeparator;
+    [cv addSubview:self.bottomSeparator];
+
+    // Status label
+    self.statusLabel = [NSTextField labelWithString:@""];
+    self.statusLabel.textColor = [NSColor systemRedColor];
+    [cv addSubview:self.statusLabel];
+
+    // Spinner
+    self.spinner = [[NSProgressIndicator alloc] init];
+    self.spinner.style = NSProgressIndicatorStyleSpinning;
+    self.spinner.controlSize = NSControlSizeSmall;
+    self.spinner.displayedWhenStopped = NO;
+    [cv addSubview:self.spinner];
+
+    // Create button
+    self.createButton = [[NSButton alloc] init];
+    [self.createButton setTitle:@"Create"];
+    [self.createButton setBezelStyle:NSBezelStyleRounded];
+    [self.createButton setKeyEquivalent:@"\r"];
+    [self.createButton setTarget:self];
+    [self.createButton setAction:@selector(createClicked:)];
+    [cv addSubview:self.createButton];
+
+    // Cancel button
+    self.cancelButton = [[NSButton alloc] init];
+    [self.cancelButton setTitle:@"Cancel"];
+    [self.cancelButton setBezelStyle:NSBezelStyleRounded];
+    [self.cancelButton setKeyEquivalent:@"\033"];
+    [self.cancelButton setTarget:self];
+    [self.cancelButton setAction:@selector(cancelClicked:)];
+    [cv addSubview:self.cancelButton];
+}
+
+- (void)populatePostgresOptions {
+    if (!_db)
+        return;
+
+    auto* executor = dynamic_cast<IQueryExecutor*>(_db.get());
+    if (!executor)
+        return;
+
+    // Populate owners from pg_roles
+    @try {
+        auto results = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
+        if (!results.empty() && results[0].success) {
+            [self.ownerPopup removeAllItems];
+            NSInteger postgresIdx = -1;
+            for (const auto& row : results[0].tableData) {
+                if (!row.empty()) {
+                    NSString* name = [NSString stringWithUTF8String:row[0].c_str()];
+                    [self.ownerPopup addItemWithTitle:name];
+                    if ([name isEqualToString:@"postgres"]) {
+                        postgresIdx = self.ownerPopup.numberOfItems - 1;
+                    }
+                }
+            }
+            if (postgresIdx >= 0) {
+                [self.ownerPopup selectItemAtIndex:postgresIdx];
+            }
+        }
+    } @catch (NSException* e) {
+        NSLog(@"Failed to load pg_roles: %@", e);
+    }
+
+    // Populate templates from pg_database
+    @
+    try {
+        auto results = executor->executeQuery(
+            "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
+        if (!results.empty() && results[0].success) {
+            [self.templatePopup removeAllItems];
+            [self.templatePopup addItemWithTitle:@"template1"];
+            for (const auto& row : results[0].tableData) {
+                if (!row.empty()) {
+                    NSString* name = [NSString stringWithUTF8String:row[0].c_str()];
+                    if (![name isEqualToString:@"template1"]) {
+                        [self.templatePopup addItemWithTitle:name];
+                    }
+                }
+            }
+        }
+    } @catch (NSException* e) {
+        NSLog(@"Failed to load template databases: %@", e);
+    }
+
+    // Populate tablespaces from pg_tablespace
+    @
+    try {
+        auto results = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
+        if (!results.empty() && results[0].success) {
+            [self.tablespacePopup removeAllItems];
+            for (const auto& row : results[0].tableData) {
+                if (!row.empty()) {
+                    [self.tablespacePopup
+                        addItemWithTitle:[NSString stringWithUTF8String:row[0].c_str()]];
+                }
+            }
+        }
+    } @catch (NSException* e) {
+        NSLog(@"Failed to load tablespaces: %@", e);
+    }
+}
+
+- (void)charsetChanged:(id)sender {
+    NSString* charset = [self.charsetPopup titleOfSelectedItem];
+    [self.collationPopup removeAllItems];
+
+    if ([charset isEqualToString:@"utf8mb4"]) {
+        for (NSString* c in @[
+                 @"utf8mb4_unicode_ci", @"utf8mb4_0900_ai_ci", @"utf8mb4_general_ci", @"utf8mb4_bin"
+             ]) {
+            [self.collationPopup addItemWithTitle:c];
+        }
+    } else if ([charset isEqualToString:@"utf8mb3"] || [charset isEqualToString:@"utf8"]) {
+        for (NSString* c in @[ @"utf8_unicode_ci", @"utf8_general_ci", @"utf8_bin" ]) {
+            [self.collationPopup addItemWithTitle:c];
+        }
+    } else if ([charset isEqualToString:@"latin1"]) {
+        for (NSString* c in @[ @"latin1_swedish_ci", @"latin1_general_ci", @"latin1_bin" ]) {
+            [self.collationPopup addItemWithTitle:c];
+        }
+    } else if ([charset isEqualToString:@"ascii"]) {
+        for (NSString* c in @[ @"ascii_general_ci", @"ascii_bin" ]) {
+            [self.collationPopup addItemWithTitle:c];
+        }
+    } else if ([charset isEqualToString:@"binary"]) {
+        [self.collationPopup addItemWithTitle:@"binary"];
+    }
+}
+
+- (CGFloat)computeRequiredHeight {
+    CGFloat h = kMargin;
+    h += kRowHeight + kRowSpacing; // Name
+
+    DatabaseType type = [self databaseType];
+    if (type == DatabaseType::POSTGRESQL) {
+        h += kRowHeight + kRowSpacing; // Owner
+        h += kRowHeight + kRowSpacing; // Template
+        h += kRowHeight + kRowSpacing; // Encoding
+        h += kRowHeight + kRowSpacing; // Tablespace
+    } else {
+        h += kRowHeight + kRowSpacing; // Charset
+        h += kRowHeight + kRowSpacing; // Collation
+    }
+
+    h += kRowHeight + kRowSpacing; // Comment
+    h += 20 + kRowSpacing;         // Status
+    h += 1 + kRowSpacing;          // Separator
+    h += kRowHeight;               // Buttons
+    h += kMargin;
+    return h;
+}
+
+- (void)layoutFields {
+    CGFloat windowH = [self computeRequiredHeight];
+
+    NSRect frame = self.dialogWindow.frame;
+    CGFloat topEdge = NSMaxY(frame);
+    frame.size.height = windowH;
+    frame.origin.y = topEdge - windowH;
+    NSRect contentRect = [self.dialogWindow contentRectForFrameRect:frame];
+    CGFloat contentH = contentRect.size.height;
+    [self.dialogWindow setFrame:frame display:YES animate:NO];
+
+    CGFloat y = contentH - kMargin;
+    DatabaseType type = [self databaseType];
+
+    // Name row
+    y -= kRowHeight;
+    self.nameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+    self.nameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+    y -= kRowSpacing;
+
+    if (type == DatabaseType::POSTGRESQL) {
+        // Owner
+        y -= kRowHeight;
+        self.ownerLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.ownerPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+
+        // Template
+        y -= kRowHeight;
+        self.templateLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.templatePopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+
+        // Encoding
+        y -= kRowHeight;
+        self.encodingLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.encodingPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+
+        // Tablespace
+        y -= kRowHeight;
+        self.tablespaceLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.tablespacePopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+    } else {
+        // Charset
+        y -= kRowHeight;
+        self.charsetLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.charsetPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+
+        // Collation
+        y -= kRowHeight;
+        self.collationLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.collationPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+    }
+
+    // Comment
+    y -= kRowHeight;
+    self.commentLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+    self.commentField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+    y -= kRowSpacing;
+
+    // Status label
+    y -= 20;
+    self.statusLabel.frame = NSMakeRect(kMargin, y, kDialogWidth - 2 * kMargin - 24, 20);
+    self.spinner.frame = NSMakeRect(kDialogWidth - kMargin - 20, y + 2, 16, 16);
+    y -= kRowSpacing;
+
+    // Bottom separator
+    y -= 1;
+    self.bottomSeparator.frame = NSMakeRect(kMargin, y, kDialogWidth - 2 * kMargin, 1);
+    y -= kRowSpacing;
+
+    // Buttons
+    y -= kRowHeight;
+    CGFloat btnW = 90;
+    self.createButton.frame = NSMakeRect(kDialogWidth - kMargin - btnW, y, btnW, kRowHeight);
+    self.cancelButton.frame =
+        NSMakeRect(kDialogWidth - kMargin - btnW - 10 - btnW, y, btnW, kRowHeight);
+}
+
+- (void)cancelClicked:(id)sender {
+    [self.dialogWindow close];
+}
+
+- (void)createClicked:(id)sender {
+    @try {
+        NSString* nameNS = self.nameField.stringValue;
+        if (nameNS.length == 0) {
+            self.statusLabel.stringValue = @"Please enter a database name";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
+
+        self.createButton.enabled = NO;
+        [self.spinner startAnimation:nil];
+        self.statusLabel.stringValue = @"Creating...";
+        self.statusLabel.textColor = [NSColor secondaryLabelColor];
+
+        // Build options
+        CreateDatabaseOptions opts;
+        opts.name = [nameNS UTF8String];
+        opts.comment = [self.commentField.stringValue UTF8String];
+
+        DatabaseType type = [self databaseType];
+        if (type == DatabaseType::POSTGRESQL) {
+            opts.owner = [[self.ownerPopup titleOfSelectedItem] UTF8String];
+            opts.templateDb = [[self.templatePopup titleOfSelectedItem] UTF8String];
+            opts.encoding = [[self.encodingPopup titleOfSelectedItem] UTF8String];
+            opts.tablespace = [[self.tablespacePopup titleOfSelectedItem] UTF8String];
+        } else {
+            opts.charset = [[self.charsetPopup titleOfSelectedItem] UTF8String];
+            opts.collation = [[self.collationPopup titleOfSelectedItem] UTF8String];
+        }
+
+        // Capture for async
+        std::shared_ptr<DatabaseInterface> dbCopy = _db;
+        Application* appPtr = self.app;
+        NSWindow* dialogRef = self.dialogWindow;
+        NSButton* createBtnRef = self.createButton;
+        NSTextField* statusRef = self.statusLabel;
+        NSProgressIndicator* spinnerRef = self.spinner;
+        [dialogRef retain];
+        [createBtnRef retain];
+        [statusRef retain];
+        [spinnerRef retain];
+
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+          auto result = dbCopy->createDatabaseWithOptions(opts);
+          bool ok = result.first;
+          std::string errMsg = result.second;
+
+          dispatch_async(dispatch_get_main_queue(), ^{
+            if (ok) {
+                // Refresh the database list
+                if (auto* pgDb = dynamic_cast<PostgresDatabase*>(dbCopy.get())) {
+                    pgDb->refreshDatabaseNames();
+                } else if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(dbCopy.get())) {
+                    mysqlDb->refreshDatabaseNames();
+                }
+                [dialogRef close];
+            } else {
+                NSString* errStr = [NSString stringWithUTF8String:("Failed: " + errMsg).c_str()];
+                statusRef.stringValue = errStr;
+                statusRef.textColor = [NSColor systemRedColor];
+                createBtnRef.enabled = YES;
+                [spinnerRef stopAnimation:nil];
+            }
+
+            [dialogRef release];
+            [createBtnRef release];
+            [statusRef release];
+            [spinnerRef release];
+          });
+        });
+    } @catch (NSException* exception) {
+        NSLog(@"Exception in createClicked: %@", exception);
+        self.statusLabel.stringValue = [NSString stringWithFormat:@"Error: %@", exception.reason];
+        self.statusLabel.textColor = [NSColor systemRedColor];
+        self.createButton.enabled = YES;
+        [self.spinner stopAnimation:nil];
+    }
+}
+
+- (void)windowWillClose:(NSNotification*)notification {
+    if (self.app) {
+        GLFWwindow* glfwWindow = self.app->getWindow();
+        if (glfwWindow) {
+            NSWindow* mainWindow = glfwGetCocoaWindow(glfwWindow);
+            [mainWindow makeKeyAndOrderFront:nil];
+        }
+    }
+
+    _db.reset();
+    sActiveCreateDatabaseDialog = nil;
+    objc_setAssociatedObject(self.dialogWindow, "controller", nil, OBJC_ASSOCIATION_RETAIN);
+}
+
+@end
+
 // MARK: - C++ free functions
 
 void showMacOSConnectionDialog(Application* app) {
@@ -989,5 +1577,17 @@ void showMacOSEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInt
     controller.app = app;
     [controller showDialogForEdit:db connectionId:connectionId];
     sActiveConnectionDialog = controller.dialogWindow;
+    [controller release]; // associated object on the window holds the retain
+}
+
+void showMacOSCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+    if (sActiveCreateDatabaseDialog) {
+        [sActiveCreateDatabaseDialog makeKeyAndOrderFront:nil];
+        return;
+    }
+    CreateDatabaseDialogController* controller = [[CreateDatabaseDialogController alloc] init];
+    controller.app = app;
+    [controller showDialogForDatabase:db];
+    sActiveCreateDatabaseDialog = controller.dialogWindow;
     [controller release]; // associated object on the window holds the retain
 }

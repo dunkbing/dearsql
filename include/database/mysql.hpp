@@ -23,6 +23,8 @@ public:
     // Database operations
     std::pair<bool, std::string> createDatabase(const std::string& dbName,
                                                 const std::string& comment = "") override;
+    std::pair<bool, std::string>
+    createDatabaseWithOptions(const CreateDatabaseOptions& options) override;
     std::pair<bool, std::string> renameDatabase(const std::string& oldName,
                                                 const std::string& newName) override;
     std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;

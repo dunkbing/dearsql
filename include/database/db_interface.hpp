@@ -97,6 +97,19 @@ struct DatabaseConnectionInfo {
     }
 };
 
+struct CreateDatabaseOptions {
+    std::string name;
+    std::string comment;
+    // PostgreSQL
+    std::string owner;
+    std::string templateDb;
+    std::string encoding;
+    std::string tablespace;
+    // MySQL
+    std::string charset;
+    std::string collation;
+};
+
 /**
  * Abstract base class for all database implementations.
  * Provides both the interface contract and common functionality:
@@ -121,6 +134,12 @@ public:
     virtual std::pair<bool, std::string> createDatabase(const std::string& dbName,
                                                         const std::string& comment = "") {
         return {false, "Create database not supported for this database type"};
+    }
+
+    // Create a database with extended options (owner, template, encoding, charset, etc.)
+    virtual std::pair<bool, std::string>
+    createDatabaseWithOptions(const CreateDatabaseOptions& options) {
+        return createDatabase(options.name, options.comment);
     }
 
     // Rename a database (returns success, error message)

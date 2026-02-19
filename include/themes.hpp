@@ -140,6 +140,7 @@ namespace Theme {
         // Colors with native appearance
         ImVec4* colors_array = style.Colors;
         colors_array[ImGuiCol_Text] = colors.text;
+        colors_array[ImGuiCol_InputTextCursor] = colors.text;
         colors_array[ImGuiCol_TextDisabled] = colors.subtext0;
         colors_array[ImGuiCol_WindowBg] = colors.base;
         colors_array[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // Transparent

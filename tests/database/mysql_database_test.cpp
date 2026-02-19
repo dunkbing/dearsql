@@ -170,3 +170,40 @@ TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMys
     ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
     EXPECT_TRUE(verifyResult[0].tableData.empty());
 }
+
+TEST_F(MySQLDatabaseIntegrationTest,
+       CreateDatabaseWithOptionsCreatesDatabaseWithCharsetAndCollation) {
+    ASSERT_NE(database, nullptr);
+
+    const std::string tempDb = TestHelpers::makeUniqueIdentifier("dearsql_mysql_create_opts_");
+
+    CreateDatabaseOptions options;
+    options.name = tempDb;
+    options.charset = "utf8mb4";
+    options.collation = "utf8mb4_unicode_ci";
+    options.comment = "dearsql option test's comment";
+
+    auto [created, createErr] = database->createDatabaseWithOptions(options);
+    if (!created) {
+        const std::string& err = createErr;
+        if (err.find("Access denied") != std::string::npos ||
+            err.find("denied") != std::string::npos) {
+            GTEST_SKIP() << "Skipping: CREATE DATABASE privilege is required for this test. Error: "
+                         << err;
+        }
+    }
+    ASSERT_TRUE(created) << createErr;
+
+    auto result = database->executeQuery(
+        std::format("SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
+                    "FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{}'",
+                    tempDb));
+    ASSERT_FALSE(result.empty());
+    ASSERT_TRUE(result[0].success) << result[0].errorMessage;
+    ASSERT_EQ(result[0].tableData.size(), 1u);
+    EXPECT_EQ(result[0].tableData[0][0], options.charset);
+    EXPECT_EQ(result[0].tableData[0][1], options.collation);
+
+    const auto [dropped, dropErr] = database->dropDatabase(tempDb);
+    ASSERT_TRUE(dropped) << dropErr;
+}

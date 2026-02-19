@@ -20,6 +20,10 @@
     {
       "name": "glfw3",
       "platform": "!linux"
+    },
+    {
+      "name": "sentry-native",
+      "features": ["backend", "transport", "compression"]
     }
   ]
 }

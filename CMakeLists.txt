@@ -77,6 +77,7 @@ find_package(mongocxx CONFIG REQUIRED)
 find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
+find_package(sentry CONFIG REQUIRED)
 
 enable_testing()
 
@@ -194,6 +195,7 @@ set(APP_SOURCES
     src/utils/spinner.cpp
     src/utils/crypto.cpp
     src/utils/logger.cpp
+    src/utils/sentry_init.cpp
 
     # License
     src/license/license_manager.cpp
@@ -266,6 +268,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     nfd::nfd
     OpenSSL::SSL
     OpenSSL::Crypto
+    sentry::sentry
 )
 
 # Platform-specific linking
@@ -322,6 +325,27 @@ if(APPLE)
             "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/Sparkle.framework"
         COMMENT "Embedding Sparkle.framework into app bundle"
     )
+
+    # Embed sentry dylib into the app bundle
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:sentry::sentry>"
+            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
+        COMMENT "Embedding sentry dylib into app bundle"
+    )
+
+    # Copy crashpad_handler into the app bundle (next to the executable)
+    find_program(CRASHPAD_HANDLER crashpad_handler
+        PATHS "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/sentry-native"
+        NO_DEFAULT_PATH)
+    if(CRASHPAD_HANDLER)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CRASHPAD_HANDLER}"
+                "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/MacOS/"
+            COMMENT "Embedding crashpad_handler into app bundle"
+        )
+    endif()
 endif()
 
 # =============================================================================

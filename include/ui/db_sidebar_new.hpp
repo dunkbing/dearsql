@@ -47,6 +47,10 @@ private:
     bool shouldShowCreateDatabaseDialog = false;
     std::shared_ptr<DatabaseInterface> createDatabaseTarget;
 
+    // Native create database dialog (macOS)
+    bool shouldShowNativeCreateDatabaseDialog = false;
+    std::shared_ptr<DatabaseInterface> nativeCreateDatabaseTarget;
+
     bool historyPanelOpen = false;
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer for fast lookup)

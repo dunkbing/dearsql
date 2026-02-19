@@ -1,5 +1,6 @@
 #include "database/mysql.hpp"
 #include "utils/logger.hpp"
+#include <cctype>
 #include <format>
 #include <iostream>
 #include <mysql/mysql.h>
@@ -112,6 +113,32 @@ namespace {
             }
         }
         return escaped;
+    }
+
+    std::string quoteMysqlIdentifier(const std::string& input) {
+        std::string quoted = "`";
+        quoted.reserve(input.size() + 2);
+        for (char ch : input) {
+            quoted.push_back(ch);
+            if (ch == '`') {
+                quoted.push_back('`');
+            }
+        }
+        quoted.push_back('`');
+        return quoted;
+    }
+
+    bool isSafeSqlToken(const std::string& input) {
+        if (input.empty()) {
+            return false;
+        }
+        for (char ch : input) {
+            const unsigned char uch = static_cast<unsigned char>(ch);
+            if (!std::isalnum(uch) && ch != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
 } // namespace
@@ -475,7 +502,8 @@ std::pair<bool, std::string> MySQLDatabase::createDatabase(const std::string& db
     try {
         std::string sql = std::format("CREATE DATABASE `{}`", dbName);
         if (!comment.empty()) {
-            sql += std::format(" COMMENT '{}'", escapeSingleQuotes(comment));
+            Logger::warn(
+                "MySQL database comments are not supported by this backend; ignoring comment");
         }
 
         auto session = getSession();
@@ -487,6 +515,49 @@ std::pair<bool, std::string> MySQLDatabase::createDatabase(const std::string& db
         }
 
         Logger::info(std::format("Database '{}' created successfully", dbName));
+        return {true, ""};
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Failed to create database: {}", e.what()));
+        return {false, e.what()};
+    }
+}
+
+std::pair<bool, std::string>
+MySQLDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    if (opts.name.empty()) {
+        return {false, "Database name cannot be empty"};
+    }
+    if (!opts.charset.empty() && !isSafeSqlToken(opts.charset)) {
+        return {false, "Invalid charset value"};
+    }
+    if (!opts.collation.empty() && !isSafeSqlToken(opts.collation)) {
+        return {false, "Invalid collation value"};
+    }
+
+    try {
+        std::string sql = std::format("CREATE DATABASE {}", quoteMysqlIdentifier(opts.name));
+        if (!opts.charset.empty())
+            sql += std::format(" CHARACTER SET {}", opts.charset);
+        if (!opts.collation.empty())
+            sql += std::format(" COLLATE {}", opts.collation);
+        if (!opts.comment.empty()) {
+            Logger::warn(
+                "MySQL database comments are not supported by this backend; ignoring comment");
+        }
+
+        auto session = getSession();
+        MYSQL* conn = session.get();
+        if (mysql_query(conn, sql.c_str()) != 0) {
+            std::string err = mysql_error(conn);
+            Logger::error(std::format("Failed to create database: {}", err));
+            return {false, err};
+        }
+
+        Logger::info(std::format("Database '{}' created successfully", opts.name));
         return {true, ""};
     } catch (const std::exception& e) {
         Logger::error(std::format("Failed to create database: {}", e.what()));

@@ -1,6 +1,7 @@
 #include "database/postgresql.hpp"
 #include "database/db.hpp"
 #include "utils/logger.hpp"
+#include <cctype>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -99,6 +100,32 @@ namespace {
             }
         }
         return escaped;
+    }
+
+    std::string quotePgIdentifier(const std::string& input) {
+        std::string quoted = "\"";
+        quoted.reserve(input.size() + 2);
+        for (char ch : input) {
+            quoted.push_back(ch);
+            if (ch == '"') {
+                quoted.push_back('"');
+            }
+        }
+        quoted.push_back('"');
+        return quoted;
+    }
+
+    bool isSafeSqlToken(const std::string& input) {
+        if (input.empty()) {
+            return false;
+        }
+        for (char ch : input) {
+            const unsigned char uch = static_cast<unsigned char>(ch);
+            if (!std::isalnum(uch) && ch != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
 } // namespace
@@ -586,6 +613,63 @@ std::pair<bool, std::string> PostgresDatabase::createDatabase(const std::string&
         }
 
         Logger::info(std::format("Database '{}' created successfully", dbName));
+        return {true, ""};
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Failed to create database: {}", e.what()));
+        return {false, e.what()};
+    }
+}
+
+std::pair<bool, std::string>
+PostgresDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
+    if (!isConnected()) {
+        return {false, "Not connected to database"};
+    }
+
+    if (opts.name.empty()) {
+        return {false, "Database name cannot be empty"};
+    }
+    if (!opts.encoding.empty() && !isSafeSqlToken(opts.encoding)) {
+        return {false, "Invalid encoding value"};
+    }
+
+    try {
+        auto session = getSession();
+        PGconn* conn = session.get();
+
+        std::string sql = std::format("CREATE DATABASE {}", quotePgIdentifier(opts.name));
+        if (!opts.owner.empty())
+            sql += std::format(" OWNER {}", quotePgIdentifier(opts.owner));
+        if (!opts.templateDb.empty())
+            sql += std::format(" TEMPLATE {}", quotePgIdentifier(opts.templateDb));
+        if (!opts.encoding.empty())
+            sql += std::format(" ENCODING '{}'", opts.encoding);
+        if (!opts.tablespace.empty())
+            sql += std::format(" TABLESPACE {}", quotePgIdentifier(opts.tablespace));
+
+        PgResultPtr createRes(PQexec(conn, sql.c_str()));
+        if (!createRes || PQresultStatus(createRes.get()) != PGRES_COMMAND_OK) {
+            std::string err =
+                createRes ? PQresultErrorMessage(createRes.get()) : PQerrorMessage(conn);
+            Logger::error(std::format("Failed to create database: {}", err));
+            return {false, err};
+        }
+
+        if (!opts.comment.empty()) {
+            const std::string commentSql =
+                std::format("COMMENT ON DATABASE {} IS '{}'", quotePgIdentifier(opts.name),
+                            escapeSingleQuotes(opts.comment));
+            PgResultPtr commentRes(PQexec(conn, commentSql.c_str()));
+            if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
+                std::string err =
+                    commentRes ? PQresultErrorMessage(commentRes.get()) : PQerrorMessage(conn);
+                Logger::warn(std::format("Database '{}' created, but failed to set comment: {}",
+                                         opts.name, err));
+                return {true, std::format("Created database, but failed to set comment: {}", err)};
+            }
+        }
+
+        Logger::info(std::format("Database '{}' created successfully", opts.name));
         return {true, ""};
     } catch (const std::exception& e) {
         Logger::error(std::format("Failed to create database: {}", e.what()));

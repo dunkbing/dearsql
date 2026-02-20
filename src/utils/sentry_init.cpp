@@ -1,8 +1,8 @@
 #include "utils/sentry_init.hpp"
 #include "config.hpp"
 #include <cstdlib>
-#include <string>
 #include <sentry.h>
+#include <string>
 
 namespace {
     std::string getSentryDbPath() {

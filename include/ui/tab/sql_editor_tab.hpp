@@ -6,11 +6,14 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <string>
 #include <vector>
 
 // Forward declarations
 class IDatabaseNode;
+class AIChatState;
+class AIChatPanel;
 
 class SQLEditorTab final : public Tab {
 public:
@@ -84,4 +87,14 @@ private:
     // Autocomplete
     void updateCompletionKeywords();
     bool completionKeywordsSet_ = false;
+
+    // AI Chat panel
+    std::unique_ptr<AIChatState> aiChatState_;
+    std::unique_ptr<AIChatPanel> aiChatPanel_;
+    bool aiPanelVisible_ = false;
+    float aiPanelWidth_ = 350.0f;
+
+    void initAIPanel();
+    void renderAIToggleStrip(float stripWidth, float availableHeight);
+    void renderAIPanel(float panelWidth, float availableHeight);
 };

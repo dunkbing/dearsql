@@ -197,6 +197,12 @@ set(APP_SOURCES
     src/utils/logger.cpp
     src/utils/sentry_init.cpp
 
+    # AI
+    src/ai/ai_client.cpp
+    src/ai/ai_chat.cpp
+    src/ui/ai_chat_panel.cpp
+    src/ui/ai_settings_dialog.cpp
+
     # License
     src/license/license_manager.cpp
     src/ui/license_dialog.cpp

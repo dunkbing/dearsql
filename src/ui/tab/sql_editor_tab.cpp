@@ -1,8 +1,12 @@
 #include "ui/tab/sql_editor_tab.hpp"
+#include "IconsFontAwesome6.h"
+#include "ai/ai_chat.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "imgui.h"
+#include "ui/ai_chat_panel.hpp"
+#include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
@@ -12,11 +16,8 @@
 #include <future>
 
 namespace {
-    constexpr const char* LABEL_EXECUTING = "Executing...";
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
     constexpr const char* LABEL_CANCEL = "Cancel";
-    constexpr const char* LABEL_EXECUTE_QUERY = "Execute Query";
-    constexpr const char* LABEL_CLEAR = "Clear";
     constexpr const char* LABEL_NO_DATABASE = "SQL Editor (No database selected)";
     constexpr const char* LABEL_NO_ROWS = "No rows returned.";
     constexpr const char* LABEL_ROW_LIMIT = "(limited to 1000 rows)";
@@ -55,25 +56,50 @@ void SQLEditorTab::render() {
 
     renderConnectionInfo();
 
+    // Render AI settings dialog (modal, always available)
+    AISettingsDialog::instance().render();
+
+    constexpr float toggleStripWidth = 28.0f;
+    const float totalWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight = ImGui::GetContentRegionAvail().y;
-    const float editorHeight = totalContentHeight * splitterPosition;
-    const float resultsHeight = totalContentHeight * (1.0f - splitterPosition) - 6.0f;
 
-    if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
-                          ImGuiWindowFlags_NoScrollbar)) {
-        sqlEditor.Render("##SQL", ImVec2(-1, -1), true);
-        sqlQuery = sqlEditor.GetText();
+    const float panelContentWidth = aiPanelVisible_ ? aiPanelWidth_ : 0.0f;
+    float editorAreaWidth = totalWidth - toggleStripWidth - panelContentWidth;
+    editorAreaWidth = std::max(200.0f, editorAreaWidth);
+
+    // Left pane: editor + results
+    if (ImGui::BeginChild("##sql_left_pane", ImVec2(editorAreaWidth, totalContentHeight), false)) {
+        float paneHeight = ImGui::GetContentRegionAvail().y;
+        const float editorHeight = paneHeight * splitterPosition;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f;
+
+        if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
+                              ImGuiWindowFlags_NoScrollbar)) {
+            sqlEditor.Render("##SQL", ImVec2(-1, -1), true);
+            sqlQuery = sqlEditor.GetText();
+        }
+        ImGui::EndChild();
+
+        renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
+
+        if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
+                              ImGuiWindowFlags_NoScrollbar)) {
+            renderToolbar();
+            renderQueryResults();
+        }
+        ImGui::EndChild();
     }
     ImGui::EndChild();
 
-    renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
-
-    if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
-                          ImGuiWindowFlags_NoScrollbar)) {
-        renderToolbar();
-        renderQueryResults();
+    // AI panel content (when open)
+    if (aiPanelVisible_) {
+        ImGui::SameLine(0, 0);
+        renderAIPanel(panelContentWidth, totalContentHeight);
     }
-    ImGui::EndChild();
+
+    // Toggle strip on the far right (always visible)
+    ImGui::SameLine(0, 0);
+    renderAIToggleStrip(toggleStripWidth, totalContentHeight);
 }
 
 void SQLEditorTab::renderConnectionInfo() {
@@ -86,9 +112,13 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderToolbar() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+
     if (isExecutingQuery) {
         ImGui::BeginDisabled();
-        ImGui::Button(LABEL_EXECUTING);
+        ImGui::Button(ICON_FA_PLAY " Run");
         ImGui::EndDisabled();
 
         ImGui::SameLine();
@@ -102,18 +132,13 @@ void SQLEditorTab::renderToolbar() {
             cancelQueryExecution();
         }
     } else {
-        if (ImGui::Button(LABEL_EXECUTE_QUERY)) {
+        if (ImGui::Button(ICON_FA_PLAY " Run")) {
             startQueryExecutionAsync(sqlQuery);
         }
     }
 
-    ImGui::SameLine();
-    if (ImGui::Button(LABEL_CLEAR)) {
-        sqlEditor.SetText("");
-        sqlQuery.clear();
-        queryResults.clear();
-        queryError.clear();
-    }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 
     ImGui::Separator();
 }
@@ -359,4 +384,132 @@ void SQLEditorTab::updateCompletionKeywords() {
 
     sqlEditor.SetCompletionKeywords(keywords);
     completionKeywordsSet_ = true;
+}
+
+void SQLEditorTab::initAIPanel() {
+    aiChatState_ = std::make_unique<AIChatState>(node_);
+    aiChatPanel_ = std::make_unique<AIChatPanel>(aiChatState_.get());
+    aiChatPanel_->setInsertCallback([this](const std::string& sql) {
+        std::string current = sqlEditor.GetText();
+        if (!current.empty() && current.back() != '\n') {
+            current += "\n";
+        }
+        current += sql;
+        sqlEditor.SetText(current);
+        sqlQuery = current;
+    });
+}
+
+void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::BeginChild("AIToggleStrip", ImVec2(stripWidth, availableHeight),
+                          ImGuiChildFlags_None)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
+
+        // Draw left border line
+        drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
+                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+        // Rotated "AI" label as a clickable tab
+        const char* label = "Assistant";
+        const ImVec2 textSize = ImGui::CalcTextSize(label);
+        constexpr float padding = 6.0f;
+        const float buttonW = stripWidth;
+        const float buttonH = textSize.x + padding * 2.0f;
+
+        ImGui::SetCursorScreenPos(ImVec2(stripPos.x, stripPos.y));
+        ImGui::InvisibleButton("##toggleAI", ImVec2(buttonW, buttonH));
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) {
+            aiPanelVisible_ = !aiPanelVisible_;
+            if (aiPanelVisible_ && !aiChatPanel_) {
+                initAIPanel();
+            }
+        }
+
+        // Button background
+        const ImVec2 btnMin = stripPos;
+        const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
+        if (aiPanelVisible_) {
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        } else if (hovered) {
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        }
+
+        // Bottom border of button area
+        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+                          1.0f);
+
+        // Draw rotated text centered in the button area
+        const float cx = stripPos.x + buttonW * 0.5f;
+        const float cy = stripPos.y + buttonH * 0.5f;
+        const float textX = cx - textSize.x * 0.5f;
+        const float textY = cy - textSize.y * 0.5f;
+
+        drawList->PushClipRectFullScreen();
+        const int vtxBegin = drawList->VtxBuffer.Size;
+        drawList->AddText(
+            ImVec2(textX, textY),
+            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.text : colors.subtext0), label);
+        const int vtxEnd = drawList->VtxBuffer.Size;
+
+        // Rotate all text vertices 90 degrees (top-to-bottom reading) around center
+        for (int i = vtxBegin; i < vtxEnd; i++) {
+            ImDrawVert& v = drawList->VtxBuffer[i];
+            const float dx = v.pos.x - cx;
+            const float dy = v.pos.y - cy;
+            v.pos.x = cx - dy;
+            v.pos.y = cy + dx;
+        }
+        drawList->PopClipRect();
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
+void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
+    if (ImGui::BeginChild("AIPanel", ImVec2(panelWidth, availableHeight),
+                          ImGuiChildFlags_Borders)) {
+        // Resize handle on the left edge
+        {
+            constexpr float handleWidth = 4.0f;
+            const ImVec2 panelPos = ImGui::GetWindowPos();
+            const ImVec2 handleMin(panelPos.x, panelPos.y);
+            const ImVec2 handleMax(panelPos.x + handleWidth, panelPos.y + availableHeight);
+
+            ImGui::SetCursorScreenPos(handleMin);
+            ImGui::InvisibleButton("##aiResizeHandle", ImVec2(handleWidth, availableHeight));
+            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            }
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                aiPanelWidth_ -= ImGui::GetIO().MouseDelta.x;
+                aiPanelWidth_ = std::clamp(aiPanelWidth_, 250.0f, 600.0f);
+            }
+
+            ImGui::SetCursorPos(ImVec2(0, 0));
+        }
+
+        if (!aiChatPanel_) {
+            initAIPanel();
+        }
+        if (aiChatState_) {
+            aiChatState_->setCurrentSQL(sqlQuery);
+        }
+        if (aiChatPanel_) {
+            aiChatPanel_->render();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
 }

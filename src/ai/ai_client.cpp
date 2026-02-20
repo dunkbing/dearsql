@@ -41,8 +41,8 @@ void AIClient::sendStreaming(AIProvider provider, const std::string& apiKey,
 void AIClient::cancel() {
     if (streamOperation_.isRunning()) {
         streamOperation_.cancel();
-        updateCompletionState();
     }
+    done_ = true;
 }
 
 bool AIClient::isStreaming() const {

@@ -243,11 +243,11 @@ private:
     }
 
     void reapZombies() {
-        Logger::debug(std::string("AsyncOperation: reapZombies ") +
-                      std::to_string(zombieOperations.size()) + " completed futures");
         if (zombieOperations.empty()) {
             return;
         }
+        Logger::debug(std::string("AsyncOperation: reapZombies ") +
+                              std::to_string(zombieOperations.size()) + " completed futures");
 
         size_t reaped = 0;
         auto it = zombieOperations.begin();

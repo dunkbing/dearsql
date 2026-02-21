@@ -677,7 +677,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     ImGui::GetWindowDrawList()->AddText(dbIconPos, iconColor, icon.c_str());
 
     if (showSpinner) {
-        ImGui::SameLine();
+        ImGui::SameLine(0, Theme::Spacing::S);
         UIUtils::Spinner("##db_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
     }
 
@@ -715,7 +715,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         if (db->isConnecting()) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Connecting...");
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {

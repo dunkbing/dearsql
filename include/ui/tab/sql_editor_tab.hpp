@@ -31,12 +31,6 @@ public:
     void setQuery(const std::string& query) {
         sqlQuery = query;
     }
-    [[nodiscard]] const std::string& getResult() const {
-        return queryResult;
-    }
-    void setResult(const std::string& result) {
-        queryResult = result;
-    }
     [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;
     }
@@ -49,7 +43,6 @@ public:
 
 private:
     std::string sqlQuery;
-    std::string queryResult;
     IDatabaseNode* node_ = nullptr; // Database node implementing IDatabaseNode
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
     TextEditor sqlEditor;
@@ -76,9 +69,15 @@ private:
 
     // Render component helper methods
     void renderConnectionInfo();
+    void renderConnectionInfoPostgres();
+    void renderConnectionInfoMySQL();
+    void renderConnectionInfoSQLite();
     void renderToolbar();
     void renderQueryResults() const;
     void renderSingleResult(const QueryResult& r, size_t index) const;
+
+    // Switch the active database node (clears results, resets autocomplete)
+    void switchNode(IDatabaseNode* newNode);
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,
@@ -87,6 +86,9 @@ private:
     // Autocomplete
     void updateCompletionKeywords();
     bool completionKeywordsSet_ = false;
+
+    // Deferred database switch (PostgreSQL: waiting for schemas to load)
+    std::string pendingDatabaseSwitch_;
 
     // AI Chat panel
     std::unique_ptr<AIChatState> aiChatState_;

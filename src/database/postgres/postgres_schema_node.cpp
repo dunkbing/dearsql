@@ -819,7 +819,19 @@ std::vector<QueryResult> PostgresSchemaNode::executeQuery(const std::string& que
         result.errorMessage = "No database connection";
         return {result};
     }
-    return parentDbNode->executeQuery(query, rowLimit);
+    // Escape double quotes in schema name for safe identifier quoting
+    std::string escapedName = name;
+    for (std::string::size_type pos = 0; (pos = escapedName.find('"', pos)) != std::string::npos;
+         pos += 2) {
+        escapedName.insert(pos, 1, '"');
+    }
+    std::string wrappedQuery = std::format("SET search_path TO \"{}\"; {}", escapedName, query);
+    auto results = parentDbNode->executeQuery(wrappedQuery, rowLimit);
+    // Drop the SET search_path result (first entry) — it's an internal detail
+    if (results.size() > 1) {
+        results.erase(results.begin());
+    }
+    return results;
 }
 
 std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table) {

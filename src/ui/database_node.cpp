@@ -102,7 +102,7 @@ void DatabaseHierarchy::renderRootNode() {
             pgDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Loading databases...");
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (pgDb->areDatabasesLoaded()) {
@@ -128,7 +128,7 @@ void DatabaseHierarchy::renderRootNode() {
             mysqlDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Loading databases...");
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (mysqlDb->areDatabasesLoaded()) {
@@ -153,7 +153,7 @@ void DatabaseHierarchy::renderRootNode() {
             mongoDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Loading databases...");
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (mongoDb->areDatabasesLoaded()) {
@@ -283,7 +283,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 sqliteDb->checkTablesStatusAsync();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading tables...");
-                ImGui::SameLine();
+                ImGui::SameLine(0, Theme::Spacing::S);
                 UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else if (sqliteDb->tablesLoaded) {
@@ -330,7 +330,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 sqliteDb->checkViewsStatusAsync();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading views...");
-                ImGui::SameLine();
+                ImGui::SameLine(0, Theme::Spacing::S);
                 UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else {
@@ -436,7 +436,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
             dbData->checkSchemasStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Loading schemas...");
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (dbData->schemasLoaded) {
@@ -562,7 +562,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     schemaData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading tables...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->tablesLoaded) {
@@ -607,7 +607,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     schemaData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading views...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->viewsLoaded) {
@@ -655,7 +655,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     schemaData->checkMaterializedViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading materialized views...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_matviews", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -701,7 +701,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     schemaData->checkSequencesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading sequences...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_sequences", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -835,7 +835,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading tables...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->tablesLoaded) {
@@ -880,7 +880,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     dbData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading views...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->viewsLoaded) {
@@ -1635,7 +1635,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                     dbData->checkCollectionsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  Loading collections...");
-                    ImGui::SameLine();
+                    ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_collections", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();

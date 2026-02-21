@@ -4,7 +4,11 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
+#include "database/mysql.hpp"
+#include "database/postgresql.hpp"
+#include "database/sqlite.hpp"
 #include "imgui.h"
+#include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
@@ -54,7 +58,9 @@ void SQLEditorTab::render() {
 
     checkQueryExecutionStatus();
 
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
     renderConnectionInfo();
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
 
     // Render AI settings dialog (modal, always available)
     AISettingsDialog::instance().render();
@@ -103,12 +109,227 @@ void SQLEditorTab::render() {
 }
 
 void SQLEditorTab::renderConnectionInfo() {
-    if (node_) {
-        ImGui::Text("Database: %s", node_->getFullPath().c_str());
-    } else {
+    if (!node_) {
         ImGui::Text("%s", LABEL_NO_DATABASE);
+        ImGui::Separator();
+        return;
     }
+
+    switch (node_->getDatabaseType()) {
+    case DatabaseType::POSTGRESQL:
+        renderConnectionInfoPostgres();
+        break;
+    case DatabaseType::MYSQL:
+        renderConnectionInfoMySQL();
+        break;
+    case DatabaseType::SQLITE:
+        renderConnectionInfoSQLite();
+        break;
+    default:
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+        break;
+    }
+
     ImGui::Separator();
+}
+
+void SQLEditorTab::renderConnectionInfoPostgres() {
+    auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+    if (!schemaNode || !schemaNode->parentDbNode) {
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+        return;
+    }
+
+    auto* dbNode = schemaNode->parentDbNode;
+    auto* serverDb = dbNode->parentDb;
+    if (!serverDb) {
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+        return;
+    }
+
+    // Handle pending database switch (schemas were loading when user selected)
+    if (!pendingDatabaseSwitch_.empty()) {
+        auto* pendingDb = serverDb->getDatabaseData(pendingDatabaseSwitch_);
+        if (pendingDb) {
+            pendingDb->checkSchemasStatusAsync();
+            if (pendingDb->schemasLoaded && !pendingDb->schemas.empty()) {
+                switchNode(pendingDb->schemas[0].get());
+                pendingDatabaseSwitch_.clear();
+                schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+                if (!schemaNode || !schemaNode->parentDbNode)
+                    return;
+                dbNode = schemaNode->parentDbNode;
+            }
+        } else {
+            pendingDatabaseSwitch_.clear();
+        }
+    }
+
+    const auto& connInfo = serverDb->getConnectionInfo();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", connInfo.host.c_str());
+    ImGui::SameLine(0, Theme::Spacing::L);
+
+    // Single "Schema" combo: database names as headers, schemas as selectable items
+    std::string preview = std::format("{}.{}", dbNode->name, schemaNode->name);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Schema:");
+    ImGui::SameLine(0, Theme::Spacing::S);
+
+    const auto& dbMap = serverDb->getDatabaseDataMap();
+    std::vector<std::string> dbNames;
+    dbNames.reserve(dbMap.size());
+    for (const auto& [name, _] : dbMap) {
+        dbNames.push_back(name);
+    }
+    std::sort(dbNames.begin(), dbNames.end());
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+
+    if (isExecutingQuery)
+        ImGui::BeginDisabled();
+
+    ImGui::SetNextItemWidth(200.0f);
+    if (ImGui::BeginCombo("##schema_combo", preview.c_str())) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
+        bool first = true;
+        for (const auto& dbName : dbNames) {
+            auto* db = serverDb->getDatabaseData(dbName);
+            if (!db)
+                continue;
+
+            // Ensure schemas are loaded
+            if (!db->schemasLoaded && !db->schemasLoader.isRunning()) {
+                db->startSchemasLoadAsync();
+            }
+            db->checkSchemasStatusAsync();
+
+            if (!first) {
+                ImGui::Separator();
+            }
+            first = false;
+
+            // Database name as non-selectable header
+            ImGui::TextDisabled("%s", dbName.c_str());
+
+            if (!db->schemasLoaded) {
+                ImGui::Indent(Theme::Spacing::L);
+                ImGui::TextDisabled("Loading...");
+                ImGui::Unindent(Theme::Spacing::L);
+            } else {
+                for (const auto& schema : db->schemas) {
+                    bool isSelected = (schema.get() == node_);
+                    std::string label =
+                        std::format("  {}##{}.{}", schema->name, dbName, schema->name);
+                    if (ImGui::Selectable(
+                            label.c_str(), isSelected, ImGuiSelectableFlags_None,
+                            ImVec2(0, ImGui::GetTextLineHeight() + Theme::Spacing::S))) {
+                        if (schema.get() != node_) {
+                            switchNode(schema.get());
+                        }
+                    }
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+            }
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndCombo();
+    }
+
+    if (isExecutingQuery)
+        ImGui::EndDisabled();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+}
+
+void SQLEditorTab::renderConnectionInfoMySQL() {
+    auto* dbNode = dynamic_cast<MySQLDatabaseNode*>(node_);
+    if (!dbNode || !dbNode->parentDb) {
+        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+        return;
+    }
+
+    auto* serverDb = dbNode->parentDb;
+    const auto& connInfo = serverDb->getConnectionInfo();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", connInfo.host.c_str());
+    ImGui::SameLine(0, Theme::Spacing::L);
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Database:");
+    ImGui::SameLine(0, Theme::Spacing::S);
+
+    const auto& dbMap = serverDb->getDatabaseDataMap();
+    std::vector<std::string> dbNames;
+    dbNames.reserve(dbMap.size());
+    for (const auto& [name, _] : dbMap) {
+        dbNames.push_back(name);
+    }
+    std::sort(dbNames.begin(), dbNames.end());
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+
+    if (isExecutingQuery)
+        ImGui::BeginDisabled();
+
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::BeginCombo("##db_combo", dbNode->name.c_str())) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
+        for (const auto& dbName : dbNames) {
+            bool isSelected = (dbName == dbNode->name);
+            if (ImGui::Selectable(dbName.c_str(), isSelected, ImGuiSelectableFlags_None,
+                                  ImVec2(0, ImGui::GetTextLineHeight() + Theme::Spacing::S))) {
+                if (dbName != dbNode->name) {
+                    auto* newNode = serverDb->getDatabaseData(dbName);
+                    if (newNode) {
+                        switchNode(newNode);
+                    }
+                }
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndCombo();
+    }
+
+    if (isExecutingQuery)
+        ImGui::EndDisabled();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
+}
+
+void SQLEditorTab::renderConnectionInfoSQLite() {
+    ImGui::Text("Database: %s", node_->getFullPath().c_str());
+}
+
+void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
+    if (!newNode || newNode == node_)
+        return;
+
+    node_ = newNode;
+    completionKeywordsSet_ = false;
+
+    if (aiChatState_) {
+        aiChatState_->setDatabaseNode(node_);
+    }
 }
 
 void SQLEditorTab::renderToolbar() {
@@ -121,13 +342,13 @@ void SQLEditorTab::renderToolbar() {
         ImGui::Button(ICON_FA_PLAY " Run");
         ImGui::EndDisabled();
 
-        ImGui::SameLine();
+        ImGui::SameLine(0, Theme::Spacing::M);
         UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
 
-        ImGui::SameLine();
+        ImGui::SameLine(0, Theme::Spacing::M);
         ImGui::Text("%s", LABEL_RUNNING_QUERY);
 
-        ImGui::SameLine();
+        ImGui::SameLine(0, Theme::Spacing::M);
         if (ImGui::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
@@ -293,8 +514,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
             queryExecutionFuture.get();
         } catch (const std::exception& e) {
             if (!shouldCancelQuery) {
-                queryResult = "Error in async query execution: " + std::string(e.what());
-                queryError = queryResult;
+                queryError = "Error in async query execution: " + std::string(e.what());
                 queryResults.clear();
             }
         }
@@ -305,8 +525,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 
 void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
-    queryResult = LABEL_QUERY_CANCELLED;
-    queryError = queryResult;
+    queryError = LABEL_QUERY_CANCELLED;
     queryResults.clear();
 }
 

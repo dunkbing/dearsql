@@ -6,7 +6,6 @@
 #include "database/mongodb.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
-#include "database/query_executor.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/confirm_dialog.hpp"

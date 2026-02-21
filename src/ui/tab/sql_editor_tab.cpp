@@ -6,7 +6,6 @@
 #include "database/db.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"

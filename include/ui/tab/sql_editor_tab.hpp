@@ -5,6 +5,7 @@
 #include "ui/tab/tab.hpp"
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -12,6 +13,7 @@
 
 // Forward declarations
 class IDatabaseNode;
+class IQueryExecutor;
 class AIChatState;
 class AIChatPanel;
 
@@ -42,8 +44,14 @@ public:
     }
 
 private:
+    struct NodeBinding {
+        std::function<IDatabaseNode*()> resolveNode;
+        std::function<IQueryExecutor*()> resolveExecutor;
+    };
+
     std::string sqlQuery;
     IDatabaseNode* node_ = nullptr; // Database node implementing IDatabaseNode
+    NodeBinding binding_;
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
     TextEditor sqlEditor;
 
@@ -78,6 +86,8 @@ private:
 
     // Switch the active database node (clears results, resets autocomplete)
     void switchNode(IDatabaseNode* newNode);
+    void bindNode(IDatabaseNode* node);
+    void syncBoundNodePointer();
 
     // Helper method for splitter
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,

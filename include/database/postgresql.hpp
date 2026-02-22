@@ -9,6 +9,7 @@
 #include <libpq-fe.h>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 class PostgresDatabase final : public DatabaseInterface, public IQueryExecutor {
     friend class PostgresDatabaseNode;
@@ -58,6 +59,8 @@ protected:
 private:
     std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>> databaseDataCache;
     bool databasesLoaded = false;
+    std::vector<std::string> pendingRefreshDatabaseNames;
+    mutable std::mutex refreshStateMutex;
 
     // Async database loading
     AsyncOperation<std::vector<std::string>> databasesLoader;

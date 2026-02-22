@@ -38,6 +38,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
     sqlEditor.SetLanguage(TextEditor::Language::Sql());
     sqlEditor.SetShowWhitespacesEnabled(false);
     sqlEditor.SetShowLineNumbersEnabled(true);
+    bindNode(node_);
 }
 
 SQLEditorTab::~SQLEditorTab() {
@@ -50,6 +51,7 @@ void SQLEditorTab::render() {
     // Sync editor palette with current app theme
     const bool dark = Application::getInstance().isDarkTheme();
     sqlEditor.SetPalette(dark ? TextEditor::GetDarkPalette() : TextEditor::GetLightPalette());
+    syncBoundNodePointer();
 
     if (node_ && !completionKeywordsSet_ && node_->isTablesLoaded()) {
         updateCompletionKeywords();
@@ -324,6 +326,7 @@ void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
         return;
 
     node_ = newNode;
+    bindNode(node_);
     completionKeywordsSet_ = false;
 
     if (aiChatState_) {
@@ -462,7 +465,12 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     queryResults.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
 
-    IDatabaseNode* executor = node_;
+    syncBoundNodePointer();
+
+    IQueryExecutor* executor = nullptr;
+    if (binding_.resolveExecutor) {
+        executor = binding_.resolveExecutor();
+    }
 
     queryExecutionFuture = std::async(std::launch::async, [this, query, executor]() {
         if (shouldCancelQuery) {
@@ -500,6 +508,91 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
 
         queryResults = std::move(results);
     });
+}
+
+void SQLEditorTab::bindNode(IDatabaseNode* node) {
+    binding_ = {};
+    if (!node) {
+        return;
+    }
+
+    if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
+        schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
+        auto* serverDb = schemaNode->parentDbNode->parentDb;
+        const std::string dbName = schemaNode->parentDbNode->name;
+        const std::string schemaName = schemaNode->name;
+
+        binding_.resolveNode = [serverDb, dbName, schemaName]() -> IDatabaseNode* {
+            if (!serverDb) {
+                return nullptr;
+            }
+
+            auto* dbNode = serverDb->getDatabaseData(dbName);
+            if (!dbNode) {
+                return nullptr;
+            }
+
+            auto resolveByName = [&]() -> PostgresSchemaNode* {
+                for (const auto& schema : dbNode->schemas) {
+                    if (schema && schema->name == schemaName) {
+                        return schema.get();
+                    }
+                }
+                return nullptr;
+            };
+
+            if (auto* schema = resolveByName()) {
+                return schema;
+            }
+
+            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning()) {
+                dbNode->startSchemasLoadAsync();
+            }
+            dbNode->checkSchemasStatusAsync();
+            if (auto* schema = resolveByName()) {
+                return schema;
+            }
+
+            if (!dbNode->schemas.empty() && dbNode->schemas.front()) {
+                return dbNode->schemas.front().get();
+            }
+
+            for (const auto& [_, candidateDb] : serverDb->getDatabaseDataMap()) {
+                if (candidateDb && !candidateDb->schemas.empty() && candidateDb->schemas.front()) {
+                    return candidateDb->schemas.front().get();
+                }
+            }
+
+            return nullptr;
+        };
+        binding_.resolveExecutor = [serverDb, dbName]() -> IQueryExecutor* {
+            if (!serverDb) {
+                return nullptr;
+            }
+            return serverDb->getDatabaseData(dbName);
+        };
+        return;
+    }
+
+    binding_.resolveNode = [node]() -> IDatabaseNode* { return node; };
+    binding_.resolveExecutor = [node]() -> IQueryExecutor* { return node; };
+}
+
+void SQLEditorTab::syncBoundNodePointer() {
+    if (!binding_.resolveNode) {
+        return;
+    }
+
+    auto* resolved = binding_.resolveNode();
+    if (resolved == node_) {
+        return;
+    }
+
+    node_ = resolved;
+    completionKeywordsSet_ = false;
+    if (aiChatState_) {
+        aiChatState_->setDatabaseNode(node_);
+    }
 }
 
 void SQLEditorTab::checkQueryExecutionStatus() {

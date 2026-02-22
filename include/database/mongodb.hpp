@@ -6,6 +6,7 @@
 #include "query_executor.hpp"
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
@@ -65,6 +66,8 @@ private:
     // Database cache
     std::unordered_map<std::string, std::unique_ptr<MongoDBDatabaseNode>> databaseDataCache;
     bool databasesLoaded = false;
+    std::vector<std::string> pendingRefreshDatabaseNames;
+    mutable std::mutex refreshStateMutex;
 
     // Async database loading
     AsyncOperation<std::vector<std::string>> databasesLoader;

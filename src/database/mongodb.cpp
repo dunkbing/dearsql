@@ -110,20 +110,11 @@ void MongoDBDatabase::refreshConnection() {
             Logger::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
-            for (const auto& dbName : databases) {
-                getDatabaseData(dbName);
-            }
-        }
-
-        databasesLoaded = true;
-
-        // Trigger refresh for all child databases
-        Logger::debug("Triggering child database refresh...");
-        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
-            if (dbDataPtr) {
-                Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
-                dbDataPtr->startCollectionsLoadAsync(true);
-            }
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames = std::move(databases);
+        } else {
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames.clear();
         }
 
         Logger::info(std::format("MongoDB refresh workflow completed for {} databases",
@@ -336,9 +327,28 @@ void MongoDBDatabase::checkDatabasesStatusAsync() {
 }
 
 void MongoDBDatabase::checkRefreshWorkflowAsync() {
-    refreshWorkflow.check([](const bool success) {
+    refreshWorkflow.check([this](const bool success) {
         if (success) {
             Logger::info("MongoDB refresh workflow completed successfully");
+            std::vector<std::string> refreshedDatabases;
+            {
+                std::lock_guard lock(refreshStateMutex);
+                refreshedDatabases = std::move(pendingRefreshDatabaseNames);
+                pendingRefreshDatabaseNames.clear();
+            }
+
+            for (const auto& dbName : refreshedDatabases) {
+                getDatabaseData(dbName);
+            }
+
+            databasesLoaded = true;
+
+            // Trigger child refresh on the main thread to avoid data races
+            for (auto& [_, dbDataPtr] : databaseDataCache) {
+                if (dbDataPtr) {
+                    dbDataPtr->startCollectionsLoadAsync(true);
+                }
+            }
         } else {
             Logger::error("MongoDB refresh workflow failed");
         }

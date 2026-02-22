@@ -231,6 +231,8 @@ void MySQLDatabase::disconnect() {
 }
 
 void MySQLDatabase::refreshConnection() {
+    getDatabaseData(connectionInfo.database);
+
     // Start the sequential refresh workflow
     refreshWorkflow.start([this]() -> bool {
         // Step 1: Disconnect and reset state
@@ -255,29 +257,11 @@ void MySQLDatabase::refreshConnection() {
             Logger::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
-            // Populate databaseDataCache with all available databases
-            for (const auto& dbName : databases) {
-                getDatabaseData(dbName);
-            }
-        }
-
-        // Step 4: Ensure all database nodes have connection pools
-        Logger::debug("Ensuring connection pools for all databases...");
-        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
-            if (dbDataPtr) {
-                dbDataPtr->ensureConnectionPool();
-            }
-        }
-        databasesLoaded = true;
-
-        // Step 5: Trigger refresh for all child databases
-        Logger::debug("Triggering child database refresh...");
-        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
-            if (dbDataPtr) {
-                Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
-                dbDataPtr->startTablesLoadAsync(true);
-                dbDataPtr->startViewsLoadAsync(true);
-            }
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames = std::move(databases);
+        } else {
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames.clear();
         }
 
         Logger::info(std::format("MySQL refresh workflow completed for {} databases",
@@ -394,6 +378,33 @@ void MySQLDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
             Logger::info("MySQL refresh workflow completed successfully");
+            std::vector<std::string> refreshedDatabases;
+            {
+                std::lock_guard lock(refreshStateMutex);
+                refreshedDatabases = std::move(pendingRefreshDatabaseNames);
+                pendingRefreshDatabaseNames.clear();
+            }
+
+            for (const auto& dbName : refreshedDatabases) {
+                getDatabaseData(dbName);
+            }
+
+            Logger::debug("Ensuring connection pools for all databases...");
+            for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+                if (dbDataPtr) {
+                    dbDataPtr->ensureConnectionPool();
+                }
+            }
+
+            databasesLoaded = true;
+
+            // Trigger child refresh on the main thread to avoid data races
+            for (auto& [_, dbDataPtr] : databaseDataCache) {
+                if (dbDataPtr) {
+                    dbDataPtr->startTablesLoadAsync(true);
+                    dbDataPtr->startViewsLoadAsync(true);
+                }
+            }
         } else {
             Logger::error("MySQL refresh workflow failed");
         }

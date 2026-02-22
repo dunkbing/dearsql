@@ -5,6 +5,7 @@
 #include <format>
 #include <iostream>
 #include <libpq-fe.h>
+#include <unordered_map>
 
 namespace {
 
@@ -87,7 +88,24 @@ namespace {
 
 void PostgresDatabaseNode::checkSchemasStatusAsync() {
     schemasLoader.check([this](std::vector<std::unique_ptr<PostgresSchemaNode>> result) {
-        schemas = std::move(result);
+        // Merge: reuse existing schema nodes by name so raw pointers held by tabs stay valid
+        std::unordered_map<std::string, std::unique_ptr<PostgresSchemaNode>> existingByName;
+        for (auto& s : schemas) {
+            existingByName[s->name] = std::move(s);
+        }
+        schemas.clear();
+
+        for (auto& newSchema : result) {
+            auto it = existingByName.find(newSchema->name);
+            if (it != existingByName.end()) {
+                // Preserve existing node (keeps raw pointers valid)
+                schemas.push_back(std::move(it->second));
+                existingByName.erase(it);
+            } else {
+                schemas.push_back(std::move(newSchema));
+            }
+        }
+
         Logger::info(std::format("Async schema loading completed for database {}. Found {} schemas",
                                  name, schemas.size()));
         schemasLoaded = true;
@@ -111,9 +129,9 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
         return;
     }
 
-    // If force refresh, clear existing schemas and reset state
+    // If force refresh, reset loaded state but keep old schemas alive
+    // so that any raw pointers held by tabs remain valid until new schemas arrive
     if (forceRefresh) {
-        schemas.clear();
         schemasLoaded = false;
         lastSchemasError.clear();
     }

@@ -225,6 +225,8 @@ void PostgresDatabase::disconnect() {
 }
 
 void PostgresDatabase::refreshConnection() {
+    getDatabaseData(connectionInfo.database);
+
     // Start the sequential refresh workflow
     refreshWorkflow.start([this]() -> bool {
         // Step 1: Disconnect and reset state
@@ -249,27 +251,11 @@ void PostgresDatabase::refreshConnection() {
         if (connectionInfo.showAllDatabases) {
             Logger::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
-
-            // Populate databaseDataCache with all available databases
-            for (const auto& dbName : databases) {
-                auto it = databaseDataCache.find(dbName);
-                if (it == databaseDataCache.end()) {
-                    auto newData = std::make_unique<PostgresDatabaseNode>();
-                    newData->name = dbName;
-                    newData->parentDb = this;
-                    databaseDataCache[dbName] = std::move(newData);
-                }
-            }
-            databasesLoaded = true;
-        }
-
-        // Step 4: Trigger refresh for all child databases
-        Logger::debug("Triggering child database refresh...");
-        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
-            if (dbDataPtr) {
-                Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
-                dbDataPtr->startSchemasLoadAsync(true, true);
-            }
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames = std::move(databases);
+        } else {
+            std::lock_guard lock(refreshStateMutex);
+            pendingRefreshDatabaseNames.clear();
         }
 
         Logger::info(
@@ -408,6 +394,25 @@ void PostgresDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
             Logger::info("Refresh workflow completed successfully");
+            std::vector<std::string> refreshedDatabases;
+            {
+                std::lock_guard lock(refreshStateMutex);
+                refreshedDatabases = std::move(pendingRefreshDatabaseNames);
+                pendingRefreshDatabaseNames.clear();
+            }
+
+            for (const auto& dbName : refreshedDatabases) {
+                getDatabaseData(dbName);
+            }
+
+            databasesLoaded = true;
+
+            // Trigger schema refresh on the main thread to avoid dangling pointers
+            for (auto& [_, dbDataPtr] : databaseDataCache) {
+                if (dbDataPtr) {
+                    dbDataPtr->startSchemasLoadAsync(true, true);
+                }
+            }
         } else {
             Logger::error("Refresh workflow failed");
         }

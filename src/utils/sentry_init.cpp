@@ -29,6 +29,7 @@ void SentryInit::initialize() {
     sentry_options_t* options = sentry_options_new();
     sentry_options_set_dsn(options, SENTRY_DSN);
     sentry_options_set_release(options, APP_NAME "@" APP_VERSION);
+    sentry_options_set_environment(options, SENTRY_ENVIRONMENT);
     sentry_options_set_database_path(options, getSentryDbPath().c_str());
     sentry_init(options);
 }

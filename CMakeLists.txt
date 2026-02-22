@@ -58,6 +58,12 @@ foreach(_line IN LISTS _metadata_lines)
     endif()
 endforeach()
 
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(SENTRY_ENVIRONMENT "production")
+else()
+    set(SENTRY_ENVIRONMENT "development")
+endif()
+
 configure_file(
     ${CMAKE_SOURCE_DIR}/include/config.hpp.in
     ${CMAKE_BINARY_DIR}/include/config.hpp

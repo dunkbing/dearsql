@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "license/license_manager.hpp"
 #include "themes.hpp"
+#include <cstring>
 
 LicenseDialog& LicenseDialog::instance() {
     static LicenseDialog inst;

@@ -7,6 +7,7 @@
 #include "themes.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
+#include <cstring>
 #include <format>
 
 TableDialog& TableDialog::instance() {

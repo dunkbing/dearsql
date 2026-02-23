@@ -2,6 +2,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include <cstring>
 
 InputDialog& InputDialog::instance() {
     static InputDialog instance;

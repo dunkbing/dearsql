@@ -107,6 +107,7 @@ void MySQLDatabaseNode::ensureConnectionPool() {
 void MySQLDatabaseNode::checkTablesStatusAsync() {
     tablesLoader.check([this](const std::vector<Table>& result) {
         tables = result;
+        populateIncomingForeignKeys(tables);
         Logger::info(std::format("Async table loading completed for database {}. Found {} tables",
                                  name, tables.size()));
         tablesLoaded = true;

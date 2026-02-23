@@ -1032,7 +1032,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         std::format("pg_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
-                        std::format("   {}###{}", columnDisplay, columnNodeId);
+                        std::format("{}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column
@@ -1087,7 +1087,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
-                        std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                        std::string fkDisplay = std::format("{} -> {}.{}", fk.sourceColumn,
                                                             fk.targetTable, fk.targetColumn);
                         ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
 
@@ -1118,7 +1118,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                         ImGuiTreeNodeFlags_FramePadding;
-                        std::string indexDisplay = "   " + index.name;
+                        std::string indexDisplay = index.name;
                         if (!index.columns.empty()) {
                             indexDisplay += " (";
                             for (size_t i = 0; i < index.columns.size(); ++i) {
@@ -1156,7 +1156,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                                   ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                   ImGuiTreeNodeFlags_FramePadding;
                     std::string refDisplay =
-                        std::format("   {}.{}", ref.targetTable, ref.sourceColumn);
+                        std::format("{}.{}", ref.targetTable, ref.sourceColumn);
                     ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
 
                     if (ImGui::IsItemHovered()) {
@@ -1374,7 +1374,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                         std::format("mysql_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
-                        std::format("   {}###{}", columnDisplay, columnNodeId);
+                        std::format("{}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column (MySQL)
@@ -1427,7 +1427,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                         ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
-                        std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                        std::string fkDisplay = std::format("{} -> {}.{}", fk.sourceColumn,
                                                             fk.targetTable, fk.targetColumn);
                         ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
 
@@ -1458,7 +1458,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                         ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                         ImGuiTreeNodeFlags_FramePadding;
-                        std::string indexDisplay = "   " + index.name;
+                        std::string indexDisplay = index.name;
                         if (!index.columns.empty()) {
                             indexDisplay += " (";
                             for (size_t i = 0; i < index.columns.size(); ++i) {
@@ -1496,7 +1496,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                                   ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                   ImGuiTreeNodeFlags_FramePadding;
                     std::string refDisplay =
-                        std::format("   {}.{}", ref.targetTable, ref.sourceColumn);
+                        std::format("{}.{}", ref.targetTable, ref.sourceColumn);
                     ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
 
                     if (ImGui::IsItemHovered()) {
@@ -1759,7 +1759,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                             std::format("mongo_field_{}_{}_{:p}", collection.name, column.name,
                                         static_cast<const void*>(&column));
                         const std::string fieldLabel =
-                            std::format("   {}###{}", fieldDisplay, fieldNodeId);
+                            std::format("{}###{}", fieldDisplay, fieldNodeId);
                         ImGui::TreeNodeEx(fieldLabel.c_str(), fieldFlags);
                     }
                 }
@@ -1875,7 +1875,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                         std::format("sqlite_col_{}_{}_{:p}", table.name, column.name,
                                     static_cast<const void*>(&column));
                     const std::string columnLabel =
-                        std::format("   {}###{}", columnDisplay, columnNodeId);
+                        std::format("{}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column
@@ -1929,7 +1929,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                         ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
                                                      ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                      ImGuiTreeNodeFlags_FramePadding;
-                        std::string fkDisplay = std::format("   {} -> {}.{}", fk.sourceColumn,
+                        std::string fkDisplay = std::format("{} -> {}.{}", fk.sourceColumn,
                                                             fk.targetTable, fk.targetColumn);
                         ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
 
@@ -1960,7 +1960,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                         ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
                                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                         ImGuiTreeNodeFlags_FramePadding;
-                        std::string indexDisplay = "   " + index.name;
+                        std::string indexDisplay = index.name;
                         if (!index.columns.empty()) {
                             indexDisplay += " (";
                             for (size_t i = 0; i < index.columns.size(); ++i) {
@@ -1998,7 +1998,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                                                   ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                   ImGuiTreeNodeFlags_FramePadding;
                     std::string refDisplay =
-                        std::format("   {}.{}", ref.targetTable, ref.sourceColumn);
+                        std::format("{}.{}", ref.targetTable, ref.sourceColumn);
                     ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
 
                     if (ImGui::IsItemHovered()) {

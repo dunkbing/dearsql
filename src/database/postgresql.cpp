@@ -29,6 +29,7 @@ namespace {
     // Build a libpq connection string from DatabaseConnectionInfo
     std::string buildPqConnStr(const DatabaseConnectionInfo& info) {
         std::string connStr = "host=" + info.host + " port=" + std::to_string(info.port);
+        connStr += " connect_timeout=5";
         if (!info.database.empty()) {
             connStr += " dbname=" + info.database;
         } else {
@@ -214,6 +215,25 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 }
 
 void PostgresDatabase::disconnect() {
+    if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
+        std::unique_lock lock(sessionMutex, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            Logger::warn("PostgresDatabase::disconnect: skipping pool teardown during shutdown "
+                         "(connection setup still in progress)");
+            connected = false;
+            return;
+        }
+
+        // Clear all connection pools
+        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+            if (dbDataPtr) {
+                dbDataPtr->connectionPool.reset();
+            }
+        }
+        connected = false;
+        return;
+    }
+
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -481,21 +501,22 @@ PostgresDatabase::getConnectionPoolForDatabase(const std::string& dbName) const 
 }
 
 void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
-    std::lock_guard lock(sessionMutex);
-
     if (info.database.empty()) {
         throw std::runtime_error("ensureConnectionPoolForDatabase: database name is required");
     }
 
-    auto* dbData = getDatabaseData(info.database);
-    if (!dbData || dbData->connectionPool) {
-        return;
+    {
+        std::lock_guard lock(sessionMutex);
+        auto* dbData = getDatabaseData(info.database);
+        if (!dbData || dbData->connectionPool) {
+            return;
+        }
     }
 
     constexpr size_t poolSize = 3;
     std::string connStr = buildPqConnStr(info);
 
-    dbData->connectionPool = std::make_unique<ConnectionPool<PGconn*>>(
+    auto newPool = std::make_unique<ConnectionPool<PGconn*>>(
         poolSize,
         // factory
         [connStr]() -> PGconn* {
@@ -511,6 +532,13 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
         [](PGconn* conn) { PQfinish(conn); },
         // validator
         [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
+
+    std::lock_guard lock(sessionMutex);
+    auto* dbData = getDatabaseData(info.database);
+    if (!dbData || dbData->connectionPool) {
+        return;
+    }
+    dbData->connectionPool = std::move(newPool);
 }
 
 ConnectionPool<PGconn*>::Session PostgresDatabase::getSession() const {

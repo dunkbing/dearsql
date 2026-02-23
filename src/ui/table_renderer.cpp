@@ -225,6 +225,7 @@ void TableRenderer::render(const char* tableId) {
             }
         }
 
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetStyle().ScrollbarSize);
         ImGui::EndTable();
     }
 }

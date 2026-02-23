@@ -276,28 +276,41 @@ void Application::run() {
 
 void Application::cleanup() {
     std::cout << "Cleaning up " << APP_NAME << "..." << std::endl;
-    if (isShutdownRequested()) {
+    const bool signalShutdownRequested = isShutdownRequested();
+    const bool pendingAsyncWork = hasPendingAsyncWork();
+    const bool fastShutdown = signalShutdownRequested || pendingAsyncWork;
+
+    if (fastShutdown) {
         AsyncOperationControl::skipWaitOnDestroy().store(true);
     }
 
     // Cleanup databases
-    for (auto& db : databases) {
-        if (db) {
-            db->disconnect();
-        }
-    }
-    databases.clear();
-
-    for (auto& cacheEntry : workspaceDatabaseCache) {
-        auto& cachedDatabases = cacheEntry.second;
-        for (auto& db : cachedDatabases) {
+    if (!fastShutdown) {
+        for (auto& db : databases) {
             if (db) {
                 db->disconnect();
             }
         }
+        databases.clear();
+
+        for (auto& cacheEntry : workspaceDatabaseCache) {
+            auto& cachedDatabases = cacheEntry.second;
+            for (auto& db : cachedDatabases) {
+                if (db) {
+                    db->disconnect();
+                }
+            }
+        }
+        workspaceDatabaseCache.clear();
+        std::cout << "Databases disconnected" << std::endl;
+    } else {
+        if (signalShutdownRequested) {
+            std::cout << "Skipping database teardown during signal shutdown" << std::endl;
+        } else if (pendingAsyncWork) {
+            std::cout << "Skipping database teardown during shutdown (async work still running)"
+                      << std::endl;
+        }
     }
-    workspaceDatabaseCache.clear();
-    std::cout << "Databases disconnected" << std::endl;
 
     // Cleanup components
     tabManager.reset();

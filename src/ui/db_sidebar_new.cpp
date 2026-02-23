@@ -15,8 +15,10 @@
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
-#ifdef __APPLE__
+#if defined(__APPLE__)
 #include "platform/macos_connection_dialog.hpp"
+#elif defined(__linux__)
+#include "platform/linux_connection_dialog.hpp"
 #endif
 #include <chrono>
 #include <format>
@@ -286,7 +288,7 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
-#ifdef __APPLE__
+#if defined(__APPLE__)
     if (shouldShowConnectionDialog) {
         showMacOSConnectionDialog(&app);
         shouldShowConnectionDialog = false;
@@ -297,6 +299,20 @@ void DatabaseSidebarNew::render() {
     }
     if (shouldShowNativeCreateDatabaseDialog && nativeCreateDatabaseTarget) {
         showMacOSCreateDatabaseDialog(&app, nativeCreateDatabaseTarget);
+        shouldShowNativeCreateDatabaseDialog = false;
+        nativeCreateDatabaseTarget = nullptr;
+    }
+#elif defined(__linux__)
+    if (shouldShowConnectionDialog) {
+        showLinuxConnectionDialog(&app);
+        shouldShowConnectionDialog = false;
+    }
+    if (databaseToEdit) {
+        showLinuxEditConnectionDialog(&app, databaseToEdit, databaseToEdit->getConnectionId());
+        databaseToEdit = nullptr;
+    }
+    if (shouldShowNativeCreateDatabaseDialog && nativeCreateDatabaseTarget) {
+        showLinuxCreateDatabaseDialog(&app, nativeCreateDatabaseTarget);
         shouldShowNativeCreateDatabaseDialog = false;
         nativeCreateDatabaseTarget = nullptr;
     }
@@ -763,7 +779,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL) {
                 if (ImGui::MenuItem("Create New Database")) {
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
                     nativeCreateDatabaseTarget = db;
                     shouldShowNativeCreateDatabaseDialog = true;
 #else

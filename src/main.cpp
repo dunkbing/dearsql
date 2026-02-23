@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "database/async_helper.hpp"
 #include "utils/logger.hpp"
 #include "utils/sentry_init.hpp"
 
@@ -42,6 +43,9 @@ int main() {
         app.run();
         app.cleanup();
         SentryInit::close();
+        if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
+            std::_Exit(0);
+        }
         return 0;
     } catch (...) {
         handleFatalException("Fatal exception in main");

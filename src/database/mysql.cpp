@@ -26,6 +26,9 @@ namespace {
                 throw std::runtime_error("mysql_init failed");
             }
 
+            constexpr unsigned int connectTimeoutSeconds = 5;
+            mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
+
             // Enable multi-statement support
             unsigned long flags = CLIENT_MULTI_STATEMENTS;
 
@@ -220,6 +223,25 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
 }
 
 void MySQLDatabase::disconnect() {
+    if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
+        std::unique_lock lock(sessionMutex, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            Logger::warn("MySQLDatabase::disconnect: skipping pool teardown during shutdown "
+                         "(connection setup still in progress)");
+            connected = false;
+            return;
+        }
+
+        // Clear all connection pools
+        for (auto& dbDataPtr : databaseDataCache | std::views::values) {
+            if (dbDataPtr) {
+                dbDataPtr->connectionPool.reset();
+            }
+        }
+        connected = false;
+        return;
+    }
+
     std::lock_guard lock(sessionMutex);
     // Clear all connection pools
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
@@ -458,24 +480,32 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
 }
 
 void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
-    std::lock_guard lock(sessionMutex);
-
     if (info.database.empty()) {
         throw std::runtime_error("ensureConnectionPoolForDatabase: database name is required");
     }
 
-    auto* dbData = getDatabaseData(info.database);
-    if (!dbData || dbData->connectionPool) {
-        return;
+    {
+        std::lock_guard lock(sessionMutex);
+        auto* dbData = getDatabaseData(info.database);
+        if (!dbData || dbData->connectionPool) {
+            return;
+        }
     }
 
     constexpr size_t poolSize = 10;
-    dbData->connectionPool = std::make_unique<ConnectionPool<MYSQL*>>(
+    auto newPool = std::make_unique<ConnectionPool<MYSQL*>>(
         poolSize, makeMysqlFactory(info),
         // closer
         [](MYSQL* conn) { mysql_close(conn); },
         // validator
         [](MYSQL* conn) { return mysql_ping(conn) == 0; });
+
+    std::lock_guard lock(sessionMutex);
+    auto* dbData = getDatabaseData(info.database);
+    if (!dbData || dbData->connectionPool) {
+        return;
+    }
+    dbData->connectionPool = std::move(newPool);
 }
 
 ConnectionPool<MYSQL*>::Session MySQLDatabase::getSession() const {

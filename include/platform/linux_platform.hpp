@@ -67,6 +67,9 @@ public:
 
     void showLicenseDialog();
     void showCreateWorkspaceDialog();
+    [[nodiscard]] GtkWidget* getGtkWindow() const {
+        return window_;
+    }
 
 private:
     Application* app_;

@@ -111,6 +111,9 @@ public:
     [[nodiscard]] float getTitlebarHeight() const;
     void updateWorkspaceDropdown() const;
 #endif
+    [[nodiscard]] PlatformInterface* getPlatform() const {
+        return platform_.get();
+    }
     [[nodiscard]] bool isShutdownRequested() const;
 
 private:

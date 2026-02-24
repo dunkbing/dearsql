@@ -96,6 +96,8 @@ void TableRenderer::render(const char* tableId) {
     }
 
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+
         // Setup columns
         if (config.showRowNumbers) {
             // Calculate width needed for row numbers
@@ -139,6 +141,14 @@ void TableRenderer::render(const char* tableId) {
             for (int rowIdx = clipper.DisplayStart; rowIdx < clipper.DisplayEnd; rowIdx++) {
                 const auto& row = data[rowIdx];
                 ImGui::TableNextRow();
+
+                // Subtle highlight on the entire selected row
+                if (config.allowSelection && selectedRow == rowIdx) {
+                    ImGui::TableSetBgColor(
+                        ImGuiTableBgTarget_RowBg1,
+                        ImGui::GetColorU32(
+                            ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.4f)));
+                }
 
                 // Row number column
                 if (config.showRowNumbers) {

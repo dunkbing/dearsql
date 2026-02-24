@@ -337,6 +337,15 @@ void TableViewerTab::render() {
         }
     }
 
+    // Add row button
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_PLUS)) {
+        addRow();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Add row");
+    }
+
     if (hasChanges) {
         ImGui::SameLine();
         ImGui::TextColored(colors.peach, "Unsaved changes");
@@ -433,7 +442,17 @@ void TableViewerTab::saveChanges() {
 }
 
 void TableViewerTab::cancelChanges() {
-    // Restore original data
+    // Remove newly added rows (iterate backwards to preserve indices)
+    for (int i = static_cast<int>(isNewRow.size()) - 1; i >= 0; i--) {
+        if (isNewRow[i]) {
+            tableData.erase(tableData.begin() + i);
+            originalData.erase(originalData.begin() + i);
+            editedCells.erase(editedCells.begin() + i);
+            isNewRow.erase(isNewRow.begin() + i);
+        }
+    }
+
+    // Restore original data for remaining rows
     tableData = originalData;
     hasChanges = false;
 
@@ -445,6 +464,30 @@ void TableViewerTab::cancelChanges() {
     // Reset selection state
     selectedRow = -1;
     selectedCol = -1;
+}
+
+void TableViewerTab::addRow() {
+    if (columnNames.empty())
+        return;
+
+    // Insert below selected row, or at end
+    int insertIdx = (selectedRow >= 0) ? selectedRow + 1 : static_cast<int>(tableData.size());
+
+    // Create empty row
+    std::vector<std::string> newRow(columnNames.size(), "");
+
+    tableData.insert(tableData.begin() + insertIdx, newRow);
+    originalData.insert(originalData.begin() + insertIdx,
+                        std::vector<std::string>(columnNames.size(), ""));
+    editedCells.insert(editedCells.begin() + insertIdx,
+                       std::vector<bool>(columnNames.size(), true));
+    isNewRow.insert(isNewRow.begin() + insertIdx, true);
+
+    hasChanges = true;
+
+    // Select first cell of new row
+    selectedRow = insertIdx;
+    selectedCol = 0;
 }
 
 void TableViewerTab::selectCell(const int row, const int col) {
@@ -554,9 +597,10 @@ void TableViewerTab::loadDataAsync() {
             originalData = tableData;
             hasChanges = false;
 
-            // Initialize edited cells tracking
+            // Initialize edited cells and new row tracking
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
+            isNewRow = std::vector<bool>(tableData.size(), false);
         } catch (const std::exception& e) {
             hasLoadingError = true;
             loadingError = e.what();
@@ -569,6 +613,13 @@ void TableViewerTab::checkAsyncLoadStatus() {
         dataLoadFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         dataLoadFuture.get(); // Wait for completion and handle any exceptions
         isLoadingData = false;
+
+        // Auto-select first cell on initial load
+        if (!initialSelectionDone && !tableData.empty() && !columnNames.empty()) {
+            selectedRow = 0;
+            selectedCol = 0;
+            initialSelectionDone = true;
+        }
 
         // Add to query history if load was successful
         if (!hasLoadingError && !tableData.empty()) {
@@ -633,8 +684,40 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
     }
     std::cout << std::endl;
 
+    // Build table reference once
+    std::string tableRef;
+    if (const auto dotPos = tableName.find('.'); dotPos != std::string::npos) {
+        const std::string schemaName = tableName.substr(0, dotPos);
+        const std::string tableNameOnly = tableName.substr(dotPos + 1);
+        tableRef = std::format(R"("{}"."{}")", schemaName, tableNameOnly);
+    } else {
+        tableRef = std::format(R"("{}")", tableName);
+    }
+
     // Process each edited cell
     for (int rowIdx = 0; rowIdx < editedCells.size(); rowIdx++) {
+        // Generate INSERT for newly added rows
+        if (rowIdx < static_cast<int>(isNewRow.size()) && isNewRow[rowIdx]) {
+            std::string cols;
+            std::string vals;
+            for (int colIdx = 0; colIdx < static_cast<int>(columnNames.size()); colIdx++) {
+                if (colIdx > 0) {
+                    cols += ", ";
+                    vals += ", ";
+                }
+                cols += std::format(R"("{}")", columnNames[colIdx]);
+                const std::string& val = tableData[rowIdx][colIdx];
+                if (val.empty() || val == "NULL") {
+                    vals += "NULL";
+                } else {
+                    vals += "'" + val + "'";
+                }
+            }
+            sqlStatements.push_back(
+                std::format("INSERT INTO {} ({}) VALUES ({});", tableRef, cols, vals));
+            continue;
+        }
+
         for (int colIdx = 0; colIdx < editedCells[rowIdx].size(); colIdx++) {
             if (!editedCells[rowIdx][colIdx]) {
                 continue; // Cell not edited
@@ -644,17 +727,6 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
             const std::string& newValue = tableData[rowIdx][colIdx];
 
             // Build UPDATE statement
-            // For PostgreSQL, tableName may be schema-qualified (schema.table)
-            std::string tableRef;
-            if (const auto dotPos = tableName.find('.'); dotPos != std::string::npos) {
-                // schema.table format - quote both parts
-                const std::string schemaName = tableName.substr(0, dotPos);
-                const std::string tableNameOnly = tableName.substr(dotPos + 1);
-                tableRef = std::format(R"("{}"."{}")", schemaName, tableNameOnly);
-            } else {
-                // simple table name
-                tableRef = std::format(R"("{}")", tableName);
-            }
             std::string sql = std::format(R"(UPDATE {} SET "{}" = )", tableRef, columnName);
 
             // Add quoted value

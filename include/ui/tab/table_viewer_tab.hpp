@@ -37,6 +37,7 @@ public:
     void refreshData();
     void saveChanges();
     void cancelChanges();
+    void addRow();
 
     // SQL generation and confirmation dialog
     std::vector<std::string> generateUpdateSQL();
@@ -52,6 +53,8 @@ private:
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;
     std::vector<std::vector<bool>> editedCells;
+    std::vector<bool> isNewRow;
+    bool initialSelectionDone = false;
     int currentPage = 0;
     int rowsPerPage = 100;
     int totalRows = 0;

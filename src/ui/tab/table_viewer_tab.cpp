@@ -157,8 +157,8 @@ void TableViewerTab::render() {
 
             tableRenderer->render("TableData");
 
-            // Handle keyboard navigation - check if we have a selection and the tab is active
-            if (selectedRow >= 0 && selectedCol >= 0) {
+            // Handle keyboard navigation - skip when editing a cell so arrow keys work in the input
+            if (selectedRow >= 0 && selectedCol >= 0 && !tableRenderer->isEditing()) {
                 handleKeyboardNavigation();
             }
         } else {

@@ -245,8 +245,17 @@ void TableRenderer::renderCell(int row, int col) {
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
-        // Edit mode - show input field
+        // Edit mode - input fills cell width, blue tint to indicate editing
+        ImGui::TableSetBgColor(
+            ImGuiTableBgTarget_CellBg,
+            ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.15f)));
+        ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::SetKeyboardFocusHere();
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
 
         // Handle cursor positioning when we just entered edit mode with a character
         bool shouldExitEditMode = false;
@@ -271,6 +280,8 @@ void TableRenderer::renderCell(int row, int col) {
             shouldExitEditMode = ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
                                                   ImGuiInputTextFlags_EnterReturnsTrue);
         }
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar(2);
 
         if (shouldExitEditMode) {
             exitEditMode(true);
@@ -290,7 +301,11 @@ void TableRenderer::renderCell(int row, int col) {
              col < static_cast<int>(editedCells[row].size()) && editedCells[row][col]);
 
         // Apply cell background colors
-        if (isEdited) {
+        if (isEdited && isSelected) {
+            ImGui::TableSetBgColor(
+                ImGuiTableBgTarget_CellBg,
+                ImGui::GetColorU32(ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.5f)));
+        } else if (isEdited) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
                 ImGui::GetColorU32(ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.3f)));
@@ -317,7 +332,13 @@ void TableRenderer::renderCell(int row, int col) {
 }
 
 void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
+    const auto& colors = Application::getInstance().getCurrentColors();
     const std::string& cellValue = data[row][col];
+
+    // Make Selectable transparent - cell bg is handled by TableSetBgColor
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
 
     if (ImGui::Selectable(cellValue.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
         // Single click - select cell
@@ -338,6 +359,13 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
                 onCellDoubleClick(row, col);
             }
         }
+    }
+
+    ImGui::PopStyleColor(3);
+
+    // Apply hover highlight at cell level
+    if (ImGui::IsItemHovered() && !isSelected) {
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
     }
 
     // Add tooltip for long text

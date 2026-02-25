@@ -8,6 +8,7 @@
 #include "license/license_manager.hpp"
 #include "platform/linux_connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
+#include "platform/linux_updater.hpp"
 #include "themes.hpp"
 #include <iostream>
 
@@ -199,6 +200,17 @@ void LinuxPlatform::setupTitlebar() {
     gtk_widget_set_halign(licenseButton_, GTK_ALIGN_FILL);
     g_signal_connect(licenseButton_, "clicked", G_CALLBACK(onLicenseClicked), this);
     gtk_box_append(GTK_BOX(menuBox), licenseButton_);
+
+    // Check for Updates button
+    GtkWidget* checkUpdatesButton = gtk_button_new_with_label("Check for Updates...");
+    gtk_widget_set_halign(checkUpdatesButton, GTK_ALIGN_FILL);
+    g_signal_connect(checkUpdatesButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
+                         auto* platform = static_cast<LinuxPlatform*>(userData);
+                         gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
+                         checkForUpdatesLinux();
+                     }),
+                     this);
+    gtk_box_append(GTK_BOX(menuBox), checkUpdatesButton);
 
     // Report Bug button
     GtkWidget* reportBugButton = gtk_button_new_with_label("Report Bug...");

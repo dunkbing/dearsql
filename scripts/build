@@ -50,53 +50,44 @@ fi
 
 echo "Build complete: $BUILD_DIR/dear-sql"
 
-# On Linux release builds, also produce .deb
+# On Linux release builds, also produce .deb and AppImage
 if [[ "$BUILD_TYPE" != "Release" ]]; then
     exit 0
 fi
 
-if ! command -v dpkg-deb &>/dev/null; then
-    echo "dpkg-deb not found, skipping .deb packaging"
-    exit 0
+VERSION="$APP_VERSION"
+
+# ---- AppImage packaging ----
+LINUXDEPLOY="$BUILD_DIR/linuxdeploy-x86_64.AppImage"
+LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+
+if [[ ! -x "$LINUXDEPLOY" ]]; then
+    echo "Downloading linuxdeploy..."
+    curl -fSL -o "$LINUXDEPLOY" "$LINUXDEPLOY_URL"
+    chmod +x "$LINUXDEPLOY"
 fi
 
-VERSION="$APP_VERSION"
-ARCH="$(dpkg --print-architecture)"
-PKG_NAME="$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')"
-DEB_NAME="${PKG_NAME}_${VERSION}_${ARCH}"
-DEB_DIR="$BUILD_DIR/$DEB_NAME"
-DEB_FILE="$BUILD_DIR/${DEB_NAME}.deb"
+APPDIR="$BUILD_DIR/AppDir"
+APPIMAGE_FILE="$BUILD_DIR/${APP_NAME}-${VERSION}-x86_64.AppImage"
 
-echo "Packaging ${DEB_NAME}.deb..."
+echo "Packaging AppImage..."
 
-rm -rf "$DEB_DIR"
-mkdir -p "$DEB_DIR"/{DEBIAN,usr/bin,usr/share/applications}
-mkdir -p "$DEB_DIR/usr/share/icons/hicolor/256x256/apps"
+rm -rf "$APPDIR"
+mkdir -p "$APPDIR/usr/bin"
+mkdir -p "$APPDIR/usr/share/applications"
+mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-install -m755 "$BUILD_DIR/dear-sql" "$DEB_DIR/usr/bin/$PKG_NAME"
-install -m644 "$ROOT_DIR/packaging/flatpak/$APP_IDENTIFIER.desktop" \
-    "$DEB_DIR/usr/share/applications/$APP_IDENTIFIER.desktop"
+install -m755 "$BUILD_DIR/dear-sql" "$APPDIR/usr/bin/dear-sql"
+install -m644 "$ROOT_DIR/packaging/$APP_IDENTIFIER.desktop" \
+    "$APPDIR/usr/share/applications/$APP_IDENTIFIER.desktop"
 install -m644 "$ROOT_DIR/assets/appicon.png" \
-    "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png"
+    "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png"
 
-cat > "$DEB_DIR/DEBIAN/control" <<EOF
-Package: ${PKG_NAME}
-Version: ${VERSION}
-Section: database
-Priority: optional
-Architecture: ${ARCH}
-Depends: libgtk-4-1, libssl3
-Maintainer: Bing Bui <bing@db99.dev>
-Homepage: https://dearsql.dev
-Description: SQL Database Client
- DearSQL is a desktop SQL client for connecting to SQLite,
- PostgreSQL, MySQL, Redis, and MongoDB databases.
- .
- Features include syntax highlighting, query history,
- ER diagrams, and table editing.
-EOF
+OUTPUT="$APPIMAGE_FILE" "$LINUXDEPLOY" \
+    --appdir "$APPDIR" \
+    --desktop-file "$APPDIR/usr/share/applications/$APP_IDENTIFIER.desktop" \
+    --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png" \
+    --output appimage
 
-dpkg-deb --build --root-owner-group "$DEB_DIR" "$DEB_FILE"
-sha256sum "$DEB_FILE" > "${DEB_FILE}.sha256"
-
-echo "Package created: $DEB_FILE"
+sha256sum "$APPIMAGE_FILE" > "${APPIMAGE_FILE}.sha256"
+echo "AppImage created: $APPIMAGE_FILE"

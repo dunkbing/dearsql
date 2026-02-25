@@ -225,6 +225,8 @@ if(APPLE)
 elseif(UNIX AND NOT APPLE)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/linux_connection_dialog.cpp)
+    list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
+    list(APPEND APP_SOURCES src/ui/update_dialog.cpp)
 else()
     list(APPEND APP_SOURCES src/platform/default_platform.cpp)
 endif()
@@ -404,9 +406,9 @@ add_test(NAME database_tests COMMAND database_tests)
 # =============================================================================
 if(UNIX AND NOT APPLE)
     install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-    install(FILES packaging/flatpak/io.gitlab.dunkbing.dearsql.desktop
+    install(FILES packaging/io.gitlab.dunkbing.dearsql.desktop
             DESTINATION share/applications)
-    install(FILES packaging/flatpak/io.gitlab.dunkbing.dearsql.metainfo.xml
+    install(FILES packaging/io.gitlab.dunkbing.dearsql.metainfo.xml
             DESTINATION share/metainfo)
     install(FILES assets/appicon.png
             DESTINATION share/icons/hicolor/256x256/apps

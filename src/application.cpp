@@ -13,6 +13,8 @@
 #include "platform/macos_updater.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
+#include "platform/linux_updater.hpp"
+#include "ui/update_dialog.hpp"
 #else
 #include "platform/default_platform.hpp"
 #endif
@@ -190,6 +192,8 @@ bool Application::initialize() {
 
 #ifdef __APPLE__
     initializeSparkleUpdater();
+#elif defined(__linux__)
+    initializeLinuxUpdater();
 #endif
 
     // Restore previous connections for current workspace
@@ -841,6 +845,11 @@ void Application::renderMainUI() {
 
     // Render license dialog
     LicenseDialog::instance().render();
+
+#if defined(__linux__)
+    UpdateDialog::instance().render();
+    pollLinuxUpdater();
+#endif
 
     ImGui::End();
 }

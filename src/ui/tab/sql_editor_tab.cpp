@@ -522,8 +522,7 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         auto* serverDb = schemaNode->parentDbNode->parentDb;
         const std::string dbName = schemaNode->parentDbNode->name;
         const std::string schemaName = schemaNode->name;
-
-        binding_.resolveNode = [serverDb, dbName, schemaName]() -> IDatabaseNode* {
+        auto resolveSchemaByName = [serverDb, dbName, schemaName]() -> PostgresSchemaNode* {
             if (!serverDb) {
                 return nullptr;
             }
@@ -566,11 +565,14 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
 
             return nullptr;
         };
-        binding_.resolveExecutor = [serverDb, dbName]() -> IQueryExecutor* {
-            if (!serverDb) {
-                return nullptr;
-            }
-            return serverDb->getDatabaseData(dbName);
+
+        // Use the schema node as executor so queries go through PostgresSchemaNode::executeQuery()
+        // and apply the correct search_path, while still re-resolving by name after refreshes.
+        binding_.resolveNode = [resolveSchemaByName]() -> IDatabaseNode* {
+            return resolveSchemaByName();
+        };
+        binding_.resolveExecutor = [resolveSchemaByName]() -> IQueryExecutor* {
+            return resolveSchemaByName();
         };
         return;
     }

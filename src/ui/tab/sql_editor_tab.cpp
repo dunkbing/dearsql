@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
-#include <future>
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
@@ -27,7 +26,6 @@ namespace {
     constexpr const char* LABEL_QUERY_SUCCESS = "Query executed successfully.";
     constexpr const char* LABEL_NO_RESULTS =
         "No results to display. Execute a query to see results here.";
-    constexpr const char* LABEL_QUERY_CANCELLED = "Query execution cancelled by user";
     constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
     constexpr int MAX_QUERY_ROWS = 1000;
 } // namespace
@@ -41,11 +39,7 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
     bindNode(node_);
 }
 
-SQLEditorTab::~SQLEditorTab() {
-    if (isExecutingQuery && queryExecutionFuture.valid()) {
-        queryExecutionFuture.wait();
-    }
-}
+SQLEditorTab::~SQLEditorTab() = default;
 
 void SQLEditorTab::render() {
     // Sync editor palette with current app theme
@@ -96,7 +90,41 @@ void SQLEditorTab::render() {
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
             renderToolbar();
+            ImVec2 contentStart = ImGui::GetCursorScreenPos();
+            if (queryExecutionOp_.isRunning())
+                ImGui::BeginDisabled();
             renderQueryResults();
+            if (queryExecutionOp_.isRunning())
+                ImGui::EndDisabled();
+
+            // Spinner overlay while executing
+            if (queryExecutionOp_.isRunning()) {
+                ImVec2 winPos = ImGui::GetWindowPos();
+                ImVec2 winSize = ImGui::GetWindowSize();
+                ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
+
+                const auto& colors = Application::getInstance().getCurrentColors();
+                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
+                bg.w = 0.75f;
+
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddRectFilled(contentStart, overlayEnd, ImGui::GetColorU32(bg));
+
+                float cx = (contentStart.x + overlayEnd.x) * 0.5f;
+                float cy = (contentStart.y + overlayEnd.y) * 0.5f;
+
+                constexpr float spinnerRadius = 10.0f;
+                ImGui::SetCursorScreenPos(
+                    ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
+                UIUtils::Spinner("##results_spinner", spinnerRadius, 2,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+
+                const char* loadingText = LABEL_RUNNING_QUERY;
+                ImVec2 textSize = ImGui::CalcTextSize(loadingText);
+                ImGui::SetCursorScreenPos(
+                    ImVec2(cx - textSize.x * 0.5f, cy + spinnerRadius + Theme::Spacing::S));
+                ImGui::Text("%s", loadingText);
+            }
         }
         ImGui::EndChild();
     }
@@ -196,7 +224,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
 
-    if (isExecutingQuery)
+    if (queryExecutionOp_.isRunning())
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(200.0f);
@@ -249,7 +277,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
         ImGui::EndCombo();
     }
 
-    if (isExecutingQuery)
+    if (queryExecutionOp_.isRunning())
         ImGui::EndDisabled();
 
     ImGui::PopStyleColor();
@@ -288,7 +316,7 @@ void SQLEditorTab::renderConnectionInfoMySQL() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
 
-    if (isExecutingQuery)
+    if (queryExecutionOp_.isRunning())
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(150.0f);
@@ -314,7 +342,7 @@ void SQLEditorTab::renderConnectionInfoMySQL() {
         ImGui::EndCombo();
     }
 
-    if (isExecutingQuery)
+    if (queryExecutionOp_.isRunning())
         ImGui::EndDisabled();
 
     ImGui::PopStyleColor();
@@ -343,16 +371,10 @@ void SQLEditorTab::renderToolbar() {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
 
-    if (isExecutingQuery) {
+    if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
         ImGui::Button(ICON_FA_PLAY " Run");
         ImGui::EndDisabled();
-
-        ImGui::SameLine(0, Theme::Spacing::M);
-        UIUtils::Spinner("##query_spinner", 8.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-
-        ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::Text("%s", LABEL_RUNNING_QUERY);
 
         ImGui::SameLine(0, Theme::Spacing::M);
         if (ImGui::Button(LABEL_CANCEL)) {
@@ -452,14 +474,11 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
 }
 
 void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
-    if (isExecutingQuery) {
+    if (queryExecutionOp_.isRunning()) {
         return;
     }
 
-    isExecutingQuery = true;
-    shouldCancelQuery = false;
     queryError.clear();
-    queryResult = {};
     lastQueryDuration = std::chrono::milliseconds{0};
 
     syncBoundNodePointer();
@@ -469,12 +488,12 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
         executor = binding_.resolveExecutor();
     }
 
-    queryExecutionFuture = std::async(std::launch::async, [this, query, executor]() {
-        if (shouldCancelQuery) {
-            return;
-        }
-
+    queryExecutionOp_.startCancellable([query, executor](std::stop_token stopToken) {
         QueryResult result;
+
+        if (stopToken.stop_requested()) {
+            return result;
+        }
 
         if (executor) {
             result = executor->executeQuery(query);
@@ -485,19 +504,10 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             result.statements.push_back(r);
         }
 
-        if (shouldCancelQuery) {
-            return;
+        if (stopToken.stop_requested()) {
+            return QueryResult{};
         }
-
-        if (!result.empty() && !result.success()) {
-            queryError = result.errorMessage();
-            SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
-        }
-
-        lastQueryDuration =
-            std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
-
-        queryResult = std::move(result);
+        return result;
     });
 }
 
@@ -587,29 +597,24 @@ void SQLEditorTab::syncBoundNodePointer() {
 }
 
 void SQLEditorTab::checkQueryExecutionStatus() {
-    if (!isExecutingQuery) {
-        return;
-    }
-
-    if (queryExecutionFuture.valid() &&
-        queryExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            queryExecutionFuture.get();
-        } catch (const std::exception& e) {
-            if (!shouldCancelQuery) {
-                queryError = "Error in async query execution: " + std::string(e.what());
-                queryResult = {};
+    try {
+        queryExecutionOp_.check([this](QueryResult result) {
+            if (!result.empty() && !result.success()) {
+                queryError = result.errorMessage();
+                SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
             }
-        }
 
-        isExecutingQuery = false;
+            lastQueryDuration =
+                std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
+            queryResult = std::move(result);
+        });
+    } catch (const std::exception& e) {
+        queryError = "Error in async query execution: " + std::string(e.what());
     }
 }
 
 void SQLEditorTab::cancelQueryExecution() {
-    shouldCancelQuery = true;
-    queryError = LABEL_QUERY_CANCELLED;
-    queryResult = {};
+    queryExecutionOp_.cancel();
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,

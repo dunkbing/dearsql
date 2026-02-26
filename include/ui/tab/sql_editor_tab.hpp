@@ -1,15 +1,13 @@
 #pragma once
 
 #include "TextEditor.h"
+#include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "ui/tab/tab.hpp"
-#include <atomic>
 #include <chrono>
 #include <functional>
-#include <future>
 #include <memory>
 #include <string>
-#include <vector>
 
 // Forward declarations
 class IDatabaseNode;
@@ -61,9 +59,7 @@ private:
     std::chrono::milliseconds lastQueryDuration{0};
 
     // Async query execution state
-    bool isExecutingQuery = false;
-    std::future<void> queryExecutionFuture;
-    std::atomic<bool> shouldCancelQuery{false};
+    AsyncOperation<QueryResult> queryExecutionOp_;
 
     // Splitter state for resizing between editor and results
     float splitterPosition = 0.4f; // 40% for editor, 60% for results

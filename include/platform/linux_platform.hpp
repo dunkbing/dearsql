@@ -81,6 +81,7 @@ private:
     GtkWidget* addButton_;
     GtkWidget* menuButton_;
     GtkWidget* menuPopover_;
+    GtkWidget* updateButton_;
     GtkWidget* themeLightButton_;
     GtkWidget* themeDarkButton_;
     GtkWidget* themeAutoButton_;

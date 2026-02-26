@@ -29,9 +29,10 @@ static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_da
 LinuxPlatform::LinuxPlatform(Application* app)
     : app_(app), window_(nullptr), glArea_(nullptr), headerBar_(nullptr), sidebarButton_(nullptr),
       workspaceDropdown_(nullptr), addButton_(nullptr), menuButton_(nullptr), menuPopover_(nullptr),
-      themeLightButton_(nullptr), themeDarkButton_(nullptr), themeAutoButton_(nullptr),
-      licenseButton_(nullptr), workspaceModel_(nullptr), shouldClose_(false), realized_(false),
-      fbWidth_(1280), fbHeight_(720), mouseX_(0), mouseY_(0) {}
+      updateButton_(nullptr), themeLightButton_(nullptr), themeDarkButton_(nullptr),
+      themeAutoButton_(nullptr), licenseButton_(nullptr), workspaceModel_(nullptr),
+      shouldClose_(false), realized_(false), fbWidth_(1280), fbHeight_(720), mouseX_(0),
+      mouseY_(0) {}
 
 LinuxPlatform::~LinuxPlatform() {
     cleanup();
@@ -244,8 +245,15 @@ void LinuxPlatform::setupTitlebar() {
                      }),
                      this);
 
+    // Update available button (initially hidden, shown when background check finds newer version)
+    updateButton_ = gtk_button_new_from_icon_name("dialog-warning-symbolic");
+    gtk_widget_set_visible(updateButton_, FALSE);
+    g_signal_connect(updateButton_, "clicked",
+                     G_CALLBACK(+[](GtkButton*, gpointer) { checkForUpdatesLinux(); }), nullptr);
+
     gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), menuButton_);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), updateButton_);
 
     gtk_window_set_titlebar(GTK_WINDOW(window_), headerBar_);
     updateGtkTheme();
@@ -1459,6 +1467,19 @@ void LinuxPlatform::runMainLoop() {
         // Process GTK events
         while (g_main_context_pending(nullptr)) {
             g_main_context_iteration(nullptr, FALSE);
+        }
+
+        // Show/hide update button based on background version check
+        if (updateButton_) {
+            bool available = isLinuxUpdateAvailable();
+            if (available != static_cast<bool>(gtk_widget_get_visible(updateButton_))) {
+                gtk_widget_set_visible(updateButton_, available);
+                if (available) {
+                    auto version = getLinuxLatestVersion();
+                    auto tooltip = "Update available: v" + version;
+                    gtk_widget_set_tooltip_text(updateButton_, tooltip.c_str());
+                }
+            }
         }
 
         // Request redraw

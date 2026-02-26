@@ -329,18 +329,15 @@ static bool downloadUpdate(std::stop_token stopToken) {
 
 void initializeLinuxUpdater() {
     const char* appImageEnv = std::getenv("APPIMAGE");
-    if (!appImageEnv || std::string(appImageEnv).empty()) {
-        Logger::debug("Not running as AppImage, updater disabled");
-        return;
-    }
-
-    {
+    if (appImageEnv && !std::string(appImageEnv).empty()) {
         std::lock_guard<std::mutex> lock(sUpdaterStateMutex);
         sAppImagePath = appImageEnv;
+        Logger::info(std::string("AppImage updater initialized: ") + appImageEnv);
+    } else {
+        Logger::debug("Not running as AppImage, download/restart disabled");
     }
-    Logger::info(std::string("AppImage updater initialized: ") + appImageEnv);
 
-    // Silent background check
+    // Always run the background version check so the titlebar icon works
     sManualCheck = false;
     sCheckOp.startCancellable(checkForUpdate);
 }
@@ -391,7 +388,12 @@ void pollLinuxUpdater() {
         }
 
         if (isNewerVersion(latestVersion, APP_VERSION)) {
-            dialog.showUpdateAvailable(APP_VERSION, latestVersion, releaseNotes);
+            // For manual checks, show the dialog immediately.
+            // For silent background checks, just leave the state set so the
+            // titlebar icon can pick it up via isLinuxUpdateAvailable().
+            if (sManualCheck) {
+                dialog.showUpdateAvailable(APP_VERSION, latestVersion, releaseNotes);
+            }
         } else if (sManualCheck) {
             dialog.showUpToDate();
         }
@@ -431,6 +433,18 @@ void pollLinuxUpdater() {
         Logger::error("Failed to restart AppImage");
         dialog.showError("Failed to restart. Please relaunch manually.");
     }
+}
+
+bool isLinuxUpdateAvailable() {
+    std::lock_guard<std::mutex> lock(sUpdaterStateMutex);
+    if (sLatestVersion.empty())
+        return false;
+    return isNewerVersion(sLatestVersion, APP_VERSION);
+}
+
+std::string getLinuxLatestVersion() {
+    std::lock_guard<std::mutex> lock(sUpdaterStateMutex);
+    return sLatestVersion;
 }
 
 #endif

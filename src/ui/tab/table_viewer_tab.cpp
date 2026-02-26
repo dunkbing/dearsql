@@ -846,8 +846,9 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
                         for (const auto& sql : sqlStatements) {
                             std::cout << "Executing SQL: " << sql << std::endl;
-                            const auto results = executor->executeQuery(sql);
-                            const auto& r = results.empty() ? QueryResult{} : results.back();
+                            const auto result = executor->executeQuery(sql);
+                            const auto& r =
+                                result.empty() ? StatementResult{} : result.statements.back();
                             std::cout << "SQL Result: " << (r.success ? r.message : r.errorMessage)
                                       << std::endl;
 

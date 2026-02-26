@@ -47,9 +47,9 @@ namespace {
         return connStr;
     }
 
-    // Extract a single QueryResult from a PGresult
-    QueryResult extractPgResult(PGresult* res, int rowLimit) {
-        QueryResult result;
+    // Extract a single StatementResult from a PGresult
+    StatementResult extractPgResult(PGresult* res, int rowLimit) {
+        StatementResult result;
         ExecStatusType status = PQresultStatus(res);
 
         if (status == PGRES_TUPLES_OK) {
@@ -284,18 +284,18 @@ void PostgresDatabase::refreshConnection() {
     });
 }
 
-std::vector<QueryResult> PostgresDatabase::executeQuery(const std::string& query, int rowLimit) {
-    std::vector<QueryResult> results;
+QueryResult PostgresDatabase::executeQuery(const std::string& query, int rowLimit) {
+    QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!isConnected()) {
         auto [success, error] = connect();
         if (!success) {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = "Failed to connect to database: " + error;
-            results.push_back(r);
-            return results;
+            result.statements.push_back(r);
+            return result;
         }
     }
 
@@ -304,32 +304,31 @@ std::vector<QueryResult> PostgresDatabase::executeQuery(const std::string& query
         PGconn* conn = session.get();
 
         if (!PQsendQuery(conn, query.c_str())) {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = PQerrorMessage(conn);
-            results.push_back(r);
-            return results;
+            result.statements.push_back(r);
+            return result;
         }
 
         while (PGresult* raw = PQgetResult(conn)) {
             PgResultPtr res(raw);
             auto r = extractPgResult(res.get(), rowLimit);
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            r.executionTimeMs =
-                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
             // Only add meaningful results (skip empty pipeline results)
             if (r.success || !r.errorMessage.empty()) {
-                results.push_back(std::move(r));
+                result.statements.push_back(std::move(r));
             }
         }
     } catch (const std::exception& e) {
-        QueryResult r;
+        StatementResult r;
         r.success = false;
         r.errorMessage = e.what();
-        results.push_back(r);
+        result.statements.push_back(r);
     }
 
-    return results;
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    return result;
 }
 
 const std::unordered_map<std::string, std::unique_ptr<PostgresDatabaseNode>>&

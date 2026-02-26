@@ -57,15 +57,9 @@ struct Schema {
 };
 
 /**
- * @brief Result of a SQL query execution
- *
- * encapsulates all possible outcomes of executing a SQL query:
- * - SELECT queries: columnNames + tableData
- * - INSERT/UPDATE/DELETE queries: affectedRows + message
- * - DDL queries: message
- * - Errors: success=false + errorMessage
+ * @brief Result of a single SQL statement execution
  */
-struct QueryResult {
+struct StatementResult {
     bool success = true;
     std::string errorMessage;
 
@@ -78,9 +72,47 @@ struct QueryResult {
 
     // general info/message
     std::string message;
+};
 
-    // execution time in milliseconds
-    long long executionTimeMs = 0;
+/**
+ * @brief Result of a query execution (may contain multiple statements)
+ */
+struct QueryResult {
+    std::vector<StatementResult> statements;
+    double executionTimeMs = 0.0;
+
+    [[nodiscard]] bool success() const {
+        if (statements.empty())
+            return false;
+        for (const auto& s : statements) {
+            if (!s.success)
+                return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] const std::string& errorMessage() const {
+        static const std::string empty;
+        for (const auto& s : statements) {
+            if (!s.success)
+                return s.errorMessage;
+        }
+        return empty;
+    }
+
+    [[nodiscard]] bool empty() const {
+        return statements.empty();
+    }
+    [[nodiscard]] size_t size() const {
+        return statements.size();
+    }
+
+    StatementResult& operator[](size_t i) {
+        return statements[i];
+    }
+    const StatementResult& operator[](size_t i) const {
+        return statements[i];
+    }
 };
 
 // Utility helpers shared across database implementations

@@ -1,5 +1,4 @@
 #include "app_state.hpp"
-#include "database/db.hpp"
 #include "utils/crypto.hpp"
 #include "utils/logger.hpp"
 #include <filesystem>

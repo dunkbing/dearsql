@@ -59,7 +59,7 @@ public:
         return DatabaseType::MONGODB;
     }
 
-    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
+    QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
 
     std::vector<Table>& getTables() override {
         return collections;

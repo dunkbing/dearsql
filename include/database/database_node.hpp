@@ -42,9 +42,6 @@ public:
      */
     [[nodiscard]] virtual DatabaseType getDatabaseType() const = 0;
 
-    // Query execution inherited from IQueryExecutor:
-    //   executeQuery(sql, rowLimit) → vector<QueryResult>
-
     // ========== Schema Information ==========
 
     /**

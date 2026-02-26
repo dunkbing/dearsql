@@ -39,8 +39,8 @@ namespace {
         };
     }
 
-    QueryResult extractMysqlResult(MYSQL* conn, int rowLimit) {
-        QueryResult result;
+    StatementResult extractMysqlResult(MYSQL* conn, int rowLimit) {
+        StatementResult result;
 
         MYSQL_RES* rawRes = mysql_store_result(conn);
         if (rawRes) {
@@ -642,8 +642,8 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
     return count;
 }
 
-std::vector<QueryResult> MySQLDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
-    std::vector<QueryResult> results;
+QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
+    QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
@@ -651,30 +651,29 @@ std::vector<QueryResult> MySQLDatabaseNode::executeQuery(const std::string& quer
         MYSQL* conn = session.get();
 
         if (mysql_query(conn, query.c_str()) != 0) {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = mysql_error(conn);
-            results.push_back(r);
-            return results;
+            result.statements.push_back(r);
+            return result;
         }
 
         do {
             auto r = extractMysqlResult(conn, rowLimit);
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            r.executionTimeMs =
-                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
             if (r.success || !r.errorMessage.empty()) {
-                results.push_back(std::move(r));
+                result.statements.push_back(std::move(r));
             }
         } while (mysql_next_result(conn) == 0);
     } catch (const std::exception& e) {
-        QueryResult r;
+        StatementResult r;
         r.success = false;
         r.errorMessage = e.what();
-        results.push_back(r);
+        result.statements.push_back(r);
     }
 
-    return results;
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    return result;
 }
 
 std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) {
@@ -682,9 +681,9 @@ std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) 
         DDLBuilder builder(DatabaseType::MYSQL);
         std::string sql = builder.createTable(table);
 
-        auto results = executeQuery(sql);
-        if (results.empty() || !results.front().success) {
-            return {false, results.empty() ? "Unknown error" : results.front().errorMessage};
+        auto result = executeQuery(sql);
+        if (!result.success()) {
+            return {false, result.errorMessage()};
         }
         return {true, ""};
     } catch (const std::exception& e) {

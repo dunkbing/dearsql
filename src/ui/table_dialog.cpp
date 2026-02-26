@@ -517,8 +517,8 @@ void TableDialog::renderButtons() {
                     for (const auto& sql : statements) {
                         Logger::info("Executing: " + sql);
                         auto r = dbNode->executeQuery(sql);
-                        auto success = !r.empty() && r[0].success;
-                        auto error = r.empty() ? std::string("No result") : r[0].errorMessage;
+                        auto success = r.success();
+                        auto error = r.errorMessage();
                         if (!success) {
                             errorMessage = error;
                             break;

@@ -31,7 +31,7 @@ public:
     std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;
 
     // IQueryExecutor implementation
-    std::vector<QueryResult> executeQuery(const std::string& query, int rowLimit = 1000) override;
+    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     // Database list methods
     void refreshDatabaseNames();

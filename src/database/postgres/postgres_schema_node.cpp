@@ -813,12 +813,14 @@ int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::str
     return parentDbNode->getRowCount(name, tableName, whereClause);
 }
 
-std::vector<QueryResult> PostgresSchemaNode::executeQuery(const std::string& query, int rowLimit) {
+QueryResult PostgresSchemaNode::executeQuery(const std::string& query, int rowLimit) {
     if (!parentDbNode) {
         QueryResult result;
-        result.success = false;
-        result.errorMessage = "No database connection";
-        return {result};
+        StatementResult r;
+        r.success = false;
+        r.errorMessage = "No database connection";
+        result.statements.push_back(std::move(r));
+        return result;
     }
     // Escape double quotes in schema name for safe identifier quoting
     std::string escapedName = name;
@@ -827,12 +829,12 @@ std::vector<QueryResult> PostgresSchemaNode::executeQuery(const std::string& que
         escapedName.insert(pos, 1, '"');
     }
     std::string wrappedQuery = std::format("SET search_path TO \"{}\"; {}", escapedName, query);
-    auto results = parentDbNode->executeQuery(wrappedQuery, rowLimit);
+    auto result = parentDbNode->executeQuery(wrappedQuery, rowLimit);
     // Drop the SET search_path result (first entry) — it's an internal detail
-    if (results.size() > 1) {
-        results.erase(results.begin());
+    if (result.statements.size() > 1) {
+        result.statements.erase(result.statements.begin());
     }
-    return results;
+    return result;
 }
 
 std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table) {
@@ -844,9 +846,9 @@ std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table)
         DDLBuilder builder(DatabaseType::POSTGRESQL);
         std::string sql = builder.createTable(table, name);
 
-        auto results = parentDbNode->executeQuery(sql);
-        bool success = !results.empty() && results[0].success;
-        std::string error = results.empty() ? "No result" : results[0].errorMessage;
+        auto result = parentDbNode->executeQuery(sql);
+        bool success = result.success();
+        std::string error = result.errorMessage();
         if (!success) {
             return {false, error};
         }

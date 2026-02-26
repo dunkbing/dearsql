@@ -53,7 +53,7 @@ void UpdateDialog::render() {
         ImGui::OpenPopup("Update###UpdateDialog");
     }
 
-    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(380, 0), ImVec2(FLT_MAX, FLT_MAX));
 
     if (ImGui::BeginPopupModal("Update###UpdateDialog", &isOpen_,
                                ImGuiWindowFlags_AlwaysAutoResize)) {

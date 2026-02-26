@@ -1261,11 +1261,11 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
 
     // Populate owners from pg_roles
     @try {
-        auto results = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
-        if (!results.empty() && results[0].success) {
+        auto result = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
+        if (result.success()) {
             [self.ownerPopup removeAllItems];
             NSInteger postgresIdx = -1;
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty()) {
                     NSString* name = [NSString stringWithUTF8String:row[0].c_str()];
                     [self.ownerPopup addItemWithTitle:name];
@@ -1285,12 +1285,12 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
     // Populate templates from pg_database
     @
     try {
-        auto results = executor->executeQuery(
+        auto result = executor->executeQuery(
             "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
-        if (!results.empty() && results[0].success) {
+        if (result.success()) {
             [self.templatePopup removeAllItems];
             [self.templatePopup addItemWithTitle:@"template1"];
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty()) {
                     NSString* name = [NSString stringWithUTF8String:row[0].c_str()];
                     if (![name isEqualToString:@"template1"]) {
@@ -1306,10 +1306,10 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
     // Populate tablespaces from pg_tablespace
     @
     try {
-        auto results = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
-        if (!results.empty() && results[0].success) {
+        auto result = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
+        if (result.success()) {
             [self.tablespacePopup removeAllItems];
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty()) {
                     [self.tablespacePopup
                         addItemWithTitle:[NSString stringWithUTF8String:row[0].c_str()]];

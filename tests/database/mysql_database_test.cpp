@@ -113,29 +113,25 @@ TEST_F(MySQLDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows) {
 
     auto r1 = database->executeQuery(std::format(
         "CREATE TABLE `{}` (id INT PRIMARY KEY AUTO_INCREMENT, value TEXT NOT NULL)", tableName));
-    auto createSuccess = !r1.empty() && r1[0].success;
-    auto createError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
-    ASSERT_TRUE(createSuccess) << createError;
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     auto r2 = database->executeQuery(
         std::format("INSERT INTO `{}`(value) VALUES ('delta'), ('epsilon'), ('zeta')", tableName));
-    auto insertSuccess = !r2.empty() && r2[0].success;
-    auto insertError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
-    ASSERT_TRUE(insertSuccess) << insertError;
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
-    auto results =
+    auto result =
         database->executeQuery(std::format("SELECT value FROM `{}` ORDER BY id", tableName));
-    ASSERT_FALSE(results.empty());
-    auto& result = results[0];
-    ASSERT_TRUE(result.success) << result.errorMessage;
+    ASSERT_FALSE(result.empty());
+    auto& stmt = result[0];
+    ASSERT_TRUE(stmt.success) << stmt.errorMessage;
 
-    ASSERT_EQ(result.columnNames.size(), 1u);
-    EXPECT_EQ(result.columnNames[0], "value");
+    ASSERT_EQ(stmt.columnNames.size(), 1u);
+    EXPECT_EQ(stmt.columnNames[0], "value");
 
-    ASSERT_EQ(result.tableData.size(), 3u);
-    EXPECT_EQ(result.tableData[0][0], "delta");
-    EXPECT_EQ(result.tableData[1][0], "epsilon");
-    EXPECT_EQ(result.tableData[2][0], "zeta");
+    ASSERT_EQ(stmt.tableData.size(), 3u);
+    EXPECT_EQ(stmt.tableData[0][0], "delta");
+    EXPECT_EQ(stmt.tableData[1][0], "epsilon");
+    EXPECT_EQ(stmt.tableData[2][0], "zeta");
 }
 
 TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMysqlDatabase) {
@@ -166,8 +162,8 @@ TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMys
     EXPECT_EQ(activeDb->getConnectionInfo().database, "mysql");
 
     auto verifyResult = database->executeQuery(std::format("SHOW DATABASES LIKE '{}'", tempDb));
+    ASSERT_TRUE(verifyResult.success()) << verifyResult.errorMessage();
     ASSERT_FALSE(verifyResult.empty());
-    ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
     EXPECT_TRUE(verifyResult[0].tableData.empty());
 }
 
@@ -194,15 +190,15 @@ TEST_F(MySQLDatabaseIntegrationTest,
     }
     ASSERT_TRUE(created) << createErr;
 
-    auto result = database->executeQuery(
+    auto schemaResult = database->executeQuery(
         std::format("SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
                     "FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '{}'",
                     tempDb));
-    ASSERT_FALSE(result.empty());
-    ASSERT_TRUE(result[0].success) << result[0].errorMessage;
-    ASSERT_EQ(result[0].tableData.size(), 1u);
-    EXPECT_EQ(result[0].tableData[0][0], options.charset);
-    EXPECT_EQ(result[0].tableData[0][1], options.collation);
+    ASSERT_TRUE(schemaResult.success()) << schemaResult.errorMessage();
+    ASSERT_FALSE(schemaResult.empty());
+    ASSERT_EQ(schemaResult[0].tableData.size(), 1u);
+    EXPECT_EQ(schemaResult[0].tableData[0][0], options.charset);
+    EXPECT_EQ(schemaResult[0].tableData[0][1], options.collation);
 
     const auto [dropped, dropErr] = database->dropDatabase(tempDb);
     ASSERT_TRUE(dropped) << dropErr;

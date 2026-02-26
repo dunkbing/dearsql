@@ -145,29 +145,24 @@ TEST_F(MongoDBDatabaseIntegrationTest, InsertAndFindDocuments) {
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "test1", "value": 42}}}})",
         collectionName);
     auto r1 = database->executeQuery(insertQuery);
-    auto insertSuccess = !r1.empty() && r1[0].success;
-    auto insertError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
-    ASSERT_TRUE(insertSuccess) << insertError;
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     // Insert another document
     insertQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "test2", "value": 100}}}})",
         collectionName);
     auto r2 = database->executeQuery(insertQuery);
-    auto insertSuccess2 = !r2.empty() && r2[0].success;
-    auto insertError2 = r2.empty() ? std::string("No result") : r2[0].errorMessage;
-    ASSERT_TRUE(insertSuccess2) << insertError2;
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
     // Find documents
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{}}}})",
         collectionName);
-    auto results = database->executeQuery(findQuery, 100);
-    ASSERT_FALSE(results.empty());
-    auto& result = results[0];
-    ASSERT_TRUE(result.success) << result.errorMessage;
+    auto result = database->executeQuery(findQuery, 100);
+    ASSERT_FALSE(result.empty());
+    ASSERT_TRUE(result[0].success) << result[0].errorMessage;
 
-    EXPECT_EQ(result.tableData.size(), 2u);
+    EXPECT_EQ(result[0].tableData.size(), 2u);
 }
 
 TEST_F(MongoDBDatabaseIntegrationTest, UpdateDocuments) {
@@ -179,31 +174,26 @@ TEST_F(MongoDBDatabaseIntegrationTest, UpdateDocuments) {
         R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "update_test", "value": 1}}}})",
         collectionName);
     auto r1 = database->executeQuery(insertQuery);
-    auto insertSuccess = !r1.empty() && r1[0].success;
-    auto insertError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
-    ASSERT_TRUE(insertSuccess) << insertError;
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     // Update the document
     std::string updateQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "update", "filter": {{"name": "update_test"}}, "update": {{"$set": {{"value": 999}}}}}})",
         collectionName);
     auto r2 = database->executeQuery(updateQuery);
-    auto updateSuccess = !r2.empty() && r2[0].success;
-    auto updateError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
-    ASSERT_TRUE(updateSuccess) << updateError;
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
     // Verify update
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "update_test"}}}})",
         collectionName);
-    auto results = database->executeQuery(findQuery, 100);
-    ASSERT_FALSE(results.empty());
-    auto& result = results[0];
-    ASSERT_TRUE(result.success) << result.errorMessage;
+    auto result = database->executeQuery(findQuery, 100);
+    ASSERT_FALSE(result.empty());
+    ASSERT_TRUE(result[0].success) << result[0].errorMessage;
 
-    ASSERT_EQ(result.tableData.size(), 1u);
+    ASSERT_EQ(result[0].tableData.size(), 1u);
     // The document JSON should contain "value": 999
-    EXPECT_NE(result.tableData[0][1].find("999"), std::string::npos);
+    EXPECT_NE(result[0].tableData[0][1].find("999"), std::string::npos);
 }
 
 TEST_F(MongoDBDatabaseIntegrationTest, DeleteDocuments) {
@@ -221,17 +211,14 @@ TEST_F(MongoDBDatabaseIntegrationTest, DeleteDocuments) {
         R"({{"database": "test", "collection": "{}", "command": "delete", "filter": {{"name": "delete_me"}}}})",
         collectionName);
     auto r1 = database->executeQuery(deleteQuery);
-    auto deleteSuccess = !r1.empty() && r1[0].success;
-    auto deleteError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
-    ASSERT_TRUE(deleteSuccess) << deleteError;
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     // Verify deletion
     std::string findQuery = std::format(
         R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{"name": "delete_me"}}}})",
         collectionName);
-    auto results = database->executeQuery(findQuery, 100);
-    ASSERT_FALSE(results.empty());
-    auto& result = results[0];
-    ASSERT_TRUE(result.success) << result.errorMessage;
-    EXPECT_EQ(result.tableData.size(), 0u);
+    auto result = database->executeQuery(findQuery, 100);
+    ASSERT_FALSE(result.empty());
+    ASSERT_TRUE(result[0].success) << result[0].errorMessage;
+    EXPECT_EQ(result[0].tableData.size(), 0u);
 }

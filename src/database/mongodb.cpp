@@ -123,14 +123,16 @@ void MongoDBDatabase::refreshConnection() {
     });
 }
 
-std::vector<QueryResult> MongoDBDatabase::executeQuery(const std::string& query, int rowLimit) {
+QueryResult MongoDBDatabase::executeQuery(const std::string& query, int rowLimit) {
     QueryResult result;
+    StatementResult s;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!connect().first) {
-        result.success = false;
-        result.errorMessage = "Not connected to database";
-        return {result};
+        s.success = false;
+        s.errorMessage = "Not connected to database";
+        result.statements.push_back(std::move(s));
+        return result;
     }
 
     try {
@@ -171,8 +173,8 @@ std::vector<QueryResult> MongoDBDatabase::executeQuery(const std::string& query,
             auto cursor = coll.find(filter, opts);
 
             // Build result from cursor
-            result.columnNames.push_back("_id");
-            result.columnNames.push_back("document");
+            s.columnNames.push_back("_id");
+            s.columnNames.push_back("document");
 
             for (auto&& doc : cursor) {
                 std::vector<std::string> row;
@@ -185,11 +187,11 @@ std::vector<QueryResult> MongoDBDatabase::executeQuery(const std::string& query,
                     row.push_back("");
                 }
                 row.push_back(bsoncxx::to_json(doc));
-                result.tableData.push_back(std::move(row));
+                s.tableData.push_back(std::move(row));
             }
 
-            result.message = std::format("Returned {} document{}", result.tableData.size(),
-                                         result.tableData.size() == 1 ? "" : "s");
+            s.message = std::format("Returned {} document{}", s.tableData.size(),
+                                    s.tableData.size() == 1 ? "" : "s");
         } else if (command == "aggregate" && !collName.empty()) {
             auto coll = db[collName];
 
@@ -202,15 +204,15 @@ std::vector<QueryResult> MongoDBDatabase::executeQuery(const std::string& query,
 
             auto cursor = coll.aggregate(pipeline);
 
-            result.columnNames.push_back("document");
+            s.columnNames.push_back("document");
             for (auto&& doc : cursor) {
                 std::vector<std::string> row;
                 row.push_back(bsoncxx::to_json(doc));
-                result.tableData.push_back(std::move(row));
+                s.tableData.push_back(std::move(row));
             }
 
-            result.message = std::format("Returned {} document{}", result.tableData.size(),
-                                         result.tableData.size() == 1 ? "" : "s");
+            s.message = std::format("Returned {} document{}", s.tableData.size(),
+                                    s.tableData.size() == 1 ? "" : "s");
         } else if (command == "insert" && !collName.empty()) {
             auto coll = db[collName];
             if (view["document"]) {
@@ -222,56 +224,55 @@ std::vector<QueryResult> MongoDBDatabase::executeQuery(const std::string& query,
                 }
                 coll.insert_many(docs);
             }
-            result.message = "Insert executed successfully";
+            s.message = "Insert executed successfully";
         } else if (command == "update" && !collName.empty()) {
             auto coll = db[collName];
             auto filter = view["filter"].get_document().value;
             auto update = view["update"].get_document().value;
             auto updateResult = coll.update_many(filter, update);
-            result.affectedRows =
-                updateResult ? static_cast<int>(updateResult->modified_count()) : 0;
-            result.message = std::format("Updated {} document{}", result.affectedRows,
-                                         result.affectedRows == 1 ? "" : "s");
+            s.affectedRows = updateResult ? static_cast<int>(updateResult->modified_count()) : 0;
+            s.message = std::format("Updated {} document{}", s.affectedRows,
+                                    s.affectedRows == 1 ? "" : "s");
         } else if (command == "delete" && !collName.empty()) {
             auto coll = db[collName];
             auto filter = view["filter"].get_document().value;
             auto deleteResult = coll.delete_many(filter);
-            result.affectedRows =
-                deleteResult ? static_cast<int>(deleteResult->deleted_count()) : 0;
-            result.message = std::format("Deleted {} document{}", result.affectedRows,
-                                         result.affectedRows == 1 ? "" : "s");
+            s.affectedRows = deleteResult ? static_cast<int>(deleteResult->deleted_count()) : 0;
+            s.message = std::format("Deleted {} document{}", s.affectedRows,
+                                    s.affectedRows == 1 ? "" : "s");
         } else if (command == "createCollection" && !collName.empty()) {
             db.create_collection(collName);
-            result.message = "Collection created successfully";
+            s.message = "Collection created successfully";
         } else if (command == "dropCollection" && !collName.empty()) {
             db[collName].drop();
-            result.message = "Collection dropped successfully";
+            s.message = "Collection dropped successfully";
         } else if (command == "runCommand") {
             if (view["commandDoc"]) {
                 auto cmdResult = db.run_command(view["commandDoc"].get_document().value);
-                result.columnNames.push_back("result");
+                s.columnNames.push_back("result");
                 std::vector<std::string> row;
                 row.push_back(bsoncxx::to_json(cmdResult.view()));
-                result.tableData.push_back(std::move(row));
-                result.message = "Command executed successfully";
+                s.tableData.push_back(std::move(row));
+                s.message = "Command executed successfully";
             }
         } else {
-            result.success = false;
-            result.errorMessage = "Unknown command or missing collection name";
-            return {result};
+            s.success = false;
+            s.errorMessage = "Unknown command or missing collection name";
+            result.statements.push_back(std::move(s));
+            return result;
         }
 
-        result.success = true;
+        s.success = true;
     } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = e.what();
+        s.success = false;
+        s.errorMessage = e.what();
     }
 
     const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    result.statements.push_back(std::move(s));
 
-    return {result};
+    return result;
 }
 
 std::unordered_map<std::string, std::unique_ptr<MongoDBDatabaseNode>>&

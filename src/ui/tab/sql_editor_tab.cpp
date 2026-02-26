@@ -82,6 +82,10 @@ void SQLEditorTab::render() {
 
         if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
+            if (pendingEditorFocusFrames_ > 0) {
+                sqlEditor.SetFocus();
+                pendingEditorFocusFrames_--;
+            }
             sqlEditor.Render("##SQL", ImVec2(-1, -1), true);
             sqlQuery = sqlEditor.GetText();
         }
@@ -367,29 +371,31 @@ void SQLEditorTab::renderToolbar() {
 }
 
 void SQLEditorTab::renderQueryResults() const {
-    if (queryResults.empty()) {
+    if (queryResult.empty()) {
         ImGui::Text("%s", LABEL_NO_RESULTS);
         return;
     }
 
+    // Show execution time above results
+    if (queryResult.executionTimeMs > 0) {
+        ImGui::Text("Execution time: %.2f ms", queryResult.executionTimeMs);
+    }
+
     // Single result — render directly without tabs
-    if (queryResults.size() == 1) {
-        const auto& r = queryResults[0];
-        renderSingleResult(r, 0);
+    if (queryResult.size() == 1) {
+        renderSingleResult(queryResult[0], 0);
         return;
     }
 
     // Multiple results — render as tabs
     if (ImGui::BeginTabBar("##QueryResultTabs")) {
         int tabIndex = 0;
-        for (size_t i = 0; i < queryResults.size(); ++i) {
-            const auto& r = queryResults[i];
+        for (size_t i = 0; i < queryResult.size(); ++i) {
+            const auto& r = queryResult[i];
 
             std::string tabLabel;
             if (!r.success) {
                 tabLabel = std::format("Error##{}", i);
-            } else if (r.columnNames.empty()) {
-                tabLabel = std::format("Result {}##{}", tabIndex + 1, i);
             } else {
                 tabLabel = std::format("Result {}##{}", tabIndex + 1, i);
             }
@@ -404,7 +410,7 @@ void SQLEditorTab::renderQueryResults() const {
     }
 }
 
-void SQLEditorTab::renderSingleResult(const QueryResult& r, size_t index) const {
+void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) const {
     if (!r.success) {
         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", r.errorMessage.c_str());
         return;
@@ -413,10 +419,6 @@ void SQLEditorTab::renderSingleResult(const QueryResult& r, size_t index) const 
     if (r.columnNames.empty()) {
         // DML/DDL result
         ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
-        if (r.executionTimeMs > 0) {
-            ImGui::SameLine();
-            ImGui::Text("| Execution time: %lld ms", r.executionTimeMs);
-        }
         return;
     }
 
@@ -429,11 +431,6 @@ void SQLEditorTab::renderSingleResult(const QueryResult& r, size_t index) const 
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
         }
-    }
-
-    if (r.executionTimeMs > 0) {
-        ImGui::SameLine();
-        ImGui::Text("| Execution time: %lld ms", r.executionTimeMs);
     }
 
     if (!r.tableData.empty()) {
@@ -462,7 +459,7 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     isExecutingQuery = true;
     shouldCancelQuery = false;
     queryError.clear();
-    queryResults.clear();
+    queryResult = {};
     lastQueryDuration = std::chrono::milliseconds{0};
 
     syncBoundNodePointer();
@@ -477,36 +474,30 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             return;
         }
 
-        std::vector<QueryResult> results;
+        QueryResult result;
 
         if (executor) {
-            results = executor->executeQuery(query);
+            result = executor->executeQuery(query);
         } else {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = LABEL_NO_DATABASE_SELECTED;
-            results.push_back(r);
+            result.statements.push_back(r);
         }
 
         if (shouldCancelQuery) {
             return;
         }
 
-        // Check for any errors
-        for (const auto& r : results) {
-            if (!r.success) {
-                queryError = r.errorMessage;
-                SentryUtils::addBreadcrumb("query", "Query error", "error", r.errorMessage,
-                                           "error");
-                break;
-            }
+        if (!result.empty() && !result.success()) {
+            queryError = result.errorMessage();
+            SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
         }
 
-        if (!results.empty()) {
-            lastQueryDuration = std::chrono::milliseconds{results.back().executionTimeMs};
-        }
+        lastQueryDuration =
+            std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
 
-        queryResults = std::move(results);
+        queryResult = std::move(result);
     });
 }
 
@@ -607,7 +598,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
         } catch (const std::exception& e) {
             if (!shouldCancelQuery) {
                 queryError = "Error in async query execution: " + std::string(e.what());
-                queryResults.clear();
+                queryResult = {};
             }
         }
 
@@ -618,7 +609,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 void SQLEditorTab::cancelQueryExecution() {
     shouldCancelQuery = true;
     queryError = LABEL_QUERY_CANCELLED;
-    queryResults.clear();
+    queryResult = {};
 }
 
 bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,

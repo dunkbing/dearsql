@@ -39,7 +39,7 @@ public:
         return DatabaseType::SQLITE;
     }
 
-    std::vector<QueryResult> executeQuery(const std::string& sql, int limit = 1000) override;
+    QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

@@ -41,8 +41,8 @@ namespace {
         return connStr;
     }
 
-    QueryResult extractPgResult(PGresult* res, int rowLimit) {
-        QueryResult result;
+    StatementResult extractPgResult(PGresult* res, int rowLimit) {
+        StatementResult result;
         ExecStatusType status = PQresultStatus(res);
 
         if (status == PGRES_TUPLES_OK) {
@@ -251,9 +251,8 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
         [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
 }
 
-std::vector<QueryResult> PostgresDatabaseNode::executeQuery(const std::string& query,
-                                                            int rowLimit) {
-    std::vector<QueryResult> results;
+QueryResult PostgresDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
+    QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
@@ -261,31 +260,30 @@ std::vector<QueryResult> PostgresDatabaseNode::executeQuery(const std::string& q
         PGconn* conn = session.get();
 
         if (!PQsendQuery(conn, query.c_str())) {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = PQerrorMessage(conn);
-            results.push_back(r);
-            return results;
+            result.statements.push_back(r);
+            return result;
         }
 
         while (PGresult* raw = PQgetResult(conn)) {
             PgResultPtr res(raw);
             auto r = extractPgResult(res.get(), rowLimit);
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            r.executionTimeMs =
-                std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
             if (r.success || !r.errorMessage.empty()) {
-                results.push_back(std::move(r));
+                result.statements.push_back(std::move(r));
             }
         }
     } catch (const std::exception& e) {
-        QueryResult r;
+        StatementResult r;
         r.success = false;
         r.errorMessage = e.what();
-        results.push_back(r);
+        result.statements.push_back(r);
     }
 
-    return results;
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    return result;
 }
 
 std::vector<std::vector<std::string>>

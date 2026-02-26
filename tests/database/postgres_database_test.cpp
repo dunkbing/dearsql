@@ -112,26 +112,22 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
 
     auto r1 = database->executeQuery(std::format(
         R"(CREATE TABLE "{}" (id SERIAL PRIMARY KEY, value TEXT NOT NULL))", tableName));
-    auto createSuccess = !r1.empty() && r1[0].success;
-    auto createError = r1.empty() ? std::string("No result") : r1[0].errorMessage;
-    ASSERT_TRUE(createSuccess) << createError;
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     auto r2 = database->executeQuery(
         std::format(R"(INSERT INTO "{}"(value) VALUES ('alpha'), ('beta'), ('gamma'))", tableName));
-    auto insertSuccess = !r2.empty() && r2[0].success;
-    auto insertError = r2.empty() ? std::string("No result") : r2[0].errorMessage;
-    ASSERT_TRUE(insertSuccess) << insertError;
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
-    auto results =
+    auto result =
         database->executeQuery(std::format(R"(SELECT value FROM "{}" ORDER BY id)", tableName));
-    ASSERT_FALSE(results.empty());
-    auto& result = results[0];
-    ASSERT_TRUE(result.success) << result.errorMessage;
-    ASSERT_EQ(result.columnNames.size(), 1u);
-    EXPECT_EQ(result.columnNames[0], "value");
+    ASSERT_FALSE(result.empty());
+    auto& stmt = result[0];
+    ASSERT_TRUE(stmt.success) << stmt.errorMessage;
+    ASSERT_EQ(stmt.columnNames.size(), 1u);
+    EXPECT_EQ(stmt.columnNames[0], "value");
 
     // Verify we got data back
-    EXPECT_FALSE(result.tableData.empty());
+    EXPECT_FALSE(stmt.tableData.empty());
 }
 
 TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToPostgresDatabase) {
@@ -164,8 +160,8 @@ TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesTo
 
     auto verifyResult = database->executeQuery(
         std::format("SELECT datname FROM pg_database WHERE datname = '{}'", tempDb));
+    ASSERT_TRUE(verifyResult.success()) << verifyResult.errorMessage();
     ASSERT_FALSE(verifyResult.empty());
-    ASSERT_TRUE(verifyResult[0].success) << verifyResult[0].errorMessage;
     EXPECT_TRUE(verifyResult[0].tableData.empty());
 }
 
@@ -199,8 +195,8 @@ TEST_F(PostgresDatabaseIntegrationTest, CreateDatabaseWithOptionsCreatesDatabase
         std::format("SELECT datname, pg_catalog.pg_encoding_to_char(encoding) "
                     "FROM pg_database WHERE datname = '{}'",
                     tempDb));
+    ASSERT_TRUE(dbResult.success()) << dbResult.errorMessage();
     ASSERT_FALSE(dbResult.empty());
-    ASSERT_TRUE(dbResult[0].success) << dbResult[0].errorMessage;
     ASSERT_EQ(dbResult[0].tableData.size(), 1u);
     EXPECT_EQ(dbResult[0].tableData[0][0], tempDb);
     EXPECT_EQ(dbResult[0].tableData[0][1], "UTF8");
@@ -208,8 +204,8 @@ TEST_F(PostgresDatabaseIntegrationTest, CreateDatabaseWithOptionsCreatesDatabase
     auto commentResult = database->executeQuery(std::format(
         "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = '{}'",
         tempDb));
+    ASSERT_TRUE(commentResult.success()) << commentResult.errorMessage();
     ASSERT_FALSE(commentResult.empty());
-    ASSERT_TRUE(commentResult[0].success) << commentResult[0].errorMessage;
     ASSERT_EQ(commentResult[0].tableData.size(), 1u);
     EXPECT_EQ(commentResult[0].tableData[0][0], options.comment);
 

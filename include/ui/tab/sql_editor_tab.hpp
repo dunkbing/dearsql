@@ -55,8 +55,8 @@ private:
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
     TextEditor sqlEditor;
 
-    // Structured query results for table display (one per statement)
-    std::vector<QueryResult> queryResults;
+    // Structured query result for table display
+    QueryResult queryResult;
     std::string queryError;
     std::chrono::milliseconds lastQueryDuration{0};
 
@@ -82,7 +82,7 @@ private:
     void renderConnectionInfoSQLite();
     void renderToolbar();
     void renderQueryResults() const;
-    void renderSingleResult(const QueryResult& r, size_t index) const;
+    void renderSingleResult(const StatementResult& r, size_t index) const;
 
     // Switch the active database node (clears results, resets autocomplete)
     void switchNode(IDatabaseNode* newNode);
@@ -96,6 +96,7 @@ private:
     // Autocomplete
     void updateCompletionKeywords();
     bool completionKeywordsSet_ = false;
+    int pendingEditorFocusFrames_ = 3;
 
     // Deferred database switch (PostgreSQL: waiting for schemas to load)
     std::string pendingDatabaseSwitch_;

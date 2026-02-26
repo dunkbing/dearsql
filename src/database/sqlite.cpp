@@ -518,16 +518,16 @@ int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string&
     }
 }
 
-std::vector<QueryResult> SQLiteDatabase::executeQuery(const std::string& query, int rowLimit) {
-    std::vector<QueryResult> results;
+QueryResult SQLiteDatabase::executeQuery(const std::string& query, int rowLimit) {
+    QueryResult result;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!connected || !db_) {
-        QueryResult r;
+        StatementResult r;
         r.success = false;
         r.errorMessage = "Database not connected";
-        results.push_back(r);
-        return results;
+        result.statements.push_back(r);
+        return result;
     }
 
     const char* remaining = query.c_str();
@@ -545,10 +545,10 @@ std::vector<QueryResult> SQLiteDatabase::executeQuery(const std::string& query, 
         int rc = sqlite3_prepare_v2(db_, remaining, -1, &raw, &tail);
 
         if (rc != SQLITE_OK) {
-            QueryResult r;
+            StatementResult r;
             r.success = false;
             r.errorMessage = sqlite3_errmsg(db_);
-            results.push_back(r);
+            result.statements.push_back(r);
             break;
         }
 
@@ -558,7 +558,7 @@ std::vector<QueryResult> SQLiteDatabase::executeQuery(const std::string& query, 
         }
 
         StmtPtr stmt(raw);
-        QueryResult r;
+        StatementResult r;
 
         int colCount = sqlite3_column_count(raw);
         if (colCount > 0) {
@@ -593,18 +593,14 @@ std::vector<QueryResult> SQLiteDatabase::executeQuery(const std::string& query, 
             }
         }
 
-        results.push_back(std::move(r));
+        result.statements.push_back(std::move(r));
         remaining = tail;
     }
 
     const auto endTime = std::chrono::high_resolution_clock::now();
-    auto totalMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    if (!results.empty()) {
-        results.back().executionTimeMs = totalMs;
-    }
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
-    return results;
+    return result;
 }
 
 std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
@@ -615,9 +611,9 @@ std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
     try {
         DDLBuilder builder(DatabaseType::SQLITE);
         std::string sql = builder.createTable(table);
-        auto results = executeQuery(sql);
-        if (results.empty() || !results[0].success) {
-            return {false, results.empty() ? "No result" : results[0].errorMessage};
+        auto result = executeQuery(sql);
+        if (!result.success()) {
+            return {false, result.errorMessage()};
         }
         return {true, ""};
     } catch (const std::exception& e) {

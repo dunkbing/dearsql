@@ -50,7 +50,7 @@ public:
     [[nodiscard]] bool hasPendingAsyncWork() const override;
 
     // IQueryExecutor implementation
-    std::vector<QueryResult> executeQuery(const std::string& query, int rowLimit = 1000) override;
+    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
 protected:
     // Async loading helpers

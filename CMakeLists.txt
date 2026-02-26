@@ -363,6 +363,7 @@ endif()
 # Test target
 # =============================================================================
 add_executable(database_tests
+    tests/database/async_helper_test.cpp
     tests/database/sqlite_database_test.cpp
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp

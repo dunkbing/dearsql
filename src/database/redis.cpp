@@ -141,58 +141,63 @@ void RedisDatabase::checkTablesStatusAsync() {
     checkKeysStatusAsync();
 }
 
-std::vector<QueryResult> RedisDatabase::executeQuery(const std::string& command, int rowLimit) {
+QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit) {
     QueryResult result;
+    StatementResult s;
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     if (!isConnected()) {
-        result.success = false;
-        result.errorMessage = "Not connected to Redis server";
-        return {result};
+        s.success = false;
+        s.errorMessage = "Not connected to Redis server";
+        result.statements.push_back(std::move(s));
+        return result;
     }
 
     try {
         // Parse command into parts
         auto commandParts = parseRedisCommand(command);
         if (commandParts.empty()) {
-            result.success = false;
-            result.errorMessage = "Empty command";
-            return {result};
+            s.success = false;
+            s.errorMessage = "Empty command";
+            result.statements.push_back(std::move(s));
+            return result;
         }
 
         redisReply* reply = executeRedisCommandParsed(commandParts);
         if (!reply) {
-            result.success = false;
-            result.errorMessage = "Failed to execute command";
-            return {result};
+            s.success = false;
+            s.errorMessage = "Failed to execute command";
+            result.statements.push_back(std::move(s));
+            return result;
         }
 
         // Check for Redis errors
         if (reply->type == REDIS_REPLY_ERROR) {
-            result.success = false;
-            result.errorMessage = reply->str;
+            s.success = false;
+            s.errorMessage = reply->str;
             freeReplyObject(reply);
-            return {result};
+            result.statements.push_back(std::move(s));
+            return result;
         }
 
         // Format result as a single-column table for consistency
-        result.columnNames.push_back("result");
+        s.columnNames.push_back("result");
         std::string formattedReply = formatRedisReply(reply);
-        result.tableData.push_back({formattedReply});
-        result.message = "Command executed successfully";
-        result.success = true;
+        s.tableData.push_back({formattedReply});
+        s.message = "Command executed successfully";
+        s.success = true;
 
         freeReplyObject(reply);
     } catch (const std::exception& e) {
-        result.success = false;
-        result.errorMessage = e.what();
+        s.success = false;
+        s.errorMessage = e.what();
     }
 
     const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    result.statements.push_back(std::move(s));
 
-    return {result};
+    return result;
 }
 
 std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::string& keyPattern,

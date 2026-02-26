@@ -781,8 +781,8 @@ static void populatePostgresOptions(CreateDatabaseDialogData* data) {
 
     // Owners
     try {
-        auto results = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
-        if (!results.empty() && results[0].success && data->ownerDropdown) {
+        auto result = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
+        if (result.success() && data->ownerDropdown) {
             auto* model =
                 GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->ownerDropdown)));
             // Clear
@@ -790,7 +790,7 @@ static void populatePostgresOptions(CreateDatabaseDialogData* data) {
                 gtk_string_list_remove(model, 0);
             int pgIdx = 0;
             int idx = 0;
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty()) {
                     gtk_string_list_append(model, row[0].c_str());
                     if (row[0] == "postgres")
@@ -805,15 +805,15 @@ static void populatePostgresOptions(CreateDatabaseDialogData* data) {
 
     // Templates
     try {
-        auto results = executor->executeQuery(
+        auto result = executor->executeQuery(
             "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
-        if (!results.empty() && results[0].success && data->templateDropdown) {
+        if (result.success() && data->templateDropdown) {
             auto* model =
                 GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->templateDropdown)));
             while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
                 gtk_string_list_remove(model, 0);
             gtk_string_list_append(model, "template1");
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty() && row[0] != "template1") {
                     gtk_string_list_append(model, row[0].c_str());
                 }
@@ -824,13 +824,13 @@ static void populatePostgresOptions(CreateDatabaseDialogData* data) {
 
     // Tablespaces
     try {
-        auto results = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
-        if (!results.empty() && results[0].success && data->tablespaceDropdown) {
+        auto result = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
+        if (result.success() && data->tablespaceDropdown) {
             auto* model =
                 GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->tablespaceDropdown)));
             while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
                 gtk_string_list_remove(model, 0);
-            for (const auto& row : results[0].tableData) {
+            for (const auto& row : result[0].tableData) {
                 if (!row.empty()) {
                     gtk_string_list_append(model, row[0].c_str());
                 }

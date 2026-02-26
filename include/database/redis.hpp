@@ -27,7 +27,7 @@ public:
     void checkTablesStatusAsync();
 
     // IQueryExecutor implementation
-    std::vector<QueryResult> executeQuery(const std::string& query, int rowLimit = 1000) override;
+    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     // Key data viewing (adapted to table interface)
     std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,

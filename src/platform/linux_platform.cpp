@@ -10,6 +10,7 @@
 #include "platform/linux_platform.hpp"
 #include "platform/linux_updater.hpp"
 #include "themes.hpp"
+#include <cmath>
 #include <iostream>
 
 #ifdef GDK_WINDOWING_X11
@@ -25,6 +26,43 @@ static bool g_ClipboardReadPending = false; // Async read in progress
 
 // Forward declarations for clipboard callbacks
 static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_data);
+
+namespace {
+
+    GdkModifierType normalizeModifierStateForKeyEvent(GdkModifierType state, guint keyval,
+                                                      bool pressed) {
+        auto setOrClearMask = [&](GdkModifierType mask) {
+            if (pressed)
+                state = static_cast<GdkModifierType>(state | mask);
+            else
+                state = static_cast<GdkModifierType>(state & ~mask);
+        };
+
+        switch (keyval) {
+        case GDK_KEY_Shift_L:
+        case GDK_KEY_Shift_R:
+            setOrClearMask(GDK_SHIFT_MASK);
+            break;
+        case GDK_KEY_Control_L:
+        case GDK_KEY_Control_R:
+            setOrClearMask(GDK_CONTROL_MASK);
+            break;
+        case GDK_KEY_Alt_L:
+        case GDK_KEY_Alt_R:
+            setOrClearMask(GDK_ALT_MASK);
+            break;
+        case GDK_KEY_Super_L:
+        case GDK_KEY_Super_R:
+            setOrClearMask(GDK_SUPER_MASK);
+            break;
+        default:
+            break;
+        }
+
+        return state;
+    }
+
+} // namespace
 
 LinuxPlatform::LinuxPlatform(Application* app)
     : app_(app), window_(nullptr), glArea_(nullptr), headerBar_(nullptr), sidebarButton_(nullptr),
@@ -514,7 +552,7 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
 
-    platform->updateImGuiKeyMods(state);
+    platform->updateImGuiKeyMods(normalizeModifierStateForKeyEvent(state, keyval, true));
 
     ImGuiKey key = platform->gtkKeyToImGuiKey(keyval);
     if (key != ImGuiKey_None) {
@@ -542,7 +580,7 @@ gboolean LinuxPlatform::onKeyRelease(GtkEventControllerKey* controller, guint ke
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
 
-    platform->updateImGuiKeyMods(state);
+    platform->updateImGuiKeyMods(normalizeModifierStateForKeyEvent(state, keyval, false));
 
     ImGuiKey key = platform->gtkKeyToImGuiKey(keyval);
     if (key != ImGuiKey_None) {
@@ -618,8 +656,29 @@ gboolean LinuxPlatform::onScroll(GtkEventControllerScroll* controller, gdouble d
                                  gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
+    GdkModifierType state =
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
 
-    io.AddMouseWheelEvent(static_cast<float>(-dx), static_cast<float>(-dy));
+    float wheelX = static_cast<float>(-dx);
+    float wheelY = static_cast<float>(-dy);
+
+    // ImGui handles Shift+scroll → horizontal conversion internally via
+    // MouseWheelRequestAxisSwap (swaps wheelY into wheelX). However, some
+    // GTK4 backends also convert Shift+vertical to horizontal at the GDK
+    // level, putting the value in dx instead of dy. If we pass that through
+    // as wheelX, ImGui's swap takes wheelY (which is 0) and zeros everything.
+    // Fix: when Shift is held and GTK already converted (wheelX ≠ 0,
+    // wheelY ≈ 0), move the value back to wheelY so ImGui's swap works.
+    bool shiftHeld = (state & GDK_SHIFT_MASK) != 0 || ImGui::IsKeyDown(ImGuiKey_LeftShift) ||
+                     ImGui::IsKeyDown(ImGuiKey_RightShift);
+    if (shiftHeld && std::fabs(wheelY) < 1e-6f && std::fabs(wheelX) > 1e-6f) {
+        wheelY = wheelX;
+        wheelX = 0.0f;
+    }
+
+    if (std::fabs(wheelX) > 1e-6f || std::fabs(wheelY) > 1e-6f) {
+        io.AddMouseWheelEvent(wheelX, wheelY);
+    }
 
     if (platform->glArea_) {
         gtk_gl_area_queue_render(GTK_GL_AREA(platform->glArea_));

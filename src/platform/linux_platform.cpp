@@ -84,6 +84,8 @@ bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
 void LinuxPlatform::setupInputHandlers() {
     // Key controller
     GtkEventController* keyController = gtk_event_controller_key_new();
+    // Capture key events before GTK's default focus navigation (Tab/Shift+Tab).
+    gtk_event_controller_set_propagation_phase(keyController, GTK_PHASE_CAPTURE);
     g_signal_connect(keyController, "key-pressed", G_CALLBACK(onKeyPress), this);
     g_signal_connect(keyController, "key-released", G_CALLBACK(onKeyRelease), this);
     gtk_widget_add_controller(glArea_, keyController);
@@ -527,6 +529,11 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
         }
     }
 
+    // Prevent GTK focus traversal from stealing focus from the GL editor area.
+    if (keyval == GDK_KEY_Tab || keyval == GDK_KEY_ISO_Left_Tab) {
+        return TRUE;
+    }
+
     return io.WantCaptureKeyboard ? TRUE : FALSE;
 }
 
@@ -540,6 +547,10 @@ gboolean LinuxPlatform::onKeyRelease(GtkEventControllerKey* controller, guint ke
     ImGuiKey key = platform->gtkKeyToImGuiKey(keyval);
     if (key != ImGuiKey_None) {
         io.AddKeyEvent(key, false);
+    }
+
+    if (keyval == GDK_KEY_Tab || keyval == GDK_KEY_ISO_Left_Tab) {
+        return TRUE;
     }
 
     return io.WantCaptureKeyboard ? TRUE : FALSE;
@@ -1216,6 +1227,7 @@ void LinuxPlatform::updateImGuiKeyMods(GdkModifierType state) {
 ImGuiKey LinuxPlatform::gtkKeyToImGuiKey(guint keyval) {
     switch (keyval) {
     case GDK_KEY_Tab:
+    case GDK_KEY_ISO_Left_Tab:
         return ImGuiKey_Tab;
     case GDK_KEY_Left:
         return ImGuiKey_LeftArrow;

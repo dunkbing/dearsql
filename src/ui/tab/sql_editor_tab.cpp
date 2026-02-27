@@ -33,9 +33,7 @@ namespace {
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
                            const std::string& schemaName)
     : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName) {
-    sqlEditor.SetLanguage(TextEditor::Language::Sql());
-    sqlEditor.SetShowWhitespacesEnabled(false);
-    sqlEditor.SetShowLineNumbersEnabled(true);
+    sqlEditor.SetShowLineNumbers(true);
     bindNode(node_);
 }
 
@@ -44,10 +42,11 @@ SQLEditorTab::~SQLEditorTab() = default;
 void SQLEditorTab::render() {
     // Sync editor palette with current app theme
     const bool dark = Application::getInstance().isDarkTheme();
-    sqlEditor.SetPalette(dark ? TextEditor::GetDarkPalette() : TextEditor::GetLightPalette());
+    sqlEditor.SetPalette(
+        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
     syncBoundNodePointer();
 
-    if (node_ && !completionKeywordsSet_ && node_->isTablesLoaded()) {
+    if (!completionKeywordsSet_) {
         updateCompletionKeywords();
     }
 
@@ -666,26 +665,26 @@ bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float
 }
 
 void SQLEditorTab::updateCompletionKeywords() {
-    if (!node_)
-        return;
+    const auto& baseKeywords = dearsql::TextEditor::GetDefaultCompletionKeywords();
+    std::vector<std::string> keywords(baseKeywords.begin(), baseKeywords.end());
 
-    std::vector<std::string> keywords;
-
-    for (const auto& table : node_->getTables()) {
-        keywords.push_back(table.name);
-        for (const auto& col : table.columns) {
-            keywords.push_back(col.name);
+    if (node_) {
+        for (const auto& table : node_->getTables()) {
+            keywords.push_back(table.name);
+            for (const auto& col : table.columns) {
+                keywords.push_back(col.name);
+            }
         }
-    }
 
-    if (node_->isViewsLoaded()) {
-        for (const auto& view : node_->getViews()) {
-            keywords.push_back(view.name);
+        if (node_->isViewsLoaded()) {
+            for (const auto& view : node_->getViews()) {
+                keywords.push_back(view.name);
+            }
         }
-    }
 
-    for (const auto& seq : node_->getSequences()) {
-        keywords.push_back(seq);
+        for (const auto& seq : node_->getSequences()) {
+            keywords.push_back(seq);
+        }
     }
 
     std::sort(keywords.begin(), keywords.end());

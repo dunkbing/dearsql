@@ -1,9 +1,9 @@
 #pragma once
 
-#include "TextEditor.h"
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "ui/tab/tab.hpp"
+#include "ui/text_editor.hpp"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -51,7 +51,7 @@ private:
     IDatabaseNode* node_ = nullptr; // Database node implementing IDatabaseNode
     NodeBinding binding_;
     std::string selectedSchemaName; // Selected schema within the database (for postgres)
-    TextEditor sqlEditor;
+    dearsql::TextEditor sqlEditor;
 
     // Structured query result for table display
     QueryResult queryResult;

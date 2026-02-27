@@ -14,10 +14,13 @@
 [submodule "external/cpp-httplib"]
 	path = external/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
-[submodule "external/ImGuiPack"]
-	path = external/ImGuiPack
-	url = https://github.com/dunkbing/ImGuiPack
-	branch = bing
 [submodule "website"]
 	path = website
 	url = https://github.com/dunkbing/dearsql-website
+[submodule "external/tree-sitter"]
+	path = external/tree-sitter
+	url = https://github.com/tree-sitter/tree-sitter.git
+[submodule "external/tree-sitter-sql"]
+	path = external/tree-sitter-sql
+	url = https://github.com/DerekStride/tree-sitter-sql.git
+	branch = gh-pages

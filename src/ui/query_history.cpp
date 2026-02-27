@@ -1,5 +1,4 @@
 #include "ui/query_history.hpp"
-#include <algorithm>
 
 QueryHistoryEntry::QueryHistoryEntry(std::string q, QueryType t, int rows, int duration,
                                      std::string dbName)

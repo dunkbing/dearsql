@@ -112,6 +112,24 @@ if(APPLE)
 endif()
 
 # =============================================================================
+# Tree-sitter (for SQL text editor syntax highlighting)
+# =============================================================================
+add_library(tree-sitter-core STATIC external/tree-sitter/lib/src/lib.c)
+target_include_directories(tree-sitter-core PUBLIC
+    external/tree-sitter/lib/include
+    external/tree-sitter/lib/src
+)
+set_target_properties(tree-sitter-core PROPERTIES C_STANDARD 11)
+
+add_library(tree-sitter-sql-grammar STATIC
+    external/tree-sitter-sql/src/parser.c
+    external/tree-sitter-sql/src/scanner.c
+)
+target_include_directories(tree-sitter-sql-grammar PRIVATE external/tree-sitter-sql/src)
+target_link_libraries(tree-sitter-sql-grammar PRIVATE tree-sitter-core)
+set_target_properties(tree-sitter-sql-grammar PROPERTIES C_STANDARD 11)
+
+# =============================================================================
 # ImGui (from submodule - tightly integrated with platform backends)
 # =============================================================================
 set(IMGUI_SOURCES
@@ -119,7 +137,6 @@ set(IMGUI_SOURCES
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp
     external/imgui/imgui_widgets.cpp
-    external/ImGuiPack/3rdparty/imgui_imguicolortextedit/TextEditor.cpp
 )
 
 # Platform-specific ImGui backend
@@ -194,6 +211,10 @@ set(APP_SOURCES
     src/ui/tab/sql_editor_tab.cpp
     src/ui/tab/table_viewer_tab.cpp
     src/ui/tab/diagram_tab.cpp
+    # Text Editor
+    src/ui/text_editor.cpp
+    src/ui/text_editor_input.cpp
+    src/ui/text_editor_highlight.cpp
 
     # Utils
     src/utils/file_dialog.cpp
@@ -253,10 +274,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     include
     external/imgui
     external/imgui/backends
-    external/ImGuiPack/3rdparty/imgui_imguicolortextedit
     external/imgui-node-editor
     external/IconFontCppHeaders
     external/cpp-httplib
+    external/tree-sitter/lib/include
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
@@ -284,6 +305,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     sentry::sentry
+    tree-sitter-core
+    tree-sitter-sql-grammar
 )
 
 # Platform-specific linking

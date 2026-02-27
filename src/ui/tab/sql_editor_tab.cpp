@@ -34,6 +34,10 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
                            const std::string& schemaName)
     : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName) {
     sqlEditor.SetShowLineNumbers(true);
+    sqlEditor.SetSubmitCallback([this] {
+        sqlQuery = sqlEditor.GetText();
+        startQueryExecutionAsync(sqlQuery);
+    });
     bindNode(node_);
 }
 
@@ -383,6 +387,10 @@ void SQLEditorTab::renderToolbar() {
         if (ImGui::Button(ICON_FA_PLAY " Run")) {
             startQueryExecutionAsync(sqlQuery);
         }
+        ImGui::SameLine(0, Theme::Spacing::M);
+        if (ImGui::Button(ICON_FA_ALIGN_LEFT " Format")) {
+            formatSQL();
+        }
     }
 
     ImGui::PopStyleColor();
@@ -664,33 +672,47 @@ bool SQLEditorTab::renderVerticalSplitter(const char* id, float* position, float
     return changed;
 }
 
+void SQLEditorTab::formatSQL() {
+    std::string formatted = dearsql::TextEditor::FormatSQL(sqlEditor.GetText());
+    if (!formatted.empty()) {
+        sqlEditor.SetText(formatted);
+        sqlQuery = formatted;
+    }
+}
+
 void SQLEditorTab::updateCompletionKeywords() {
-    const auto& baseKeywords = dearsql::TextEditor::GetDefaultCompletionKeywords();
-    std::vector<std::string> keywords(baseKeywords.begin(), baseKeywords.end());
+    using CI = dearsql::TextEditor::CompletionItem;
+    using CK = dearsql::TextEditor::CompletionKind;
+
+    std::vector<CI> items;
+
+    // SQL keywords
+    for (const auto& kw : dearsql::TextEditor::GetDefaultCompletionKeywords())
+        items.push_back({kw, CK::Keyword});
 
     if (node_) {
         for (const auto& table : node_->getTables()) {
-            keywords.push_back(table.name);
-            for (const auto& col : table.columns) {
-                keywords.push_back(col.name);
-            }
+            items.push_back({table.name, CK::Table});
+            for (const auto& col : table.columns)
+                items.push_back({col.name, CK::Column});
         }
 
         if (node_->isViewsLoaded()) {
-            for (const auto& view : node_->getViews()) {
-                keywords.push_back(view.name);
-            }
+            for (const auto& view : node_->getViews())
+                items.push_back({view.name, CK::View});
         }
 
-        for (const auto& seq : node_->getSequences()) {
-            keywords.push_back(seq);
-        }
+        for (const auto& seq : node_->getSequences())
+            items.push_back({seq, CK::Sequence});
     }
 
-    std::sort(keywords.begin(), keywords.end());
-    keywords.erase(std::unique(keywords.begin(), keywords.end()), keywords.end());
+    // Sort and deduplicate by text
+    std::sort(items.begin(), items.end(), [](const CI& a, const CI& b) { return a.text < b.text; });
+    items.erase(std::unique(items.begin(), items.end(),
+                            [](const CI& a, const CI& b) { return a.text == b.text; }),
+                items.end());
 
-    sqlEditor.SetCompletionKeywords(keywords);
+    sqlEditor.SetCompletionItems(items);
     completionKeywordsSet_ = true;
 }
 

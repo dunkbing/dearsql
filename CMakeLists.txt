@@ -215,6 +215,7 @@ set(APP_SOURCES
     src/ui/text_editor.cpp
     src/ui/text_editor_input.cpp
     src/ui/text_editor_highlight.cpp
+    src/ui/text_editor_format.cpp
 
     # Utils
     src/utils/file_dialog.cpp
@@ -424,6 +425,28 @@ target_link_libraries(database_tests PRIVATE
 )
 
 add_test(NAME database_tests COMMAND database_tests)
+
+# =============================================================================
+# SQL format test target
+# =============================================================================
+add_executable(sql_format_tests
+    tests/ui/sql_format_test.cpp
+    src/ui/text_editor_format.cpp
+)
+
+target_include_directories(sql_format_tests PRIVATE
+    include
+    external/imgui
+    external/tree-sitter/lib/include
+)
+
+target_link_libraries(sql_format_tests PRIVATE
+    GTest::gtest_main
+    tree-sitter-core
+    tree-sitter-sql-grammar
+)
+
+add_test(NAME sql_format_tests COMMAND sql_format_tests)
 
 # =============================================================================
 # Install rules for Linux packaging

@@ -89,6 +89,9 @@ private:
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,
                                 float minSize2) const;
 
+    // Formatting
+    void formatSQL();
+
     // Autocomplete
     void updateCompletionKeywords();
     bool completionKeywordsSet_ = false;

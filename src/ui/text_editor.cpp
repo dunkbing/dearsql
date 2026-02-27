@@ -26,7 +26,7 @@ namespace dearsql {
           palette_(other.palette_), undoStack_(std::move(other.undoStack_)),
           redoStack_(std::move(other.redoStack_)),
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
-          completionKeywords_(std::move(other.completionKeywords_)), tsParser_(other.tsParser_),
+          completionItems_(std::move(other.completionItems_)), tsParser_(other.tsParser_),
           tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
           tsPreviousContent_(std::move(other.tsPreviousContent_)),
           highlightDirty_(other.highlightDirty_) {
@@ -46,7 +46,7 @@ namespace dearsql {
             palette_ = other.palette_;
             undoStack_ = std::move(other.undoStack_);
             redoStack_ = std::move(other.redoStack_);
-            completionKeywords_ = std::move(other.completionKeywords_);
+            completionItems_ = std::move(other.completionItems_);
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
             tsQuery_ = other.tsQuery_;
@@ -79,8 +79,19 @@ namespace dearsql {
         focusRequested_ = true;
     }
 
+    void TextEditor::SetSubmitCallback(std::function<void()> cb) {
+        submitCallback_ = std::move(cb);
+    }
+
+    void TextEditor::SetCompletionItems(const std::vector<CompletionItem>& items) {
+        completionItems_ = items;
+    }
+
     void TextEditor::SetCompletionKeywords(const std::vector<std::string>& keywords) {
-        completionKeywords_ = keywords;
+        completionItems_.clear();
+        completionItems_.reserve(keywords.size());
+        for (const auto& kw : keywords)
+            completionItems_.push_back({kw, CompletionKind::Keyword});
     }
 
     const std::vector<std::string>& TextEditor::GetDefaultCompletionKeywords() {
@@ -411,11 +422,15 @@ namespace dearsql {
 
         bool isFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
+        // Don't handle input if an ImGui text widget (InputText, etc.) is active,
+        // since it reads from the same io.InputQueueCharacters queue.
+        bool imguiWantsText = ImGui::GetIO().WantTextInput;
+
         // Cursor blink
         cursorBlinkTimer_ += ImGui::GetIO().DeltaTime;
 
         // Input handling
-        if (isFocused && !readOnly_) {
+        if (isFocused && !readOnly_ && !imguiWantsText) {
             handleKeyboardInput();
         }
         if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
@@ -575,7 +590,7 @@ namespace dearsql {
     }
 
     void TextEditor::renderCursor(ImDrawList* drawList) {
-        float blinkAlpha = (sinf(cursorBlinkTimer_ * 4.0f) + 1.0f) * 0.5f;
+        float blinkAlpha = (sinf(cursorBlinkTimer_ * 5.0f) + 1.0f) * 0.5f;
         if (blinkAlpha < 0.3f)
             return;
 

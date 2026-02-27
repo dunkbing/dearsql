@@ -11,9 +11,9 @@ source "$SCRIPT_DIR/test-db-config"
 
 # Ensure build directory exists and build tests
 mkdir -p "$BUILD_DIR"
-echo "Building database_tests..."
+echo "Building database_tests and sql_format_tests..."
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" > /dev/null
-cmake --build "$BUILD_DIR" --target database_tests
+cmake --build "$BUILD_DIR" --target database_tests sql_format_tests
 
 echo "Running database tests..."
 echo "PostgreSQL: $DEARSQL_TEST_PG_HOST:$DEARSQL_TEST_PG_PORT"
@@ -24,3 +24,4 @@ echo ""
 
 cd "$BUILD_DIR"
 ./database_tests "$@"
+./sql_format_tests "$@"

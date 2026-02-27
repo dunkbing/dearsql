@@ -41,6 +41,12 @@ namespace dearsql {
         }
 
         if (ctrl) {
+            // Ctrl+Enter submits
+            if (ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+                if (submitCallback_)
+                    submitCallback_();
+                return;
+            }
             // Ctrl+F opens find
             if (ImGui::IsKeyPressed(ImGuiKey_F)) {
                 openFind();
@@ -49,6 +55,11 @@ namespace dearsql {
             // Ctrl+H opens find+replace
             if (ImGui::IsKeyPressed(ImGuiKey_H)) {
                 openFind();
+                return;
+            }
+            // Ctrl+/ toggles line comment
+            if (ImGui::IsKeyPressed(ImGuiKey_Slash)) {
+                toggleLineComment();
                 return;
             }
             handleClipboard();
@@ -76,7 +87,7 @@ namespace dearsql {
         std::string input;
         for (int n = 0; n < io.InputQueueCharacters.Size; ++n) {
             ImWchar ch = io.InputQueueCharacters[n];
-            if (ch >= 32 && ch < 0x10000) {
+            if (ch >= 32) {
                 // Convert ImWchar to UTF-8
                 char buf[5] = {};
                 if (ch < 0x80) {
@@ -497,6 +508,79 @@ namespace dearsql {
         }
     }
 
+    void TextEditor::toggleLineComment() {
+        if (readOnly_)
+            return;
+
+        pushUndoSnapshot();
+
+        // Determine affected line range
+        int startLine, endLine;
+        if (selectionActive_ && selectionStart() != selectionEnd()) {
+            startLine = getLineFromPos(selectionStart());
+            endLine = getLineFromPos(selectionEnd());
+            // If selection ends at column 0, don't include that line
+            if (selectionEnd() == lineStarts_[endLine] && endLine > startLine)
+                --endLine;
+        } else {
+            startLine = endLine = getLineFromPos(cursorIndex_);
+        }
+
+        // Check if all affected lines are already commented
+        bool allCommented = true;
+        for (int i = startLine; i <= endLine; ++i) {
+            int ls = lineStarts_[i];
+            int le = getLineEnd(i);
+            // Skip whitespace
+            int j = ls;
+            while (j < le && (content_[j] == ' ' || content_[j] == '\t'))
+                ++j;
+            if (j >= le)
+                continue; // blank line, skip
+            if (j + 1 < le && content_[j] == '-' && content_[j + 1] == '-') {
+                continue; // commented
+            }
+            allCommented = false;
+            break;
+        }
+
+        // Apply or remove comments, tracking offset for cursor adjustment
+        int cursorOffset = 0;
+        for (int i = startLine; i <= endLine; ++i) {
+            int ls = lineStarts_[i];
+            int le = getLineEnd(i);
+            int j = ls;
+            while (j < le && (content_[j] == ' ' || content_[j] == '\t'))
+                ++j;
+
+            if (allCommented) {
+                // Remove "-- " or "--"
+                if (j + 1 < le && content_[j] == '-' && content_[j + 1] == '-') {
+                    int removeLen = 2;
+                    if (j + 2 < le && content_[j + 2] == ' ')
+                        removeLen = 3;
+                    content_.erase(j, removeLen);
+                    if (cursorIndex_ > j)
+                        cursorOffset -= removeLen;
+                }
+            } else {
+                // Insert "-- "
+                content_.insert(j, "-- ");
+                if (cursorIndex_ >= j)
+                    cursorOffset += 3;
+            }
+
+            // Rebuild after each line since offsets shift
+            rebuildLineStarts();
+        }
+
+        cursorIndex_ =
+            std::clamp(cursorIndex_ + cursorOffset, 0, static_cast<int>(content_.size()));
+        selectionAnchor_ = cursorIndex_;
+        selectionActive_ = false;
+        highlightDirty_ = true;
+    }
+
     // --- Mouse Input ---
 
     void TextEditor::handleMouseInput() {
@@ -619,8 +703,16 @@ namespace dearsql {
     // --- Autocomplete ---
 
     void TextEditor::updateAutoComplete() {
-        const std::vector<std::string>& keywords =
-            completionKeywords_.empty() ? GetDefaultCompletionKeywords() : completionKeywords_;
+        // Build source items: use set items or fall back to default keywords
+        const std::vector<CompletionItem>* items = &completionItems_;
+        std::vector<CompletionItem> defaultItems;
+        if (completionItems_.empty()) {
+            const auto& kws = GetDefaultCompletionKeywords();
+            defaultItems.reserve(kws.size());
+            for (const auto& kw : kws)
+                defaultItems.push_back({kw, CompletionKind::Keyword});
+            items = &defaultItems;
+        }
 
         std::string word = getCurrentWord();
         if (word.empty()) {
@@ -634,19 +726,19 @@ namespace dearsql {
                        [](unsigned char c) { return std::tolower(c); });
 
         filteredCompletions_.clear();
-        for (const auto& kw : keywords) {
-            std::string lowerKw = kw;
-            std::transform(lowerKw.begin(), lowerKw.end(), lowerKw.begin(),
+        for (const auto& item : *items) {
+            std::string lowerText = item.text;
+            std::transform(lowerText.begin(), lowerText.end(), lowerText.begin(),
                            [](unsigned char c) { return std::tolower(c); });
-            if (lowerKw.find(lowerWord) == 0 && lowerKw != lowerWord)
-                filteredCompletions_.push_back(kw);
+            if (lowerText.find(lowerWord) == 0 && lowerText != lowerWord)
+                filteredCompletions_.push_back(item);
         }
 
         // Sort
         std::sort(filteredCompletions_.begin(), filteredCompletions_.end(),
-                  [](const std::string& a, const std::string& b) {
+                  [](const CompletionItem& a, const CompletionItem& b) {
                       return std::lexicographical_compare(
-                          a.begin(), a.end(), b.begin(), b.end(),
+                          a.text.begin(), a.text.end(), b.text.begin(), b.text.end(),
                           [](char ca, char cb) { return std::tolower(ca) < std::tolower(cb); });
                   });
 
@@ -672,7 +764,7 @@ namespace dearsql {
         int line = getLineFromPos(cursorIndex_);
         float cursorY = textOrigin_.y + (line + 1) * lineHeight_;
 
-        constexpr float popupWidth = 220.0f;
+        constexpr float popupWidth = 240.0f;
         constexpr float popupPadding = 6.0f;
         const int maxShow = std::min(static_cast<int>(filteredCompletions_.size()), 8);
         const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
@@ -691,19 +783,53 @@ namespace dearsql {
             viewport ? ImGui::GetForegroundDrawList(viewport) : ImGui::GetForegroundDrawList();
         const ImVec2 rectMin = pos;
         const ImVec2 rectMax(pos.x + popupWidth, pos.y + popupHeight);
-        drawList->AddRectFilled(rectMin, rectMax, palette_.background, 6.0f);
-        drawList->AddRect(rectMin, rectMax, IM_COL32(80, 80, 100, 220), 6.0f);
+        drawList->AddRectFilled(rectMin, rectMax, palette_.background);
+        drawList->AddRect(rectMin, rectMax, palette_.lineNumber);
 
-        const ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
+        const ImU32 textColor = palette_.text;
+        constexpr float iconWidth = 20.0f;
         for (int i = 0; i < maxShow; ++i) {
             const float rowY = pos.y + popupPadding + rowHeight * i;
             if (i == autocompleteIndex_) {
                 drawList->AddRectFilled(ImVec2(pos.x + 2.0f, rowY),
                                         ImVec2(pos.x + popupWidth - 2.0f, rowY + rowHeight),
-                                        IM_COL32(80, 80, 120, 130), 3.0f);
+                                        palette_.selection);
             }
-            drawList->AddText(ImVec2(pos.x + popupPadding, rowY), textColor,
-                              filteredCompletions_[i].c_str());
+
+            // Icon label and color based on completion kind
+            const char* icon = "K";
+            ImU32 iconColor = palette_.keyword;
+            switch (filteredCompletions_[i].kind) {
+            case CompletionKind::Keyword:
+                icon = "K";
+                iconColor = palette_.keyword;
+                break;
+            case CompletionKind::Table:
+                icon = "T";
+                iconColor = palette_.function;
+                break;
+            case CompletionKind::Column:
+                icon = "C";
+                iconColor = palette_.text;
+                break;
+            case CompletionKind::View:
+                icon = "V";
+                iconColor = palette_.string;
+                break;
+            case CompletionKind::Sequence:
+                icon = "S";
+                iconColor = palette_.number;
+                break;
+            case CompletionKind::Function:
+                icon = "F";
+                iconColor = palette_.type;
+                break;
+            }
+
+            float iconX = pos.x + popupPadding;
+            drawList->AddText(ImVec2(iconX, rowY), iconColor, icon);
+            drawList->AddText(ImVec2(pos.x + popupPadding + iconWidth, rowY), textColor,
+                              filteredCompletions_[i].text.c_str());
         }
     }
 
@@ -714,7 +840,7 @@ namespace dearsql {
 
         pushUndoSnapshot();
 
-        const std::string& completion = filteredCompletions_[autocompleteIndex_];
+        const std::string& completion = filteredCompletions_[autocompleteIndex_].text;
         std::string word = getCurrentWord();
 
         // Replace the current word with the completion

@@ -1,6 +1,7 @@
 #pragma once
 #include "imgui.h"
 #include "themes.hpp"
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -28,6 +29,14 @@ namespace dearsql {
         void SetFocus();
 
         // Autocomplete
+        enum class CompletionKind : uint8_t { Keyword, Table, Column, View, Sequence, Function };
+        struct CompletionItem {
+            std::string text;
+            CompletionKind kind = CompletionKind::Keyword;
+            CompletionItem() = default;
+            CompletionItem(std::string t, CompletionKind k) : text(std::move(t)), kind(k) {}
+        };
+        void SetCompletionItems(const std::vector<CompletionItem>& items);
         void SetCompletionKeywords(const std::vector<std::string>& keywords);
         [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
 
@@ -54,6 +63,12 @@ namespace dearsql {
         static Palette GetDarkPalette();
         static Palette GetLightPalette();
         static Palette FromTheme(const Theme::Colors& colors);
+
+        // SQL formatting
+        [[nodiscard]] static std::string FormatSQL(const std::string& sql);
+
+        // Callbacks
+        void SetSubmitCallback(std::function<void()> cb);
 
         // Options
         void SetShowLineNumbers(bool show);
@@ -93,6 +108,9 @@ namespace dearsql {
         bool readOnly_ = false;
         bool focusRequested_ = false;
 
+        // --- Callbacks ---
+        std::function<void()> submitCallback_;
+
         // --- Palette ---
         Palette palette_;
 
@@ -106,8 +124,8 @@ namespace dearsql {
         std::string lastSnapshotContent_;
 
         // --- Autocomplete ---
-        std::vector<std::string> completionKeywords_;
-        std::vector<std::string> filteredCompletions_;
+        std::vector<CompletionItem> completionItems_;
+        std::vector<CompletionItem> filteredCompletions_;
         bool autocompleteVisible_ = false;
         int autocompleteIndex_ = 0;
         int autocompleteWordStart_ = 0;
@@ -138,6 +156,7 @@ namespace dearsql {
         void handleSelectAll();
         void handleClipboard();
         void handleUndoRedo();
+        void toggleLineComment();
         void handleMouseInput();
         int getCharIndexFromScreenPos(ImVec2 screenPos) const;
         void handleDoubleClick(int charIndex);

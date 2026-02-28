@@ -445,7 +445,8 @@ void Application::restorePreviousConnections() {
 
         if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
             db = std::make_shared<PostgresDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::MYSQL) {
+        } else if (conn.connectionInfo.type == DatabaseType::MYSQL ||
+                   conn.connectionInfo.type == DatabaseType::MARIADB) {
             db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
             db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);

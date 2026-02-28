@@ -4,6 +4,7 @@
 std::string DDLBuilder::quoteIdentifier(const std::string& id) const {
     switch (dbType_) {
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         return "`" + id + "`";
     case DatabaseType::POSTGRESQL:
         return "\"" + id + "\"";
@@ -39,7 +40,8 @@ std::string DDLBuilder::createTable(const Table& table, const std::string& schem
         }
 
         // MySQL column comments
-        if (dbType_ == DatabaseType::MYSQL && !col.comment.empty()) {
+        if ((dbType_ == DatabaseType::MYSQL || dbType_ == DatabaseType::MARIADB) &&
+            !col.comment.empty()) {
             std::string escaped;
             for (char ch : col.comment) {
                 if (ch == '\'') {
@@ -70,7 +72,7 @@ std::string DDLBuilder::createTable(const Table& table, const std::string& schem
     sql += ")";
 
     // MySQL engine suffix
-    if (dbType_ == DatabaseType::MYSQL) {
+    if (dbType_ == DatabaseType::MYSQL || dbType_ == DatabaseType::MARIADB) {
         sql += " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
     }
 

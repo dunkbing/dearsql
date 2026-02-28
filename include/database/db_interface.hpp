@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, REDIS, MONGODB };
+enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB };
 
 struct DatabaseConnectionInfo {
     DatabaseType type = DatabaseType::SQLITE;
@@ -53,7 +53,8 @@ struct DatabaseConnectionInfo {
             return connStr;
         }
 
-        case DatabaseType::MYSQL: {
+        case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB: {
             const std::string targetDb = !dbName.empty() ? dbName : database;
             std::string connStr =
                 "host=" + host + " port=" + std::to_string(port) + " dbname=" + targetDb;
@@ -234,7 +235,8 @@ public:
             connectionInfo.database = "postgres";
             break;
         }
-        case DatabaseType::MYSQL: {
+        case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB: {
             connectionInfo.database = "mysql";
             break;
         }

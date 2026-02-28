@@ -455,7 +455,8 @@ void TableDialog::renderColumnEditor() {
     ImGui::Spacing();
 
     // Comment (if supported by database)
-    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::POSTGRESQL) {
+    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB ||
+        databaseType == DatabaseType::POSTGRESQL) {
         ImGui::Text("Comment:");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputTextMultiline("##column_comment", columnComment, sizeof(columnComment),
@@ -659,7 +660,7 @@ std::string TableDialog::generateAddColumnSQL() const {
 
     // Handle comments differently for different databases
     if (std::strlen(columnComment) > 0) {
-        if (databaseType == DatabaseType::MYSQL) {
+        if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB) {
             sql += " COMMENT '" + std::string(columnComment) + "'";
         } else if (databaseType == DatabaseType::POSTGRESQL) {
             sql += "; COMMENT ON COLUMN " + qualifiedTableName + "." + std::string(columnName) +
@@ -730,6 +731,7 @@ std::string TableDialog::generateEditColumnSQL() const {
     }
 
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         sql = "ALTER TABLE " + tableName + " MODIFY COLUMN " + std::string(columnName) + " " +
               std::string(columnType);
 
@@ -770,6 +772,7 @@ std::vector<std::string> TableDialog::getCommonDataTypes() const {
         break;
 
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         types = {"INT",    "BIGINT",       "SMALLINT",  "TINYINT",  "DECIMAL(10,2)", "FLOAT",
                  "DOUBLE", "VARCHAR(255)", "TEXT",      "CHAR(10)", "BOOLEAN",       "DATE",
                  "TIME",   "DATETIME",     "TIMESTAMP", "JSON"};
@@ -808,7 +811,8 @@ void TableDialog::renderTableProperties() {
     ImGui::Spacing();
 
     // Comment (if supported by database)
-    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::POSTGRESQL) {
+    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB ||
+        databaseType == DatabaseType::POSTGRESQL) {
         ImGui::Text("Comment:");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputTextMultiline("##table_comment", tableCommentBuffer,
@@ -922,7 +926,8 @@ std::string TableDialog::generateCreateTableSQL() const {
             sql += " NOT NULL";
         }
 
-        if (!column.comment.empty() && databaseType == DatabaseType::MYSQL) {
+        if (!column.comment.empty() &&
+            (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB)) {
             sql += " COMMENT '" + column.comment + "'";
         }
 
@@ -953,8 +958,9 @@ std::string TableDialog::generateCreateTableSQL() const {
 
     sql += ")";
 
-    // Add table comment for MySQL
-    if (databaseType == DatabaseType::MYSQL && std::strlen(tableCommentBuffer) > 0) {
+    // Add table comment for MySQL/MariaDB
+    if ((databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB) &&
+        std::strlen(tableCommentBuffer) > 0) {
         sql += " COMMENT = '" + std::string(tableCommentBuffer) + "'";
     }
 

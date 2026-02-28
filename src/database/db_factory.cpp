@@ -18,6 +18,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "redis";
     case DatabaseType::MONGODB:
         return "mongodb";
+    case DatabaseType::MARIADB:
+        return "mariadb";
     }
     return "unknown";
 }
@@ -33,6 +35,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::REDIS;
     if (typeStr == "mongodb")
         return DatabaseType::MONGODB;
+    if (typeStr == "mariadb")
+        return DatabaseType::MARIADB;
     return DatabaseType::SQLITE; // default
 }
 
@@ -53,6 +57,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::MONGODB:
         return std::make_shared<MongoDBDatabase>(info);
+
+    case DatabaseType::MARIADB:
+        return std::make_shared<MySQLDatabase>(info);
 
     default:
         return nullptr;

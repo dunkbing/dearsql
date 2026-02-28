@@ -220,7 +220,7 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
 
     // Default port by type
     const char* defaultPort = "5432";
-    if (type == DatabaseType::MYSQL)
+    if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB)
         defaultPort = "3306";
     else if (type == DatabaseType::MONGODB)
         defaultPort = "27017";
@@ -470,6 +470,7 @@ static void connectServerAsync(ConnectionDialogData* data) {
             db = std::make_shared<PostgresDatabase>(info);
             break;
         case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB:
             info.database = dbStr.empty() ? "mysql" : dbStr;
             db = std::make_shared<MySQLDatabase>(info);
             break;
@@ -564,8 +565,9 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data) {
     gtk_box_append(GTK_BOX(mainBox), nameRow);
 
     // Type dropdown
-    static const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "Redis", "MongoDB"};
-    data->typeDropdown = makeStringDropdown(typeNames, 5, 0);
+    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",
+                                      "MariaDB", "Redis",      "MongoDB"};
+    data->typeDropdown = makeStringDropdown(typeNames, 6, 0);
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
 
@@ -713,6 +715,7 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
         break;
 
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
     case DatabaseType::MONGODB:
         if (data->hostEntry)
             gtk_editable_set_text(GTK_EDITABLE(data->hostEntry), info.host.c_str());

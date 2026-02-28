@@ -539,7 +539,7 @@ void DatabaseSidebarNew::render() {
 
             ImGui::Spacing();
 
-            if (dbType == DatabaseType::MYSQL) {
+            if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
                 ImGui::Text("Comment (optional):");
                 ImGui::SetNextItemWidth(300);
                 ImGui::InputText("##db_comment", dbComment, sizeof(dbComment));
@@ -563,7 +563,10 @@ void DatabaseSidebarNew::render() {
                 if (strlen(dbName) == 0) {
                     errorMessage = "Database name cannot be empty";
                 } else {
-                    const std::string comment = dbType == DatabaseType::MYSQL ? dbComment : "";
+                    const std::string comment =
+                        (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB)
+                            ? dbComment
+                            : "";
                     auto [success, createError] = db->createDatabase(dbName, comment);
                     if (!success) {
                         errorMessage =
@@ -579,7 +582,8 @@ void DatabaseSidebarNew::render() {
                             if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
                                 pgDb->refreshDatabaseNames();
                             }
-                        } else if (dbType == DatabaseType::MYSQL) {
+                        } else if (dbType == DatabaseType::MYSQL ||
+                                   dbType == DatabaseType::MARIADB) {
                             if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
                                 mysqlDb->refreshDatabaseNames();
                             }
@@ -642,6 +646,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         icon = ICON_FK_POSTGRESQL;
         break;
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         icon = ICON_FK_MYSQL;
         break;
     case DatabaseType::MONGODB:
@@ -675,6 +680,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     case DatabaseType::MYSQL:
         iconColor = ImGui::GetColorU32(colors.peach);
         break;
+    case DatabaseType::MARIADB:
+        iconColor = ImGui::GetColorU32(colors.teal);
+        break;
     case DatabaseType::MONGODB:
         iconColor = ImGui::GetColorU32(colors.green);
         break;
@@ -706,7 +714,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
             pgDb->checkRefreshWorkflowAsync();
         }
-    } else if (type == DatabaseType::MYSQL) {
+    } else if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) {
         if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
             mysqlDb->checkRefreshWorkflowAsync();
         }
@@ -772,7 +780,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         // Create New Database (PostgreSQL and MySQL only, when connected)
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
-            if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL) {
+            if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL ||
+                dbType == DatabaseType::MARIADB) {
                 if (ImGui::MenuItem("Create New Database")) {
 #if defined(__APPLE__) || defined(__linux__)
                     nativeCreateDatabaseTarget = db;

@@ -347,11 +347,6 @@ void DatabaseSidebarNew::render() {
     }
 #endif
 
-    ImGui::PushStyleColor(ImGuiCol_Separator,
-                          ImVec4(colors.overlay0.x, colors.overlay0.y, colors.overlay0.z, 0.2f));
-    ImGui::Separator();
-    ImGui::PopStyleColor();
-
     // Calculate available height for the sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float sidebarWidth = ImGui::GetContentRegionAvail().x;

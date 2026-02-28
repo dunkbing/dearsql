@@ -266,6 +266,17 @@ void Application::run() {
             glfwPollEvents();
         }
 
+#ifdef __APPLE__
+        // Metal's nextDrawable blocks ~1s when the window is in the background,
+        // causing a visible delay when switching back to the app quickly.
+        // Skip rendering while unfocused; the focus event wakes us instantly.
+        if (!glfwGetWindowAttrib(window, GLFW_FOCUSED)) {
+            glfwWaitEventsTimeout(kMaximumWaitSeconds);
+            lastInteractionTime = glfwGetTime();
+            continue;
+        }
+#endif
+
         platform_->renderFrame();
 
         const bool userActive = isImGuiUserActive();
@@ -763,11 +774,12 @@ void Application::renderMainUI() {
 
     ImGui::PopStyleVar(3);
 
-    // Customize titlebar colors to match app background
+    // Customize titlebar colors — use mantle so the dock tab bar visually
+    // matches the native titlebar through the vibrancy layer.
     const auto& colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.base);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.base);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.base);
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.mantle);
 
     // Add border around dock windows using Theme colors (only when using docking)
     if (shouldUseDocking) {

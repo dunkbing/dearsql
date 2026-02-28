@@ -35,9 +35,11 @@ private:
     id metalDevice_;
     id metalCommandQueue_;
     id metalLayer_;
+    id visualEffectView_;
 #else
     void* metalDevice_;
     void* metalCommandQueue_;
     void* metalLayer_;
+    void* visualEffectView_;
 #endif
 };

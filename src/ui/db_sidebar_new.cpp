@@ -8,7 +8,7 @@
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
-#include "ui/confirm_dialog.hpp"
+#include "platform/alert.hpp"
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
@@ -473,22 +473,22 @@ void DatabaseSidebarNew::render() {
         const auto db = databasePendingDeletion;
         auto const connectionInfo = db->getConnectionInfo();
 
-        ConfirmDialog::instance().show(
+        Alert::show(
             "Remove Database",
-            std::format("Are you sure you want to remove '{}'?", connectionInfo.name),
-            {"Remove the database from the current session", "Delete the saved connection (if any)",
-             "Close any open tabs for this database"},
-            "Remove",
-            [this, db, &app, connectionInfo]() {
-                if (app.getAppState()->deleteConnection(db->getConnectionId())) {
-                    Logger::info(std::format("Removed saved connection: {}", connectionInfo.name));
-                }
-                Logger::info(std::format("Database removed: {}", connectionInfo.name));
-                hierarchyCache.erase(db.get());
-                app.removeDatabase(db);
-                databasePendingDeletion.reset();
-            },
-            [this]() { databasePendingDeletion.reset(); });
+            std::format("Remove '{}' and delete the saved connection?", connectionInfo.name),
+            {{"Cancel", [this]() { databasePendingDeletion.reset(); }, AlertButton::Style::Cancel},
+             {"Remove",
+              [this, db, &app, connectionInfo]() {
+                  if (app.getAppState()->deleteConnection(db->getConnectionId())) {
+                      Logger::info(
+                          std::format("Removed saved connection: {}", connectionInfo.name));
+                  }
+                  Logger::info(std::format("Database removed: {}", connectionInfo.name));
+                  hierarchyCache.erase(db.get());
+                  app.removeDatabase(db);
+                  databasePendingDeletion.reset();
+              },
+              AlertButton::Style::Destructive}});
 
         shouldShowDeleteConfirmation = false;
     }
@@ -500,10 +500,6 @@ void DatabaseSidebarNew::render() {
 
     if (InputDialog::instance().isOpen()) {
         InputDialog::instance().render();
-    }
-
-    if (ConfirmDialog::instance().isOpen()) {
-        ConfirmDialog::instance().render();
     }
 
     // Handle create database dialog

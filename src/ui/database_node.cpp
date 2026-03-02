@@ -9,7 +9,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
-#include "ui/confirm_dialog.hpp"
+#include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
@@ -405,22 +405,25 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
-            ConfirmDialog::instance().show(
-                "Delete Database", std::format("You are about to delete the database: {}", dbName),
-                {"Permanently delete the database and ALL its data",
-                 "Remove all tables, views, and other objects", "This operation is IRREVERSIBLE"},
-                "Delete Database", [this, dbName]() {
-                    auto [success, error] = db->dropDatabase(dbName);
-                    if (success) {
-                        Logger::info(std::format("Database '{}' deleted successfully", dbName));
-                        if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                            pgDb->refreshDatabaseNames();
-                        }
-                    } else {
-                        Logger::error(std::format("Failed to delete database: {}", error));
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Database",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            dbName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [this, dbName]() {
+                      auto [success, error] = db->dropDatabase(dbName);
+                      if (success) {
+                          Logger::info(std::format("Database '{}' deleted successfully", dbName));
+                          if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+                              pgDb->refreshDatabaseNames();
+                          }
+                      } else {
+                          Logger::error(std::format("Failed to delete database: {}", error));
+                          Alert::show("Error", std::format("Failed to delete database: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -499,18 +502,19 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 });
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string schemaName = schemaData->name;
-            ConfirmDialog::instance().show(
-                "Delete Schema", std::format("You are about to delete the schema: {}", schemaName),
-                {"Permanently delete the schema and ALL its contents",
-                 "Remove all tables, views, sequences in this schema",
-                 "This operation is IRREVERSIBLE"},
-                "Delete Schema", [schemaData]() {
-                    auto [success, error] = schemaData->dropSchema();
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Schema",
+                std::format("Permanently delete '{}' and ALL its contents? This is irreversible.",
+                            schemaData->name),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [schemaData]() {
+                      auto [success, error] = schemaData->dropSchema();
+                      if (!success) {
+                          Alert::show("Error", std::format("Failed to delete schema: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -768,22 +772,25 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
-            ConfirmDialog::instance().show(
-                "Delete Database", std::format("You are about to delete the database: {}", dbName),
-                {"Permanently delete the database and ALL its data",
-                 "Remove all tables, views, and other objects", "This operation is IRREVERSIBLE"},
-                "Delete Database", [this, dbName]() {
-                    auto [success, error] = db->dropDatabase(dbName);
-                    if (success) {
-                        Logger::info(std::format("Database '{}' deleted successfully", dbName));
-                        if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                            mysqlDb->refreshDatabaseNames();
-                        }
-                    } else {
-                        Logger::error(std::format("Failed to delete database: {}", error));
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Database",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            dbName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [this, dbName]() {
+                      auto [success, error] = db->dropDatabase(dbName);
+                      if (success) {
+                          Logger::info(std::format("Database '{}' deleted successfully", dbName));
+                          if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+                              mysqlDb->refreshDatabaseNames();
+                          }
+                      } else {
+                          Logger::error(std::format("Failed to delete database: {}", error));
+                          Alert::show("Error", std::format("Failed to delete database: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -958,19 +965,19 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
-            const std::string schemaNameCopy = schemaNode->name;
-            ConfirmDialog::instance().show(
-                "Delete Table",
-                std::format("You are about to delete the table: {}.{}", schemaNameCopy, tableName),
-                {"Permanently delete the table and ALL its data",
-                 "Remove all indexes and constraints",
-                 "Break any foreign key references to this table"},
-                "Delete Table", [schemaNode, tableName]() {
-                    auto [success, error] = schemaNode->dropTable(tableName);
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show("Delete Table",
+                        std::format("Permanently delete '{}.{}'? This is irreversible.",
+                                    schemaNode->name, tableName),
+                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                         {"Delete",
+                          [schemaNode, tableName]() {
+                              auto [success, error] = schemaNode->dropTable(tableName);
+                              if (!success) {
+                                  Alert::show("Error",
+                                              std::format("Failed to delete table: {}", error));
+                              }
+                          },
+                          AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1012,21 +1019,22 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
-                            const std::string& schemaNameCopy = schemaNode->name;
-                            ConfirmDialog::instance().show(
+                            Alert::show(
                                 "Drop Column",
-                                std::format("You are about to drop the column: {}.{}.{}",
-                                            schemaNameCopy, tblName, colName),
-                                {"Permanently delete the column and all its data",
-                                 "Remove any indexes or constraints on this column",
-                                 "Potentially break applications that depend on this column"},
-                                "Drop Column", [schemaNode, tblName, colName]() {
-                                    auto [success, error] =
-                                        schemaNode->dropColumn(tblName, colName);
-                                    if (!success) {
-                                        ConfirmDialog::instance().setError(error);
-                                    }
-                                });
+                                std::format("Permanently drop column '{}.{}.{}'?", schemaNode->name,
+                                            tblName, colName),
+                                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                                 {"Drop",
+                                  [schemaNode, tblName, colName]() {
+                                      auto [success, error] =
+                                          schemaNode->dropColumn(tblName, colName);
+                                      if (!success) {
+                                          Alert::show(
+                                              "Error",
+                                              std::format("Failed to drop column: {}", error));
+                                      }
+                                  },
+                                  AlertButton::Style::Destructive}});
                         }
                         ImGui::PopStyleVar();
                         ImGui::EndPopup();
@@ -1178,20 +1186,20 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string viewName = view.name;
-            const std::string schemaName = schemaData->name;
             const std::string typeLabel = isMaterializedView ? "Materialized View" : "View";
-            ConfirmDialog::instance().show(
+            Alert::show(
                 std::format("Delete {}", typeLabel),
-                std::format("You are about to delete the {}: {}.{}", typeLabel, schemaName,
-                            viewName),
-                {std::format("Permanently delete the {}", typeLabel),
-                 "Any dependent objects may break", "This operation is IRREVERSIBLE"},
-                "Delete", [schemaData, viewName, isMaterializedView]() {
-                    auto [success, error] = schemaData->dropView(viewName, isMaterializedView);
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+                std::format("Permanently delete {} '{}.{}'? This is irreversible.", typeLabel,
+                            schemaData->name, viewName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [schemaData, viewName, isMaterializedView]() {
+                      auto [success, error] = schemaData->dropView(viewName, isMaterializedView);
+                      if (!success) {
+                          Alert::show("Error", std::format("Failed to delete view: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1269,17 +1277,19 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
-            ConfirmDialog::instance().show(
-                "Delete Table", std::format("You are about to delete the table: {}", tableName),
-                {"Permanently delete the table and ALL its data",
-                 "Remove all indexes and constraints",
-                 "Break any foreign key references to this table"},
-                "Delete Table", [dbData, tableName]() {
-                    auto [success, error] = dbData->dropTable(tableName);
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Table",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            tableName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [dbData, tableName]() {
+                      auto [success, error] = dbData->dropTable(tableName);
+                      if (!success) {
+                          Alert::show("Error", std::format("Failed to delete table: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1321,19 +1331,20 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
-                            ConfirmDialog::instance().show(
+                            Alert::show(
                                 "Drop Column",
-                                std::format("You are about to drop the column: {}.{}", tblName,
-                                            colName),
-                                {"Permanently delete the column and all its data",
-                                 "Remove any indexes or constraints on this column",
-                                 "Potentially break applications that depend on this column"},
-                                "Drop Column", [dbData, tblName, colName]() {
-                                    auto [success, error] = dbData->dropColumn(tblName, colName);
-                                    if (!success) {
-                                        ConfirmDialog::instance().setError(error);
-                                    }
-                                });
+                                std::format("Permanently drop column '{}.{}'?", tblName, colName),
+                                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                                 {"Drop",
+                                  [dbData, tblName, colName]() {
+                                      auto [success, error] = dbData->dropColumn(tblName, colName);
+                                      if (!success) {
+                                          Alert::show(
+                                              "Error",
+                                              std::format("Failed to drop column: {}", error));
+                                      }
+                                  },
+                                  AlertButton::Style::Destructive}});
                         }
                         ImGui::PopStyleVar();
                         ImGui::EndPopup();
@@ -1515,22 +1526,25 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string dbName = dbData->name;
-            ConfirmDialog::instance().show(
-                "Delete Database", std::format("You are about to delete the database: {}", dbName),
-                {"Permanently delete the database and ALL its data",
-                 "Remove all collections and documents", "This operation is IRREVERSIBLE"},
-                "Delete Database", [this, dbName]() {
-                    auto [success, error] = db->dropDatabase(dbName);
-                    if (success) {
-                        Logger::info(std::format("Database '{}' deleted successfully", dbName));
-                        if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
-                            mongoDb->refreshDatabaseNames();
-                        }
-                    } else {
-                        Logger::error(std::format("Failed to delete database: {}", error));
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Database",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            dbName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [this, dbName]() {
+                      auto [success, error] = db->dropDatabase(dbName);
+                      if (success) {
+                          Logger::info(std::format("Database '{}' deleted successfully", dbName));
+                          if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
+                              mongoDb->refreshDatabaseNames();
+                          }
+                      } else {
+                          Logger::error(std::format("Failed to delete database: {}", error));
+                          Alert::show("Error", std::format("Failed to delete database: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1637,17 +1651,20 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string collName = collection.name;
-            ConfirmDialog::instance().show(
+            Alert::show(
                 "Delete Collection",
-                std::format("You are about to delete the collection: {}", collName),
-                {"Permanently delete the collection and ALL its documents",
-                 "Remove all indexes on this collection", "This operation is IRREVERSIBLE"},
-                "Delete Collection", [dbData, collName]() {
-                    auto [success, error] = dbData->dropCollection(collName);
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+                std::format("Permanently delete '{}' and ALL its documents? This is irreversible.",
+                            collName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [dbData, collName]() {
+                      auto [success, error] = dbData->dropCollection(collName);
+                      if (!success) {
+                          Alert::show("Error",
+                                      std::format("Failed to delete collection: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1742,17 +1759,19 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
         }
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string tableName = table.name;
-            ConfirmDialog::instance().show(
-                "Delete", std::format("You are about to delete the table: {}", tableName),
-                {"Permanently delete the table and ALL its data",
-                 "Remove all indexes and constraints",
-                 "Break any foreign key references to this table"},
-                "Delete Table", [sqliteDb, tableName]() {
-                    auto [success, error] = sqliteDb->dropTable(tableName);
-                    if (!success) {
-                        ConfirmDialog::instance().setError(error);
-                    }
-                });
+            Alert::show(
+                "Delete Table",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            tableName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [sqliteDb, tableName]() {
+                      auto [success, error] = sqliteDb->dropTable(tableName);
+                      if (!success) {
+                          Alert::show("Error", std::format("Failed to delete table: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1794,20 +1813,21 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                         if (ImGui::MenuItem(DELETE_LABEL)) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
-                            ConfirmDialog::instance().show(
+                            Alert::show(
                                 "Drop Column",
-                                std::format("You are about to drop the column: {}.{}", tblName,
-                                            colName),
-                                {"Permanently delete the column and all its data",
-                                 "Remove any indexes or constraints on this column",
-                                 "Potentially break applications that depend on this column",
-                                 "Note: Requires SQLite 3.35.0+ (2021-03-12)"},
-                                "Drop Column", [sqliteDb, tblName, colName]() {
-                                    auto [success, error] = sqliteDb->dropColumn(tblName, colName);
-                                    if (!success) {
-                                        ConfirmDialog::instance().setError(error);
-                                    }
-                                });
+                                std::format("Permanently drop column '{}.{}'?", tblName, colName),
+                                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                                 {"Drop",
+                                  [sqliteDb, tblName, colName]() {
+                                      auto [success, error] =
+                                          sqliteDb->dropColumn(tblName, colName);
+                                      if (!success) {
+                                          Alert::show(
+                                              "Error",
+                                              std::format("Failed to drop column: {}", error));
+                                      }
+                                  },
+                                  AlertButton::Style::Destructive}});
                         }
                         ImGui::PopStyleVar();
                         ImGui::EndPopup();

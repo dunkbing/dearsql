@@ -70,9 +70,7 @@ configure_file(
     @ONLY
 )
 
-# =============================================================================
 # vcpkg packages (cross-platform)
-# =============================================================================
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
@@ -111,9 +109,7 @@ if(APPLE)
     endif()
 endif()
 
-# =============================================================================
-# Tree-sitter (for SQL text editor syntax highlighting)
-# =============================================================================
+# tree-sitter (for text editor syntax highlighting)
 add_library(tree-sitter-core STATIC external/tree-sitter/lib/src/lib.c)
 target_include_directories(tree-sitter-core PUBLIC
     external/tree-sitter/lib/include
@@ -129,9 +125,7 @@ target_include_directories(tree-sitter-sql-grammar PRIVATE external/tree-sitter-
 target_link_libraries(tree-sitter-sql-grammar PRIVATE tree-sitter-core)
 set_target_properties(tree-sitter-sql-grammar PROPERTIES C_STANDARD 11)
 
-# =============================================================================
 # ImGui (from submodule - tightly integrated with platform backends)
-# =============================================================================
 set(IMGUI_SOURCES
     external/imgui/imgui.cpp
     external/imgui/imgui_draw.cpp
@@ -146,7 +140,7 @@ else()
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
 endif()
 
-# ImGui Node Editor sources (from submodule - custom fork)
+# ImGui Node Editor sources (from submodule)
 set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
     external/imgui-node-editor/imgui_node_editor_api.cpp
@@ -171,9 +165,7 @@ else()
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 endif()
 
-# =============================================================================
-# Application source files
-# =============================================================================
+# app source files
 set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
@@ -198,7 +190,6 @@ set(APP_SOURCES
     # UI
     src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
-    src/ui/confirm_dialog.cpp
     src/ui/input_dialog.cpp
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
@@ -236,19 +227,19 @@ set(APP_SOURCES
     src/ui/license_dialog.cpp
 )
 
-# Add application.cpp and platform-specific files
+# application.cpp and platform-specific files
 list(APPEND APP_SOURCES src/application.cpp)
-
-# Add platform-specific files
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
     list(APPEND APP_SOURCES src/platform/macos_connection_dialog.mm)
     list(APPEND APP_SOURCES src/platform/macos_updater.mm)
+    list(APPEND APP_SOURCES src/platform/macos_alert.mm)
 elseif(UNIX AND NOT APPLE)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/linux_connection_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
     list(APPEND APP_SOURCES src/ui/update_dialog.cpp)
+    list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
 else()
     list(APPEND APP_SOURCES src/platform/default_platform.cpp)
 endif()
@@ -262,9 +253,7 @@ embed_images()
 
 list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
-# =============================================================================
-# Main application target
-# =============================================================================
+# main app target
 add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
@@ -283,7 +272,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
 
-# Platform-specific include directories
+# platform-specific include directories
 if(UNIX AND NOT APPLE)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
 endif()
@@ -293,7 +282,7 @@ if(APPLE)
     target_include_directories(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}/Headers")
 endif()
 
-# Link libraries (common - vcpkg packages)
+# link libraries (common - vcpkg packages)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
@@ -310,7 +299,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     tree-sitter-sql-grammar
 )
 
-# Platform-specific linking
+# platform-specific linking
 if(APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         glfw

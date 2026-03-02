@@ -88,6 +88,7 @@ bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
 
     // Create main window
     window_ = gtk_window_new();
+    gtk_widget_add_css_class(window_, "dearsql-main");
     gtk_window_set_title(GTK_WINDOW(window_), APP_NAME);
     gtk_window_set_default_size(GTK_WINDOW(window_), 1280, 720);
 
@@ -865,7 +866,7 @@ void LinuxPlatform::updateGtkTheme() {
     std::string surface1 = toHex(colors.surface1);
     std::string overlay0 = toHex(colors.overlay0);
 
-    std::string css = "window { background: " + base +
+    std::string css = "window.dearsql-main { background: " + base +
                       "; }\n"
 
                       /* headerbar background and text */

@@ -445,6 +445,21 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 // MARK: - Layout
 
+- (void)setFormEnabled:(BOOL)enabled {
+    self.nameField.enabled = enabled;
+    self.typePopup.enabled = enabled && (self.editingConnectionId == -1);
+    self.sqlitePathField.enabled = enabled;
+    self.browseButton.enabled = enabled;
+    self.hostField.enabled = enabled;
+    self.portField.enabled = enabled;
+    self.databaseField.enabled = enabled;
+    self.sslModePopup.enabled = enabled;
+    self.authSegment.enabled = enabled;
+    self.usernameField.enabled = enabled;
+    self.passwordField.enabled = enabled;
+    self.showAllDbsCheckbox.enabled = enabled;
+}
+
 - (void)hideAllOptionalFields {
     for (NSView* v in @[
              self.sqlitePathLabel, self.sqlitePathField, self.browseButton, self.hostLabel,
@@ -793,8 +808,9 @@ static NSWindow* sActiveConnectionDialog = nil;
         return;
     }
 
-    // UI feedback
+    // UI feedback — disable all inputs while connecting
     self.connectButton.enabled = NO;
+    [self setFormEnabled:NO];
     [self.spinner startAnimation:nil];
     self.statusLabel.stringValue = @"Connecting...";
     self.statusLabel.textColor = [NSColor secondaryLabelColor];
@@ -905,6 +921,11 @@ static NSWindow* sActiveConnectionDialog = nil;
             statusRef.textColor = [NSColor systemRedColor];
             connectBtnRef.enabled = YES;
             [spinnerRef stopAnimation:nil];
+            // Re-enable form fields
+            ConnectionDialogController* ctrl = objc_getAssociatedObject(dialogRef, "controller");
+            if (ctrl) {
+                [ctrl setFormEnabled:YES];
+            }
         }
 
         [dialogRef release];

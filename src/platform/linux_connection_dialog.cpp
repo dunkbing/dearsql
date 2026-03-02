@@ -429,8 +429,11 @@ static void connectServerAsync(ConnectionDialogData* data) {
         return;
     }
 
-    // UI feedback
+    // UI feedback — disable all inputs while connecting
     gtk_widget_set_sensitive(data->connectButton, FALSE);
+    gtk_widget_set_sensitive(data->nameEntry, FALSE);
+    gtk_widget_set_sensitive(data->typeDropdown, FALSE);
+    gtk_widget_set_sensitive(data->fieldsBox, FALSE);
     gtk_spinner_start(GTK_SPINNER(data->spinner));
     gtk_label_set_text(GTK_LABEL(data->statusLabel), "Connecting...");
 
@@ -516,6 +519,9 @@ static void connectServerAsync(ConnectionDialogData* data) {
                         gtk_label_set_text(GTK_LABEL(d->statusLabel),
                                            ("Failed: " + r->error).c_str());
                         gtk_widget_set_sensitive(d->connectButton, TRUE);
+                        gtk_widget_set_sensitive(d->nameEntry, TRUE);
+                        gtk_widget_set_sensitive(d->typeDropdown, d->editingConnectionId == -1);
+                        gtk_widget_set_sensitive(d->fieldsBox, TRUE);
                         gtk_spinner_stop(GTK_SPINNER(d->spinner));
                     }
                 }

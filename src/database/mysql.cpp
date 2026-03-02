@@ -210,10 +210,11 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
     } catch (const std::exception& e) {
         Logger::error(std::format("Connection to database failed: {}", e.what()));
         std::lock_guard lock(sessionMutex);
-        // Clear connection pool from DatabaseData
-        auto* dbData = getDatabaseData(connectionInfo.database);
-        if (dbData) {
-            dbData->connectionPool.reset();
+        // Clear connection pool if it exists — avoid getDatabaseData() here
+        // because it calls ensureConnectionPool() which would throw again.
+        auto it = databaseDataCache.find(connectionInfo.database);
+        if (it != databaseDataCache.end() && it->second) {
+            it->second->connectionPool.reset();
         }
         connected = false;
         std::string error = "MySQL connection failed: " + std::string(e.what());

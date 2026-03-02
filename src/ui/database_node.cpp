@@ -113,7 +113,7 @@ void DatabaseHierarchy::renderRootNode() {
                 }
             }
         }
-    } else if (dbType == DatabaseType::MYSQL) {
+    } else if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
         auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
         if (!mysqlDb) {
             return;

@@ -156,6 +156,7 @@ void SQLEditorTab::renderConnectionInfo() {
         renderConnectionInfoPostgres();
         break;
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         renderConnectionInfoMySQL();
         break;
     case DatabaseType::SQLITE:

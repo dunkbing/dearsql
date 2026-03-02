@@ -678,7 +678,7 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
 
 std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) {
     try {
-        DDLBuilder builder(DatabaseType::MYSQL);
+        DDLBuilder builder(getDatabaseType());
         std::string sql = builder.createTable(table);
 
         auto result = executeQuery(sql);
@@ -693,6 +693,13 @@ std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) 
 
 std::string MySQLDatabaseNode::getFullPath() const {
     return name;
+}
+
+DatabaseType MySQLDatabaseNode::getDatabaseType() const {
+    if (parentDb) {
+        return parentDb->getConnectionInfo().type;
+    }
+    return DatabaseType::MYSQL;
 }
 
 void MySQLDatabaseNode::checkLoadingStatus() {

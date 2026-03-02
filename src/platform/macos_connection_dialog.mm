@@ -229,6 +229,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     }
 
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
     case DatabaseType::MONGODB: {
         self.hostField.stringValue = [NSString stringWithUTF8String:info.host.c_str()];
         self.portField.stringValue = [NSString stringWithFormat:@"%d", info.port];
@@ -298,6 +299,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"SQLite"];
     [self.typePopup addItemWithTitle:@"PostgreSQL"];
     [self.typePopup addItemWithTitle:@"MySQL"];
+    [self.typePopup addItemWithTitle:@"MariaDB"];
     [self.typePopup addItemWithTitle:@"Redis"];
     [self.typePopup addItemWithTitle:@"MongoDB"];
     [self.typePopup setTarget:self];
@@ -662,6 +664,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portField.stringValue = @"6379";
         self.authSegment.selectedSegment = 1;
         break;
+    case DatabaseType::MARIADB:
+        self.portField.stringValue = @"3306";
+        self.authSegment.selectedSegment = 0;
+        break;
     }
 
     // Clear status
@@ -826,6 +832,7 @@ static NSWindow* sActiveConnectionDialog = nil;
           db = std::make_shared<PostgresDatabase>(info);
           break;
       case DatabaseType::MYSQL:
+      case DatabaseType::MARIADB:
           info.database = database.empty() ? "mysql" : database;
           db = std::make_shared<MySQLDatabase>(info);
           break;

@@ -44,6 +44,8 @@ namespace {
             conn.connectionInfo.type = DatabaseType::REDIS;
         } else if (typeStr == "mongodb") {
             conn.connectionInfo.type = DatabaseType::MONGODB;
+        } else if (typeStr == "mariadb") {
+            conn.connectionInfo.type = DatabaseType::MARIADB;
         } else {
             Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
                                      typeStr, conn.connectionInfo.name));
@@ -298,6 +300,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::MONGODB:
         typeStr = "mongodb";
         break;
+    case DatabaseType::MARIADB:
+        typeStr = "mariadb";
+        break;
     }
 
     std::string saltBase64 =
@@ -373,6 +378,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         break;
     case DatabaseType::MONGODB:
         typeStr = "mongodb";
+        break;
+    case DatabaseType::MARIADB:
+        typeStr = "mariadb";
         break;
     }
 

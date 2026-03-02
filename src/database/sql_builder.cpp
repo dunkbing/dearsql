@@ -8,6 +8,7 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     case DatabaseType::POSTGRESQL:
         return std::make_unique<PostgreSQLBuilder>();
     case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
         return std::make_unique<MySQLBuilder>();
     case DatabaseType::SQLITE:
         return std::make_unique<SQLiteBuilder>();

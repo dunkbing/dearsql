@@ -44,12 +44,12 @@ void DatabaseConnectionDialog::showDialog() {
 }
 
 void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
-    const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "Redis", "MongoDB"};
+    const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "MariaDB", "Redis", "MongoDB"};
     int currentType = static_cast<int>(selectedDatabaseType);
 
     ImGui::SetNextItemWidth(150);
     if (ImGui::BeginCombo("Type", typeNames[currentType])) {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             bool isSelected = (currentType == i);
             if (ImGui::Selectable(typeNames[i], isSelected)) {
                 DatabaseType newType = static_cast<DatabaseType>(i);
@@ -65,6 +65,7 @@ void DatabaseConnectionDialog::renderDatabaseTypeSelector() {
                         port = 5432;
                         break;
                     case DatabaseType::MYSQL:
+                    case DatabaseType::MARIADB:
                         port = 3306;
                         break;
                     case DatabaseType::MONGODB:
@@ -296,6 +297,7 @@ void DatabaseConnectionDialog::renderConnectionDialog() {
         }
 
         case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB:
             renderServerFields(true, nullptr);
             renderAuthFields(false);
             renderShowAllDatabasesCheckbox();
@@ -468,7 +470,7 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
                 break;
             }
         }
-    } else if (type == DatabaseType::MYSQL) {
+    } else if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) {
         const auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(db);
         const auto& connInfo = mysqlDb->getConnectionInfo();
         strncpy(host, connInfo.host.c_str(), sizeof(host) - 1);
@@ -584,6 +586,24 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMySQLDatabase
     });
 }
 
+std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMariaDBDatabase() {
+    return createSqlDatabase("mysql", [](const std::string& name, const std::string& hostValue,
+                                         int portValue, const std::string& databaseValue,
+                                         const std::string& usernameValue,
+                                         const std::string& passwordValue, bool showAll) {
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::MARIADB;
+        info.name = name;
+        info.host = hostValue;
+        info.port = portValue;
+        info.database = databaseValue;
+        info.username = usernameValue;
+        info.password = passwordValue;
+        info.showAllDatabases = showAll;
+        return std::make_shared<MySQLDatabase>(info);
+    });
+}
+
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createMongoDBDatabase() {
     if (strlen(connectionName) == 0) {
         return nullptr;
@@ -666,7 +686,7 @@ void DatabaseConnectionDialog::startAsyncConnection() {
             if (pgDb) {
                 pgDb->setConnectionInfo(updatedInfo);
             }
-        } else if (type == DatabaseType::MYSQL) {
+        } else if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) {
             auto mysqlDb = std::dynamic_pointer_cast<MySQLDatabase>(editingDatabase);
             if (mysqlDb) {
                 mysqlDb->setConnectionInfo(updatedInfo);
@@ -702,6 +722,9 @@ void DatabaseConnectionDialog::startAsyncConnection() {
                 break;
             case DatabaseType::MYSQL:
                 db = createMySQLDatabase();
+                break;
+            case DatabaseType::MARIADB:
+                db = createMariaDBDatabase();
                 break;
             case DatabaseType::MONGODB:
                 db = createMongoDBDatabase();

@@ -55,6 +55,8 @@ std::string AIChatState::dbTypeName() const {
         return "PostgreSQL";
     case DatabaseType::MYSQL:
         return "MySQL";
+    case DatabaseType::MARIADB:
+        return "MariaDB";
     case DatabaseType::MONGODB:
         return "MongoDB";
     case DatabaseType::REDIS:

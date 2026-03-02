@@ -80,6 +80,7 @@ private:
     static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
     std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
     std::shared_ptr<DatabaseInterface> createMySQLDatabase();
+    std::shared_ptr<DatabaseInterface> createMariaDBDatabase();
     std::shared_ptr<DatabaseInterface> createMongoDBDatabase();
     std::shared_ptr<DatabaseInterface>
     createSqlDatabase(const std::string& defaultDatabase,

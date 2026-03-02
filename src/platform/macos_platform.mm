@@ -17,6 +17,23 @@
 #import "imgui_impl_metal.h"
 #import <GLFW/glfw3native.h>
 
+// Pass-through views: hitTest returns nil so all events reach GLFW's content view.
+@interface PassthroughView : NSView
+@end
+@implementation PassthroughView
+- (NSView*)hitTest:(NSPoint)point {
+    return nil;
+}
+@end
+
+@interface PassthroughEffectView : NSVisualEffectView
+@end
+@implementation PassthroughEffectView
+- (NSView*)hitTest:(NSPoint)point {
+    return nil;
+}
+@end
+
 // Toolbar delegate interface
 @interface ToolbarDelegate : NSObject <NSToolbarDelegate>
 @property(nonatomic, assign) Application* app;
@@ -845,6 +862,7 @@ MacOSPlatform::MacOSPlatform(Application* app) : app_(app), window_(nullptr) {
     metalDevice_ = nullptr;
     metalCommandQueue_ = nullptr;
     metalLayer_ = nullptr;
+    visualEffectView_ = nullptr;
 }
 
 MacOSPlatform::~MacOSPlatform() {
@@ -867,17 +885,48 @@ bool MacOSPlatform::initializePlatform(GLFWwindow* window) {
         return false;
     }
 
-    // Set up Metal layer
     NSWindow* nsWindow = glfwGetCocoaWindow(window);
+    NSView* contentView = nsWindow.contentView;
+
+    // Make the contentView layer-backed so subviews composite correctly.
+    // Do NOT set a custom layer here — GLFW's contentView stays as-is for events.
+    [contentView setWantsLayer:YES];
+
+    // --- Vibrancy blur (behind everything) ---
+    PassthroughEffectView* effectView =
+        [[PassthroughEffectView alloc] initWithFrame:contentView.bounds];
+    effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    effectView.state = NSVisualEffectStateActive;
+    effectView.material = NSVisualEffectMaterialUnderWindowBackground;
+    effectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [contentView addSubview:effectView];
+    visualEffectView_ = effectView;
+
+    // --- Metal rendering view (on top of blur, pass-through for events) ---
+    // Wrapped in a layer-backed container whose alphaValue lets blur show through.
+    // (alphaValue is ignored on layer-hosting views, so the extra wrapper is needed.)
+    PassthroughView* appContainer = [[PassthroughView alloc] initWithFrame:contentView.bounds];
+    [appContainer setWantsLayer:YES];
+    appContainer.layer.opaque = NO;
+    appContainer.alphaValue = 0.85;
+    appContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    PassthroughView* metalView = [[PassthroughView alloc] initWithFrame:appContainer.bounds];
+    metalView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
     CAMetalLayer* layer = [CAMetalLayer layer];
     layer.device = (id<MTLDevice>)metalDevice_;
     layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     layer.displaySyncEnabled = YES; // vsync
-    nsWindow.contentView.layer = layer;
-    nsWindow.contentView.wantsLayer = YES;
+    layer.opaque = NO;
+    metalView.layer = layer;
+    [metalView setWantsLayer:YES];
     metalLayer_ = layer;
 
-    std::cout << "Metal device and layer initialized successfully" << std::endl;
+    [appContainer addSubview:metalView];
+    [contentView addSubview:appContainer];
+
+    std::cout << "Metal device and vibrancy layer initialized successfully" << std::endl;
 
     return true;
 }
@@ -992,6 +1041,7 @@ void MacOSPlatform::cleanup() {
     metalDevice_ = nullptr;
     metalCommandQueue_ = nullptr;
     metalLayer_ = nullptr;
+    visualEffectView_ = nullptr;
 }
 
 void MacOSPlatform::renderFrame() {
@@ -1007,9 +1057,10 @@ void MacOSPlatform::renderFrame() {
             [MTLRenderPassDescriptor renderPassDescriptor];
         renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
         renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(
-            app_->isDarkTheme() ? 0.110f : 0.957f, app_->isDarkTheme() ? 0.110f : 0.957f,
-            app_->isDarkTheme() ? 0.137f : 0.957f, 1.0f);
+        const auto& clearCol =
+            app_->isDarkTheme() ? Theme::NATIVE_DARK.base : Theme::NATIVE_LIGHT.base;
+        renderPassDescriptor.colorAttachments[0].clearColor =
+            MTLClearColorMake(clearCol.x, clearCol.y, clearCol.z, clearCol.w);
         renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         // Create command buffer

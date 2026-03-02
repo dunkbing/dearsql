@@ -83,12 +83,12 @@ namespace Theme {
         ImVec4(0.60f, 0.60f, 0.60f, 1.0f), // overlay2
         ImVec4(0.70f, 0.70f, 0.70f, 1.0f), // overlay1
         ImVec4(0.80f, 0.80f, 0.80f, 1.0f), // overlay0
-        ImVec4(0.95f, 0.95f, 0.95f, 1.0f), // surface2
-        ImVec4(0.97f, 0.97f, 0.97f, 1.0f), // surface1
-        ImVec4(0.99f, 0.99f, 0.99f, 1.0f), // surface0
+        ImVec4(0.82f, 0.82f, 0.84f, 1.0f), // surface2
+        ImVec4(0.88f, 0.88f, 0.90f, 1.0f), // surface1
+        ImVec4(0.93f, 0.93f, 0.94f, 1.0f), // surface0
         ImVec4(1.00f, 1.00f, 1.00f, 1.0f), // base - pure white
-        ImVec4(0.98f, 0.98f, 0.98f, 1.0f), // mantle
-        ImVec4(0.96f, 0.96f, 0.96f, 1.0f)  // crust
+        ImVec4(0.95f, 0.95f, 0.96f, 1.0f), // mantle
+        ImVec4(0.90f, 0.90f, 0.92f, 1.0f)  // crust
     };
 
     // Legacy themes for compatibility

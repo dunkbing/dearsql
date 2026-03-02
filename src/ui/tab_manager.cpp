@@ -63,9 +63,9 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name, IDa
     tab->setShouldFocus(true);
     addTab(tab);
 
-    // Force docking layout to be rebuilt to include the new tab
+    // Dock the new tab into the existing center panel without rebuilding the whole layout
     auto& app = Application::getInstance();
-    app.resetDockingLayout();
+    app.dockTabToCenter(tabName);
 
     return tab;
 }
@@ -99,9 +99,9 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(IDatabaseNode* node,
     tab->setShouldFocus(true);
     addTab(tab);
 
-    // Force docking layout to be rebuilt to include the new tab
+    // Dock the new tab into the existing center panel without rebuilding the whole layout
     auto& app = Application::getInstance();
-    app.resetDockingLayout();
+    app.dockTabToCenter(tabName);
 
     std::cout << "Created new tab for table: " << tableName << " with fullName: " << tableFullName
               << std::endl;
@@ -265,9 +265,9 @@ std::shared_ptr<Tab> TabManager::createDiagramTab(IDatabaseNode* node) {
     tab->setShouldFocus(true);
     addTab(tab);
 
-    // Force docking layout to be rebuilt to include the new tab
+    // Dock the new tab into the existing center panel without rebuilding the whole layout
     auto& app = Application::getInstance();
-    app.resetDockingLayout();
+    app.dockTabToCenter(tabName);
 
     std::cout << "Created new diagram tab for: " << node->getFullPath() << std::endl;
     return tab;

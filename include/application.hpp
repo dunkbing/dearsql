@@ -54,15 +54,10 @@ public:
     void clearSelectedDatabase();
 
     // UI state
-    [[nodiscard]] bool isDockingLayoutInitialized() const {
-        return dockingLayoutInitialized;
-    }
-    void setDockingLayoutInitialized(const bool initialized) {
-        dockingLayoutInitialized = initialized;
-    }
     void resetDockingLayout() {
         dockingLayoutInitialized = false;
     }
+    void dockTabToCenter(const std::string& tabName);
 
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {

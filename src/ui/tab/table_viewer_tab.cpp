@@ -55,28 +55,25 @@ void TableViewerTab::render() {
 
     // Apply Filter button with green tint
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.green.x * 0.3f, colors.green.y * 0.3f,
-                                                  colors.green.z * 0.3f, 1.0f));
-    ImGui::PushStyleColor(
-        ImGuiCol_ButtonHovered,
-        ImVec4(colors.green.x * 0.5f, colors.green.y * 0.5f, colors.green.z * 0.5f, 1.0f));
-    ImGui::PushStyleColor(
-        ImGuiCol_ButtonActive,
-        ImVec4(colors.green.x * 0.7f, colors.green.y * 0.7f, colors.green.z * 0.7f, 1.0f));
-    if (ImGui::Button("Apply Filter")) {
+    ImGui::PushStyleColor(ImGuiCol_Button,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.25f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.4f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.55f));
+    if (ImGui::Button("Apply")) {
         applyFilter();
     }
     ImGui::PopStyleColor(3);
 
     // Clear Filter button with red tint
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x * 0.3f, colors.red.y * 0.3f,
-                                                  colors.red.z * 0.3f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.red.x * 0.5f, colors.red.y * 0.5f,
-                                                         colors.red.z * 0.5f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors.red.x * 0.7f, colors.red.y * 0.7f,
-                                                        colors.red.z * 0.7f, 1.0f));
-    if (ImGui::Button("Clear Filter")) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.25f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.4f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                          ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.55f));
+    if (ImGui::Button("Clear")) {
         memset(filterBuffer, 0, sizeof(filterBuffer));
         if (filterAutoComplete) {
             filterAutoComplete->hideAutoComplete();

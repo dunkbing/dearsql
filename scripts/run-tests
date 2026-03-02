@@ -6,20 +6,180 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-"$ROOT_DIR/build"}"
 
-# Source shared config (sets all DEARSQL_TEST_* env vars)
-source "$SCRIPT_DIR/test-db-config"
+# ── Config ──────────────────────────────────────────────────────────
 
-# Ensure build directory exists and build tests
+# Container names
+POSTGRES_CONTAINER="dearsql-postgres-test"
+MYSQL_CONTAINER="dearsql-mysql-test"
+REDIS_CONTAINER="dearsql-redis-test"
+MONGODB_CONTAINER="dearsql-mongodb-test"
+
+# Docker images
+POSTGRES_IMAGE="postgres:15-alpine"
+MYSQL_IMAGE="mysql:8.0"
+REDIS_IMAGE="redis:7-alpine"
+MONGODB_IMAGE="mongo:7.0"
+
+# Ports (host ports mapped to container ports)
+POSTGRES_PORT="${POSTGRES_PORT:-55432}"
+MYSQL_PORT="${MYSQL_PORT:-53306}"
+REDIS_PORT="${REDIS_PORT:-56379}"
+MONGODB_PORT="${MONGODB_PORT:-57017}"
+
+# Test env vars
+export DEARSQL_TEST_PG_HOST="127.0.0.1"
+export DEARSQL_TEST_PG_PORT="$POSTGRES_PORT"
+export DEARSQL_TEST_PG_DB="dearsql_test"
+export DEARSQL_TEST_PG_USER="postgres"
+export DEARSQL_TEST_PG_PASSWORD="postgres"
+export DEARSQL_TEST_PG_NAME="PostgresDocker"
+
+export DEARSQL_TEST_MYSQL_HOST="127.0.0.1"
+export DEARSQL_TEST_MYSQL_PORT="$MYSQL_PORT"
+export DEARSQL_TEST_MYSQL_DB="dearsql_test"
+export DEARSQL_TEST_MYSQL_USER="root"
+export DEARSQL_TEST_MYSQL_PASSWORD="mysql"
+export DEARSQL_TEST_MYSQL_NAME="MySQLDocker"
+
+export DEARSQL_TEST_REDIS_HOST="127.0.0.1"
+export DEARSQL_TEST_REDIS_PORT="$REDIS_PORT"
+export DEARSQL_TEST_REDIS_NAME="RedisDocker"
+
+export DEARSQL_TEST_MONGODB_HOST="127.0.0.1"
+export DEARSQL_TEST_MONGODB_PORT="$MONGODB_PORT"
+export DEARSQL_TEST_MONGODB_DB="test"
+export DEARSQL_TEST_MONGODB_NAME="MongoDBDocker"
+
+# ── Docker helpers ──────────────────────────────────────────────────
+
+DOCKER=(docker)
+if ! docker info >/dev/null 2>&1; then
+    if command -v sudo >/dev/null 2>&1; then
+        DOCKER=(sudo docker)
+    fi
+fi
+
+docker_cmd() {
+    "${DOCKER[@]}" "$@"
+}
+
+# ── Port / readiness checks ────────────────────────────────────────
+
+port_open() {
+    (exec 3<>"/dev/tcp/${1}/${2}") 2>/dev/null && exec 3>&-
+}
+
+wait_for_port() {
+    local host="$1" port="$2" name="$3" max="${4:-60}"
+    printf "Waiting for %s on %s:%s" "$name" "$host" "$port"
+    for ((i = 0; i < max; ++i)); do
+        if port_open "$host" "$port"; then
+            echo " ... ready"
+            return 0
+        fi
+        printf "."
+        sleep 1
+    done
+    echo " ... timeout"
+    return 1
+}
+
+wait_for_command() {
+    local name="$1" max="${2:-60}"
+    shift 2
+    printf "Waiting for %s" "$name"
+    for ((i = 0; i < max; ++i)); do
+        if "$@" >/dev/null 2>&1; then
+            echo " ... ready"
+            return 0
+        fi
+        printf "."
+        sleep 1
+    done
+    echo " ... timeout"
+    return 1
+}
+
+start_or_create() {
+    local name="$1"
+    shift
+    if docker_cmd ps --format '{{.Names}}' | grep -Fxq "$name"; then
+        return
+    fi
+    if docker_cmd ps -a --format '{{.Names}}' | grep -Fxq "$name"; then
+        docker_cmd start "$name" >/dev/null
+        return
+    fi
+    docker_cmd run -d --name "$name" "$@" >/dev/null
+}
+
+# ── Ensure all servers are reachable ────────────────────────────────
+
+all_ports_open() {
+    port_open 127.0.0.1 "$POSTGRES_PORT" &&
+    port_open 127.0.0.1 "$MYSQL_PORT" &&
+    port_open 127.0.0.1 "$REDIS_PORT" &&
+    port_open 127.0.0.1 "$MONGODB_PORT"
+}
+
+setup_containers() {
+    if ! docker_cmd info >/dev/null 2>&1; then
+        echo "Error: Docker is not reachable." >&2
+        exit 1
+    fi
+
+    echo "=== Setting up test databases ==="
+
+    start_or_create "$POSTGRES_CONTAINER" \
+        -e POSTGRES_PASSWORD="$DEARSQL_TEST_PG_PASSWORD" \
+        -p "127.0.0.1:${POSTGRES_PORT}:5432" \
+        "$POSTGRES_IMAGE"
+    wait_for_port 127.0.0.1 "$POSTGRES_PORT" "PostgreSQL"
+    wait_for_command "PostgreSQL" 60 docker_cmd exec "$POSTGRES_CONTAINER" \
+        pg_isready -h localhost -U postgres
+
+    start_or_create "$MYSQL_CONTAINER" \
+        -e MYSQL_ROOT_PASSWORD=mysql \
+        -p "127.0.0.1:${MYSQL_PORT}:3306" \
+        "$MYSQL_IMAGE"
+    wait_for_port 127.0.0.1 "$MYSQL_PORT" "MySQL"
+    wait_for_command "MySQL" 60 docker_cmd exec "$MYSQL_CONTAINER" \
+        mysqladmin ping -uroot -pmysql --silent
+
+    start_or_create "$REDIS_CONTAINER" \
+        -p "127.0.0.1:${REDIS_PORT}:6379" \
+        "$REDIS_IMAGE"
+    wait_for_port 127.0.0.1 "$REDIS_PORT" "Redis"
+    wait_for_command "Redis" 60 docker_cmd exec "$REDIS_CONTAINER" redis-cli ping
+
+    start_or_create "$MONGODB_CONTAINER" \
+        -p "127.0.0.1:${MONGODB_PORT}:27017" \
+        "$MONGODB_IMAGE"
+    wait_for_port 127.0.0.1 "$MONGODB_PORT" "MongoDB"
+    wait_for_command "MongoDB" 60 docker_cmd exec "$MONGODB_CONTAINER" \
+        mongosh --quiet --eval 'db.runCommand({ ping: 1 })'
+
+    echo ""
+}
+
+if all_ports_open; then
+    echo "All test servers already reachable, skipping setup."
+else
+    setup_containers
+fi
+
+# ── Build & run tests ──────────────────────────────────────────────
+
 mkdir -p "$BUILD_DIR"
 echo "Building database_tests and sql_format_tests..."
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" > /dev/null
 cmake --build "$BUILD_DIR" --target database_tests sql_format_tests
 
-echo "Running database tests..."
+echo ""
 echo "PostgreSQL: $DEARSQL_TEST_PG_HOST:$DEARSQL_TEST_PG_PORT"
-echo "MySQL: $DEARSQL_TEST_MYSQL_HOST:$DEARSQL_TEST_MYSQL_PORT"
-echo "Redis: $DEARSQL_TEST_REDIS_HOST:$DEARSQL_TEST_REDIS_PORT"
-echo "MongoDB: ${DEARSQL_TEST_MONGODB_HOST:-not set}:${DEARSQL_TEST_MONGODB_PORT:-27017}"
+echo "MySQL:      $DEARSQL_TEST_MYSQL_HOST:$DEARSQL_TEST_MYSQL_PORT"
+echo "Redis:      $DEARSQL_TEST_REDIS_HOST:$DEARSQL_TEST_REDIS_PORT"
+echo "MongoDB:    $DEARSQL_TEST_MONGODB_HOST:$DEARSQL_TEST_MONGODB_PORT"
 echo ""
 
 cd "$BUILD_DIR"

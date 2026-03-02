@@ -73,14 +73,33 @@ protected:
 
         database = std::make_shared<MySQLDatabase>(connInfo);
         bool connected = false;
+        bool dbCreated = false;
         std::string lastError;
         for (int attempt = 0; attempt < 30; ++attempt) {
-            const auto [success, error] = database->connect();
-            if (success) {
-                connected = true;
-                break;
+            try {
+                const auto [success, error] = database->connect();
+                if (success) {
+                    connected = true;
+                    break;
+                }
+                lastError = error;
+            } catch (const std::exception& e) {
+                lastError = e.what();
             }
-            lastError = error;
+            // Auto-create the test database if it doesn't exist
+            if (!dbCreated && lastError.find("Unknown database") != std::string::npos) {
+                try {
+                    auto adminInfo = connInfo;
+                    adminInfo.database = "";
+                    auto admin = std::make_shared<MySQLDatabase>(adminInfo);
+                    if (auto [ok, _] = admin->connect(); ok) {
+                        admin->createDatabase(config.database);
+                        admin->disconnect();
+                        dbCreated = true;
+                    }
+                } catch (...) {
+                }
+            }
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         ASSERT_TRUE(connected) << "MySQL connection failed: " << lastError;
@@ -202,4 +221,82 @@ TEST_F(MySQLDatabaseIntegrationTest,
 
     const auto [dropped, dropErr] = database->dropDatabase(tempDb);
     ASSERT_TRUE(dropped) << dropErr;
+}
+
+// ========== Database Node DDL Tests ==========
+
+class MySQLDatabaseNodeDDLTest : public MySQLDatabaseIntegrationTest {
+protected:
+    void SetUp() override {
+        MySQLDatabaseIntegrationTest::SetUp();
+        if (testing::Test::HasFatalFailure())
+            return;
+
+        dbNode = database->getDatabaseData(config.database);
+        ASSERT_NE(dbNode, nullptr);
+    }
+
+    void TearDown() override {
+        if (database && !renamedTableName.empty()) {
+            database->executeQuery(std::format("DROP TABLE IF EXISTS `{}`", renamedTableName));
+        }
+        MySQLDatabaseIntegrationTest::TearDown();
+    }
+
+    MySQLDatabaseNode* dbNode = nullptr;
+    std::string renamedTableName;
+};
+
+TEST_F(MySQLDatabaseNodeDDLTest, RenameTableRenamesSuccessfully) {
+    auto r = database->executeQuery(
+        std::format("CREATE TABLE `{}` (id INT PRIMARY KEY, val TEXT)", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    renamedTableName = tableName + "_renamed";
+    auto [ok, err] = dbNode->renameTable(tableName, renamedTableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check =
+        database->executeQuery(std::format("SELECT TABLE_NAME FROM information_schema.TABLES "
+                                           "WHERE TABLE_SCHEMA='{}' AND TABLE_NAME='{}'",
+                                           config.database, renamedTableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData.size(), 1u);
+}
+
+TEST_F(MySQLDatabaseNodeDDLTest, DropTableRemovesTable) {
+    auto r =
+        database->executeQuery(std::format("CREATE TABLE `{}` (id INT PRIMARY KEY)", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = dbNode->dropTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check =
+        database->executeQuery(std::format("SELECT TABLE_NAME FROM information_schema.TABLES "
+                                           "WHERE TABLE_SCHEMA='{}' AND TABLE_NAME='{}'",
+                                           config.database, tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_TRUE(check[0].tableData.empty());
+}
+
+TEST_F(MySQLDatabaseNodeDDLTest, DropColumnRemovesColumn) {
+    auto r = database->executeQuery(std::format(
+        "CREATE TABLE `{}` (id INT PRIMARY KEY, keep_me TEXT, drop_me TEXT)", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = dbNode->dropColumn(tableName, "drop_me");
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(
+        std::format("SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA='{}' AND TABLE_NAME='{}' ORDER BY ORDINAL_POSITION",
+                    config.database, tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    ASSERT_EQ(check[0].tableData.size(), 2u);
+    EXPECT_EQ(check[0].tableData[0][0], "id");
+    EXPECT_EQ(check[0].tableData[1][0], "keep_me");
 }

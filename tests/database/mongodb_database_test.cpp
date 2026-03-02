@@ -222,3 +222,39 @@ TEST_F(MongoDBDatabaseIntegrationTest, DeleteDocuments) {
     ASSERT_TRUE(result[0].success) << result[0].errorMessage;
     EXPECT_EQ(result[0].tableData.size(), 0u);
 }
+
+// ========== Database Node DDL Tests ==========
+
+TEST_F(MongoDBDatabaseIntegrationTest, DropCollectionRemovesCollection) {
+    ASSERT_NE(database, nullptr);
+    ASSERT_FALSE(collectionName.empty());
+
+    // Create collection by inserting a document
+    std::string insertQuery = std::format(
+        R"({{"database": "test", "collection": "{}", "command": "insert", "document": {{"name": "drop_test"}}}})",
+        collectionName);
+    auto r = database->executeQuery(insertQuery);
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    // Get the database node and call dropCollection
+    auto* dbNode = database->getDatabaseData("test");
+    ASSERT_NE(dbNode, nullptr);
+
+    auto [ok, err] = dbNode->dropCollection(collectionName);
+    ASSERT_TRUE(ok) << err;
+
+    // Wait for async collections reload triggered by dropCollection
+    for (int i = 0; i < 50 && dbNode->isLoadingTables(); ++i) {
+        dbNode->checkLoadingStatus();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    ASSERT_FALSE(dbNode->isLoadingTables()) << "Async collections reload did not complete in time";
+
+    // Verify collection is gone by trying to find documents
+    std::string findQuery = std::format(
+        R"({{"database": "test", "collection": "{}", "command": "find", "filter": {{}}}})",
+        collectionName);
+    auto result = database->executeQuery(findQuery, 100);
+    ASSERT_FALSE(result.empty());
+    EXPECT_TRUE(result[0].tableData.empty());
+}

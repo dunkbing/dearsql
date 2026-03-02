@@ -72,14 +72,33 @@ protected:
 
         database = std::make_shared<PostgresDatabase>(connInfo);
         bool connected = false;
+        bool dbCreated = false;
         std::string lastError;
         for (int attempt = 0; attempt < 30; ++attempt) {
-            const auto [success, error] = database->connect();
-            if (success) {
-                connected = true;
-                break;
+            try {
+                const auto [success, error] = database->connect();
+                if (success) {
+                    connected = true;
+                    break;
+                }
+                lastError = error;
+            } catch (const std::exception& e) {
+                lastError = e.what();
             }
-            lastError = error;
+            // Auto-create the test database if it doesn't exist
+            if (!dbCreated && lastError.find("does not exist") != std::string::npos) {
+                try {
+                    auto adminInfo = connInfo;
+                    adminInfo.database = "postgres";
+                    auto admin = std::make_shared<PostgresDatabase>(adminInfo);
+                    if (auto [ok, _] = admin->connect(); ok) {
+                        admin->createDatabase(config.database);
+                        admin->disconnect();
+                        dbCreated = true;
+                    }
+                } catch (...) {
+                }
+            }
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         ASSERT_TRUE(connected) << "PostgreSQL connection failed: " << lastError;
@@ -211,4 +230,152 @@ TEST_F(PostgresDatabaseIntegrationTest, CreateDatabaseWithOptionsCreatesDatabase
 
     const auto [dropped, dropErr] = database->dropDatabase(tempDb);
     ASSERT_TRUE(dropped) << dropErr;
+}
+
+// ========== Schema Node DDL Tests ==========
+
+class PostgresSchemaNodeDDLTest : public PostgresDatabaseIntegrationTest {
+protected:
+    void SetUp() override {
+        PostgresDatabaseIntegrationTest::SetUp();
+        if (testing::Test::HasFatalFailure())
+            return;
+
+        dbNode = database->getDatabaseData(config.database);
+        ASSERT_NE(dbNode, nullptr);
+
+        schemaNode = std::make_unique<PostgresSchemaNode>();
+        schemaNode->parentDbNode = dbNode;
+        schemaNode->name = "public";
+
+        schemaName = TestHelpers::makeUniqueIdentifier("dearsql_pg_schema_");
+        viewName = TestHelpers::makeUniqueIdentifier("dearsql_pg_view_");
+    }
+
+    void TearDown() override {
+        if (database) {
+            database->executeQuery(std::format(R"(DROP TABLE IF EXISTS public."{}")", tableName));
+            database->executeQuery(
+                std::format(R"(DROP TABLE IF EXISTS public."{}")", tableName + "_renamed"));
+            database->executeQuery(std::format(R"(DROP VIEW IF EXISTS public."{}")", viewName));
+            database->executeQuery(
+                std::format(R"(DROP SCHEMA IF EXISTS "{}" CASCADE)", schemaName));
+            database->executeQuery(
+                std::format(R"(DROP SCHEMA IF EXISTS "{}" CASCADE)", schemaName + "_new"));
+        }
+        schemaNode.reset();
+        PostgresDatabaseIntegrationTest::TearDown();
+    }
+
+    PostgresDatabaseNode* dbNode = nullptr;
+    std::unique_ptr<PostgresSchemaNode> schemaNode;
+    std::string schemaName;
+    std::string viewName;
+};
+
+TEST_F(PostgresSchemaNodeDDLTest, RenameTableRenamesSuccessfully) {
+    auto r = database->executeQuery(
+        std::format(R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, val TEXT))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    const std::string newName = tableName + "_renamed";
+    auto [ok, err] = schemaNode->renameTable(tableName, newName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(std::format(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='{}'", newName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData.size(), 1u);
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DropTableRemovesTable) {
+    auto r = database->executeQuery(
+        std::format(R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = schemaNode->dropTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(std::format(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='{}'", tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_TRUE(check[0].tableData.empty());
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DropColumnRemovesColumn) {
+    auto r = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, keep_me TEXT, drop_me TEXT))",
+        tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = schemaNode->dropColumn(tableName, "drop_me");
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(
+        std::format("SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name='{}' ORDER BY ordinal_position",
+                    tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    ASSERT_EQ(check[0].tableData.size(), 2u);
+    EXPECT_EQ(check[0].tableData[0][0], "id");
+    EXPECT_EQ(check[0].tableData[1][0], "keep_me");
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DropViewRemovesView) {
+    auto r1 = database->executeQuery(
+        std::format(R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, val TEXT))", tableName));
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
+
+    auto r2 = database->executeQuery(std::format(
+        R"(CREATE VIEW public."{}" AS SELECT val FROM public."{}")", viewName, tableName));
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
+
+    auto [ok, err] = schemaNode->dropView(viewName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(std::format(
+        "SELECT viewname FROM pg_views WHERE schemaname='public' AND viewname='{}'", viewName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_TRUE(check[0].tableData.empty());
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, RenameSchemaRenamesSuccessfully) {
+    auto r = database->executeQuery(std::format(R"(CREATE SCHEMA "{}")", schemaName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto testSchema = std::make_unique<PostgresSchemaNode>();
+    testSchema->parentDbNode = dbNode;
+    testSchema->name = schemaName;
+
+    const std::string newSchemaName = schemaName + "_new";
+    auto [ok, err] = testSchema->renameSchema(newSchemaName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(
+        std::format("SELECT nspname FROM pg_namespace WHERE nspname='{}'", newSchemaName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData.size(), 1u);
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DropSchemaRemovesSchema) {
+    auto r = database->executeQuery(std::format(R"(CREATE SCHEMA "{}")", schemaName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto testSchema = std::make_unique<PostgresSchemaNode>();
+    testSchema->parentDbNode = dbNode;
+    testSchema->name = schemaName;
+
+    auto [ok, err] = testSchema->dropSchema();
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(
+        std::format("SELECT nspname FROM pg_namespace WHERE nspname='{}'", schemaName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_TRUE(check[0].tableData.empty());
 }

@@ -908,7 +908,7 @@ std::pair<bool, std::string> PostgresSchemaNode::renameTable(const std::string& 
 }
 
 std::pair<bool, std::string> PostgresSchemaNode::dropTable(const std::string& tableName) {
-    auto sql = std::format(R"(DROP TABLE "{}"."{}"")", name, tableName);
+    auto sql = std::format(R"(DROP TABLE "{}"."{}")", name, tableName);
     auto r = executeQuery(sql);
     if (r.success()) {
         startTablesLoadAsync(true);

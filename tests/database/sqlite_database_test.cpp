@@ -101,3 +101,87 @@ TEST_F(SQLiteDatabaseFixture, IDatabaseNodeInterface) {
     EXPECT_EQ(database_->getDatabaseType(), DatabaseType::SQLITE);
     EXPECT_FALSE(database_->getFullPath().empty());
 }
+
+// ========== Schema Modification Tests ==========
+
+TEST_F(SQLiteDatabaseFixture, RenameTableRenamesSuccessfully) {
+    auto r = database_->executeQuery("CREATE TABLE old_name (id INTEGER PRIMARY KEY, val TEXT)");
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = database_->renameTable("old_name", "new_name");
+    ASSERT_TRUE(ok) << err;
+
+    // Wait for async table refresh
+    for (int i = 0; i < 50 && database_->isLoadingTables(); ++i) {
+        database_->checkLoadingStatus();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_FALSE(database_->isLoadingTables()) << "Async table refresh did not complete in time";
+
+    // Verify old table gone, new table exists
+    auto check = database_->executeQuery("SELECT name FROM sqlite_master WHERE type='table'");
+    ASSERT_TRUE(check.success()) << check.errorMessage();
+    ASSERT_FALSE(check.empty());
+    bool foundNew = false, foundOld = false;
+    for (const auto& row : check[0].tableData) {
+        if (row[0] == "new_name")
+            foundNew = true;
+        if (row[0] == "old_name")
+            foundOld = true;
+    }
+    EXPECT_TRUE(foundNew);
+    EXPECT_FALSE(foundOld);
+}
+
+TEST_F(SQLiteDatabaseFixture, DropTableRemovesTable) {
+    auto r = database_->executeQuery("CREATE TABLE to_drop (id INTEGER PRIMARY KEY)");
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = database_->dropTable("to_drop");
+    ASSERT_TRUE(ok) << err;
+
+    // Wait for async table refresh triggered by dropTable
+    for (int i = 0; i < 50 && database_->isLoadingTables(); ++i) {
+        database_->checkLoadingStatus();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Verify table is gone
+    auto check = database_->executeQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='to_drop'");
+    ASSERT_TRUE(check.success()) << check.errorMessage();
+    ASSERT_FALSE(check.empty());
+    EXPECT_TRUE(check[0].tableData.empty());
+}
+
+TEST_F(SQLiteDatabaseFixture, DropColumnRemovesColumn) {
+    auto r = database_->executeQuery(
+        "CREATE TABLE col_test (id INTEGER PRIMARY KEY, keep_me TEXT, drop_me TEXT)");
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto [ok, err] = database_->dropColumn("col_test", "drop_me");
+    ASSERT_TRUE(ok) << err;
+
+    // Wait for async table refresh triggered by dropColumn
+    for (int i = 0; i < 50 && database_->isLoadingTables(); ++i) {
+        database_->checkLoadingStatus();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    auto cols = database_->getColumnNames("col_test");
+    EXPECT_EQ(cols.size(), 2u);
+    EXPECT_EQ(cols[0], "id");
+    EXPECT_EQ(cols[1], "keep_me");
+}
+
+TEST_F(SQLiteDatabaseFixture, RenameNonexistentTableFails) {
+    auto [ok, err] = database_->renameTable("nonexistent", "whatever");
+    EXPECT_FALSE(ok);
+    EXPECT_FALSE(err.empty());
+}
+
+TEST_F(SQLiteDatabaseFixture, DropNonexistentTableFails) {
+    auto [ok, err] = database_->dropTable("nonexistent");
+    EXPECT_FALSE(ok);
+    EXPECT_FALSE(err.empty());
+}

@@ -706,3 +706,35 @@ void MySQLDatabaseNode::checkLoadingStatus() {
     checkTablesStatusAsync();
     checkViewsStatusAsync();
 }
+
+std::pair<bool, std::string> MySQLDatabaseNode::renameTable(const std::string& oldName,
+                                                            const std::string& newName) {
+    auto sql = std::format("RENAME TABLE `{}` TO `{}`", oldName, newName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> MySQLDatabaseNode::dropTable(const std::string& tableName) {
+    auto sql = std::format("DROP TABLE `{}`", tableName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> MySQLDatabaseNode::dropColumn(const std::string& tableName,
+                                                           const std::string& columnName) {
+    auto sql = std::format("ALTER TABLE `{}` DROP COLUMN `{}`", tableName, columnName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}

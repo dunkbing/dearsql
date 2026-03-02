@@ -128,4 +128,12 @@ public:
 
     ConnectionPool<MYSQL*>::Session getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
+
+    // ========== Schema Modification ==========
+
+    std::pair<bool, std::string> renameTable(const std::string& oldName,
+                                             const std::string& newName);
+    std::pair<bool, std::string> dropTable(const std::string& tableName);
+    std::pair<bool, std::string> dropColumn(const std::string& tableName,
+                                            const std::string& columnName);
 };

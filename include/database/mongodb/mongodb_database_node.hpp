@@ -120,4 +120,8 @@ public:
     // Schema inference by sampling documents
     std::vector<Column> inferSchemaFromSample(const std::string& collectionName,
                                               int sampleSize = 100);
+
+    // ========== Schema Modification ==========
+
+    std::pair<bool, std::string> dropCollection(const std::string& collectionName);
 };

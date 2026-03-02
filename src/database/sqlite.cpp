@@ -713,3 +713,35 @@ void SQLiteDatabase::checkTableRefreshStatusAsync(const std::string& tableName) 
         tableRefreshFutures.erase(it);
     }
 }
+
+std::pair<bool, std::string> SQLiteDatabase::renameTable(const std::string& oldName,
+                                                         const std::string& newName) {
+    auto sql = std::format(R"(ALTER TABLE "{}" RENAME TO "{}")", oldName, newName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> SQLiteDatabase::dropTable(const std::string& tableName) {
+    auto sql = std::format(R"(DROP TABLE "{}")", tableName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> SQLiteDatabase::dropColumn(const std::string& tableName,
+                                                        const std::string& columnName) {
+    auto sql = std::format(R"(ALTER TABLE "{}" DROP COLUMN "{}")", tableName, columnName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}

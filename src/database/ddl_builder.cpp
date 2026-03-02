@@ -5,24 +5,25 @@ std::string DDLBuilder::quoteIdentifier(const std::string& id) const {
     switch (dbType_) {
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
-        return "`" + id + "`";
+        return std::format("`{}`", id);
     case DatabaseType::POSTGRESQL:
-        return "\"" + id + "\"";
+        return std::format("\"{}\"", id);
     case DatabaseType::SQLITE:
     default:
-        return "\"" + id + "\"";
+        return std::format("\"{}\"", id);
     }
 }
 
 std::string DDLBuilder::createTable(const Table& table, const std::string& schemaPrefix) const {
     std::string qualifiedName;
     if (!schemaPrefix.empty()) {
-        qualifiedName = quoteIdentifier(schemaPrefix) + "." + quoteIdentifier(table.name);
+        qualifiedName =
+            std::format("{}.{}", quoteIdentifier(schemaPrefix), quoteIdentifier(table.name));
     } else {
         qualifiedName = quoteIdentifier(table.name);
     }
 
-    std::string sql = "CREATE TABLE " + qualifiedName + " (";
+    std::string sql = std::format("CREATE TABLE {} (", qualifiedName);
 
     std::vector<std::string> primaryKeyColumns;
 
@@ -33,7 +34,7 @@ std::string DDLBuilder::createTable(const Table& table, const std::string& schem
             sql += ", ";
         }
 
-        sql += quoteIdentifier(col.name) + " " + col.type;
+        sql += std::format("{} {}", quoteIdentifier(col.name), col.type);
 
         if (col.isNotNull && !col.isPrimaryKey) {
             sql += " NOT NULL";
@@ -50,7 +51,7 @@ std::string DDLBuilder::createTable(const Table& table, const std::string& schem
                     escaped += ch;
                 }
             }
-            sql += " COMMENT '" + escaped + "'";
+            sql += std::format(" COMMENT '{}'", escaped);
         }
 
         if (col.isPrimaryKey) {

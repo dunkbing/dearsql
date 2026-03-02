@@ -871,3 +871,76 @@ void PostgresSchemaNode::checkLoadingStatus() {
     checkMaterializedViewsStatusAsync();
     checkSequencesStatusAsync();
 }
+
+std::pair<bool, std::string> PostgresSchemaNode::renameSchema(const std::string& newName) {
+    auto sql = std::format(R"(ALTER SCHEMA "{}" RENAME TO "{}")", name, newName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        if (parentDbNode) {
+            parentDbNode->startSchemasLoadAsync(true, false);
+        }
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::dropSchema() {
+    auto sql = std::format(R"(DROP SCHEMA "{}" CASCADE)", name);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        if (parentDbNode) {
+            parentDbNode->startSchemasLoadAsync(true, false);
+        }
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::renameTable(const std::string& oldName,
+                                                             const std::string& newName) {
+    auto sql = std::format(R"(ALTER TABLE "{}"."{}" RENAME TO "{}")", name, oldName, newName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::dropTable(const std::string& tableName) {
+    auto sql = std::format(R"(DROP TABLE "{}"."{}"")", name, tableName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::dropColumn(const std::string& tableName,
+                                                            const std::string& columnName) {
+    auto sql =
+        std::format(R"(ALTER TABLE "{}"."{}" DROP COLUMN "{}")", name, tableName, columnName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        startTablesLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::dropView(const std::string& viewName,
+                                                          bool isMaterialized) {
+    const auto keyword = isMaterialized ? "MATERIALIZED VIEW" : "VIEW";
+    auto sql = std::format(R"(DROP {} "{}"."{}")", keyword, name, viewName);
+    auto r = executeQuery(sql);
+    if (r.success()) {
+        if (isMaterialized) {
+            startMaterializedViewsLoadAsync(true);
+        } else {
+            startViewsLoadAsync(true);
+        }
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}

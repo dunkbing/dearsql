@@ -447,7 +447,7 @@ static void connectServerAsync(ConnectionDialogData* data) {
     GtkWidget* dialogRef = data->dialog;
     std::atomic<bool>* cancelledFlag = &data->cancelled;
 
-    g_object_ref(dialogRef);
+    (void)g_object_ref(dialogRef);
 
     std::thread([=]() {
         DatabaseConnectionInfo info;
@@ -1030,7 +1030,7 @@ static GtkWidget* buildCreateDatabaseDialog(CreateDatabaseDialogData* data) {
 
             auto dbCopy = data->db;
             GtkWidget* dialogRef = data->dialog;
-            g_object_ref(dialogRef);
+            (void)g_object_ref(dialogRef);
 
             std::thread([=]() {
                 auto result = dbCopy->createDatabaseWithOptions(opts);

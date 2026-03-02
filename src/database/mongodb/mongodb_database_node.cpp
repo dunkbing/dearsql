@@ -437,3 +437,16 @@ void MongoDBDatabaseNode::checkLoadingStatus() {
     checkCollectionsStatusAsync();
     // Views are handled as part of collections
 }
+
+std::pair<bool, std::string>
+MongoDBDatabaseNode::dropCollection(const std::string& collectionName) {
+    auto query =
+        std::format(R"({{"database": "{}", "collection": "{}", "command": "dropCollection"}})",
+                    name, collectionName);
+    auto r = executeQuery(query);
+    if (r.success()) {
+        startCollectionsLoadAsync(true);
+        return {true, ""};
+    }
+    return {false, r.errorMessage()};
+}

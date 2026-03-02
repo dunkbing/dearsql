@@ -491,18 +491,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                         return "New name must be different";
                     return "";
                 },
-                [schemaData, oldName](const std::string& newName) {
-                    const std::string sql =
-                        std::format(R"(ALTER SCHEMA "{}" RENAME TO "{}")", oldName, newName);
-                    Logger::info("Executing: " + sql);
-                    auto r = schemaData->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        if (schemaData->parentDbNode) {
-                            schemaData->parentDbNode->startSchemasLoadAsync(true, false);
-                        }
-                    } else {
+                [schemaData](const std::string& newName) {
+                    auto [success, error] = schemaData->renameSchema(newName);
+                    if (!success) {
                         InputDialog::instance().setError(error);
                     }
                 });
@@ -514,15 +505,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 {"Permanently delete the schema and ALL its contents",
                  "Remove all tables, views, sequences in this schema",
                  "This operation is IRREVERSIBLE"},
-                "Delete Schema", [schemaData, schemaName]() {
-                    const std::string sql = std::format("DROP SCHEMA \"{}\" CASCADE", schemaName);
-                    Logger::info("Executing: " + sql);
-                    auto r = schemaData->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success && schemaData->parentDbNode) {
-                        schemaData->parentDbNode->startSchemasLoadAsync(true, false);
-                    } else if (!success) {
+                "Delete Schema", [schemaData]() {
+                    auto [success, error] = schemaData->dropSchema();
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -957,7 +942,6 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         ImGui::Separator();
         if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = table.name;
-            const std::string schemaNameCopy = schemaNode->name;
             InputDialog::instance().showWithValidation(
                 "Rename Table", "New name:", oldName, "Rename",
                 [oldName](const std::string& newName) -> std::string {
@@ -965,16 +949,9 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         return "New name must be different";
                     return "";
                 },
-                [schemaNode, schemaNameCopy, oldName](const std::string& newName) {
-                    const std::string sql = std::format(R"(ALTER TABLE "{}"."{}" RENAME TO "{}")",
-                                                        schemaNameCopy, oldName, newName);
-                    Logger::info("Executing: " + sql);
-                    auto r = schemaNode->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        schemaNode->startTablesLoadAsync(true);
-                    } else {
+                [schemaNode, oldName](const std::string& newName) {
+                    auto [success, error] = schemaNode->renameTable(oldName, newName);
+                    if (!success) {
                         InputDialog::instance().setError(error);
                     }
                 });
@@ -988,16 +965,9 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                 {"Permanently delete the table and ALL its data",
                  "Remove all indexes and constraints",
                  "Break any foreign key references to this table"},
-                "Delete Table", [schemaNode, schemaNameCopy, tableName]() {
-                    const std::string sql =
-                        std::format(R"(DROP TABLE "{}"."{}")", schemaNameCopy, tableName);
-                    Logger::info("Executing: " + sql);
-                    auto r = schemaNode->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        schemaNode->startTablesLoadAsync(true);
-                    } else {
+                "Delete Table", [schemaNode, tableName]() {
+                    auto [success, error] = schemaNode->dropTable(tableName);
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -1050,17 +1020,10 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                 {"Permanently delete the column and all its data",
                                  "Remove any indexes or constraints on this column",
                                  "Potentially break applications that depend on this column"},
-                                "Drop Column", [schemaNode, schemaNameCopy, tblName, colName]() {
-                                    const std::string sql =
-                                        std::format(R"(ALTER TABLE "{}"."{}" DROP COLUMN "{}")",
-                                                    schemaNameCopy, tblName, colName);
-                                    Logger::info("Executing: " + sql);
-                                    auto r = schemaNode->executeQuery(sql);
-                                    auto success = r.success();
-                                    auto error = r.errorMessage();
-                                    if (success) {
-                                        schemaNode->startTablesLoadAsync(true);
-                                    } else {
+                                "Drop Column", [schemaNode, tblName, colName]() {
+                                    auto [success, error] =
+                                        schemaNode->dropColumn(tblName, colName);
+                                    if (!success) {
                                         ConfirmDialog::instance().setError(error);
                                     }
                                 });
@@ -1217,27 +1180,15 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
             const std::string viewName = view.name;
             const std::string schemaName = schemaData->name;
             const std::string typeLabel = isMaterializedView ? "Materialized View" : "View";
-            const std::string dropKeyword = isMaterializedView ? "MATERIALIZED VIEW" : "VIEW";
             ConfirmDialog::instance().show(
                 std::format("Delete {}", typeLabel),
                 std::format("You are about to delete the {}: {}.{}", typeLabel, schemaName,
                             viewName),
                 {std::format("Permanently delete the {}", typeLabel),
                  "Any dependent objects may break", "This operation is IRREVERSIBLE"},
-                "Delete", [schemaData, schemaName, viewName, dropKeyword, isMaterializedView]() {
-                    const std::string sql =
-                        std::format(R"(DROP {} "{}"."{}")", dropKeyword, schemaName, viewName);
-                    Logger::info("Executing: " + sql);
-                    auto r = schemaData->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        if (isMaterializedView) {
-                            schemaData->startMaterializedViewsLoadAsync(true);
-                        } else {
-                            schemaData->startViewsLoadAsync(true);
-                        }
-                    } else {
+                "Delete", [schemaData, viewName, isMaterializedView]() {
+                    auto [success, error] = schemaData->dropView(viewName, isMaterializedView);
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -1310,15 +1261,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     return "";
                 },
                 [dbData, oldName](const std::string& newName) {
-                    const std::string sql =
-                        std::format("RENAME TABLE `{}` TO `{}`", oldName, newName);
-                    Logger::info("Executing: " + sql);
-                    auto r = dbData->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        dbData->startTablesLoadAsync(true);
-                    } else {
+                    auto [success, error] = dbData->renameTable(oldName, newName);
+                    if (!success) {
                         InputDialog::instance().setError(error);
                     }
                 });
@@ -1331,14 +1275,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                  "Remove all indexes and constraints",
                  "Break any foreign key references to this table"},
                 "Delete Table", [dbData, tableName]() {
-                    const std::string sql = std::format("DROP TABLE `{}`", tableName);
-                    Logger::info("Executing: " + sql);
-                    auto r = dbData->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        dbData->startTablesLoadAsync(true);
-                    } else {
+                    auto [success, error] = dbData->dropTable(tableName);
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -1391,15 +1329,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                  "Remove any indexes or constraints on this column",
                                  "Potentially break applications that depend on this column"},
                                 "Drop Column", [dbData, tblName, colName]() {
-                                    const std::string sql = std::format(
-                                        "ALTER TABLE `{}` DROP COLUMN `{}`", tblName, colName);
-                                    Logger::info("Executing: " + sql);
-                                    auto r = dbData->executeQuery(sql);
-                                    auto success = r.success();
-                                    auto error = r.errorMessage();
-                                    if (success) {
-                                        dbData->startTablesLoadAsync(true);
-                                    } else {
+                                    auto [success, error] = dbData->dropColumn(tblName, colName);
+                                    if (!success) {
                                         ConfirmDialog::instance().setError(error);
                                     }
                                 });
@@ -1712,15 +1643,8 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                 {"Permanently delete the collection and ALL its documents",
                  "Remove all indexes on this collection", "This operation is IRREVERSIBLE"},
                 "Delete Collection", [dbData, collName]() {
-                    const std::string query = std::format(
-                        R"({{"database": "{}", "collection": "{}", "command": "dropCollection"}})",
-                        dbData->name, collName);
-                    auto r = dbData->executeQuery(query);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        dbData->startCollectionsLoadAsync(true);
-                    } else {
+                    auto [success, error] = dbData->dropCollection(collName);
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -1810,15 +1734,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                     return "";
                 },
                 [sqliteDb, oldName](const std::string& newName) {
-                    const std::string sql =
-                        std::format(R"(ALTER TABLE "{}" RENAME TO "{}")", oldName, newName);
-                    Logger::info("Executing: " + sql);
-                    auto r = sqliteDb->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        sqliteDb->startTablesLoadAsync(true);
-                    } else {
+                    auto [success, error] = sqliteDb->renameTable(oldName, newName);
+                    if (!success) {
                         InputDialog::instance().setError(error);
                     }
                 });
@@ -1831,14 +1748,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                  "Remove all indexes and constraints",
                  "Break any foreign key references to this table"},
                 "Delete Table", [sqliteDb, tableName]() {
-                    const std::string sql = std::format("DROP TABLE \"{}\"", tableName);
-                    Logger::info("Executing: " + sql);
-                    auto r = sqliteDb->executeQuery(sql);
-                    auto success = r.success();
-                    auto error = r.errorMessage();
-                    if (success) {
-                        sqliteDb->startTablesLoadAsync(true);
-                    } else {
+                    auto [success, error] = sqliteDb->dropTable(tableName);
+                    if (!success) {
                         ConfirmDialog::instance().setError(error);
                     }
                 });
@@ -1892,15 +1803,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
                                  "Potentially break applications that depend on this column",
                                  "Note: Requires SQLite 3.35.0+ (2021-03-12)"},
                                 "Drop Column", [sqliteDb, tblName, colName]() {
-                                    const std::string sql = std::format(
-                                        R"(ALTER TABLE "{}" DROP COLUMN "{}")", tblName, colName);
-                                    Logger::info("Executing: " + sql);
-                                    auto r = sqliteDb->executeQuery(sql);
-                                    auto success = r.success();
-                                    auto error = r.errorMessage();
-                                    if (success) {
-                                        sqliteDb->startTablesLoadAsync(true);
-                                    } else {
+                                    auto [success, error] = sqliteDb->dropColumn(tblName, colName);
+                                    if (!success) {
                                         ConfirmDialog::instance().setError(error);
                                     }
                                 });

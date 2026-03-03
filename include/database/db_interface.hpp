@@ -2,12 +2,31 @@
 
 #include "async_helper.hpp"
 #include "db.hpp"
+#include "ssh_tunnel.hpp"
 #include "utils/logger.hpp"
 #include <memory>
 #include <string>
 #include <vector>
 
 enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB };
+
+enum class SSHAuthMethod { Password, PrivateKey };
+
+enum class SslMode { Disable, Allow, Prefer, Require, VerifyCA, VerifyFull };
+
+// Forward declarations (defined in db_factory.cpp)
+std::string sslModeToString(SslMode mode);
+SslMode stringToSslMode(const std::string& str);
+
+struct SSHConfig {
+    bool enabled = false;
+    std::string host;
+    int port = 22;
+    std::string username;
+    SSHAuthMethod authMethod = SSHAuthMethod::Password;
+    std::string password;       // when authMethod == Password
+    std::string privateKeyPath; // when authMethod == PrivateKey
+};
 
 struct DatabaseConnectionInfo {
     DatabaseType type = DatabaseType::SQLITE;
@@ -19,7 +38,9 @@ struct DatabaseConnectionInfo {
     std::string username;
     std::string password;
     bool showAllDatabases = false;
-    std::string sslmode = "prefer"; // PostgreSQL SSL mode
+    SslMode sslmode = SslMode::Prefer; // SSL mode (all server backends)
+    std::string sslCACertPath;         // CA certificate for verify-ca/verify-full
+    SSHConfig ssh;
 
     // Build database-specific connection string
     [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
@@ -46,8 +67,10 @@ struct DatabaseConnectionInfo {
                 connStr += " password=" + password;
             }
 
-            if (!sslmode.empty()) {
-                connStr += " sslmode=" + sslmode;
+            connStr += " sslmode=" + sslModeToString(sslmode);
+            if ((sslmode == SslMode::VerifyCA || sslmode == SslMode::VerifyFull) &&
+                !sslCACertPath.empty()) {
+                connStr += " sslrootcert=" + sslCACertPath;
             }
 
             return connStr;
@@ -88,6 +111,14 @@ struct DatabaseConnectionInfo {
                 connStr += "/" + dbName;
             } else if (!database.empty()) {
                 connStr += "/" + database;
+            }
+            // TLS via sslmode
+            if (sslmode == SslMode::Require || sslmode == SslMode::VerifyCA ||
+                sslmode == SslMode::VerifyFull) {
+                connStr += (connStr.find('?') != std::string::npos) ? "&" : "?";
+                connStr += "tls=true";
+                if (!sslCACertPath.empty())
+                    connStr += "&tlsCAFile=" + sslCACertPath;
             }
             return connStr;
         }
@@ -251,6 +282,54 @@ public:
     }
 
 protected:
+    std::pair<bool, std::string> prepareConnectionForConnect() {
+        // SSH disabled: ensure any previous tunnel is gone and restore remote endpoint.
+        if (!connectionInfo.ssh.enabled) {
+            if (sshTunnel_.isRunning())
+                sshTunnel_.stop();
+            if (sshTunnel_.hasOriginals()) {
+                connectionInfo.host = sshTunnel_.remoteHost();
+                connectionInfo.port = sshTunnel_.remotePort();
+            }
+            return {true, ""};
+        }
+
+        // If host/port currently points at a previous local tunnel endpoint,
+        // recover the original remote endpoint before starting a new tunnel.
+        std::string remoteHost = connectionInfo.host;
+        int remotePort = connectionInfo.port;
+        if (sshTunnel_.hasOriginals() && connectionInfo.host == "127.0.0.1" &&
+            connectionInfo.port == sshTunnel_.localPort()) {
+            remoteHost = sshTunnel_.remoteHost();
+            remotePort = sshTunnel_.remotePort();
+        }
+
+        if (remoteHost.empty() || remotePort <= 0 || remotePort > 65535) {
+            return {false, "SSH tunnel: invalid remote database host/port"};
+        }
+
+        // Always restart to guarantee tunnel settings match current connection info.
+        if (sshTunnel_.isRunning())
+            sshTunnel_.stop();
+
+        auto [ok, err] = sshTunnel_.start(connectionInfo.ssh, remoteHost, remotePort);
+        if (!ok)
+            return {false, "SSH tunnel: " + err};
+
+        connectionInfo.host = "127.0.0.1";
+        connectionInfo.port = sshTunnel_.localPort();
+        return {true, ""};
+    }
+
+    void stopSshTunnel() {
+        if (sshTunnel_.isRunning())
+            sshTunnel_.stop();
+        if (sshTunnel_.hasOriginals()) {
+            connectionInfo.host = sshTunnel_.remoteHost();
+            connectionInfo.port = sshTunnel_.remotePort();
+        }
+    }
+
     // Common state
     bool attemptedConnection = false;
     std::string lastConnectionError;
@@ -258,6 +337,7 @@ protected:
     int savedConnectionId = -1;
     bool connected = false;
     DatabaseConnectionInfo connectionInfo;
+    SSHTunnel sshTunnel_;
 
     // Async operations
     AsyncOperation<std::pair<bool, std::string>> connectionOp;

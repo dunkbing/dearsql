@@ -73,11 +73,13 @@ namespace {
         if (saltStr == "NULL")
             saltStr = "";
 
+        // Derive encryption key once for both DB and SSH credentials
+        std::string encryptionKey;
         try {
             if (!saltStr.empty()) {
                 auto saltData = CryptoUtils::base64Decode(saltStr);
                 std::string salt(saltData.begin(), saltData.end());
-                std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+                encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
 
                 if (!encryptedUsername.empty()) {
                     try {
@@ -121,8 +123,62 @@ namespace {
             (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
         std::string sslmodeStr = columnText(stmt, 13);
-        conn.connectionInfo.sslmode =
-            (sslmodeStr == "NULL" || sslmodeStr.empty()) ? "prefer" : sslmodeStr;
+        conn.connectionInfo.sslmode = (sslmodeStr == "NULL" || sslmodeStr.empty())
+                                          ? SslMode::Prefer
+                                          : stringToSslMode(sslmodeStr);
+
+        // SSH tunnel fields (columns 14-20)
+        std::string sshEnabledStr = columnText(stmt, 14);
+        conn.connectionInfo.ssh.enabled =
+            (sshEnabledStr != "NULL" && sshEnabledStr != "0" && !sshEnabledStr.empty());
+
+        std::string sshHostStr = columnText(stmt, 15);
+        conn.connectionInfo.ssh.host = (sshHostStr == "NULL") ? "" : sshHostStr;
+
+        std::string sshPortStr = columnText(stmt, 16);
+        conn.connectionInfo.ssh.port =
+            (sshPortStr == "NULL" || sshPortStr.empty()) ? 22 : std::stoi(sshPortStr);
+
+        std::string encryptedSshUsername = columnText(stmt, 17);
+        if (encryptedSshUsername == "NULL")
+            encryptedSshUsername = "";
+
+        std::string sshAuthStr = columnText(stmt, 18);
+        conn.connectionInfo.ssh.authMethod =
+            (sshAuthStr == "privatekey") ? SSHAuthMethod::PrivateKey : SSHAuthMethod::Password;
+
+        std::string sshKeyPath = columnText(stmt, 19);
+        conn.connectionInfo.ssh.privateKeyPath = (sshKeyPath == "NULL") ? "" : sshKeyPath;
+
+        std::string encryptedSshPassword = columnText(stmt, 20);
+        if (encryptedSshPassword == "NULL")
+            encryptedSshPassword = "";
+
+        std::string sslCACertPath = columnText(stmt, 21);
+        conn.connectionInfo.sslCACertPath = (sslCACertPath == "NULL") ? "" : sslCACertPath;
+
+        // Decrypt SSH credentials reusing the same per-row key
+        if (!saltStr.empty() && !encryptionKey.empty()) {
+            if (!encryptedSshUsername.empty()) {
+                try {
+                    conn.connectionInfo.ssh.username =
+                        CryptoUtils::decrypt(encryptedSshUsername, encryptionKey);
+                } catch (...) {
+                    conn.connectionInfo.ssh.username = "";
+                }
+            }
+            if (!encryptedSshPassword.empty()) {
+                try {
+                    conn.connectionInfo.ssh.password =
+                        CryptoUtils::decrypt(encryptedSshPassword, encryptionKey);
+                } catch (...) {
+                    conn.connectionInfo.ssh.password = "";
+                }
+            }
+        } else {
+            conn.connectionInfo.ssh.username = encryptedSshUsername;
+            conn.connectionInfo.ssh.password = encryptedSshPassword;
+        }
 
         return true;
     }
@@ -244,6 +300,24 @@ bool AppState::createTables() {
     ensureColumnExists("sslmode",
                        "ALTER TABLE saved_connections ADD COLUMN sslmode TEXT DEFAULT 'prefer';");
 
+    // SSH tunnel columns
+    ensureColumnExists("ssh_enabled",
+                       "ALTER TABLE saved_connections ADD COLUMN ssh_enabled INTEGER DEFAULT 0;");
+    ensureColumnExists("ssh_host", "ALTER TABLE saved_connections ADD COLUMN ssh_host TEXT;");
+    ensureColumnExists("ssh_port",
+                       "ALTER TABLE saved_connections ADD COLUMN ssh_port INTEGER DEFAULT 22;");
+    ensureColumnExists("ssh_username",
+                       "ALTER TABLE saved_connections ADD COLUMN ssh_username TEXT;");
+    ensureColumnExists(
+        "ssh_auth_method",
+        "ALTER TABLE saved_connections ADD COLUMN ssh_auth_method TEXT DEFAULT 'password';");
+    ensureColumnExists("ssh_private_key_path",
+                       "ALTER TABLE saved_connections ADD COLUMN ssh_private_key_path TEXT;");
+    ensureColumnExists("ssh_password",
+                       "ALTER TABLE saved_connections ADD COLUMN ssh_password TEXT;");
+    ensureColumnExists("ssl_ca_cert_path",
+                       "ALTER TABLE saved_connections ADD COLUMN ssl_ca_cert_path TEXT;");
+
     // Ensure default workspace exists
     if (success) {
         ensureDefaultWorkspace();
@@ -267,8 +341,10 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     const std::string sql = R"(
         INSERT OR REPLACE INTO saved_connections
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
-         show_all_databases, sslmode)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?);
+         show_all_databases, sslmode,
+         ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_auth_method, ssh_private_key_path, ssh_password,
+         ssl_ca_cert_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     )";
 
     // Encrypt sensitive data
@@ -282,6 +358,14 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         connection.connectionInfo.password.empty()
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
+    std::string encryptedSshUsername =
+        connection.connectionInfo.ssh.username.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.ssh.username, encryptionKey);
+    std::string encryptedSshPassword =
+        connection.connectionInfo.ssh.password.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.ssh.password, encryptionKey);
 
     std::string typeStr;
     switch (connection.connectionInfo.type) {
@@ -329,7 +413,23 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
     sqlite3_bind_int(stmt.get(), 11, showAll);
-    sqlite3_bind_text(stmt.get(), 12, connection.connectionInfo.sslmode.c_str(), -1,
+    auto sslmodeStr = sslModeToString(connection.connectionInfo.sslmode);
+    sqlite3_bind_text(stmt.get(), 12, sslmodeStr.c_str(), -1, SQLITE_TRANSIENT);
+
+    // SSH tunnel fields (params 13-19)
+    sqlite3_bind_int(stmt.get(), 13, connection.connectionInfo.ssh.enabled ? 1 : 0);
+    sqlite3_bind_text(stmt.get(), 14, connection.connectionInfo.ssh.host.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 15, connection.connectionInfo.ssh.port);
+    sqlite3_bind_text(stmt.get(), 16, encryptedSshUsername.c_str(), -1, SQLITE_TRANSIENT);
+    std::string sshAuthStr = connection.connectionInfo.ssh.authMethod == SSHAuthMethod::PrivateKey
+                                 ? "privatekey"
+                                 : "password";
+    sqlite3_bind_text(stmt.get(), 17, sshAuthStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 18, connection.connectionInfo.ssh.privateKeyPath.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt.get());
@@ -346,7 +446,10 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         UPDATE saved_connections
         SET name = ?, type = ?, host = ?, port = ?, database_name = ?,
             username = ?, password = ?, path = ?, salt = ?, last_used = CURRENT_TIMESTAMP,
-            workspace_id = ?, show_all_databases = ?, sslmode = ?
+            workspace_id = ?, show_all_databases = ?, sslmode = ?,
+            ssh_enabled = ?, ssh_host = ?, ssh_port = ?, ssh_username = ?,
+            ssh_auth_method = ?, ssh_private_key_path = ?, ssh_password = ?,
+            ssl_ca_cert_path = ?
         WHERE id = ?;
     )";
 
@@ -361,6 +464,14 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         connection.connectionInfo.password.empty()
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.password, encryptionKey);
+    std::string encryptedSshUsername =
+        connection.connectionInfo.ssh.username.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.ssh.username, encryptionKey);
+    std::string encryptedSshPassword =
+        connection.connectionInfo.ssh.password.empty()
+            ? ""
+            : CryptoUtils::encrypt(connection.connectionInfo.ssh.password, encryptionKey);
 
     std::string typeStr;
     switch (connection.connectionInfo.type) {
@@ -408,9 +519,25 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 9, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 10, connection.workspaceId);
     sqlite3_bind_int(stmt.get(), 11, showAll);
-    sqlite3_bind_text(stmt.get(), 12, connection.connectionInfo.sslmode.c_str(), -1,
+    auto sslmodeStr = sslModeToString(connection.connectionInfo.sslmode);
+    sqlite3_bind_text(stmt.get(), 12, sslmodeStr.c_str(), -1, SQLITE_TRANSIENT);
+
+    // SSH tunnel fields (params 13-19)
+    sqlite3_bind_int(stmt.get(), 13, connection.connectionInfo.ssh.enabled ? 1 : 0);
+    sqlite3_bind_text(stmt.get(), 14, connection.connectionInfo.ssh.host.c_str(), -1,
                       SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 13, connection.id);
+    sqlite3_bind_int(stmt.get(), 15, connection.connectionInfo.ssh.port);
+    sqlite3_bind_text(stmt.get(), 16, encryptedSshUsername.c_str(), -1, SQLITE_TRANSIENT);
+    std::string sshAuthStr = connection.connectionInfo.ssh.authMethod == SSHAuthMethod::PrivateKey
+                                 ? "privatekey"
+                                 : "password";
+    sqlite3_bind_text(stmt.get(), 17, sshAuthStr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 18, connection.connectionInfo.ssh.privateKeyPath.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 21, connection.id);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -428,7 +555,12 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used,
                COALESCE(workspace_id, 1) as workspace_id,
                COALESCE(show_all_databases, 0) as show_all_databases,
-               COALESCE(sslmode, 'prefer') as sslmode
+               COALESCE(sslmode, 'prefer') as sslmode,
+               COALESCE(ssh_enabled, 0) as ssh_enabled,
+               ssh_host, COALESCE(ssh_port, 22) as ssh_port,
+               ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
+               ssh_private_key_path, ssh_password,
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -676,7 +808,12 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
     const std::string sql = R"(
         SELECT id, name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
                show_all_databases,
-               COALESCE(sslmode, 'prefer') as sslmode
+               COALESCE(sslmode, 'prefer') as sslmode,
+               COALESCE(ssh_enabled, 0) as ssh_enabled,
+               ssh_host, COALESCE(ssh_port, 22) as ssh_port,
+               ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
+               ssh_private_key_path, ssh_password,
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;

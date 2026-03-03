@@ -29,6 +29,39 @@ namespace {
             constexpr unsigned int connectTimeoutSeconds = 5;
             mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
 
+            // SSL mode
+            switch (info.sslmode) {
+            case SslMode::Disable: {
+                unsigned int mode = SSL_MODE_DISABLED;
+                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                break;
+            }
+            case SslMode::Require: {
+                unsigned int mode = SSL_MODE_REQUIRED;
+                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                break;
+            }
+            case SslMode::VerifyCA: {
+                unsigned int mode = SSL_MODE_VERIFY_CA;
+                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                if (!info.sslCACertPath.empty())
+                    mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
+                break;
+            }
+            case SslMode::VerifyFull: {
+                unsigned int mode = SSL_MODE_VERIFY_IDENTITY;
+                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                if (!info.sslCACertPath.empty())
+                    mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
+                break;
+            }
+            default: {
+                unsigned int mode = SSL_MODE_PREFERRED;
+                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                break;
+            }
+            }
+
             // Enable multi-statement support
             unsigned long flags = CLIENT_MULTI_STATEMENTS;
 
@@ -106,18 +139,6 @@ namespace {
         return result;
     }
 
-    std::string escapeSingleQuotes(const std::string& input) {
-        std::string escaped;
-        escaped.reserve(input.size());
-        for (char ch : input) {
-            escaped.push_back(ch);
-            if (ch == '\'') {
-                escaped.push_back('\'');
-            }
-        }
-        return escaped;
-    }
-
     std::string quoteMysqlIdentifier(const std::string& input) {
         std::string quoted = "`";
         quoted.reserve(input.size() + 2);
@@ -193,6 +214,12 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
     }
 
     setAttemptedConnection(true);
+    auto [prepOk, prepErr] = prepareConnectionForConnect();
+    if (!prepOk) {
+        connected = false;
+        setLastConnectionError(prepErr);
+        return {false, prepErr};
+    }
 
     try {
         ensureConnectionPoolForDatabase(connectionInfo);
@@ -239,6 +266,7 @@ void MySQLDatabase::disconnect() {
                 dbDataPtr->connectionPool.reset();
             }
         }
+        stopSshTunnel();
         connected = false;
         return;
     }
@@ -250,6 +278,7 @@ void MySQLDatabase::disconnect() {
             dbDataPtr->connectionPool.reset();
         }
     }
+    stopSshTunnel();
     connected = false;
 }
 

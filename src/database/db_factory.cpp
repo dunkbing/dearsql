@@ -40,6 +40,40 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
     return DatabaseType::SQLITE; // default
 }
 
+std::string sslModeToString(const SslMode mode) {
+    switch (mode) {
+    case SslMode::Disable:
+        return "disable";
+    case SslMode::Allow:
+        return "allow";
+    case SslMode::Prefer:
+        return "prefer";
+    case SslMode::Require:
+        return "require";
+    case SslMode::VerifyCA:
+        return "verify-ca";
+    case SslMode::VerifyFull:
+        return "verify-full";
+    }
+    return "prefer";
+}
+
+SslMode stringToSslMode(const std::string& str) {
+    if (str == "disable")
+        return SslMode::Disable;
+    if (str == "allow")
+        return SslMode::Allow;
+    if (str == "prefer")
+        return SslMode::Prefer;
+    if (str == "require")
+        return SslMode::Require;
+    if (str == "verify-ca")
+        return SslMode::VerifyCA;
+    if (str == "verify-full")
+        return SslMode::VerifyFull;
+    return SslMode::Prefer;
+}
+
 std::shared_ptr<DatabaseInterface>
 DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
     switch (info.type) {

@@ -460,12 +460,13 @@ void DatabaseConnectionDialog::editConnection(const std::shared_ptr<DatabaseInte
         strncpy(password, connInfo.password.c_str(), sizeof(password) - 1);
         showAllDatabases = connInfo.showAllDatabases;
         authType = connInfo.username.empty() ? AUTH_NONE : AUTH_USERNAME_PASSWORD;
-        // Map sslmode string to index
-        static const char* sslModes[] = {"disable", "allow",     "prefer",
-                                         "require", "verify-ca", "verify-full"};
+        // Map sslmode to index
+        static constexpr SslMode sslModeValues[] = {SslMode::Disable,  SslMode::Allow,
+                                                    SslMode::Prefer,   SslMode::Require,
+                                                    SslMode::VerifyCA, SslMode::VerifyFull};
         sslModeIndex = 2; // default "prefer"
         for (int i = 0; i < 6; ++i) {
-            if (connInfo.sslmode == sslModes[i]) {
+            if (connInfo.sslmode == sslModeValues[i]) {
                 sslModeIndex = i;
                 break;
             }
@@ -545,8 +546,9 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDat
         return nullptr;
     }
 
-    static const char* sslModes[] = {"disable", "allow",     "prefer",
-                                     "require", "verify-ca", "verify-full"};
+    static constexpr SslMode sslModeValues[] = {SslMode::Disable,  SslMode::Allow,
+                                                SslMode::Prefer,   SslMode::Require,
+                                                SslMode::VerifyCA, SslMode::VerifyFull};
 
     DatabaseConnectionInfo info;
     info.type = DatabaseType::POSTGRESQL;
@@ -555,7 +557,7 @@ std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDat
     info.port = port;
     info.database = strlen(database) > 0 ? std::string(database) : "postgres";
     info.showAllDatabases = showAllDatabases;
-    info.sslmode = sslModes[sslModeIndex];
+    info.sslmode = sslModeValues[sslModeIndex];
 
     if (authType == AUTH_USERNAME_PASSWORD) {
         if (strlen(username) == 0) {
@@ -674,9 +676,10 @@ void DatabaseConnectionDialog::startAsyncConnection() {
         updatedInfo.password = std::string(password);
         updatedInfo.showAllDatabases = showAllDatabases;
         if (selectedDatabaseType == DatabaseType::POSTGRESQL) {
-            static const char* sslModes[] = {"disable", "allow",     "prefer",
-                                             "require", "verify-ca", "verify-full"};
-            updatedInfo.sslmode = sslModes[sslModeIndex];
+            static constexpr SslMode sslModeValues[] = {SslMode::Disable,  SslMode::Allow,
+                                                        SslMode::Prefer,   SslMode::Require,
+                                                        SslMode::VerifyCA, SslMode::VerifyFull};
+            updatedInfo.sslmode = sslModeValues[sslModeIndex];
         }
 
         // Update the database object with new connection info

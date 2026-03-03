@@ -8,6 +8,7 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/ssl_config.hpp"
 #include "utils/file_dialog.hpp"
 
 #import <AppKit/AppKit.h>
@@ -57,9 +58,11 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 @property(nonatomic, strong) NSTextField* databaseLabel;
 @property(nonatomic, strong) NSTextField* databaseField;
 
-// PostgreSQL SSL
+// SSL
 @property(nonatomic, strong) NSTextField* sslModeLabel;
 @property(nonatomic, strong) NSPopUpButton* sslModePopup;
+@property(nonatomic, strong) NSTextField* sslCACertPathLabel;
+@property(nonatomic, strong) NSTextField* sslCACertPathField;
 
 // Auth
 @property(nonatomic, strong) NSTextField* authLabel;
@@ -71,6 +74,23 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 
 // Show all databases
 @property(nonatomic, strong) NSButton* showAllDbsCheckbox;
+
+// SSH Tunnel
+@property(nonatomic, strong) NSBox* sshSeparator;
+@property(nonatomic, strong) NSButton* sshEnabledCheckbox;
+@property(nonatomic, strong) NSTextField* sshHostLabel;
+@property(nonatomic, strong) NSTextField* sshHostField;
+@property(nonatomic, strong) NSTextField* sshPortLabel;
+@property(nonatomic, strong) NSTextField* sshPortField;
+@property(nonatomic, strong) NSTextField* sshUsernameLabel;
+@property(nonatomic, strong) NSTextField* sshUsernameField;
+@property(nonatomic, strong) NSTextField* sshAuthLabel;
+@property(nonatomic, strong) NSSegmentedControl* sshAuthSegment;
+@property(nonatomic, strong) NSTextField* sshPasswordLabel;
+@property(nonatomic, strong) NSSecureTextField* sshPasswordField;
+@property(nonatomic, strong) NSTextField* sshKeyPathLabel;
+@property(nonatomic, strong) NSTextField* sshKeyPathField;
+@property(nonatomic, strong) NSButton* sshKeyBrowseButton;
 
 // Bottom controls
 @property(nonatomic, strong) NSBox* bottomSeparator;
@@ -85,6 +105,8 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 @end
 
 static NSWindow* sActiveConnectionDialog = nil;
+
+// SslModeConfig, getSslConfig(), sslModeNeedsCACert() from ssl_config.hpp
 
 @implementation ConnectionDialogController
 
@@ -207,16 +229,6 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.showAllDbsCheckbox.state =
             info.showAllDatabases ? NSControlStateValueOn : NSControlStateValueOff;
 
-        // SSL mode
-        static const char* sslModes[] = {"disable", "allow",     "prefer",
-                                         "require", "verify-ca", "verify-full"};
-        for (int i = 0; i < 6; i++) {
-            if (info.sslmode == sslModes[i]) {
-                [self.sslModePopup selectItemAtIndex:i];
-                break;
-            }
-        }
-
         // Auth
         if (info.username.empty()) {
             self.authSegment.selectedSegment = 1; // None
@@ -260,6 +272,39 @@ static NSWindow* sActiveConnectionDialog = nil;
         }
         break;
     }
+    }
+
+    // SSL mode (all server types)
+    if (info.type != DatabaseType::SQLITE) {
+        auto sslCfg = getSslConfig(info.type);
+        for (int i = 0; i < sslCfg.count; i++) {
+            if (info.sslmode == sslCfg.values[i]) {
+                [self.sslModePopup selectItemAtIndex:i];
+                break;
+            }
+        }
+        if (!info.sslCACertPath.empty()) {
+            self.sslCACertPathField.stringValue =
+                [NSString stringWithUTF8String:info.sslCACertPath.c_str()];
+        }
+    }
+
+    // Populate SSH fields
+    if (info.ssh.enabled) {
+        self.sshEnabledCheckbox.state = NSControlStateValueOn;
+        self.sshHostField.stringValue = [NSString stringWithUTF8String:info.ssh.host.c_str()];
+        self.sshPortField.stringValue = [NSString stringWithFormat:@"%d", info.ssh.port];
+        self.sshUsernameField.stringValue =
+            [NSString stringWithUTF8String:info.ssh.username.c_str()];
+        if (info.ssh.authMethod == SSHAuthMethod::PrivateKey) {
+            self.sshAuthSegment.selectedSegment = 1;
+            self.sshKeyPathField.stringValue =
+                [NSString stringWithUTF8String:info.ssh.privateKeyPath.c_str()];
+        } else {
+            self.sshAuthSegment.selectedSegment = 0;
+            self.sshPasswordField.stringValue =
+                [NSString stringWithUTF8String:info.ssh.password.c_str()];
+        }
     }
 
     [self layoutFields];
@@ -347,14 +392,15 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.sslModeLabel = [self makeLabel:@"SSL Mode"];
     [cv addSubview:self.sslModeLabel];
     self.sslModePopup = [[NSPopUpButton alloc] init];
-    [self.sslModePopup addItemWithTitle:@"disable"];
-    [self.sslModePopup addItemWithTitle:@"allow"];
-    [self.sslModePopup addItemWithTitle:@"prefer"];
-    [self.sslModePopup addItemWithTitle:@"require"];
-    [self.sslModePopup addItemWithTitle:@"verify-ca"];
-    [self.sslModePopup addItemWithTitle:@"verify-full"];
-    [self.sslModePopup selectItemAtIndex:2]; // prefer
+    [self.sslModePopup setTarget:self];
+    [self.sslModePopup setAction:@selector(authChanged:)];
     [cv addSubview:self.sslModePopup];
+
+    // CA Certificate path (for verify-ca / verify-full)
+    self.sslCACertPathLabel = [self makeLabel:@"CA Cert"];
+    [cv addSubview:self.sslCACertPathLabel];
+    self.sslCACertPathField = [self makeTextField:@"/path/to/ca-cert.pem"];
+    [cv addSubview:self.sslCACertPathField];
 
     // Auth
     self.authLabel = [self makeLabel:@"Auth"];
@@ -387,6 +433,61 @@ static NSWindow* sActiveConnectionDialog = nil;
                                                    target:nil
                                                    action:nil];
     [cv addSubview:self.showAllDbsCheckbox];
+
+    // SSH Tunnel section
+    self.sshSeparator = [[NSBox alloc] init];
+    self.sshSeparator.boxType = NSBoxSeparator;
+    [cv addSubview:self.sshSeparator];
+
+    self.sshEnabledCheckbox = [NSButton checkboxWithTitle:@"Connect via SSH tunnel"
+                                                   target:self
+                                                   action:@selector(authChanged:)];
+    [cv addSubview:self.sshEnabledCheckbox];
+
+    self.sshHostLabel = [self makeLabel:@"SSH Host"];
+    [cv addSubview:self.sshHostLabel];
+    self.sshHostField = [self makeTextField:@"SSH server hostname"];
+    [cv addSubview:self.sshHostField];
+
+    self.sshPortLabel = [self makeLabel:@"SSH Port"];
+    [cv addSubview:self.sshPortLabel];
+    self.sshPortField = [self makeTextField:@"22"];
+    self.sshPortField.stringValue = @"22";
+    [cv addSubview:self.sshPortField];
+
+    self.sshUsernameLabel = [self makeLabel:@"SSH User"];
+    [cv addSubview:self.sshUsernameLabel];
+    self.sshUsernameField = [self makeTextField:@"SSH username"];
+    [cv addSubview:self.sshUsernameField];
+
+    self.sshAuthLabel = [self makeLabel:@"SSH Auth"];
+    [cv addSubview:self.sshAuthLabel];
+    self.sshAuthSegment =
+        [NSSegmentedControl segmentedControlWithLabels:@[ @"Password", @"Private Key" ]
+                                          trackingMode:NSSegmentSwitchTrackingSelectOne
+                                                target:self
+                                                action:@selector(authChanged:)];
+    self.sshAuthSegment.selectedSegment = 0;
+    [cv addSubview:self.sshAuthSegment];
+
+    self.sshPasswordLabel = [self makeLabel:@"SSH Pass"];
+    [cv addSubview:self.sshPasswordLabel];
+    self.sshPasswordField = [[NSSecureTextField alloc] init];
+    self.sshPasswordField.placeholderString = @"SSH password";
+    self.sshPasswordField.bezeled = YES;
+    self.sshPasswordField.bezelStyle = NSTextFieldRoundedBezel;
+    [cv addSubview:self.sshPasswordField];
+
+    self.sshKeyPathLabel = [self makeLabel:@"Key File"];
+    [cv addSubview:self.sshKeyPathLabel];
+    self.sshKeyPathField = [self makeTextField:@"~/.ssh/id_rsa"];
+    [cv addSubview:self.sshKeyPathField];
+    self.sshKeyBrowseButton = [[NSButton alloc] init];
+    [self.sshKeyBrowseButton setTitle:@"Browse…"];
+    [self.sshKeyBrowseButton setBezelStyle:NSBezelStyleRounded];
+    [self.sshKeyBrowseButton setTarget:self];
+    [self.sshKeyBrowseButton setAction:@selector(sshKeyBrowseClicked:)];
+    [cv addSubview:self.sshKeyBrowseButton];
 
     // Bottom separator
     self.bottomSeparator = [[NSBox alloc] init];
@@ -454,19 +555,35 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.portField.enabled = enabled;
     self.databaseField.enabled = enabled;
     self.sslModePopup.enabled = enabled;
+    self.sslCACertPathField.enabled = enabled;
     self.authSegment.enabled = enabled;
     self.usernameField.enabled = enabled;
     self.passwordField.enabled = enabled;
     self.showAllDbsCheckbox.enabled = enabled;
+    self.sshEnabledCheckbox.enabled = enabled;
+    self.sshHostField.enabled = enabled;
+    self.sshPortField.enabled = enabled;
+    self.sshUsernameField.enabled = enabled;
+    self.sshAuthSegment.enabled = enabled;
+    self.sshPasswordField.enabled = enabled;
+    self.sshKeyPathField.enabled = enabled;
+    self.sshKeyBrowseButton.enabled = enabled;
 }
 
 - (void)hideAllOptionalFields {
     for (NSView* v in @[
-             self.sqlitePathLabel, self.sqlitePathField, self.browseButton, self.hostLabel,
-             self.hostField, self.portLabel, self.portField, self.databaseLabel, self.databaseField,
-             self.sslModeLabel, self.sslModePopup, self.authLabel, self.authSegment,
-             self.usernameLabel, self.usernameField, self.passwordLabel, self.passwordField,
-             self.showAllDbsCheckbox
+             self.sqlitePathLabel,    self.sqlitePathField,    self.browseButton,
+             self.hostLabel,          self.hostField,          self.portLabel,
+             self.portField,          self.databaseLabel,      self.databaseField,
+             self.sslModeLabel,       self.sslModePopup,       self.sslCACertPathLabel,
+             self.sslCACertPathField, self.authLabel,          self.authSegment,
+             self.usernameLabel,      self.usernameField,      self.passwordLabel,
+             self.passwordField,      self.showAllDbsCheckbox, self.sshSeparator,
+             self.sshEnabledCheckbox, self.sshHostLabel,       self.sshHostField,
+             self.sshPortLabel,       self.sshPortField,       self.sshUsernameLabel,
+             self.sshUsernameField,   self.sshAuthLabel,       self.sshAuthSegment,
+             self.sshPasswordLabel,   self.sshPasswordField,   self.sshKeyPathLabel,
+             self.sshKeyPathField,    self.sshKeyBrowseButton
          ]) {
         v.hidden = YES;
     }
@@ -474,6 +591,50 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 - (DatabaseType)selectedDatabaseType {
     return static_cast<DatabaseType>([self.typePopup indexOfSelectedItem]);
+}
+
+- (void)rebuildSSLPopupForType:(DatabaseType)type {
+    auto cfg = getSslConfig(type);
+
+    // Skip rebuild if popup already has the right items for this type
+    if (self.sslModePopup.numberOfItems == cfg.count) {
+        NSString* firstTitle = [self.sslModePopup itemTitleAtIndex:0];
+        if (firstTitle && strcmp([firstTitle UTF8String], cfg.labels[0]) == 0)
+            return;
+    }
+
+    // Capture current sslmode value before rebuild
+    std::string currentLabel;
+    if (self.sslModePopup.numberOfItems > 0) {
+        NSString* title = [self.sslModePopup titleOfSelectedItem];
+        if (title)
+            currentLabel = [title UTF8String];
+    }
+
+    // Suppress action during mutation to prevent re-entrancy
+    [self.sslModePopup setAction:nil];
+
+    [self.sslModePopup removeAllItems];
+    for (int i = 0; i < cfg.count; i++) {
+        [self.sslModePopup addItemWithTitle:[NSString stringWithUTF8String:cfg.labels[i]]];
+    }
+
+    // Restore by matching label or value
+    bool restored = false;
+    if (!currentLabel.empty()) {
+        for (int i = 0; i < cfg.count; i++) {
+            if (currentLabel == cfg.labels[i]) {
+                [self.sslModePopup selectItemAtIndex:i];
+                restored = true;
+                break;
+            }
+        }
+    }
+    if (!restored) {
+        [self.sslModePopup selectItemAtIndex:cfg.defaultIdx];
+    }
+
+    [self.sslModePopup setAction:@selector(authChanged:)];
 }
 
 - (CGFloat)computeRequiredHeight {
@@ -492,8 +653,13 @@ static NSWindow* sActiveConnectionDialog = nil;
         if (type != DatabaseType::REDIS) {
             h += kRowHeight + kRowSpacing; // Database
         }
-        if (type == DatabaseType::POSTGRESQL) {
-            h += kRowHeight + kRowSpacing; // SSL Mode
+        h += kRowHeight + kRowSpacing; // SSL Mode
+        {
+            auto cfg = getSslConfig(type);
+            int sslIdx = (int)[self.sslModePopup indexOfSelectedItem];
+            if (sslIdx >= 0 && sslIdx < cfg.count && sslModeNeedsCACert(cfg.values[sslIdx])) {
+                h += kRowHeight + kRowSpacing; // CA cert path
+            }
         }
         h += kRowHeight + kRowSpacing; // Auth segment
         if (authIsCredentials) {
@@ -501,6 +667,20 @@ static NSWindow* sActiveConnectionDialog = nil;
         }
         if (type != DatabaseType::REDIS) {
             h += kRowHeight + kRowSpacing; // Show all databases
+        }
+
+        // SSH section
+        h += 1 + kRowSpacing;          // SSH separator
+        h += kRowHeight + kRowSpacing; // SSH enabled checkbox
+        if (self.sshEnabledCheckbox.state == NSControlStateValueOn) {
+            h += kRowHeight + kRowSpacing; // SSH host + port
+            h += kRowHeight + kRowSpacing; // SSH username
+            h += kRowHeight + kRowSpacing; // SSH auth segment
+            if (self.sshAuthSegment.selectedSegment == 0) {
+                h += kRowHeight + kRowSpacing; // SSH password
+            } else {
+                h += kRowHeight + kRowSpacing; // SSH key path
+            }
         }
     }
 
@@ -592,14 +772,27 @@ static NSWindow* sActiveConnectionDialog = nil;
             y -= kRowSpacing;
         }
 
-        // SSL Mode (PostgreSQL only)
-        if (type == DatabaseType::POSTGRESQL) {
-            self.sslModeLabel.hidden = NO;
-            self.sslModePopup.hidden = NO;
-            y -= kRowHeight;
-            self.sslModeLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
-            self.sslModePopup.frame = NSMakeRect(kFieldX, y, 150, kRowHeight);
-            y -= kRowSpacing;
+        // SSL Mode (per-backend items)
+        [self rebuildSSLPopupForType:type];
+        self.sslModeLabel.hidden = NO;
+        self.sslModePopup.hidden = NO;
+        y -= kRowHeight;
+        self.sslModeLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.sslModePopup.frame = NSMakeRect(kFieldX, y, 150, kRowHeight);
+        y -= kRowSpacing;
+
+        // CA cert path (when selected mode needs it)
+        {
+            auto cfg = getSslConfig(type);
+            int sslIdx = (int)[self.sslModePopup indexOfSelectedItem];
+            if (sslIdx >= 0 && sslIdx < cfg.count && sslModeNeedsCACert(cfg.values[sslIdx])) {
+                self.sslCACertPathLabel.hidden = NO;
+                self.sslCACertPathField.hidden = NO;
+                y -= kRowHeight;
+                self.sslCACertPathLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                self.sslCACertPathField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+                y -= kRowSpacing;
+            }
         }
 
         // Auth segment
@@ -632,6 +825,79 @@ static NSWindow* sActiveConnectionDialog = nil;
             y -= kRowHeight;
             self.showAllDbsCheckbox.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
             y -= kRowSpacing;
+        }
+
+        // SSH Tunnel section
+        self.sshSeparator.hidden = NO;
+        self.sshEnabledCheckbox.hidden = NO;
+
+        y -= 1;
+        self.sshSeparator.frame = NSMakeRect(kMargin, y, kDialogWidth - 2 * kMargin, 1);
+        y -= kRowSpacing;
+
+        y -= kRowHeight;
+        self.sshEnabledCheckbox.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+        y -= kRowSpacing;
+
+        bool sshEnabled = (self.sshEnabledCheckbox.state == NSControlStateValueOn);
+        if (sshEnabled) {
+            bool sshIsPassword = (self.sshAuthSegment.selectedSegment == 0);
+
+            // SSH Host + Port on same row
+            self.sshHostLabel.hidden = NO;
+            self.sshHostField.hidden = NO;
+            self.sshPortLabel.hidden = NO;
+            self.sshPortField.hidden = NO;
+            y -= kRowHeight;
+            self.sshHostLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            CGFloat sshPortW = 70;
+            CGFloat sshPortLabelW = 35;
+            CGFloat sshHostW = kFieldWidth - sshPortW - sshPortLabelW - 8 - 8;
+            self.sshHostField.frame = NSMakeRect(kFieldX, y, sshHostW, kRowHeight);
+            self.sshPortLabel.frame =
+                NSMakeRect(kFieldX + sshHostW + 8, y, sshPortLabelW, kRowHeight);
+            self.sshPortField.frame =
+                NSMakeRect(kFieldX + sshHostW + 8 + sshPortLabelW + 8, y, sshPortW, kRowHeight);
+            y -= kRowSpacing;
+
+            // SSH Username
+            self.sshUsernameLabel.hidden = NO;
+            self.sshUsernameField.hidden = NO;
+            y -= kRowHeight;
+            self.sshUsernameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.sshUsernameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+            y -= kRowSpacing;
+
+            // SSH Auth method
+            self.sshAuthLabel.hidden = NO;
+            self.sshAuthSegment.hidden = NO;
+            y -= kRowHeight;
+            self.sshAuthLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.sshAuthSegment.frame = NSMakeRect(kFieldX, y, 220, kRowHeight);
+            y -= kRowSpacing;
+
+            if (sshIsPassword) {
+                // SSH Password
+                self.sshPasswordLabel.hidden = NO;
+                self.sshPasswordField.hidden = NO;
+                y -= kRowHeight;
+                self.sshPasswordLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                self.sshPasswordField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+                y -= kRowSpacing;
+            } else {
+                // SSH Key path + Browse
+                self.sshKeyPathLabel.hidden = NO;
+                self.sshKeyPathField.hidden = NO;
+                self.sshKeyBrowseButton.hidden = NO;
+                y -= kRowHeight;
+                self.sshKeyPathLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                CGFloat browseW = 80;
+                self.sshKeyPathField.frame =
+                    NSMakeRect(kFieldX, y, kFieldWidth - browseW - 8, kRowHeight);
+                self.sshKeyBrowseButton.frame =
+                    NSMakeRect(kFieldX + kFieldWidth - browseW, y, browseW, kRowHeight);
+                y -= kRowSpacing;
+            }
         }
     }
 
@@ -717,6 +983,24 @@ static NSWindow* sActiveConnectionDialog = nil;
     }
 }
 
+- (void)sshKeyBrowseClicked:(id)sender {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = NO;
+
+    // Start in ~/.ssh
+    NSString* sshDir = [NSHomeDirectory() stringByAppendingPathComponent:@".ssh"];
+    panel.directoryURL = [NSURL fileURLWithPath:sshDir];
+
+    if ([panel runModal] == NSModalResponseOK) {
+        NSURL* url = panel.URL;
+        if (url) {
+            self.sshKeyPathField.stringValue = url.path;
+        }
+    }
+}
+
 - (void)cancelClicked:(id)sender {
     [self.dialogWindow close];
 }
@@ -793,8 +1077,30 @@ static NSWindow* sActiveConnectionDialog = nil;
         authEnabled ? std::string([self.passwordField.stringValue UTF8String]) : "";
     bool showAllDbs = (self.showAllDbsCheckbox.state == NSControlStateValueOn);
     int sslModeIdx = (int)[self.sslModePopup indexOfSelectedItem];
-    static const char* sslModes[] = {"disable", "allow",     "prefer",
-                                     "require", "verify-ca", "verify-full"};
+    auto sslCfg = getSslConfig(type);
+    SslMode sslModeValue = (sslModeIdx >= 0 && sslModeIdx < sslCfg.count)
+                               ? sslCfg.values[sslModeIdx]
+                               : SslMode::Disable;
+    std::string sslCACertPath = [self.sslCACertPathField.stringValue UTF8String];
+
+    // SSH tunnel fields
+    SSHConfig sshConfig;
+    sshConfig.enabled = (self.sshEnabledCheckbox.state == NSControlStateValueOn);
+    if (sshConfig.enabled) {
+        sshConfig.host = [self.sshHostField.stringValue UTF8String];
+        sshConfig.port = [self.sshPortField.stringValue intValue];
+        if (sshConfig.port <= 0 || sshConfig.port > 65535)
+            sshConfig.port = 22;
+        sshConfig.username = [self.sshUsernameField.stringValue UTF8String];
+        sshConfig.authMethod = (self.sshAuthSegment.selectedSegment == 0)
+                                   ? SSHAuthMethod::Password
+                                   : SSHAuthMethod::PrivateKey;
+        if (sshConfig.authMethod == SSHAuthMethod::Password) {
+            sshConfig.password = [self.sshPasswordField.stringValue UTF8String];
+        } else {
+            sshConfig.privateKeyPath = [self.sshKeyPathField.stringValue UTF8String];
+        }
+    }
 
     Application* appPtr = self.app;
     int editConnId = self.editingConnectionId;
@@ -806,6 +1112,24 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.statusLabel.stringValue = @"Please enter a username";
         self.statusLabel.textColor = [NSColor systemRedColor];
         return;
+    }
+
+    if (sshConfig.enabled) {
+        if (sshConfig.host.empty()) {
+            self.statusLabel.stringValue = @"Please enter an SSH host";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
+        if (sshConfig.username.empty()) {
+            self.statusLabel.stringValue = @"Please enter an SSH username";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
+        if (sshConfig.authMethod == SSHAuthMethod::PrivateKey && sshConfig.privateKeyPath.empty()) {
+            self.statusLabel.stringValue = @"Please select an SSH private key file";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
     }
 
     // UI feedback — disable all inputs while connecting
@@ -834,6 +1158,9 @@ static NSWindow* sActiveConnectionDialog = nil;
       info.host = host;
       info.port = port;
       info.showAllDatabases = showAllDbs;
+      info.ssh = sshConfig;
+      info.sslmode = sslModeValue;
+      info.sslCACertPath = sslCACertPath;
       if (authEnabled) {
           info.username = username;
           info.password = password;
@@ -844,7 +1171,6 @@ static NSWindow* sActiveConnectionDialog = nil;
       switch (type) {
       case DatabaseType::POSTGRESQL:
           info.database = database.empty() ? "postgres" : database;
-          info.sslmode = sslModes[sslModeIdx];
           db = std::make_shared<PostgresDatabase>(info);
           break;
       case DatabaseType::MYSQL:

@@ -5,6 +5,15 @@
 #include <iostream>
 #include <sstream>
 
+namespace {
+    struct RedisSSLInit {
+        RedisSSLInit() {
+            redisInitOpenSSL();
+        }
+    };
+    static RedisSSLInit redisSSLInitOnce;
+} // namespace
+
 RedisDatabase::RedisDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
 }
@@ -23,11 +32,31 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         redisFree(context);
         context = nullptr;
     }
+    if (sslCtx_) {
+        redisFreeSSLContext(sslCtx_);
+        sslCtx_ = nullptr;
+    }
     connected = false;
 
     setAttemptedConnection(true);
+    auto [prepOk, prepErr] = prepareConnectionForConnect();
+    if (!prepOk) {
+        setLastConnectionError(prepErr);
+        return {false, prepErr};
+    }
     std::cout << "Attempting Redis connection to " << connectionInfo.host << ":"
               << connectionInfo.port << std::endl;
+
+    auto cleanupConnectionState = [this]() {
+        if (context) {
+            redisFree(context);
+            context = nullptr;
+        }
+        if (sslCtx_) {
+            redisFreeSSLContext(sslCtx_);
+            sslCtx_ = nullptr;
+        }
+    };
 
     try {
         // Use redisConnectWithTimeout for better timeout handling
@@ -38,11 +67,37 @@ std::pair<bool, std::string> RedisDatabase::connect() {
             std::string error = context ? context->errstr : "Failed to allocate redis context";
             setLastConnectionError(error);
             std::cout << "Redis connection failed: " << error << std::endl;
-            if (context) {
-                redisFree(context);
-                context = nullptr;
-            }
+            cleanupConnectionState();
             return {false, error};
+        }
+
+        // TLS negotiation
+        if (connectionInfo.sslmode == SslMode::Require ||
+            connectionInfo.sslmode == SslMode::VerifyCA ||
+            connectionInfo.sslmode == SslMode::VerifyFull) {
+            redisSSLContextError sslErr = REDIS_SSL_CTX_NONE;
+            const char* caPath = (!connectionInfo.sslCACertPath.empty() &&
+                                  (connectionInfo.sslmode == SslMode::VerifyCA ||
+                                   connectionInfo.sslmode == SslMode::VerifyFull))
+                                     ? connectionInfo.sslCACertPath.c_str()
+                                     : nullptr;
+
+            sslCtx_ = redisCreateSSLContext(caPath, nullptr, nullptr, nullptr, nullptr, &sslErr);
+            if (!sslCtx_) {
+                std::string error =
+                    std::string("Redis SSL context failed: ") + redisSSLContextGetError(sslErr);
+                setLastConnectionError(error);
+                cleanupConnectionState();
+                return {false, error};
+            }
+
+            if (redisInitiateSSLWithContext(context, sslCtx_) != REDIS_OK) {
+                std::string error =
+                    context->errstr[0] ? context->errstr : "Redis TLS handshake failed";
+                setLastConnectionError(error);
+                cleanupConnectionState();
+                return {false, error};
+            }
         }
 
         // Authenticate if password is provided
@@ -70,8 +125,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
                 std::cout << "Redis authentication failed: " << error << std::endl;
                 if (reply)
                     freeReplyObject(reply);
-                redisFree(context);
-                context = nullptr;
+                cleanupConnectionState();
                 return {false, error};
             }
             freeReplyObject(reply);
@@ -85,8 +139,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
             setLastConnectionError(error);
             if (reply)
                 freeReplyObject(reply);
-            redisFree(context);
-            context = nullptr;
+            cleanupConnectionState();
             return {false, error};
         }
         freeReplyObject(reply);
@@ -99,10 +152,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
     } catch (const std::exception& e) {
         std::string error = e.what();
         setLastConnectionError(error);
-        if (context) {
-            redisFree(context);
-            context = nullptr;
-        }
+        cleanupConnectionState();
         return {false, error};
     }
 }
@@ -114,6 +164,11 @@ void RedisDatabase::disconnect() {
         std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString()
                   << std::endl;
     }
+    if (sslCtx_) {
+        redisFreeSSLContext(sslCtx_);
+        sslCtx_ = nullptr;
+    }
+    stopSshTunnel();
     connected = false;
 
     // Reset loading states

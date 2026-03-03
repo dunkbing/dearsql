@@ -5,6 +5,7 @@
 #include <atomic>
 #include <future>
 #include <hiredis/hiredis.h>
+#include <hiredis/hiredis_ssl.h>
 
 struct RedisKey {
     std::string name;
@@ -67,6 +68,7 @@ protected:
 private:
     // Redis-specific state (base class handles common state)
     redisContext* context = nullptr;
+    redisSSLContext* sslCtx_ = nullptr;
 
     // Async key loading future
     std::future<std::vector<Table>> keysFuture;

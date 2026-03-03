@@ -13,7 +13,10 @@
     },
     "openssl",
     "libmysql",
-    "hiredis",
+    {
+      "name": "hiredis",
+      "features": ["ssl"]
+    },
     "mongo-cxx-driver",
     "gtest",
     "nativefiledialog-extended",

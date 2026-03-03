@@ -63,11 +63,11 @@ struct StatementResult {
     bool success = true;
     std::string errorMessage;
 
-    // for SELECT queries
+    // SELECT
     std::vector<std::string> columnNames;
     std::vector<std::vector<std::string>> tableData;
 
-    // for INSERT/UPDATE/DELETE queries
+    // INSERT/UPDATE/DELETE
     int affectedRows = 0;
 
     // general info/message

@@ -77,6 +77,7 @@ find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(unofficial-libmysql CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
+find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(mongocxx CONFIG REQUIRED)
 find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
@@ -186,6 +187,8 @@ set(APP_SOURCES
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
+    src/database/ssh_tunnel.cpp
+    src/database/ssh_config_parser.cpp
 
     # UI
     src/ui/db_connection_dialog.cpp
@@ -289,6 +292,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
     hiredis::hiredis
+    hiredis::hiredis_ssl
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
     nfd::nfd
@@ -383,6 +387,7 @@ add_executable(database_tests
     tests/database/redis_database_test.cpp
     tests/database/mongodb_database_test.cpp
     tests/database/sql_builder_test.cpp
+    src/database/db_factory.cpp
     src/database/sqlite.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
@@ -395,6 +400,8 @@ add_executable(database_tests
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
+    src/database/ssh_tunnel.cpp
+    src/database/ssh_config_parser.cpp
     src/utils/logger.cpp
 )
 
@@ -409,6 +416,7 @@ target_link_libraries(database_tests PRIVATE
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
     hiredis::hiredis
+    hiredis::hiredis_ssl
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
 )

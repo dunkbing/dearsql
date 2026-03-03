@@ -41,8 +41,10 @@ namespace {
         if (!info.password.empty()) {
             connStr += " password=" + info.password;
         }
-        if (!info.sslmode.empty()) {
-            connStr += " sslmode=" + info.sslmode;
+        connStr += " sslmode=" + sslModeToString(info.sslmode);
+        if ((info.sslmode == SslMode::VerifyCA || info.sslmode == SslMode::VerifyFull) &&
+            !info.sslCACertPath.empty()) {
+            connStr += " sslrootcert=" + info.sslCACertPath;
         }
         return connStr;
     }
@@ -186,6 +188,12 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
     }
 
     setAttemptedConnection(true);
+    auto [prepOk, prepErr] = prepareConnectionForConnect();
+    if (!prepOk) {
+        connected = false;
+        setLastConnectionError(prepErr);
+        return {false, prepErr};
+    }
 
     try {
         ensureConnectionPoolForDatabase(connectionInfo);
@@ -230,6 +238,7 @@ void PostgresDatabase::disconnect() {
                 dbDataPtr->connectionPool.reset();
             }
         }
+        stopSshTunnel();
         connected = false;
         return;
     }
@@ -241,6 +250,7 @@ void PostgresDatabase::disconnect() {
             dbDataPtr->connectionPool.reset();
         }
     }
+    stopSshTunnel();
     connected = false;
 }
 

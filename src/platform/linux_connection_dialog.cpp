@@ -10,6 +10,8 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/ssh_config_parser.hpp"
+#include "database/ssl_config.hpp"
 #include "platform/linux_platform.hpp"
 #include "utils/file_dialog.hpp"
 #include <atomic>
@@ -42,6 +44,8 @@ struct ConnectionDialogData {
 
     // SSL
     GtkWidget* sslModeDropdown = nullptr;
+    GtkWidget* sslCACertPathEntry = nullptr;
+    GtkWidget* sslCACertPathRow = nullptr;
 
     // Auth
     GtkWidget* authPasswordRadio = nullptr;
@@ -52,6 +56,24 @@ struct ConnectionDialogData {
 
     // Show all databases
     GtkWidget* showAllDbsCheck = nullptr;
+
+    // SSH Tunnel
+    GtkWidget* sshExpander = nullptr;
+    GtkWidget* sshEnabledCheck = nullptr;
+    GtkWidget* sshFieldsBox = nullptr;
+    GtkWidget* sshHostEntry = nullptr;
+    GtkWidget* sshPortEntry = nullptr;
+    GtkWidget* sshUsernameEntry = nullptr;
+    GtkWidget* sshAuthPasswordRadio = nullptr;
+    GtkWidget* sshAuthKeyRadio = nullptr;
+    GtkWidget* sshPasswordEntry = nullptr;
+    GtkWidget* sshPasswordRow = nullptr;
+    GtkWidget* sshKeyPathEntry = nullptr;
+    GtkWidget* sshKeyRow = nullptr;
+
+    // Cached SSH config hosts
+    std::vector<SSHHostEntry> sshConfigHosts;
+    bool sshConfigLoaded = false;
 
     // Bottom
     GtkWidget* statusLabel = nullptr;
@@ -93,9 +115,7 @@ static GtkWidget* sActiveCreateDatabaseDialog = nullptr;
 // Constants
 // ---------------------------------------------------------------------------
 
-static constexpr const char* kSslModes[] = {"disable", "allow",     "prefer",
-                                            "require", "verify-ca", "verify-full"};
-static constexpr int kSslModeCount = 6;
+// SslModeConfig, getSslConfig(), sslModeNeedsCACert() from ssl_config.hpp
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -167,12 +187,26 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     data->portEntry = nullptr;
     data->databaseEntry = nullptr;
     data->sslModeDropdown = nullptr;
+    data->sslCACertPathEntry = nullptr;
+    data->sslCACertPathRow = nullptr;
     data->authPasswordRadio = nullptr;
     data->authNoneRadio = nullptr;
     data->usernameEntry = nullptr;
     data->passwordEntry = nullptr;
     data->credentialsRow = nullptr;
     data->showAllDbsCheck = nullptr;
+    data->sshExpander = nullptr;
+    data->sshEnabledCheck = nullptr;
+    data->sshFieldsBox = nullptr;
+    data->sshHostEntry = nullptr;
+    data->sshPortEntry = nullptr;
+    data->sshUsernameEntry = nullptr;
+    data->sshAuthPasswordRadio = nullptr;
+    data->sshAuthKeyRadio = nullptr;
+    data->sshPasswordEntry = nullptr;
+    data->sshPasswordRow = nullptr;
+    data->sshKeyPathEntry = nullptr;
+    data->sshKeyRow = nullptr;
 
     int selectedType = gtk_drop_down_get_selected(GTK_DROP_DOWN(data->typeDropdown));
     auto type = static_cast<DatabaseType>(selectedType);
@@ -244,11 +278,35 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         gtk_box_append(GTK_BOX(data->fieldsBox), dbRow);
     }
 
-    // SSL Mode (PostgreSQL only)
-    if (type == DatabaseType::POSTGRESQL) {
-        data->sslModeDropdown = makeStringDropdown(kSslModes, kSslModeCount, 2);
+    // SSL Mode (all server types)
+    if (type != DatabaseType::SQLITE) {
+        auto sslCfg = getSslConfig(type);
+        data->sslModeDropdown = makeStringDropdown(sslCfg.labels, sslCfg.count, sslCfg.defaultIdx);
         GtkWidget* sslRow = makeRow(makeLabel("SSL Mode"), data->sslModeDropdown);
         gtk_box_append(GTK_BOX(data->fieldsBox), sslRow);
+
+        data->sslCACertPathEntry = makeEntry("/path/to/ca-cert.pem");
+        data->sslCACertPathRow = makeRow(makeLabel("CA Cert"), data->sslCACertPathEntry);
+        gtk_box_append(GTK_BOX(data->fieldsBox), data->sslCACertPathRow);
+        gtk_widget_set_visible(data->sslCACertPathRow, FALSE);
+
+        // Show CA cert row when verify-ca or verify-full selected
+        g_signal_connect(data->sslModeDropdown, "notify::selected",
+                         G_CALLBACK(+[](GObject* obj, GParamSpec*, gpointer userdata) {
+                             auto* d = static_cast<ConnectionDialogData*>(userdata);
+                             if (!d->sslCACertPathRow || !d->sslModeDropdown || !d->typeDropdown)
+                                 return;
+                             auto type = static_cast<DatabaseType>(
+                                 gtk_drop_down_get_selected(GTK_DROP_DOWN(d->typeDropdown)));
+                             auto cfg = getSslConfig(type);
+                             guint idx =
+                                 gtk_drop_down_get_selected(GTK_DROP_DOWN(d->sslModeDropdown));
+                             SslMode val =
+                                 (idx < (guint)cfg.count) ? cfg.values[idx] : SslMode::Disable;
+                             bool showCa = sslModeNeedsCACert(val);
+                             gtk_widget_set_visible(d->sslCACertPathRow, showCa);
+                         }),
+                         data);
     }
 
     // Auth radio
@@ -296,6 +354,166 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         gtk_box_append(GTK_BOX(checkRow), data->showAllDbsCheck);
         gtk_box_append(GTK_BOX(data->fieldsBox), checkRow);
     }
+
+    // --- SSH Tunnel section ---
+    GtkWidget* sshSep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_append(GTK_BOX(data->fieldsBox), sshSep);
+
+    data->sshEnabledCheck = gtk_check_button_new_with_label("Connect via SSH tunnel");
+    GtkWidget* sshEnableRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget* sshSpacer = gtk_label_new("");
+    gtk_widget_set_size_request(sshSpacer, 90, -1);
+    gtk_box_append(GTK_BOX(sshEnableRow), sshSpacer);
+    gtk_box_append(GTK_BOX(sshEnableRow), data->sshEnabledCheck);
+    gtk_box_append(GTK_BOX(data->fieldsBox), sshEnableRow);
+
+    data->sshFieldsBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_sensitive(data->sshFieldsBox, FALSE);
+    gtk_box_append(GTK_BOX(data->fieldsBox), data->sshFieldsBox);
+
+    // SSH Host + Port
+    data->sshHostEntry = makeEntry("SSH host");
+    data->sshPortEntry = makeEntry("22");
+    gtk_editable_set_text(GTK_EDITABLE(data->sshPortEntry), "22");
+    gtk_widget_set_size_request(data->sshPortEntry, 70, -1);
+    gtk_widget_set_hexpand(data->sshPortEntry, FALSE);
+
+    GtkWidget* sshHostRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(sshHostRow), makeLabel("SSH Host"));
+    gtk_box_append(GTK_BOX(sshHostRow), data->sshHostEntry);
+    GtkWidget* sshPortLabel = gtk_label_new("Port");
+    gtk_widget_add_css_class(sshPortLabel, "dim-label");
+    gtk_box_append(GTK_BOX(sshHostRow), sshPortLabel);
+    gtk_box_append(GTK_BOX(sshHostRow), data->sshPortEntry);
+    gtk_box_append(GTK_BOX(data->sshFieldsBox), sshHostRow);
+
+    // SSH Username
+    data->sshUsernameEntry = makeEntry("SSH username");
+    GtkWidget* sshUserRow = makeRow(makeLabel("SSH User"), data->sshUsernameEntry);
+    gtk_box_append(GTK_BOX(data->sshFieldsBox), sshUserRow);
+
+    // SSH Auth method radios
+    data->sshAuthPasswordRadio = gtk_check_button_new_with_label("Password");
+    data->sshAuthKeyRadio = gtk_check_button_new_with_label("Private Key");
+    gtk_check_button_set_group(GTK_CHECK_BUTTON(data->sshAuthKeyRadio),
+                               GTK_CHECK_BUTTON(data->sshAuthPasswordRadio));
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshAuthPasswordRadio), TRUE);
+
+    GtkWidget* sshAuthRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(sshAuthRow), makeLabel("SSH Auth"));
+    gtk_box_append(GTK_BOX(sshAuthRow), data->sshAuthPasswordRadio);
+    gtk_box_append(GTK_BOX(sshAuthRow), data->sshAuthKeyRadio);
+    gtk_box_append(GTK_BOX(data->sshFieldsBox), sshAuthRow);
+
+    // SSH Password row
+    data->sshPasswordEntry = gtk_password_entry_new();
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(data->sshPasswordEntry), TRUE);
+    gtk_widget_set_hexpand(data->sshPasswordEntry, TRUE);
+    data->sshPasswordRow = makeRow(makeLabel("SSH Pass"), data->sshPasswordEntry);
+    gtk_box_append(GTK_BOX(data->sshFieldsBox), data->sshPasswordRow);
+
+    // SSH Key path row
+    data->sshKeyPathEntry = makeEntry("~/.ssh/id_rsa");
+    GtkWidget* browseKeyBtn = gtk_button_new_with_label("Browse...");
+    g_signal_connect(
+        browseKeyBtn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer ud) {
+            auto* d = static_cast<ConnectionDialogData*>(ud);
+            GtkWidget* chooser = gtk_file_chooser_dialog_new(
+                "Select Private Key", GTK_WINDOW(d->dialog), GTK_FILE_CHOOSER_ACTION_OPEN,
+                "_Cancel", GTK_RESPONSE_CANCEL, "_Open", GTK_RESPONSE_ACCEPT, nullptr);
+
+            // Default to ~/.ssh/
+            const char* home = g_get_home_dir();
+            if (home) {
+                std::string sshDir = std::string(home) + "/.ssh";
+                auto* folder = g_file_new_for_path(sshDir.c_str());
+                gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(chooser), folder, nullptr);
+                g_object_unref(folder);
+            }
+
+            gtk_widget_set_visible(chooser, TRUE);
+            g_signal_connect(
+                chooser, "response", G_CALLBACK(+[](GtkDialog* dlg, int response, gpointer ud2) {
+                    auto* d2 = static_cast<ConnectionDialogData*>(ud2);
+                    if (response == GTK_RESPONSE_ACCEPT) {
+                        auto* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dlg));
+                        if (file) {
+                            char* path = g_file_get_path(file);
+                            if (path) {
+                                gtk_editable_set_text(GTK_EDITABLE(d2->sshKeyPathEntry), path);
+                                g_free(path);
+                            }
+                            g_object_unref(file);
+                        }
+                    }
+                    gtk_window_destroy(GTK_WINDOW(dlg));
+                }),
+                d);
+        }),
+        data);
+
+    data->sshKeyRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(data->sshKeyRow), makeLabel("Key File"));
+    gtk_box_append(GTK_BOX(data->sshKeyRow), data->sshKeyPathEntry);
+    gtk_box_append(GTK_BOX(data->sshKeyRow), browseKeyBtn);
+    gtk_widget_set_visible(data->sshKeyRow, FALSE);
+    gtk_box_append(GTK_BOX(data->sshFieldsBox), data->sshKeyRow);
+
+    // Toggle SSH auth method visibility
+    g_signal_connect(data->sshAuthPasswordRadio, "toggled",
+                     G_CALLBACK(+[](GtkCheckButton*, gpointer ud) {
+                         auto* d = static_cast<ConnectionDialogData*>(ud);
+                         bool passwordAuth =
+                             gtk_check_button_get_active(GTK_CHECK_BUTTON(d->sshAuthPasswordRadio));
+                         gtk_widget_set_visible(d->sshPasswordRow, passwordAuth);
+                         gtk_widget_set_visible(d->sshKeyRow, !passwordAuth);
+                     }),
+                     data);
+
+    // Toggle SSH fields sensitivity
+    g_signal_connect(
+        data->sshEnabledCheck, "toggled", G_CALLBACK(+[](GtkCheckButton*, gpointer ud) {
+            auto* d = static_cast<ConnectionDialogData*>(ud);
+            bool enabled = gtk_check_button_get_active(GTK_CHECK_BUTTON(d->sshEnabledCheck));
+            gtk_widget_set_sensitive(d->sshFieldsBox, enabled);
+        }),
+        data);
+
+    // Auto-fill from ~/.ssh/config when SSH host changes
+    g_signal_connect(data->sshHostEntry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer ud) {
+                         auto* d = static_cast<ConnectionDialogData*>(ud);
+                         if (!d->sshConfigLoaded) {
+                             d->sshConfigHosts = parseSSHConfig();
+                             d->sshConfigLoaded = true;
+                         }
+                         const char* text = gtk_editable_get_text(GTK_EDITABLE(d->sshHostEntry));
+                         if (!text)
+                             return;
+                         std::string hostText(text);
+                         for (const auto& entry : d->sshConfigHosts) {
+                             if (entry.alias == hostText) {
+                                 if (!entry.hostname.empty())
+                                     gtk_editable_set_text(GTK_EDITABLE(d->sshHostEntry),
+                                                           entry.hostname.c_str());
+                                 if (!entry.user.empty())
+                                     gtk_editable_set_text(GTK_EDITABLE(d->sshUsernameEntry),
+                                                           entry.user.c_str());
+                                 if (entry.port != 22) {
+                                     char portBuf[16];
+                                     snprintf(portBuf, sizeof(portBuf), "%d", entry.port);
+                                     gtk_editable_set_text(GTK_EDITABLE(d->sshPortEntry), portBuf);
+                                 }
+                                 if (!entry.identityFile.empty()) {
+                                     gtk_editable_set_text(GTK_EDITABLE(d->sshKeyPathEntry),
+                                                           entry.identityFile.c_str());
+                                     gtk_check_button_set_active(
+                                         GTK_CHECK_BUTTON(d->sshAuthKeyRadio), TRUE);
+                                 }
+                                 break;
+                             }
+                         }
+                     }),
+                     data);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,11 +639,65 @@ static void connectServerAsync(ConnectionDialogData* data) {
     int sslModeIdx = data->sslModeDropdown
                          ? gtk_drop_down_get_selected(GTK_DROP_DOWN(data->sslModeDropdown))
                          : 2;
+    std::string sslCACertPath;
+    if (data->sslCACertPathEntry) {
+        const char* v = gtk_editable_get_text(GTK_EDITABLE(data->sslCACertPathEntry));
+        sslCACertPath = v ? v : "";
+    }
+
+    // Read SSH config
+    bool sshEnabled = data->sshEnabledCheck &&
+                      gtk_check_button_get_active(GTK_CHECK_BUTTON(data->sshEnabledCheck));
+    SSHConfig sshConfig;
+    if (sshEnabled) {
+        sshConfig.enabled = true;
+        const char* sshHost =
+            data->sshHostEntry ? gtk_editable_get_text(GTK_EDITABLE(data->sshHostEntry)) : "";
+        const char* sshPortStr =
+            data->sshPortEntry ? gtk_editable_get_text(GTK_EDITABLE(data->sshPortEntry)) : "22";
+        const char* sshUser = data->sshUsernameEntry
+                                  ? gtk_editable_get_text(GTK_EDITABLE(data->sshUsernameEntry))
+                                  : "";
+        sshConfig.host = sshHost ? sshHost : "";
+        sshConfig.port = sshPortStr ? atoi(sshPortStr) : 22;
+        if (sshConfig.port <= 0)
+            sshConfig.port = 22;
+        sshConfig.username = sshUser ? sshUser : "";
+
+        bool useKey = data->sshAuthKeyRadio &&
+                      gtk_check_button_get_active(GTK_CHECK_BUTTON(data->sshAuthKeyRadio));
+        if (useKey) {
+            sshConfig.authMethod = SSHAuthMethod::PrivateKey;
+            const char* keyPath = data->sshKeyPathEntry
+                                      ? gtk_editable_get_text(GTK_EDITABLE(data->sshKeyPathEntry))
+                                      : "";
+            sshConfig.privateKeyPath = keyPath ? keyPath : "";
+        } else {
+            sshConfig.authMethod = SSHAuthMethod::Password;
+            const char* sshPass = data->sshPasswordEntry
+                                      ? gtk_editable_get_text(GTK_EDITABLE(data->sshPasswordEntry))
+                                      : "";
+            sshConfig.password = sshPass ? sshPass : "";
+        }
+    }
 
     // Validate
     if (authEnabled && (!username || strlen(username) == 0) && type != DatabaseType::MONGODB &&
         type != DatabaseType::REDIS) {
         gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please enter a username");
+        return;
+    }
+    if (sshEnabled && sshConfig.host.empty()) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please enter an SSH host");
+        return;
+    }
+    if (sshEnabled && sshConfig.username.empty()) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please enter an SSH username");
+        return;
+    }
+    if (sshEnabled && sshConfig.authMethod == SSHAuthMethod::PrivateKey &&
+        sshConfig.privateKeyPath.empty()) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please select an SSH private key file");
         return;
     }
 
@@ -459,6 +731,10 @@ static void connectServerAsync(ConnectionDialogData* data) {
         info.host = hostStr;
         info.port = port;
         info.showAllDatabases = showAllDbs;
+        auto sslCfg = getSslConfig(type);
+        info.sslmode = (sslModeIdx < sslCfg.count) ? sslCfg.values[sslModeIdx] : SslMode::Disable;
+        info.sslCACertPath = sslCACertPath;
+        info.ssh = sshConfig;
 
         if (authEnabled) {
             info.username = userStr;
@@ -469,7 +745,6 @@ static void connectServerAsync(ConnectionDialogData* data) {
         switch (type) {
         case DatabaseType::POSTGRESQL:
             info.database = dbStr.empty() ? "postgres" : dbStr;
-            info.sslmode = kSslModes[sslModeIdx];
             db = std::make_shared<PostgresDatabase>(info);
             break;
         case DatabaseType::MYSQL:
@@ -699,14 +974,6 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
         if (data->showAllDbsCheck)
             gtk_check_button_set_active(GTK_CHECK_BUTTON(data->showAllDbsCheck),
                                         info.showAllDatabases);
-        if (data->sslModeDropdown) {
-            for (int i = 0; i < kSslModeCount; i++) {
-                if (info.sslmode == kSslModes[i]) {
-                    gtk_drop_down_set_selected(GTK_DROP_DOWN(data->sslModeDropdown), i);
-                    break;
-                }
-            }
-        }
         if (info.username.empty()) {
             if (data->authNoneRadio)
                 gtk_check_button_set_active(GTK_CHECK_BUTTON(data->authNoneRadio), TRUE);
@@ -768,6 +1035,48 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
                 gtk_editable_set_text(GTK_EDITABLE(data->passwordEntry), info.password.c_str());
         }
         break;
+    }
+
+    // Restore SSL mode (all server types)
+    if (info.type != DatabaseType::SQLITE && data->sslModeDropdown) {
+        auto sslCfg = getSslConfig(info.type);
+        for (int i = 0; i < sslCfg.count; i++) {
+            if (info.sslmode == sslCfg.values[i]) {
+                gtk_drop_down_set_selected(GTK_DROP_DOWN(data->sslModeDropdown), i);
+                break;
+            }
+        }
+        if (data->sslCACertPathEntry && !info.sslCACertPath.empty())
+            gtk_editable_set_text(GTK_EDITABLE(data->sslCACertPathEntry),
+                                  info.sslCACertPath.c_str());
+    }
+
+    // Restore SSH tunnel fields (all server types)
+    if (info.type != DatabaseType::SQLITE && info.ssh.enabled) {
+        if (data->sshEnabledCheck)
+            gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshEnabledCheck), TRUE);
+        if (data->sshHostEntry)
+            gtk_editable_set_text(GTK_EDITABLE(data->sshHostEntry), info.ssh.host.c_str());
+        if (data->sshPortEntry) {
+            char portBuf[16];
+            snprintf(portBuf, sizeof(portBuf), "%d", info.ssh.port);
+            gtk_editable_set_text(GTK_EDITABLE(data->sshPortEntry), portBuf);
+        }
+        if (data->sshUsernameEntry)
+            gtk_editable_set_text(GTK_EDITABLE(data->sshUsernameEntry), info.ssh.username.c_str());
+        if (info.ssh.authMethod == SSHAuthMethod::PrivateKey) {
+            if (data->sshAuthKeyRadio)
+                gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshAuthKeyRadio), TRUE);
+            if (data->sshKeyPathEntry)
+                gtk_editable_set_text(GTK_EDITABLE(data->sshKeyPathEntry),
+                                      info.ssh.privateKeyPath.c_str());
+        } else {
+            if (data->sshAuthPasswordRadio)
+                gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshAuthPasswordRadio), TRUE);
+            if (data->sshPasswordEntry)
+                gtk_editable_set_text(GTK_EDITABLE(data->sshPasswordEntry),
+                                      info.ssh.password.c_str());
+        }
     }
 }
 

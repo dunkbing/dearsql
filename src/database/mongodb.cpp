@@ -53,6 +53,12 @@ std::pair<bool, std::string> MongoDBDatabase::connect() {
     }
 
     setAttemptedConnection(true);
+    auto [prepOk, prepErr] = prepareConnectionForConnect();
+    if (!prepOk) {
+        connected = false;
+        setLastConnectionError(prepErr);
+        return {false, prepErr};
+    }
 
     try {
         std::string uri = connectionInfo.buildConnectionString();
@@ -91,6 +97,7 @@ std::pair<bool, std::string> MongoDBDatabase::connect() {
 void MongoDBDatabase::disconnect() {
     std::lock_guard lock(poolMutex);
     connectionPool.reset();
+    stopSshTunnel();
     connected = false;
 }
 

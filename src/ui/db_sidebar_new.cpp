@@ -41,7 +41,11 @@ DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<Databa
 }
 
 void DatabaseSidebarNew::showConnectionDialog() {
-    shouldShowConnectionDialog = true;
+#if defined(__APPLE__)
+    showMacOSConnectionDialog(&Application::getInstance());
+#elif defined(__linux__)
+    showLinuxConnectionDialog(&Application::getInstance());
+#endif
 }
 
 void DatabaseSidebarNew::renderEmpty() {
@@ -288,65 +292,6 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
-#if defined(__APPLE__)
-    if (shouldShowConnectionDialog) {
-        showMacOSConnectionDialog(&app);
-        shouldShowConnectionDialog = false;
-    }
-    if (databaseToEdit) {
-        showMacOSEditConnectionDialog(&app, databaseToEdit, databaseToEdit->getConnectionId());
-        databaseToEdit = nullptr;
-    }
-    if (shouldShowNativeCreateDatabaseDialog && nativeCreateDatabaseTarget) {
-        showMacOSCreateDatabaseDialog(&app, nativeCreateDatabaseTarget);
-        shouldShowNativeCreateDatabaseDialog = false;
-        nativeCreateDatabaseTarget = nullptr;
-    }
-#elif defined(__linux__)
-    if (shouldShowConnectionDialog) {
-        showLinuxConnectionDialog(&app);
-        shouldShowConnectionDialog = false;
-    }
-    if (databaseToEdit) {
-        showLinuxEditConnectionDialog(&app, databaseToEdit, databaseToEdit->getConnectionId());
-        databaseToEdit = nullptr;
-    }
-    if (shouldShowNativeCreateDatabaseDialog && nativeCreateDatabaseTarget) {
-        showLinuxCreateDatabaseDialog(&app, nativeCreateDatabaseTarget);
-        shouldShowNativeCreateDatabaseDialog = false;
-        nativeCreateDatabaseTarget = nullptr;
-    }
-#else
-    if (shouldShowConnectionDialog) {
-        connectionDialog.showDialog();
-        shouldShowConnectionDialog = false;
-    }
-
-    if (databaseToEdit) {
-        connectionDialog.editConnection(databaseToEdit);
-        connectionDialog.showDialog();
-        databaseToEdit = nullptr;
-    }
-
-    // Always render the dialog to handle multi-frame interactions
-    if (connectionDialog.isDialogOpen()) {
-        connectionDialog.showDialog();
-    }
-
-    // Check if dialog completed and get result
-    if (const auto db = connectionDialog.getResult()) {
-        auto [success, error] = db->connect();
-        if (success) {
-            Logger::info(
-                std::format("Database connection established: {}", db->getConnectionInfo().name));
-            app.addDatabase(db);
-        } else {
-            Logger::error(std::format("Failed to connect to database '{}': {}",
-                                      db->getConnectionInfo().name, error));
-        }
-    }
-#endif
-
     // Calculate available height for the sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float sidebarWidth = ImGui::GetContentRegionAvail().x;
@@ -468,31 +413,6 @@ void DatabaseSidebarNew::render() {
         renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
     }
 
-    // Handle delete confirmation dialog
-    if (shouldShowDeleteConfirmation && databasePendingDeletion) {
-        const auto db = databasePendingDeletion;
-        auto const connectionInfo = db->getConnectionInfo();
-
-        Alert::show(
-            "Remove Database",
-            std::format("Remove '{}' and delete the saved connection?", connectionInfo.name),
-            {{"Cancel", [this]() { databasePendingDeletion.reset(); }, AlertButton::Style::Cancel},
-             {"Remove",
-              [this, db, &app, connectionInfo]() {
-                  if (app.getAppState()->deleteConnection(db->getConnectionId())) {
-                      Logger::info(
-                          std::format("Removed saved connection: {}", connectionInfo.name));
-                  }
-                  Logger::info(std::format("Database removed: {}", connectionInfo.name));
-                  hierarchyCache.erase(db.get());
-                  app.removeDatabase(db);
-                  databasePendingDeletion.reset();
-              },
-              AlertButton::Style::Destructive}});
-
-        shouldShowDeleteConfirmation = false;
-    }
-
     // dialogs
     if (TableDialog::instance().isOpen()) {
         TableDialog::instance().render();
@@ -500,113 +420,6 @@ void DatabaseSidebarNew::render() {
 
     if (InputDialog::instance().isOpen()) {
         InputDialog::instance().render();
-    }
-
-    // Handle create database dialog
-    if (shouldShowCreateDatabaseDialog) {
-        ImGui::OpenPopup("Create Database");
-        shouldShowCreateDatabaseDialog = false;
-    }
-
-    if (ImGui::BeginPopupModal("Create Database", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        auto db = createDatabaseTarget;
-        static char dbName[256] = "";
-        static char dbComment[512] = "";
-        static std::string errorMessage;
-
-        if (!db) {
-            ImGui::Text("No connection selected.");
-            if (ImGui::Button("Close", ImVec2(120, 0))) {
-                createDatabaseTarget.reset();
-                ImGui::CloseCurrentPopup();
-            }
-        } else {
-            auto const connectionInfo = db->getConnectionInfo();
-            const auto dbType = connectionInfo.type;
-            ImGui::Text("Create new database on:");
-            ImGui::Text("Connection: %s", connectionInfo.name.c_str());
-            ImGui::Text("Type: %s", dbType == DatabaseType::POSTGRESQL ? "PostgreSQL" : "MySQL");
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            ImGui::Text("Database Name:");
-            ImGui::SetNextItemWidth(300);
-            ImGui::InputText("##db_name", dbName, sizeof(dbName));
-
-            ImGui::Spacing();
-
-            if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
-                ImGui::Text("Comment (optional):");
-                ImGui::SetNextItemWidth(300);
-                ImGui::InputText("##db_comment", dbComment, sizeof(dbComment));
-                ImGui::Spacing();
-            }
-
-            if (!errorMessage.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-                ImGui::TextWrapped("Error: %s", errorMessage.c_str());
-                ImGui::PopStyleColor();
-                ImGui::Spacing();
-            }
-
-            ImGui::Separator();
-
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
-
-            if (ImGui::Button("Create Database", ImVec2(120, 0))) {
-                if (strlen(dbName) == 0) {
-                    errorMessage = "Database name cannot be empty";
-                } else {
-                    const std::string comment =
-                        (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB)
-                            ? dbComment
-                            : "";
-                    auto [success, createError] = db->createDatabase(dbName, comment);
-                    if (!success) {
-                        errorMessage =
-                            createError.empty() ? "Failed to create database" : createError;
-                    } else {
-                        Logger::info(std::format("Database '{}' created successfully", dbName));
-                        memset(dbName, 0, sizeof(dbName));
-                        memset(dbComment, 0, sizeof(dbComment));
-                        errorMessage.clear();
-                        ImGui::CloseCurrentPopup();
-
-                        if (dbType == DatabaseType::POSTGRESQL) {
-                            if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                                pgDb->refreshDatabaseNames();
-                            }
-                        } else if (dbType == DatabaseType::MYSQL ||
-                                   dbType == DatabaseType::MARIADB) {
-                            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                                mysqlDb->refreshDatabaseNames();
-                            }
-                        }
-                        createDatabaseTarget.reset();
-                    }
-                }
-            }
-
-            ImGui::PopStyleColor(3);
-            ImGui::SameLine();
-
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
-
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-                memset(dbName, 0, sizeof(dbName));
-                memset(dbComment, 0, sizeof(dbComment));
-                errorMessage.clear();
-                createDatabaseTarget.reset();
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::PopStyleColor(3);
-        }
-        ImGui::EndPopup();
     }
 
     ImGui::PopStyleColor(3);
@@ -772,19 +585,18 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 ImGui::Separator();
             }
         }
+        auto& app = Application::getInstance();
 
-        // Create New Database (PostgreSQL and MySQL only, when connected)
+        // Create New Database (when connected)
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL ||
                 dbType == DatabaseType::MARIADB) {
                 if (ImGui::MenuItem("Create New Database")) {
-#if defined(__APPLE__) || defined(__linux__)
-                    nativeCreateDatabaseTarget = db;
-                    shouldShowNativeCreateDatabaseDialog = true;
-#else
-                    createDatabaseTarget = db;
-                    shouldShowCreateDatabaseDialog = true;
+#if defined(__APPLE__)
+                    showMacOSCreateDatabaseDialog(&app, db);
+#elif defined(__linux__)
+                    showLinuxCreateDatabaseDialog(&app, db);
 #endif
                 }
                 ImGui::Separator();
@@ -792,7 +604,11 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
 
         if (ImGui::MenuItem("Edit connection")) {
-            databaseToEdit = db;
+#if defined(__APPLE__)
+            showMacOSEditConnectionDialog(&app, db);
+#elif defined(__linux__)
+            showLinuxEditConnectionDialog(&app, db);
+#endif
         }
 
         if (db->isConnected()) {
@@ -803,8 +619,21 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
         ImGui::Separator();
         if (ImGui::MenuItem("Remove Database")) {
-            shouldShowDeleteConfirmation = true;
-            databasePendingDeletion = db;
+            auto const connectionInfo = db->getConnectionInfo();
+            Alert::show(
+                "Remove Database",
+                std::format("Remove '{}' and delete the saved connection?", connectionInfo.name),
+                {{"Cancel", []() {}, AlertButton::Style::Cancel},
+                 {"Remove",
+                  [db, &app, connectionInfo]() {
+                      if (app.getAppState()->deleteConnection(db->getConnectionId())) {
+                          Logger::info(
+                              std::format("Removed saved connection: {}", connectionInfo.name));
+                      }
+                      Logger::info(std::format("Database removed: {}", connectionInfo.name));
+                      app.removeDatabase(db);
+                  },
+                  AlertButton::Style::Destructive}});
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {

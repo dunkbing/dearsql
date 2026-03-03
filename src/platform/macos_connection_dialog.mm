@@ -1921,15 +1921,14 @@ void showMacOSConnectionDialog(Application* app) {
     [controller release]; // associated object on the window holds the retain
 }
 
-void showMacOSEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db,
-                                   int connectionId) {
+void showMacOSEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveConnectionDialog) {
         [sActiveConnectionDialog makeKeyAndOrderFront:nil];
         return;
     }
     ConnectionDialogController* controller = [[ConnectionDialogController alloc] init];
     controller.app = app;
-    [controller showDialogForEdit:db connectionId:connectionId];
+    [controller showDialogForEdit:db connectionId:db->getConnectionId()];
     sActiveConnectionDialog = controller.dialogWindow;
     [controller release]; // associated object on the window holds the retain
 }

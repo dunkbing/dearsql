@@ -1,5 +1,6 @@
 #include "database/postgresql.hpp"
 #include "database/db.hpp"
+#include "database/ddl_utils.hpp"
 #include "utils/logger.hpp"
 #include <cctype>
 #include <format>
@@ -91,18 +92,6 @@ namespace {
             result.errorMessage = PQresultErrorMessage(res);
         }
         return result;
-    }
-
-    std::string escapeSingleQuotes(const std::string& input) {
-        std::string escaped;
-        escaped.reserve(input.size());
-        for (char ch : input) {
-            escaped.push_back(ch);
-            if (ch == '\'') {
-                escaped.push_back('\'');
-            }
-        }
-        return escaped;
     }
 
     std::string quotePgIdentifier(const std::string& input) {
@@ -643,7 +632,7 @@ std::pair<bool, std::string> PostgresDatabase::createDatabase(const std::string&
 
         if (!comment.empty()) {
             const std::string commentSql = std::format("COMMENT ON DATABASE \"{}\" IS '{}'", dbName,
-                                                       escapeSingleQuotes(comment));
+                                                       ddl_utils::escapeSingleQuotes(comment));
             PgResultPtr commentRes(PQexec(conn, commentSql.c_str()));
             if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
                 std::string err =
@@ -700,7 +689,7 @@ PostgresDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
         if (!opts.comment.empty()) {
             const std::string commentSql =
                 std::format("COMMENT ON DATABASE {} IS '{}'", quotePgIdentifier(opts.name),
-                            escapeSingleQuotes(opts.comment));
+                            ddl_utils::escapeSingleQuotes(opts.comment));
             PgResultPtr commentRes(PQexec(conn, commentSql.c_str()));
             if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
                 std::string err =

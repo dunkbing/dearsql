@@ -37,14 +37,13 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
                                                const ImGuiTreeNodeFlags flags) {
     const std::string fullLabel = std::format("   {}###{}", label, nodeId);
 
-    // Get hover state before rendering
     ImGui::PushID(nodeId.c_str());
     const ImGuiID id = ImGui::GetID("hover");
     ImGui::PopID();
 
     const float dt = ImGui::GetIO().DeltaTime;
 
-    // Check if this item will be hovered (predict based on cursor position)
+    // check if this item will be hovered (predict based on cursor position)
     const ImVec2 cursorPos = ImGui::GetCursorScreenPos();
     const float itemHeight = ImGui::GetFrameHeight();
     const float itemWidth = ImGui::GetContentRegionAvail().x;
@@ -54,7 +53,6 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
         ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     const bool willBeHovered = !anyPopupOpen && ImGui::IsMouseHoveringRect(itemMin, itemMax);
 
-    // Draw hover background
     if (willBeHovered) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImVec4 hoverColor = colors.surface2;
@@ -65,7 +63,6 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
 
     const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
 
-    // Draw icon
     const auto iconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
@@ -83,7 +80,6 @@ void DatabaseHierarchy::renderRootNode() {
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    // Get database type
     const auto dbType = db->getConnectionInfo().type;
 
     if (dbType == DatabaseType::SQLITE) {

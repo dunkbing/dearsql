@@ -1421,8 +1421,7 @@ void showLinuxConnectionDialog(Application* app) {
     gtk_window_present(GTK_WINDOW(dialog));
 }
 
-void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db,
-                                   int connectionId) {
+void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveConnectionDialog) {
         gtk_window_present(GTK_WINDOW(sActiveConnectionDialog));
         return;
@@ -1430,7 +1429,7 @@ void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInt
     auto* data = new ConnectionDialogData();
     data->app = app;
     data->editingDb = db;
-    data->editingConnectionId = connectionId;
+    data->editingConnectionId = db->getConnectionId();
     GtkWidget* dialog = buildConnectionDialog(data);
 
     populateFieldsFromConnection(data, db);

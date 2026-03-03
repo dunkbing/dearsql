@@ -196,7 +196,6 @@ bool Application::initialize() {
     initializeLinuxUpdater();
 #endif
 
-    // Restore previous connections for current workspace
     restorePreviousConnections();
 
     // Register signal handler

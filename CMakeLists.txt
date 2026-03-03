@@ -191,7 +191,6 @@ set(APP_SOURCES
     src/database/ssh_config_parser.cpp
 
     # UI
-    src/ui/db_connection_dialog.cpp
     src/ui/table_dialog.cpp
     src/ui/input_dialog.cpp
     src/ui/query_history.cpp

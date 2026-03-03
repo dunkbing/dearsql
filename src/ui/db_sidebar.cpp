@@ -1,4 +1,4 @@
-#include "ui/db_sidebar_new.hpp"
+#include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
@@ -338,7 +338,7 @@ void DatabaseSidebarNew::render() {
                               ImGui::GetColorU32(colors.overlay0), 1.0f);
 
             // Rotated "History" button at the bottom of the strip
-            const float buttonW = stripWidth;
+            constexpr float buttonW = stripWidth;
             const float buttonH = historyButtonH;
             const float buttonY = stripPos.y + bottomHeight - buttonH;
             const ImVec2 btnMin(stripPos.x, buttonY);
@@ -406,7 +406,7 @@ void DatabaseSidebarNew::render() {
         const ImVec2 contentMax(windowPos.x + ImGui::GetWindowContentRegionMax().x,
                                 windowPos.y + ImGui::GetWindowContentRegionMax().y);
 
-        const float buttonW = stripWidth;
+        constexpr float buttonW = stripWidth;
         const float buttonH = historyButtonH;
 
         const ImVec2 btnMin(contentMin.x, contentMax.y - buttonH);

@@ -132,7 +132,7 @@ void TableViewerTab::render() {
     const float availableHeight = ImGui::GetContentRegionAvail().y - bottomControlsHeight;
 
     // Horizontal layout: table area | panel content (when open) | toggle strip (always)
-    const float toggleStripWidth = 28.0f;
+    constexpr float toggleStripWidth = 28.0f;
     const float panelContentWidth = rightPanelOpen ? rightPanelWidth : 0.0f;
     const float totalAvailableWidth = ImGui::GetContentRegionAvail().x;
     float tableAreaWidth = totalAvailableWidth - toggleStripWidth - panelContentWidth;
@@ -828,12 +828,11 @@ void TableViewerTab::showSaveConfirmationDialog() {
                 executingSQL = true;
 
                 auto sqlStatements = pendingUpdateSQL;
-                IDatabaseNode* executor = node_;
 
                 sqlExecutionFuture = std::async(
                     std::launch::async,
-                    [executor, sqlStatements]() -> std::pair<bool, std::string> {
-                        if (!executor) {
+                    [node = node_, sqlStatements]() -> std::pair<bool, std::string> {
+                        if (!node) {
                             return std::make_pair(
                                 false, "Error: Database does not support query execution");
                         }
@@ -843,7 +842,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
                         for (const auto& sql : sqlStatements) {
                             std::cout << "Executing SQL: " << sql << std::endl;
-                            const auto result = executor->executeQuery(sql);
+                            const auto result = node->executeQuery(sql);
                             const auto& r =
                                 result.empty() ? StatementResult{} : result.statements.back();
                             std::cout << "SQL Result: " << (r.success ? r.message : r.errorMessage)
@@ -1032,14 +1031,14 @@ void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availab
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         const ImVec2 stripPos = ImGui::GetCursorScreenPos();
 
-        // Draw left border line for the strip
+        // Draw left borderline for the strip
         drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
                           ImGui::GetColorU32(colors.overlay0), 1.0f);
 
         // "Panels" rotated label as a compact clickable tab at the top
-        const char* label = "Panels";
+        const auto label = "Panels";
         const ImVec2 textSize = ImGui::CalcTextSize(label);
-        const float padding = 6.0f;
+        constexpr float padding = 6.0f;
         // After rotation, text width becomes button height, text height becomes button width
         const float buttonW = stripWidth;
         const float buttonH = textSize.x + padding * 2.0f;
@@ -1102,10 +1101,9 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
                           ImGuiChildFlags_Borders)) {
         // Resize handle on the left edge of the panel
         {
-            const float handleWidth = 4.0f;
+            constexpr float handleWidth = 4.0f;
             const ImVec2 panelPos = ImGui::GetWindowPos();
             const ImVec2 handleMin(panelPos.x, panelPos.y);
-            const ImVec2 handleMax(panelPos.x + handleWidth, panelPos.y + availableHeight);
 
             ImGui::SetCursorScreenPos(handleMin);
             ImGui::InvisibleButton("##resizeHandle", ImVec2(handleWidth, availableHeight));
@@ -1284,13 +1282,13 @@ void TableViewerTab::renderMetadataTab() {
 
         // Convert filter to lowercase for case-insensitive matching
         std::string filterLower = metadataFilter;
-        std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+        std::ranges::transform(filterLower, filterLower.begin(), ::tolower);
 
         for (const auto& col : foundTable->columns) {
             // Apply filter
             if (!filterLower.empty()) {
                 std::string nameLower = col.name;
-                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                std::ranges::transform(nameLower, nameLower.begin(), ::tolower);
                 if (nameLower.find(filterLower) == std::string::npos) {
                     continue;
                 }

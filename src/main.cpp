@@ -8,18 +8,18 @@
 #include <string>
 
 namespace {
-    [[noreturn]] void handleFatalException(const char* context) {
-        std::exception_ptr current = std::current_exception();
+    [[noreturn]] void handleFatalException() {
+        const std::exception_ptr current = std::current_exception();
         if (current) {
             try {
                 std::rethrow_exception(current);
             } catch (const std::exception& e) {
-                Logger::error(std::string(context) + ": " + e.what());
+                Logger::error(std::string("Unhandled exception: ") + e.what());
             } catch (...) {
-                Logger::error(std::string(context) + ": unknown exception");
+                Logger::error("Unhandled exception: unknown");
             }
         } else {
-            Logger::error(std::string(context) + ": no active exception");
+            Logger::error("Unhandled exception: no active exception");
         }
 
         SentryInit::close();
@@ -30,24 +30,20 @@ namespace {
 int main() {
     SentryInit::initialize();
 
-    std::set_terminate([] { handleFatalException("Unhandled exception reached std::terminate"); });
+    std::set_terminate([] { handleFatalException(); });
 
-    try {
-        auto& app = Application::getInstance();
+    auto& app = Application::getInstance();
 
-        if (!app.initialize()) {
-            SentryInit::close();
-            return -1;
-        }
-
-        app.run();
-        app.cleanup();
+    if (!app.initialize()) {
         SentryInit::close();
-        if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
-            std::_Exit(0);
-        }
-        return 0;
-    } catch (...) {
-        handleFatalException("Fatal exception in main");
+        return -1;
     }
+
+    app.run();
+    app.cleanup();
+    SentryInit::close();
+    if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
+        std::_Exit(0);
+    }
+    return 0;
 }

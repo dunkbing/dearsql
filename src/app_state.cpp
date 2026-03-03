@@ -276,13 +276,13 @@ bool AppState::createTables() {
             const std::string checkSql =
                 "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name = ?";
             sqlite3_stmt* raw = nullptr;
-            int rc = sqlite3_prepare_v2(db_, checkSql.c_str(), -1, &raw, nullptr);
+            const int rc = sqlite3_prepare_v2(db_, checkSql.c_str(), -1, &raw, nullptr);
             if (rc != SQLITE_OK)
                 return;
-            StmtPtr stmt(raw);
+            const StmtPtr stmt(raw);
             sqlite3_bind_text(stmt.get(), 1, columnName.c_str(), -1, SQLITE_TRANSIENT);
             if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                int count = sqlite3_column_int(stmt.get(), 0);
+                const int count = sqlite3_column_int(stmt.get(), 0);
                 if (count == 0) {
                     executeSQL(alterSql);
                 }

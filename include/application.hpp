@@ -4,7 +4,7 @@
 #include "imgui.h"
 #include "platform/platform_interface.hpp"
 #include "themes.hpp"
-#include "ui/db_sidebar_new.hpp"
+#include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <memory>
@@ -57,7 +57,7 @@ public:
     void resetDockingLayout() {
         dockingLayoutInitialized = false;
     }
-    void dockTabToCenter(const std::string& tabName);
+    void dockTabToCenter(const std::string& tabName) const;
 
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {

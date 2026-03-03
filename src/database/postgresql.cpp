@@ -2,7 +2,6 @@
 #include "database/db.hpp"
 #include "database/ddl_utils.hpp"
 #include "utils/logger.hpp"
-#include <cctype>
 #include <format>
 #include <memory>
 #include <ranges>
@@ -19,7 +18,7 @@ namespace {
     };
     using PgResultPtr = std::unique_ptr<PGresult, PgResultDeleter>;
 
-    std::string pgValue(PGresult* res, int row, int col) {
+    std::string pgValue(const PGresult* res, const int row, const int col) {
         if (PQgetisnull(res, row, col)) {
             return "NULL";
         }
@@ -340,7 +339,7 @@ bool PostgresDatabase::hasPendingAsyncWork() const {
     }
 
     // Check all database nodes for pending async work
-    for (const auto& [_, dbNode] : databaseDataCache) {
+    for (const auto& dbNode : databaseDataCache | std::views::values) {
         if (!dbNode) {
             continue;
         }
@@ -410,7 +409,7 @@ void PostgresDatabase::checkRefreshWorkflowAsync() {
             databasesLoaded = true;
 
             // Trigger schema refresh on the main thread to avoid dangling pointers
-            for (auto& [_, dbDataPtr] : databaseDataCache) {
+            for (auto& dbDataPtr : databaseDataCache | std::views::values) {
                 if (dbDataPtr) {
                     dbDataPtr->startSchemasLoadAsync(true, true);
                 }
@@ -508,7 +507,7 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
         // closer
         [](PGconn* conn) { PQfinish(conn); },
         // validator
-        [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
+        [](const PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
 
     std::lock_guard lock(sessionMutex);
     auto* dbData = getDatabaseData(info.database);

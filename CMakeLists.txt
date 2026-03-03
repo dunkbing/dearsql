@@ -197,7 +197,7 @@ set(APP_SOURCES
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
     src/ui/database_node.cpp
-    src/ui/db_sidebar_new.cpp
+    src/ui/db_sidebar.cpp
     # Tabs
     src/ui/tab_manager.cpp
     src/ui/tab/tab.cpp

@@ -398,10 +398,6 @@ void DiagramTab::handleNodeInteraction() {
 void DiagramTab::detectForeignKeys() {
     foreignKeyCache.clear();
 
-    if (!node_) {
-        return;
-    }
-
     const std::vector<Table>& tables = node_->getTables();
 
     for (const auto& table : tables) {

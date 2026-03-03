@@ -697,7 +697,7 @@ void Application::refreshWorkspaceConnections() {
     resetDockingLayout();
 }
 
-void Application::dockTabToCenter(const std::string& tabName) {
+void Application::dockTabToCenter(const std::string& tabName) const {
     const ImGuiID dockId = centerDockId != 0 ? centerDockId : ImGui::GetID("MyDockSpace");
     ImGui::DockBuilderDockWindow(tabName.c_str(), dockId);
 }

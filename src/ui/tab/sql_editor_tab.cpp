@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
+#include <ranges>
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
@@ -23,7 +24,6 @@ namespace {
     constexpr const char* LABEL_NO_DATABASE = "SQL Editor (No database selected)";
     constexpr const char* LABEL_NO_ROWS = "No rows returned.";
     constexpr const char* LABEL_ROW_LIMIT = "(limited to 1000 rows)";
-    constexpr const char* LABEL_QUERY_SUCCESS = "Query executed successfully.";
     constexpr const char* LABEL_NO_RESULTS =
         "No results to display. Execute a query to see results here.";
     constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
@@ -218,10 +218,10 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
     const auto& dbMap = serverDb->getDatabaseDataMap();
     std::vector<std::string> dbNames;
     dbNames.reserve(dbMap.size());
-    for (const auto& [name, _] : dbMap) {
+    for (const auto& name : dbMap | std::views::keys) {
         dbNames.push_back(name);
     }
-    std::sort(dbNames.begin(), dbNames.end());
+    std::ranges::sort(dbNames);
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
@@ -310,10 +310,10 @@ void SQLEditorTab::renderConnectionInfoMySQL() {
     const auto& dbMap = serverDb->getDatabaseDataMap();
     std::vector<std::string> dbNames;
     dbNames.reserve(dbMap.size());
-    for (const auto& [name, _] : dbMap) {
+    for (const auto& name : dbMap | std::views::keys) {
         dbNames.push_back(name);
     }
-    std::sort(dbNames.begin(), dbNames.end());
+    std::ranges::sort(dbNames);
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
@@ -496,27 +496,27 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
         executor = binding_.resolveExecutor();
     }
 
-    queryExecutionOp_.startCancellable([query, executor](std::stop_token stopToken) {
-        QueryResult result;
+    if (executor) {
+        queryExecutionOp_.startCancellable([query, executor](const std::stop_token& stopToken) {
+            QueryResult result;
 
-        if (stopToken.stop_requested()) {
-            return result;
-        }
+            if (stopToken.stop_requested()) {
+                return result;
+            }
 
-        if (executor) {
             result = executor->executeQuery(query);
-        } else {
-            StatementResult r;
-            r.success = false;
-            r.errorMessage = LABEL_NO_DATABASE_SELECTED;
-            result.statements.push_back(r);
-        }
 
-        if (stopToken.stop_requested()) {
-            return QueryResult{};
-        }
-        return result;
-    });
+            if (stopToken.stop_requested()) {
+                return QueryResult{};
+            }
+            return result;
+        });
+    }
+    StatementResult r;
+    r.success = false;
+    r.errorMessage = LABEL_NO_DATABASE_SELECTED;
+    queryResult = QueryResult{};
+    queryResult.statements.push_back(r);
 }
 
 void SQLEditorTab::bindNode(IDatabaseNode* node) {
@@ -525,12 +525,15 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         return;
     }
 
-    if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
+    if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
         schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-        auto* serverDb = schemaNode->parentDbNode->parentDb;
         const std::string dbName = schemaNode->parentDbNode->name;
         const std::string schemaName = schemaNode->name;
-        auto resolveSchemaByName = [serverDb, dbName, schemaName]() -> PostgresSchemaNode* {
+
+        // Use the schema node as executor so queries go through PostgresSchemaNode::executeQuery()
+        // and apply the correct search_path, while still re-resolving by name after refreshes.
+        binding_.resolveNode = [schemaNode, dbName, schemaName]() -> IDatabaseNode* {
+            auto* serverDb = schemaNode->parentDbNode->parentDb;
             if (!serverDb) {
                 return nullptr;
             }
@@ -565,7 +568,7 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
                 return dbNode->schemas.front().get();
             }
 
-            for (const auto& [_, candidateDb] : serverDb->getDatabaseDataMap()) {
+            for (const auto& candidateDb : serverDb->getDatabaseDataMap() | std::views::values) {
                 if (candidateDb && !candidateDb->schemas.empty() && candidateDb->schemas.front()) {
                     return candidateDb->schemas.front().get();
                 }
@@ -573,14 +576,8 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
 
             return nullptr;
         };
-
-        // Use the schema node as executor so queries go through PostgresSchemaNode::executeQuery()
-        // and apply the correct search_path, while still re-resolving by name after refreshes.
-        binding_.resolveNode = [resolveSchemaByName]() -> IDatabaseNode* {
-            return resolveSchemaByName();
-        };
-        binding_.resolveExecutor = [resolveSchemaByName]() -> IQueryExecutor* {
-            return resolveSchemaByName();
+        binding_.resolveExecutor = [this]() -> IQueryExecutor* {
+            return binding_.resolveNode ? binding_.resolveNode() : nullptr;
         };
         return;
     }
@@ -708,10 +705,11 @@ void SQLEditorTab::updateCompletionKeywords() {
     }
 
     // Sort and deduplicate by text
-    std::sort(items.begin(), items.end(), [](const CI& a, const CI& b) { return a.text < b.text; });
-    items.erase(std::unique(items.begin(), items.end(),
-                            [](const CI& a, const CI& b) { return a.text == b.text; }),
-                items.end());
+    std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
+    items.erase(
+        std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; })
+            .begin(),
+        items.end());
 
     sqlEditor.SetCompletionItems(items);
     completionKeywordsSet_ = true;
@@ -741,7 +739,7 @@ void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) 
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         const ImVec2 stripPos = ImGui::GetCursorScreenPos();
 
-        // Draw left border line
+        // Draw left borderline
         drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
                           ImGui::GetColorU32(colors.overlay0), 1.0f);
 
@@ -815,7 +813,6 @@ void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
             constexpr float handleWidth = 4.0f;
             const ImVec2 panelPos = ImGui::GetWindowPos();
             const ImVec2 handleMin(panelPos.x, panelPos.y);
-            const ImVec2 handleMax(panelPos.x + handleWidth, panelPos.y + availableHeight);
 
             ImGui::SetCursorScreenPos(handleMin);
             ImGui::InvisibleButton("##aiResizeHandle", ImVec2(handleWidth, availableHeight));

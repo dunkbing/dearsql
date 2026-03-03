@@ -14,9 +14,6 @@
 [submodule "external/cpp-httplib"]
 	path = external/cpp-httplib
 	url = https://github.com/yhirose/cpp-httplib.git
-[submodule "website"]
-	path = website
-	url = https://github.com/dunkbing/dearsql-website
 [submodule "external/tree-sitter"]
 	path = external/tree-sitter
 	url = https://github.com/tree-sitter/tree-sitter.git

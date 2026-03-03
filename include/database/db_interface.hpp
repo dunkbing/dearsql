@@ -50,6 +50,7 @@ struct DatabaseConnectionInfo {
 
         case DatabaseType::POSTGRESQL: {
             std::string connStr = "host=" + host + " port=" + std::to_string(port);
+            connStr += " connect_timeout=10";
 
             if (!dbName.empty()) {
                 connStr += " dbname=" + dbName;

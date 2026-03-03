@@ -4,7 +4,6 @@
 #include "utils/logger.hpp"
 #include <cctype>
 #include <format>
-#include <iostream>
 #include <memory>
 #include <ranges>
 #include <unordered_map>
@@ -25,29 +24,6 @@ namespace {
             return "NULL";
         }
         return PQgetvalue(res, row, col);
-    }
-
-    // Build a libpq connection string from DatabaseConnectionInfo
-    std::string buildPqConnStr(const DatabaseConnectionInfo& info) {
-        std::string connStr = "host=" + info.host + " port=" + std::to_string(info.port);
-        connStr += " connect_timeout=5";
-        if (!info.database.empty()) {
-            connStr += " dbname=" + info.database;
-        } else {
-            connStr += " dbname=postgres";
-        }
-        if (!info.username.empty()) {
-            connStr += " user=" + info.username;
-        }
-        if (!info.password.empty()) {
-            connStr += " password=" + info.password;
-        }
-        connStr += " sslmode=" + sslModeToString(info.sslmode);
-        if ((info.sslmode == SslMode::VerifyCA || info.sslmode == SslMode::VerifyFull) &&
-            !info.sslCACertPath.empty()) {
-            connStr += " sslrootcert=" + info.sslCACertPath;
-        }
-        return connStr;
     }
 
     // Extract a single StatementResult from a PGresult
@@ -244,7 +220,10 @@ void PostgresDatabase::disconnect() {
 }
 
 void PostgresDatabase::refreshConnection() {
-    getDatabaseData(connectionInfo.database);
+    {
+        std::lock_guard lock(sessionMutex);
+        getDatabaseData(connectionInfo.database);
+    }
 
     // Start the sequential refresh workflow
     refreshWorkflow.start([this]() -> bool {
@@ -389,18 +368,20 @@ bool PostgresDatabase::hasPendingAsyncWork() const {
 
 void PostgresDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& databases) {
-        std::cout << "Async database loading completed. Found " << databases.size() << " databases."
-                  << std::endl;
+        Logger::debug(
+            std::format("Async database loading completed. Found {} databases.", databases.size()));
 
         // Populate databaseDataCache with all available databases
-        for (const auto& dbName : databases) {
-            auto it = databaseDataCache.find(dbName);
-            if (it == databaseDataCache.end()) {
-                // Create new DatabaseData with the name set
-                auto newData = std::make_unique<PostgresDatabaseNode>();
-                newData->name = dbName;
-                newData->parentDb = this;
-                databaseDataCache[dbName] = std::move(newData);
+        {
+            std::lock_guard lock(sessionMutex);
+            for (const auto& dbName : databases) {
+                auto it = databaseDataCache.find(dbName);
+                if (it == databaseDataCache.end()) {
+                    auto newData = std::make_unique<PostgresDatabaseNode>();
+                    newData->name = dbName;
+                    newData->parentDb = this;
+                    databaseDataCache[dbName] = std::move(newData);
+                }
             }
         }
 
@@ -419,8 +400,11 @@ void PostgresDatabase::checkRefreshWorkflowAsync() {
                 pendingRefreshDatabaseNames.clear();
             }
 
-            for (const auto& dbName : refreshedDatabases) {
-                getDatabaseData(dbName);
+            {
+                std::lock_guard lock(sessionMutex);
+                for (const auto& dbName : refreshedDatabases) {
+                    getDatabaseData(dbName);
+                }
             }
 
             databasesLoaded = true;
@@ -440,16 +424,11 @@ void PostgresDatabase::checkRefreshWorkflowAsync() {
 std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
     std::vector<std::string> result;
 
-    // Check if we're still supposed to be loading
     if (!databasesLoader.isRunning()) {
         return result;
     }
 
     try {
-        if (!databasesLoader.isRunning()) {
-            return result;
-        }
-
         std::vector<std::string> conditions = {sql::eq("datistemplate", "false")};
         if (!connectionInfo.showAllDatabases) {
             conditions.push_back(sql::eq("datname", "'" + connectionInfo.database + "'"));
@@ -459,13 +438,13 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
         const std::string sqlQuery =
             std::format("SELECT datname FROM pg_database WHERE {} ORDER BY datname", whereClause);
 
-        std::cout << "Executing async query to get database names..." << std::endl;
+        Logger::debug("Executing async query to get database names...");
         auto session = getSession();
         PGconn* conn = session.get();
         PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
         if (!res || PQresultStatus(res.get()) != PGRES_TUPLES_OK) {
-            std::cerr << "Failed to execute async database query: " << PQerrorMessage(conn)
-                      << std::endl;
+            Logger::error(
+                std::format("Failed to execute async database query: {}", PQerrorMessage(conn)));
             return result;
         }
 
@@ -475,11 +454,11 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
                 break;
             }
             auto dbName = std::string(PQgetvalue(res.get(), i, 0));
-            std::cout << "Found database: " << dbName << std::endl;
+            Logger::debug(std::format("Found database: {}", dbName));
             result.push_back(dbName);
         }
     } catch (const std::exception& e) {
-        std::cerr << "Failed to execute async database query: " << e.what() << std::endl;
+        Logger::error(std::format("Failed to execute async database query: {}", e.what()));
     }
 
     Logger::info(std::format("Async query completed. Found: {} databases", result.size()));
@@ -512,7 +491,7 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
     }
 
     constexpr size_t poolSize = 3;
-    std::string connStr = buildPqConnStr(info);
+    std::string connStr = info.buildConnectionString();
 
     auto newPool = std::make_unique<ConnectionPool<PGconn*>>(
         poolSize,
@@ -591,12 +570,15 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
         }
 
         // Update the cache if the renamed database exists in it
-        auto it = databaseDataCache.find(oldName);
-        if (it != databaseDataCache.end()) {
-            auto node = std::move(it->second);
-            node->name = newName;
-            databaseDataCache.erase(it);
-            databaseDataCache[newName] = std::move(node);
+        {
+            std::lock_guard lock(sessionMutex);
+            auto it = databaseDataCache.find(oldName);
+            if (it != databaseDataCache.end()) {
+                auto node = std::move(it->second);
+                node->name = newName;
+                databaseDataCache.erase(it);
+                databaseDataCache[newName] = std::move(node);
+            }
         }
 
         Logger::info(std::format("Database '{}' renamed to '{}'", oldName, newName));
@@ -745,7 +727,7 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
             // the object with a destroyed active pool.
             auto tempInfo = connectionInfo;
             tempInfo.database = "postgres";
-            std::string tempConnStr = buildPqConnStr(tempInfo);
+            std::string tempConnStr = tempInfo.buildConnectionString();
             PGconn* tempConn = PQconnectdb(tempConnStr.c_str());
             if (PQstatus(tempConn) != CONNECTION_OK) {
                 std::string err = PQerrorMessage(tempConn);
@@ -785,7 +767,10 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
         }
 
         // Remove from cache
-        databaseDataCache.erase(dbName);
+        {
+            std::lock_guard lock(sessionMutex);
+            databaseDataCache.erase(dbName);
+        }
 
         // If we dropped the connected database, switch to 'postgres'
         if (isDroppingConnectedDb) {

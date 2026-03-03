@@ -1,9 +1,9 @@
 #pragma once
 
+#include "async_helper.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
 #include <atomic>
-#include <future>
 #include <hiredis/hiredis.h>
 #include <hiredis/hiredis_ssl.h>
 
@@ -70,8 +70,8 @@ private:
     redisContext* context = nullptr;
     redisSSLContext* sslCtx_ = nullptr;
 
-    // Async key loading future
-    std::future<std::vector<Table>> keysFuture;
+    // Async key loading
+    AsyncOperation<std::vector<Table>> keysLoadOp_;
     std::vector<Table> tables;
 
     // Helper methods
@@ -79,5 +79,5 @@ private:
     redisReply* executeRedisCommandParsed(const std::vector<std::string>& commandParts) const;
     static std::string formatRedisReply(redisReply* reply);
     static std::vector<std::string> parseRedisCommand(const std::string& command);
-    void groupKeysByPattern();
+    void groupKeysByPattern(std::vector<Table>& out) const;
 };

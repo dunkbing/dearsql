@@ -158,6 +158,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 }
 
 void RedisDatabase::disconnect() {
+    keysLoadOp_.cancel();
     if (context) {
         redisFree(context);
         context = nullptr;
@@ -621,7 +622,7 @@ std::vector<std::string> RedisDatabase::parseRedisCommand(const std::string& com
     return parts;
 }
 
-void RedisDatabase::groupKeysByPattern() {
+void RedisDatabase::groupKeysByPattern(std::vector<Table>& out) const {
     if (!isConnected()) {
         return;
     }
@@ -631,13 +632,12 @@ void RedisDatabase::groupKeysByPattern() {
     Table allKeys;
     allKeys.name = "*";
     allKeys.fullName = connectionInfo.name + ".*";
-    // allKeys.columns = getTableColumns("*");
-    tables.push_back(allKeys);
+    out.push_back(std::move(allKeys));
 }
 
 // Async key loading methods (merged from RedisNode)
 void RedisDatabase::startKeysLoadAsync(bool forceRefresh) {
-    if (loadingKeys.load()) {
+    if (keysLoadOp_.isRunning()) {
         return; // already loading
     }
 
@@ -652,25 +652,17 @@ void RedisDatabase::startKeysLoadAsync(bool forceRefresh) {
     }
 
     loadingKeys = true;
-    keysFuture = std::async(std::launch::async, [this]() { return getKeysAsync(); });
+    keysLoadOp_.start([this]() { return getKeysAsync(); });
 }
 
 void RedisDatabase::checkKeysStatusAsync() {
-    if (keysFuture.valid() &&
-        keysFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tables = keysFuture.get();
-            std::cout << std::format("Key loading completed. Found {} key groups", tables.size())
-                      << std::endl;
-            keysLoaded = true;
-            loadingKeys = false;
-        } catch (const std::exception& e) {
-            std::cerr << std::format("Error in key loading: {}", e.what()) << std::endl;
-            lastKeysError = e.what();
-            keysLoaded = true;
-            loadingKeys = false;
-        }
-    }
+    keysLoadOp_.check([this](std::vector<Table> loadedTables) {
+        tables = std::move(loadedTables);
+        std::cout << std::format("Key loading completed. Found {} key groups", tables.size())
+                  << std::endl;
+        keysLoaded = true;
+        loadingKeys = false;
+    });
 }
 
 std::vector<Table> RedisDatabase::getKeysAsync() {
@@ -683,8 +675,7 @@ std::vector<Table> RedisDatabase::getKeysAsync() {
         }
 
         // Group keys by pattern
-        groupKeysByPattern();
-        result = tables;
+        groupKeysByPattern(result);
 
         std::cout << "Finished loading keys. Total key groups: " << std::to_string(result.size())
                   << std::endl;

@@ -89,7 +89,8 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(IDatabaseNode* node,
     for (auto& tab : tabs) {
         if (tab->getType() == TabType::TABLE_VIEWER) {
             const auto tableTab = std::dynamic_pointer_cast<TableViewerTab>(tab);
-            if (tableTab && tableTab->getDatabasePath() == tableFullName) {
+            if (tableTab && tableTab->getDatabaseNode() == node &&
+                tableTab->getDatabasePath() == tableFullName) {
                 tableTab->setShouldFocus(true);
                 std::cout << "Table " << tableName << " is already open, focusing existing tab"
                           << std::endl;
@@ -308,7 +309,7 @@ std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
     for (auto& tab : tabs) {
         if (tab->getType() == TabType::REDIS_KEY_VIEWER) {
             const auto keyTab = std::dynamic_pointer_cast<RedisKeyViewerTab>(tab);
-            if (keyTab && keyTab->getPattern() == pattern) {
+            if (keyTab && keyTab->getDatabase() == db && keyTab->getPattern() == pattern) {
                 keyTab->setShouldFocus(true);
                 return tab;
             }

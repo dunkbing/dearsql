@@ -17,6 +17,9 @@ public:
     [[nodiscard]] const std::string& getPattern() const {
         return pattern_;
     }
+    [[nodiscard]] const RedisDatabase* getDatabase() const {
+        return db_;
+    }
 
 private:
     RedisDatabase* db_;

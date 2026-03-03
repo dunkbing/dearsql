@@ -209,6 +209,9 @@ set(APP_SOURCES
     src/ui/text_editor_input.cpp
     src/ui/text_editor_highlight.cpp
     src/ui/text_editor_format.cpp
+    # Redis
+    src/ui/tab/redis_editor_tab.cpp
+    src/ui/tab/redis_key_viewer_tab.cpp
 
     # Utils
     src/utils/file_dialog.cpp

@@ -11,6 +11,7 @@
 #include "imgui.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
+#include "ui/tab_manager.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -184,8 +185,39 @@ void DatabaseHierarchy::renderRootNode() {
             return;
         }
 
-        // Show Redis connection info
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), ICON_FA_DATABASE " Connected");
+        // Commands node — opens a Redis CLI editor tab
+        {
+            constexpr ImGuiTreeNodeFlags cmdFlags = ImGuiTreeNodeFlags_Leaf |
+                                                    ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                    ImGuiTreeNodeFlags_FramePadding;
+            const std::string cmdId =
+                std::format("redis_commands_{:p}", static_cast<const void*>(redisDb.get()));
+            const std::string cmdLabel = std::format("   Commands###{}", cmdId);
+            ImGui::TreeNodeEx(cmdLabel.c_str(), cmdFlags);
+
+            const auto iconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.mauve),
+                                                ICON_FA_TERMINAL);
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                Application::getInstance().getTabManager()->createRedisCommandEditorTab(
+                    redisDb.get());
+            }
+
+            if (ImGui::BeginPopupContextItem(cmdId.c_str())) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem("Open Command Editor")) {
+                    Application::getInstance().getTabManager()->createRedisCommandEditorTab(
+                        redisDb.get());
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+        }
 
         // Load keys if not loaded yet
         if (!redisDb->keysLoaded && !redisDb->loadingKeys.load()) {
@@ -223,13 +255,23 @@ void DatabaseHierarchy::renderRootNode() {
                                                            static_cast<const void*>(&keyGroup));
 
                 ImGui::TreeNodeEx(keyGroupId.c_str(), keyGroupFlags, "%s", displayName.c_str());
+                const bool rowHovered = ImGui::IsItemHovered();
                 ImGui::SameLine(0.0f, 4.0f);
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), ICON_FA_KEY);
+
+                if (rowHovered && ImGui::IsMouseDoubleClicked(0)) {
+                    Application::getInstance().getTabManager()->createRedisKeyViewerTab(
+                        redisDb.get(), keyGroup.name);
+                }
 
                 // Context menu
                 if (ImGui::BeginPopupContextItem(keyGroupId.c_str())) {
                     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                         ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                    if (ImGui::MenuItem("View Keys")) {
+                        Application::getInstance().getTabManager()->createRedisKeyViewerTab(
+                            redisDb.get(), keyGroup.name);
+                    }
                     if (ImGui::MenuItem("Refresh Keys")) {
                         redisDb->startKeysLoadAsync(true);
                     }

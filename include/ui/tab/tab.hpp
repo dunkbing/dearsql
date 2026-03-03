@@ -2,7 +2,7 @@
 
 #include <string>
 
-enum class TabType { SQL_EDITOR, TABLE_VIEWER, DIAGRAM };
+enum class TabType { SQL_EDITOR, TABLE_VIEWER, DIAGRAM, REDIS_EDITOR, REDIS_KEY_VIEWER };
 
 class Tab {
 public:

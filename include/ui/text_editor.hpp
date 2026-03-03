@@ -70,6 +70,10 @@ namespace dearsql {
         // Callbacks
         void SetSubmitCallback(std::function<void()> cb);
 
+        // Language / highlighting mode
+        enum class Language : uint8_t { SQL, Redis, PlainText };
+        void SetLanguage(Language lang);
+
         // Options
         void SetShowLineNumbers(bool show);
         void SetTabSize(int size);
@@ -107,6 +111,7 @@ namespace dearsql {
         int tabSize_ = 4;
         bool readOnly_ = false;
         bool focusRequested_ = false;
+        Language language_ = Language::SQL;
 
         // --- Callbacks ---
         std::function<void()> submitCallback_;
@@ -213,6 +218,7 @@ namespace dearsql {
         void initTreeSitter();
         void cleanupTreeSitter();
         void rehighlight();
+        void rehighlightRedis();
 
         // --- Helpers ---
         float getCharWidth(const char* start, const char* end) const;

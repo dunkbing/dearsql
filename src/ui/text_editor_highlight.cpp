@@ -1,8 +1,11 @@
 #include "ui/text_editor.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <format>
 #include <tree_sitter/api.h>
+#include <unordered_set>
 
 extern "C" const TSLanguage* tree_sitter_sql();
 
@@ -335,7 +338,302 @@ namespace dearsql {
         }
     }
 
+    void TextEditor::rehighlightRedis() {
+        colors_.assign(content_.size(), palette_.text);
+
+        static const std::unordered_set<std::string> REDIS_COMMANDS = {
+            "APPEND",
+            "AUTH",
+            "BGSAVE",
+            "BGREWRITEAOF",
+            "BITCOUNT",
+            "BITFIELD",
+            "BITOP",
+            "BITPOS",
+            "BLMOVE",
+            "BLMPOP",
+            "BLPOP",
+            "BRPOP",
+            "BZMPOP",
+            "BZPOPMAX",
+            "BZPOPMIN",
+            "CLIENT",
+            "CLUSTER",
+            "COMMAND",
+            "CONFIG",
+            "COPY",
+            "DEBUG",
+            "DBSIZE",
+            "DECR",
+            "DECRBY",
+            "DEL",
+            "DISCARD",
+            "DUMP",
+            "ECHO",
+            "EVAL",
+            "EVALSHA",
+            "EXEC",
+            "EXISTS",
+            "EXPIRE",
+            "EXPIREAT",
+            "EXPIRETIME",
+            "FLUSHALL",
+            "FLUSHDB",
+            "GEOADD",
+            "GEODIST",
+            "GEOHASH",
+            "GEOPOS",
+            "GEOSEARCH",
+            "GEOSEARCHSTORE",
+            "GET",
+            "GETBIT",
+            "GETDEL",
+            "GETEX",
+            "GETRANGE",
+            "GETSET",
+            "HDEL",
+            "HELLO",
+            "HEXISTS",
+            "HGET",
+            "HGETALL",
+            "HINCRBY",
+            "HINCRBYFLOAT",
+            "HKEYS",
+            "HLEN",
+            "HMGET",
+            "HMSET",
+            "HRANDFIELD",
+            "HSCAN",
+            "HSET",
+            "HSETNX",
+            "HSTRLEN",
+            "HVALS",
+            "INCR",
+            "INCRBY",
+            "INCRBYFLOAT",
+            "INFO",
+            "KEYS",
+            "LASTSAVE",
+            "LCS",
+            "LINDEX",
+            "LINSERT",
+            "LLEN",
+            "LMOVE",
+            "LMPOP",
+            "LPOP",
+            "LPOS",
+            "LPUSH",
+            "LPUSHX",
+            "LRANGE",
+            "LREM",
+            "LSET",
+            "LTRIM",
+            "MEMORY",
+            "MGET",
+            "MIGRATE",
+            "MODULE",
+            "MONITOR",
+            "MOVE",
+            "MSET",
+            "MSETNX",
+            "MULTI",
+            "OBJECT",
+            "PERSIST",
+            "PEXPIRE",
+            "PEXPIREAT",
+            "PEXPIRETIME",
+            "PFADD",
+            "PFCOUNT",
+            "PFMERGE",
+            "PING",
+            "PSETEX",
+            "PSUBSCRIBE",
+            "PTTL",
+            "PUBLISH",
+            "PUBSUB",
+            "PUNSUBSCRIBE",
+            "QUIT",
+            "RANDOMKEY",
+            "READONLY",
+            "READWRITE",
+            "RENAME",
+            "RENAMENX",
+            "REPLCONF",
+            "REPLICAOF",
+            "RESET",
+            "RESTORE",
+            "ROLE",
+            "RPOP",
+            "RPOPLPUSH",
+            "RPUSH",
+            "RPUSHX",
+            "SADD",
+            "SAVE",
+            "SCAN",
+            "SCARD",
+            "SCRIPT",
+            "SDIFF",
+            "SDIFFSTORE",
+            "SELECT",
+            "SET",
+            "SETBIT",
+            "SETEX",
+            "SETNX",
+            "SETRANGE",
+            "SINTER",
+            "SINTERCARD",
+            "SINTERSTORE",
+            "SLAVEOF",
+            "SLOWLOG",
+            "SMEMBERS",
+            "SMISMEMBER",
+            "SMOVE",
+            "SORT",
+            "SORT_RO",
+            "SPOP",
+            "SRANDMEMBER",
+            "SREM",
+            "SSCAN",
+            "STRLEN",
+            "SUBSCRIBE",
+            "SUNION",
+            "SUNIONSTORE",
+            "SWAPDB",
+            "SYNC",
+            "TIME",
+            "TTL",
+            "TYPE",
+            "UNLINK",
+            "UNSUBSCRIBE",
+            "UNWATCH",
+            "WAIT",
+            "WATCH",
+            "XACK",
+            "XADD",
+            "XAUTOCLAIM",
+            "XCLAIM",
+            "XDEL",
+            "XGROUP",
+            "XINFO",
+            "XLEN",
+            "XPENDING",
+            "XRANGE",
+            "XREAD",
+            "XREADGROUP",
+            "XREVRANGE",
+            "XSETID",
+            "XTRIM",
+            "ZADD",
+            "ZCARD",
+            "ZCOUNT",
+            "ZDIFF",
+            "ZDIFFSTORE",
+            "ZINCRBY",
+            "ZINTER",
+            "ZINTERCARD",
+            "ZINTERSTORE",
+            "ZLEXCOUNT",
+            "ZMPOP",
+            "ZMSCORE",
+            "ZPOPMAX",
+            "ZPOPMIN",
+            "ZRANDMEMBER",
+            "ZRANGE",
+            "ZRANGEBYLEX",
+            "ZRANGEBYSCORE",
+            "ZRANGESTORE",
+            "ZRANK",
+            "ZREM",
+            "ZREMRANGEBYLEX",
+            "ZREMRANGEBYSCORE",
+            "ZREMRANGEBYRANK",
+            "ZREVRANGE",
+            "ZREVRANGEBYLEX",
+            "ZREVRANGEBYSCORE",
+            "ZREVRANK",
+            "ZSCAN",
+            "ZSCORE",
+            "ZUNION",
+            "ZUNIONSTORE",
+            "LOLWUT",
+            "LATENCY",
+        };
+
+        const size_t n = content_.size();
+        size_t i = 0;
+
+        while (i < n) {
+            if (std::isspace(static_cast<unsigned char>(content_[i]))) {
+                ++i;
+                continue;
+            }
+
+            // comment: # to end of line
+            if (content_[i] == '#') {
+                while (i < n && content_[i] != '\n')
+                    colors_[i++] = palette_.comment;
+                continue;
+            }
+
+            // string: single or double quoted
+            if (content_[i] == '"' || content_[i] == '\'') {
+                const char q = content_[i];
+                colors_[i++] = palette_.string;
+                while (i < n && content_[i] != q && content_[i] != '\n') {
+                    if (content_[i] == '\\' && i + 1 < n)
+                        colors_[i++] = palette_.string;
+                    colors_[i++] = palette_.string;
+                }
+                if (i < n && content_[i] == q)
+                    colors_[i++] = palette_.string;
+                continue;
+            }
+
+            // number (including negative)
+            if (std::isdigit(static_cast<unsigned char>(content_[i])) ||
+                (content_[i] == '-' && i + 1 < n &&
+                 std::isdigit(static_cast<unsigned char>(content_[i + 1])))) {
+                if (content_[i] == '-')
+                    colors_[i++] = palette_.number;
+                while (i < n && (std::isdigit(static_cast<unsigned char>(content_[i])) ||
+                                 content_[i] == '.'))
+                    colors_[i++] = palette_.number;
+                continue;
+            }
+
+            // word: command or identifier
+            if (std::isalpha(static_cast<unsigned char>(content_[i])) || content_[i] == '_') {
+                size_t j = i;
+                while (j < n && (std::isalnum(static_cast<unsigned char>(content_[j])) ||
+                                 content_[j] == '_' || content_[j] == ':' || content_[j] == '.'))
+                    ++j;
+
+                std::string upper(j - i, '\0');
+                std::transform(content_.begin() + static_cast<ptrdiff_t>(i),
+                               content_.begin() + static_cast<ptrdiff_t>(j), upper.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+                const ImU32 color = REDIS_COMMANDS.count(upper) ? palette_.keyword : palette_.text;
+                for (size_t k = i; k < j; ++k)
+                    colors_[k] = color;
+                i = j;
+                continue;
+            }
+
+            ++i;
+        }
+    }
+
     void TextEditor::rehighlight() {
+        if (language_ == Language::Redis) {
+            rehighlightRedis();
+            return;
+        }
+        if (language_ == Language::PlainText) {
+            colors_.assign(content_.size(), palette_.text);
+            return;
+        }
+
         if (!tsParser_ || !tsQuery_ || content_.empty()) {
             // Set all to default text color
             colors_.assign(content_.size(), palette_.text);

@@ -1,11 +1,15 @@
 #include "ui/tab_manager.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
+#include "database/redis.hpp"
 #include "imgui.h"
 #include "ui/tab/diagram_tab.hpp"
+#include "ui/tab/redis_editor_tab.hpp"
+#include "ui/tab/redis_key_viewer_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include <algorithm>
+#include <format>
 #include <iostream>
 #include <iterator>
 
@@ -270,6 +274,63 @@ std::shared_ptr<Tab> TabManager::createDiagramTab(IDatabaseNode* node) {
     app.dockTabToCenter(tabName);
 
     std::cout << "Created new diagram tab for: " << node->getFullPath() << std::endl;
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createRedisCommandEditorTab(RedisDatabase* db) {
+    if (!db)
+        return nullptr;
+
+    const std::string baseName = "Redis CLI";
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        ++count;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    auto tab = std::make_shared<RedisEditorTab>(tabName, db);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    auto& app = Application::getInstance();
+    app.dockTabToCenter(tabName);
+
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
+                                                         const std::string& pattern) {
+    if (!db)
+        return nullptr;
+
+    // reuse existing tab for same db + pattern
+    for (auto& tab : tabs) {
+        if (tab->getType() == TabType::REDIS_KEY_VIEWER) {
+            const auto keyTab = std::dynamic_pointer_cast<RedisKeyViewerTab>(tab);
+            if (keyTab && keyTab->getPattern() == pattern) {
+                keyTab->setShouldFocus(true);
+                return tab;
+            }
+        }
+    }
+
+    const std::string displayName = (pattern == "*") ? "All Keys" : pattern;
+    const std::string baseName = std::format("Redis: {}", displayName);
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        ++count;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    auto tab = std::make_shared<RedisKeyViewerTab>(tabName, db, pattern);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    auto& app = Application::getInstance();
+    app.dockTabToCenter(tabName);
+
     return tab;
 }
 

@@ -26,8 +26,8 @@ namespace dearsql {
           palette_(other.palette_), undoStack_(std::move(other.undoStack_)),
           redoStack_(std::move(other.redoStack_)),
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
-          completionItems_(std::move(other.completionItems_)), tsParser_(other.tsParser_),
-          tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
+          completionItems_(std::move(other.completionItems_)), language_(other.language_),
+          tsParser_(other.tsParser_), tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
           tsPreviousContent_(std::move(other.tsPreviousContent_)),
           highlightDirty_(other.highlightDirty_) {
         other.tsParser_ = nullptr;
@@ -47,6 +47,7 @@ namespace dearsql {
             undoStack_ = std::move(other.undoStack_);
             redoStack_ = std::move(other.redoStack_);
             completionItems_ = std::move(other.completionItems_);
+            language_ = other.language_;
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
             tsQuery_ = other.tsQuery_;
@@ -57,6 +58,11 @@ namespace dearsql {
             other.tsQuery_ = nullptr;
         }
         return *this;
+    }
+
+    void TextEditor::SetLanguage(Language lang) {
+        language_ = lang;
+        highlightDirty_ = true;
     }
 
     void TextEditor::SetText(const std::string& text) {

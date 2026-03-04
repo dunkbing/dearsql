@@ -74,8 +74,9 @@ void SQLEditorTab::render() {
     // Left pane: editor + results
     if (ImGui::BeginChild("##sql_left_pane", ImVec2(editorAreaWidth, totalContentHeight), false)) {
         float paneHeight = ImGui::GetContentRegionAvail().y;
+        const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
         const float editorHeight = paneHeight * splitterPosition;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f - toolbarHeight;
 
         if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -88,11 +89,11 @@ void SQLEditorTab::render() {
         }
         ImGui::EndChild();
 
+        renderToolbar();
         renderVerticalSplitter("##sql_splitter", &splitterPosition, 100.0f, 200.0f);
 
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
-            renderToolbar();
             ImVec2 contentStart = ImGui::GetCursorScreenPos();
             if (queryExecutionOp_.isRunning())
                 ImGui::BeginDisabled();
@@ -396,8 +397,6 @@ void SQLEditorTab::renderToolbar() {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
-
-    ImGui::Separator();
 }
 
 void SQLEditorTab::renderQueryResults() const {

@@ -1,13 +1,21 @@
 #pragma once
 
 #include "database/async_helper.hpp"
-#include "database/db.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
-#include <chrono>
 #include <string>
+#include <vector>
 
 class RedisDatabase;
+
+struct RedisResultEntry {
+    std::string command;
+    std::string result;
+    bool success = true;
+    std::string errorMessage;
+    double durationMs = 0.0;
+    std::string timestamp;
+};
 
 class RedisEditorTab final : public Tab {
 public:
@@ -21,14 +29,11 @@ private:
     dearsql::TextEditor editor_;
     std::string command_;
 
-    QueryResult queryResult_;
-    std::string queryError_;
-    std::chrono::milliseconds lastQueryDuration_{0};
-
-    AsyncOperation<QueryResult> queryOp_;
+    std::vector<RedisResultEntry> resultHistory_;
+    AsyncOperation<std::vector<RedisResultEntry>> queryOp_;
 
     float splitterPosition_ = 0.35f;
-    bool splitterActive_ = false;
+    bool autoClearEditor_ = true;
     float totalContentHeight_ = 0.0f;
     int pendingFocusFrames_ = 3;
 
@@ -36,7 +41,7 @@ private:
     void checkCommandExecutionStatus();
     void renderHeader() const;
     void renderToolbar();
-    void renderResults() const;
+    void renderResults();
     bool renderVerticalSplitter(const char* id, float* position, float minSize1,
                                 float minSize2) const;
 };

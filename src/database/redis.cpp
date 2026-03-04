@@ -210,7 +210,6 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
     }
 
     try {
-        // Parse command into parts
         auto commandParts = parseRedisCommand(command);
         if (commandParts.empty()) {
             s.success = false;
@@ -227,7 +226,6 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
             return result;
         }
 
-        // Check for Redis errors
         if (reply->type == REDIS_REPLY_ERROR) {
             s.success = false;
             s.errorMessage = reply->str;
@@ -236,13 +234,9 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
             return result;
         }
 
-        // Format result as a single-column table for consistency
         s.columnNames.push_back("result");
-        std::string formattedReply = formatRedisReply(reply);
-        s.tableData.push_back({formattedReply});
-        s.message = "Command executed successfully";
+        s.tableData.push_back({formatRedisReply(reply)});
         s.success = true;
-
         freeReplyObject(reply);
     } catch (const std::exception& e) {
         s.success = false;

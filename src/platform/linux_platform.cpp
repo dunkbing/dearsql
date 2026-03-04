@@ -810,7 +810,7 @@ void LinuxPlatform::showCreateWorkspaceDialog() {
 gboolean LinuxPlatform::onClose(GtkWindow* window, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->shouldClose_ = true;
-    return FALSE;
+    return TRUE; // prevent GTK auto-destroy; cleanup() handles it
 }
 
 void LinuxPlatform::updateThemeButtons() {

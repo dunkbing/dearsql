@@ -798,10 +798,11 @@ void Application::renderMainUI() {
     }
 
     const ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
-    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
 
-    // Setup default docking layout
+    // setup layout before DockSpace so rebuilt nodes are ready this frame
     setupDockingLayout(dockSpaceId);
+
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
 
     // Database sidebar rendering
     const bool shouldShowSidebar = sidebarWidth > 0.01f;

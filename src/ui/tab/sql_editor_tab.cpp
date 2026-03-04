@@ -42,7 +42,9 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
     bindNode(node_);
 }
 
-SQLEditorTab::~SQLEditorTab() = default;
+SQLEditorTab::~SQLEditorTab() {
+    queryExecutionOp_.cancel();
+}
 
 void SQLEditorTab::render() {
     // Sync editor palette with current app theme

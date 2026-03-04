@@ -449,7 +449,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.sshHostField = [self makeTextField:@"SSH server hostname"];
     [cv addSubview:self.sshHostField];
 
-    self.sshPortLabel = [self makeLabel:@"SSH Port"];
+    self.sshPortLabel = [self makeLabel:@"Port"];
     [cv addSubview:self.sshPortLabel];
     self.sshPortField = [self makeTextField:@"22"];
     self.sshPortField.stringValue = @"22";

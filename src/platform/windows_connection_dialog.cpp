@@ -637,7 +637,7 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         y += RS;
 
         // SSH port
-        makeCtrl("STATIC", "SSH Port:", IDC_LABEL_SSH_PORT, SS_RIGHT, LX, y + 3, LW, RH);
+        makeCtrl("STATIC", "Port:", IDC_LABEL_SSH_PORT, SS_RIGHT, LX, y + 3, LW, RH);
         makeCtrl("EDIT", "22", IDC_SSH_PORT_EDIT, WS_BORDER | WS_TABSTOP | ES_NUMBER, FX, y, 80,
                  RH);
         y += RS;

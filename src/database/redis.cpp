@@ -1,6 +1,8 @@
 #include "database/redis.hpp"
+#include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <format>
 #include <iostream>
 #include <sstream>
@@ -323,38 +325,165 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
     }
 
     try {
-        auto* reply = static_cast<redisReply*>(redisCommand(context, "KEYS %s", pattern.c_str()));
-        if (!reply || reply->type != REDIS_REPLY_ARRAY) {
-            if (reply)
-                freeReplyObject(reply);
-            return keys;
+        // collect key names using SCAN (non-blocking, safe for production)
+        std::vector<std::string> keyNames;
+        unsigned long long cursor = 0;
+        do {
+            auto* reply = static_cast<redisReply*>(
+                redisCommand(context, "SCAN %llu MATCH %s COUNT 200", cursor, pattern.c_str()));
+            if (!reply || reply->type != REDIS_REPLY_ARRAY || reply->elements != 2) {
+                if (reply)
+                    freeReplyObject(reply);
+                break;
+            }
+            cursor = std::strtoull(reply->element[0]->str, nullptr, 10);
+            auto* keysArray = reply->element[1];
+            for (size_t i = 0; i < keysArray->elements; ++i) {
+                if (keysArray->element[i]->type == REDIS_REPLY_STRING) {
+                    keyNames.emplace_back(keysArray->element[i]->str);
+                    if (static_cast<int>(keyNames.size()) >= limit) {
+                        cursor = 0; // stop scanning
+                        break;
+                    }
+                }
+            }
+            freeReplyObject(reply);
+        } while (cursor != 0);
+
+        std::sort(keyNames.begin(), keyNames.end());
+
+        // pipeline TYPE + TTL + MEMORY USAGE for all keys in one batch
+        for (const auto& name : keyNames) {
+            redisAppendCommand(context, "TYPE %s", name.c_str());
+            redisAppendCommand(context, "TTL %s", name.c_str());
+            redisAppendCommand(context, "MEMORY USAGE %s", name.c_str());
         }
 
-        const int count = std::min(limit, static_cast<int>(reply->elements));
-        for (int i = 0; i < count; ++i) {
-            if (reply->element[i]->type == REDIS_REPLY_STRING) {
-                RedisKey key;
-                key.name = reply->element[i]->str;
-                key.type = getKeyType(key.name);
-                key.value = getKeyValue(key.name, key.type);
-                key.ttl = getKeyTTL(key.name);
+        // read pipelined replies and populate key metadata
+        keys.resize(keyNames.size());
+        for (size_t i = 0; i < keyNames.size(); ++i) {
+            keys[i].name = keyNames[i];
 
-                // get memory usage
-                auto* memReply = static_cast<redisReply*>(
-                    redisCommand(context, "MEMORY USAGE %s", key.name.c_str()));
-                if (memReply && memReply->type == REDIS_REPLY_INTEGER) {
-                    key.size = memReply->integer;
-                }
-                if (memReply)
-                    freeReplyObject(memReply);
+            // TYPE reply
+            redisReply* typeReply = nullptr;
+            redisGetReply(context, reinterpret_cast<void**>(&typeReply));
+            if (typeReply && typeReply->type == REDIS_REPLY_STATUS) {
+                keys[i].type = typeReply->str;
+            } else {
+                keys[i].type = "unknown";
+            }
+            if (typeReply)
+                freeReplyObject(typeReply);
 
-                keys.push_back(key);
+            // TTL reply
+            redisReply* ttlReply = nullptr;
+            redisGetReply(context, reinterpret_cast<void**>(&ttlReply));
+            if (ttlReply && ttlReply->type == REDIS_REPLY_INTEGER) {
+                keys[i].ttl = ttlReply->integer;
+            }
+            if (ttlReply)
+                freeReplyObject(ttlReply);
+
+            // MEMORY USAGE reply
+            redisReply* memReply = nullptr;
+            redisGetReply(context, reinterpret_cast<void**>(&memReply));
+            if (memReply && memReply->type == REDIS_REPLY_INTEGER) {
+                keys[i].size = memReply->integer;
+            }
+            if (memReply)
+                freeReplyObject(memReply);
+        }
+
+        // fetch values in a second pipeline batch (command varies by type)
+        for (const auto& key : keys) {
+            if (key.type == "string") {
+                redisAppendCommand(context, "GET %s", key.name.c_str());
+            } else if (key.type == "list") {
+                redisAppendCommand(context, "LRANGE %s 0 4", key.name.c_str());
+            } else if (key.type == "set") {
+                redisAppendCommand(context, "SSCAN %s 0 COUNT 5", key.name.c_str());
+            } else if (key.type == "zset") {
+                redisAppendCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.name.c_str());
+            } else if (key.type == "hash") {
+                redisAppendCommand(context, "HSCAN %s 0 COUNT 5", key.name.c_str());
+            } else {
+                redisAppendCommand(context, "TYPE %s", key.name.c_str()); // dummy
             }
         }
 
-        freeReplyObject(reply);
+        for (size_t i = 0; i < keys.size(); ++i) {
+            redisReply* valReply = nullptr;
+            redisGetReply(context, reinterpret_cast<void**>(&valReply));
+            if (!valReply) {
+                keys[i].value = "[error]";
+                continue;
+            }
+
+            if (keys[i].type == "string") {
+                keys[i].value = (valReply->type == REDIS_REPLY_STRING) ? valReply->str : "[nil]";
+            } else if (keys[i].type == "list") {
+                if (valReply->type == REDIS_REPLY_ARRAY) {
+                    std::string s = "[";
+                    for (size_t j = 0; j < valReply->elements; ++j) {
+                        if (j > 0)
+                            s += ", ";
+                        s += std::string("\"") + valReply->element[j]->str + "\"";
+                    }
+                    s += "]";
+                    keys[i].value = s;
+                }
+            } else if (keys[i].type == "set") {
+                // SSCAN returns [cursor, [members...]]
+                if (valReply->type == REDIS_REPLY_ARRAY && valReply->elements == 2 &&
+                    valReply->element[1]->type == REDIS_REPLY_ARRAY) {
+                    auto* members = valReply->element[1];
+                    std::string s = "{";
+                    for (size_t j = 0; j < members->elements && j < 5; ++j) {
+                        if (j > 0)
+                            s += ", ";
+                        s += std::string("\"") + members->element[j]->str + "\"";
+                    }
+                    if (members->elements > 5)
+                        s += ", ...";
+                    s += "}";
+                    keys[i].value = s;
+                }
+            } else if (keys[i].type == "zset") {
+                if (valReply->type == REDIS_REPLY_ARRAY) {
+                    std::string s = "[";
+                    for (size_t j = 0; j + 1 < valReply->elements; j += 2) {
+                        if (j > 0)
+                            s += ", ";
+                        s += std::string("\"") + valReply->element[j]->str +
+                             "\":" + valReply->element[j + 1]->str;
+                    }
+                    if (valReply->elements > 10)
+                        s += ", ...";
+                    s += "]";
+                    keys[i].value = s;
+                }
+            } else if (keys[i].type == "hash") {
+                // HSCAN returns [cursor, [field, value, field, value, ...]]
+                if (valReply->type == REDIS_REPLY_ARRAY && valReply->elements == 2 &&
+                    valReply->element[1]->type == REDIS_REPLY_ARRAY) {
+                    auto* pairs = valReply->element[1];
+                    std::string s = "{";
+                    for (size_t j = 0; j + 1 < pairs->elements && j < 10; j += 2) {
+                        if (j > 0)
+                            s += ", ";
+                        s += std::string("\"") + pairs->element[j]->str + "\": \"" +
+                             pairs->element[j + 1]->str + "\"";
+                    }
+                    if (pairs->elements > 10)
+                        s += ", ...";
+                    s += "}";
+                    keys[i].value = s;
+                }
+            }
+            freeReplyObject(valReply);
+        }
     } catch (const std::exception& e) {
-        std::cerr << "Error getting Redis keys: " << e.what() << std::endl;
+        Logger::error(std::format("Error getting Redis keys: {}", e.what()));
     }
 
     return keys;

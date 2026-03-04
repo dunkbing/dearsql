@@ -15,6 +15,8 @@
 #include "platform/linux_platform.hpp"
 #include "platform/linux_updater.hpp"
 #include "ui/update_dialog.hpp"
+#elif defined(_WIN32)
+#include "platform/windows_platform.hpp"
 #else
 #include "platform/default_platform.hpp"
 #endif
@@ -38,7 +40,7 @@
 #endif
 
 #if defined(_WIN32)
-#include "imgui_impl_opengl3.h"
+#include "imgui_impl_dx11.h"
 #endif
 
 #include "embedded_fonts.hpp"
@@ -143,6 +145,18 @@ bool Application::initialize() {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
     // Setup titlebar before showing window
     platform_->setupTitlebar();
+#elif defined(_WIN32)
+    platform_ = std::make_unique<WindowsPlatform>(this);
+    if (!initializeGLFW()) {
+        return false;
+    }
+    if (!platform_->initializePlatform(window)) {
+        std::cerr << "Failed to initialize platform" << std::endl;
+        return false;
+    }
+    if (!initializeImGui()) {
+        return false;
+    }
 #else
     platform_ = std::make_unique<DefaultPlatform>(this);
     if (!initializeGLFW()) {
@@ -219,6 +233,8 @@ bool Application::initialize() {
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
 #elif defined(__linux__)
     std::cout << "Application initialized successfully (with GTK4 + OpenGL backend)" << std::endl;
+#elif defined(_WIN32)
+    std::cout << "Application initialized successfully (with DirectX 11 backend)" << std::endl;
 #else
     std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
 #endif
@@ -234,10 +250,7 @@ void Application::run() {
     linuxPlatform->runMainLoop();
 #else
     // macOS and Windows use GLFW main loop
-#if defined(_WIN32)
-    glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
-                 darkTheme ? 0.137f : 0.957f, 0.98f);
-#endif
+    // D3D11 handles clear color in WindowsPlatform::renderFrame()
 
     double lastInteractionTime = glfwGetTime();
 
@@ -488,11 +501,8 @@ bool Application::initializeGLFW() {
     // Metal backend doesn't need OpenGL context hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #elif defined(_WIN32)
-    // OpenGL backend requires context hints
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    // D3D11 backend — no OpenGL context needed
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
 #ifdef NDEBUG
@@ -507,10 +517,7 @@ bool Application::initializeGLFW() {
         return false;
     }
 
-#if defined(_WIN32)
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
-#endif
+    // note: no glfwMakeContextCurrent on Windows (D3D11 — no OpenGL context)
 
     std::cout << "GLFW window created successfully" << std::endl;
     return true;
@@ -533,7 +540,7 @@ bool Application::initializeImGui() const {
 #ifdef __APPLE__
     ImGui_ImplGlfw_InitForOther(window, true);
 #elif defined(_WIN32)
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOther(window, true);
 #endif
 
     // Initialize platform-specific ImGui backend
@@ -545,7 +552,7 @@ bool Application::initializeImGui() const {
 #ifdef __APPLE__
     std::cout << "ImGui initialized with Metal backend" << std::endl;
 #elif defined(_WIN32)
-    std::cout << "ImGui initialized with OpenGL backend" << std::endl;
+    std::cout << "ImGui initialized with DirectX 11 backend" << std::endl;
 #endif
 
     return true;

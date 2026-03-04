@@ -19,6 +19,8 @@
 #include "platform/macos_connection_dialog.hpp"
 #elif defined(__linux__)
 #include "platform/linux_connection_dialog.hpp"
+#elif defined(_WIN32)
+#include "platform/windows_connection_dialog.hpp"
 #endif
 #include <chrono>
 #include <format>
@@ -45,6 +47,8 @@ void DatabaseSidebarNew::showConnectionDialog() {
     showMacOSConnectionDialog(&Application::getInstance());
 #elif defined(__linux__)
     showLinuxConnectionDialog(&Application::getInstance());
+#elif defined(_WIN32)
+    showWindowsConnectionDialog(&Application::getInstance());
 #endif
 }
 
@@ -597,6 +601,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                     showMacOSCreateDatabaseDialog(&app, db);
 #elif defined(__linux__)
                     showLinuxCreateDatabaseDialog(&app, db);
+#elif defined(_WIN32)
+                    showWindowsCreateDatabaseDialog(&app, db);
 #endif
                 }
                 ImGui::Separator();
@@ -608,6 +614,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             showMacOSEditConnectionDialog(&app, db);
 #elif defined(__linux__)
             showLinuxEditConnectionDialog(&app, db);
+#elif defined(_WIN32)
+            showWindowsEditConnectionDialog(&app, db);
 #endif
         }
 

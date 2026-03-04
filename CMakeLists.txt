@@ -40,6 +40,10 @@ set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/cmake/triplets" CACHE STRING "" 
 
 project(dear-sql)
 
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -87,7 +91,7 @@ find_package(sentry CONFIG REQUIRED)
 enable_testing()
 
 # Platform-specific windowing
-if(UNIX AND NOT APPLE)
+if(LINUX)
     # Linux uses GTK4 for windowing
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
@@ -135,7 +139,7 @@ set(IMGUI_SOURCES
 )
 
 # Platform-specific ImGui backend
-if(UNIX AND NOT APPLE)
+if(LINUX)
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 else()
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
@@ -158,8 +162,14 @@ if(APPLE)
 
     message(STATUS "Using Metal backend for macOS")
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
-elseif(UNIX AND NOT APPLE)
+elseif(LINUX)
     message(STATUS "Using GTK4 + OpenGL backend for Linux")
+elseif(WIN32)
+    message(STATUS "Using DirectX 11 backend for Windows")
+    list(APPEND IMGUI_SOURCES
+        external/imgui/backends/imgui_impl_dx11.cpp
+        external/imgui/backends/imgui_impl_win32.cpp
+    )
 else()
     find_package(OpenGL REQUIRED)
     message(STATUS "Using OpenGL backend for ${CMAKE_SYSTEM_NAME}")
@@ -240,12 +250,18 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_connection_dialog.mm)
     list(APPEND APP_SOURCES src/platform/macos_updater.mm)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
-elseif(UNIX AND NOT APPLE)
+elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/linux_connection_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
     list(APPEND APP_SOURCES src/ui/update_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
+elseif(WIN32)
+    list(APPEND APP_SOURCES
+        src/platform/windows_platform.cpp
+        src/platform/windows_connection_dialog.cpp
+        src/platform/windows_alert.cpp
+    )
 else()
     list(APPEND APP_SOURCES src/platform/default_platform.cpp)
 endif()
@@ -279,7 +295,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # platform-specific include directories
-if(UNIX AND NOT APPLE)
+if(LINUX)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
 endif()
 
@@ -316,13 +332,21 @@ if(APPLE)
         ${APPKIT_LIBRARY}
     )
     target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
-elseif(UNIX AND NOT APPLE)
+elseif(LINUX)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         ${GTK4_LIBRARIES}
         ${EPOXY_LIBRARIES}
         ${X11_LIBRARIES}
     )
     target_link_directories(${PROJECT_NAME} PRIVATE ${GTK4_LIBRARY_DIRS} ${EPOXY_LIBRARY_DIRS})
+elseif(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        glfw
+        d3d11
+        dxgi
+        dwmapi
+        comctl32
+    )
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
         glfw
@@ -451,7 +475,7 @@ add_test(NAME sql_format_tests COMMAND sql_format_tests)
 # =============================================================================
 # Install rules for Linux packaging
 # =============================================================================
-if(UNIX AND NOT APPLE)
+if(LINUX)
     install(TARGETS ${PROJECT_NAME} DESTINATION bin)
     install(FILES packaging/io.gitlab.dunkbing.dearsql.desktop
             DESTINATION share/applications)

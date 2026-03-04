@@ -418,37 +418,35 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     g_signal_connect(
         browseKeyBtn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer ud) {
             auto* d = static_cast<ConnectionDialogData*>(ud);
-            GtkWidget* chooser = gtk_file_chooser_dialog_new(
-                "Select Private Key", GTK_WINDOW(d->dialog), GTK_FILE_CHOOSER_ACTION_OPEN,
-                "_Cancel", GTK_RESPONSE_CANCEL, "_Open", GTK_RESPONSE_ACCEPT, nullptr);
+            GtkFileDialog* fileDialog = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(fileDialog, "Select Private Key");
 
-            // Default to ~/.ssh/
+            // default to ~/.ssh/
             const char* home = g_get_home_dir();
             if (home) {
                 std::string sshDir = std::string(home) + "/.ssh";
                 auto* folder = g_file_new_for_path(sshDir.c_str());
-                gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(chooser), folder, nullptr);
+                gtk_file_dialog_set_initial_folder(fileDialog, folder);
                 g_object_unref(folder);
             }
 
-            gtk_widget_set_visible(chooser, TRUE);
-            g_signal_connect(
-                chooser, "response", G_CALLBACK(+[](GtkDialog* dlg, int response, gpointer ud2) {
+            gtk_file_dialog_open(
+                fileDialog, GTK_WINDOW(d->dialog), nullptr,
+                +[](GObject* source, GAsyncResult* res, gpointer ud2) {
                     auto* d2 = static_cast<ConnectionDialogData*>(ud2);
-                    if (response == GTK_RESPONSE_ACCEPT) {
-                        auto* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(dlg));
-                        if (file) {
-                            char* path = g_file_get_path(file);
-                            if (path) {
-                                gtk_editable_set_text(GTK_EDITABLE(d2->sshKeyPathEntry), path);
-                                g_free(path);
-                            }
-                            g_object_unref(file);
+                    GFile* file =
+                        gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source), res, nullptr);
+                    if (file) {
+                        char* path = g_file_get_path(file);
+                        if (path) {
+                            gtk_editable_set_text(GTK_EDITABLE(d2->sshKeyPathEntry), path);
+                            g_free(path);
                         }
+                        g_object_unref(file);
                     }
-                    gtk_window_destroy(GTK_WINDOW(dlg));
-                }),
+                },
                 d);
+            g_object_unref(fileDialog);
         }),
         data);
 

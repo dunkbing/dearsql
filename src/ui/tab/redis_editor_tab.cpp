@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/spinner.hpp"
+#include "utils/splitter.hpp"
 #include <algorithm>
 #include <chrono>
 #include <sstream>
@@ -290,7 +291,8 @@ void RedisEditorTab::render() {
         ImGui::EndChild();
 
         renderToolbar();
-        renderVerticalSplitter("##redis_splitter", &splitterPosition_, 60.0f, 80.0f);
+        UIUtils::Splitter("##redis_splitter", &splitterPosition_, totalContentHeight_, 60.0f,
+                          80.0f);
 
         if (ImGui::BeginChild("RedisResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -560,47 +562,3 @@ void RedisEditorTab::checkCommandExecutionStatus() {
     });
 }
 
-bool RedisEditorTab::renderVerticalSplitter(const char* id, float* position, float minSize1,
-                                            float minSize2) const {
-    constexpr float hoverThickness = 6.0f;
-
-    ImGui::InvisibleButton(id, ImVec2(-1, hoverThickness));
-
-    const bool hovered = ImGui::IsItemHovered();
-    const bool held = ImGui::IsItemActive();
-
-    if (hovered || held) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-    }
-
-    bool changed = false;
-    if (held) {
-        const float delta = ImGui::GetIO().MouseDelta.y;
-        if (delta != 0.0f) {
-            const float availableHeight = totalContentHeight_;
-            const float currentPixelPos = *position * availableHeight;
-            const float newPixelPos = currentPixelPos + delta;
-            float newPosition = newPixelPos / availableHeight;
-
-            const float minPos1 = minSize1 / availableHeight;
-            const float maxPos1 = 1.0f - (minSize2 / availableHeight);
-
-            newPosition = std::max(minPos1, std::min(maxPos1, newPosition));
-
-            if (newPosition != *position) {
-                *position = newPosition;
-                changed = true;
-            }
-        }
-    }
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 pos = ImGui::GetItemRectMin();
-    const ImVec2 size = ImGui::GetItemRectSize();
-    const float centerY = pos.y + size.y / 2.0f;
-    const ImU32 color = (hovered || held) ? ImGui::GetColorU32(ImGuiCol_SeparatorHovered)
-                                          : ImGui::GetColorU32(ImGuiCol_Separator);
-    drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 2.0f);
-
-    return changed;
-}

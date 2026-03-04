@@ -62,9 +62,8 @@ private:
     AsyncOperation<QueryResult> queryExecutionOp_;
 
     // Splitter state for resizing between editor and results
-    float splitterPosition = 0.4f; // 40% for editor, 60% for results
-    bool splitterActive = false;
-    float totalContentHeight = 0.0f; // Store total height for consistent splitter calculation
+    float splitterPosition = 0.4f;
+    float totalContentHeight = 0.0f;
 
     // Helper methods for async execution
     void startQueryExecutionAsync(const std::string& query);
@@ -84,10 +83,6 @@ private:
     void switchNode(IDatabaseNode* newNode);
     void bindNode(IDatabaseNode* node);
     void syncBoundNodePointer();
-
-    // Helper method for splitter
-    bool renderVerticalSplitter(const char* id, float* position, float minSize1,
-                                float minSize2) const;
 
     // Formatting
     void formatSQL();

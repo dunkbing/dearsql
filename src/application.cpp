@@ -135,14 +135,7 @@ bool Application::initialize() {
     if (!linuxPlatform->initializeGTK(nullptr, nullptr)) {
         return false;
     }
-    // ImGui context creation for Linux
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    setupFonts();
-    ImGui::StyleColorsDark();
-    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+    setupImGuiContext();
     // Setup titlebar before showing window
     platform_->setupTitlebar();
 #elif defined(_WIN32)
@@ -524,26 +517,22 @@ bool Application::initializeGLFW() {
 }
 #endif
 
-#if defined(__APPLE__) || defined(_WIN32)
-bool Application::initializeImGui() const {
+void Application::setupImGuiContext() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
     setupFonts();
-
     ImGui::StyleColorsDark();
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+}
 
-    // Initialize GLFW backend
-#ifdef __APPLE__
-    ImGui_ImplGlfw_InitForOther(window, true);
-#elif defined(_WIN32)
-    ImGui_ImplGlfw_InitForOther(window, true);
-#endif
+#if defined(__APPLE__) || defined(_WIN32)
+bool Application::initializeImGui() const {
+    setupImGuiContext();
 
-    // Initialize platform-specific ImGui backend
+    ImGui_ImplGlfw_InitForOther(window, true);
+
     if (!platform_->initializeImGuiBackend()) {
         std::cerr << "Failed to initialize ImGui backend" << std::endl;
         return false;
@@ -596,9 +585,6 @@ void Application::setupFonts() {
             }
         }
     }
-
-    // Don't call io.Fonts->Build() - the backend handles this automatically
-    // when ImGuiBackendFlags_RendererHasTextures is set
 }
 
 void Application::setCurrentWorkspace(const int workspaceId) {

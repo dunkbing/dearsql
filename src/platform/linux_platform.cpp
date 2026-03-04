@@ -444,6 +444,40 @@ gboolean LinuxPlatform::onRender(GtkGLArea* area, GdkGLContext* context, gpointe
 
     ImGui::Render();
 
+    // update GTK cursor to match ImGui's requested cursor
+    ImGuiMouseCursor imguiCursor = ImGui::GetMouseCursor();
+    const char* cursorName = nullptr;
+    switch (imguiCursor) {
+    case ImGuiMouseCursor_Arrow:
+        cursorName = "default";
+        break;
+    case ImGuiMouseCursor_TextInput:
+        cursorName = "text";
+        break;
+    case ImGuiMouseCursor_ResizeNS:
+        cursorName = "ns-resize";
+        break;
+    case ImGuiMouseCursor_ResizeEW:
+        cursorName = "ew-resize";
+        break;
+    case ImGuiMouseCursor_ResizeNESW:
+        cursorName = "nesw-resize";
+        break;
+    case ImGuiMouseCursor_ResizeNWSE:
+        cursorName = "nwse-resize";
+        break;
+    case ImGuiMouseCursor_Hand:
+        cursorName = "pointer";
+        break;
+    case ImGuiMouseCursor_NotAllowed:
+        cursorName = "not-allowed";
+        break;
+    default:
+        cursorName = "default";
+        break;
+    }
+    gtk_widget_set_cursor_from_name(platform->glArea_, cursorName);
+
     glViewport(0, 0, platform->fbWidth_, platform->fbHeight_);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

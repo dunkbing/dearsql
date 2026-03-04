@@ -42,6 +42,4 @@ private:
     void renderHeader() const;
     void renderToolbar();
     void renderResults();
-    bool renderVerticalSplitter(const char* id, float* position, float minSize1,
-                                float minSize2) const;
 };

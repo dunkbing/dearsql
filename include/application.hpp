@@ -143,6 +143,7 @@ private:
     int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods
+    void setupImGuiContext() const;
 #if defined(__APPLE__) || defined(_WIN32)
     bool initializeGLFW();
     bool initializeImGui() const;

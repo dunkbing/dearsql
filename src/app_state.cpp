@@ -79,7 +79,7 @@ namespace {
             if (!saltStr.empty()) {
                 auto saltData = CryptoUtils::base64Decode(saltStr);
                 std::string salt(saltData.begin(), saltData.end());
-                encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+                encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
 
                 if (!encryptedUsername.empty()) {
                     try {
@@ -195,9 +195,9 @@ AppState::AppState() {
 #endif
 
     if (home) {
-        dbPath_ = fs::path(home) / ".dear-sql" / "app_state.db";
+        dbPath_ = fs::path(home) / ".dearsql" / "connections.db";
     } else {
-        dbPath_ = fs::path("./app_state.db");
+        dbPath_ = fs::path("./connections.db");
     }
 
     dbPath = dbPath_.string();
@@ -226,6 +226,9 @@ bool AppState::initialize() {
         db_ = nullptr;
         return false;
     }
+
+    // limit page cache to ~1MB (state DB is tiny)
+    sqlite3_exec(db_, "PRAGMA cache_size = -1000;", nullptr, nullptr, nullptr);
 
     return createTables();
 }
@@ -349,7 +352,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+    std::string encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""
@@ -455,7 +458,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey("dear-sql-master-key", salt);
+    std::string encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""

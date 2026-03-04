@@ -22,7 +22,7 @@
   <url type="homepage">https://dearsql.dev</url>
 
   <provides>
-    <binary>dear-sql</binary>
+    <binary>dearsql</binary>
   </provides>
 
   <content_rating type="oars-1.1" />

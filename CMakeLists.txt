@@ -38,7 +38,7 @@ endif()
 # Use project-local triplet overlay for deployment target
 set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_SOURCE_DIR}/cmake/triplets" CACHE STRING "" FORCE)
 
-project(dear-sql)
+project(dearsql)
 
 if(UNIX AND NOT APPLE)
     set(LINUX TRUE)

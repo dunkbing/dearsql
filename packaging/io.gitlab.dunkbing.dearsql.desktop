@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=DearSQL
 Comment=SQL Database Client
-Exec=dear-sql
+Exec=dearsql
 Icon=io.gitlab.dunkbing.dearsql
 Terminal=false
 Type=Application

@@ -41,14 +41,14 @@ else
 fi
 
 echo "Building DearSQL..."
-cmake --build "$BUILD_DIR" --target dear-sql
+cmake --build "$BUILD_DIR" --target dearsql
 
 if [[ "$(uname)" == "Darwin" ]]; then
     echo "Build complete: $BUILD_DIR/DearSQL.app"
     exit 0
 fi
 
-echo "Build complete: $BUILD_DIR/dear-sql"
+echo "Build complete: $BUILD_DIR/dearsql"
 
 # On Linux release builds, also produce .deb and AppImage
 if [[ "$BUILD_TYPE" != "Release" ]]; then
@@ -77,7 +77,7 @@ mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-install -m755 "$BUILD_DIR/dear-sql" "$APPDIR/usr/bin/dear-sql"
+install -m755 "$BUILD_DIR/dearsql" "$APPDIR/usr/bin/dearsql"
 install -m644 "$ROOT_DIR/packaging/$APP_IDENTIFIER.desktop" \
     "$APPDIR/usr/share/applications/$APP_IDENTIFIER.desktop"
 install -m644 "$ROOT_DIR/assets/appicon.png" \

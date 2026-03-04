@@ -43,6 +43,8 @@
 #include "imgui_impl_dx11.h"
 #endif
 
+#include "IconsFontAwesome6.h"
+#include "IconsForkAwesome.h"
 #include "embedded_fonts.hpp"
 
 namespace {
@@ -551,38 +553,55 @@ bool Application::initializeImGui() const {
 void Application::setupFonts() {
     const ImGuiIO& io = ImGui::GetIO();
 
-    // load embedded fonts first
     const size_t embeddedFontCount = getEmbeddedFontCount();
-    if (embeddedFontCount > 0) {
-        ImFontConfig fontConfig;
-        const EmbeddedFont* embeddedFonts = getEmbeddedFonts();
-        for (size_t i = 0; i < embeddedFontCount; ++i) {
-            const EmbeddedFont& font = embeddedFonts[i];
+    if (embeddedFontCount == 0)
+        return;
 
-            // Choose appropriate glyph ranges based on font name
-            const ImWchar* ranges = nullptr;
-            std::string fontName = font.name;
+    const EmbeddedFont* embeddedFonts = getEmbeddedFonts();
+    ImFontConfig fontConfig;
 
-            if (fontName.find("Cyrillic") != std::string::npos) {
-                ranges = io.Fonts->GetGlyphRangesCyrillic();
-            } else {
-                ranges = io.Fonts->GetGlyphRangesDefault();
-            }
+    // icon glyph ranges (only load codepoints we actually need)
+    static const ImWchar faRanges[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
+    static const ImWchar fkRanges[] = {ICON_MIN_FK, ICON_MAX_16_FK, 0};
 
-            // Create a copy of fontConfig for each font to avoid reuse issues
-            ImFontConfig embeddedFontConfig = fontConfig;
-            // Don't let ImGui free the embedded data
-            embeddedFontConfig.FontDataOwnedByAtlas = false;
+    for (size_t i = 0; i < embeddedFontCount; ++i) {
+        const EmbeddedFont& font = embeddedFonts[i];
+        std::string fontName = font.name;
 
-            const ImFont* loadedFont = io.Fonts->AddFontFromMemoryTTF(
-                (void*)font.data, static_cast<int>(font.size), 16.0f, &embeddedFontConfig, ranges);
-            if (!fontConfig.MergeMode) {
-                fontConfig.MergeMode = true;
-            }
+        const ImWchar* ranges = nullptr;
+        bool isIconFont = false;
 
-            if (loadedFont) {
-                std::cout << "✓ Successfully loaded embedded font: " << font.name << std::endl;
-            }
+        if (fontName.find("fa-solid") != std::string::npos ||
+            fontName.find("fa-regular") != std::string::npos) {
+            ranges = faRanges;
+            isIconFont = true;
+        } else if (fontName.find("forkawesome") != std::string::npos) {
+            ranges = fkRanges;
+            isIconFont = true;
+        } else if (fontName.find("Cyrillic") != std::string::npos) {
+            ranges = io.Fonts->GetGlyphRangesCyrillic();
+        } else {
+            ranges = io.Fonts->GetGlyphRangesDefault();
+        }
+
+        ImFontConfig embeddedFontConfig = fontConfig;
+        embeddedFontConfig.FontDataOwnedByAtlas = false;
+
+        // icon fonts don't need oversampling
+        if (isIconFont) {
+            embeddedFontConfig.OversampleH = 1;
+            embeddedFontConfig.OversampleV = 1;
+            embeddedFontConfig.PixelSnapH = true;
+        }
+
+        const ImFont* loadedFont = io.Fonts->AddFontFromMemoryTTF(
+            (void*)font.data, static_cast<int>(font.size), 16.0f, &embeddedFontConfig, ranges);
+        if (!fontConfig.MergeMode) {
+            fontConfig.MergeMode = true;
+        }
+
+        if (loadedFont) {
+            Logger::info(std::format("loaded embedded font: {}", fontName));
         }
     }
 }

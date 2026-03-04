@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "name": "dear-sql",
+  "name": "dearsql",
   "version": "0.1.7",
   "description": "Cross-platform SQL database client",
   "dependencies": [

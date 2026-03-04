@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -26,6 +28,9 @@ public:
         bool allowSelection = true;
         float minHeight = 50.0f;
         int tableFlags = 0; // ImGuiTableFlags
+        std::set<int> nonEditableColumns;
+        std::map<int, int> columnInputFlags; // per-column ImGuiInputTextFlags
+        std::map<int, std::vector<std::string>> columnDropdownOptions;
     };
 
     // Callbacks for editing functionality
@@ -34,6 +39,11 @@ public:
     using OnCellDoubleClickCallback = std::function<void(int row, int col)>;
     using OnSortChangedCallback =
         std::function<void(int col, const std::string& colName, SortDirection direction)>;
+    // returns optional color override for a cell (0 = no override)
+    using CellColorCallback =
+        std::function<unsigned int(int row, int col, const std::string& value)>;
+    // returns false to block editing a specific cell
+    using CellEditableCallback = std::function<bool(int row, int col)>;
 
     TableRenderer();
     explicit TableRenderer(const Config& config);
@@ -59,6 +69,12 @@ public:
     }
     void setOnSortChanged(OnSortChangedCallback callback) {
         onSortChanged = callback;
+    }
+    void setCellColorCallback(CellColorCallback callback) {
+        cellColorCb = callback;
+    }
+    void setCellEditableCallback(CellEditableCallback callback) {
+        cellEditableCb = callback;
     }
 
     // Sorting
@@ -116,12 +132,16 @@ private:
     // Edit mode state
     bool justEnteredEditWithChar = false;
     int initialCursorPos = 0;
+    bool comboNeedsOpen = false;
+    bool comboHasOpened = false;
 
     // Callbacks
     OnCellEditCallback onCellEdit;
     OnCellSelectCallback onCellSelect;
     OnCellDoubleClickCallback onCellDoubleClick;
     OnSortChangedCallback onSortChanged;
+    CellColorCallback cellColorCb;
+    CellEditableCallback cellEditableCb;
 
     // Sorting state
     int sortColumn = -1;

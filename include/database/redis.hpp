@@ -11,7 +11,8 @@ struct RedisKey {
     std::string name;
     std::string type;
     std::string value;
-    int64_t ttl = -1; // -1 means no expiration
+    int64_t ttl = -1;  // -1 means no expiration
+    int64_t size = -1; // bytes, -1 if unavailable
 };
 
 class RedisDatabase final : public DatabaseInterface, public IQueryExecutor {
@@ -38,7 +39,7 @@ public:
 
     // Redis-specific methods
     std::vector<RedisKey> getKeys(const std::string& pattern = "*", int limit = 1000) const;
-    std::string getKeyValue(const std::string& key) const;
+    std::string getKeyValue(const std::string& key, const std::string& knownType = "") const;
     std::string getKeyType(const std::string& key) const;
     int64_t getKeyTTL(const std::string& key) const;
 

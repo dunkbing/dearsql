@@ -63,15 +63,16 @@ void TableRenderer::render(const char* tableId) {
 
     // Check for keyboard input to start editing when a cell is selected
     if (config.allowEditing && selectedRow >= 0 && selectedCol >= 0 && editingRow == -1 &&
-        editingCol == -1) {
+        editingCol == -1 && !config.nonEditableColumns.contains(selectedCol) &&
+        (!cellEditableCb || cellEditableCb(selectedRow, selectedCol))) {
         // Check if window is focused
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
             // Check for Enter key to enter edit mode with existing value
             if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
                 // Enter edit mode preserving the current cell value
                 enterEditMode(selectedRow, selectedCol);
-            } else {
-                // Get the input character from ImGui
+            } else if (!config.columnDropdownOptions.contains(selectedCol)) {
+                // Get the input character from ImGui (skip for dropdown columns)
                 ImGuiIO& io = ImGui::GetIO();
                 if (io.InputQueueCharacters.Size > 0) {
                     // A character was typed - enter edit mode
@@ -96,8 +97,6 @@ void TableRenderer::render(const char* tableId) {
     }
 
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
-        const auto& colors = Application::getInstance().getCurrentColors();
-
         // Setup columns
         if (config.showRowNumbers) {
             // Calculate width needed for row numbers
@@ -245,51 +244,93 @@ void TableRenderer::renderCell(int row, int col) {
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
-        // Edit mode - input fills cell width, blue tint to indicate editing
+        // Edit mode - blue tint to indicate editing
         ImGui::TableSetBgColor(
             ImGuiTableBgTarget_CellBg,
             ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.15f)));
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::SetKeyboardFocusHere();
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
 
-        // Handle cursor positioning when we just entered edit mode with a character
-        bool shouldExitEditMode = false;
-        if (justEnteredEditWithChar) {
-            // Use callback to set cursor position after the input field is created
-            shouldExitEditMode = ImGui::InputText(
-                "##edit", editBuffer, sizeof(editBuffer),
-                ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways,
-                [](ImGuiInputTextCallbackData* data) {
-                    TableRenderer* renderer = static_cast<TableRenderer*>(data->UserData);
-                    if (renderer->justEnteredEditWithChar) {
-                        // Set cursor position after the first character
-                        data->CursorPos = renderer->initialCursorPos;
-                        data->SelectionStart = renderer->initialCursorPos;
-                        data->SelectionEnd = renderer->initialCursorPos;
-                        renderer->justEnteredEditWithChar = false;
+        auto dropdownIt = config.columnDropdownOptions.find(col);
+        if (dropdownIt != config.columnDropdownOptions.end()) {
+            // Dropdown combo editing
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            if (comboNeedsOpen) {
+                ImGui::OpenPopup(ImGui::GetID("##dropdown_edit"));
+                comboNeedsOpen = false;
+            }
+            if (ImGui::BeginCombo("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
+                comboHasOpened = true;
+                for (const auto& option : dropdownIt->second) {
+                    bool selected = (option == std::string(editBuffer));
+                    if (ImGui::Selectable(option.c_str(), selected)) {
+                        strncpy(editBuffer, option.c_str(), sizeof(editBuffer) - 1);
+                        editBuffer[sizeof(editBuffer) - 1] = '\0';
+                        exitEditMode(true);
                     }
-                    return 0;
-                },
-                this);
+                    if (selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            } else if (comboHasOpened) {
+                exitEditMode(false);
+            }
+            ImGui::PopStyleVar(2);
+
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                exitEditMode(false);
+            }
         } else {
-            shouldExitEditMode = ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
-                                                  ImGuiInputTextFlags_EnterReturnsTrue);
-        }
-        ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar(2);
+            // Text input editing
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::SetKeyboardFocusHere();
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
 
-        if (shouldExitEditMode) {
-            exitEditMode(true);
-        }
+            // per-column input flags
+            int extraFlags = 0;
+            if (auto it = config.columnInputFlags.find(col); it != config.columnInputFlags.end()) {
+                extraFlags = it->second;
+            }
 
-        // Exit edit mode on Escape
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            exitEditMode(false);
+            // Handle cursor positioning when we just entered edit mode with a character
+            bool shouldExitEditMode = false;
+            if (justEnteredEditWithChar) {
+                // Use callback to set cursor position after the input field is created
+                shouldExitEditMode = ImGui::InputText(
+                    "##edit", editBuffer, sizeof(editBuffer),
+                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways |
+                        extraFlags,
+                    [](ImGuiInputTextCallbackData* data) {
+                        TableRenderer* renderer = static_cast<TableRenderer*>(data->UserData);
+                        if (renderer->justEnteredEditWithChar) {
+                            data->CursorPos = renderer->initialCursorPos;
+                            data->SelectionStart = renderer->initialCursorPos;
+                            data->SelectionEnd = renderer->initialCursorPos;
+                            renderer->justEnteredEditWithChar = false;
+                        }
+                        return 0;
+                    },
+                    this);
+            } else {
+                shouldExitEditMode =
+                    ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
+                                     ImGuiInputTextFlags_EnterReturnsTrue | extraFlags);
+            }
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(2);
+
+            if (shouldExitEditMode) {
+                exitEditMode(true);
+            }
+
+            // Exit edit mode on Escape
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                exitEditMode(false);
+            }
         }
     } else {
         // Display mode - show cell content
@@ -315,6 +356,15 @@ void TableRenderer::renderCell(int row, int col) {
 
         const std::string& cellValue = data[row][col];
 
+        // apply per-cell color override
+        bool hasColorOverride = false;
+        if (cellColorCb) {
+            if (ImU32 color = cellColorCb(row, col, cellValue); color != 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                hasColorOverride = true;
+            }
+        }
+
         if (config.allowSelection) {
             handleCellInteraction(row, col, isSelected);
         } else {
@@ -326,6 +376,9 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::SetTooltip("%s", cellValue.c_str());
             }
         }
+
+        if (hasColorOverride)
+            ImGui::PopStyleColor();
 
         ImGui::PopID();
     }
@@ -363,8 +416,9 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 
     ImGui::PopStyleColor(3);
 
-    // Apply hover highlight at cell level
-    if (ImGui::IsItemHovered() && !isSelected) {
+    // Apply hover highlight at cell level (skip non-editable cells)
+    if (ImGui::IsItemHovered() && !isSelected && !config.nonEditableColumns.contains(col) &&
+        (!cellEditableCb || cellEditableCb(row, col))) {
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
     }
 
@@ -375,7 +429,9 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 }
 
 void TableRenderer::enterEditMode(int row, int col) {
-    if (!config.allowEditing)
+    if (!config.allowEditing || config.nonEditableColumns.contains(col))
+        return;
+    if (cellEditableCb && !cellEditableCb(row, col))
         return;
 
     if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 &&
@@ -387,6 +443,11 @@ void TableRenderer::enterEditMode(int row, int col) {
         const std::string& currentValue = data[row][col];
         strncpy(editBuffer, currentValue.c_str(), sizeof(editBuffer) - 1);
         editBuffer[sizeof(editBuffer) - 1] = '\0';
+
+        if (config.columnDropdownOptions.contains(col)) {
+            comboNeedsOpen = true;
+            comboHasOpened = false;
+        }
     }
 }
 

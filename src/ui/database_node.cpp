@@ -250,7 +250,7 @@ void DatabaseHierarchy::renderRootNode() {
                                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                              ImGuiTreeNodeFlags_FramePadding;
 
-                const std::string displayName = (keyGroup.name == "*") ? "All Keys" : keyGroup.name;
+                const std::string displayName = (keyGroup.name == "*") ? "Browse" : keyGroup.name;
                 const std::string keyGroupId = std::format("redis_key_{}_{:p}", displayName,
                                                            static_cast<const void*>(&keyGroup));
 

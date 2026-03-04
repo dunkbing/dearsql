@@ -316,7 +316,7 @@ std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
         }
     }
 
-    const std::string displayName = (pattern == "*") ? "All Keys" : pattern;
+    const std::string displayName = (pattern == "*") ? "Browse" : pattern;
     const std::string baseName = std::format("Redis: {}", displayName);
     std::string tabName = baseName;
     int count = 1;

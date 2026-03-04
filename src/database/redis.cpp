@@ -274,7 +274,19 @@ std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::str
             row.push_back(it->name);
             row.push_back(it->type);
             row.push_back(it->value);
-            row.push_back(it->ttl == -1 ? "No expiration" : std::to_string(it->ttl) + "s");
+            row.push_back(std::to_string(it->ttl));
+
+            // format size
+            if (it->size < 0) {
+                row.push_back("-");
+            } else if (it->size < 1024) {
+                row.push_back(std::to_string(it->size) + " B");
+            } else if (it->size < 1024 * 1024) {
+                row.push_back(std::format("{:.1f} KB", it->size / 1024.0));
+            } else {
+                row.push_back(std::format("{:.1f} MB", it->size / (1024.0 * 1024.0)));
+            }
+
             data.push_back(row);
         }
     } catch (const std::exception& e) {
@@ -285,7 +297,7 @@ std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::str
 }
 
 std::vector<std::string> RedisDatabase::getColumnNames(const std::string& keyPattern) {
-    return {"Key", "Type", "Value", "TTL"};
+    return {"Key", "Type", "Value", "TTL", "Size"};
 }
 
 int RedisDatabase::getRowCount(const std::string& keyPattern) {
@@ -324,8 +336,18 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
                 RedisKey key;
                 key.name = reply->element[i]->str;
                 key.type = getKeyType(key.name);
-                key.value = getKeyValue(key.name);
+                key.value = getKeyValue(key.name, key.type);
                 key.ttl = getKeyTTL(key.name);
+
+                // get memory usage
+                auto* memReply = static_cast<redisReply*>(
+                    redisCommand(context, "MEMORY USAGE %s", key.name.c_str()));
+                if (memReply && memReply->type == REDIS_REPLY_INTEGER) {
+                    key.size = memReply->integer;
+                }
+                if (memReply)
+                    freeReplyObject(memReply);
+
                 keys.push_back(key);
             }
         }
@@ -338,13 +360,13 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
     return keys;
 }
 
-std::string RedisDatabase::getKeyValue(const std::string& key) const {
+std::string RedisDatabase::getKeyValue(const std::string& key, const std::string& knownType) const {
     if (!isConnected()) {
         return "";
     }
 
     try {
-        std::string type = getKeyType(key);
+        std::string type = knownType.empty() ? getKeyType(key) : knownType;
 
         if (type == "string") {
             auto* reply = static_cast<redisReply*>(redisCommand(context, "GET %s", key.c_str()));

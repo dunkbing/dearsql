@@ -6,6 +6,7 @@
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/redis_editor_tab.hpp"
 #include "ui/tab/redis_key_viewer_tab.hpp"
+#include "ui/tab/redis_pubsub_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include <algorithm>
@@ -326,6 +327,39 @@ std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
     }
 
     auto tab = std::make_shared<RedisKeyViewerTab>(tabName, db, pattern);
+    tab->setShouldFocus(true);
+    addTab(tab);
+
+    auto& app = Application::getInstance();
+    app.dockTabToCenter(tabName);
+
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createRedisPubSubTab(RedisDatabase* db) {
+    if (!db)
+        return nullptr;
+
+    // reuse existing tab for same db
+    for (auto& tab : tabs) {
+        if (tab->getType() == TabType::REDIS_PUBSUB) {
+            const auto pubsubTab = std::dynamic_pointer_cast<RedisPubSubTab>(tab);
+            if (pubsubTab && pubsubTab->getDatabase() == db) {
+                pubsubTab->setShouldFocus(true);
+                return tab;
+            }
+        }
+    }
+
+    const std::string baseName = "Pub/Sub";
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTab(tabName)) {
+        ++count;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    auto tab = std::make_shared<RedisPubSubTab>(tabName, db);
     tab->setShouldFocus(true);
     addTab(tab);
 

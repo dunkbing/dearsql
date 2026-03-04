@@ -212,6 +212,7 @@ set(APP_SOURCES
     # Redis
     src/ui/tab/redis_editor_tab.cpp
     src/ui/tab/redis_key_viewer_tab.cpp
+    src/ui/tab/redis_pubsub_tab.cpp
 
     # Utils
     src/utils/file_dialog.cpp

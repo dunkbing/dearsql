@@ -219,6 +219,38 @@ void DatabaseHierarchy::renderRootNode() {
             }
         }
 
+        // Pub/Sub node
+        {
+            constexpr ImGuiTreeNodeFlags pubsubFlags = ImGuiTreeNodeFlags_Leaf |
+                                                       ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                       ImGuiTreeNodeFlags_FramePadding;
+            const std::string pubsubId =
+                std::format("redis_pubsub_{:p}", static_cast<const void*>(redisDb.get()));
+            const std::string pubsubLabel = std::format("   Pub/Sub###{}", pubsubId);
+            ImGui::TreeNodeEx(pubsubLabel.c_str(), pubsubFlags);
+
+            const auto pubsubIconPos =
+                ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                       ImGui::GetItemRectMin().y +
+                           (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::GetWindowDrawList()->AddText(pubsubIconPos, ImGui::GetColorU32(colors.green),
+                                                ICON_FA_TOWER_BROADCAST);
+
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                Application::getInstance().getTabManager()->createRedisPubSubTab(redisDb.get());
+            }
+
+            if (ImGui::BeginPopupContextItem(pubsubId.c_str())) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem("Open Pub/Sub")) {
+                    Application::getInstance().getTabManager()->createRedisPubSubTab(redisDb.get());
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+        }
+
         // Load keys if not loaded yet
         if (!redisDb->keysLoaded && !redisDb->loadingKeys.load()) {
             redisDb->startKeysLoadAsync();

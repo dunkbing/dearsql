@@ -42,6 +42,7 @@ public:
 
     std::shared_ptr<Tab> createRedisCommandEditorTab(RedisDatabase* db);
     std::shared_ptr<Tab> createRedisKeyViewerTab(RedisDatabase* db, const std::string& pattern);
+    std::shared_ptr<Tab> createRedisPubSubTab(RedisDatabase* db);
 
     // UI rendering
     void renderTabs();

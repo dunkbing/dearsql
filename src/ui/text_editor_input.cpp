@@ -4,6 +4,9 @@
 #include <cstring>
 
 namespace dearsql {
+    namespace {
+        constexpr int kAutocompleteMaxVisible = 8;
+    }
 
     // --- Keyboard Input ---
 
@@ -15,12 +18,28 @@ namespace dearsql {
         // Autocomplete navigation takes priority
         if (autocompleteVisible_) {
             if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-                autocompleteIndex_ = std::min(autocompleteIndex_ + 1,
-                                              static_cast<int>(filteredCompletions_.size()) - 1);
+                const int count = static_cast<int>(filteredCompletions_.size());
+                if (autocompleteIndex_ >= count - 1) {
+                    autocompleteIndex_ = 0;
+                    autocompleteScrollOffset_ = 0;
+                } else {
+                    autocompleteIndex_++;
+                    if (autocompleteIndex_ >= autocompleteScrollOffset_ + kAutocompleteMaxVisible)
+                        autocompleteScrollOffset_ =
+                            autocompleteIndex_ - kAutocompleteMaxVisible + 1;
+                }
                 return;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-                autocompleteIndex_ = std::max(autocompleteIndex_ - 1, 0);
+                const int count = static_cast<int>(filteredCompletions_.size());
+                if (autocompleteIndex_ <= 0) {
+                    autocompleteIndex_ = count - 1;
+                    autocompleteScrollOffset_ = std::max(0, count - kAutocompleteMaxVisible);
+                } else {
+                    autocompleteIndex_--;
+                    if (autocompleteIndex_ < autocompleteScrollOffset_)
+                        autocompleteScrollOffset_ = autocompleteIndex_;
+                }
                 return;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) ||
@@ -749,6 +768,7 @@ namespace dearsql {
 
         autocompleteVisible_ = true;
         autocompleteIndex_ = 0;
+        autocompleteScrollOffset_ = 0;
         autocompleteWordStart_ = cursorIndex_ - static_cast<int>(word.size());
     }
 
@@ -766,7 +786,8 @@ namespace dearsql {
 
         constexpr float popupWidth = 240.0f;
         constexpr float popupPadding = 6.0f;
-        const int maxShow = std::min(static_cast<int>(filteredCompletions_.size()), 8);
+        const int maxShow =
+            std::min(static_cast<int>(filteredCompletions_.size()), kAutocompleteMaxVisible);
         const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
         const float popupHeight = popupPadding * 2.0f + rowHeight * maxShow;
 
@@ -789,8 +810,11 @@ namespace dearsql {
         const ImU32 textColor = palette_.text;
         constexpr float iconWidth = 20.0f;
         for (int i = 0; i < maxShow; ++i) {
+            const int itemIdx = i + autocompleteScrollOffset_;
+            if (itemIdx >= static_cast<int>(filteredCompletions_.size()))
+                break;
             const float rowY = pos.y + popupPadding + rowHeight * i;
-            if (i == autocompleteIndex_) {
+            if (itemIdx == autocompleteIndex_) {
                 drawList->AddRectFilled(ImVec2(pos.x + 2.0f, rowY),
                                         ImVec2(pos.x + popupWidth - 2.0f, rowY + rowHeight),
                                         palette_.selection);
@@ -799,7 +823,7 @@ namespace dearsql {
             // Icon label and color based on completion kind
             const char* icon = "K";
             ImU32 iconColor = palette_.keyword;
-            switch (filteredCompletions_[i].kind) {
+            switch (filteredCompletions_[itemIdx].kind) {
             case CompletionKind::Keyword:
                 break;
             case CompletionKind::Table:
@@ -827,7 +851,7 @@ namespace dearsql {
             float iconX = pos.x + popupPadding;
             drawList->AddText(ImVec2(iconX, rowY), iconColor, icon);
             drawList->AddText(ImVec2(pos.x + popupPadding + iconWidth, rowY), textColor,
-                              filteredCompletions_[i].text.c_str());
+                              filteredCompletions_[itemIdx].text.c_str());
         }
     }
 
@@ -863,6 +887,7 @@ namespace dearsql {
         autocompleteVisible_ = false;
         filteredCompletions_.clear();
         autocompleteIndex_ = 0;
+        autocompleteScrollOffset_ = 0;
     }
 
     // --- Find/Replace ---

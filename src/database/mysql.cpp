@@ -117,7 +117,6 @@ namespace {
             if (static_cast<int>(totalRows) >= rowLimit) {
                 result.message += std::format(" (limited to {})", rowLimit);
             }
-            result.success = true;
         } else {
             // No result set - could be DML/DDL or error
             if (mysql_field_count(conn) == 0) {
@@ -128,7 +127,6 @@ namespace {
                 } else {
                     result.message = "Query executed successfully";
                 }
-                result.success = true;
             } else {
                 // Error
                 result.success = false;

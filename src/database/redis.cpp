@@ -243,7 +243,6 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
 
         s.columnNames.push_back("result");
         s.tableData.push_back({formatRedisReply(reply)});
-        s.success = true;
         freeReplyObject(reply);
     } catch (const std::exception& e) {
         s.success = false;

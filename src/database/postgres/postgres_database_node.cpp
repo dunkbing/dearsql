@@ -68,7 +68,6 @@ namespace {
             if (nRows >= rowLimit) {
                 result.message += std::format(" (limited to {})", rowLimit);
             }
-            result.success = true;
         } else if (status == PGRES_COMMAND_OK) {
             const char* affected = PQcmdTuples(res);
             if (affected && *affected) {
@@ -76,7 +75,6 @@ namespace {
             } else {
                 result.message = "Query executed successfully";
             }
-            result.success = true;
         } else {
             result.success = false;
             result.errorMessage = PQresultErrorMessage(res);

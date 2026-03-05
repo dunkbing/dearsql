@@ -78,7 +78,6 @@ void MongoDBDatabaseNode::startViewsLoadAsync(bool force) {
     // For now, views are empty
     if (force) {
         views.clear();
-        viewsLoaded = false;
     }
     viewsLoaded = true;
 }

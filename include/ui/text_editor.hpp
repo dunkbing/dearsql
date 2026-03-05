@@ -133,6 +133,7 @@ namespace dearsql {
         std::vector<CompletionItem> filteredCompletions_;
         bool autocompleteVisible_ = false;
         int autocompleteIndex_ = 0;
+        int autocompleteScrollOffset_ = 0;
         int autocompleteWordStart_ = 0;
 
         // --- Tree-sitter ---

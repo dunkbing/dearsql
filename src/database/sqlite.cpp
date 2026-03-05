@@ -577,14 +577,12 @@ QueryResult SQLiteDatabase::executeQuery(const std::string& query, int rowLimit)
                 r.tableData.push_back(std::move(rowData));
                 ++rowCount;
             }
-            r.success = true;
             r.message = std::format("Returned {} row{}", r.tableData.size(),
                                     r.tableData.size() == 1 ? "" : "s");
         } else {
             // DML/DDL statement
             rc = sqlite3_step(raw);
             if (rc == SQLITE_DONE || rc == SQLITE_ROW) {
-                r.success = true;
                 r.affectedRows = sqlite3_changes(db_);
                 r.message = "Query executed successfully";
             } else {

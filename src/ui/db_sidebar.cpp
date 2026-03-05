@@ -10,19 +10,13 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
+#include "platform/connection_dialog.hpp"
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
-#if defined(__APPLE__)
-#include "platform/macos_connection_dialog.hpp"
-#elif defined(__linux__)
-#include "platform/linux_connection_dialog.hpp"
-#elif defined(_WIN32)
-#include "platform/windows_connection_dialog.hpp"
-#endif
 #include <chrono>
 #include <format>
 #include <memory>
@@ -44,13 +38,7 @@ DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<Databa
 }
 
 void DatabaseSidebarNew::showConnectionDialog() {
-#if defined(__APPLE__)
-    showMacOSConnectionDialog(&Application::getInstance());
-#elif defined(__linux__)
-    showLinuxConnectionDialog(&Application::getInstance());
-#elif defined(_WIN32)
-    showWindowsConnectionDialog(&Application::getInstance());
-#endif
+    ::showConnectionDialog(&Application::getInstance());
 }
 
 void DatabaseSidebarNew::renderEmpty() {
@@ -237,7 +225,7 @@ void DatabaseSidebarNew::renderHistoryToggleButton(const ImVec2& btnMin, float b
     const ImVec2 btnMax(btnMin.x + buttonW, btnMin.y + buttonH);
 
     ImGui::SetCursorScreenPos(btnMin);
-    ImGui::InvisibleButton("##toggleHistory", ImVec2(buttonW, buttonH));
+    ImGui::InvisibleButton("##toggle_history", ImVec2(buttonW, buttonH));
     const bool hovered = ImGui::IsItemHovered();
     if (ImGui::IsItemClicked()) {
         historyPanelOpen = !historyPanelOpen;
@@ -464,11 +452,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         icon = ICON_FK_MYSQL;
         break;
     case DatabaseType::MONGODB:
-        icon = ICON_FK_DATABASE;
-        break;
     case DatabaseType::REDIS:
-        icon = ICON_FK_DATABASE;
-        break;
     case DatabaseType::MSSQL:
         icon = ICON_FK_DATABASE;
         break;
@@ -608,26 +592,14 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL ||
                 dbType == DatabaseType::MARIADB || dbType == DatabaseType::MSSQL) {
                 if (ImGui::MenuItem("Create New Database")) {
-#if defined(__APPLE__)
-                    showMacOSCreateDatabaseDialog(&app, db);
-#elif defined(__linux__)
-                    showLinuxCreateDatabaseDialog(&app, db);
-#elif defined(_WIN32)
-                    showWindowsCreateDatabaseDialog(&app, db);
-#endif
+                    showCreateDatabaseDialog(&app, db);
                 }
                 ImGui::Separator();
             }
         }
 
         if (ImGui::MenuItem("Edit connection")) {
-#if defined(__APPLE__)
-            showMacOSEditConnectionDialog(&app, db);
-#elif defined(__linux__)
-            showLinuxEditConnectionDialog(&app, db);
-#elif defined(_WIN32)
-            showWindowsEditConnectionDialog(&app, db);
-#endif
+            showEditConnectionDialog(&app, db);
         }
 
         if (db->isConnected()) {

@@ -312,14 +312,15 @@ void RedisEditorTab::render() {
             if (ImGui::BeginChild("RedisResults", ImVec2(-1, resultsHeight), true,
                                   ImGuiWindowFlags_NoScrollbar)) {
                 const ImVec2 contentStart = ImGui::GetCursorScreenPos();
-                if (queryOp_.isRunning())
+                const bool isRunning = queryOp_.isRunning();
+                if (isRunning)
                     ImGui::BeginDisabled();
                 renderResults();
-                if (queryOp_.isRunning())
+                if (isRunning)
                     ImGui::EndDisabled();
 
                 // spinner overlay while running
-                if (queryOp_.isRunning()) {
+                if (isRunning) {
                     const ImVec2 winPos = ImGui::GetWindowPos();
                     const ImVec2 winSize = ImGui::GetWindowSize();
                     const ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
@@ -575,7 +576,6 @@ void RedisEditorTab::startCommandExecutionAsync(const std::string& cmd) {
                     } else {
                         entry.result = "OK";
                     }
-                    entry.success = true;
                 } else if (!result.empty()) {
                     entry.success = false;
                     entry.errorMessage = result[0].errorMessage;

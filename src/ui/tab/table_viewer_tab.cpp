@@ -963,7 +963,6 @@ void TableViewerTab::initializeTableRenderer() {
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
     config.allowEditing = true;
-    config.allowSelection = true;
     config.showRowNumbers = true;
     config.minHeight = 200.0f;
 
@@ -1036,7 +1035,7 @@ void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availab
                           ImGui::GetColorU32(colors.overlay0), 1.0f);
 
         // "Panels" rotated label as a compact clickable tab at the top
-        const auto label = "Panels";
+        const auto label = "Inspector";
         const ImVec2 textSize = ImGui::CalcTextSize(label);
         constexpr float padding = 6.0f;
         // After rotation, text width becomes button height, text height becomes button width
@@ -1045,7 +1044,7 @@ void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availab
 
         // Clickable area for the "Panels" button
         ImGui::SetCursorScreenPos(ImVec2(stripPos.x, stripPos.y));
-        ImGui::InvisibleButton("##togglePanel", ImVec2(buttonW, buttonH));
+        ImGui::InvisibleButton("##toggle_inspector", ImVec2(buttonW, buttonH));
         const bool hovered = ImGui::IsItemHovered();
         if (ImGui::IsItemClicked()) {
             rightPanelOpen = !rightPanelOpen;
@@ -1106,7 +1105,7 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
             const ImVec2 handleMin(panelPos.x, panelPos.y);
 
             ImGui::SetCursorScreenPos(handleMin);
-            ImGui::InvisibleButton("##resizeHandle", ImVec2(handleWidth, availableHeight));
+            ImGui::InvisibleButton("##resize_handle", ImVec2(handleWidth, availableHeight));
             if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
             }
@@ -1119,7 +1118,7 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
             ImGui::SetCursorPos(ImVec2(0, 0));
         }
 
-        if (ImGui::BeginTabBar("##PanelTabs")) {
+        if (ImGui::BeginTabBar("##panel_tabs")) {
             if (ImGui::BeginTabItem("Value")) {
                 activeRightPanelTab = 0;
                 renderValueTab();
@@ -1190,7 +1189,7 @@ void TableViewerTab::renderValueTab() {
     // Multiline text editor for the cell value
     const float availH = ImGui::GetContentRegionAvail().y -
                          (valuePanelBufferDirty ? ImGui::GetFrameHeightWithSpacing() + 4.0f : 0.0f);
-    if (ImGui::InputTextMultiline("##valuePanelEdit", valuePanelBuffer, sizeof(valuePanelBuffer),
+    if (ImGui::InputTextMultiline("##value_panel_edit", valuePanelBuffer, sizeof(valuePanelBuffer),
                                   ImVec2(-1, availH))) {
         // Check if user modified the buffer
         const std::string& currentValue = tableData[selectedRow][selectedCol];
@@ -1263,7 +1262,7 @@ void TableViewerTab::renderMetadataTab() {
     char filterBuf[128];
     std::strncpy(filterBuf, metadataFilter.c_str(), sizeof(filterBuf) - 1);
     filterBuf[sizeof(filterBuf) - 1] = '\0';
-    if (ImGui::InputTextWithHint("##metaFilter", "Filter columns...", filterBuf,
+    if (ImGui::InputTextWithHint("##meta_filter", "Filter columns...", filterBuf,
                                  sizeof(filterBuf))) {
         metadataFilter = filterBuf;
     }

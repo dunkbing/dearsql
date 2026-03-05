@@ -1,4 +1,3 @@
-#include "platform/macos_connection_dialog.hpp"
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
@@ -10,6 +9,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "database/ssl_config.hpp"
+#include "platform/connection_dialog.hpp"
 #include "utils/file_dialog.hpp"
 
 #import <AppKit/AppKit.h>
@@ -1919,7 +1919,7 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
 
 // MARK: - C++ free functions
 
-void showMacOSConnectionDialog(Application* app) {
+void showConnectionDialog(Application* app) {
     if (sActiveConnectionDialog) {
         [sActiveConnectionDialog makeKeyAndOrderFront:nil];
         return;
@@ -1931,7 +1931,7 @@ void showMacOSConnectionDialog(Application* app) {
     [controller release]; // associated object on the window holds the retain
 }
 
-void showMacOSEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveConnectionDialog) {
         [sActiveConnectionDialog makeKeyAndOrderFront:nil];
         return;
@@ -1943,7 +1943,7 @@ void showMacOSEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInt
     [controller release]; // associated object on the window holds the retain
 }
 
-void showMacOSCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveCreateDatabaseDialog) {
         [sActiveCreateDatabaseDialog makeKeyAndOrderFront:nil];
         return;

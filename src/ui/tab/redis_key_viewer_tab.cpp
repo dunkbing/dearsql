@@ -41,7 +41,6 @@ RedisKeyViewerTab::~RedisKeyViewerTab() {
 void RedisKeyViewerTab::initializeTableRenderer() {
     TableRenderer::Config config;
     config.allowEditing = true;
-    config.allowSelection = true;
     config.showRowNumbers = true;
     config.minHeight = 200.0f;
     config.nonEditableColumns = {COL_SIZE};
@@ -260,18 +259,18 @@ void RedisKeyViewerTab::saveChanges() {
         if (row < static_cast<int>(isNewRow_.size()) && isNewRow_[row]) {
             // new key
             const std::string& key = currRow[COL_KEY];
-            const std::string& type = currRow[COL_TYPE];
+            const std::string& keyType = currRow[COL_TYPE];
             const std::string& value = currRow[COL_VALUE];
             if (key.empty())
                 continue;
 
-            if (type == "list") {
+            if (keyType == "list") {
                 commands.push_back(std::format("RPUSH {} {}", key, value));
-            } else if (type == "set") {
+            } else if (keyType == "set") {
                 commands.push_back(std::format("SADD {} {}", key, value));
-            } else if (type == "zset") {
+            } else if (keyType == "zset") {
                 commands.push_back(std::format("ZADD {} 0 {}", key, value));
-            } else if (type == "hash") {
+            } else if (keyType == "hash") {
                 commands.push_back(std::format("HSET {} {} \"\"", key, value));
             } else {
                 commands.push_back(std::format("SET {} {}", key, value));

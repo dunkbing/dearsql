@@ -1,6 +1,5 @@
 #if defined(_WIN32)
 
-#include "platform/windows_connection_dialog.hpp"
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
@@ -12,6 +11,7 @@
 #include "database/sqlite.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
+#include "platform/connection_dialog.hpp"
 #include "platform/windows_platform.hpp"
 #include "utils/file_dialog.hpp"
 
@@ -954,11 +954,11 @@ static void showConnectionDialogInternal(Application* app,
     }
 }
 
-void showWindowsConnectionDialog(Application* app) {
+void showConnectionDialog(Application* app) {
     showConnectionDialogInternal(app, nullptr);
 }
 
-void showWindowsEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     showConnectionDialogInternal(app, db);
 }
 
@@ -1052,7 +1052,7 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-void showWindowsCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveCreateDatabaseDialog) {
         SetForegroundWindow(sActiveCreateDatabaseDialog);
         return;

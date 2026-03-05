@@ -268,8 +268,6 @@ QueryResult MongoDBDatabase::executeQuery(const std::string& query, int rowLimit
             result.statements.push_back(std::move(s));
             return result;
         }
-
-        s.success = true;
     } catch (const std::exception& e) {
         s.success = false;
         s.errorMessage = e.what();

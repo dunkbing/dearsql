@@ -2,6 +2,7 @@
 
 #include "database/db_interface.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
+#include "database/mssql/mssql_database_node.hpp"
 #include "database/mysql/mysql_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
@@ -46,6 +47,7 @@ private:
     void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,
                                   PostgresSchemaNode* schemaData);
     void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
+    void renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData);
     void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
     void renderSQLiteNode();
 
@@ -55,6 +57,8 @@ private:
                         bool isMaterializedView = false);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
+    void renderMSSQLTableNode(Table& table, MSSQLDatabaseNode* dbData);
+    void renderMSSQLViewNode(Table& view, MSSQLDatabaseNode* dbData);
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
     void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);
     void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);

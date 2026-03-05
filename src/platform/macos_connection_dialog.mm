@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
@@ -347,6 +348,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"MariaDB"];
     [self.typePopup addItemWithTitle:@"Redis"];
     [self.typePopup addItemWithTitle:@"MongoDB"];
+    [self.typePopup addItemWithTitle:@"MSSQL"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -949,6 +951,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portField.stringValue = @"3306";
         self.authSegment.selectedSegment = 0;
         break;
+    case DatabaseType::MSSQL:
+        self.portField.stringValue = @"1433";
+        self.authSegment.selectedSegment = 0;
+        break;
     }
 
     // Clear status
@@ -1184,6 +1190,10 @@ static NSWindow* sActiveConnectionDialog = nil;
           break;
       case DatabaseType::REDIS:
           db = std::make_shared<RedisDatabase>(info);
+          break;
+      case DatabaseType::MSSQL:
+          info.database = database.empty() ? "master" : database;
+          db = std::make_shared<MSSQLDatabase>(info);
           break;
       default:
           break;

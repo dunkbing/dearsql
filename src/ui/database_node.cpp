@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -158,6 +159,31 @@ void DatabaseHierarchy::renderRootNode() {
             for (const auto& dbDataPtr : databases) {
                 if (dbDataPtr) {
                     renderMongoDBDatabaseNode(dbDataPtr.get());
+                }
+            }
+        }
+    } else if (dbType == DatabaseType::MSSQL) {
+        auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get());
+        if (!mssqlDb) {
+            return;
+        }
+
+        if (!mssqlDb->areDatabasesLoaded() && !mssqlDb->isLoadingDatabases()) {
+            mssqlDb->refreshDatabaseNames();
+        }
+
+        if (mssqlDb->isLoadingDatabases()) {
+            mssqlDb->checkDatabasesStatusAsync();
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::Text("  Loading databases...");
+            ImGui::SameLine(0, Theme::Spacing::S);
+            UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            ImGui::PopStyleColor();
+        } else if (mssqlDb->areDatabasesLoaded()) {
+            const auto& databases = mssqlDb->getDatabaseDataMap() | std::views::values;
+            for (const auto& dbDataPtr : databases) {
+                if (dbDataPtr) {
+                    renderMSSQLDatabaseNode(dbDataPtr.get());
                 }
             }
         }
@@ -1561,6 +1587,410 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
         }
         if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             // TODO: Show view structure in a tab
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+}
+
+void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
+    if (!dbData) {
+        return;
+    }
+
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
+    const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
+                                               ImGui::GetColorU32(colors.mauve));
+
+    if (ImGui::IsItemToggledOpen()) {
+        dbData->expanded = isOpen;
+    }
+
+    // context menu
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
+            app.getTabManager()->createSQLEditorTab("", dbData);
+        }
+        if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
+            app.getTabManager()->createDiagramTab(dbData);
+        }
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
+            dbData->startTablesLoadAsync(true);
+            dbData->startViewsLoadAsync(true);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(DELETE_LABEL)) {
+            const std::string dbName = dbData->name;
+            Alert::show(
+                "Delete Database",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            dbName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [this, dbName]() {
+                      auto [success, error] = db->dropDatabase(dbName);
+                      if (success) {
+                          Logger::info(std::format("Database '{}' deleted successfully", dbName));
+                          if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
+                              mssqlDb->refreshDatabaseNames();
+                          }
+                      } else {
+                          Logger::error(std::format("Failed to delete database: {}", error));
+                          Alert::show("Error", std::format("Failed to delete database: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (isOpen) {
+        // tables
+        {
+            const std::string tablesNodeId =
+                std::format("tables_{}_{:p}", dbData->name, static_cast<void*>(&dbData->tables));
+            const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
+                                                           ImGui::GetColorU32(colors.green));
+
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
+                    TableDialog::instance().showCreate(dbData);
+                }
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
+                    dbData->startTablesLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (tablesOpen) {
+                if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
+                    dbData->startTablesLoadAsync();
+                }
+
+                if (dbData->tablesLoader.isRunning()) {
+                    dbData->checkTablesStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading tables...");
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (dbData->tablesLoaded) {
+                    if (dbData->tables.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No tables");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& table : dbData->tables) {
+                            renderMSSQLTableNode(table, dbData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // views
+        {
+            const std::string viewsNodeId =
+                std::format("views_{}_{:p}", dbData->name, static_cast<void*>(&dbData->views));
+            const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
+                                                          ImGui::GetColorU32(colors.teal));
+
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
+                    dbData->startViewsLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (viewsOpen) {
+                if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning()) {
+                    dbData->startViewsLoadAsync();
+                }
+
+                if (dbData->viewsLoader.isRunning()) {
+                    dbData->checkViewsStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading views...");
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (dbData->viewsLoaded) {
+                    if (dbData->views.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No views");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& view : dbData->views) {
+                            renderMSSQLViewNode(view, dbData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLDatabaseNode* dbData) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    constexpr ImGuiTreeNodeFlags tableFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+    const std::string tableNodeId =
+        std::format("mssql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
+                                                  ImGui::GetColorU32(colors.green), tableFlags);
+
+    const bool isRefreshing = dbData->isTableRefreshing(table.name);
+    if (isRefreshing) {
+        constexpr float spinnerRadius = 6.0f;
+        const float spinnerX = ImGui::GetItemRectMax().x + 4.0f;
+        const float itemCenterY = ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y * 0.5f);
+        const float spinnerY = itemCenterY - spinnerRadius - ImGui::GetStyle().FramePadding.y;
+        ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
+
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        UIUtils::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
+                         ImGui::GetColorU32(colors.peach));
+        ImGui::PopStyleColor();
+
+        dbData->checkTableRefreshStatusAsync(table.name);
+    }
+
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+        app.getTabManager()->createTableViewerTab(dbData, table.name);
+    }
+
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+            app.getTabManager()->createTableViewerTab(dbData, table.name);
+        }
+        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+            TableDialog::instance().showEdit(dbData, table);
+        }
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
+            dbData->startTableRefreshAsync(table.name);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(RENAME_LABEL)) {
+            const std::string oldName = table.name;
+            InputDialog::instance().showWithValidation(
+                "Rename Table", "New name:", oldName, "Rename",
+                [oldName](const std::string& newName) -> std::string {
+                    if (newName == oldName)
+                        return "New name must be different";
+                    return "";
+                },
+                [dbData, oldName](const std::string& newName) {
+                    auto [success, error] = dbData->renameTable(oldName, newName);
+                    if (!success) {
+                        InputDialog::instance().setError(error);
+                    }
+                });
+        }
+        if (ImGui::MenuItem(DELETE_LABEL)) {
+            const std::string tableName = table.name;
+            Alert::show(
+                "Delete Table",
+                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                            tableName),
+                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                 {"Delete",
+                  [dbData, tableName]() {
+                      auto [success, error] = dbData->dropTable(tableName);
+                      if (!success) {
+                          Alert::show("Error", std::format("Failed to delete table: {}", error));
+                      }
+                  },
+                  AlertButton::Style::Destructive}});
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (tableOpen) {
+        // columns
+        {
+            const std::string columnsNodeId = std::format("mssql_columns_{}_{:p}", table.name,
+                                                          static_cast<void*>(&table.columns));
+            const bool columnsOpen = renderTreeNodeWithIcon(
+                "Columns", columnsNodeId, ICON_FA_TABLE_COLUMNS, ImGui::GetColorU32(colors.green));
+
+            if (columnsOpen) {
+                for (const auto& column : table.columns) {
+                    ImGuiTreeNodeFlags columnFlags = ImGuiTreeNodeFlags_Leaf |
+                                                     ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                     ImGuiTreeNodeFlags_FramePadding;
+
+                    std::string columnDisplay = std::format("{} ({})", column.name, column.type);
+                    if (column.isPrimaryKey)
+                        columnDisplay += ", PK";
+                    if (column.isNotNull)
+                        columnDisplay += ", NOT NULL";
+
+                    const std::string columnNodeId =
+                        std::format("mssql_col_{}_{}_{:p}", table.name, column.name,
+                                    static_cast<const void*>(&column));
+                    const std::string columnLabel =
+                        std::format("{}###{}", columnDisplay, columnNodeId);
+                    ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
+
+                    if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                            const std::string colName = column.name;
+                            const std::string tblName = table.name;
+                            Alert::show(
+                                "Drop Column",
+                                std::format("Permanently drop column '{}.{}'?", tblName, colName),
+                                {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                                 {"Drop",
+                                  [dbData, tblName, colName]() {
+                                      auto [success, error] = dbData->dropColumn(tblName, colName);
+                                      if (!success) {
+                                          Alert::show(
+                                              "Error",
+                                              std::format("Failed to drop column: {}", error));
+                                      }
+                                  },
+                                  AlertButton::Style::Destructive}});
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::EndPopup();
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // foreign keys
+        if (!table.foreignKeys.empty()) {
+            const std::string fkNodeId =
+                std::format("mssql_foreign_keys_{}_{:p}", table.name, static_cast<void*>(&table));
+            const bool fkOpen = renderTreeNodeWithIcon("Foreign Keys", fkNodeId, ICON_FA_KEY,
+                                                       ImGui::GetColorU32(colors.yellow));
+
+            if (fkOpen) {
+                for (const auto& fk : table.foreignKeys) {
+                    ImGuiTreeNodeFlags fkFlags = ImGuiTreeNodeFlags_Leaf |
+                                                 ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                 ImGuiTreeNodeFlags_FramePadding;
+                    std::string fkDisplay = std::format("{} -> {}.{}", fk.sourceColumn,
+                                                        fk.targetTable, fk.targetColumn);
+                    ImGui::TreeNodeEx(fkDisplay.c_str(), fkFlags);
+
+                    if (ImGui::IsItemHovered() && !fk.name.empty()) {
+                        ImGui::SetTooltip("Constraint: %s", fk.name.c_str());
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // indexes
+        if (!table.indexes.empty()) {
+            const std::string indexesNodeId =
+                std::format("indexes_{}_{:p}", table.name, static_cast<void*>(&table.indexes));
+            const bool indexesOpen =
+                renderTreeNodeWithIcon("Indexes", indexesNodeId, ICON_FA_MAGNIFYING_GLASS,
+                                       ImGui::GetColorU32(colors.lavender));
+
+            if (indexesOpen) {
+                for (const auto& index : table.indexes) {
+                    ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
+                                                    ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                    ImGuiTreeNodeFlags_FramePadding;
+                    std::string indexDisplay = index.name;
+                    if (!index.columns.empty()) {
+                        indexDisplay += " (";
+                        for (size_t i = 0; i < index.columns.size(); ++i) {
+                            if (i > 0)
+                                indexDisplay += ", ";
+                            indexDisplay += index.columns[i];
+                        }
+                        indexDisplay += ")";
+                    }
+                    if (index.isUnique)
+                        indexDisplay += " UNIQUE";
+                    ImGui::TreeNodeEx(indexDisplay.c_str(), indexFlags);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // references (incoming foreign keys)
+        if (!table.incomingForeignKeys.empty()) {
+            const std::string referencesNodeId = std::format(
+                "references_{}_{:p}", table.name, static_cast<void*>(&table.incomingForeignKeys));
+            const bool referencesOpen = renderTreeNodeWithIcon("References", referencesNodeId,
+                                                               ICON_FA_ARROW_RIGHT_TO_BRACKET,
+                                                               ImGui::GetColorU32(colors.sky));
+
+            if (referencesOpen) {
+                for (const auto& ref : table.incomingForeignKeys) {
+                    ImGuiTreeNodeFlags refFlags = ImGuiTreeNodeFlags_Leaf |
+                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                  ImGuiTreeNodeFlags_FramePadding;
+                    std::string refDisplay =
+                        std::format("{}.{}", ref.targetTable, ref.sourceColumn);
+                    ImGui::TreeNodeEx(refDisplay.c_str(), refFlags);
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderMSSQLViewNode(Table& view, MSSQLDatabaseNode* dbData) {
+    const auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
+
+    const std::string viewNodeId =
+        std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
+    ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+
+    const auto iconPos =
+        ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+               ImGui::GetItemRectMin().y +
+                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.teal), ICON_FK_EYE);
+
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+        app.getTabManager()->createTableViewerTab(dbData, view.name);
+    }
+
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+            app.getTabManager()->createTableViewerTab(dbData, view.name);
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

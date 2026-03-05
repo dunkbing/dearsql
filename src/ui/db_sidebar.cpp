@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/sqlite.hpp"
@@ -468,6 +469,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     case DatabaseType::REDIS:
         icon = ICON_FK_DATABASE;
         break;
+    case DatabaseType::MSSQL:
+        icon = ICON_FK_DATABASE;
+        break;
     default:
         icon = ICON_FK_DATABASE;
         break;
@@ -502,6 +506,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     case DatabaseType::REDIS:
         iconColor = ImGui::GetColorU32(colors.red);
         break;
+    case DatabaseType::MSSQL:
+        iconColor = ImGui::GetColorU32(colors.mauve);
+        break;
     default:
         break;
     }
@@ -534,6 +541,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     } else if (type == DatabaseType::MONGODB) {
         if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
             mongoDb->checkRefreshWorkflowAsync();
+        }
+    } else if (type == DatabaseType::MSSQL) {
+        if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
+            mssqlDb->checkRefreshWorkflowAsync();
         }
     }
 
@@ -595,7 +606,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::MYSQL ||
-                dbType == DatabaseType::MARIADB) {
+                dbType == DatabaseType::MARIADB || dbType == DatabaseType::MSSQL) {
                 if (ImGui::MenuItem("Create New Database")) {
 #if defined(__APPLE__)
                     showMacOSCreateDatabaseDialog(&app, db);

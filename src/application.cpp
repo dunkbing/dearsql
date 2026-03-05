@@ -66,7 +66,7 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 15.0; // time after last activity before idling
+    constexpr double kIdleActivationDelaySeconds = 10.0; // time after last activity before idling
     constexpr double kMinimumWaitSeconds = 1.0 / 120.0;  // keep responsive when active
     constexpr double kMaximumWaitSeconds = 0.2;          // cap sleep to keep UI responsive
 

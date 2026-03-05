@@ -6,7 +6,7 @@
 #include "config.hpp"
 #include "imgui_impl_opengl3.h"
 #include "license/license_manager.hpp"
-#include "platform/linux_connection_dialog.hpp"
+#include "platform/connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
 #include "platform/linux_updater.hpp"
 #include "themes.hpp"
@@ -763,7 +763,7 @@ void LinuxPlatform::onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec,
 void LinuxPlatform::onAddConnection(GtkButton* button, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     if (platform->app_) {
-        showLinuxConnectionDialog(platform->app_);
+        showConnectionDialog(platform->app_);
     }
 }
 

@@ -1,6 +1,5 @@
 #if defined(__linux__)
 
-#include "platform/linux_connection_dialog.hpp"
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
@@ -12,6 +11,7 @@
 #include "database/sqlite.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
+#include "platform/connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
 #include "utils/file_dialog.hpp"
 #include <atomic>
@@ -79,6 +79,13 @@ struct ConnectionDialogData {
     GtkWidget* statusLabel = nullptr;
     GtkWidget* spinner = nullptr;
     GtkWidget* connectButton = nullptr;
+
+    // content box (set as window child only at presentation time)
+    GtkWidget* contentBox = nullptr;
+
+    // signal handler ID for type dropdown
+    gulong typeChangedHandlerId = 0;
+    bool isPopulatingFields = false;
 };
 
 struct CreateDatabaseDialogData {
@@ -174,8 +181,69 @@ static GtkWidget* makeStringDropdown(const char* const items[], int count, int s
 
 static void onAuthToggled(GtkCheckButton*, gpointer userData) {
     auto* data = static_cast<ConnectionDialogData*>(userData);
+    if (data->isPopulatingFields)
+        return;
     bool show = gtk_check_button_get_active(GTK_CHECK_BUTTON(data->authPasswordRadio));
     gtk_widget_set_visible(data->credentialsRow, show);
+}
+
+static void refreshDynamicFieldState(ConnectionDialogData* data) {
+    if (data->credentialsRow && data->authPasswordRadio) {
+        bool showCredentials =
+            gtk_check_button_get_active(GTK_CHECK_BUTTON(data->authPasswordRadio));
+        gtk_widget_set_visible(data->credentialsRow, showCredentials);
+    }
+
+    if (data->sshFieldsBox && data->sshEnabledCheck) {
+        bool sshEnabled = gtk_check_button_get_active(GTK_CHECK_BUTTON(data->sshEnabledCheck));
+        gtk_widget_set_sensitive(data->sshFieldsBox, sshEnabled);
+    }
+
+    if (data->sshPasswordRow && data->sshKeyRow && data->sshAuthPasswordRadio) {
+        bool passwordAuth =
+            gtk_check_button_get_active(GTK_CHECK_BUTTON(data->sshAuthPasswordRadio));
+        gtk_widget_set_visible(data->sshPasswordRow, passwordAuth);
+        gtk_widget_set_visible(data->sshKeyRow, !passwordAuth);
+    }
+
+    if (data->sslCACertPathRow && data->sslModeDropdown && data->typeDropdown) {
+        auto type = static_cast<DatabaseType>(
+            gtk_drop_down_get_selected(GTK_DROP_DOWN(data->typeDropdown)));
+        auto cfg = getSslConfig(type);
+        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(data->sslModeDropdown));
+        SslMode val = (idx < static_cast<guint>(cfg.count)) ? cfg.values[idx] : SslMode::Disable;
+        gtk_widget_set_visible(data->sslCACertPathRow, sslModeNeedsCACert(val));
+    }
+}
+
+static void presentConnectionDialog(ConnectionDialogData* data) {
+    // attach content to window only now, so GTK never renders partial/stale content
+    if (data->contentBox) {
+        gtk_window_set_child(GTK_WINDOW(data->dialog), data->contentBox);
+        data->contentBox = nullptr;
+    }
+    GtkWidget* parent = getParentWindow(data->app);
+    if (parent) {
+        gtk_window_set_transient_for(GTK_WINDOW(data->dialog), GTK_WINDOW(parent));
+    }
+    gtk_window_set_modal(GTK_WINDOW(data->dialog), TRUE);
+    gtk_window_present(GTK_WINDOW(data->dialog));
+}
+
+// defer presentation to next main loop iteration so the ImGui popup closes cleanly first
+static void presentConnectionDialogDeferred(ConnectionDialogData* data) {
+    g_object_ref(data->dialog);
+    g_idle_add(
+        +[](gpointer ud) -> gboolean {
+            auto* dlg = static_cast<GtkWidget*>(ud);
+            auto* d = static_cast<ConnectionDialogData*>(g_object_get_data(G_OBJECT(dlg), "data"));
+            if (d) {
+                presentConnectionDialog(d);
+            }
+            g_object_unref(dlg);
+            return G_SOURCE_REMOVE;
+        },
+        data->dialog);
 }
 
 static void rebuildFieldsForType(ConnectionDialogData* data) {
@@ -294,6 +362,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         g_signal_connect(data->sslModeDropdown, "notify::selected",
                          G_CALLBACK(+[](GObject* obj, GParamSpec*, gpointer userdata) {
                              auto* d = static_cast<ConnectionDialogData*>(userdata);
+                             if (d->isPopulatingFields)
+                                 return;
                              if (!d->sslCACertPathRow || !d->sslModeDropdown || !d->typeDropdown)
                                  return;
                              auto type = static_cast<DatabaseType>(
@@ -461,6 +531,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     g_signal_connect(data->sshAuthPasswordRadio, "toggled",
                      G_CALLBACK(+[](GtkCheckButton*, gpointer ud) {
                          auto* d = static_cast<ConnectionDialogData*>(ud);
+                         if (d->isPopulatingFields)
+                             return;
                          bool passwordAuth =
                              gtk_check_button_get_active(GTK_CHECK_BUTTON(d->sshAuthPasswordRadio));
                          gtk_widget_set_visible(d->sshPasswordRow, passwordAuth);
@@ -472,6 +544,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     g_signal_connect(
         data->sshEnabledCheck, "toggled", G_CALLBACK(+[](GtkCheckButton*, gpointer ud) {
             auto* d = static_cast<ConnectionDialogData*>(ud);
+            if (d->isPopulatingFields)
+                return;
             bool enabled = gtk_check_button_get_active(GTK_CHECK_BUTTON(d->sshEnabledCheck));
             gtk_widget_set_sensitive(d->sshFieldsBox, enabled);
         }),
@@ -480,6 +554,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     // Auto-fill from ~/.ssh/config when SSH host changes
     g_signal_connect(data->sshHostEntry, "changed", G_CALLBACK(+[](GtkEditable*, gpointer ud) {
                          auto* d = static_cast<ConnectionDialogData*>(ud);
+                         if (d->isPopulatingFields)
+                             return;
                          if (!d->sshConfigLoaded) {
                              d->sshConfigHosts = parseSSHConfig();
                              d->sshConfigLoaded = true;
@@ -817,17 +893,12 @@ static void destroyConnectionDialogData(gpointer ptr) {
     delete data;
 }
 
-static GtkWidget* buildConnectionDialog(ConnectionDialogData* data) {
+static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
+                                        DatabaseType initialType = DatabaseType::SQLITE) {
     GtkWidget* dialog = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(dialog), "Connect to Database");
-    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
-
-    GtkWidget* parent = getParentWindow(data->app);
-    if (parent) {
-        gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(parent));
-    }
 
     data->dialog = dialog;
 
@@ -846,7 +917,7 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data) {
     // Type dropdown
     static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",
                                       "MariaDB", "Redis",      "MongoDB"};
-    data->typeDropdown = makeStringDropdown(typeNames, 6, 0);
+    data->typeDropdown = makeStringDropdown(typeNames, 6, static_cast<int>(initialType));
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
 
@@ -859,13 +930,14 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data) {
     gtk_box_append(GTK_BOX(mainBox), data->fieldsBox);
 
     // Type change handler
-    g_signal_connect(data->typeDropdown, "notify::selected",
-                     G_CALLBACK(+[](GtkDropDown*, GParamSpec*, gpointer ud) {
-                         auto* d = static_cast<ConnectionDialogData*>(ud);
-                         rebuildFieldsForType(d);
-                         gtk_label_set_text(GTK_LABEL(d->statusLabel), "");
-                     }),
-                     data);
+    data->typeChangedHandlerId =
+        g_signal_connect(data->typeDropdown, "notify::selected",
+                         G_CALLBACK(+[](GtkDropDown*, GParamSpec*, gpointer ud) {
+                             auto* d = static_cast<ConnectionDialogData*>(ud);
+                             rebuildFieldsForType(d);
+                             gtk_label_set_text(GTK_LABEL(d->statusLabel), "");
+                         }),
+                         data);
 
     // Status + spinner row
     GtkWidget* statusRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -920,7 +992,8 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data) {
     gtk_box_append(GTK_BOX(btnRow), data->connectButton);
     gtk_box_append(GTK_BOX(mainBox), btnRow);
 
-    gtk_window_set_child(GTK_WINDOW(dialog), mainBox);
+    // defer setting the window child until presentation
+    data->contentBox = mainBox;
 
     // Attach data and close/destroy handlers
     g_object_set_data_full(G_OBJECT(dialog), "data", data, destroyConnectionDialogData);
@@ -947,11 +1020,18 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
                                          const std::shared_ptr<DatabaseInterface>& db) {
     const auto& info = db->getConnectionInfo();
 
-    gtk_editable_set_text(GTK_EDITABLE(data->nameEntry), info.name.c_str());
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(data->typeDropdown), static_cast<int>(info.type));
+    data->isPopulatingFields = true;
 
-    // Rebuild fields for the correct type
-    rebuildFieldsForType(data);
+    gtk_editable_set_text(GTK_EDITABLE(data->nameEntry), info.name.c_str());
+
+    guint currentType = gtk_drop_down_get_selected(GTK_DROP_DOWN(data->typeDropdown));
+    guint targetType = static_cast<guint>(info.type);
+    if (currentType != targetType) {
+        g_signal_handler_block(data->typeDropdown, data->typeChangedHandlerId);
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(data->typeDropdown), targetType);
+        rebuildFieldsForType(data);
+        g_signal_handler_unblock(data->typeDropdown, data->typeChangedHandlerId);
+    }
 
     switch (info.type) {
     case DatabaseType::SQLITE:
@@ -1076,6 +1156,9 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
                                       info.ssh.password.c_str());
         }
     }
+
+    data->isPopulatingFields = false;
+    refreshDynamicFieldState(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -1407,19 +1490,19 @@ static GtkWidget* buildCreateDatabaseDialog(CreateDatabaseDialogData* data) {
 // Public API
 // ---------------------------------------------------------------------------
 
-void showLinuxConnectionDialog(Application* app) {
+void showConnectionDialog(Application* app) {
     if (sActiveConnectionDialog) {
         gtk_window_present(GTK_WINDOW(sActiveConnectionDialog));
         return;
     }
     auto* data = new ConnectionDialogData();
     data->app = app;
-    GtkWidget* dialog = buildConnectionDialog(data);
+    GtkWidget* dialog = buildConnectionDialog(data, DatabaseType::SQLITE);
     sActiveConnectionDialog = dialog;
-    gtk_window_present(GTK_WINDOW(dialog));
+    presentConnectionDialogDeferred(data);
 }
 
-void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveConnectionDialog) {
         gtk_window_present(GTK_WINDOW(sActiveConnectionDialog));
         return;
@@ -1428,7 +1511,7 @@ void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInt
     data->app = app;
     data->editingDb = db;
     data->editingConnectionId = db->getConnectionId();
-    GtkWidget* dialog = buildConnectionDialog(data);
+    GtkWidget* dialog = buildConnectionDialog(data, db->getConnectionInfo().type);
 
     populateFieldsFromConnection(data, db);
     gtk_widget_set_sensitive(data->typeDropdown, FALSE);
@@ -1436,10 +1519,10 @@ void showLinuxEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInt
     gtk_button_set_label(GTK_BUTTON(data->connectButton), "Update");
 
     sActiveConnectionDialog = dialog;
-    gtk_window_present(GTK_WINDOW(dialog));
+    presentConnectionDialogDeferred(data);
 }
 
-void showLinuxCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
+void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveCreateDatabaseDialog) {
         gtk_window_present(GTK_WINDOW(sActiveCreateDatabaseDialog));
         return;
@@ -1449,7 +1532,17 @@ void showLinuxCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInt
     data->db = db;
     GtkWidget* dialog = buildCreateDatabaseDialog(data);
     sActiveCreateDatabaseDialog = dialog;
-    gtk_window_present(GTK_WINDOW(dialog));
+
+    // defer to next main loop iteration so the ImGui popup closes cleanly first
+    g_object_ref(dialog);
+    g_idle_add(
+        +[](gpointer ud) -> gboolean {
+            auto* dlg = static_cast<GtkWidget*>(ud);
+            gtk_window_present(GTK_WINDOW(dlg));
+            g_object_unref(dlg);
+            return G_SOURCE_REMOVE;
+        },
+        dialog);
 }
 
 #endif // defined(__linux__)

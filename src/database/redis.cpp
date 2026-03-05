@@ -25,6 +25,8 @@ RedisDatabase::~RedisDatabase() {
 }
 
 std::pair<bool, std::string> RedisDatabase::connect() {
+    std::lock_guard<std::mutex> lock(contextMutex_);
+
     if (connected && context) {
         return {true, ""};
     }
@@ -161,18 +163,21 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 
 void RedisDatabase::disconnect() {
     keysLoadOp_.cancel();
-    if (context) {
-        redisFree(context);
-        context = nullptr;
-        std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString()
-                  << std::endl;
-    }
-    if (sslCtx_) {
-        redisFreeSSLContext(sslCtx_);
-        sslCtx_ = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (context) {
+            redisFree(context);
+            context = nullptr;
+            std::cout << "Disconnected from Redis: " << connectionInfo.buildConnectionString()
+                      << std::endl;
+        }
+        if (sslCtx_) {
+            redisFreeSSLContext(sslCtx_);
+            sslCtx_ = nullptr;
+        }
+        connected = false;
     }
     stopSshTunnel();
-    connected = false;
 
     // Reset loading states
     loadingKeys = false;
@@ -325,6 +330,11 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
     }
 
     try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            return keys;
+        }
+
         // collect key names using SCAN (non-blocking, safe for production)
         std::vector<std::string> keyNames;
         unsigned long long cursor = 0;
@@ -496,6 +506,10 @@ std::string RedisDatabase::getKeyValue(const std::string& key, const std::string
 
     try {
         std::string type = knownType.empty() ? getKeyType(key) : knownType;
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            return "[Unable to retrieve value]";
+        }
 
         if (type == "string") {
             auto* reply = static_cast<redisReply*>(redisCommand(context, "GET %s", key.c_str()));
@@ -599,6 +613,11 @@ std::string RedisDatabase::getKeyType(const std::string& key) const {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            return "unknown";
+        }
+
         auto* reply = (redisReply*)redisCommand(context, "TYPE %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_STATUS) {
             std::string type = reply->str;
@@ -620,6 +639,11 @@ int64_t RedisDatabase::getKeyTTL(const std::string& key) const {
     }
 
     try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            return -1;
+        }
+
         auto* reply = (redisReply*)redisCommand(context, "TTL %s", key.c_str());
         if (reply && reply->type == REDIS_REPLY_INTEGER) {
             const int64_t ttl = reply->integer;
@@ -657,6 +681,12 @@ redisReply* RedisDatabase::executeRedisCommand(const std::string& command) const
     }
 
     try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            std::cerr << "Redis command failed: Context unavailable" << std::endl;
+            return nullptr;
+        }
+
         auto* reply = (redisReply*)redisCommand(context, "%s", command.c_str());
         if (reply && reply->type == REDIS_REPLY_ERROR) {
             std::cerr << "Redis command error: " << reply->str << std::endl;
@@ -676,6 +706,12 @@ RedisDatabase::executeRedisCommandParsed(const std::vector<std::string>& command
     }
 
     try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            std::cerr << "Redis parsed command failed: Context unavailable" << std::endl;
+            return nullptr;
+        }
+
         // Convert string vector to char* array for redisCommandArgv
         std::vector<const char*> argv;
         std::vector<size_t> argvlen;

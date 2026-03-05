@@ -1,6 +1,7 @@
 #pragma once
 
 #include "themes.hpp"
+#include "ui/tab/redis_status_panel.hpp"
 #include "ui/tab/tab.hpp"
 #include <atomic>
 #include <mutex>
@@ -55,6 +56,8 @@ private:
     std::vector<PubSubMessage> displayMessages_;
     std::atomic<int> totalMessageCount_{0};
     std::atomic<int> pendingCount_{0};
+    bool statusPanelOpen_ = false;
+    RedisStatusPanel statusPanel_;
 
     void subscribe(const std::string& pattern);
     void unsubscribe();

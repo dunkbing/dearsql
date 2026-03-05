@@ -6,6 +6,7 @@
 #include <atomic>
 #include <hiredis/hiredis.h>
 #include <hiredis/hiredis_ssl.h>
+#include <mutex>
 
 struct RedisKey {
     std::string name;
@@ -68,6 +69,7 @@ protected:
 
 private:
     // Redis-specific state (base class handles common state)
+    mutable std::mutex contextMutex_;
     redisContext* context = nullptr;
     redisSSLContext* sslCtx_ = nullptr;
 

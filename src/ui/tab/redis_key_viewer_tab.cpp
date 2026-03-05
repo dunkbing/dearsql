@@ -28,7 +28,7 @@ namespace {
 
 RedisKeyViewerTab::RedisKeyViewerTab(const std::string& name, RedisDatabase* db,
                                      const std::string& pattern)
-    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern) {
+    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern), statusPanel_(db) {
     initializeTableRenderer();
     loadDataAsync();
 }
@@ -153,66 +153,99 @@ void RedisKeyViewerTab::render() {
 
     const auto& colors = Application::getInstance().getCurrentColors();
     const std::string displayName = (pattern_ == "*") ? "Browse" : pattern_;
+    constexpr float toggleStripWidth = 28.0f;
+    const float totalWidth = ImGui::GetContentRegionAvail().x;
+    const float totalHeight = ImGui::GetContentRegionAvail().y;
+    const float panelContentWidth = statusPanelOpen_ ? RedisStatusPanel::kFixedPanelWidth : 0.0f;
+    float mainWidth = totalWidth - toggleStripWidth - panelContentWidth;
+    mainWidth = std::max(220.0f, mainWidth);
+    float statusTopOffset = 0.0f;
+    float statusHeight = totalHeight;
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
+    if (ImGui::BeginChild("##redis_key_viewer_main", ImVec2(mainWidth, totalHeight), false)) {
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
 
-    ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
-    ImGui::Text(ICON_FA_DATABASE);
-    ImGui::PopStyleColor();
-    ImGui::SameLine(0, Theme::Spacing::S);
-    if (db_) {
-        const auto& connInfo = db_->getConnectionInfo();
-        ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
-        ImGui::SameLine(0, Theme::Spacing::L);
-    }
-    ImGui::Text(ICON_FA_KEY " %s", displayName.c_str());
-    ImGui::Separator();
-
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
-
-    renderToolbar();
-
-    if (!saveError_.empty()) {
+        ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
-        ImGui::TextWrapped("%s", saveError_.c_str());
+        ImGui::Text(ICON_FA_DATABASE);
         ImGui::PopStyleColor();
+        ImGui::SameLine(0, Theme::Spacing::S);
+        if (db_) {
+            const auto& connInfo = db_->getConnectionInfo();
+            ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
+            ImGui::SameLine(0, Theme::Spacing::L);
+        }
+        ImGui::Text(ICON_FA_KEY " %s", displayName.c_str());
+        ImGui::Separator();
+
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
+        statusTopOffset = ImGui::GetCursorPosY();
+        statusHeight = ImGui::GetContentRegionAvail().y;
+
+        renderToolbar();
+
+        if (!saveError_.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+            ImGui::TextWrapped("%s", saveError_.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        if (isLoading_) {
+            const ImVec2 winPos = ImGui::GetWindowPos();
+            const float cx = winPos.x + ImGui::GetWindowWidth() * 0.5f;
+            const float cy = winPos.y + ImGui::GetWindowHeight() * 0.5f;
+            constexpr float r = 10.0f;
+            ImGui::SetCursorScreenPos(ImVec2(cx - r, cy - r));
+            UIUtils::Spinner("##redis_key_load", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        } else if (hasError_) {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", loadingError_.c_str());
+        } else if (tableData_.empty()) {
+            ImGui::TextDisabled("No keys found for pattern: %s", pattern_.c_str());
+        } else {
+            if (totalRows_ >= 0) {
+                ImGui::Text("Rows: %d", totalRows_);
+            } else {
+                ImGui::Text("Rows: %zu  (page %d, more available)", tableData_.size(),
+                            currentPage_ + 1);
+            }
+
+            const float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 4.0f, 50.0f);
+
+            tableRenderer_->setColumns(columnNames_);
+            tableRenderer_->setData(tableData_);
+            tableRenderer_->setCellEditedStatus(editedCells_);
+            tableRenderer_->setSelectedCell(selectedRow_, selectedCol_);
+            tableRenderer_->setRowNumberOffset(currentPage_ * rowsPerPage_);
+            tableRenderer_->render("##redis_keys_table");
+        }
+    }
+    ImGui::EndChild();
+
+    const float alignedStatusTop =
+        (statusTopOffset > Theme::Spacing::S) ? (statusTopOffset - Theme::Spacing::S) : 0.0f;
+    const float statusTopDelta = statusTopOffset - alignedStatusTop;
+    const float alignedStatusHeight =
+        std::min(totalHeight - alignedStatusTop, statusHeight + statusTopDelta);
+
+    if (statusPanelOpen_) {
+        ImGui::SameLine(0, 0);
+        if (ImGui::BeginChild("##redis_key_viewer_status_wrap",
+                              ImVec2(RedisStatusPanel::kFixedPanelWidth, totalHeight), false)) {
+            ImGui::SetCursorPosY(alignedStatusTop);
+            statusPanel_.renderPanel(alignedStatusHeight, "##redis_key_viewer_status_panel");
+        }
+        ImGui::EndChild();
     }
 
-    if (isLoading_) {
-        const ImVec2 winPos = ImGui::GetWindowPos();
-        const float cx = winPos.x + ImGui::GetWindowWidth() * 0.5f;
-        const float cy = winPos.y + ImGui::GetWindowHeight() * 0.5f;
-        constexpr float r = 10.0f;
-        ImGui::SetCursorScreenPos(ImVec2(cx - r, cy - r));
-        UIUtils::Spinner("##redis_key_load", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
-        return;
+    ImGui::SameLine(0, 0);
+    if (ImGui::BeginChild("##redis_key_viewer_status_strip_wrap",
+                          ImVec2(toggleStripWidth, totalHeight), false)) {
+        ImGui::SetCursorPosY(alignedStatusTop);
+        RedisStatusPanel::renderToggleStrip(statusPanelOpen_, toggleStripWidth, alignedStatusHeight,
+                                            "##redis_key_viewer_status_strip",
+                                            "##redis_key_viewer_status_toggle");
     }
-
-    if (hasError_) {
-        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", loadingError_.c_str());
-        return;
-    }
-
-    if (tableData_.empty()) {
-        ImGui::TextDisabled("No keys found for pattern: %s", pattern_.c_str());
-        return;
-    }
-
-    if (totalRows_ >= 0) {
-        ImGui::Text("Rows: %d", totalRows_);
-    } else {
-        ImGui::Text("Rows: %zu  (page %d, more available)", tableData_.size(), currentPage_ + 1);
-    }
-
-    const float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 4.0f, 50.0f);
-
-    tableRenderer_->setColumns(columnNames_);
-    tableRenderer_->setData(tableData_);
-    tableRenderer_->setCellEditedStatus(editedCells_);
-    tableRenderer_->setSelectedCell(selectedRow_, selectedCol_);
-    tableRenderer_->setRowNumberOffset(currentPage_ * rowsPerPage_);
-    tableRenderer_->render("##redis_keys_table");
+    ImGui::EndChild();
 }
 
 void RedisKeyViewerTab::saveChanges() {

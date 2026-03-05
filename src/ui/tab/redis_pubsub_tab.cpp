@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -14,7 +15,7 @@
 #include <poll.h>
 
 RedisPubSubTab::RedisPubSubTab(const std::string& name, RedisDatabase* db)
-    : Tab(name, TabType::REDIS_PUBSUB), db_(db) {
+    : Tab(name, TabType::REDIS_PUBSUB), db_(db), statusPanel_(db) {
     strncpy(publishChannelBuf_, "*", sizeof(publishChannelBuf_) - 1);
 }
 
@@ -270,44 +271,84 @@ void RedisPubSubTab::render() {
     drainPendingMessages();
 
     const auto& colors = Application::getInstance().getCurrentColors();
+    constexpr float toggleStripWidth = 28.0f;
+    const float totalWidth = ImGui::GetContentRegionAvail().x;
+    const float totalHeight = ImGui::GetContentRegionAvail().y;
+    const float panelContentWidth = statusPanelOpen_ ? RedisStatusPanel::kFixedPanelWidth : 0.0f;
+    float mainWidth = totalWidth - toggleStripWidth - panelContentWidth;
+    mainWidth = std::max(220.0f, mainWidth);
+    float statusTopOffset = 0.0f;
+    float statusHeight = totalHeight;
 
-    // header
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
-    ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
-    ImGui::Text(ICON_FA_DATABASE);
-    ImGui::PopStyleColor();
-    ImGui::SameLine(0, Theme::Spacing::S);
-    if (db_) {
-        const auto& connInfo = db_->getConnectionInfo();
-        ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
-        ImGui::SameLine(0, Theme::Spacing::L);
+    if (ImGui::BeginChild("##redis_pubsub_main", ImVec2(mainWidth, totalHeight), false)) {
+        // header
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
+        ImGui::AlignTextToFramePadding();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+        ImGui::Text(ICON_FA_DATABASE);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, Theme::Spacing::S);
+        if (db_) {
+            const auto& connInfo = db_->getConnectionInfo();
+            ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
+            ImGui::SameLine(0, Theme::Spacing::L);
+        }
+        ImGui::Text(ICON_FA_TOWER_BROADCAST " Pub/Sub");
+        ImGui::Separator();
+
+        statusTopOffset = ImGui::GetCursorPosY();
+        statusHeight = ImGui::GetContentRegionAvail().y;
+
+        // border on all input fields
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+
+        // main content area (between header and publish bar)
+        const float publishBarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M;
+        const float contentHeight = ImGui::GetContentRegionAvail().y - publishBarHeight;
+
+        ImGui::BeginChild("##pubsub_content", ImVec2(0, contentHeight));
+
+        renderToolbar(colors);
+
+        ImGui::Separator();
+
+        renderMessageTable(colors);
+
+        ImGui::EndChild();
+
+        renderPublishBar(colors);
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
     }
-    ImGui::Text(ICON_FA_TOWER_BROADCAST " Pub/Sub");
-    ImGui::Separator();
-
-    // border on all input fields
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
-
-    // main content area (between header and publish bar)
-    const float publishBarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M;
-    const float contentHeight = ImGui::GetContentRegionAvail().y - publishBarHeight;
-
-    ImGui::BeginChild("##pubsub_content", ImVec2(0, contentHeight));
-
-    renderToolbar(colors);
-
-    ImGui::Separator();
-
-    renderMessageTable(colors);
-
     ImGui::EndChild();
 
-    renderPublishBar(colors);
+    const float alignedStatusTop =
+        (statusTopOffset > Theme::Spacing::S) ? (statusTopOffset - Theme::Spacing::S) : 0.0f;
+    const float statusTopDelta = statusTopOffset - alignedStatusTop;
+    const float alignedStatusHeight =
+        std::min(totalHeight - alignedStatusTop, statusHeight + statusTopDelta);
 
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    if (statusPanelOpen_) {
+        ImGui::SameLine(0, 0);
+        if (ImGui::BeginChild("##redis_pubsub_status_wrap",
+                              ImVec2(RedisStatusPanel::kFixedPanelWidth, totalHeight), false)) {
+            ImGui::SetCursorPosY(alignedStatusTop);
+            statusPanel_.renderPanel(alignedStatusHeight, "##redis_pubsub_status_panel");
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::SameLine(0, 0);
+    if (ImGui::BeginChild("##redis_pubsub_status_strip_wrap", ImVec2(toggleStripWidth, totalHeight),
+                          false)) {
+        ImGui::SetCursorPosY(alignedStatusTop);
+        RedisStatusPanel::renderToggleStrip(statusPanelOpen_, toggleStripWidth, alignedStatusHeight,
+                                            "##redis_pubsub_status_strip",
+                                            "##redis_pubsub_status_toggle");
+    }
+    ImGui::EndChild();
 }
 
 void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {

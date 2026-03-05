@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/async_helper.hpp"
+#include "ui/tab/redis_status_panel.hpp"
 #include "ui/tab/tab.hpp"
 #include <memory>
 #include <string>
@@ -55,6 +56,8 @@ private:
         std::string errorMessage;
     };
     AsyncOperation<SaveResult> saveOp_;
+    bool statusPanelOpen_ = false;
+    RedisStatusPanel statusPanel_;
 
     void initializeTableRenderer();
     void loadDataAsync();

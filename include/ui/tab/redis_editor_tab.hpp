@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/async_helper.hpp"
+#include "ui/tab/redis_status_panel.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
 #include <string>
@@ -36,6 +37,8 @@ private:
     bool autoClearEditor_ = true;
     float totalContentHeight_ = 0.0f;
     int pendingFocusFrames_ = 3;
+    bool statusPanelOpen_ = false;
+    RedisStatusPanel statusPanel_;
 
     void startCommandExecutionAsync(const std::string& cmd);
     void checkCommandExecutionStatus();

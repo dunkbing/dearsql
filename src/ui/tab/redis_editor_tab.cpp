@@ -248,7 +248,7 @@ namespace {
 } // namespace
 
 RedisEditorTab::RedisEditorTab(const std::string& name, RedisDatabase* db)
-    : Tab(name, TabType::REDIS_EDITOR), db_(db) {
+    : Tab(name, TabType::REDIS_EDITOR), db_(db), statusPanel_(db) {
     editor_.SetShowLineNumbers(false);
     editor_.SetLanguage(dearsql::TextEditor::Language::Redis);
     editor_.SetCompletionKeywords(REDIS_COMPLETION_KEYWORDS);
@@ -269,71 +269,112 @@ void RedisEditorTab::render() {
 
     checkCommandExecutionStatus();
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
-    renderHeader();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
+    constexpr float toggleStripWidth = 28.0f;
+    const float totalWidth = ImGui::GetContentRegionAvail().x;
+    const float totalHeight = ImGui::GetContentRegionAvail().y;
+    const float panelContentWidth = statusPanelOpen_ ? RedisStatusPanel::kFixedPanelWidth : 0.0f;
+    float mainWidth = totalWidth - toggleStripWidth - panelContentWidth;
+    mainWidth = std::max(220.0f, mainWidth);
+    float statusTopOffset = 0.0f;
+    float statusHeight = totalHeight;
 
-    totalContentHeight_ = ImGui::GetContentRegionAvail().y;
+    if (ImGui::BeginChild("##redis_editor_main", ImVec2(mainWidth, totalHeight), false)) {
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
+        renderHeader();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
 
-    if (ImGui::BeginChild("##redis_left_pane", ImVec2(-1, totalContentHeight_), false)) {
-        const float paneHeight = ImGui::GetContentRegionAvail().y;
-        const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
-        const float editorHeight = paneHeight * splitterPosition_;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition_) - 6.0f - toolbarHeight;
+        statusTopOffset = ImGui::GetCursorPosY();
+        totalContentHeight_ = ImGui::GetContentRegionAvail().y;
+        statusHeight = totalContentHeight_;
 
-        if (ImGui::BeginChild("RedisEditor", ImVec2(-1, editorHeight), true,
-                              ImGuiWindowFlags_NoScrollbar)) {
-            if (pendingFocusFrames_ > 0) {
-                editor_.SetFocus();
-                --pendingFocusFrames_;
+        if (ImGui::BeginChild("##redis_left_pane", ImVec2(-1, totalContentHeight_), false)) {
+            const float paneHeight = ImGui::GetContentRegionAvail().y;
+            const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
+            const float editorHeight = paneHeight * splitterPosition_;
+            const float resultsHeight =
+                paneHeight * (1.0f - splitterPosition_) - 6.0f - toolbarHeight;
+
+            if (ImGui::BeginChild("RedisEditor", ImVec2(-1, editorHeight), true,
+                                  ImGuiWindowFlags_NoScrollbar)) {
+                if (pendingFocusFrames_ > 0) {
+                    editor_.SetFocus();
+                    --pendingFocusFrames_;
+                }
+                editor_.Render("##Redis", ImVec2(-1, -1), true);
+                command_ = editor_.GetText();
             }
-            editor_.Render("##Redis", ImVec2(-1, -1), true);
-            command_ = editor_.GetText();
+            ImGui::EndChild();
+
+            renderToolbar();
+            UIUtils::Splitter("##redis_splitter", &splitterPosition_, totalContentHeight_, 60.0f,
+                              80.0f);
+
+            if (ImGui::BeginChild("RedisResults", ImVec2(-1, resultsHeight), true,
+                                  ImGuiWindowFlags_NoScrollbar)) {
+                const ImVec2 contentStart = ImGui::GetCursorScreenPos();
+                if (queryOp_.isRunning())
+                    ImGui::BeginDisabled();
+                renderResults();
+                if (queryOp_.isRunning())
+                    ImGui::EndDisabled();
+
+                // spinner overlay while running
+                if (queryOp_.isRunning()) {
+                    const ImVec2 winPos = ImGui::GetWindowPos();
+                    const ImVec2 winSize = ImGui::GetWindowSize();
+                    const ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
+
+                    const auto& colors = Application::getInstance().getCurrentColors();
+                    ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
+                    bg.w = 0.75f;
+
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    dl->AddRectFilled(contentStart, overlayEnd, ImGui::GetColorU32(bg));
+
+                    const float cx = (contentStart.x + overlayEnd.x) * 0.5f;
+                    const float cy = (contentStart.y + overlayEnd.y) * 0.5f;
+                    constexpr float spinnerRadius = 10.0f;
+                    ImGui::SetCursorScreenPos(
+                        ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
+                    UIUtils::Spinner("##redis_spinner", spinnerRadius, 2,
+                                     ImGui::GetColorU32(ImGuiCol_Text));
+
+                    const char* loadingText = LABEL_RUNNING;
+                    const ImVec2 textSize = ImGui::CalcTextSize(loadingText);
+                    ImGui::SetCursorScreenPos(
+                        ImVec2(cx - textSize.x * 0.5f, cy + spinnerRadius + Theme::Spacing::S));
+                    ImGui::Text("%s", loadingText);
+                }
+            }
+            ImGui::EndChild();
         }
         ImGui::EndChild();
+    }
+    ImGui::EndChild();
 
-        renderToolbar();
-        UIUtils::Splitter("##redis_splitter", &splitterPosition_, totalContentHeight_, 60.0f,
-                          80.0f);
+    const float alignedStatusTop =
+        (statusTopOffset > Theme::Spacing::S) ? (statusTopOffset - Theme::Spacing::S) : 0.0f;
+    const float statusTopDelta = statusTopOffset - alignedStatusTop;
+    const float alignedStatusHeight =
+        std::min(totalHeight - alignedStatusTop, statusHeight + statusTopDelta);
 
-        if (ImGui::BeginChild("RedisResults", ImVec2(-1, resultsHeight), true,
-                              ImGuiWindowFlags_NoScrollbar)) {
-            const ImVec2 contentStart = ImGui::GetCursorScreenPos();
-            if (queryOp_.isRunning())
-                ImGui::BeginDisabled();
-            renderResults();
-            if (queryOp_.isRunning())
-                ImGui::EndDisabled();
-
-            // spinner overlay while running
-            if (queryOp_.isRunning()) {
-                const ImVec2 winPos = ImGui::GetWindowPos();
-                const ImVec2 winSize = ImGui::GetWindowSize();
-                const ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
-
-                const auto& colors = Application::getInstance().getCurrentColors();
-                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
-                bg.w = 0.75f;
-
-                ImDrawList* dl = ImGui::GetWindowDrawList();
-                dl->AddRectFilled(contentStart, overlayEnd, ImGui::GetColorU32(bg));
-
-                const float cx = (contentStart.x + overlayEnd.x) * 0.5f;
-                const float cy = (contentStart.y + overlayEnd.y) * 0.5f;
-                constexpr float spinnerRadius = 10.0f;
-                ImGui::SetCursorScreenPos(
-                    ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
-                UIUtils::Spinner("##redis_spinner", spinnerRadius, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
-
-                const char* loadingText = LABEL_RUNNING;
-                const ImVec2 textSize = ImGui::CalcTextSize(loadingText);
-                ImGui::SetCursorScreenPos(
-                    ImVec2(cx - textSize.x * 0.5f, cy + spinnerRadius + Theme::Spacing::S));
-                ImGui::Text("%s", loadingText);
-            }
+    if (statusPanelOpen_) {
+        ImGui::SameLine(0, 0);
+        if (ImGui::BeginChild("##redis_editor_status_wrap",
+                              ImVec2(RedisStatusPanel::kFixedPanelWidth, totalHeight), false)) {
+            ImGui::SetCursorPosY(alignedStatusTop);
+            statusPanel_.renderPanel(alignedStatusHeight, "##redis_editor_status_panel");
         }
         ImGui::EndChild();
+    }
+
+    ImGui::SameLine(0, 0);
+    if (ImGui::BeginChild("##redis_editor_status_strip_wrap", ImVec2(toggleStripWidth, totalHeight),
+                          false)) {
+        ImGui::SetCursorPosY(alignedStatusTop);
+        RedisStatusPanel::renderToggleStrip(statusPanelOpen_, toggleStripWidth, alignedStatusHeight,
+                                            "##redis_editor_status_strip",
+                                            "##redis_editor_status_toggle");
     }
     ImGui::EndChild();
 }

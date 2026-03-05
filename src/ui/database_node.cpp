@@ -312,12 +312,10 @@ void DatabaseHierarchy::renderRootNode() {
                 const std::string keyGroupId = std::format("redis_key_{}_{:p}", displayName,
                                                            static_cast<const void*>(&keyGroup));
 
-                ImGui::TreeNodeEx(keyGroupId.c_str(), keyGroupFlags, "%s", displayName.c_str());
-                const bool rowHovered = ImGui::IsItemHovered();
-                ImGui::SameLine(0.0f, 4.0f);
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), ICON_FA_KEY);
+                renderTreeNodeWithIcon(displayName, keyGroupId, ICON_FA_KEY,
+                                       ImGui::GetColorU32(colors.yellow), keyGroupFlags);
 
-                if (rowHovered && ImGui::IsMouseDoubleClicked(0)) {
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     Application::getInstance().getTabManager()->createRedisKeyViewerTab(
                         redisDb.get(), keyGroup.name);
                 }

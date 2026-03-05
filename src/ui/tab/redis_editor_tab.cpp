@@ -258,7 +258,9 @@ RedisEditorTab::RedisEditorTab(const std::string& name, RedisDatabase* db)
     });
 }
 
-RedisEditorTab::~RedisEditorTab() = default;
+RedisEditorTab::~RedisEditorTab() {
+    queryOp_.cancel();
+}
 
 void RedisEditorTab::render() {
     const bool dark = Application::getInstance().isDarkTheme();
@@ -561,4 +563,3 @@ void RedisEditorTab::checkCommandExecutionStatus() {
         }
     });
 }
-

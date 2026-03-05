@@ -33,7 +33,10 @@ RedisKeyViewerTab::RedisKeyViewerTab(const std::string& name, RedisDatabase* db,
     loadDataAsync();
 }
 
-RedisKeyViewerTab::~RedisKeyViewerTab() = default;
+RedisKeyViewerTab::~RedisKeyViewerTab() {
+    loadOp_.cancel();
+    saveOp_.cancel();
+}
 
 void RedisKeyViewerTab::initializeTableRenderer() {
     TableRenderer::Config config;

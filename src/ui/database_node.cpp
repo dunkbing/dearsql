@@ -1774,6 +1774,44 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
             }
         }
 
+        // Indexes section
+        {
+            const std::string indexesNodeId = std::format("mongo_indexes_{}_{:p}", collection.name,
+                                                          static_cast<void*>(&collection.indexes));
+            const bool indexesOpen =
+                renderTreeNodeWithIcon("Indexes", indexesNodeId, ICON_FA_MAGNIFYING_GLASS,
+                                       ImGui::GetColorU32(colors.lavender));
+
+            if (indexesOpen) {
+                if (!collection.indexes.empty()) {
+                    for (const auto& index : collection.indexes) {
+                        ImGuiTreeNodeFlags indexFlags = ImGuiTreeNodeFlags_Leaf |
+                                                        ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                        ImGuiTreeNodeFlags_FramePadding;
+                        std::string indexDisplay = index.name;
+                        if (!index.columns.empty()) {
+                            indexDisplay += " (";
+                            for (size_t i = 0; i < index.columns.size(); ++i) {
+                                if (i > 0)
+                                    indexDisplay += ", ";
+                                indexDisplay += index.columns[i];
+                            }
+                            indexDisplay += ")";
+                        }
+                        if (index.isUnique) {
+                            indexDisplay += " UNIQUE";
+                        }
+                        ImGui::TreeNodeEx(indexDisplay.c_str(), indexFlags);
+                    }
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                    ImGui::Text("  No indexes defined");
+                    ImGui::PopStyleColor();
+                }
+                ImGui::TreePop();
+            }
+        }
+
         ImGui::TreePop();
     }
 }

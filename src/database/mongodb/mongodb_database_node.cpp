@@ -150,6 +150,7 @@ std::vector<Table> MongoDBDatabaseNode::getCollectionsAsync() {
 
             // Infer schema by sampling documents
             collection.columns = inferSchemaFromSample(collName, 100);
+            collection.indexes = getCollectionIndexes(collName);
 
             result.push_back(std::move(collection));
         }
@@ -256,6 +257,53 @@ std::vector<Column> MongoDBDatabaseNode::inferSchemaFromSample(const std::string
     return columns;
 }
 
+std::vector<Index> MongoDBDatabaseNode::getCollectionIndexes(const std::string& collectionName) {
+    std::vector<Index> indexes;
+
+    try {
+        auto client = parentDb->getClient();
+        auto db = (*client)[name];
+        auto coll = db[collectionName];
+
+        auto cursor = coll.list_indexes();
+        for (auto&& doc : cursor) {
+            Index idx;
+
+            // index name
+            if (auto it = doc.find("name"); it != doc.end()) {
+                idx.name = std::string(it->get_string().value);
+            }
+
+            // key fields and direction
+            if (auto it = doc.find("key");
+                it != doc.end() && it->type() == bsoncxx::type::k_document) {
+                for (auto&& field : it->get_document().value) {
+                    idx.columns.emplace_back(field.key());
+                }
+            }
+
+            // unique flag
+            if (auto it = doc.find("unique");
+                it != doc.end() && it->type() == bsoncxx::type::k_bool) {
+                idx.isUnique = it->get_bool().value;
+            }
+
+            // _id index is the primary index
+            if (idx.name == "_id_") {
+                idx.isPrimary = true;
+                idx.isUnique = true;
+            }
+
+            indexes.push_back(std::move(idx));
+        }
+    } catch (const std::exception& e) {
+        Logger::error(
+            std::format("Error fetching indexes for {}.{}: {}", name, collectionName, e.what()));
+    }
+
+    return indexes;
+}
+
 void MongoDBDatabaseNode::startTableRefreshAsync(const std::string& collectionName) {
     Logger::debug(std::format("Starting async refresh for collection: {}", collectionName));
 
@@ -299,6 +347,7 @@ Table MongoDBDatabaseNode::refreshCollectionAsync(const std::string& collectionN
 
     try {
         refreshedCollection.columns = inferSchemaFromSample(collectionName, 100);
+        refreshedCollection.indexes = getCollectionIndexes(collectionName);
     } catch (const std::exception& e) {
         Logger::error(std::format("Error refreshing collection {}: {}", collectionName, e.what()));
         throw;

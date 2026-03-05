@@ -121,6 +121,9 @@ public:
     std::vector<Column> inferSchemaFromSample(const std::string& collectionName,
                                               int sampleSize = 100);
 
+    // Fetch indexes for a collection
+    std::vector<Index> getCollectionIndexes(const std::string& collectionName);
+
     // ========== Schema Modification ==========
 
     std::pair<bool, std::string> dropCollection(const std::string& collectionName);

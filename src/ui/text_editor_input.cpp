@@ -520,7 +520,7 @@ namespace dearsql {
             startLine = getLineFromPos(selectionStart());
             endLine = getLineFromPos(selectionEnd());
             // If selection ends at column 0, don't include that line
-            if (selectionEnd() == lineStarts_[endLine] && endLine > startLine)
+            if (endLine > startLine && selectionEnd() == lineStarts_[endLine])
                 --endLine;
         } else {
             startLine = endLine = getLineFromPos(cursorIndex_);
@@ -801,8 +801,6 @@ namespace dearsql {
             ImU32 iconColor = palette_.keyword;
             switch (filteredCompletions_[i].kind) {
             case CompletionKind::Keyword:
-                icon = "K";
-                iconColor = palette_.keyword;
                 break;
             case CompletionKind::Table:
                 icon = "T";

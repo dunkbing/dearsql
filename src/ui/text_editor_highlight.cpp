@@ -678,7 +678,7 @@ namespace dearsql {
         tsTree_ = newTree;
         tsPreviousContent_ = content_;
 
-        if (!newTree) {
+        if (!tsTree_) {
             colors_.assign(content_.size(), palette_.text);
             return;
         }

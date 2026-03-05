@@ -451,11 +451,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         icon = ICON_FK_MYSQL;
         break;
     case DatabaseType::MONGODB:
-        icon = ICON_FK_DATABASE;
-        break;
     case DatabaseType::REDIS:
-        icon = ICON_FK_DATABASE;
-        break;
     default:
         icon = ICON_FK_DATABASE;
         break;

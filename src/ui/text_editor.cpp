@@ -662,7 +662,7 @@ namespace dearsql {
 
             float x1 = calcXForPos(rangeStart);
             float x2 = calcXForPos(rangeEnd);
-            if (rangeEnd > rangeStart && content_[rangeEnd - 1] == '\n')
+            if (content_[rangeEnd - 1] == '\n')
                 x2 += spaceWidth; // extend selection past newline
 
             float y = textOrigin_.y + lineNum * lineHeight_;

@@ -81,7 +81,8 @@ void AutoCompleteInput::addKeywords(const std::vector<std::string>& keywords) {
 
     // Remove duplicates and sort
     std::ranges::sort(config.keywords);
-    config.keywords.erase(std::ranges::unique(config.keywords).begin(), config.keywords.end());
+    auto ret = std::ranges::unique(config.keywords);
+    config.keywords.erase(ret.begin(), ret.end());
 }
 
 void AutoCompleteInput::clearKeywords() {
@@ -174,8 +175,8 @@ void AutoCompleteInput::updateAutoCompleteSuggestions(const ImGuiInputTextCallba
     std::ranges::sort(autoCompleteSuggestions);
 
     // Remove duplicates
-    autoCompleteSuggestions.erase(std::ranges::unique(autoCompleteSuggestions).begin(),
-                                  autoCompleteSuggestions.end());
+    auto ret = std::ranges::unique(autoCompleteSuggestions);
+    autoCompleteSuggestions.erase(ret.begin(), ret.end());
 
     showAutoComplete = !autoCompleteSuggestions.empty();
     autoCompleteWordStart = wordStart;

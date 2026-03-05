@@ -75,7 +75,6 @@ namespace {
             if (static_cast<int>(totalRows) >= rowLimit) {
                 result.message += std::format(" (limited to {})", rowLimit);
             }
-            result.success = true;
         } else {
             if (mysql_field_count(conn) == 0) {
                 my_ulonglong affected = mysql_affected_rows(conn);
@@ -84,7 +83,6 @@ namespace {
                 } else {
                     result.message = "Query executed successfully";
                 }
-                result.success = true;
             } else {
                 result.success = false;
                 result.errorMessage = mysql_error(conn);

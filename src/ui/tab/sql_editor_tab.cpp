@@ -98,14 +98,15 @@ void SQLEditorTab::render() {
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
             ImVec2 contentStart = ImGui::GetCursorScreenPos();
-            if (queryExecutionOp_.isRunning())
+            const bool isRunning = queryExecutionOp_.isRunning();
+            if (isRunning)
                 ImGui::BeginDisabled();
             renderQueryResults();
-            if (queryExecutionOp_.isRunning())
+            if (isRunning)
                 ImGui::EndDisabled();
 
             // Spinner overlay while executing
-            if (queryExecutionOp_.isRunning()) {
+            if (isRunning) {
                 ImVec2 winPos = ImGui::GetWindowPos();
                 ImVec2 winSize = ImGui::GetWindowSize();
                 ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
@@ -470,7 +471,6 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
 
         TableRenderer::Config config;
         config.allowEditing = false;
-        config.allowSelection = true;
         config.showRowNumbers = false;
         config.minHeight = tableHeight;
 
@@ -536,10 +536,6 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         // and apply the correct search_path, while still re-resolving by name after refreshes.
         binding_.resolveNode = [schemaNode, dbName, schemaName]() -> IDatabaseNode* {
             auto* serverDb = schemaNode->parentDbNode->parentDb;
-            if (!serverDb) {
-                return nullptr;
-            }
-
             auto* dbNode = serverDb->getDatabaseData(dbName);
             if (!dbNode) {
                 return nullptr;
@@ -662,10 +658,9 @@ void SQLEditorTab::updateCompletionKeywords() {
 
     // Sort and deduplicate by text
     std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
-    items.erase(
-        std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; })
-            .begin(),
-        items.end());
+    auto ret =
+        std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; });
+    items.erase(ret.begin(), ret.end());
 
     sqlEditor.SetCompletionItems(items);
     completionKeywordsSet_ = true;

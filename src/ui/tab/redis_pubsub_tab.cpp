@@ -179,7 +179,7 @@ void RedisPubSubTab::subscriberLoop(std::stop_token stopToken) {
             if (msgType == "pmessage" && msg->elements >= 4) {
                 channel = msg->element[2]->str;
                 payload = msg->element[3]->str;
-            } else if (msgType == "message" && msg->elements >= 3) {
+            } else if (msgType == "message") {
                 channel = msg->element[1]->str;
                 payload = msg->element[2]->str;
             } else {

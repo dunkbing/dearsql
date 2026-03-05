@@ -6,14 +6,14 @@
 #include <vector>
 
 struct SavedConnection {
-    int id;
+    int id = 0;
     DatabaseConnectionInfo connectionInfo;
     std::string lastUsed;
     int workspaceId = 1; // default workspace
 };
 
 struct Workspace {
-    int id;
+    int id = 0;
     std::string name;
     std::string description;
     std::string createdAt;

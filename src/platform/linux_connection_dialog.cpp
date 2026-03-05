@@ -347,7 +347,7 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     }
 
     // SSL Mode (all server types)
-    if (type != DatabaseType::SQLITE) {
+    {
         auto sslCfg = getSslConfig(type);
         data->sslModeDropdown = makeStringDropdown(sslCfg.labels, sslCfg.count, sslCfg.defaultIdx);
         GtkWidget* sslRow = makeRow(makeLabel("SSL Mode"), data->sslModeDropdown);

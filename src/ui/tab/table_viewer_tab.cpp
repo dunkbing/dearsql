@@ -963,7 +963,6 @@ void TableViewerTab::initializeTableRenderer() {
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
     config.allowEditing = true;
-    config.allowSelection = true;
     config.showRowNumbers = true;
     config.minHeight = 200.0f;
 

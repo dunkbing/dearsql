@@ -25,6 +25,7 @@ public:
     void renderFrame() override;
     void shutdownImGui() override;
     void updateWorkspaceDropdown() override;
+    ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
 
 private:
     Application* app_;

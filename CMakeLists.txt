@@ -232,6 +232,7 @@ set(APP_SOURCES
     src/utils/crypto.cpp
     src/utils/logger.cpp
     src/utils/sentry_init.cpp
+    src/utils/texture_manager.cpp
 
     # AI
     src/ai/ai_client.cpp
@@ -288,6 +289,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui
     external/imgui/backends
     external/imgui-node-editor
+    external/imgui-node-editor/external/stb_image
     external/IconFontCppHeaders
     external/cpp-httplib
     external/tree-sitter/lib/include

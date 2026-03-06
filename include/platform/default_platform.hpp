@@ -17,6 +17,7 @@ public:
     void cleanup() override;
     void renderFrame() override;
     void shutdownImGui() override;
+    ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
 
 private:
     Application* app_;

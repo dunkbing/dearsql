@@ -1,9 +1,14 @@
 #include "platform/default_platform.hpp"
 #include "application.hpp"
+#include "platform/opengl_texture.hpp"
 #include <iostream>
 
 #if defined(__linux__) || defined(_WIN32)
 #include "imgui_impl_opengl3.h"
+#endif
+
+#if !defined(__APPLE__) && !defined(_WIN32) && !defined(__linux__)
+#include <GL/gl.h>
 #endif
 
 DefaultPlatform::DefaultPlatform(Application* app) : app_(app), window_(nullptr) {}
@@ -63,4 +68,8 @@ void DefaultPlatform::shutdownImGui() {
     ImGui_ImplOpenGL3_Shutdown();
     std::cout << "ImGui OpenGL backend shutdown" << std::endl;
 #endif
+}
+
+ImTextureID DefaultPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+    return createOpenGLTextureFromRGBA(pixels, width, height);
 }

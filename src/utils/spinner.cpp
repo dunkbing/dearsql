@@ -40,4 +40,27 @@ namespace UIUtils {
         window->DrawList->PathStroke(color, false, static_cast<float>(thickness));
         return true;
     }
+
+    void SpinnerOverlay(ImDrawList* drawList, const ImVec2 centre, const float radius,
+                        const int thickness, const ImU32 color) {
+        if (!drawList) {
+            return;
+        }
+
+        const float time = static_cast<float>(ImGui::GetTime());
+        constexpr int numSegments = 30;
+        const float start = abs(ImSin(time * 1.8f) * (numSegments - 5));
+        const float aMin = IM_PI * 2.0f * start / numSegments;
+        constexpr float aMax = IM_PI * 2.0f * (numSegments - 3) / numSegments;
+        const float rotation = time * 8.0f;
+
+        drawList->PathClear();
+        for (int i = 0; i < numSegments; i++) {
+            const float a =
+                aMin + (static_cast<float>(i) / static_cast<float>(numSegments)) * (aMax - aMin);
+            drawList->PathLineTo(ImVec2(centre.x + ImCos(a + rotation) * radius,
+                                        centre.y + ImSin(a + rotation) * radius));
+        }
+        drawList->PathStroke(color, false, static_cast<float>(thickness));
+    }
 } // namespace UIUtils

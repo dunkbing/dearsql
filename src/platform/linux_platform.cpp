@@ -9,6 +9,7 @@
 #include "platform/connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
 #include "platform/linux_updater.hpp"
+#include "platform/opengl_texture.hpp"
 #include "themes.hpp"
 #include <cmath>
 #include <iostream>
@@ -1596,6 +1597,10 @@ void LinuxPlatform::runMainLoop() {
         // Small sleep to prevent 100% CPU usage
         g_usleep(1000); // 1ms
     }
+}
+
+ImTextureID LinuxPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+    return createOpenGLTextureFromRGBA(pixels, width, height);
 }
 
 #endif // defined(__linux__)

@@ -204,4 +204,45 @@ void WindowsPlatform::applyTitlebarTheme() {
     DwmSetWindowAttribute(hWnd, DWMWA_CAPTION_COLOR, &captionColor, sizeof(captionColor));
 }
 
+ImTextureID WindowsPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+    if (!d3dDevice_ || !pixels) {
+        return ImTextureID{};
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA subResource = {};
+    subResource.pSysMem = pixels;
+    subResource.SysMemPitch = width * 4;
+
+    ID3D11Texture2D* texture = nullptr;
+    HRESULT hr = d3dDevice_->CreateTexture2D(&desc, &subResource, &texture);
+    if (FAILED(hr)) {
+        return ImTextureID{};
+    }
+
+    ID3D11ShaderResourceView* srv = nullptr;
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    hr = d3dDevice_->CreateShaderResourceView(texture, &srvDesc, &srv);
+    texture->Release();
+
+    if (FAILED(hr)) {
+        return ImTextureID{};
+    }
+
+    return (ImTextureID)(intptr_t)srv;
+}
+
 #endif

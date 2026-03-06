@@ -103,8 +103,16 @@ elseif(WIN32)
     set(SYBDB_LIBRARY freetds::freetds)
     set(SYBDB_INCLUDE_DIR "")
 elseif(APPLE)
-    find_library(SYBDB_LIBRARY NAMES libsybdb.a sybdb PATHS /opt/homebrew/lib /usr/local/lib REQUIRED)
-    find_path(SYBDB_INCLUDE_DIR sybdb.h PATHS /opt/homebrew/include /usr/local/include REQUIRED)
+    # use brew --prefix to get isolated Cellar path (avoids /opt/homebrew/include polluting vcpkg headers)
+    execute_process(COMMAND brew --prefix freetds OUTPUT_VARIABLE _FREETDS_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _FREETDS_RC)
+    if(NOT _FREETDS_RC EQUAL 0)
+        message(FATAL_ERROR "FreeTDS not found. Install with: brew install freetds")
+    endif()
+    find_library(SYBDB_LIBRARY NAMES libsybdb.a sybdb PATHS "${_FREETDS_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
+    find_path(SYBDB_INCLUDE_DIR sybdb.h PATHS "${_FREETDS_PREFIX}/include" NO_DEFAULT_PATH REQUIRED)
+    find_library(KERBEROS_FRAMEWORK Kerberos)
+    find_library(ICONV_LIBRARY iconv)
+    set(SYBDB_DEPS ${KERBEROS_FRAMEWORK} ${ICONV_LIBRARY})
 endif()
 
 enable_testing()
@@ -253,6 +261,7 @@ set(APP_SOURCES
     src/utils/crypto.cpp
     src/utils/logger.cpp
     src/utils/sentry_init.cpp
+    src/utils/texture_manager.cpp
 
     # AI
     src/ai/ai_client.cpp
@@ -309,17 +318,21 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui
     external/imgui/backends
     external/imgui-node-editor
+    external/imgui-node-editor/external/stb_image
     external/IconFontCppHeaders
     external/cpp-httplib
     external/tree-sitter/lib/include
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
-    ${SYBDB_INCLUDE_DIR}
 )
 
 # platform-specific include directories
 if(LINUX)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
+endif()
+# FreeTDS include dir (SYSTEM to avoid shadowing vcpkg MySQL/OpenSSL headers)
+if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
+    target_include_directories(${PROJECT_NAME} SYSTEM AFTER PRIVATE ${SYBDB_INCLUDE_DIR})
 endif()
 
 # Sparkle includes (macOS)
@@ -463,8 +476,10 @@ add_executable(database_tests
 target_include_directories(database_tests PRIVATE
     include
     tests/database
-    ${SYBDB_INCLUDE_DIR}
 )
+if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
+    target_include_directories(database_tests SYSTEM AFTER PRIVATE ${SYBDB_INCLUDE_DIR})
+endif()
 
 target_link_libraries(database_tests PRIVATE
     GTest::gtest_main

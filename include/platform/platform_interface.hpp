@@ -1,5 +1,8 @@
 #pragma once
 
+#include "imgui.h"
+#include <cstdint>
+
 #if defined(__APPLE__) || defined(_WIN32)
 #include <GLFW/glfw3.h>
 #else
@@ -20,4 +23,9 @@ public:
     virtual void renderFrame() = 0;
     virtual void shutdownImGui() = 0;
     virtual void updateWorkspaceDropdown() {}
+
+    // create a GPU texture from RGBA pixel data, returns ImTextureID (0 if failed)
+    virtual ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+        return 0;
+    }
 };

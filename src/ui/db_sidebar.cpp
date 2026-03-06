@@ -1,6 +1,5 @@
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
-#include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
@@ -17,6 +16,7 @@
 #include "ui/table_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
+#include "utils/texture_manager.hpp"
 #include <chrono>
 #include <format>
 #include <memory>
@@ -439,68 +439,33 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     }
 
     const bool showSpinner = db->isConnecting();
-    std::string icon;
-    switch (type) {
-    case DatabaseType::SQLITE:
-        icon = ICON_FK_DATABASE;
-        break;
-    case DatabaseType::POSTGRESQL:
-        icon = ICON_FK_POSTGRESQL;
-        break;
-    case DatabaseType::MYSQL:
-    case DatabaseType::MARIADB:
-        icon = ICON_FK_MYSQL;
-        break;
-    case DatabaseType::MONGODB:
-    case DatabaseType::REDIS:
-    case DatabaseType::MSSQL:
-        icon = ICON_FK_DATABASE;
-        break;
-    default:
-        icon = ICON_FK_DATABASE;
-        break;
+
+    // lazy-load database icon textures on first use
+    auto& texMgr = TextureManager::instance();
+    static bool texturesLoaded = false;
+    if (!texturesLoaded) {
+        texMgr.loadDatabaseIcons(app.getPlatform());
+        texturesLoaded = true;
     }
 
     const std::string dbLabel =
         std::format("   {}###db_{:p}", connectionInfo.name, static_cast<const void*>(db.get()));
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
 
+    const float iconSize = texMgr.getIconSize();
     const auto dbIconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
-               ImGui::GetItemRectMin().y +
-                   (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-
-    ImU32 iconColor = ImGui::GetColorU32(colors.overlay1);
-    switch (type) {
-    case DatabaseType::SQLITE:
-        iconColor = ImGui::GetColorU32(colors.sky);
-        break;
-    case DatabaseType::POSTGRESQL:
-        iconColor = ImGui::GetColorU32(colors.blue);
-        break;
-    case DatabaseType::MYSQL:
-        iconColor = ImGui::GetColorU32(colors.peach);
-        break;
-    case DatabaseType::MARIADB:
-        iconColor = ImGui::GetColorU32(colors.teal);
-        break;
-    case DatabaseType::MONGODB:
-        iconColor = ImGui::GetColorU32(colors.green);
-        break;
-    case DatabaseType::REDIS:
-        iconColor = ImGui::GetColorU32(colors.red);
-        break;
-    case DatabaseType::MSSQL:
-        iconColor = ImGui::GetColorU32(colors.mauve);
-        break;
-    default:
-        break;
-    }
-    ImGui::GetWindowDrawList()->AddText(dbIconPos, iconColor, icon.c_str());
+               ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y - iconSize) * 0.5f);
 
     if (showSpinner) {
-        ImGui::SameLine(0, Theme::Spacing::S);
-        UIUtils::Spinner("##db_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        // replace icon with spinner while connecting
+        const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
+        UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
+                                ImGui::GetColorU32(colors.peach));
+    } else {
+        ImTextureID iconTex = texMgr.getIcon(type);
+        const ImVec2 iconMax = ImVec2(dbIconPos.x + iconSize, dbIconPos.y + iconSize);
+        ImGui::GetWindowDrawList()->AddImage(iconTex, dbIconPos, iconMax);
     }
 
     if (ImGui::IsItemClicked()) {

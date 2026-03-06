@@ -335,7 +335,8 @@ static NSWindow* sActiveConnectionDialog = nil;
     // Name
     self.nameLabel = [self makeLabel:@"Name"];
     [cv addSubview:self.nameLabel];
-    self.nameField = [self makeTextField:@"Untitled connection"];
+    self.nameField = [self makeTextField:@"Connection name"];
+    self.nameField.stringValue = @"Untitled connection";
     [cv addSubview:self.nameField];
 
     // Type

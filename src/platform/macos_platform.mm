@@ -1105,3 +1105,30 @@ void MacOSPlatform::updateWorkspaceDropdown() {
         [toolbarDelegate_ updateWorkspaceDropdown];
     }
 }
+
+ImTextureID MacOSPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+    id<MTLDevice> device = (id<MTLDevice>)metalDevice_;
+    if (!device || !pixels) {
+        return ImTextureID{};
+    }
+
+    MTLTextureDescriptor* desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                           width:width
+                                                          height:height
+                                                       mipmapped:NO];
+    desc.usage = MTLTextureUsageShaderRead;
+    desc.storageMode = MTLStorageModeShared;
+
+    id<MTLTexture> texture = [device newTextureWithDescriptor:desc];
+    if (!texture) {
+        return ImTextureID{};
+    }
+
+    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height)
+               mipmapLevel:0
+                 withBytes:pixels
+               bytesPerRow:width * 4];
+
+    return (ImTextureID)(intptr_t)(void*)texture;
+}

@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -461,6 +462,8 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
             db = std::make_shared<MongoDBDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::MSSQL) {
+            db = std::make_shared<MSSQLDatabase>(conn.connectionInfo);
         } else {
             Logger::warn(std::format("Unknown database type {} for connection '{}', skipping",
                                      static_cast<int>(conn.connectionInfo.type),

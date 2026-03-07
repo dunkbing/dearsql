@@ -175,7 +175,8 @@ inline DBPROCESS* openDbLibConnection(const DatabaseConnectionInfo& info,
 }
 
 // execute a query on a DBPROCESS and collect all result sets into a QueryResult
-inline QueryResult executeQueryOnProcess(DBPROCESS* dbproc, const std::string& query, int rowLimit) {
+inline QueryResult executeQueryOnProcess(DBPROCESS* dbproc, const std::string& query,
+                                         int rowLimit) {
     QueryResult result;
 
     clearLastError();

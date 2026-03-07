@@ -135,6 +135,7 @@ private:
     ImGuiID rightDockId = 0;
     std::weak_ptr<DatabaseInterface> selectedDatabase;
     bool dockingLayoutInitialized = false;
+    bool lastSidebarVisible_ = true;
 
     // Data
     std::vector<std::shared_ptr<DatabaseInterface>> databases;

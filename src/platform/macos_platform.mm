@@ -210,7 +210,10 @@
                                 NSString* workspaceName = textField.stringValue;
                                 if (workspaceName.length > 0 && self.app) {
                                     std::string name = [workspaceName UTF8String];
-                                    self.app->createWorkspace(name);
+                                    int result = self.app->createWorkspace(name);
+                                    if (result <= 0) {
+                                        NSLog(@"Failed to create workspace: %@", workspaceName);
+                                    }
                                 }
                             }
                             [self updateWorkspaceDropdown];
@@ -226,7 +229,10 @@
                 NSString* workspaceName = textField.stringValue;
                 if (workspaceName.length > 0 && self.app) {
                     std::string name = [workspaceName UTF8String];
-                    self.app->createWorkspace(name);
+                    int result = self.app->createWorkspace(name);
+                    if (result <= 0) {
+                        NSLog(@"Failed to create workspace: %@", workspaceName);
+                    }
                 }
             }
             [self updateWorkspaceDropdown];

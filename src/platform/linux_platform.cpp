@@ -156,13 +156,8 @@ bool LinuxPlatform::initializePlatform(GLFWwindow* window) {
 }
 
 bool LinuxPlatform::initializeImGuiBackend() {
-    if (!realized_) {
-        return false;
-    }
-
-    ImGui_ImplOpenGL3_Init("#version 330");
-    std::cout << "ImGui OpenGL backend initialized" << std::endl;
-    return true;
+    // OpenGL backend is initialized in onRealize() once the GL context is ready
+    return realized_;
 }
 
 void LinuxPlatform::setupTitlebar() {

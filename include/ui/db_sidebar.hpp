@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 class DatabaseSidebarNew {
 public:
@@ -26,8 +27,10 @@ private:
                                    bool drawRightBorder);
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
+    void syncHierarchyCache(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
 
     bool historyPanelOpen = false;
+    bool texturesLoaded_ = false;
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer)
     std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;

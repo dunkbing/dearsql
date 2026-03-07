@@ -113,14 +113,6 @@ namespace {
 
         return false;
     }
-
-#if defined(__APPLE__) || defined(_WIN32)
-    void wakeGlfwEventLoop() {
-        glfwPostEmptyEvent();
-    }
-#else
-    void wakeGlfwEventLoop() {}
-#endif
 } // namespace
 
 bool Application::initialize() {
@@ -195,7 +187,11 @@ bool Application::initialize() {
 
     // Restore current workspace from settings
     const std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
-    currentWorkspaceId = std::stoi(workspaceIdStr);
+    try {
+        currentWorkspaceId = std::stoi(workspaceIdStr);
+    } catch (const std::exception&) {
+        currentWorkspaceId = 1;
+    }
 
     // Restore theme from settings
     const std::string themeStr = appState->getSetting("theme", "dark");
@@ -635,7 +631,6 @@ void Application::setCurrentWorkspace(const int workspaceId) {
 
     // Refresh connections for new workspace
     refreshWorkspaceConnections();
-    wakeGlfwEventLoop();
 }
 
 std::vector<Workspace> Application::getWorkspaces() const {
@@ -696,7 +691,16 @@ bool Application::deleteWorkspace(const int workspaceId) {
         if (currentWorkspaceId == workspaceId) {
             setCurrentWorkspace(1);
         }
-        workspaceDatabaseCache.erase(workspaceId);
+        // disconnect cached connections before dropping them
+        if (auto cacheIt = workspaceDatabaseCache.find(workspaceId);
+            cacheIt != workspaceDatabaseCache.end()) {
+            for (auto& db : cacheIt->second) {
+                if (db) {
+                    db->disconnect();
+                }
+            }
+            workspaceDatabaseCache.erase(cacheIt);
+        }
     }
 
     return success;
@@ -704,6 +708,11 @@ bool Application::deleteWorkspace(const int workspaceId) {
 
 void Application::refreshWorkspaceConnections() {
     databases.clear();
+
+    // close tabs that reference nodes from the previous workspace
+    if (tabManager) {
+        tabManager->closeAllTabs();
+    }
 
     // First switch to cached connections if this workspace was loaded before.
     if (auto cacheIt = workspaceDatabaseCache.find(currentWorkspaceId);
@@ -780,11 +789,10 @@ void Application::renderMainUI() {
     const bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
     // Rebuild layout when sidebar visibility changes
-    static bool lastSidebarVisible = false;
     const bool currentSidebarVisible = targetSidebarWidth > 0.01f;
-    if (lastSidebarVisible != currentSidebarVisible) {
+    if (lastSidebarVisible_ != currentSidebarVisible) {
         dockingLayoutInitialized = false;
-        lastSidebarVisible = currentSidebarVisible;
+        lastSidebarVisible_ = currentSidebarVisible;
     }
     const float topInset = platform_ ? platform_->getClientAreaTopInset() : 0.0f;
     const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);

@@ -67,6 +67,14 @@ void DatabaseSidebarNew::renderEmpty() {
     }
 }
 
+void DatabaseSidebarNew::syncHierarchyCache(
+    const std::vector<std::shared_ptr<DatabaseInterface>>& databases) {
+    std::erase_if(hierarchyCache, [&](const auto& entry) {
+        return std::ranges::none_of(databases,
+                                    [&](const auto& db) { return db.get() == entry.first; });
+    });
+}
+
 void DatabaseSidebarNew::renderStructure() {
     auto& app = Application::getInstance();
 
@@ -74,12 +82,14 @@ void DatabaseSidebarNew::renderStructure() {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 2.0f));
     const auto& databases = app.getDatabases();
 
-    if (databases.empty()) {
-        renderEmpty();
-    } else {
+    syncHierarchyCache(databases);
+
+    if (!databases.empty()) {
         for (const auto& db : databases) {
             renderDatabaseNode(db);
         }
+    } else {
+        renderEmpty();
     }
 
     ImGui::PopStyleVar(2);
@@ -442,10 +452,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     // lazy-load database icon textures on first use
     auto& texMgr = TextureManager::instance();
-    static bool texturesLoaded = false;
-    if (!texturesLoaded) {
+    if (!texturesLoaded_) {
         texMgr.loadDatabaseIcons(app.getPlatform());
-        texturesLoaded = true;
+        texturesLoaded_ = true;
     }
 
     const std::string dbLabel =

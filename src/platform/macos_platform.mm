@@ -45,6 +45,7 @@
 - (void)showMenuPopover:(NSButton*)sender;
 - (void)updateThemeButtons;
 - (void)updateWindowBackgroundColor;
+- (void)restoreMainWindowFocus:(NSWindow*)mainWindow;
 @end
 
 @implementation ToolbarDelegate
@@ -124,10 +125,18 @@
     @try {
         if (self.app && self.workspaceDropdown) {
             NSInteger selectedIndex = [self.workspaceDropdown indexOfSelectedItem];
+            NSLog(@"workspaceChanged: selectedIndex=%ld", (long)selectedIndex);
             if (selectedIndex >= 0) {
                 NSMenuItem* selectedItem = [self.workspaceDropdown itemAtIndex:selectedIndex];
                 int workspaceId = (int)selectedItem.tag;
-                self.app->setCurrentWorkspace(workspaceId);
+                NSLog(@"workspaceChanged: tag=%d, currentWorkspaceId=%d", workspaceId,
+                      self.app->getCurrentWorkspaceId());
+                // skip non-workspace items (separator, "New Workspace..." have tag 0)
+                if (workspaceId > 0) {
+                    self.app->setCurrentWorkspace(workspaceId);
+                } else {
+                    NSLog(@"workspaceChanged: skipped (tag <= 0)");
+                }
             }
         }
     } @catch (NSException* exception) {
@@ -139,6 +148,10 @@
     if (!self.workspaceDropdown || !self.app) {
         return;
     }
+
+    // suppress action during rebuild to prevent re-entrant workspaceChanged: callbacks
+    SEL savedAction = [self.workspaceDropdown action];
+    [self.workspaceDropdown setAction:nil];
 
     [self.workspaceDropdown removeAllItems];
 
@@ -164,6 +177,8 @@
                                                        keyEquivalent:@""];
     newWorkspaceItem.target = self;
     [self.workspaceDropdown.menu addItem:newWorkspaceItem];
+
+    [self.workspaceDropdown setAction:savedAction];
 }
 
 - (void)createNewWorkspace:(id)sender {
@@ -195,12 +210,14 @@
                                 NSString* workspaceName = textField.stringValue;
                                 if (workspaceName.length > 0 && self.app) {
                                     std::string name = [workspaceName UTF8String];
-                                    int newWorkspaceId = self.app->createWorkspace(name);
-                                    if (newWorkspaceId > 0) {
-                                        [self updateWorkspaceDropdown];
-                                    }
+                                    self.app->createWorkspace(name);
                                 }
                             }
+                            [self updateWorkspaceDropdown];
+                            [self.workspaceDropdown sizeToFit];
+                            [self.workspaceDropdown setNeedsDisplay:YES];
+                            [mainWindow displayIfNeeded];
+                            [self restoreMainWindowFocus:mainWindow];
                           }];
         } else {
             // Fallback to modal dialog if no main window
@@ -209,16 +226,28 @@
                 NSString* workspaceName = textField.stringValue;
                 if (workspaceName.length > 0 && self.app) {
                     std::string name = [workspaceName UTF8String];
-                    int newWorkspaceId = self.app->createWorkspace(name);
-                    if (newWorkspaceId > 0) {
-                        [self updateWorkspaceDropdown];
-                    }
+                    self.app->createWorkspace(name);
                 }
             }
+            [self updateWorkspaceDropdown];
+            [self.workspaceDropdown sizeToFit];
+            [self.workspaceDropdown setNeedsDisplay:YES];
+            [self restoreMainWindowFocus:mainWindow];
         }
     } @catch (NSException* exception) {
         NSLog(@"Exception in createNewWorkspace: %@", exception);
     }
+}
+
+- (void)restoreMainWindowFocus:(NSWindow*)mainWindow {
+    if (!mainWindow) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [NSApp activateIgnoringOtherApps:YES];
+      [mainWindow makeKeyAndOrderFront:nil];
+    });
 }
 
 - (void)showMenuPopover:(NSButton*)sender {

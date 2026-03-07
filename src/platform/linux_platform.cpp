@@ -829,10 +829,7 @@ void LinuxPlatform::showCreateWorkspaceDialog() {
 
                          const char* name = gtk_editable_get_text(GTK_EDITABLE(entry));
                          if (name && strlen(name) > 0 && platform->app_) {
-                             int newId = platform->app_->createWorkspace(std::string(name));
-                             if (newId > 0) {
-                                 platform->updateWorkspaceDropdown();
-                             }
+                             platform->app_->createWorkspace(std::string(name));
                          }
                          gtk_window_destroy(GTK_WINDOW(dlg));
                      }),

@@ -104,7 +104,6 @@ public:
 #ifdef __APPLE__
     void onSidebarToggleClicked() const;
     [[nodiscard]] float getTitlebarHeight() const;
-    void updateWorkspaceDropdown() const;
 #endif
     [[nodiscard]] PlatformInterface* getPlatform() const {
         return platform_.get();

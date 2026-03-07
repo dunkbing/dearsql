@@ -113,6 +113,14 @@ namespace {
 
         return false;
     }
+
+#if defined(__APPLE__) || defined(_WIN32)
+    void wakeGlfwEventLoop() {
+        glfwPostEmptyEvent();
+    }
+#else
+    void wakeGlfwEventLoop() {}
+#endif
 } // namespace
 
 bool Application::initialize() {
@@ -217,13 +225,7 @@ bool Application::initialize() {
     platform_->setupTitlebar();
 #endif
 
-#if defined(__APPLE__)
-    // Update workspace dropdown after titlebar is set up
-    updateWorkspaceDropdown();
-#elif defined(__linux__)
-    // Update workspace dropdown for Linux
     platform_->updateWorkspaceDropdown();
-#endif
 
 #ifdef __APPLE__
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
@@ -610,7 +612,10 @@ void Application::setupFonts() {
 }
 
 void Application::setCurrentWorkspace(const int workspaceId) {
+    Logger::info(
+        std::format("setCurrentWorkspace({}) current={}", workspaceId, currentWorkspaceId));
     if (currentWorkspaceId == workspaceId) {
+        Logger::info("setCurrentWorkspace: early return (same id)");
         return;
     }
 
@@ -630,6 +635,7 @@ void Application::setCurrentWorkspace(const int workspaceId) {
 
     // Refresh connections for new workspace
     refreshWorkspaceConnections();
+    wakeGlfwEventLoop();
 }
 
 std::vector<Workspace> Application::getWorkspaces() const {
@@ -664,13 +670,15 @@ int Application::createWorkspace(const std::string& name, const std::string& des
     workspace.description = description;
 
     const int newWorkspaceId = appState->saveWorkspace(workspace);
+    Logger::info(std::format("createWorkspace: saved with id={}", newWorkspaceId));
 
     if (newWorkspaceId > 0) {
-#ifdef __APPLE__
-        updateWorkspaceDropdown();
-#endif
-        // Switch to the newly created workspace
         setCurrentWorkspace(newWorkspaceId);
+        Logger::info(std::format("createWorkspace: after setCurrentWorkspace, currentId={}",
+                                 currentWorkspaceId));
+        platform_->updateWorkspaceDropdown();
+        Logger::info(std::format("createWorkspace: after updateWorkspaceDropdown, currentId={}",
+                                 currentWorkspaceId));
     }
 
     return newWorkspaceId;
@@ -707,9 +715,7 @@ void Application::refreshWorkspaceConnections() {
         restorePreviousConnections();
     }
 
-    // Reset UI state
     clearSelectedDatabase();
-    resetDockingLayout();
 }
 
 void Application::dockTabToCenter(const std::string& tabName) const {
@@ -737,7 +743,8 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
             ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
 
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
-        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), centerDockId);
+        const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
+        ImGui::DockBuilderDockWindow(wsTitle.c_str(), centerDockId);
 
         for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), centerDockId);
@@ -746,7 +753,8 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         rightDockId = 0;
     } else {
         // Single panel layout: just center
-        ImGui::DockBuilderDockWindow(getCurrentWorkspaceName().c_str(), dockSpaceId);
+        const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
+        ImGui::DockBuilderDockWindow(wsTitle.c_str(), dockSpaceId);
 
         for (const auto& tab : tabManager->getTabs()) {
             ImGui::DockBuilderDockWindow(tab->getName().c_str(), dockSpaceId);
@@ -778,8 +786,11 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         lastSidebarVisible = currentSidebarVisible;
     }
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
+    const float topInset = platform_ ? platform_->getClientAreaTopInset() : 0.0f;
+    const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);
+    const ImVec2 dockSize(viewport->Size.x, std::max(0.0f, viewport->Size.y - topInset));
+    ImGui::SetNextWindowPos(dockPos);
+    ImGui::SetNextWindowSize(dockSize);
     ImGui::SetNextWindowViewport(viewport->ID);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -847,8 +858,8 @@ void Application::renderMainUI() {
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     if (tabManager->isEmpty()) {
-        // Show empty state
-        const std::string workspaceTitle = getCurrentWorkspaceName();
+        // Show empty state — stable ###ID so the window keeps its dock position across switches
+        const std::string workspaceTitle = getCurrentWorkspaceName() + "###workspace_main";
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
         ImGui::Begin(workspaceTitle.c_str(), nullptr,
@@ -900,11 +911,5 @@ float Application::getTitlebarHeight() const {
         return platform_->getTitlebarHeight();
     }
     return 0.0f;
-}
-
-void Application::updateWorkspaceDropdown() const {
-    if (platform_) {
-        platform_->updateWorkspaceDropdown();
-    }
 }
 #endif

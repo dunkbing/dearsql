@@ -23,6 +23,10 @@ public:
     virtual void renderFrame() = 0;
     virtual void shutdownImGui() = 0;
     virtual void updateWorkspaceDropdown() {}
+    // windows
+    [[nodiscard]] virtual float getClientAreaTopInset() const {
+        return 0.0f;
+    }
 
     // create a GPU texture from RGBA pixel data, returns ImTextureID (0 if failed)
     virtual ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) {

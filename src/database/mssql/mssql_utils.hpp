@@ -77,6 +77,10 @@ inline StatementResult extractDbLibResult(DBPROCESS* dbproc, int rowLimit) {
             rowCount++;
         }
 
+        // drain any remaining rows past the limit so db-lib state stays clean
+        while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+        }
+
         result.message = std::format("Returned {} row{}", result.tableData.size(),
                                      result.tableData.size() == 1 ? "" : "s");
         if (static_cast<int>(result.tableData.size()) >= rowLimit) {
@@ -168,6 +172,39 @@ inline DBPROCESS* openDbLibConnection(const DatabaseConnectionInfo& info,
     }
 
     return dbproc;
+}
+
+// execute a query on a DBPROCESS and collect all result sets into a QueryResult
+inline QueryResult executeQueryOnProcess(DBPROCESS* dbproc, const std::string& query, int rowLimit) {
+    QueryResult result;
+
+    clearLastError();
+    dbcmd(dbproc, query.c_str());
+
+    if (dbsqlexec(dbproc) == FAIL) {
+        StatementResult r;
+        r.success = false;
+        r.errorMessage = getLastError();
+        result.statements.push_back(r);
+        dbcancel(dbproc);
+        return result;
+    }
+
+    RETCODE rc;
+    while ((rc = dbresults(dbproc)) != NO_MORE_RESULTS) {
+        if (rc == FAIL) {
+            StatementResult r;
+            r.success = false;
+            r.errorMessage = getLastError();
+            result.statements.push_back(r);
+            break;
+        }
+        auto r = extractDbLibResult(dbproc, rowLimit);
+        if (r.success || !r.errorMessage.empty()) {
+            result.statements.push_back(std::move(r));
+        }
+    }
+    return result;
 }
 
 // RAII wrapper for a raw DBPROCESS* (use for temporary connections outside the pool)

@@ -9,9 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-// forward-declare to avoid sybdb.h BOOL/ObjC clash in .mm files
-struct tds_dblib_dbprocess;
-typedef struct tds_dblib_dbprocess DBPROCESS;
+#include "mssql/mssql_fwd.hpp"
 
 class MSSQLDatabase final : public DatabaseInterface, public IQueryExecutor {
     friend class MSSQLDatabaseNode;

@@ -11,9 +11,7 @@
 #include <string>
 #include <vector>
 
-// forward-declare to avoid sybdb.h BOOL/ObjC clash in .mm files
-struct tds_dblib_dbprocess;
-typedef struct tds_dblib_dbprocess DBPROCESS;
+#include "database/mssql/mssql_fwd.hpp"
 
 class MSSQLDatabase;
 

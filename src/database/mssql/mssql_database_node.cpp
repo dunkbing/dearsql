@@ -506,39 +506,7 @@ QueryResult MSSQLDatabaseNode::executeQuery(const std::string& query, int rowLim
 
     try {
         auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-
-        clearLastError();
-        dbcmd(dbproc, query.c_str());
-
-        if (dbsqlexec(dbproc) == FAIL) {
-            StatementResult r;
-            r.success = false;
-            r.errorMessage = getLastError();
-            result.statements.push_back(r);
-
-            dbcancel(dbproc);
-
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            result.executionTimeMs =
-                std::chrono::duration<double, std::milli>(endTime - startTime).count();
-            return result;
-        }
-
-        RETCODE rc;
-        while ((rc = dbresults(dbproc)) != NO_MORE_RESULTS) {
-            if (rc == FAIL) {
-                StatementResult r;
-                r.success = false;
-                r.errorMessage = getLastError();
-                result.statements.push_back(r);
-                break;
-            }
-            auto r = extractDbLibResult(dbproc, rowLimit);
-            if (r.success || !r.errorMessage.empty()) {
-                result.statements.push_back(std::move(r));
-            }
-        }
+        result = executeQueryOnProcess(session.get(), query, rowLimit);
     } catch (const std::exception& e) {
         StatementResult r;
         r.success = false;

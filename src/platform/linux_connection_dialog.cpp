@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
@@ -328,6 +329,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         defaultPort = "27017";
     else if (type == DatabaseType::REDIS)
         defaultPort = "6379";
+    else if (type == DatabaseType::MSSQL)
+        defaultPort = "1433";
     gtk_editable_set_text(GTK_EDITABLE(data->portEntry), defaultPort);
 
     GtkWidget* hostRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -833,6 +836,10 @@ static void connectServerAsync(ConnectionDialogData* data) {
         case DatabaseType::REDIS:
             db = std::make_shared<RedisDatabase>(info);
             break;
+        case DatabaseType::MSSQL:
+            info.database = dbStr.empty() ? "master" : dbStr;
+            db = std::make_shared<MSSQLDatabase>(info);
+            break;
         default:
             break;
         }
@@ -915,9 +922,10 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
     gtk_box_append(GTK_BOX(mainBox), nameRow);
 
     // Type dropdown
-    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",
-                                      "MariaDB", "Redis",      "MongoDB"};
-    data->typeDropdown = makeStringDropdown(typeNames, 6, static_cast<int>(initialType));
+    static const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "MariaDB",
+                                      "Redis",  "MongoDB",    "MSSQL"};
+    data->typeDropdown = makeStringDropdown(typeNames, 7, static_cast<int>(initialType));
+
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
 

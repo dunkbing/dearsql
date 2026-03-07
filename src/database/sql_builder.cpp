@@ -10,6 +10,8 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
         return std::make_unique<MySQLBuilder>();
+    case DatabaseType::MSSQL:
+        return std::make_unique<MSSQLBuilder>();
     case DatabaseType::SQLITE:
         return std::make_unique<SQLiteBuilder>();
     default:
@@ -308,6 +310,154 @@ std::string MySQLBuilder::addColumn(const std::string& table, const Column& colu
 }
 
 std::string MySQLBuilder::dropColumn(const std::string& table,
+                                     const std::string& columnName) const {
+    return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
+}
+
+// ========== MSSQL Implementation ==========
+
+std::string MSSQLBuilder::quoteIdentifier(const std::string& identifier) const {
+    // MSSQL uses square brackets for identifiers
+    std::string result = "[";
+    for (char c : identifier) {
+        if (c == ']') {
+            result += "]]"; // escape ] by doubling
+        } else {
+            result += c;
+        }
+    }
+    result += "]";
+    return result;
+}
+
+std::string MSSQLBuilder::quoteString(const std::string& value) const {
+    if (value == "NULL") {
+        return "NULL";
+    }
+    std::string result = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            result += "''";
+        } else {
+            result += c;
+        }
+    }
+    result += "'";
+    return result;
+}
+
+std::string MSSQLBuilder::selectAll(const std::string& table, int limit, int offset) const {
+    return std::format(
+        "SELECT * FROM {} ORDER BY (SELECT NULL) OFFSET {} ROWS FETCH NEXT {} ROWS ONLY",
+        quoteIdentifier(table), offset, limit);
+}
+
+std::string MSSQLBuilder::selectWithFilter(const std::string& table, const std::string& whereClause,
+                                           const std::string& orderBy, int limit,
+                                           int offset) const {
+    std::string sql = "SELECT * FROM " + quoteIdentifier(table);
+    if (!whereClause.empty()) {
+        sql += " WHERE " + whereClause;
+    }
+    if (!orderBy.empty()) {
+        sql += " ORDER BY " + orderBy;
+    } else {
+        sql += " ORDER BY (SELECT NULL)";
+    }
+    sql += std::format(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", offset, limit);
+    return sql;
+}
+
+std::string MSSQLBuilder::selectCount(const std::string& table,
+                                      const std::string& whereClause) const {
+    std::string sql = "SELECT COUNT(*) FROM " + quoteIdentifier(table);
+    if (!whereClause.empty()) {
+        sql += " WHERE " + whereClause;
+    }
+    return sql;
+}
+
+std::string MSSQLBuilder::update(
+    const std::string& table, const std::string& column, const std::string& newValue,
+    const std::vector<std::pair<std::string, std::string>>& whereConditions) const {
+    std::string sql = "UPDATE " + quoteIdentifier(table);
+    sql += " SET " + quoteIdentifier(column) + " = " + quoteString(newValue);
+
+    if (!whereConditions.empty()) {
+        sql += " WHERE ";
+        for (size_t i = 0; i < whereConditions.size(); ++i) {
+            if (i > 0) {
+                sql += " AND ";
+            }
+            const auto& [col, val] = whereConditions[i];
+            if (val == "NULL") {
+                sql += quoteIdentifier(col) + " IS NULL";
+            } else {
+                sql += quoteIdentifier(col) + " = " + quoteString(val);
+            }
+        }
+    }
+    return sql;
+}
+
+std::string MSSQLBuilder::insert(const std::string& table, const std::vector<std::string>& columns,
+                                 const std::vector<std::string>& values) const {
+    std::string sql = "INSERT INTO " + quoteIdentifier(table) + " (";
+    for (size_t i = 0; i < columns.size(); ++i) {
+        if (i > 0) {
+            sql += ", ";
+        }
+        sql += quoteIdentifier(columns[i]);
+    }
+    sql += ") VALUES (";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            sql += ", ";
+        }
+        sql += quoteString(values[i]);
+    }
+    sql += ")";
+    return sql;
+}
+
+std::string MSSQLBuilder::deleteFrom(
+    const std::string& table,
+    const std::vector<std::pair<std::string, std::string>>& whereConditions) const {
+    std::string sql = "DELETE FROM " + quoteIdentifier(table);
+    if (!whereConditions.empty()) {
+        sql += " WHERE ";
+        for (size_t i = 0; i < whereConditions.size(); ++i) {
+            if (i > 0) {
+                sql += " AND ";
+            }
+            const auto& [col, val] = whereConditions[i];
+            if (val == "NULL") {
+                sql += quoteIdentifier(col) + " IS NULL";
+            } else {
+                sql += quoteIdentifier(col) + " = " + quoteString(val);
+            }
+        }
+    }
+    return sql;
+}
+
+std::string MSSQLBuilder::dropTable(const std::string& table, bool ifExists) const {
+    if (ifExists) {
+        return "DROP TABLE IF EXISTS " + quoteIdentifier(table);
+    }
+    return "DROP TABLE " + quoteIdentifier(table);
+}
+
+std::string MSSQLBuilder::addColumn(const std::string& table, const Column& column) const {
+    std::string sql = "ALTER TABLE " + quoteIdentifier(table);
+    sql += " ADD " + quoteIdentifier(column.name) + " " + column.type;
+    if (column.isNotNull) {
+        sql += " NOT NULL";
+    }
+    return sql;
+}
+
+std::string MSSQLBuilder::dropColumn(const std::string& table,
                                      const std::string& columnName) const {
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }

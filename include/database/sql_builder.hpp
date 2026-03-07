@@ -205,6 +205,38 @@ public:
                                          const std::string& columnName) const override;
 };
 
+class MSSQLBuilder : public ISQLBuilder {
+public:
+    [[nodiscard]] std::string quoteIdentifier(const std::string& identifier) const override;
+    [[nodiscard]] std::string quoteString(const std::string& value) const override;
+
+    [[nodiscard]] std::string selectAll(const std::string& table, int limit,
+                                        int offset) const override;
+    [[nodiscard]] std::string selectWithFilter(const std::string& table,
+                                               const std::string& whereClause,
+                                               const std::string& orderBy, int limit,
+                                               int offset) const override;
+    [[nodiscard]] std::string selectCount(const std::string& table,
+                                          const std::string& whereClause = "") const override;
+
+    [[nodiscard]] std::string
+    update(const std::string& table, const std::string& column, const std::string& newValue,
+           const std::vector<std::pair<std::string, std::string>>& whereConditions) const override;
+    [[nodiscard]] std::string insert(const std::string& table,
+                                     const std::vector<std::string>& columns,
+                                     const std::vector<std::string>& values) const override;
+    [[nodiscard]] std::string deleteFrom(
+        const std::string& table,
+        const std::vector<std::pair<std::string, std::string>>& whereConditions) const override;
+
+    [[nodiscard]] std::string dropTable(const std::string& table,
+                                        bool ifExists = true) const override;
+    [[nodiscard]] std::string addColumn(const std::string& table,
+                                        const Column& column) const override;
+    [[nodiscard]] std::string dropColumn(const std::string& table,
+                                         const std::string& columnName) const override;
+};
+
 class SQLiteBuilder : public ISQLBuilder {
 public:
     [[nodiscard]] std::string quoteIdentifier(const std::string& identifier) const override;

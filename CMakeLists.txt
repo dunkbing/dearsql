@@ -87,6 +87,33 @@ find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
+# FreeTDS db-lib for MSSQL support (static linking)
+if(LINUX)
+    find_library(SYBDB_LIBRARY NAMES libsybdb.a sybdb REQUIRED)
+    find_path(SYBDB_INCLUDE_DIR sybdb.h REQUIRED)
+    # transitive deps of static libsybdb.a (TLS, crypto, Kerberos)
+    find_library(GNUTLS_LIBRARY gnutls REQUIRED)
+    find_library(NETTLE_LIBRARY nettle REQUIRED)
+    find_library(HOGWEED_LIBRARY hogweed REQUIRED)
+    find_library(GMP_LIBRARY gmp REQUIRED)
+    find_library(GSSAPI_LIBRARY gssapi_krb5 REQUIRED)
+    set(SYBDB_DEPS ${GNUTLS_LIBRARY} ${NETTLE_LIBRARY} ${HOGWEED_LIBRARY} ${GMP_LIBRARY} ${GSSAPI_LIBRARY})
+elseif(WIN32)
+    find_package(freetds CONFIG REQUIRED)
+    set(SYBDB_LIBRARY freetds::freetds)
+    set(SYBDB_INCLUDE_DIR "")
+elseif(APPLE)
+    # use brew --prefix to get isolated Cellar path (avoids /opt/homebrew/include polluting vcpkg headers)
+    execute_process(COMMAND brew --prefix freetds OUTPUT_VARIABLE _FREETDS_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE _FREETDS_RC)
+    if(NOT _FREETDS_RC EQUAL 0)
+        message(FATAL_ERROR "FreeTDS not found. Install with: brew install freetds")
+    endif()
+    find_library(SYBDB_LIBRARY NAMES libsybdb.a sybdb PATHS "${_FREETDS_PREFIX}/lib" NO_DEFAULT_PATH REQUIRED)
+    find_path(SYBDB_INCLUDE_DIR sybdb.h PATHS "${_FREETDS_PREFIX}/include" NO_DEFAULT_PATH REQUIRED)
+    find_library(KERBEROS_FRAMEWORK Kerberos)
+    find_library(ICONV_LIBRARY iconv)
+    set(SYBDB_DEPS ${KERBEROS_FRAMEWORK} ${ICONV_LIBRARY})
+endif()
 
 enable_testing()
 
@@ -193,6 +220,8 @@ set(APP_SOURCES
     src/database/redis.cpp
     src/database/mongodb.cpp
     src/database/mongodb/mongodb_database_node.cpp
+    src/database/mssql.cpp
+    src/database/mssql/mssql_database_node.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
@@ -301,6 +330,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(LINUX)
     target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS})
 endif()
+# FreeTDS include dir (SYSTEM to avoid shadowing vcpkg MySQL/OpenSSL headers)
+if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
+    target_include_directories(${PROJECT_NAME} SYSTEM AFTER PRIVATE ${SYBDB_INCLUDE_DIR})
+endif()
 
 # Sparkle includes (macOS)
 if(APPLE)
@@ -321,6 +354,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     sentry::sentry
+    ${SYBDB_LIBRARY}
+    ${SYBDB_DEPS}
     tree-sitter-core
     tree-sitter-sql-grammar
 )
@@ -416,6 +451,7 @@ add_executable(database_tests
     tests/database/mysql_database_test.cpp
     tests/database/redis_database_test.cpp
     tests/database/mongodb_database_test.cpp
+    tests/database/mssql_database_test.cpp
     tests/database/sql_builder_test.cpp
     src/database/db_factory.cpp
     src/database/sqlite.cpp
@@ -427,6 +463,8 @@ add_executable(database_tests
     src/database/redis.cpp
     src/database/mongodb.cpp
     src/database/mongodb/mongodb_database_node.cpp
+    src/database/mssql.cpp
+    src/database/mssql/mssql_database_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
@@ -439,6 +477,9 @@ target_include_directories(database_tests PRIVATE
     include
     tests/database
 )
+if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
+    target_include_directories(database_tests SYSTEM AFTER PRIVATE ${SYBDB_INCLUDE_DIR})
+endif()
 
 target_link_libraries(database_tests PRIVATE
     GTest::gtest_main
@@ -449,6 +490,8 @@ target_link_libraries(database_tests PRIVATE
     hiredis::hiredis_ssl
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
+    ${SYBDB_LIBRARY}
+    ${SYBDB_DEPS}
 )
 
 add_test(NAME database_tests COMMAND database_tests)

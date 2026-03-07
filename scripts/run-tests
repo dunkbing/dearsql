@@ -13,18 +13,21 @@ POSTGRES_CONTAINER="dearsql-postgres-test"
 MYSQL_CONTAINER="dearsql-mysql-test"
 REDIS_CONTAINER="dearsql-redis-test"
 MONGODB_CONTAINER="dearsql-mongodb-test"
+MSSQL_CONTAINER="dearsql-mssql-test"
 
 # Docker images
 POSTGRES_IMAGE="postgres:15-alpine"
 MYSQL_IMAGE="mysql:8.0"
 REDIS_IMAGE="redis:7-alpine"
 MONGODB_IMAGE="mongo:7.0"
+MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
 
 # Ports (host ports mapped to container ports)
 POSTGRES_PORT="${POSTGRES_PORT:-55432}"
 MYSQL_PORT="${MYSQL_PORT:-53306}"
 REDIS_PORT="${REDIS_PORT:-56379}"
 MONGODB_PORT="${MONGODB_PORT:-57017}"
+MSSQL_PORT="${MSSQL_PORT:-51433}"
 
 # Test env vars
 export DEARSQL_TEST_PG_HOST="127.0.0.1"
@@ -49,6 +52,13 @@ export DEARSQL_TEST_MONGODB_HOST="127.0.0.1"
 export DEARSQL_TEST_MONGODB_PORT="$MONGODB_PORT"
 export DEARSQL_TEST_MONGODB_DB="test"
 export DEARSQL_TEST_MONGODB_NAME="MongoDBDocker"
+
+export DEARSQL_TEST_MSSQL_HOST="127.0.0.1"
+export DEARSQL_TEST_MSSQL_PORT="$MSSQL_PORT"
+export DEARSQL_TEST_MSSQL_DB="dearsql_test"
+export DEARSQL_TEST_MSSQL_USER="sa"
+export DEARSQL_TEST_MSSQL_PASSWORD="DearSQL_Test1!"
+export DEARSQL_TEST_MSSQL_NAME="MSSQLDocker"
 
 # ── Docker helpers ──────────────────────────────────────────────────
 
@@ -119,7 +129,8 @@ all_ports_open() {
     port_open 127.0.0.1 "$POSTGRES_PORT" &&
     port_open 127.0.0.1 "$MYSQL_PORT" &&
     port_open 127.0.0.1 "$REDIS_PORT" &&
-    port_open 127.0.0.1 "$MONGODB_PORT"
+    port_open 127.0.0.1 "$MONGODB_PORT" &&
+    port_open 127.0.0.1 "$MSSQL_PORT"
 }
 
 setup_containers() {
@@ -159,6 +170,23 @@ setup_containers() {
     wait_for_command "MongoDB" 60 docker_cmd exec "$MONGODB_CONTAINER" \
         mongosh --quiet --eval 'db.runCommand({ ping: 1 })'
 
+    start_or_create "$MSSQL_CONTAINER" \
+        -e "ACCEPT_EULA=Y" \
+        -e "MSSQL_SA_PASSWORD=$DEARSQL_TEST_MSSQL_PASSWORD" \
+        -p "127.0.0.1:${MSSQL_PORT}:1433" \
+        "$MSSQL_IMAGE"
+    wait_for_port 127.0.0.1 "$MSSQL_PORT" "MSSQL"
+    wait_for_command "MSSQL" 90 docker_cmd exec "$MSSQL_CONTAINER" \
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
+        -P "$DEARSQL_TEST_MSSQL_PASSWORD" -C -Q "SELECT 1"
+
+    # create test database if it doesn't exist
+    docker_cmd exec "$MSSQL_CONTAINER" \
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa \
+        -P "$DEARSQL_TEST_MSSQL_PASSWORD" -C \
+        -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '$DEARSQL_TEST_MSSQL_DB') CREATE DATABASE [$DEARSQL_TEST_MSSQL_DB]" \
+        >/dev/null 2>&1 || true
+
     echo ""
 }
 
@@ -180,6 +208,7 @@ echo "PostgreSQL: $DEARSQL_TEST_PG_HOST:$DEARSQL_TEST_PG_PORT"
 echo "MySQL:      $DEARSQL_TEST_MYSQL_HOST:$DEARSQL_TEST_MYSQL_PORT"
 echo "Redis:      $DEARSQL_TEST_REDIS_HOST:$DEARSQL_TEST_REDIS_PORT"
 echo "MongoDB:    $DEARSQL_TEST_MONGODB_HOST:$DEARSQL_TEST_MONGODB_PORT"
+echo "MSSQL:      $DEARSQL_TEST_MSSQL_HOST:$DEARSQL_TEST_MSSQL_PORT"
 echo ""
 
 cd "$BUILD_DIR"

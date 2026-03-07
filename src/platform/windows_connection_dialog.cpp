@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
+#include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
@@ -192,6 +193,8 @@ static int defaultPort(DatabaseType type) {
         return 27017;
     case DatabaseType::REDIS:
         return 6379;
+    case DatabaseType::MSSQL:
+        return 1433;
     default:
         return 0;
     }
@@ -493,6 +496,10 @@ static void connectServerAsync(ConnectionDialogData* data) {
         case DatabaseType::REDIS:
             db = std::make_shared<RedisDatabase>(info);
             break;
+        case DatabaseType::MSSQL:
+            info.database = database.empty() ? "master" : database;
+            db = std::make_shared<MSSQLDatabase>(info);
+            break;
         default:
             break;
         }
@@ -555,7 +562,8 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         makeCtrl("STATIC", "Type:", IDC_LABEL_TYPE, SS_RIGHT, LX, y + 3, LW, RH);
         HWND typeCombo =
             makeCtrl("COMBOBOX", "", IDC_TYPE_COMBO, CBS_DROPDOWNLIST | WS_TABSTOP, FX, y, FW, 200);
-        const char* types[] = {"SQLite", "PostgreSQL", "MySQL", "MongoDB", "Redis"};
+        const char* types[] = {"SQLite", "PostgreSQL", "MySQL", "MariaDB",
+                               "Redis",  "MongoDB",    "MSSQL"};
         for (const char* t : types) {
             SendMessageA(typeCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t));
         }

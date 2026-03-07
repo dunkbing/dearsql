@@ -164,6 +164,9 @@ void SQLEditorTab::renderConnectionInfo() {
     case DatabaseType::MARIADB:
         renderConnectionInfoMySQL();
         break;
+    case DatabaseType::MSSQL:
+        renderConnectionInfoMySQL();
+        break;
     case DatabaseType::SQLITE:
         renderConnectionInfoSQLite();
         break;

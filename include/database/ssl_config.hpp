@@ -22,6 +22,11 @@ inline constexpr const char* kMySqlSslLabels[] = {"disable", "prefer", "require"
 inline constexpr SslMode kMySqlSslValues[] = {SslMode::Disable, SslMode::Prefer, SslMode::Require,
                                               SslMode::VerifyCA, SslMode::VerifyFull};
 
+// MSSQL: Encrypt attribute modes
+inline constexpr const char* kMssqlSslLabels[] = {"Off", "Encrypt", "Encrypt + Verify", "Strict"};
+inline constexpr SslMode kMssqlSslValues[] = {SslMode::Disable, SslMode::Require, SslMode::VerifyCA,
+                                              SslMode::VerifyFull};
+
 // MongoDB/Redis: simple on/off TLS
 inline constexpr const char* kSimpleSslLabels[] = {"Off", "TLS", "TLS + Verify CA"};
 inline constexpr SslMode kSimpleSslModeValues[] = {SslMode::Disable, SslMode::Require,
@@ -34,6 +39,8 @@ inline SslModeConfig getSslConfig(DatabaseType type) {
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
         return {kMySqlSslLabels, kMySqlSslValues, 5, 1};
+    case DatabaseType::MSSQL:
+        return {kMssqlSslLabels, kMssqlSslValues, 4, 0};
     default:
         return {kSimpleSslLabels, kSimpleSslModeValues, 3, 0};
     }

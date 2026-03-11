@@ -9,6 +9,7 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/duckdb.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
 #include "utils/file_dialog.hpp"
@@ -221,6 +222,7 @@ static NSWindow* sActiveConnectionDialog = nil;
 
     switch (info.type) {
     case DatabaseType::SQLITE:
+    case DatabaseType::DUCKDB:
         self.sqlitePathField.stringValue = [NSString stringWithUTF8String:info.path.c_str()];
         break;
 
@@ -279,7 +281,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     }
 
     // SSL mode (all server types)
-    if (info.type != DatabaseType::SQLITE) {
+    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB) {
         auto sslCfg = getSslConfig(info.type);
         for (int i = 0; i < sslCfg.count; i++) {
             if (info.sslmode == sslCfg.values[i]) {
@@ -355,6 +357,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"MSSQL"];
     [self.typePopup addItemWithTitle:@"Oracle"];
     [self.typePopup addItemWithTitle:@"Redshift"];
+    [self.typePopup addItemWithTitle:@"DuckDB"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -654,7 +657,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     DatabaseType type = [self selectedDatabaseType];
     bool authIsCredentials = (self.authSegment.selectedSegment == 0);
 
-    if (type == DatabaseType::SQLITE) {
+    if (type == DatabaseType::SQLITE || type == DatabaseType::DUCKDB) {
         h += kRowHeight + kRowSpacing; // Path + Browse
     } else {
         h += kRowHeight + kRowSpacing; // Host + Port
@@ -735,7 +738,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.topSeparator.frame = NSMakeRect(kMargin, y, kDialogWidth - 2 * kMargin, 1);
     y -= kRowSpacing;
 
-    if (type == DatabaseType::SQLITE) {
+    if (type == DatabaseType::SQLITE || type == DatabaseType::DUCKDB) {
         // SQLite path + browse
         self.sqlitePathLabel.hidden = NO;
         self.sqlitePathField.hidden = NO;
@@ -975,6 +978,8 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portField.stringValue = @"5439";
         self.authSegment.selectedSegment = 0;
         break;
+    case DatabaseType::DUCKDB:
+        break;
     }
 
     // Clear status
@@ -991,17 +996,12 @@ static NSWindow* sActiveConnectionDialog = nil;
     @try {
         auto db = FileDialog::openSQLiteFile();
         if (db) {
-            auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
-            if (sqliteDb) {
-                self.sqlitePathField.stringValue =
-                    [NSString stringWithUTF8String:sqliteDb->getPath().c_str()];
+            const auto& info = db->getConnectionInfo();
+            self.sqlitePathField.stringValue = [NSString stringWithUTF8String:info.path.c_str()];
 
-                NSString* currentName = self.nameField.stringValue;
-                if (currentName.length == 0 ||
-                    [currentName isEqualToString:@"Untitled connection"]) {
-                    self.nameField.stringValue =
-                        [NSString stringWithUTF8String:sqliteDb->getConnectionInfo().name.c_str()];
-                }
+            NSString* currentName = self.nameField.stringValue;
+            if (currentName.length == 0 || [currentName isEqualToString:@"Untitled connection"]) {
+                self.nameField.stringValue = [NSString stringWithUTF8String:info.name.c_str()];
             }
         }
     } @catch (NSException* exception) {
@@ -1043,9 +1043,13 @@ static NSWindow* sActiveConnectionDialog = nil;
 
         DatabaseType type = [self selectedDatabaseType];
 
-        // SQLite: synchronous
+        // File-backed local databases: synchronous
         if (type == DatabaseType::SQLITE) {
             [self connectSQLite];
+            return;
+        }
+        if (type == DatabaseType::DUCKDB) {
+            [self connectDuckDB];
             return;
         }
 
@@ -1074,6 +1078,34 @@ static NSWindow* sActiveConnectionDialog = nil;
     connInfo.path = sqlitePath;
 
     auto db = std::make_shared<SQLiteDatabase>(connInfo);
+    auto [success, error] = db->connect();
+
+    if (success) {
+        [self handleSuccess:db info:connInfo];
+        [self.dialogWindow close];
+    } else {
+        self.statusLabel.stringValue = [NSString stringWithUTF8String:("Failed: " + error).c_str()];
+        self.statusLabel.textColor = [NSColor systemRedColor];
+    }
+}
+
+
+- (void)connectDuckDB {
+    std::string dbPath = [self.sqlitePathField.stringValue UTF8String];
+    if (dbPath.empty()) {
+        self.statusLabel.stringValue = @"Please select a database file";
+        self.statusLabel.textColor = [NSColor systemRedColor];
+        return;
+    }
+
+    std::string name = [self.nameField.stringValue UTF8String];
+
+    DatabaseConnectionInfo connInfo;
+    connInfo.type = DatabaseType::DUCKDB;
+    connInfo.name = name;
+    connInfo.path = dbPath;
+
+    auto db = std::make_shared<DuckDBDatabase>(connInfo);
     auto [success, error] = db->connect();
 
     if (success) {
@@ -1222,6 +1254,8 @@ static NSWindow* sActiveConnectionDialog = nil;
       case DatabaseType::REDSHIFT:
           info.database = database.empty() ? "dev" : database;
           db = std::make_shared<PostgresDatabase>(info);
+          break;
+      case DatabaseType::DUCKDB:
           break;
       default:
           break;

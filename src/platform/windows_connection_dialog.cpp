@@ -10,6 +10,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/duckdb.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
@@ -214,14 +215,14 @@ static void showCtrl(HWND dialog, int id, bool show) {
 }
 
 static void updateFieldVisibility(HWND dialog, DatabaseType type) {
-    bool isSQLite = (type == DatabaseType::SQLITE);
-    bool isServer = !isSQLite;
+    bool isLocalFile = (type == DatabaseType::SQLITE || type == DatabaseType::DUCKDB);
+    bool isServer = !isLocalFile;
     bool isRedis = (type == DatabaseType::REDIS);
 
     // SQLite fields
-    showCtrl(dialog, IDC_LABEL_PATH, isSQLite);
-    showCtrl(dialog, IDC_SQLITE_PATH_EDIT, isSQLite);
-    showCtrl(dialog, IDC_SQLITE_BROWSE_BTN, isSQLite);
+    showCtrl(dialog, IDC_LABEL_PATH, isLocalFile);
+    showCtrl(dialog, IDC_SQLITE_PATH_EDIT, isLocalFile);
+    showCtrl(dialog, IDC_SQLITE_BROWSE_BTN, isLocalFile);
 
     // server fields
     showCtrl(dialog, IDC_LABEL_HOST, isServer);
@@ -337,6 +338,8 @@ static void handleConnectionSuccess(AsyncConnectResult* r) {
     }
 }
 
+static void connectDuckDB(ConnectionDialogData* data);
+
 static void connectSQLite(ConnectionDialogData* data) {
     HWND dialog = data->dialog;
     std::string path = getWindowText(GetDlgItem(dialog, IDC_SQLITE_PATH_EDIT));
@@ -353,6 +356,56 @@ static void connectSQLite(ConnectionDialogData* data) {
     info.path = path;
 
     auto db = std::make_shared<SQLiteDatabase>(info);
+    auto [success, error] = db->connect();
+
+    if (success) {
+        if (data->editingConnectionId != -1 && data->editingDb) {
+            SavedConnection conn;
+            conn.id = data->editingConnectionId;
+            conn.connectionInfo = info;
+            conn.workspaceId = data->app->getCurrentWorkspaceId();
+            data->app->getAppState()->updateConnection(conn);
+            db->setConnectionId(data->editingConnectionId);
+            auto& dbs = data->app->getDatabases();
+            for (size_t i = 0; i < dbs.size(); i++) {
+                if (dbs[i] == data->editingDb) {
+                    dbs[i]->disconnect();
+                    dbs[i] = db;
+                    break;
+                }
+            }
+        } else {
+            SavedConnection conn;
+            conn.connectionInfo = info;
+            conn.workspaceId = data->app->getCurrentWorkspaceId();
+            int newId = data->app->getAppState()->saveConnection(conn);
+            if (newId != -1) {
+                db->setConnectionId(newId);
+            }
+            data->app->addDatabase(db);
+        }
+        DestroyWindow(dialog);
+    } else {
+        setStatus(dialog, "Failed: " + error);
+    }
+}
+
+static void connectDuckDB(ConnectionDialogData* data) {
+    HWND dialog = data->dialog;
+    std::string path = getWindowText(GetDlgItem(dialog, IDC_SQLITE_PATH_EDIT));
+    if (path.empty()) {
+        setStatus(dialog, "Please select a database file");
+        return;
+    }
+
+    std::string name = getWindowText(GetDlgItem(dialog, IDC_NAME_EDIT));
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::DUCKDB;
+    info.name = name;
+    info.path = path;
+
+    auto db = std::make_shared<DuckDBDatabase>(info);
     auto [success, error] = db->connect();
 
     if (success) {
@@ -578,7 +631,7 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         HWND typeCombo =
             makeCtrl("COMBOBOX", "", IDC_TYPE_COMBO, CBS_DROPDOWNLIST | WS_TABSTOP, FX, y, FW, 200);
         const char* types[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
-                               "MongoDB", "MSSQL",      "Oracle", "Redshift"};
+                               "MongoDB", "MSSQL",      "Oracle", "Redshift", "DuckDB"};
         for (const char* t : types) {
             SendMessageA(typeCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t));
         }
@@ -749,7 +802,10 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
             char filePath[MAX_PATH] = "";
             ofn.lStructSize = sizeof(ofn);
             ofn.hwndOwner = hwnd;
-            ofn.lpstrFilter = "SQLite Database\0*.db;*.sqlite;*.sqlite3\0All Files\0*.*\0";
+            auto selectedType = static_cast<DatabaseType>(data ? data->currentTypeIndex : 0);
+            ofn.lpstrFilter = (selectedType == DatabaseType::DUCKDB)
+                                  ? "DuckDB Database\0*.duckdb;*.db\0All Files\0*.*\0"
+                                  : "SQLite Database\0*.db;*.sqlite;*.sqlite3\0All Files\0*.*\0";
             ofn.lpstrFile = filePath;
             ofn.nMaxFile = MAX_PATH;
             ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
@@ -786,6 +842,8 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
             auto type = static_cast<DatabaseType>(data->currentTypeIndex);
             if (type == DatabaseType::SQLITE) {
                 connectSQLite(data);
+            } else if (type == DatabaseType::DUCKDB) {
+                connectDuckDB(data);
             } else {
                 connectServerAsync(data);
             }
@@ -912,7 +970,7 @@ static void showConnectionDialogInternal(Application* app,
 
         rebuildSslModes(hwnd, info.type);
 
-        if (info.type == DatabaseType::SQLITE) {
+        if (info.type == DatabaseType::SQLITE || info.type == DatabaseType::DUCKDB) {
             SetWindowTextA(GetDlgItem(hwnd, IDC_SQLITE_PATH_EDIT), info.path.c_str());
         } else {
             SetWindowTextA(GetDlgItem(hwnd, IDC_HOST_EDIT), info.host.c_str());

@@ -17,7 +17,8 @@ enum class DatabaseType {
     MONGODB,
     MSSQL,
     ORACLE,
-    REDSHIFT
+    REDSHIFT,
+    DUCKDB
 };
 
 enum class SSHAuthMethod { Password, PrivateKey };
@@ -56,6 +57,7 @@ struct DatabaseConnectionInfo {
     [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
         switch (type) {
         case DatabaseType::SQLITE:
+        case DatabaseType::DUCKDB:
             return path;
 
         case DatabaseType::REDSHIFT:

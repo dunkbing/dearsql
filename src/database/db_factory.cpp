@@ -6,6 +6,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/duckdb.hpp"
 
 // Helper functions to convert between DatabaseType enum and strings
 std::string databaseTypeToString(const DatabaseType type) {
@@ -28,6 +29,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "oracle";
     case DatabaseType::REDSHIFT:
         return "redshift";
+    case DatabaseType::DUCKDB:
+        return "duckdb";
     }
     return "unknown";
 }
@@ -51,6 +54,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::ORACLE;
     if (typeStr == "redshift")
         return DatabaseType::REDSHIFT;
+    if (typeStr == "duckdb")
+        return DatabaseType::DUCKDB;
     return DatabaseType::SQLITE; // default
 }
 
@@ -117,6 +122,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::REDSHIFT:
         return std::make_shared<PostgresDatabase>(info);
+
+    case DatabaseType::DUCKDB:
+        return std::make_shared<DuckDBDatabase>(info);
 
     default:
         return nullptr;

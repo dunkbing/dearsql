@@ -76,6 +76,7 @@ configure_file(
 
 # vcpkg packages (cross-platform)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(unofficial-duckdb CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -189,6 +190,7 @@ set(APP_SOURCES
 
     # Database
     src/database/sqlite.cpp
+    src/database/duckdb.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
@@ -329,6 +331,7 @@ endif()
 # link libraries (common - vcpkg packages)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
+    unofficial::duckdb::duckdb
     nlohmann_json::nlohmann_json
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
@@ -437,6 +440,7 @@ endif()
 add_executable(database_tests
     tests/database/async_helper_test.cpp
     tests/database/sqlite_database_test.cpp
+    tests/database/duckdb_database_test.cpp
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
     tests/database/redis_database_test.cpp
@@ -448,6 +452,7 @@ add_executable(database_tests
     tests/database/sql_builder_test.cpp
     src/database/db_factory.cpp
     src/database/sqlite.cpp
+    src/database/duckdb.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
@@ -486,6 +491,7 @@ endif()
 target_link_libraries(database_tests PRIVATE
     GTest::gtest_main
     unofficial::sqlite3::sqlite3
+    unofficial::duckdb::duckdb
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
     hiredis::hiredis

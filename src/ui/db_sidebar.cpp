@@ -582,14 +582,16 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         // SQLite-specific menu items (only when connected)
-        if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
-            auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
-            if (sqliteDb) {
+        if (db->isConnected() &&
+            (db->getConnectionInfo().type == DatabaseType::SQLITE ||
+             db->getConnectionInfo().type == DatabaseType::DUCKDB)) {
+            auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+            if (node) {
                 if (ImGui::MenuItem("New SQL Editor")) {
-                    Application::getInstance().getTabManager()->createSQLEditorTab("", sqliteDb);
+                    Application::getInstance().getTabManager()->createSQLEditorTab("", node);
                 }
                 if (ImGui::MenuItem("Show Diagram")) {
-                    Application::getInstance().getTabManager()->createDiagramTab(sqliteDb);
+                    Application::getInstance().getTabManager()->createDiagramTab(node);
                 }
                 ImGui::Separator();
             }

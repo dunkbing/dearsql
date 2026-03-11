@@ -8,6 +8,7 @@ std::string DDLBuilder::quoteIdentifier(const std::string& id) const {
         return std::format("`{}`", id);
     case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL:
+    case DatabaseType::DUCKDB:
         return std::format("\"{}\"", id);
     case DatabaseType::MSSQL:
         return std::format("[{}]", id);

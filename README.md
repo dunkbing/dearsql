@@ -10,7 +10,7 @@
 
 ## Features
 
-- Support SQLite, PostgreSQL, MySQL, MariaDB, MongoDB, and Redis connections
+- Support SQLite, DuckDB, PostgreSQL, MySQL, MariaDB, MongoDB, and Redis connections
 - Cross-platform: macOS (Metal), Linux (GTK4 + OpenGL)
 - Database browser: Sidebar for exploring schemas, tables, and structure
 - Native file dialogs for SQLite files

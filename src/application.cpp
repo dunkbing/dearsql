@@ -8,6 +8,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/duckdb.hpp"
 #include "license/license_manager.hpp"
 
 #if defined(__APPLE__)
@@ -458,6 +459,8 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
             db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::DUCKDB) {
+            db = std::make_shared<DuckDBDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {

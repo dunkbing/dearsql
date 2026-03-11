@@ -11,6 +11,7 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "database/duckdb.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
@@ -281,7 +282,7 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     int selectedType = gtk_drop_down_get_selected(GTK_DROP_DOWN(data->typeDropdown));
     auto type = static_cast<DatabaseType>(selectedType);
 
-    if (type == DatabaseType::SQLITE) {
+    if (type == DatabaseType::SQLITE || type == DatabaseType::DUCKDB) {
         // Path + Browse
         data->sqlitePathEntry = makeEntry("Database file path");
         GtkWidget* browseBtn = gtk_button_new_with_label("Browse...");
@@ -290,16 +291,11 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
                 auto* d = static_cast<ConnectionDialogData*>(ud);
                 auto db = FileDialog::openSQLiteFile();
                 if (db) {
-                    auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db);
-                    if (sqliteDb) {
-                        gtk_editable_set_text(GTK_EDITABLE(d->sqlitePathEntry),
-                                              sqliteDb->getPath().c_str());
-                        const char* name = gtk_editable_get_text(GTK_EDITABLE(d->nameEntry));
-                        if (!name || strlen(name) == 0 ||
-                            strcmp(name, "Untitled connection") == 0) {
-                            gtk_editable_set_text(GTK_EDITABLE(d->nameEntry),
-                                                  sqliteDb->getConnectionInfo().name.c_str());
-                        }
+                    const auto& info = db->getConnectionInfo();
+                    gtk_editable_set_text(GTK_EDITABLE(d->sqlitePathEntry), info.path.c_str());
+                    const char* name = gtk_editable_get_text(GTK_EDITABLE(d->nameEntry));
+                    if (!name || strlen(name) == 0 || strcmp(name, "Untitled connection") == 0) {
+                        gtk_editable_set_text(GTK_EDITABLE(d->nameEntry), info.name.c_str());
                     }
                 }
             }),
@@ -648,6 +644,8 @@ static void handleConnectionSuccess(AsyncConnectResult* r) {
     }
 }
 
+static void connectDuckDB(ConnectionDialogData* data);
+
 static void connectSQLite(ConnectionDialogData* data) {
     const char* path = gtk_editable_get_text(GTK_EDITABLE(data->sqlitePathEntry));
     if (!path || strlen(path) == 0) {
@@ -941,8 +939,8 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
 
     // Type dropdown
     static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
-                                      "MongoDB", "MSSQL",      "Oracle", "Redshift"};
-    data->typeDropdown = makeStringDropdown(typeNames, 9, static_cast<int>(initialType));
+                                      "MongoDB", "MSSQL",      "Oracle", "Redshift", "DuckDB"};
+    data->typeDropdown = makeStringDropdown(typeNames, 10, static_cast<int>(initialType));
 
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
@@ -1008,6 +1006,8 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
 
             if (type == DatabaseType::SQLITE) {
                 connectSQLite(d);
+            } else if (type == DatabaseType::DUCKDB) {
+                connectDuckDB(d);
             } else {
                 connectServerAsync(d);
             }
@@ -1061,6 +1061,7 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
 
     switch (info.type) {
     case DatabaseType::SQLITE:
+    case DatabaseType::DUCKDB:
         if (data->sqlitePathEntry)
             gtk_editable_set_text(GTK_EDITABLE(data->sqlitePathEntry), info.path.c_str());
         break;
@@ -1142,7 +1143,7 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     }
 
     // Restore SSL mode (all server types)
-    if (info.type != DatabaseType::SQLITE && data->sslModeDropdown) {
+    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB && data->sslModeDropdown) {
         auto sslCfg = getSslConfig(info.type);
         for (int i = 0; i < sslCfg.count; i++) {
             if (info.sslmode == sslCfg.values[i]) {
@@ -1156,7 +1157,7 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     }
 
     // Restore SSH tunnel fields (all server types)
-    if (info.type != DatabaseType::SQLITE && info.ssh.enabled) {
+    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB && info.ssh.enabled) {
         if (data->sshEnabledCheck)
             gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshEnabledCheck), TRUE);
         if (data->sshHostEntry)
@@ -1548,6 +1549,37 @@ void showEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterfac
     presentConnectionDialogDeferred(data);
 }
 
+
+static void connectDuckDB(ConnectionDialogData* data) {
+    const char* path = gtk_editable_get_text(GTK_EDITABLE(data->sqlitePathEntry));
+    if (!path || strlen(path) == 0) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please select a database file");
+        return;
+    }
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::DUCKDB;
+    info.name = gtk_editable_get_text(GTK_EDITABLE(data->nameEntry));
+    info.path = path;
+
+    auto db = std::make_shared<DuckDBDatabase>(info);
+    auto [ok, err] = db->connect();
+    if (!ok) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), err.c_str());
+        return;
+    }
+
+    auto& app = *data->app;
+    SavedConnection c;
+    c.connectionInfo = info;
+    c.workspaceId = app.getCurrentWorkspaceId();
+    c.id = app.getAppState()->saveConnection(c);
+    if (c.id > 0)
+        db->setConnectionId(c.id);
+    app.addDatabase(db);
+    gtk_window_destroy(GTK_WINDOW(data->dialog));
+}
+
 void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterface> db) {
     if (sActiveCreateDatabaseDialog) {
         gtk_window_present(GTK_WINDOW(sActiveCreateDatabaseDialog));
@@ -1572,3 +1604,4 @@ void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterfac
 }
 
 #endif // defined(__linux__)
+

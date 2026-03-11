@@ -14,6 +14,7 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     case DatabaseType::MSSQL:
         return std::make_unique<MSSQLBuilder>();
     case DatabaseType::SQLITE:
+    case DatabaseType::DUCKDB:
         return std::make_unique<SQLiteBuilder>();
     default:
         return std::make_unique<SQLiteBuilder>(); // Default to SQLite

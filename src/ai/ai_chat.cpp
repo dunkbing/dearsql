@@ -65,6 +65,8 @@ std::string AIChatState::dbTypeName() const {
         return "MSSQL";
     case DatabaseType::REDSHIFT:
         return "Redshift";
+    case DatabaseType::DUCKDB:
+        return "DuckDB";
     }
     return "SQL";
 }

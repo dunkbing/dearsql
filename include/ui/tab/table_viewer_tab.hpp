@@ -1,9 +1,9 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "ui/auto_complete_input.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
-#include <future>
 #include <memory>
 #include <string>
 #include <vector>
@@ -60,10 +60,9 @@ private:
     int totalRows = 0;
 
     // Async loading state
-    bool isLoadingData = false;
     bool hasLoadingError = false;
     std::string loadingError;
-    std::future<void> dataLoadFuture;
+    AsyncOperation<bool> dataLoadOp;
 
     // Edit state
     int selectedRow = -1;
@@ -76,8 +75,7 @@ private:
     std::vector<std::string> pendingUpdateSQL;
 
     // Async SQL execution state
-    bool executingSQL = false;
-    std::future<std::pair<bool, std::string>> sqlExecutionFuture;
+    AsyncOperation<std::pair<bool, std::string>> sqlExecutionOp;
 
     // Table renderer
     std::unique_ptr<TableRenderer> tableRenderer;

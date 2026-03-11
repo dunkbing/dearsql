@@ -66,6 +66,8 @@ void Alert::show(const std::string& title, const std::string& message,
                 buttons[originalIndex].onPress();
             }
         }
+
+        [[NSApp mainWindow] makeKeyWindow];
     }
 }
 

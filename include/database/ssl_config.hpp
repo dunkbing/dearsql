@@ -39,6 +39,7 @@ inline constexpr SslMode kSimpleSslModeValues[] = {SslMode::Disable, SslMode::Re
 
 inline SslModeConfig getSslConfig(DatabaseType type) {
     switch (type) {
+    case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL:
         return {kPgSslLabels, kPgSslValues, 6, 2};
     case DatabaseType::MYSQL:

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB, MSSQL, ORACLE };
+enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB, MSSQL, ORACLE, REDSHIFT };
 
 enum class SSHAuthMethod { Password, PrivateKey };
 
@@ -48,6 +48,7 @@ struct DatabaseConnectionInfo {
         case DatabaseType::SQLITE:
             return path;
 
+        case DatabaseType::REDSHIFT:
         case DatabaseType::POSTGRESQL: {
             std::string connStr = "host=" + host + " port=" + std::to_string(port);
             connStr += " connect_timeout=10";
@@ -57,7 +58,8 @@ struct DatabaseConnectionInfo {
             } else if (!database.empty()) {
                 connStr += " dbname=" + database;
             } else {
-                connStr += " dbname=postgres";
+                connStr +=
+                    std::string(" dbname=") + (type == DatabaseType::REDSHIFT ? "dev" : "postgres");
             }
 
             if (!username.empty()) {
@@ -277,6 +279,10 @@ public:
             return;
 
         switch (info.type) {
+        case DatabaseType::REDSHIFT: {
+            connectionInfo.database = "dev";
+            break;
+        }
         case DatabaseType::POSTGRESQL: {
             connectionInfo.database = "postgres";
             break;

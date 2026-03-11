@@ -224,6 +224,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.sqlitePathField.stringValue = [NSString stringWithUTF8String:info.path.c_str()];
         break;
 
+    case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL: {
         self.hostField.stringValue = [NSString stringWithUTF8String:info.host.c_str()];
         self.portField.stringValue = [NSString stringWithFormat:@"%d", info.port];
@@ -242,6 +243,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         break;
     }
 
+    case DatabaseType::MSSQL:
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
     case DatabaseType::MONGODB: {
@@ -352,6 +354,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"MongoDB"];
     [self.typePopup addItemWithTitle:@"MSSQL"];
     [self.typePopup addItemWithTitle:@"Oracle"];
+    [self.typePopup addItemWithTitle:@"Redshift"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -771,6 +774,8 @@ static NSWindow* sActiveConnectionDialog = nil;
 
             if (type == DatabaseType::POSTGRESQL) {
                 self.databaseField.toolTip = @"Leave empty to use the default 'postgres' database";
+            } else if (type == DatabaseType::REDSHIFT) {
+                self.databaseField.toolTip = @"Leave empty to use the default 'dev' database";
             } else {
                 self.databaseField.toolTip = nil;
             }
@@ -964,6 +969,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         break;
     case DatabaseType::ORACLE:
         self.portField.stringValue = @"1521";
+        self.authSegment.selectedSegment = 0;
+        break;
+    case DatabaseType::REDSHIFT:
+        self.portField.stringValue = @"5439";
         self.authSegment.selectedSegment = 0;
         break;
     }
@@ -1209,6 +1218,10 @@ static NSWindow* sActiveConnectionDialog = nil;
       case DatabaseType::ORACLE:
           info.database = database;
           db = std::make_shared<OracleDatabase>(info);
+          break;
+      case DatabaseType::REDSHIFT:
+          info.database = database.empty() ? "dev" : database;
+          db = std::make_shared<PostgresDatabase>(info);
           break;
       default:
           break;
@@ -1510,7 +1523,7 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
 
 - (void)buildControls {
     DatabaseType type = [self databaseType];
-    bool isPostgres = (type == DatabaseType::POSTGRESQL);
+    bool isPostgres = (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT);
 
     self.dialogWindow =
         [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, kDialogWidth, 320)
@@ -1732,7 +1745,7 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
     h += kRowHeight + kRowSpacing; // Name
 
     DatabaseType type = [self databaseType];
-    if (type == DatabaseType::POSTGRESQL) {
+    if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
         h += kRowHeight + kRowSpacing; // Owner
         h += kRowHeight + kRowSpacing; // Template
         h += kRowHeight + kRowSpacing; // Encoding
@@ -1770,7 +1783,7 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
     self.nameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
     y -= kRowSpacing;
 
-    if (type == DatabaseType::POSTGRESQL) {
+    if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
         // Owner
         y -= kRowHeight;
         self.ownerLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
@@ -1857,7 +1870,7 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
         opts.comment = [self.commentField.stringValue UTF8String];
 
         DatabaseType type = [self databaseType];
-        if (type == DatabaseType::POSTGRESQL) {
+        if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
             opts.owner = [[self.ownerPopup titleOfSelectedItem] UTF8String];
             opts.templateDb = [[self.templatePopup titleOfSelectedItem] UTF8String];
             opts.encoding = [[self.encodingPopup titleOfSelectedItem] UTF8String];

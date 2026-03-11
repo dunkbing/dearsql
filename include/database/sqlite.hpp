@@ -1,12 +1,10 @@
 #pragma once
 
+#include "async_helper.hpp"
 #include "database_node.hpp"
 #include "db_interface.hpp"
 #include "table_data_provider.hpp"
-#include <atomic>
-#include <future>
 #include <map>
-#include <set>
 #include <sqlite3.h>
 
 class SQLiteDatabase final : public IDatabaseNode,
@@ -73,10 +71,10 @@ public:
         return viewsLoaded;
     }
     [[nodiscard]] bool isLoadingTables() const override {
-        return loadingTables.load();
+        return tablesLoader.isRunning();
     }
     [[nodiscard]] bool isLoadingViews() const override {
-        return loadingViews.load();
+        return viewsLoader.isRunning();
     }
 
     void startTablesLoadAsync(bool force = false) override;
@@ -104,9 +102,7 @@ public:
 
     // ========== Internal Methods ==========
 
-    void checkTablesStatusAsync();
     std::vector<Table> getTablesAsync() const;
-    void checkViewsStatusAsync();
     std::vector<Table> getViewsAsync() const;
 
     // Session access
@@ -114,27 +110,21 @@ public:
 
     // Async operation status
     [[nodiscard]] bool hasPendingAsyncWork() const override {
-        return isConnecting() || loadingTables.load() || loadingViews.load() ||
-               loadingSequences.load();
+        return isConnecting() || tablesLoader.isRunning() || viewsLoader.isRunning();
     }
 
-    // Loading state
-    std::atomic<bool> loadingTables = false;
-    std::atomic<bool> loadingViews = false;
-    std::atomic<bool> loadingSequences = false;
+    // Async operations
+    AsyncOperation<std::vector<Table>> tablesLoader;
+    AsyncOperation<std::vector<Table>> viewsLoader;
+    std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
+    // Loading state
     bool tablesLoaded = false;
     bool viewsLoaded = false;
-    bool sequencesLoaded = false;
 
     // Error tracking
     std::string lastTablesError;
     std::string lastViewsError;
-    std::string lastSequencesError;
-
-    // Table refresh tracking
-    std::map<std::string, std::future<Table>> tableRefreshFutures;
-    std::set<std::string> refreshingTables;
 
 protected:
     std::vector<std::string> getTableNames() const;
@@ -143,11 +133,6 @@ protected:
 
 private:
     sqlite3* db_ = nullptr;
-
-    // Async futures
-    std::future<std::vector<Table>> tablesFuture;
-    std::future<std::vector<Table>> viewsFuture;
-    std::future<std::vector<std::string>> sequencesFuture;
 
     std::vector<Table> tables;
     std::vector<Table> views;

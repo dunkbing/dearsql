@@ -98,7 +98,7 @@ namespace {
 PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
     if (connectionInfo.database.empty()) {
-        connectionInfo.database = "postgres";
+        connectionInfo.database = (connInfo.type == DatabaseType::REDSHIFT) ? "dev" : "postgres";
     }
 }
 
@@ -723,7 +723,8 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
             // Connect to maintenance DB first so failure paths do not leave
             // the object with a destroyed active pool.
             auto tempInfo = connectionInfo;
-            tempInfo.database = "postgres";
+            tempInfo.database =
+                (connectionInfo.type == DatabaseType::REDSHIFT) ? "dev" : "postgres";
             std::string tempConnStr = tempInfo.buildConnectionString();
             PGconn* tempConn = PQconnectdb(tempConnStr.c_str());
             if (PQstatus(tempConn) != CONNECTION_OK) {
@@ -769,9 +770,10 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
             databaseDataCache.erase(dbName);
         }
 
-        // If we dropped the connected database, switch to 'postgres'
+        // If we dropped the connected database, switch to maintenance db
         if (isDroppingConnectedDb) {
-            connectionInfo.database = "postgres";
+            connectionInfo.database =
+                (connectionInfo.type == DatabaseType::REDSHIFT) ? "dev" : "postgres";
             try {
                 ensureConnectionPoolForDatabase(connectionInfo);
                 connected = true;

@@ -159,6 +159,7 @@ void SQLEditorTab::renderConnectionInfo() {
     }
 
     switch (node_->getDatabaseType()) {
+    case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL:
         renderConnectionInfoPostgres();
         break;

@@ -5,6 +5,7 @@
 
 std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     switch (type) {
+    case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL:
         return std::make_unique<PostgreSQLBuilder>();
     case DatabaseType::MYSQL:

@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <utility>
@@ -230,31 +229,9 @@ std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& t
     return foreignKeys;
 }
 
-// Async table loading
-void SQLiteDatabase::checkTablesStatusAsync() {
-    if (tablesFuture.valid() &&
-        tablesFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            tables = tablesFuture.get();
-            Logger::info(std::format("Table loading completed. Found {} tables", tables.size()));
-            tablesLoaded = true;
-            loadingTables = false;
-        } catch (const std::exception& e) {
-            Logger::error(std::format("Error in table loading: {}", e.what()));
-            lastTablesError = e.what();
-            tablesLoaded = true;
-            loadingTables = false;
-        }
-    }
-}
-
 void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
     Logger::debug("startTablesLoadAsync for SQLite database" +
                   std::string(forceRefresh ? " (force refresh)" : ""));
-
-    if (loadingTables.load()) {
-        return;
-    }
 
     if (forceRefresh) {
         tables.clear();
@@ -266,18 +243,12 @@ void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
         return;
     }
 
-    loadingTables = true;
     tables.clear();
-
-    tablesFuture = std::async(std::launch::async, [this]() { return getTablesAsync(); });
+    tablesLoader.start([this]() { return getTablesAsync(); });
 }
 
 std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     std::vector<Table> result;
-
-    if (!loadingTables.load()) {
-        return result;
-    }
 
     try {
         if (!connected || !db_) {
@@ -285,33 +256,19 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
             return result;
         }
 
-        // Get table names
         std::vector<std::string> tableNames;
         const std::string tableNamesQuery =
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-        queryRows(db_, tableNamesQuery, [&](sqlite3_stmt* stmt) {
-            if (!loadingTables.load())
-                return;
-            tableNames.push_back(columnText(stmt, 0));
-        });
+        queryRows(db_, tableNamesQuery,
+                  [&](sqlite3_stmt* stmt) { tableNames.push_back(columnText(stmt, 0)); });
 
         Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in database");
 
-        if (tableNames.empty() || !loadingTables.load()) {
-            return result;
-        }
-
-        // Load table details
         for (const auto& tableName : tableNames) {
-            if (!loadingTables.load()) {
-                break;
-            }
-
             Table table;
             table.name = tableName;
             table.fullName = connectionInfo.name + "." + tableName;
 
-            // Get table columns
             const std::string columnsQuery = std::format("PRAGMA table_info({})", tableName);
             queryRows(db_, columnsQuery, [&](sqlite3_stmt* stmt) {
                 Column col;
@@ -322,7 +279,6 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
                 table.columns.push_back(std::move(col));
             });
 
-            // Get foreign keys
             const std::string fkQuery = std::format("PRAGMA foreign_key_list({})", tableName);
             queryRows(db_, fkQuery, [&](sqlite3_stmt* stmt) {
                 ForeignKey fk;
@@ -333,7 +289,6 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
                 table.foreignKeys.push_back(std::move(fk));
             });
 
-            // Get indexes
             const std::string indexQuery = std::format("PRAGMA index_list({})", tableName);
             queryRows(db_, indexQuery, [&](sqlite3_stmt* stmt) {
                 Index idx;
@@ -362,31 +317,9 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     return result;
 }
 
-// Async view loading
-void SQLiteDatabase::checkViewsStatusAsync() {
-    if (viewsFuture.valid() &&
-        viewsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            views = viewsFuture.get();
-            Logger::info(std::format("View loading completed. Found {} views", views.size()));
-            viewsLoaded = true;
-            loadingViews = false;
-        } catch (const std::exception& e) {
-            Logger::error(std::format("Error in view loading: {}", e.what()));
-            lastViewsError = e.what();
-            viewsLoaded = true;
-            loadingViews = false;
-        }
-    }
-}
-
 void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
     Logger::debug("startViewsLoadAsync for SQLite database" +
                   std::string(forceRefresh ? " (force refresh)" : ""));
-
-    if (loadingViews.load()) {
-        return;
-    }
 
     if (forceRefresh) {
         views.clear();
@@ -398,18 +331,12 @@ void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
         return;
     }
 
-    loadingViews = true;
     views.clear();
-
-    viewsFuture = std::async(std::launch::async, [this]() { return getViewsAsync(); });
+    viewsLoader.start([this]() { return getViewsAsync(); });
 }
 
 std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     std::vector<Table> result;
-
-    if (!loadingViews.load()) {
-        return result;
-    }
 
     try {
         if (!connected || !db_) {
@@ -419,19 +346,12 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
 
         std::vector<std::string> viewNames;
         const std::string viewNamesQuery = "SELECT name FROM sqlite_master WHERE type='view'";
-        queryRows(db_, viewNamesQuery, [&](sqlite3_stmt* stmt) {
-            if (!loadingViews.load())
-                return;
-            viewNames.push_back(columnText(stmt, 0));
-        });
+        queryRows(db_, viewNamesQuery,
+                  [&](sqlite3_stmt* stmt) { viewNames.push_back(columnText(stmt, 0)); });
 
         Logger::debug("Found " + std::to_string(viewNames.size()) + " views in database");
 
         for (const auto& viewName : viewNames) {
-            if (!loadingViews.load()) {
-                break;
-            }
-
             Table view;
             view.name = viewName;
             view.fullName = connectionInfo.name + "." + viewName;
@@ -640,23 +560,43 @@ std::string SQLiteDatabase::getFullPath() const {
 }
 
 void SQLiteDatabase::checkLoadingStatus() {
-    checkTablesStatusAsync();
-    checkViewsStatusAsync();
+    tablesLoader.check([this](std::vector<Table> result) {
+        tables = std::move(result);
+        tablesLoaded = true;
+        Logger::info(std::format("Table loading completed. Found {} tables", tables.size()));
+    });
+    viewsLoader.check([this](std::vector<Table> result) {
+        views = std::move(result);
+        viewsLoaded = true;
+        Logger::info(std::format("View loading completed. Found {} views", views.size()));
+    });
+    for (auto it = tableRefreshLoaders.begin(); it != tableRefreshLoaders.end();) {
+        const auto& tableName = it->first;
+        it->second.check([this, &tableName](Table refreshedTable) {
+            auto tableIt = std::find_if(tables.begin(), tables.end(), [&tableName](const Table& t) {
+                return t.name == tableName;
+            });
+            if (tableIt != tables.end()) {
+                *tableIt = std::move(refreshedTable);
+                Logger::info(std::format("Table {} refreshed successfully", tableName));
+            }
+        });
+        if (!it->second.isRunning()) {
+            it = tableRefreshLoaders.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
-    if (refreshingTables.contains(tableName)) {
-        return;
-    }
-
-    refreshingTables.insert(tableName);
-    tableRefreshFutures[tableName] = std::async(std::launch::async, [this, tableName]() {
+    auto& loader = tableRefreshLoaders[tableName];
+    loader.start([this, tableName]() {
         Table refreshedTable;
         refreshedTable.name = tableName;
         refreshedTable.fullName = connectionInfo.name + "." + tableName;
 
         try {
-            // Get columns
             const std::string columnsQuery = std::format("PRAGMA table_info(\"{}\")", tableName);
             queryRows(db_, columnsQuery, [&](sqlite3_stmt* stmt) {
                 Column col;
@@ -680,36 +620,12 @@ void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
 }
 
 bool SQLiteDatabase::isTableRefreshing(const std::string& tableName) const {
-    return refreshingTables.contains(tableName);
+    auto it = tableRefreshLoaders.find(tableName);
+    return it != tableRefreshLoaders.end() && it->second.isRunning();
 }
 
 void SQLiteDatabase::checkTableRefreshStatusAsync(const std::string& tableName) {
-    auto it = tableRefreshFutures.find(tableName);
-    if (it == tableRefreshFutures.end()) {
-        return;
-    }
-
-    if (it->second.valid() &&
-        it->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            Table refreshedTable = it->second.get();
-
-            auto tableIt = std::find_if(tables.begin(), tables.end(), [&tableName](const Table& t) {
-                return t.name == tableName;
-            });
-            if (tableIt != tables.end()) {
-                *tableIt = refreshedTable;
-                Logger::info(std::format("Table {} refreshed successfully", tableName));
-            }
-
-        } catch (const std::exception& e) {
-            Logger::error(
-                std::format("Error completing table refresh for {}: {}", tableName, e.what()));
-        }
-
-        refreshingTables.erase(tableName);
-        tableRefreshFutures.erase(it);
-    }
+    // handled by checkLoadingStatus
 }
 
 std::pair<bool, std::string> SQLiteDatabase::renameTable(const std::string& oldName,

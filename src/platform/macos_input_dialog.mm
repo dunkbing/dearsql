@@ -38,6 +38,7 @@ void InputDialog::show(const std::string& title, const std::string& label,
             if (response != NSAlertFirstButtonReturn) {
                 if (onCancel)
                     onCancel();
+                [[NSApp mainWindow] makeKeyWindow];
                 return;
             }
 
@@ -56,6 +57,7 @@ void InputDialog::show(const std::string& title, const std::string& label,
                     continue;
             }
 
+            [[NSApp mainWindow] makeKeyWindow];
             return;
         }
     }

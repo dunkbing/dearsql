@@ -8,10 +8,8 @@
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <format>
-#include <future>
 #include <iostream>
 #include <utility>
 
@@ -141,7 +139,7 @@ void TableViewerTab::render() {
     // Table display in a child window to prevent cutoff
     if (ImGui::BeginChild("TableArea", ImVec2(tableAreaWidth, availableHeight),
                           ImGuiChildFlags_None)) {
-        if (isLoadingData) {
+        if (dataLoadOp.isRunning()) {
             ImGui::Text("Loading table data...");
         } else if (!columnNames.empty() && !tableData.empty()) {
             // Update table renderer with current data
@@ -289,7 +287,7 @@ void TableViewerTab::render() {
     }
 
     // Show loading indicator
-    if (isLoadingData) {
+    if (dataLoadOp.isRunning()) {
         ImGui::SameLine();
         ImGui::Text("Loading...");
     }
@@ -360,7 +358,7 @@ void TableViewerTab::render() {
 
 void TableViewerTab::nextPage() {
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
-    if (currentPage < totalPages - 1 && !isLoadingData) {
+    if (currentPage < totalPages - 1 && !dataLoadOp.isRunning()) {
         currentPage++;
         // When moving to next page from keyboard navigation, select first row
         if (selectedRow >= 0 && selectedCol >= 0) {
@@ -371,7 +369,7 @@ void TableViewerTab::nextPage() {
 }
 
 void TableViewerTab::previousPage() {
-    if (currentPage > 0 && !isLoadingData) {
+    if (currentPage > 0 && !dataLoadOp.isRunning()) {
         currentPage--;
         // When moving to previous page from keyboard navigation, select last row
         if (selectedRow >= 0 && selectedCol >= 0) {
@@ -384,14 +382,14 @@ void TableViewerTab::previousPage() {
 }
 
 void TableViewerTab::firstPage() {
-    if (!isLoadingData) {
+    if (!dataLoadOp.isRunning()) {
         currentPage = 0;
         loadDataAsync();
     }
 }
 
 void TableViewerTab::lastPage() {
-    if (isLoadingData)
+    if (dataLoadOp.isRunning())
         return;
 
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
@@ -400,7 +398,7 @@ void TableViewerTab::lastPage() {
 }
 
 void TableViewerTab::refreshData() {
-    if (!isLoadingData) {
+    if (!dataLoadOp.isRunning()) {
         // Reset selection state
         selectedRow = -1;
         selectedCol = -1;
@@ -561,7 +559,6 @@ void TableViewerTab::handleKeyboardNavigation() {
 }
 
 void TableViewerTab::loadDataAsync() {
-    isLoadingData = true;
     hasLoadingError = false;
     loadingError.clear();
 
@@ -581,8 +578,7 @@ void TableViewerTab::loadDataAsync() {
                                     sortDirection == SortDirection::Ascending ? "ASC" : "DESC");
     }
 
-    // Launch async loading
-    dataLoadFuture = std::async(std::launch::async, [this, orderByClause]() {
+    dataLoadOp.start([this, orderByClause]() -> bool {
         try {
             totalRows = node_->getRowCount(tableName, currentFilter);
             columnNames = node_->getColumnNames(tableName);
@@ -590,11 +586,9 @@ void TableViewerTab::loadDataAsync() {
             tableData =
                 node_->getTableData(tableName, rowsPerPage, offset, currentFilter, orderByClause);
 
-            // Store original data for change tracking
             originalData = tableData;
             hasChanges = false;
 
-            // Initialize edited cells and new row tracking
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(columnNames.size(), false));
             isNewRow = std::vector<bool>(tableData.size(), false);
@@ -602,15 +596,12 @@ void TableViewerTab::loadDataAsync() {
             hasLoadingError = true;
             loadingError = e.what();
         }
+        return true;
     });
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {
-    if (dataLoadFuture.valid() &&
-        dataLoadFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        dataLoadFuture.get(); // Wait for completion and handle any exceptions
-        isLoadingData = false;
-
+    dataLoadOp.check([this](bool) {
         // Auto-select first cell on initial load
         if (!initialSelectionDone && !tableData.empty() && !columnNames.empty()) {
             selectedRow = 0;
@@ -634,7 +625,7 @@ void TableViewerTab::checkAsyncLoadStatus() {
 
             QueryHistory::instance().add(query, static_cast<int>(tableData.size()));
         }
-    }
+    });
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
@@ -811,7 +802,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
         ImGui::Separator();
 
         // Buttons
-        if (executingSQL) {
+        if (sqlExecutionOp.isRunning()) {
             // Show spinner and disable buttons during execution
             ImGui::BeginDisabled();
             ImGui::Button("Execute", ImVec2(120, 0));
@@ -825,51 +816,45 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::Text("Executing...");
         } else {
             if (ImGui::Button("Execute", ImVec2(120, 0))) {
-                executingSQL = true;
-
                 auto sqlStatements = pendingUpdateSQL;
 
-                sqlExecutionFuture = std::async(
-                    std::launch::async,
-                    [node = node_, sqlStatements]() -> std::pair<bool, std::string> {
-                        if (!node) {
-                            return std::make_pair(
-                                false, "Error: Database does not support query execution");
+                sqlExecutionOp.start([node = node_,
+                                      sqlStatements]() -> std::pair<bool, std::string> {
+                    if (!node) {
+                        return std::make_pair(false,
+                                              "Error: Database does not support query execution");
+                    }
+
+                    bool allSuccess = true;
+                    std::string errorMessage;
+
+                    for (const auto& sql : sqlStatements) {
+                        std::cout << "Executing SQL: " << sql << std::endl;
+                        const auto result = node->executeQuery(sql);
+                        const auto& r =
+                            result.empty() ? StatementResult{} : result.statements.back();
+                        std::cout << "SQL Result: " << (r.success ? r.message : r.errorMessage)
+                                  << std::endl;
+
+                        if (!r.success) {
+                            allSuccess = false;
+                            errorMessage = "Error: " + r.errorMessage;
+                            std::cerr << "SQL execution failed: " << r.errorMessage << std::endl;
+                            return std::make_pair(allSuccess, errorMessage);
                         }
+                    }
 
-                        bool allSuccess = true;
-                        std::string errorMessage;
+                    if (allSuccess) {
+                        std::cout << "All SQL statements executed successfully" << std::endl;
+                    }
 
-                        for (const auto& sql : sqlStatements) {
-                            std::cout << "Executing SQL: " << sql << std::endl;
-                            const auto result = node->executeQuery(sql);
-                            const auto& r =
-                                result.empty() ? StatementResult{} : result.statements.back();
-                            std::cout << "SQL Result: " << (r.success ? r.message : r.errorMessage)
-                                      << std::endl;
-
-                            if (!r.success) {
-                                allSuccess = false;
-                                errorMessage = "Error: " + r.errorMessage;
-                                std::cerr << "SQL execution failed: " << r.errorMessage
-                                          << std::endl;
-                                return std::make_pair(allSuccess, errorMessage);
-                            }
-                        }
-
-                        auto result = std::make_pair(allSuccess, errorMessage);
-
-                        if (result.first) {
-                            std::cout << "All SQL statements executed successfully" << std::endl;
-                        }
-
-                        return result;
-                    });
+                    return std::make_pair(allSuccess, errorMessage);
+                });
             }
         }
 
         ImGui::SameLine();
-        if (executingSQL) {
+        if (sqlExecutionOp.isRunning()) {
             ImGui::BeginDisabled();
             ImGui::Button("Cancel", ImVec2(120, 0));
             ImGui::EndDisabled();
@@ -891,42 +876,22 @@ void TableViewerTab::showSaveConfirmationDialog() {
 }
 
 void TableViewerTab::checkSQLExecutionStatus() {
-    if (!executingSQL || !sqlExecutionFuture.valid()) {
-        return;
-    }
+    sqlExecutionOp.check([this](std::pair<bool, std::string> result) {
+        auto [success, errorMessage] = result;
 
-    // Check if async execution is complete
-    if (sqlExecutionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            auto [success, errorMessage] = sqlExecutionFuture.get();
-
-            if (success) {
-                // Mark changes as saved
-                hasChanges = false;
-                originalData = tableData;
-                for (auto& row : editedCells) {
-                    std::fill(row.begin(), row.end(), false);
-                }
-            } else {
-                std::cerr << "Failed to execute SQL statements: " << errorMessage << std::endl;
-                // Keep the dialog open but reset execution state
+        if (success) {
+            hasChanges = false;
+            originalData = tableData;
+            for (auto& row : editedCells) {
+                std::fill(row.begin(), row.end(), false);
             }
-
-            // Reset execution state
-            executingSQL = false;
-
-            // Close dialog on successful execution, keep open on error for user to see
-            if (success) {
-                showSaveDialog = false;
-                pendingUpdateSQL.clear();
-                dialogOpened = false;
-            }
-
-        } catch (const std::exception& e) {
-            std::cerr << "Exception during SQL execution: " << e.what() << std::endl;
-            executingSQL = false;
+            showSaveDialog = false;
+            pendingUpdateSQL.clear();
+            dialogOpened = false;
+        } else {
+            std::cerr << "Failed to execute SQL statements: " << errorMessage << std::endl;
         }
-    }
+    });
 }
 
 void TableViewerTab::applyFilter() {

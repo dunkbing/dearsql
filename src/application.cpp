@@ -450,7 +450,8 @@ void Application::restorePreviousConnections() {
     for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
 
-        if (conn.connectionInfo.type == DatabaseType::POSTGRESQL) {
+        if (conn.connectionInfo.type == DatabaseType::POSTGRESQL ||
+            conn.connectionInfo.type == DatabaseType::REDSHIFT) {
             db = std::make_shared<PostgresDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MYSQL ||
                    conn.connectionInfo.type == DatabaseType::MARIADB) {

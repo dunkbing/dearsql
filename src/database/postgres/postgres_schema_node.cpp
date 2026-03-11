@@ -2,6 +2,7 @@
 #include "database/db.hpp"
 #include "database/ddl_builder.hpp"
 #include "database/postgres/postgres_database_node.hpp"
+#include "database/postgresql.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <format>
@@ -863,6 +864,13 @@ std::string PostgresSchemaNode::getFullPath() const {
         return name;
     }
     return parentDbNode->name + "." + name;
+}
+
+DatabaseType PostgresSchemaNode::getDatabaseType() const {
+    if (parentDbNode && parentDbNode->parentDb) {
+        return parentDbNode->parentDb->getConnectionInfo().type;
+    }
+    return DatabaseType::POSTGRESQL;
 }
 
 void PostgresSchemaNode::checkLoadingStatus() {

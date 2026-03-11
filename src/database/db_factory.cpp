@@ -26,6 +26,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "mssql";
     case DatabaseType::ORACLE:
         return "oracle";
+    case DatabaseType::REDSHIFT:
+        return "redshift";
     }
     return "unknown";
 }
@@ -47,6 +49,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::MSSQL;
     if (typeStr == "oracle")
         return DatabaseType::ORACLE;
+    if (typeStr == "redshift")
+        return DatabaseType::REDSHIFT;
     return DatabaseType::SQLITE; // default
 }
 
@@ -110,6 +114,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::ORACLE:
         return std::make_shared<OracleDatabase>(info);
+
+    case DatabaseType::REDSHIFT:
+        return std::make_shared<PostgresDatabase>(info);
 
     default:
         return nullptr;

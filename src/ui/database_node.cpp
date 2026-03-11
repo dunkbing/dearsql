@@ -88,7 +88,7 @@ void DatabaseHierarchy::renderRootNode() {
 
     if (dbType == DatabaseType::SQLITE) {
         renderSQLiteNode();
-    } else if (dbType == DatabaseType::POSTGRESQL) {
+    } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
         if (!pgDb) {
             return;
@@ -416,12 +416,12 @@ void DatabaseHierarchy::renderSQLiteNode() {
         }
 
         if (tablesOpen) {
-            if (!sqliteDb->areTablesLoaded() && !sqliteDb->loadingTables) {
+            if (!sqliteDb->areTablesLoaded() && !sqliteDb->isLoadingTables()) {
                 sqliteDb->startTablesLoadAsync();
             }
 
-            if (sqliteDb->loadingTables) {
-                sqliteDb->checkTablesStatusAsync();
+            if (sqliteDb->isLoadingTables()) {
+                sqliteDb->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading tables...");
                 ImGui::SameLine(0, Theme::Spacing::S);
@@ -463,12 +463,12 @@ void DatabaseHierarchy::renderSQLiteNode() {
         }
 
         if (viewsOpen) {
-            if (!sqliteDb->viewsLoaded && !sqliteDb->loadingViews.load()) {
+            if (!sqliteDb->viewsLoaded && !sqliteDb->isLoadingViews()) {
                 sqliteDb->startViewsLoadAsync();
             }
 
-            if (sqliteDb->loadingViews) {
-                sqliteDb->checkViewsStatusAsync();
+            if (sqliteDb->isLoadingViews()) {
+                sqliteDb->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::Text("  Loading views...");
                 ImGui::SameLine(0, Theme::Spacing::S);

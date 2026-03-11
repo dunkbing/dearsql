@@ -50,6 +50,8 @@ namespace {
             conn.connectionInfo.type = DatabaseType::MSSQL;
         } else if (typeStr == "oracle") {
             conn.connectionInfo.type = DatabaseType::ORACLE;
+        } else if (typeStr == "redshift") {
+            conn.connectionInfo.type = DatabaseType::REDSHIFT;
         } else {
             Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
                                      typeStr, conn.connectionInfo.name));
@@ -402,6 +404,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::ORACLE:
         typeStr = "oracle";
         break;
+    case DatabaseType::REDSHIFT:
+        typeStr = "redshift";
+        break;
     }
 
     std::string saltBase64 =
@@ -513,6 +518,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         break;
     case DatabaseType::ORACLE:
         typeStr = "oracle";
+        break;
+    case DatabaseType::REDSHIFT:
+        typeStr = "redshift";
         break;
     }
 

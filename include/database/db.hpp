@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <future>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -127,13 +125,3 @@ namespace sql {
     std::string like(const std::string& column, const std::string& pattern);
     std::string ilike(const std::string& column, const std::string& pattern);
 } // namespace sql
-
-struct TableDataLoadState {
-    std::atomic<bool> loading{false};
-    std::atomic<bool> ready{false};
-    std::vector<std::vector<std::string>> tableData;
-    std::vector<std::string> columnNames;
-    int rowCount = 0;
-    std::string lastError;
-    std::future<void> future;
-};

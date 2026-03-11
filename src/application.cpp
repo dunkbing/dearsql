@@ -4,6 +4,7 @@
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
+#include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
@@ -462,6 +463,8 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<MongoDBDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MSSQL) {
             db = std::make_shared<MSSQLDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::ORACLE) {
+            db = std::make_shared<OracleDatabase>(conn.connectionInfo);
         } else {
             Logger::warn(std::format("Unknown database type {} for connection '{}', skipping",
                                      static_cast<int>(conn.connectionInfo.type),

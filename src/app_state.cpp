@@ -127,9 +127,11 @@ namespace {
             (showAllStr != "NULL" && showAllStr != "0" && !showAllStr.empty());
 
         std::string sslmodeStr = columnText(stmt, 13);
-        conn.connectionInfo.sslmode = (sslmodeStr == "NULL" || sslmodeStr.empty())
-                                          ? SslMode::Prefer
-                                          : stringToSslMode(sslmodeStr);
+        conn.connectionInfo.sslmode =
+            (sslmodeStr == "NULL" || sslmodeStr.empty())
+                ? (conn.connectionInfo.type == DatabaseType::ORACLE ? SslMode::Disable
+                                                                    : SslMode::Prefer)
+                : stringToSslMode(sslmodeStr);
 
         // SSH tunnel fields (columns 14-20)
         std::string sshEnabledStr = columnText(stmt, 14);

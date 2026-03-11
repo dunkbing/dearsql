@@ -57,6 +57,11 @@ namespace {
         std::transform(result.begin(), result.end(), result.begin(), ::toupper);
         return result;
     }
+
+    bool installerDownloadTestsEnabled() {
+        const char* enabledEnv = std::getenv("DEARSQL_TEST_ORACLE_INSTALLER_DOWNLOAD");
+        return enabledEnv && std::string(enabledEnv) == "1";
+    }
 } // namespace
 
 // ========== 1. Oracle Client Installer Tests (run first, no DB needed) ==========
@@ -85,6 +90,10 @@ TEST_F(OracleClientInstallerTest, NeedsClientInstallReflectsContext) {
 }
 
 TEST_F(OracleClientInstallerTest, DownloadAndInstallOracleClient) {
+    if (!installerDownloadTestsEnabled()) {
+        GTEST_SKIP() << "Set DEARSQL_TEST_ORACLE_INSTALLER_DOWNLOAD=1 to run download-based tests";
+    }
+
     if (OracleClientInstaller::isInstalled()) {
         GTEST_SKIP() << "Oracle Client already installed, skipping download test";
     }

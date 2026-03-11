@@ -6,6 +6,7 @@
 #include "database/db_interface.hpp"
 #include "database/oracle.hpp"
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <string>
 #include <vector>
@@ -184,14 +185,69 @@ inline std::string dpiQueryScalar(dpiConn* conn, const std::string& sql) {
     return list.empty() ? "" : list[0];
 }
 
+inline std::string oracleWalletLocation(const std::string& path) {
+    if (path.empty())
+        return {};
+
+    std::error_code ec;
+    std::filesystem::path walletPath(path);
+    if (std::filesystem::is_regular_file(walletPath, ec)) {
+        auto parent = walletPath.parent_path();
+        if (!parent.empty()) {
+            return parent.string();
+        }
+    }
+    return walletPath.string();
+}
+
+inline std::string buildOracleConnectString(const DatabaseConnectionInfo& info) {
+    const bool useTls = info.sslmode == SslMode::Require || info.sslmode == SslMode::VerifyCA ||
+                        info.sslmode == SslMode::VerifyFull;
+    const bool needsWallet =
+        info.sslmode == SslMode::VerifyCA || info.sslmode == SslMode::VerifyFull;
+
+    std::string connectString =
+        useTls ? std::format("tcps://{}:{}/{}", info.host, info.port, info.database)
+               : std::format("{}:{}/{}", info.host, info.port, info.database);
+
+    if (!useTls) {
+        return connectString;
+    }
+
+    std::vector<std::string> params;
+    if (info.sslmode == SslMode::Require) {
+        params.emplace_back("ssl_server_dn_match=off");
+    }
+
+    if (needsWallet) {
+        auto walletLocation = oracleWalletLocation(info.sslCACertPath);
+        if (walletLocation.empty()) {
+            throw std::runtime_error(
+                "Oracle TLS verify mode requires a wallet path or wallet file location");
+        }
+        params.push_back(std::format("wallet_location=\"{}\"", walletLocation));
+    }
+
+    if (!params.empty()) {
+        connectString += '?';
+        for (size_t i = 0; i < params.size(); ++i) {
+            if (i > 0) {
+                connectString += '&';
+            }
+            connectString += params[i];
+        }
+    }
+
+    return connectString;
+}
+
 // open a new ODPI-C connection
 inline dpiConn* openDpiConnection(const DatabaseConnectionInfo& info,
                                   const std::string& schema = "") {
     dpiContext* ctx = OracleDatabase::getContext();
     dpiConn* conn = nullptr;
 
-    // build connect string: host:port/service_name
-    std::string connStr = std::format("{}:{}/{}", info.host, info.port, info.database);
+    auto connStr = buildOracleConnectString(info);
 
     if (dpiConn_create(ctx, info.username.c_str(), static_cast<uint32_t>(info.username.size()),
                        info.password.c_str(), static_cast<uint32_t>(info.password.size()),

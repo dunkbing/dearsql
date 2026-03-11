@@ -90,6 +90,9 @@ void OracleDatabase::reinitContext() {
 
 OracleDatabase::OracleDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
+    if (connectionInfo.sslmode == SslMode::Prefer || connectionInfo.sslmode == SslMode::Allow) {
+        connectionInfo.sslmode = SslMode::Disable;
+    }
     Logger::debug(std::format("Creating OracleDatabase with service = '{}', showAllDatabases = {}",
                               connectionInfo.database, connInfo.showAllDatabases));
     // service name can be empty — connect() will auto-detect

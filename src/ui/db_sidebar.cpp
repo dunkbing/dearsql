@@ -503,6 +503,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
             mssqlDb->checkRefreshWorkflowAsync();
         }
+    } else if (type == DatabaseType::ORACLE) {
+        if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
+            oracleDb->checkRefreshWorkflowAsync();
+        }
     } else if (type == DatabaseType::REDIS) {
         if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
             redisDb->checkRefreshWorkflowAsync();

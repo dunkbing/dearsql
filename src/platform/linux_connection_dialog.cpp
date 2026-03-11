@@ -362,8 +362,10 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         GtkWidget* sslRow = makeRow(makeLabel("SSL Mode"), data->sslModeDropdown);
         gtk_box_append(GTK_BOX(data->fieldsBox), sslRow);
 
-        data->sslCACertPathEntry = makeEntry("/path/to/ca-cert.pem");
-        data->sslCACertPathRow = makeRow(makeLabel("CA Cert"), data->sslCACertPathEntry);
+        const bool isOracle = type == DatabaseType::ORACLE;
+        data->sslCACertPathEntry = makeEntry(isOracle ? "/path/to/wallet" : "/path/to/ca-cert.pem");
+        data->sslCACertPathRow =
+            makeRow(makeLabel(isOracle ? "Wallet" : "CA Cert"), data->sslCACertPathEntry);
         gtk_box_append(GTK_BOX(data->fieldsBox), data->sslCACertPathRow);
         gtk_widget_set_visible(data->sslCACertPathRow, FALSE);
 

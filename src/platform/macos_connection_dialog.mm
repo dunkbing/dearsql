@@ -791,6 +791,10 @@ static NSWindow* sActiveConnectionDialog = nil;
             auto cfg = getSslConfig(type);
             int sslIdx = (int)[self.sslModePopup indexOfSelectedItem];
             if (sslIdx >= 0 && sslIdx < cfg.count && sslModeNeedsCACert(cfg.values[sslIdx])) {
+                self.sslCACertPathLabel.stringValue =
+                    (type == DatabaseType::ORACLE) ? @"Wallet" : @"CA Cert";
+                self.sslCACertPathField.placeholderString =
+                    (type == DatabaseType::ORACLE) ? @"/path/to/wallet" : @"/path/to/ca-cert.pem";
                 self.sslCACertPathLabel.hidden = NO;
                 self.sslCACertPathField.hidden = NO;
                 y -= kRowHeight;

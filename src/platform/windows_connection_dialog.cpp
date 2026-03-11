@@ -269,6 +269,8 @@ static void updateFieldVisibility(HWND dialog, DatabaseType type) {
         auto sslCfg = getSslConfig(type);
         bool needsCACert =
             (sslIdx >= 0 && sslIdx < sslCfg.count) && sslModeNeedsCACert(sslCfg.values[sslIdx]);
+        SetWindowTextA(GetDlgItem(dialog, IDC_SSL_CA_CERT_LABEL),
+                       type == DatabaseType::ORACLE ? "Wallet:" : "CA cert:");
         showCtrl(dialog, IDC_SSL_CA_CERT_LABEL, needsCACert);
         showCtrl(dialog, IDC_SSL_CA_CERT_EDIT, needsCACert);
         showCtrl(dialog, IDC_SSL_CA_CERT_BROWSE, needsCACert);

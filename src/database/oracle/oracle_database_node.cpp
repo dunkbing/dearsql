@@ -721,6 +721,7 @@ Table OracleDatabaseNode::refreshTableAsync(const std::string& tableName) {
     std::string fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
         return loadTableMetadata(conn, name, tableName, fullName);
@@ -742,6 +743,7 @@ OracleDatabaseNode::getTableData(const std::string& tableName, const int limit, 
     std::string qualified = quoteOracleTable(name, tableName);
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
 
@@ -773,6 +775,7 @@ std::vector<std::string> OracleDatabaseNode::getColumnNames(const std::string& t
     std::vector<std::string> columnNames;
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
 
@@ -794,6 +797,7 @@ int OracleDatabaseNode::getRowCount(const std::string& tableName, const std::str
     std::string qualified = quoteOracleTable(name, tableName);
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
 
@@ -817,6 +821,7 @@ QueryResult OracleDatabaseNode::executeQuery(const std::string& query, int rowLi
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
         result = dpiExecuteQuery(conn, query, rowLimit);

@@ -39,7 +39,7 @@ struct DatabaseConnectionInfo {
     std::string password;
     bool showAllDatabases = false;
     SslMode sslmode = SslMode::Prefer; // SSL mode (all server backends)
-    std::string sslCACertPath;         // CA certificate for verify-ca/verify-full
+    std::string sslCACertPath;         // CA certificate or Oracle wallet path
     SSHConfig ssh;
 
     // Build database-specific connection string

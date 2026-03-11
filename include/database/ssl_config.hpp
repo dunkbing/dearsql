@@ -27,6 +27,11 @@ inline constexpr const char* kMssqlSslLabels[] = {"Off", "Encrypt", "Encrypt + V
 inline constexpr SslMode kMssqlSslValues[] = {SslMode::Disable, SslMode::Require, SslMode::VerifyCA,
                                               SslMode::VerifyFull};
 
+// Oracle: wallet-based TLS (simplified)
+inline constexpr const char* kOracleSslLabels[] = {"Off", "TLS", "TLS + Verify"};
+inline constexpr SslMode kOracleSslValues[] = {SslMode::Disable, SslMode::Require,
+                                               SslMode::VerifyCA};
+
 // MongoDB/Redis: simple on/off TLS
 inline constexpr const char* kSimpleSslLabels[] = {"Off", "TLS", "TLS + Verify CA"};
 inline constexpr SslMode kSimpleSslModeValues[] = {SslMode::Disable, SslMode::Require,
@@ -41,6 +46,8 @@ inline SslModeConfig getSslConfig(DatabaseType type) {
         return {kMySqlSslLabels, kMySqlSslValues, 5, 1};
     case DatabaseType::MSSQL:
         return {kMssqlSslLabels, kMssqlSslValues, 4, 0};
+    case DatabaseType::ORACLE:
+        return {kOracleSslLabels, kOracleSslValues, 3, 0};
     default:
         return {kSimpleSslLabels, kSimpleSslModeValues, 3, 0};
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include "database/oracle/oracle_client_installer.hpp"
 #include "database_node.hpp"
 #include "imgui.h"
 #include <memory>
@@ -31,6 +32,8 @@ private:
 
     bool historyPanelOpen = false;
     bool texturesLoaded_ = false;
+
+    OracleClientInstaller oracleClientInstaller_;
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer)
     std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;

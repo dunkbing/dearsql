@@ -75,6 +75,7 @@ private:
     void renderConnectionInfoPostgres();
     void renderConnectionInfoMySQL();
     void renderConnectionInfoMSSQL();
+    void renderConnectionInfoOracle();
     void renderConnectionInfoSQLite();
     void renderToolbar();
     void renderQueryResults() const;

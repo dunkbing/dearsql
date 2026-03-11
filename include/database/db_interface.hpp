@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB, MSSQL };
+enum class DatabaseType { SQLITE, POSTGRESQL, MYSQL, MARIADB, REDIS, MONGODB, MSSQL, ORACLE };
 
 enum class SSHAuthMethod { Password, PrivateKey };
 
@@ -131,6 +131,11 @@ struct DatabaseConnectionInfo {
         case DatabaseType::MSSQL: {
             // FreeTDS uses host:port format for dbopen()
             return host + ":" + std::to_string(port);
+        }
+
+        case DatabaseType::ORACLE: {
+            // OCI Easy Connect: //host:port/service_name
+            return "//" + host + ":" + std::to_string(port) + "/" + database;
         }
 
         default:
@@ -283,6 +288,10 @@ public:
         }
         case DatabaseType::MSSQL: {
             connectionInfo.database = "master";
+            break;
+        }
+        case DatabaseType::ORACLE: {
+            connectionInfo.database = "ORCL";
             break;
         }
         default:

@@ -6,6 +6,7 @@
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
+#include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
@@ -331,6 +332,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         defaultPort = "6379";
     else if (type == DatabaseType::MSSQL)
         defaultPort = "1433";
+    else if (type == DatabaseType::ORACLE)
+        defaultPort = "1521";
     gtk_editable_set_text(GTK_EDITABLE(data->portEntry), defaultPort);
 
     GtkWidget* hostRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -344,8 +347,11 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
 
     // Database (not for Redis)
     if (type != DatabaseType::REDIS) {
-        data->databaseEntry = makeEntry("(optional)");
-        GtkWidget* dbRow = makeRow(makeLabel("Database"), data->databaseEntry);
+        const char* dbLabel = type == DatabaseType::ORACLE ? "Service" : "Database";
+        const char* dbPlaceholder =
+            type == DatabaseType::ORACLE ? "e.g. XEPDB1, ORCL, FREEPDB1" : "(optional)";
+        data->databaseEntry = makeEntry(dbPlaceholder);
+        GtkWidget* dbRow = makeRow(makeLabel(dbLabel), data->databaseEntry);
         gtk_box_append(GTK_BOX(data->fieldsBox), dbRow);
     }
 
@@ -840,6 +846,10 @@ static void connectServerAsync(ConnectionDialogData* data) {
             info.database = dbStr.empty() ? "master" : dbStr;
             db = std::make_shared<MSSQLDatabase>(info);
             break;
+        case DatabaseType::ORACLE:
+            info.database = dbStr;
+            db = std::make_shared<OracleDatabase>(info);
+            break;
         default:
             break;
         }
@@ -923,8 +933,8 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
 
     // Type dropdown
     static const char* typeNames[] = {"SQLite", "PostgreSQL", "MySQL", "MariaDB",
-                                      "Redis",  "MongoDB",    "MSSQL"};
-    data->typeDropdown = makeStringDropdown(typeNames, 7, static_cast<int>(initialType));
+                                      "Redis",  "MongoDB",    "MSSQL", "Oracle"};
+    data->typeDropdown = makeStringDropdown(typeNames, 8, static_cast<int>(initialType));
 
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);

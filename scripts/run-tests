@@ -12,6 +12,7 @@ MYSQL_CONTAINER="dearsql-mysql-test"
 REDIS_CONTAINER="dearsql-redis-test"
 MONGODB_CONTAINER="dearsql-mongodb-test"
 MSSQL_CONTAINER="dearsql-mssql-test"
+ORACLE_CONTAINER="dearsql-oracle-test"
 SSH_CONTAINER="dearsql-ssh-test"
 
 # Docker images
@@ -20,6 +21,7 @@ MYSQL_IMAGE="mysql:8.0"
 REDIS_IMAGE="redis:7-alpine"
 MONGODB_IMAGE="mongo:7.0"
 MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
+ORACLE_IMAGE="gvenzl/oracle-xe:21-slim-faststart"
 SSH_IMAGE="dearsql-ssh-test-img"
 
 # for SSH tunnel tests
@@ -32,6 +34,7 @@ REDIS_PORT="${REDIS_PORT:-56379}"
 REDIS_TLS_PORT="${REDIS_TLS_PORT:-56380}"
 MONGODB_PORT="${MONGODB_PORT:-57017}"
 MSSQL_PORT="${MSSQL_PORT:-51433}"
+ORACLE_PORT="${ORACLE_PORT:-51521}"
 SSH_PORT="${SSH_PORT:-52222}"
 
 # TLS cert directory
@@ -69,6 +72,13 @@ export DEARSQL_TEST_MSSQL_DB="dearsql_test"
 export DEARSQL_TEST_MSSQL_USER="sa"
 export DEARSQL_TEST_MSSQL_PASSWORD="DearSQL_Test1!"
 export DEARSQL_TEST_MSSQL_NAME="MSSQLDocker"
+
+export DEARSQL_TEST_ORACLE_HOST="127.0.0.1"
+export DEARSQL_TEST_ORACLE_PORT="$ORACLE_PORT"
+export DEARSQL_TEST_ORACLE_DB="XEPDB1"
+export DEARSQL_TEST_ORACLE_USER="system"
+export DEARSQL_TEST_ORACLE_PASSWORD="DearSQL_Test1"
+export DEARSQL_TEST_ORACLE_NAME="OracleDocker"
 
 # SSH tunnel test env vars
 export DEARSQL_TEST_SSH_HOST="127.0.0.1"
@@ -272,6 +282,7 @@ all_ports_open() {
     port_open 127.0.0.1 "$REDIS_PORT" &&
     port_open 127.0.0.1 "$MONGODB_PORT" &&
     port_open 127.0.0.1 "$MSSQL_PORT" &&
+    port_open 127.0.0.1 "$ORACLE_PORT" &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$REDIS_TLS_PORT"; } &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SSH_PORT"; } &&
     ssh_test_environment_ready
@@ -394,6 +405,15 @@ setup_containers() {
         -Q "IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '$DEARSQL_TEST_MSSQL_DB') CREATE DATABASE [$DEARSQL_TEST_MSSQL_DB]" \
         >/dev/null 2>&1 || true
 
+    # ── Oracle XE (faststart image for quick startup) ──
+    start_or_create "$ORACLE_CONTAINER" \
+        -e "ORACLE_PASSWORD=$DEARSQL_TEST_ORACLE_PASSWORD" \
+        -p "127.0.0.1:${ORACLE_PORT}:1521" \
+        "$ORACLE_IMAGE"
+    wait_for_port 127.0.0.1 "$ORACLE_PORT" "Oracle"
+    wait_for_command "Oracle" 120 docker_cmd exec "$ORACLE_CONTAINER" \
+        healthcheck.sh
+
     # ── SSH server (for tunnel tests, same network as PostgreSQL) ──
     if $has_certs; then
         # build minimal SSH image with the test public key baked in
@@ -463,6 +483,7 @@ echo "MySQL:       $DEARSQL_TEST_MYSQL_HOST:$DEARSQL_TEST_MYSQL_PORT"
 echo "Redis:       $DEARSQL_TEST_REDIS_HOST:$DEARSQL_TEST_REDIS_PORT (TLS: $REDIS_TLS_PORT)"
 echo "MongoDB:     $DEARSQL_TEST_MONGODB_HOST:$DEARSQL_TEST_MONGODB_PORT"
 echo "MSSQL:       $DEARSQL_TEST_MSSQL_HOST:$DEARSQL_TEST_MSSQL_PORT"
+echo "Oracle:      $DEARSQL_TEST_ORACLE_HOST:$DEARSQL_TEST_ORACLE_PORT"
 echo "SSH:         $DEARSQL_TEST_SSH_HOST:$DEARSQL_TEST_SSH_PORT"
 echo "CA cert:     ${DEARSQL_TEST_CA_CERT:-<not available>}"
 echo ""

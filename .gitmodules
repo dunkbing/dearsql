@@ -27,3 +27,6 @@
 [submodule "external/tree-sitter-json"]
 	path = external/tree-sitter-json
 	url = https://github.com/tree-sitter/tree-sitter-json.git
+[submodule "external/odpi"]
+	path = external/odpi
+	url = https://github.com/oracle/odpi.git

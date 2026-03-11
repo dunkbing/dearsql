@@ -4,6 +4,7 @@
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "database/mssql/mssql_database_node.hpp"
 #include "database/mysql/mysql_database_node.hpp"
+#include "database/oracle/oracle_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
@@ -51,6 +52,7 @@ private:
                                   PostgresSchemaNode* schemaData);
     void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
     void renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData);
+    void renderOracleDatabaseNode(OracleDatabaseNode* dbData);
     void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
     void renderSQLiteNode();
 
@@ -62,6 +64,8 @@ private:
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
     void renderMSSQLTableNode(Table& table, MSSQLDatabaseNode* dbData);
     void renderMSSQLViewNode(Table& view, MSSQLDatabaseNode* dbData);
+    void renderOracleTableNode(Table& table, OracleDatabaseNode* dbData);
+    void renderOracleViewNode(Table& view, OracleDatabaseNode* dbData);
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
     void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);
     void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);

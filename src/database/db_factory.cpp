@@ -2,6 +2,7 @@
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
+#include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
@@ -23,6 +24,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "mariadb";
     case DatabaseType::MSSQL:
         return "mssql";
+    case DatabaseType::ORACLE:
+        return "oracle";
     }
     return "unknown";
 }
@@ -42,6 +45,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::MARIADB;
     if (typeStr == "mssql")
         return DatabaseType::MSSQL;
+    if (typeStr == "oracle")
+        return DatabaseType::ORACLE;
     return DatabaseType::SQLITE; // default
 }
 
@@ -102,6 +107,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::MSSQL:
         return std::make_shared<MSSQLDatabase>(info);
+
+    case DatabaseType::ORACLE:
+        return std::make_shared<OracleDatabase>(info);
 
     default:
         return nullptr;

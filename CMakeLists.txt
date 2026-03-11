@@ -88,6 +88,7 @@ find_package(GTest CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
 include(cmake/FreeTDS.cmake)
+include(cmake/OracleOCI.cmake)
 
 enable_testing()
 
@@ -203,6 +204,9 @@ set(APP_SOURCES
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
+    src/database/oracle.cpp
+    src/database/oracle/oracle_database_node.cpp
+    src/database/oracle/oracle_client_installer.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
@@ -345,6 +349,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     sentry::sentry
     ${SYBDB_LIBRARY}
     ${SYBDB_DEPS}
+    odpi
     tree-sitter-core
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
@@ -443,6 +448,7 @@ add_executable(database_tests
     tests/database/redis_database_test.cpp
     tests/database/mongodb_database_test.cpp
     tests/database/mssql_database_test.cpp
+    tests/database/oracle_database_test.cpp
     tests/database/ssl_connection_test.cpp
     tests/database/ssh_tunnel_test.cpp
     tests/database/sql_builder_test.cpp
@@ -458,6 +464,9 @@ add_executable(database_tests
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
+    src/database/oracle.cpp
+    src/database/oracle/oracle_database_node.cpp
+    src/database/oracle/oracle_client_installer.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
@@ -475,6 +484,7 @@ endif()
 target_include_directories(database_tests PRIVATE
     include
     tests/database
+    external/cpp-httplib
 )
 if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
     target_include_directories(database_tests SYSTEM AFTER PRIVATE ${SYBDB_INCLUDE_DIR})
@@ -491,6 +501,7 @@ target_link_libraries(database_tests PRIVATE
     $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
     ${SYBDB_LIBRARY}
     ${SYBDB_DEPS}
+    odpi
 )
 
 add_test(NAME database_tests COMMAND database_tests)

@@ -4,6 +4,7 @@
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
+#include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
@@ -350,6 +351,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"Redis"];
     [self.typePopup addItemWithTitle:@"MongoDB"];
     [self.typePopup addItemWithTitle:@"MSSQL"];
+    [self.typePopup addItemWithTitle:@"Oracle"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -956,6 +958,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portField.stringValue = @"1433";
         self.authSegment.selectedSegment = 0;
         break;
+    case DatabaseType::ORACLE:
+        self.portField.stringValue = @"1521";
+        self.authSegment.selectedSegment = 0;
+        break;
     }
 
     // Clear status
@@ -1195,6 +1201,10 @@ static NSWindow* sActiveConnectionDialog = nil;
       case DatabaseType::MSSQL:
           info.database = database.empty() ? "master" : database;
           db = std::make_shared<MSSQLDatabase>(info);
+          break;
+      case DatabaseType::ORACLE:
+          info.database = database;
+          db = std::make_shared<OracleDatabase>(info);
           break;
       default:
           break;

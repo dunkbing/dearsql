@@ -5,6 +5,8 @@
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
+#include "database/oracle.hpp"
+#include "database/oracle/oracle_client_installer.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
@@ -528,6 +530,35 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
+
+            // offer Oracle Client install when not available
+            if (connectionInfo.type == DatabaseType::ORACLE &&
+                OracleDatabase::needsClientInstall()) {
+                auto& installer = oracleClientInstaller_;
+                installer.checkStatus();
+
+                if (installer.isRunning()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  %s", installer.getStatusMessage().c_str());
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    UIUtils::Spinner("##oracle_install_spinner", 6.0f, 2,
+                                     ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (installer.getStatus() == OracleClientInstaller::Status::Done) {
+                    OracleDatabase::reinitContext();
+                    db->startConnectionAsync();
+                } else {
+                    ImGui::Indent(Theme::Spacing::M);
+                    if (ImGui::SmallButton(ICON_FA_DOWNLOAD " Install Oracle Instant Client")) {
+                        installer.startInstall();
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(
+                            "Downloads Oracle Instant Client Basic Lite (~30MB) to ~/.dearsql/");
+                    }
+                    ImGui::Unindent(Theme::Spacing::M);
+                }
+            }
         } else if (db->isConnected()) {
             // Use cached hierarchy for rendering (avoids creating new objects every frame)
             if (auto* hierarchy = getHierarchy(db)) {

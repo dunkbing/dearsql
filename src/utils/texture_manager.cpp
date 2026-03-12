@@ -24,12 +24,11 @@ void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
     };
 
     static constexpr IconMapping mappings[] = {
-        {DatabaseType::SQLITE, "sqlite"},     {DatabaseType::DUCKDB, "sqlite"},
-        {DatabaseType::POSTGRESQL, "postgres"},
-        {DatabaseType::MYSQL, "mysql"},       {DatabaseType::MARIADB, "mariadb"},
-        {DatabaseType::MONGODB, "mongodb"},   {DatabaseType::REDIS, "redis"},
-        {DatabaseType::MSSQL, "mssql"},       {DatabaseType::ORACLE, "oracle"},
-        {DatabaseType::REDSHIFT, "redshift"},
+        {DatabaseType::SQLITE, "sqlite"},       {DatabaseType::DUCKDB, "duckdb"},
+        {DatabaseType::POSTGRESQL, "postgres"}, {DatabaseType::MYSQL, "mysql"},
+        {DatabaseType::MARIADB, "mariadb"},     {DatabaseType::MONGODB, "mongodb"},
+        {DatabaseType::REDIS, "redis"},         {DatabaseType::MSSQL, "mssql"},
+        {DatabaseType::ORACLE, "oracle"},       {DatabaseType::REDSHIFT, "redshift"},
     };
 
     for (const auto& [type, name] : mappings) {

@@ -1,4 +1,5 @@
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -6,7 +7,6 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "database/duckdb.hpp"
 
 // Helper functions to convert between DatabaseType enum and strings
 std::string databaseTypeToString(const DatabaseType type) {

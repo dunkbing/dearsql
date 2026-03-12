@@ -1,6 +1,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -9,7 +10,6 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "database/duckdb.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
 #include "utils/file_dialog.hpp"
@@ -1089,7 +1089,6 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.statusLabel.textColor = [NSColor systemRedColor];
     }
 }
-
 
 - (void)connectDuckDB {
     std::string dbPath = [self.sqlitePathField.stringValue UTF8String];

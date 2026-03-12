@@ -44,8 +44,16 @@ echo "Building DearSQL..."
 cmake --build "$BUILD_DIR" --target dearsql
 
 if [[ "$(uname)" == "Darwin" ]]; then
+    if [[ "$BUILD_TYPE" == "Release" ]]; then
+        strip -x "$BUILD_DIR/DearSQL.app/Contents/MacOS/DearSQL" 2>/dev/null || true
+    fi
     echo "Build complete: $BUILD_DIR/DearSQL.app"
     exit 0
+fi
+
+# strip release binaries
+if [[ "$BUILD_TYPE" == "Release" ]]; then
+    strip --strip-all "$BUILD_DIR/dearsql" 2>/dev/null || true
 fi
 
 echo "Build complete: $BUILD_DIR/dearsql"

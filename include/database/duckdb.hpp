@@ -26,32 +26,52 @@ public:
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
-    std::vector<Table>& getTables() override { return tables; }
-    const std::vector<Table>& getTables() const override { return tables; }
-    std::vector<Table>& getViews() override { return views; }
-    const std::vector<Table>& getViews() const override { return views; }
+    std::vector<Table>& getTables() override {
+        return tables;
+    }
+    const std::vector<Table>& getTables() const override {
+        return tables;
+    }
+    std::vector<Table>& getViews() override {
+        return views;
+    }
+    const std::vector<Table>& getViews() const override {
+        return views;
+    }
 
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset) {
         return getTableData(tableName, limit, offset, "");
     }
-    std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset, const std::string& whereClause,
-                 const std::string& orderBy = "") override;
+    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
+                                                       int offset, const std::string& whereClause,
+                                                       const std::string& orderBy = "") override;
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
 
-    [[nodiscard]] bool isTablesLoaded() const override { return tablesLoaded; }
-    [[nodiscard]] bool isViewsLoaded() const override { return viewsLoaded; }
-    [[nodiscard]] bool isLoadingTables() const override { return tablesLoader.isRunning(); }
-    [[nodiscard]] bool isLoadingViews() const override { return viewsLoader.isRunning(); }
+    [[nodiscard]] bool isTablesLoaded() const override {
+        return tablesLoaded;
+    }
+    [[nodiscard]] bool isViewsLoaded() const override {
+        return viewsLoaded;
+    }
+    [[nodiscard]] bool isLoadingTables() const override {
+        return tablesLoader.isRunning();
+    }
+    [[nodiscard]] bool isLoadingViews() const override {
+        return viewsLoader.isRunning();
+    }
 
     void startTablesLoadAsync(bool force = false) override;
     void startViewsLoadAsync(bool force = false) override;
     void checkLoadingStatus() override;
 
-    [[nodiscard]] const std::string& getLastTablesError() const override { return lastTablesError; }
-    [[nodiscard]] const std::string& getLastViewsError() const override { return lastViewsError; }
+    [[nodiscard]] const std::string& getLastTablesError() const override {
+        return lastTablesError;
+    }
+    [[nodiscard]] const std::string& getLastViewsError() const override {
+        return lastViewsError;
+    }
 
     void startTableRefreshAsync(const std::string& tableName) override;
     [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;

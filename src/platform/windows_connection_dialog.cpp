@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -10,7 +11,6 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "database/duckdb.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
@@ -630,7 +630,7 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         makeCtrl("STATIC", "Type:", IDC_LABEL_TYPE, SS_RIGHT, LX, y + 3, LW, RH);
         HWND typeCombo =
             makeCtrl("COMBOBOX", "", IDC_TYPE_COMBO, CBS_DROPDOWNLIST | WS_TABSTOP, FX, y, FW, 200);
-        const char* types[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
+        const char* types[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB",  "Redis",
                                "MongoDB", "MSSQL",      "Oracle", "Redshift", "DuckDB"};
         for (const char* t : types) {
             SendMessageA(typeCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t));

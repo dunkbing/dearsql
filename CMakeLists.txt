@@ -48,6 +48,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# release build size optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+    # enable LTO for cross-TU dead code elimination
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+
+    # split functions/data into sections so linker can discard unused ones
+    add_compile_options(-ffunction-sections -fdata-sections)
+    if(APPLE)
+        add_link_options(-Wl,-dead_strip)
+    else()
+        add_link_options(-Wl,--gc-sections)
+    endif()
+endif()
+
 if(APPLE)
     # Enable experimental C++20 features (jthread, stop_token) in libc++
     add_compile_options(-fexperimental-library)
@@ -76,7 +90,7 @@ configure_file(
 
 # vcpkg packages (cross-platform)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(unofficial-duckdb CONFIG REQUIRED)
+find_package(DuckDB CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -331,7 +345,7 @@ endif()
 # link libraries (common - vcpkg packages)
 target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
-    unofficial::duckdb::duckdb
+    ${DuckDB_LIBRARIES}
     nlohmann_json::nlohmann_json
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
@@ -491,7 +505,7 @@ endif()
 target_link_libraries(database_tests PRIVATE
     GTest::gtest_main
     unofficial::sqlite3::sqlite3
-    unofficial::duckdb::duckdb
+    ${DuckDB_LIBRARIES}
     PostgreSQL::PostgreSQL
     unofficial::libmysql::libmysql
     hiredis::hiredis

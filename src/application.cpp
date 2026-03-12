@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -8,7 +9,6 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "database/duckdb.hpp"
 #include "license/license_manager.hpp"
 
 #if defined(__APPLE__)

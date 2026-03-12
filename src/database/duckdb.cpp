@@ -6,41 +6,42 @@
 #include <format>
 
 namespace {
-std::vector<std::vector<std::string>> queryRows(duckdb_connection conn, const std::string& sql,
-                                                std::vector<std::string>* columnNames = nullptr) {
-    std::vector<std::vector<std::string>> rows;
-    duckdb_result result;
-    if (duckdb_query(conn, sql.c_str(), &result) != DuckDBSuccess) {
-        throw std::runtime_error(duckdb_result_error(&result));
-    }
-
-    const idx_t colCount = duckdb_column_count(&result);
-    const idx_t rowCount = duckdb_row_count(&result);
-
-    if (columnNames) {
-        columnNames->clear();
-        for (idx_t col = 0; col < colCount; ++col) {
-            columnNames->emplace_back(duckdb_column_name(&result, col));
+    std::vector<std::vector<std::string>>
+    queryRows(duckdb_connection conn, const std::string& sql,
+              std::vector<std::string>* columnNames = nullptr) {
+        std::vector<std::vector<std::string>> rows;
+        duckdb_result result;
+        if (duckdb_query(conn, sql.c_str(), &result) != DuckDBSuccess) {
+            throw std::runtime_error(duckdb_result_error(&result));
         }
-    }
 
-    for (idx_t row = 0; row < rowCount; ++row) {
-        std::vector<std::string> rowData;
-        for (idx_t col = 0; col < colCount; ++col) {
-            if (duckdb_value_is_null(&result, col, row)) {
-                rowData.emplace_back("NULL");
-                continue;
+        const idx_t colCount = duckdb_column_count(&result);
+        const idx_t rowCount = duckdb_row_count(&result);
+
+        if (columnNames) {
+            columnNames->clear();
+            for (idx_t col = 0; col < colCount; ++col) {
+                columnNames->emplace_back(duckdb_column_name(&result, col));
             }
-            auto* str = duckdb_value_varchar(&result, col, row);
-            rowData.emplace_back(str ? str : "");
-            duckdb_free(str);
         }
-        rows.push_back(std::move(rowData));
-    }
 
-    duckdb_destroy_result(&result);
-    return rows;
-}
+        for (idx_t row = 0; row < rowCount; ++row) {
+            std::vector<std::string> rowData;
+            for (idx_t col = 0; col < colCount; ++col) {
+                if (duckdb_value_is_null(&result, col, row)) {
+                    rowData.emplace_back("NULL");
+                    continue;
+                }
+                auto* str = duckdb_value_varchar(&result, col, row);
+                rowData.emplace_back(str ? str : "");
+                duckdb_free(str);
+            }
+            rows.push_back(std::move(rowData));
+        }
+
+        duckdb_destroy_result(&result);
+        return rows;
+    }
 } // namespace
 
 DuckDBDatabase::DuckDBDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -163,9 +164,9 @@ DuckDBDatabase::getTableData(const std::string& tableName, int limit, int offset
 
 int DuckDBDatabase::getRowCount(const std::string& tableName, const std::string& whereClause) {
     try {
-        auto sql = whereClause.empty() ? std::format("SELECT COUNT(*) FROM {}", tableName)
-                                       : std::format("SELECT COUNT(*) FROM {} WHERE {}", tableName,
-                                                     whereClause);
+        auto sql = whereClause.empty()
+                       ? std::format("SELECT COUNT(*) FROM {}", tableName)
+                       : std::format("SELECT COUNT(*) FROM {} WHERE {}", tableName, whereClause);
         auto rows = queryRows(conn_, sql);
         if (!rows.empty() && !rows[0].empty())
             return std::stoi(rows[0][0]);
@@ -198,9 +199,8 @@ Table DuckDBDatabase::loadTableMetadata(const std::string& tableName) const {
 std::vector<Table> DuckDBDatabase::getTablesAsync() const {
     std::vector<Table> out;
     auto names = queryRows(
-        conn_,
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND "
-        "table_type='BASE TABLE' ORDER BY table_name");
+        conn_, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND "
+               "table_type='BASE TABLE' ORDER BY table_name");
     for (const auto& row : names) {
         if (row.empty())
             continue;
@@ -213,9 +213,8 @@ std::vector<Table> DuckDBDatabase::getTablesAsync() const {
 std::vector<Table> DuckDBDatabase::getViewsAsync() const {
     std::vector<Table> out;
     auto names = queryRows(
-        conn_,
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND "
-        "table_type='VIEW' ORDER BY table_name");
+        conn_, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' AND "
+               "table_type='VIEW' ORDER BY table_name");
     for (const auto& row : names) {
         if (row.empty())
             continue;
@@ -259,9 +258,8 @@ void DuckDBDatabase::checkLoadingStatus() {
     for (auto it = tableRefreshLoaders.begin(); it != tableRefreshLoaders.end();) {
         const auto tableName = it->first;
         it->second.check([this, tableName](Table refreshed) {
-            auto found = std::find_if(tables.begin(), tables.end(), [&](const Table& t) {
-                return t.name == tableName;
-            });
+            auto found = std::find_if(tables.begin(), tables.end(),
+                                      [&](const Table& t) { return t.name == tableName; });
             if (found != tables.end()) {
                 *found = std::move(refreshed);
             }

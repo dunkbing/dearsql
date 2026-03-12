@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -11,7 +12,6 @@
 #include "database/query_executor.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
-#include "database/duckdb.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
@@ -938,7 +938,7 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
     gtk_box_append(GTK_BOX(mainBox), nameRow);
 
     // Type dropdown
-    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
+    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB",  "Redis",
                                       "MongoDB", "MSSQL",      "Oracle", "Redshift", "DuckDB"};
     data->typeDropdown = makeStringDropdown(typeNames, 10, static_cast<int>(initialType));
 
@@ -1143,7 +1143,8 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     }
 
     // Restore SSL mode (all server types)
-    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB && data->sslModeDropdown) {
+    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB &&
+        data->sslModeDropdown) {
         auto sslCfg = getSslConfig(info.type);
         for (int i = 0; i < sslCfg.count; i++) {
             if (info.sslmode == sslCfg.values[i]) {
@@ -1157,7 +1158,8 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     }
 
     // Restore SSH tunnel fields (all server types)
-    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB && info.ssh.enabled) {
+    if (info.type != DatabaseType::SQLITE && info.type != DatabaseType::DUCKDB &&
+        info.ssh.enabled) {
         if (data->sshEnabledCheck)
             gtk_check_button_set_active(GTK_CHECK_BUTTON(data->sshEnabledCheck), TRUE);
         if (data->sshHostEntry)
@@ -1548,7 +1550,6 @@ void showEditConnectionDialog(Application* app, std::shared_ptr<DatabaseInterfac
     sActiveConnectionDialog = dialog;
     presentConnectionDialogDeferred(data);
 }
-
 
 static void connectDuckDB(ConnectionDialogData* data) {
     const char* path = gtk_editable_get_text(GTK_EDITABLE(data->sqlitePathEntry));

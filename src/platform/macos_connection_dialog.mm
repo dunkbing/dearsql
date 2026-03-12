@@ -1,5 +1,6 @@
 #include "app_state.hpp"
 #include "application.hpp"
+#include "database/bigquery.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -243,6 +244,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         break;
     }
 
+    case DatabaseType::BIGQUERY:
     case DatabaseType::MSSQL:
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
@@ -356,6 +358,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"MSSQL"];
     [self.typePopup addItemWithTitle:@"Oracle"];
     [self.typePopup addItemWithTitle:@"Redshift"];
+    [self.typePopup addItemWithTitle:@"BigQuery"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -976,6 +979,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portField.stringValue = @"5439";
         self.authSegment.selectedSegment = 0;
         break;
+    case DatabaseType::BIGQUERY:
+        self.portField.stringValue = @"443";
+        self.authSegment.selectedSegment = 0;
+        break;
     }
 
     // Clear status
@@ -1223,6 +1230,10 @@ static NSWindow* sActiveConnectionDialog = nil;
       case DatabaseType::REDSHIFT:
           info.database = database.empty() ? "dev" : database;
           db = std::make_shared<PostgresDatabase>(info);
+          break;
+      case DatabaseType::BIGQUERY:
+          info.database = database; // project ID
+          db = std::make_shared<BigQueryDatabase>(info);
           break;
       default:
           break;

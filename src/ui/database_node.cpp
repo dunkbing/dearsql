@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
+#include "database/bigquery.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -231,6 +232,32 @@ void DatabaseHierarchy::renderRootNode() {
             for (const auto& schemaPtr : schemas) {
                 if (schemaPtr) {
                     renderOracleDatabaseNode(schemaPtr.get());
+                }
+            }
+        }
+    } else if (dbType == DatabaseType::BIGQUERY) {
+        auto* bqDb = dynamic_cast<BigQueryDatabase*>(db.get());
+        if (!bqDb) {
+            return;
+        }
+
+        if (!bqDb->areDatabasesLoaded() && !bqDb->isLoadingDatabases()) {
+            bqDb->refreshDatabaseNames();
+        }
+
+        if (bqDb->isLoadingDatabases()) {
+            bqDb->checkDatabasesStatusAsync();
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::Text("  Loading datasets...");
+            ImGui::SameLine(0, Theme::Spacing::S);
+            UIUtils::Spinner("##loading_datasets_spinner", 6.0f, 2,
+                             ImGui::GetColorU32(colors.peach));
+            ImGui::PopStyleColor();
+        } else if (bqDb->areDatabasesLoaded()) {
+            const auto& datasets = bqDb->getDatabaseDataMap() | std::views::values;
+            for (const auto& dsPtr : datasets) {
+                if (dsPtr) {
+                    renderBigQueryDatasetNode(dsPtr.get());
                 }
             }
         }
@@ -2436,6 +2463,209 @@ void DatabaseHierarchy::renderOracleViewNode(Table& view, OracleDatabaseNode* db
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, view.name);
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+}
+
+void DatabaseHierarchy::renderBigQueryDatasetNode(BigQueryDatasetNode* dsData) {
+    if (!dsData)
+        return;
+
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    const std::string nodeId = std::format("ds_{}_{:p}", dsData->name, static_cast<void*>(dsData));
+    const bool isOpen = renderTreeNodeWithIcon(dsData->name, nodeId, ICON_FK_DATABASE,
+                                               ImGui::GetColorU32(colors.mauve));
+
+    if (ImGui::IsItemToggledOpen())
+        dsData->expanded = isOpen;
+
+    // context menu
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
+            app.getTabManager()->createSQLEditorTab("", dsData);
+        }
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
+            dsData->startTablesLoadAsync(true);
+            dsData->startViewsLoadAsync(true);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(DELETE_LABEL)) {
+            const std::string dsName = dsData->name;
+            Alert::show("Delete Dataset",
+                        std::format("Permanently delete dataset '{}' and ALL its data?", dsName),
+                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                         {"Delete",
+                          [this, dsName]() {
+                              auto [success, error] = db->dropDatabase(dsName);
+                              if (success) {
+                                  Logger::info(std::format("Dataset '{}' deleted", dsName));
+                                  if (auto* bqDb = dynamic_cast<BigQueryDatabase*>(db.get())) {
+                                      bqDb->refreshDatabaseNames();
+                                  }
+                              } else {
+                                  Logger::error(std::format("Failed to delete dataset: {}", error));
+                                  Alert::show("Error",
+                                              std::format("Failed to delete dataset: {}", error));
+                              }
+                          },
+                          AlertButton::Style::Destructive}});
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (isOpen) {
+        // tables
+        {
+            const std::string tablesNodeId =
+                std::format("tables_{}_{:p}", dsData->name, static_cast<void*>(&dsData->tables));
+            const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
+                                                           ImGui::GetColorU32(colors.green));
+
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
+                    dsData->startTablesLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (tablesOpen) {
+                if (!dsData->tablesLoaded && !dsData->tablesLoader.isRunning()) {
+                    dsData->startTablesLoadAsync();
+                }
+
+                if (dsData->tablesLoader.isRunning()) {
+                    dsData->checkTablesStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading tables...");
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (dsData->tablesLoaded) {
+                    if (dsData->tables.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No tables");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& table : dsData->tables) {
+                            renderBigQueryTableNode(table, dsData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        // views
+        {
+            const std::string viewsNodeId =
+                std::format("views_{}_{:p}", dsData->name, static_cast<void*>(&dsData->views));
+            const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
+                                                          ImGui::GetColorU32(colors.teal));
+
+            if (ImGui::BeginPopupContextItem(nullptr)) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem(REFRESH_LABEL)) {
+                    dsData->startViewsLoadAsync(true);
+                }
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+
+            if (viewsOpen) {
+                if (!dsData->viewsLoaded && !dsData->viewsLoader.isRunning()) {
+                    dsData->startViewsLoadAsync();
+                }
+
+                if (dsData->viewsLoader.isRunning()) {
+                    dsData->checkViewsStatusAsync();
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::Text("  Loading views...");
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    ImGui::PopStyleColor();
+                } else if (dsData->viewsLoaded) {
+                    if (dsData->views.empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+                        ImGui::Text("  No views");
+                        ImGui::PopStyleColor();
+                    } else {
+                        for (auto& view : dsData->views) {
+                            renderBigQueryViewNode(view, dsData);
+                        }
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderBigQueryTableNode(Table& table, BigQueryDatasetNode* dsData) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    constexpr ImGuiTreeNodeFlags tableFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+
+    const std::string tableNodeId =
+        std::format("bq_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
+                                                  ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+            app.getTabManager()->createTableViewerTab(dsData, table.name);
+        }
+        if (ImGui::MenuItem(REFRESH_LABEL)) {
+            dsData->startTableRefreshAsync(table.name);
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
+
+    if (tableOpen) {
+        for (const auto& col : table.columns) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::Text("  %s %s", col.name.c_str(), col.type.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderBigQueryViewNode(Table& view, BigQueryDatasetNode* dsData) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+
+    constexpr ImGuiTreeNodeFlags viewFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding;
+
+    const std::string viewNodeId =
+        std::format("bq_view_{}_{:p}", view.name, static_cast<const void*>(&view));
+    renderTreeNodeWithIcon(view.name, viewNodeId, ICON_FK_EYE, ImGui::GetColorU32(colors.teal),
+                           viewFlags);
+
+    if (ImGui::BeginPopupContextItem(nullptr)) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+            app.getTabManager()->createTableViewerTab(dsData, view.name);
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

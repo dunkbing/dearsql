@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/bigquery/bigquery_dataset_node.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "database/mssql/mssql_database_node.hpp"
@@ -53,6 +54,7 @@ private:
     void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
     void renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData);
     void renderOracleDatabaseNode(OracleDatabaseNode* dbData);
+    void renderBigQueryDatasetNode(BigQueryDatasetNode* dsData);
     void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
     void renderSQLiteNode();
 
@@ -66,6 +68,8 @@ private:
     void renderMSSQLViewNode(Table& view, MSSQLDatabaseNode* dbData);
     void renderOracleTableNode(Table& table, OracleDatabaseNode* dbData);
     void renderOracleViewNode(Table& view, OracleDatabaseNode* dbData);
+    void renderBigQueryTableNode(Table& table, BigQueryDatasetNode* dsData);
+    void renderBigQueryViewNode(Table& view, BigQueryDatasetNode* dsData);
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
     void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);
     void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);

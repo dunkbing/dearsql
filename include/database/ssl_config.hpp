@@ -49,6 +49,9 @@ inline SslModeConfig getSslConfig(DatabaseType type) {
         return {kMssqlSslLabels, kMssqlSslValues, 4, 0};
     case DatabaseType::ORACLE:
         return {kOracleSslLabels, kOracleSslValues, 3, 0};
+    case DatabaseType::BIGQUERY:
+        // BigQuery always uses TLS via gRPC, no user-configurable SSL mode
+        return {kSimpleSslLabels, kSimpleSslModeValues, 3, 0};
     default:
         return {kSimpleSslLabels, kSimpleSslModeValues, 3, 0};
     }

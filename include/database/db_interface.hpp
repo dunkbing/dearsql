@@ -17,7 +17,8 @@ enum class DatabaseType {
     MONGODB,
     MSSQL,
     ORACLE,
-    REDSHIFT
+    REDSHIFT,
+    BIGQUERY
 };
 
 enum class SSHAuthMethod { Password, PrivateKey };
@@ -148,6 +149,11 @@ struct DatabaseConnectionInfo {
         case DatabaseType::ORACLE: {
             // OCI Easy Connect: //host:port/service_name
             return "//" + host + ":" + std::to_string(port) + "/" + database;
+        }
+
+        case DatabaseType::BIGQUERY: {
+            // BigQuery uses project ID (stored in database field)
+            return database;
         }
 
         default:

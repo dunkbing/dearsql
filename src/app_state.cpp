@@ -52,6 +52,8 @@ namespace {
             conn.connectionInfo.type = DatabaseType::ORACLE;
         } else if (typeStr == "redshift") {
             conn.connectionInfo.type = DatabaseType::REDSHIFT;
+        } else if (typeStr == "bigquery") {
+            conn.connectionInfo.type = DatabaseType::BIGQUERY;
         } else {
             Logger::warn(std::format("Unknown database type '{}' for connection '{}', skipping",
                                      typeStr, conn.connectionInfo.name));
@@ -131,8 +133,10 @@ namespace {
         std::string sslmodeStr = columnText(stmt, 13);
         conn.connectionInfo.sslmode =
             (sslmodeStr == "NULL" || sslmodeStr.empty())
-                ? (conn.connectionInfo.type == DatabaseType::ORACLE ? SslMode::Disable
-                                                                    : SslMode::Prefer)
+                ? (conn.connectionInfo.type == DatabaseType::ORACLE ||
+                           conn.connectionInfo.type == DatabaseType::BIGQUERY
+                       ? SslMode::Disable
+                       : SslMode::Prefer)
                 : stringToSslMode(sslmodeStr);
 
         // SSH tunnel fields (columns 14-20)
@@ -407,6 +411,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::REDSHIFT:
         typeStr = "redshift";
         break;
+    case DatabaseType::BIGQUERY:
+        typeStr = "bigquery";
+        break;
     }
 
     std::string saltBase64 =
@@ -521,6 +528,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         break;
     case DatabaseType::REDSHIFT:
         typeStr = "redshift";
+        break;
+    case DatabaseType::BIGQUERY:
+        typeStr = "bigquery";
         break;
     }
 

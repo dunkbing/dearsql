@@ -34,6 +34,10 @@
     {
       "name": "freetds",
       "platform": "windows"
+    },
+    {
+      "name": "google-cloud-cpp",
+      "features": ["bigquery", "bigquerycontrol"]
     }
   ]
 }

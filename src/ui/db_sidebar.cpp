@@ -1,6 +1,7 @@
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/bigquery.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -507,6 +508,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
             oracleDb->checkRefreshWorkflowAsync();
         }
+    } else if (type == DatabaseType::BIGQUERY) {
+        if (auto* bqDb = dynamic_cast<BigQueryDatabase*>(db.get())) {
+            bqDb->checkRefreshWorkflowAsync();
+        }
     } else if (type == DatabaseType::REDIS) {
         if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
             redisDb->checkRefreshWorkflowAsync();
@@ -601,7 +606,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT ||
                 dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB ||
-                dbType == DatabaseType::MSSQL) {
+                dbType == DatabaseType::MSSQL || dbType == DatabaseType::BIGQUERY) {
                 if (ImGui::MenuItem("Create New Database")) {
                     showCreateDatabaseDialog(&app, db);
                 }

@@ -173,6 +173,10 @@ void SQLEditorTab::renderConnectionInfo() {
     case DatabaseType::ORACLE:
         renderConnectionInfoOracle();
         break;
+    case DatabaseType::BIGQUERY:
+        // uses default rendering
+        ImGui::Text("Dataset: %s", node_->getFullPath().c_str());
+        break;
     case DatabaseType::SQLITE:
         renderConnectionInfoSQLite();
         break;

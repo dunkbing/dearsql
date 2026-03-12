@@ -13,6 +13,8 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
         return std::make_unique<MySQLBuilder>();
     case DatabaseType::MSSQL:
         return std::make_unique<MSSQLBuilder>();
+    case DatabaseType::BIGQUERY:
+        return std::make_unique<PostgreSQLBuilder>(); // BigQuery uses standard SQL
     case DatabaseType::SQLITE:
         return std::make_unique<SQLiteBuilder>();
     default:

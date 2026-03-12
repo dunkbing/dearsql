@@ -2,6 +2,7 @@
 
 #include "app_state.hpp"
 #include "application.hpp"
+#include "database/bigquery.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -58,6 +59,9 @@ struct ConnectionDialogData {
 
     // Show all databases
     GtkWidget* showAllDbsCheck = nullptr;
+
+    // BigQuery
+    GtkWidget* bqKeyFileEntry = nullptr;
 
     // SSH Tunnel
     GtkWidget* sshExpander = nullptr;
@@ -277,6 +281,7 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
     data->sshPasswordRow = nullptr;
     data->sshKeyPathEntry = nullptr;
     data->sshKeyRow = nullptr;
+    data->bqKeyFileEntry = nullptr;
 
     int selectedType = gtk_drop_down_get_selected(GTK_DROP_DOWN(data->typeDropdown));
     auto type = static_cast<DatabaseType>(selectedType);
@@ -313,6 +318,72 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         return;
     }
 
+    if (type == DatabaseType::BIGQUERY) {
+        // project ID
+        data->databaseEntry = makeEntry("my-gcp-project");
+        GtkWidget* projectRow = makeRow(makeLabel("Project ID"), data->databaseEntry);
+        gtk_box_append(GTK_BOX(data->fieldsBox), projectRow);
+
+        // service account key file (optional — uses ADC if empty)
+        data->bqKeyFileEntry = makeEntry("/path/to/service-account.json (optional)");
+        GtkWidget* browseKeyBtn = gtk_button_new_with_label("Browse...");
+        g_signal_connect(
+            browseKeyBtn, "clicked", G_CALLBACK(+[](GtkButton*, gpointer ud) {
+                auto* d = static_cast<ConnectionDialogData*>(ud);
+                GtkFileDialog* fileDialog = gtk_file_dialog_new();
+                gtk_file_dialog_set_title(fileDialog, "Select Service Account Key");
+                auto* filter = gtk_file_filter_new();
+                gtk_file_filter_add_pattern(filter, "*.json");
+                gtk_file_filter_set_name(filter, "JSON files");
+                auto* filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+                g_list_store_append(filters, filter);
+                g_object_unref(filter);
+                gtk_file_dialog_set_filters(fileDialog, G_LIST_MODEL(filters));
+                g_object_unref(filters);
+                gtk_file_dialog_open(
+                    fileDialog, GTK_WINDOW(d->dialog), nullptr,
+                    +[](GObject* src, GAsyncResult* res, gpointer ud2) {
+                        auto* d2 = static_cast<ConnectionDialogData*>(ud2);
+                        GFile* file =
+                            gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, nullptr);
+                        if (file) {
+                            char* path = g_file_get_path(file);
+                            if (path && d2->bqKeyFileEntry) {
+                                gtk_editable_set_text(GTK_EDITABLE(d2->bqKeyFileEntry), path);
+                            }
+                            g_free(path);
+                            g_object_unref(file);
+                        }
+                    },
+                    d);
+            }),
+            data);
+
+        GtkWidget* keyRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_box_append(GTK_BOX(keyRow), makeLabel("Key File"));
+        gtk_box_append(GTK_BOX(keyRow), data->bqKeyFileEntry);
+        gtk_box_append(GTK_BOX(keyRow), browseKeyBtn);
+        gtk_box_append(GTK_BOX(data->fieldsBox), keyRow);
+
+        // optional host/port for emulator
+        data->hostEntry = makeEntry("(optional, for emulator)");
+        gtk_editable_set_text(GTK_EDITABLE(data->hostEntry), "");
+        data->portEntry = makeEntry("9050");
+        gtk_editable_set_text(GTK_EDITABLE(data->portEntry), "");
+        gtk_widget_set_size_request(data->portEntry, 70, -1);
+        gtk_widget_set_hexpand(data->portEntry, FALSE);
+
+        GtkWidget* hostRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_box_append(GTK_BOX(hostRow), makeLabel("Endpoint"));
+        gtk_box_append(GTK_BOX(hostRow), data->hostEntry);
+        GtkWidget* portLabel = gtk_label_new("Port");
+        gtk_widget_add_css_class(portLabel, "dim-label");
+        gtk_box_append(GTK_BOX(hostRow), portLabel);
+        gtk_box_append(GTK_BOX(hostRow), data->portEntry);
+        gtk_box_append(GTK_BOX(data->fieldsBox), hostRow);
+        return;
+    }
+
     // --- Server fields ---
 
     // Host + Port
@@ -336,6 +407,8 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
         defaultPort = "1521";
     else if (type == DatabaseType::REDSHIFT)
         defaultPort = "5439";
+    else if (type == DatabaseType::BIGQUERY)
+        defaultPort = "443";
     gtk_editable_set_text(GTK_EDITABLE(data->portEntry), defaultPort);
 
     GtkWidget* hostRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -349,9 +422,12 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
 
     // Database (not for Redis)
     if (type != DatabaseType::REDIS) {
-        const char* dbLabel = type == DatabaseType::ORACLE ? "Service" : "Database";
-        const char* dbPlaceholder =
-            type == DatabaseType::ORACLE ? "e.g. XEPDB1, ORCL, FREEPDB1" : "(optional)";
+        const char* dbLabel = type == DatabaseType::ORACLE     ? "Service"
+                              : type == DatabaseType::BIGQUERY ? "Project ID"
+                                                               : "Database";
+        const char* dbPlaceholder = type == DatabaseType::ORACLE     ? "e.g. XEPDB1, ORCL, FREEPDB1"
+                                    : type == DatabaseType::BIGQUERY ? "my-gcp-project"
+                                                                     : "(optional)";
         data->databaseEntry = makeEntry(dbPlaceholder);
         GtkWidget* dbRow = makeRow(makeLabel(dbLabel), data->databaseEntry);
         gtk_box_append(GTK_BOX(data->fieldsBox), dbRow);
@@ -769,8 +845,12 @@ static void connectServerAsync(ConnectionDialogData* data) {
     }
 
     // Validate
+    if (type == DatabaseType::BIGQUERY && (!database || strlen(database) == 0)) {
+        gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please enter a Project ID");
+        return;
+    }
     if (authEnabled && (!username || strlen(username) == 0) && type != DatabaseType::MONGODB &&
-        type != DatabaseType::REDIS) {
+        type != DatabaseType::REDIS && type != DatabaseType::BIGQUERY) {
         gtk_label_set_text(GTK_LABEL(data->statusLabel), "Please enter a username");
         return;
     }
@@ -802,6 +882,9 @@ static void connectServerAsync(ConnectionDialogData* data) {
     std::string dbStr = database ? database : "";
     std::string userStr = username ? username : "";
     std::string passStr = password ? password : "";
+    const char* bqKeyFile =
+        data->bqKeyFileEntry ? gtk_editable_get_text(GTK_EDITABLE(data->bqKeyFileEntry)) : "";
+    std::string bqKeyFileStr = bqKeyFile ? bqKeyFile : "";
 
     Application* appPtr = data->app;
     auto editingDb = data->editingDb;
@@ -857,6 +940,11 @@ static void connectServerAsync(ConnectionDialogData* data) {
         case DatabaseType::REDSHIFT:
             info.database = dbStr.empty() ? "dev" : dbStr;
             db = std::make_shared<PostgresDatabase>(info);
+            break;
+        case DatabaseType::BIGQUERY:
+            info.database = dbStr; // project ID
+            info.path = bqKeyFileStr;
+            db = std::make_shared<BigQueryDatabase>(info);
             break;
         default:
             break;
@@ -940,9 +1028,9 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
     gtk_box_append(GTK_BOX(mainBox), nameRow);
 
     // Type dropdown
-    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
-                                      "MongoDB", "MSSQL",      "Oracle", "Redshift"};
-    data->typeDropdown = makeStringDropdown(typeNames, 9, static_cast<int>(initialType));
+    static const char* typeNames[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB",  "Redis",
+                                      "MongoDB", "MSSQL",      "Oracle", "Redshift", "BigQuery"};
+    data->typeDropdown = makeStringDropdown(typeNames, 10, static_cast<int>(initialType));
 
     GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
@@ -1063,6 +1151,20 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     case DatabaseType::SQLITE:
         if (data->sqlitePathEntry)
             gtk_editable_set_text(GTK_EDITABLE(data->sqlitePathEntry), info.path.c_str());
+        break;
+
+    case DatabaseType::BIGQUERY:
+        if (data->databaseEntry)
+            gtk_editable_set_text(GTK_EDITABLE(data->databaseEntry), info.database.c_str());
+        if (data->bqKeyFileEntry && !info.path.empty())
+            gtk_editable_set_text(GTK_EDITABLE(data->bqKeyFileEntry), info.path.c_str());
+        if (data->hostEntry && !info.host.empty())
+            gtk_editable_set_text(GTK_EDITABLE(data->hostEntry), info.host.c_str());
+        if (data->portEntry && info.port > 0) {
+            char portBuf[16];
+            snprintf(portBuf, sizeof(portBuf), "%d", info.port);
+            gtk_editable_set_text(GTK_EDITABLE(data->portEntry), portBuf);
+        }
         break;
 
     case DatabaseType::POSTGRESQL:

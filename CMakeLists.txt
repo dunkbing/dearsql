@@ -89,6 +89,8 @@ find_package(httplib CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
+find_package(google_cloud_cpp_bigquery CONFIG REQUIRED)
+find_package(google_cloud_cpp_bigquerycontrol CONFIG REQUIRED)
 include(cmake/FreeTDS.cmake)
 include(cmake/OracleOCI.cmake)
 
@@ -202,6 +204,8 @@ set(APP_SOURCES
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
+    src/database/bigquery.cpp
+    src/database/bigquery/bigquery_dataset_node.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
@@ -345,6 +349,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     odpi
     httplib::httplib
     unofficial::tree-sitter::tree-sitter
+    google-cloud-cpp::bigquery
+    google-cloud-cpp::bigquerycontrol
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
 )
@@ -443,6 +449,7 @@ add_executable(database_tests
     tests/database/mongodb_database_test.cpp
     tests/database/mssql_database_test.cpp
     tests/database/oracle_database_test.cpp
+    tests/database/bigquery_database_test.cpp
     tests/database/ssl_connection_test.cpp
     tests/database/ssh_tunnel_test.cpp
     tests/database/sql_builder_test.cpp
@@ -461,6 +468,8 @@ add_executable(database_tests
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
+    src/database/bigquery.cpp
+    src/database/bigquery/bigquery_dataset_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
@@ -495,6 +504,8 @@ target_link_libraries(database_tests PRIVATE
     ${SYBDB_LIBRARY}
     ${SYBDB_DEPS}
     odpi
+    google-cloud-cpp::bigquery
+    google-cloud-cpp::bigquerycontrol
 )
 
 add_test(NAME database_tests COMMAND database_tests)

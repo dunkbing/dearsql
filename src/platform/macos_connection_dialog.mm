@@ -248,6 +248,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     case DatabaseType::MSSQL:
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::ORACLE:
     case DatabaseType::MONGODB: {
         self.hostField.stringValue = [NSString stringWithUTF8String:info.host.c_str()];
         self.portField.stringValue = [NSString stringWithFormat:@"%d", info.port];

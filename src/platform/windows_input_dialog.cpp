@@ -107,7 +107,7 @@ static void registerInputDialogClass() {
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = inputDialogProc;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszClassName = L"DearSQLInputDialog";
     RegisterClassExW(&wc);

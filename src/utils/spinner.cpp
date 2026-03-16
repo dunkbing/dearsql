@@ -1,5 +1,6 @@
 #include "utils/spinner.hpp"
 #include "imgui_internal.h"
+#include <cmath>
 
 namespace UIUtils {
     bool Spinner(const char* label, float radius, int thickness, const ImU32& color) {
@@ -23,7 +24,7 @@ namespace UIUtils {
         window->DrawList->PathClear();
 
         constexpr int num_segments = 30;
-        const float start = abs(ImSin(g.Time * 1.8f) * (num_segments - 5));
+        const float start = std::abs(ImSin(g.Time * 1.8f) * (num_segments - 5));
 
         const float a_min = IM_PI * 2.0f * start / num_segments;
         constexpr float a_max = IM_PI * 2.0f * (num_segments - 3) / num_segments;
@@ -49,7 +50,7 @@ namespace UIUtils {
 
         const float time = static_cast<float>(ImGui::GetTime());
         constexpr int numSegments = 30;
-        const float start = abs(ImSin(time * 1.8f) * (numSegments - 5));
+        const float start = std::abs(ImSin(time * 1.8f) * (numSegments - 5));
         const float aMin = IM_PI * 2.0f * start / numSegments;
         constexpr float aMax = IM_PI * 2.0f * (numSegments - 3) / numSegments;
         const float rotation = time * 8.0f;

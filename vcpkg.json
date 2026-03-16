@@ -31,9 +31,6 @@
       "name": "sentry-native",
       "features": ["backend", "transport", "compression"]
     },
-    {
-      "name": "freetds",
-      "platform": "windows"
-    }
+    "libiconv"
   ]
 }

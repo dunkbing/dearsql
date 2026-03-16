@@ -278,7 +278,34 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
+<<<<<<< HEAD
     auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_);
+=======
+    // Database-level editor: PostgresDatabaseNode bound directly
+    if (auto* pgDbNode = dynamic_cast<PostgresDatabaseNode*>(node_)) {
+        auto* serverDb = pgDbNode->parentDb;
+        if (!serverDb) {
+            ImGui::Text("Database: %s", node_->getFullPath().c_str());
+            return;
+        }
+
+        const auto& dbMap = serverDb->getDatabaseDataMap();
+        std::vector<std::string> dbNames;
+        dbNames.reserve(dbMap.size());
+        for (const auto& dbName : dbMap | std::views::keys)
+            dbNames.push_back(dbName);
+        std::ranges::sort(dbNames);
+
+        renderDatabaseCombo(serverDb->getConnectionInfo().host, "Database:", pgDbNode->name,
+                            dbNames, [serverDb, this](const std::string& selectedName) {
+                                if (auto* n = serverDb->getDatabaseData(selectedName))
+                                    switchNode(n);
+                            });
+        return;
+    }
+
+    // Schema-level editor: PostgresSchemaNode bound (backward compat)
+>>>>>>> 6d80dbc (fix editor suggesstion and create editor with only db selection)
     auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
     if (!dbNode && schemaNode)
         dbNode = schemaNode->parentDbNode;
@@ -689,9 +716,10 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         return;
     }
 
+    // PostgresDatabaseNode: database-level editor (no SET search_path — cross-schema queries)
     if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node); dbNode && dbNode->parentDb) {
         const std::string dbName = dbNode->name;
-        binding_.resolveNode = [serverDb = dbNode->parentDb, dbName]() -> IDatabaseNode* {
+        binding_.resolveNode = [serverDb = dbNode->parentDb, dbName, dbNode]() -> IDatabaseNode* {
             if (auto* resolved = serverDb->getDatabaseData(dbName))
                 return resolved;
 
@@ -699,7 +727,8 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
                 serverDb->refreshDatabaseNames();
             }
             serverDb->checkDatabasesStatusAsync();
-            return serverDb->getDatabaseData(dbName);
+            auto* resolvedAsync = serverDb->getDatabaseData(dbName);
+            return resolvedAsync ? resolvedAsync : const_cast<PostgresDatabaseNode*>(dbNode);
         };
         binding_.resolveExecutor = [this]() -> IQueryExecutor* {
             return binding_.resolveNode ? binding_.resolveNode() : nullptr;
@@ -817,8 +846,7 @@ void SQLEditorTab::updateCompletionKeywords() {
     for (const auto& kw : dearsql::TextEditor::GetDefaultCompletionKeywords())
         items.push_back({kw, CompletionKind::Keyword});
 
-    if (node_) {
-        auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
+
             if (!sourceNode)
                 return;
             for (const auto& table : sourceNode->getTables()) {

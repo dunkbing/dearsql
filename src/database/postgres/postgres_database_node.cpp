@@ -649,6 +649,11 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     Logger::debug(std::format("Triggering child schema refresh for database: {}", name));
     invalidateAggregatedObjects();
 
+    // Invalidate caches when schemas are refreshed
+    allTablesCached = false;
+    allViewsCached = false;
+    allSequencesCached = false;
+
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& schema : schemas) {
         if (schema) {
@@ -663,3 +668,34 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     Logger::info(
         std::format("Triggered refresh for {} schemas in database {}", schemas.size(), name));
 }
+
+
+PostgresSchemaNode* PostgresDatabaseNode::findSchema(const std::string& schemaName) const {
+    for (const auto& schema : schemas) {
+        if (schema && schema->name == schemaName) {
+            return schema.get();
+        }
+    }
+    return nullptr;
+}
+
+
+
+
+
+std::pair<bool, std::string> PostgresDatabaseNode::createTable(const Table& table) {
+    // Delegate to "public" schema by default
+    auto* publicSchema = findSchema("public");
+    if (publicSchema) {
+        return publicSchema->createTable(table);
+    }
+    // Fallback: first available schema
+    if (!schemas.empty() && schemas.front()) {
+        return schemas.front()->createTable(table);
+    }
+    return {false, "No schemas available"};
+}
+
+
+
+

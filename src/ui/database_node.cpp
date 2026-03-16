@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
+#include "database/ddl_builder.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -17,6 +18,7 @@
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
+
 #include "ui/text_editor.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -35,6 +37,22 @@ namespace {
     constexpr const char* NEW_SQL_EDITOR_LABEL = "New SQL Editor";
     constexpr const char* NEW_QUERY_EDITOR_LABEL = "New Query Editor";
     constexpr const char* SHOW_DIAGRAM_LABEL = "Show Diagram";
+} // namespace
+
+namespace {
+    void openStructureTab(IDatabaseNode* node, const Table& table, const std::string& schemaPrefix = "") {
+        auto& app = Application::getInstance();
+        DDLBuilder ddl(node->getDatabaseType());
+        std::string sql = ddl.createTable(table, schemaPrefix);
+        std::string formatted = dearsql::TextEditor::FormatSQL(sql);
+        if (formatted.empty()) formatted = sql;
+
+        std::string tabName = table.name + " (DDL)";
+        auto tab = app.getTabManager()->createSQLEditorTab(tabName, node);
+        if (auto* editorTab = dynamic_cast<SQLEditorTab*>(tab.get())) {
+            editorTab->setQuery(formatted);
+        }
+    }
 } // namespace
 
 DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface)
@@ -110,6 +128,20 @@ void DatabaseHierarchy::renderRootNode() {
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (pgDb->areDatabasesLoaded()) {
+            // check deferred sql editor open
+            if (!pendingEditorOpenDbName_.empty()) {
+                auto* pendingDb = pgDb->getDatabaseData(pendingEditorOpenDbName_);
+                if (!pendingDb) {
+                    // database was deleted while waiting
+                    pendingEditorOpenDbName_.clear();
+                } else {
+                    // Open directly at database level (no need to wait for schemas)
+                    app.getTabManager()->createSQLEditorTab("", pendingDb);
+                    pendingEditorOpenDbName_.clear();
+                }
+            }
+
+
             const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
                 if (dbDataPtr) {
@@ -507,6 +539,8 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
+            // PostgresDatabaseNode now implements IDatabaseNode — pass directly
+            // for database-level SQL editor (no SET search_path, cross-schema queries)
             app.getTabManager()->createSQLEditorTab("", dbData);
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -1066,6 +1100,9 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             app.getTabManager()->createTableEditorTab(schemaNode, table, schemaNode->name);
         }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(schemaNode, table, schemaNode->name);
+        }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaNode->startTableRefreshAsync(table.name);
         }
@@ -1304,6 +1341,9 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(schemaData, view.name);
         }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(schemaData, view, schemaData->name);
+        }
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {
             const std::string viewName = view.name;
@@ -1372,6 +1412,9 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         }
         if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             app.getTabManager()->createTableEditorTab(dbData, table);
+        }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(dbData, table);
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTableRefreshAsync(table.name);
@@ -1607,6 +1650,9 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(dbData, view.name);
+        }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(dbData, view);
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -2701,6 +2747,9 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
         if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
             app.getTabManager()->createTableEditorTab(sqliteDb, table);
         }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(sqliteDb, table);
+        }
         TableExporter::renderExportMenu(sqliteDb, table.name);
         TableImporter::renderImportMenu(sqliteDb, table.name);
         ImGui::Separator();
@@ -3101,6 +3150,9 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqlite
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
             app.getTabManager()->createTableViewerTab(sqliteDb, view.name);
+        }
+        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+            openStructureTab(sqliteDb, view);
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

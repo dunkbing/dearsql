@@ -50,7 +50,7 @@ public:
     ConnectionPool<PGconn*>::Session getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
 
-    // query execution with comprehensive result
+    // query execution with comprehensive result (no SET search_path — cross-schema queries work)
     QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
@@ -98,14 +98,30 @@ public:
     int getRowCount(const std::string& schemaName, const std::string& tableName,
                     const std::string& whereClause = "");
 
+    std::pair<bool, std::string> createTable(const Table& table) override;
+
 private:
     bool refreshChildrenAfterSchemasLoad = false;
     mutable std::vector<Table> allTables;
     mutable std::vector<Table> allViews;
     mutable std::vector<std::string> allSequences;
+
     mutable bool aggregatedObjectsDirty = true;
     mutable std::string aggregatedTablesError;
     mutable std::string aggregatedViewsError;
+
+    mutable bool allTablesCached = false;
+    mutable bool allViewsCached = false;
+    mutable bool allSequencesCached = false;
+
+    void rebuildTablesCache() const;
+    void rebuildViewsCache() const;
+    void rebuildSequencesCache() const;
+
+    // Find schema by name, or return first available
+    PostgresSchemaNode* findSchema(const std::string& schemaName) const;
+    // Parse "schema.table" → (schema, table), default to "public"
+    std::pair<std::string, std::string> parseQualifiedName(const std::string& name) const;
 
     // internal method to refresh all child schemas (tables, views, sequences)
     void triggerChildSchemaRefresh();

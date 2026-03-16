@@ -185,6 +185,30 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
+    // Database-level editor: PostgresDatabaseNode bound directly
+    if (auto* pgDbNode = dynamic_cast<PostgresDatabaseNode*>(node_)) {
+        auto* serverDb = pgDbNode->parentDb;
+        if (!serverDb) {
+            ImGui::Text("Database: %s", node_->getFullPath().c_str());
+            return;
+        }
+
+        const auto& dbMap = serverDb->getDatabaseDataMap();
+        std::vector<std::string> dbNames;
+        dbNames.reserve(dbMap.size());
+        for (const auto& dbName : dbMap | std::views::keys)
+            dbNames.push_back(dbName);
+        std::ranges::sort(dbNames);
+
+        renderDatabaseCombo(serverDb->getConnectionInfo().host, "Database:", pgDbNode->name,
+                            dbNames, [serverDb, this](const std::string& selectedName) {
+                                if (auto* n = serverDb->getDatabaseData(selectedName))
+                                    switchNode(n);
+                            });
+        return;
+    }
+
+    // Schema-level editor: PostgresSchemaNode bound (backward compat)
     auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
     if (!schemaNode || !schemaNode->parentDbNode) {
         ImGui::Text("Database: %s", node_->getFullPath().c_str());
@@ -589,6 +613,22 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         return;
     }
 
+    // PostgresDatabaseNode: database-level editor (no SET search_path — cross-schema queries)
+    if (const auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node);
+        dbNode && dbNode->parentDb) {
+        const std::string dbName = dbNode->name;
+
+        binding_.resolveNode = [dbNode, dbName]() -> IDatabaseNode* {
+            auto* serverDb = dbNode->parentDb;
+            auto* resolved = serverDb->getDatabaseData(dbName);
+            return resolved ? resolved : const_cast<PostgresDatabaseNode*>(dbNode);
+        };
+        binding_.resolveExecutor = [this]() -> IQueryExecutor* {
+            return binding_.resolveNode ? binding_.resolveNode() : nullptr;
+        };
+        return;
+    }
+
     if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
         schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
         const std::string dbName = schemaNode->parentDbNode->name;
@@ -703,19 +743,51 @@ void SQLEditorTab::updateCompletionKeywords() {
         items.push_back({kw, CK::Keyword});
 
     if (node_) {
+        // For PostgresDatabaseNode, ensure schemas are loaded first (prerequisite for tables/views)
+        if (auto* pgDbNode = dynamic_cast<PostgresDatabaseNode*>(node_)) {
+            pgDbNode->checkSchemasStatusAsync();
+            if (!pgDbNode->schemasLoaded && !pgDbNode->schemasLoader.isRunning()) {
+                pgDbNode->startSchemasLoadAsync();
+            }
+        }
+
+        // Poll async loading results so isTablesLoaded()/isViewsLoaded() reflect latest state
+        node_->checkLoadingStatus();
+
+        // Ensure tables and views loading has been triggered
+        if (!node_->isTablesLoaded() && !node_->isLoadingTables()) {
+            node_->startTablesLoadAsync();
+        }
+        if (!node_->isViewsLoaded() && !node_->isLoadingViews()) {
+            node_->startViewsLoadAsync();
+        }
+
+        const bool tablesLoaded = node_->isTablesLoaded();
+        const bool viewsLoaded = node_->isViewsLoaded();
+
+        // Always gather whatever tables/columns/views are available so far,
+        // even if not all schemas have finished loading yet.
         for (const auto& table : node_->getTables()) {
             items.push_back({table.name, CK::Table});
             for (const auto& col : table.columns)
                 items.push_back({col.name, CK::Column});
         }
 
-        if (node_->isViewsLoaded()) {
-            for (const auto& view : node_->getViews())
-                items.push_back({view.name, CK::View});
-        }
+        for (const auto& view : node_->getViews())
+            items.push_back({view.name, CK::View});
 
         for (const auto& seq : node_->getSequences())
             items.push_back({seq, CK::Sequence});
+
+        // Only mark as fully set if both tables and views are loaded
+        if (!tablesLoaded || !viewsLoaded) {
+            // Still loading — set what we have, retry on next render for more
+            std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
+            auto r = std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; });
+            items.erase(r.begin(), r.end());
+            sqlEditor.SetCompletionItems(items);
+            return;
+        }
     }
 
     // Sort and deduplicate by text

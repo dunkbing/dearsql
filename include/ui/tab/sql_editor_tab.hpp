@@ -30,6 +30,7 @@ public:
     }
     void setQuery(const std::string& query) {
         sqlQuery = query;
+        sqlEditor.SetText(query);
     }
     [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;

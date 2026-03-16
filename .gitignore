@@ -2,6 +2,7 @@
 build/
 build_*/
 out/
+vcpkg_installed/
 
 # IDE specific files
 .vscode/
@@ -42,3 +43,4 @@ imgui.ini
 external/Sparkle/
 
 .test-certs/
+

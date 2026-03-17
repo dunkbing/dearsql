@@ -53,6 +53,7 @@ private:
     void subclassWindow();
     void applyTitlebarTheme();
     void renderTitlebar();
+    void renderTitlebarPopups();
     [[nodiscard]] int getTitlebarHeightPixels() const;
     [[nodiscard]] int getResizeBorderWidth() const;
     LRESULT hitTest(HWND hWnd, LPARAM lParam) const;
@@ -70,6 +71,16 @@ private:
     ID3D11RenderTargetView* mainRenderTargetView_ = nullptr;
     bool lastAppliedDarkTheme_ = true;
     bool titlebarWidgetHovered_ = false;
+
+    // Popup state
+    bool openWorkspacePopup_ = false;
+    bool openMenuPopup_ = false;
+    ImVec2 workspacePopupPos_ = {};
+    ImVec2 menuPopupPos_ = {};
+
+    // Interactive regions (screen coords) for hit testing
+    float interactiveLeftEnd_ = 0;
+    float interactiveRightStart_ = 0;
 };
 
 #endif

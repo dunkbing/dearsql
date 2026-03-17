@@ -8,8 +8,10 @@
 #include "themes.hpp"
 
 #include "IconsFontAwesome6.h"
+#include "ui/license_dialog.hpp"
 
 #include <d3d11.h>
+#include <shellapi.h>
 #include <dwmapi.h>
 #include <dxgi.h>
 #include <iostream>
@@ -141,8 +143,12 @@ LRESULT WindowsPlatform::hitTest(HWND hWnd, LPARAM lParam) const {
         if (pt.x >= rc.right - 138) {
             return HTCLIENT;
         }
-        // Sidebar toggle button zone (left side)
-        if (pt.x < rc.left + 44 && pt.y < rc.top + titlebar) {
+        // Left interactive zone (sidebar toggle, add button, etc.)
+        if (pt.x < rc.left + static_cast<int>(interactiveLeftEnd_)) {
+            return HTCLIENT;
+        }
+        // Right interactive zone (workspace dropdown, menu button)
+        if (interactiveRightStart_ > 0 && pt.x >= rc.left + static_cast<int>(interactiveRightStart_)) {
             return HTCLIENT;
         }
         return HTCAPTION;
@@ -313,8 +319,10 @@ void WindowsPlatform::renderTitlebar() {
 
     titlebarWidgetHovered_ = false;
 
-    // Helper: manual hit-test button drawn on the foreground draw list.
-    // Uses raw mouse state instead of ImGui helpers (no window context needed).
+    const ImVec4 hoverBg = isDark ? ImVec4(1, 1, 1, 0.1f) : ImVec4(0, 0, 0, 0.06f);
+    const ImVec4 activeBg = isDark ? ImVec4(1, 1, 1, 0.15f) : ImVec4(0, 0, 0, 0.10f);
+
+    // Helper: manual foreground button (no ImGui window context needed)
     auto fgButton = [&](ImVec2 bMin, ImVec2 bMax, auto drawIcon,
                         ImVec4 hBg, ImVec4 aBg, bool whiteIconOnHover) -> bool {
         bool hovered = (mouse.x >= bMin.x && mouse.x < bMax.x &&
@@ -335,79 +343,268 @@ void WindowsPlatform::renderTitlebar() {
         return clicked;
     };
 
-    // --- Caption buttons (right side) ---
-    const float btnW = 46.0f;
-    const ImVec4 hoverBg = isDark ? ImVec4(1, 1, 1, 0.1f) : ImVec4(0, 0, 0, 0.06f);
-    const ImVec4 activeBg = isDark ? ImVec4(1, 1, 1, 0.15f) : ImVec4(0, 0, 0, 0.10f);
-    const ImVec4 closeHoverBg = ImVec4(0.77f, 0.17f, 0.11f, 1.0f);
-    const ImVec4 closeActiveBg = ImVec4(0.67f, 0.14f, 0.09f, 1.0f);
-
-    float bx = origin.x + winW - btnW * 3;
-    float by = origin.y;
-
-    // Minimize
-    if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawMinimizeIcon, hoverBg, activeBg, false))
-        ShowWindow(getHWND(), SW_MINIMIZE);
-    bx += btnW;
-
-    // Maximize / Restore
-    if (maximized) {
-        if (fgButton(
-                {bx, by}, {bx + btnW, by + tbHeight},
-                [&](ImDrawList* d, ImVec2 c, ImU32 col) {
-                    DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.mantle));
-                },
-                hoverBg, activeBg, false))
-            ShowWindow(getHWND(), SW_RESTORE);
-    } else {
-        if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawMaximizeIcon, hoverBg, activeBg, false))
-            ShowWindow(getHWND(), SW_MAXIMIZE);
-    }
-    bx += btnW;
-
-    // Close
-    if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawCloseIcon, closeHoverBg, closeActiveBg, true))
-        PostMessageW(getHWND(), WM_CLOSE, 0, 0);
-
-    // --- Left side: sidebar toggle ---
-    const float leftPad = 8.0f;
+    // Helper: simple icon button (rounded, fixed size)
     const float iconBtnSize = tbHeight - 4.0f;
-    const float iconY = origin.y + (tbHeight - iconBtnSize) * 0.5f;
-    ImVec2 sbMin{origin.x + leftPad, iconY};
-    ImVec2 sbMax{sbMin.x + iconBtnSize, sbMin.y + iconBtnSize};
-
-    {
-        bool hovered = (mouse.x >= sbMin.x && mouse.x < sbMax.x &&
-                        mouse.y >= sbMin.y && mouse.y < sbMax.y);
+    auto fgIconBtn = [&](float x, const char* iconText) -> bool {
+        float iy = origin.y + (tbHeight - iconBtnSize) * 0.5f;
+        ImVec2 bMin{x, iy}, bMax{x + iconBtnSize, iy + iconBtnSize};
+        bool hovered = (mouse.x >= bMin.x && mouse.x < bMax.x &&
+                        mouse.y >= bMin.y && mouse.y < bMax.y);
         bool held = hovered && io.MouseDown[0];
         bool clicked = hovered && io.MouseReleased[0];
         titlebarWidgetHovered_ |= hovered;
 
         if (held)
-            fg->AddRectFilled(sbMin, sbMax, ImGui::GetColorU32(activeBg), 4.0f);
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(activeBg), 4.0f);
         else if (hovered)
-            fg->AddRectFilled(sbMin, sbMax, ImGui::GetColorU32(hoverBg), 4.0f);
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(hoverBg), 4.0f);
 
-        // Draw the hamburger icon (three horizontal lines)
-        ImVec2 center{(sbMin.x + sbMax.x) * 0.5f, (sbMin.y + sbMax.y) * 0.5f};
+        // Center icon text
+        ImVec2 textSize = ImGui::CalcTextSize(iconText);
+        fg->AddText({(bMin.x + bMax.x - textSize.x) * 0.5f,
+                     (bMin.y + bMax.y - textSize.y) * 0.5f},
+                    ImGui::GetColorU32(colors.text), iconText);
+
+        return clicked;
+    };
+
+    // ===================== RIGHT SIDE: Caption buttons =====================
+    const float captionBtnW = 46.0f;
+    const ImVec4 closeHoverBg = ImVec4(0.77f, 0.17f, 0.11f, 1.0f);
+    const ImVec4 closeActiveBg = ImVec4(0.67f, 0.14f, 0.09f, 1.0f);
+
+    float rx = origin.x + winW - captionBtnW * 3;
+
+    if (fgButton({rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
+                 DrawMinimizeIcon, hoverBg, activeBg, false))
+        ShowWindow(getHWND(), SW_MINIMIZE);
+    rx += captionBtnW;
+
+    if (maximized) {
+        if (fgButton({rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
+                     [&](ImDrawList* d, ImVec2 c, ImU32 col) {
+                         DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.mantle));
+                     },
+                     hoverBg, activeBg, false))
+            ShowWindow(getHWND(), SW_RESTORE);
+    } else {
+        if (fgButton({rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
+                     DrawMaximizeIcon, hoverBg, activeBg, false))
+            ShowWindow(getHWND(), SW_MAXIMIZE);
+    }
+    rx += captionBtnW;
+
+    if (fgButton({rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
+                 DrawCloseIcon, closeHoverBg, closeActiveBg, true))
+        PostMessageW(getHWND(), WM_CLOSE, 0, 0);
+
+    // ===================== RIGHT SIDE: Menu + Workspace (before caption) =====================
+    const float rightGroupX = origin.x + winW - captionBtnW * 3 - 8.0f; // 8px gap before caption btns
+
+    // Menu button (rightmost before caption buttons)
+    float menuX = rightGroupX - iconBtnSize;
+    if (fgIconBtn(menuX, ICON_FA_ELLIPSIS_VERTICAL)) {
+        openMenuPopup_ = true;
+        menuPopupPos_ = {menuX, origin.y + tbHeight};
+    }
+
+    // Workspace dropdown
+    const std::string wsName = app_->getCurrentWorkspaceName();
+    const std::string wsLabel = wsName + "  " ICON_FA_CHEVRON_DOWN;
+    ImVec2 wsTextSize = ImGui::CalcTextSize(wsLabel.c_str());
+    float wsBtnW = wsTextSize.x + 16.0f;
+    float wsX = menuX - 4.0f - wsBtnW;
+    {
+        float iy = origin.y + (tbHeight - iconBtnSize) * 0.5f;
+        ImVec2 bMin{wsX, iy}, bMax{wsX + wsBtnW, iy + iconBtnSize};
+        bool hovered = (mouse.x >= bMin.x && mouse.x < bMax.x &&
+                        mouse.y >= bMin.y && mouse.y < bMax.y);
+        bool held = hovered && io.MouseDown[0];
+        bool clicked = hovered && io.MouseReleased[0];
+        titlebarWidgetHovered_ |= hovered;
+
+        if (held)
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(activeBg), 4.0f);
+        else if (hovered)
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(hoverBg), 4.0f);
+
+        fg->AddText({bMin.x + 8.0f, (bMin.y + bMax.y - wsTextSize.y) * 0.5f},
+                    ImGui::GetColorU32(colors.text), wsLabel.c_str());
+
+        if (clicked) {
+            openWorkspacePopup_ = true;
+            workspacePopupPos_ = {wsX, origin.y + tbHeight};
+        }
+    }
+
+    // Track right interactive zone start for hit testing
+    interactiveRightStart_ = wsX;
+
+    // ===================== LEFT SIDE: Sidebar toggle + Add connection =====================
+    const float leftPad = 8.0f;
+    float lx = origin.x + leftPad;
+
+    // Sidebar toggle (hamburger icon drawn manually)
+    {
+        float iy = origin.y + (tbHeight - iconBtnSize) * 0.5f;
+        ImVec2 bMin{lx, iy}, bMax{lx + iconBtnSize, iy + iconBtnSize};
+        bool hovered = (mouse.x >= bMin.x && mouse.x < bMax.x &&
+                        mouse.y >= bMin.y && mouse.y < bMax.y);
+        bool held = hovered && io.MouseDown[0];
+        bool clicked = hovered && io.MouseReleased[0];
+        titlebarWidgetHovered_ |= hovered;
+        if (held) fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(activeBg), 4.0f);
+        else if (hovered) fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(hoverBg), 4.0f);
+
+        ImVec2 center{(bMin.x + bMax.x) * 0.5f, (bMin.y + bMax.y) * 0.5f};
         ImU32 iconCol = ImGui::GetColorU32(colors.text);
-        float hw = 5.0f;
-        fg->AddLine({center.x - hw, center.y - 4}, {center.x + hw, center.y - 4}, iconCol, 1.5f);
-        fg->AddLine({center.x - hw, center.y},     {center.x + hw, center.y},     iconCol, 1.5f);
-        fg->AddLine({center.x - hw, center.y + 4}, {center.x + hw, center.y + 4}, iconCol, 1.5f);
+        fg->AddLine({center.x - 5, center.y - 4}, {center.x + 5, center.y - 4}, iconCol, 1.5f);
+        fg->AddLine({center.x - 5, center.y},     {center.x + 5, center.y},     iconCol, 1.5f);
+        fg->AddLine({center.x - 5, center.y + 4}, {center.x + 5, center.y + 4}, iconCol, 1.5f);
 
         if (clicked) onSidebarToggleClicked();
     }
+    lx += iconBtnSize + 2.0f;
+
+    // Add connection button (+)
+    if (fgIconBtn(lx, ICON_FA_PLUS)) {
+        if (app_->getDatabaseSidebar()) {
+            app_->getDatabaseSidebar()->showConnectionDialog();
+        }
+    }
+    lx += iconBtnSize + 8.0f;
+
+    // Track left interactive zone end for hit testing
+    interactiveLeftEnd_ = lx;
 
     // --- Title text ---
-    const float titleX = origin.x + leftPad + iconBtnSize + 8.0f;
     const float titleY = origin.y + (tbHeight - ImGui::GetFontSize()) * 0.5f;
 #ifdef NDEBUG
-    const char* title = APP_NAME;
+    fg->AddText({lx, titleY}, ImGui::GetColorU32(colors.subtext1), APP_NAME);
 #else
-    const char* title = "DearSQL (Debug)";
+    fg->AddText({lx, titleY}, ImGui::GetColorU32(colors.subtext1), "DearSQL (Debug)");
 #endif
-    fg->AddText({titleX, titleY}, ImGui::GetColorU32(colors.subtext1), title);
+}
+
+// ---------------------------------------------------------------------------
+// Titlebar popups (workspace dropdown, menu)
+// ---------------------------------------------------------------------------
+
+void WindowsPlatform::renderTitlebarPopups() {
+    if (!app_) return;
+
+    const bool isDark = app_->isDarkTheme();
+    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+
+    // We need an ImGui window context to host popups
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({1, 1});
+    ImGui::Begin("##TitlebarPopupHost", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoDocking |
+                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs);
+
+    // --- Workspace popup ---
+    if (openWorkspacePopup_) {
+        ImGui::OpenPopup("##WorkspacePopup");
+        openWorkspacePopup_ = false;
+    }
+    ImGui::SetNextWindowPos(workspacePopupPos_);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+    if (ImGui::BeginPopup("##WorkspacePopup")) {
+        auto workspaces = app_->getWorkspaces();
+        for (const auto& ws : workspaces) {
+            bool isCurrent = (ws.id == app_->getCurrentWorkspaceId());
+            if (ImGui::Selectable(ws.name.c_str(), isCurrent)) {
+                app_->setCurrentWorkspace(ws.id);
+            }
+        }
+        ImGui::Separator();
+        if (ImGui::Selectable("New Workspace...")) {
+            app_->createWorkspace("New Workspace", "");
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleColor();
+
+    // --- Menu popup ---
+    if (openMenuPopup_) {
+        ImGui::OpenPopup("##MenuPopup");
+        openMenuPopup_ = false;
+    }
+    ImGui::SetNextWindowPos(menuPopupPos_);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 8});
+    if (ImGui::BeginPopup("##MenuPopup")) {
+        const float popupW = 180.0f;
+
+        // --- Theme section ---
+        ImGui::TextColored(colors.subtext0, "Theme");
+        {
+            float btnW = (popupW - 8.0f * 2) / 3.0f;
+            auto themeBtn = [&](const char* label, bool selected, auto action) {
+                if (selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.blue);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                }
+                if (ImGui::Button(label, {btnW, 0})) action();
+                if (selected) ImGui::PopStyleColor(3);
+            };
+            themeBtn(ICON_FA_SUN " Light", !isDark, [&] { app_->setDarkTheme(false); });
+            ImGui::SameLine();
+            themeBtn(ICON_FA_MOON " Dark", isDark, [&] { app_->setDarkTheme(true); });
+        }
+
+        ImGui::Spacing();
+
+        // --- Font size section ---
+        ImGui::TextColored(colors.subtext0, "Font Size");
+        {
+            float btnW = 36.0f;
+            float currentScale = app_->getFontScale();
+            if (ImGui::Button("A-", {btnW, 0})) {
+                app_->setFontScale(currentScale - 0.1f);
+            }
+            ImGui::SameLine();
+            char sizeLabel[16];
+            snprintf(sizeLabel, sizeof(sizeLabel), "%d%%", static_cast<int>(currentScale * 100));
+            float labelW = popupW - btnW * 2 - 8.0f * 2;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (labelW - ImGui::CalcTextSize(sizeLabel).x) * 0.5f);
+            ImGui::TextUnformatted(sizeLabel);
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelW - ImGui::CalcTextSize(sizeLabel).x);
+            if (ImGui::Button("A+", {btnW, 0})) {
+                app_->setFontScale(currentScale + 0.1f);
+            }
+        }
+
+        ImGui::Separator();
+
+        // --- Action buttons ---
+        if (ImGui::Selectable("Manage License...")) {
+            LicenseDialog::instance().show();
+        }
+        if (ImGui::Selectable("Report Bug...")) {
+            ShellExecuteW(nullptr, L"open",
+                          L"https://github.com/nicholasgasior/dearsql/issues/new"
+                          L"?labels=bug&title=%5BBug%5D",
+                          nullptr, nullptr, SW_SHOWNORMAL);
+        }
+
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
+
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +625,7 @@ void WindowsPlatform::renderFrame() {
     ImGui::NewFrame();
 
     renderTitlebar();
+    renderTitlebarPopups();
     app_->renderMainUI();
 
     ImGui::Render();

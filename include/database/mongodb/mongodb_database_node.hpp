@@ -25,6 +25,8 @@ public:
 
     std::string name;
 
+    [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
+
     // MongoDB: Database -> Collections (mapped to tables for consistency)
     std::vector<Table> collections; // Collections treated as "tables"
     std::vector<Table> views;       // MongoDB views (if any)

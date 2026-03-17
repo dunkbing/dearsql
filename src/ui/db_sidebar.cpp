@@ -17,6 +17,7 @@
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "ui/table_dialog.hpp"
+#include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
@@ -65,6 +66,13 @@ void DatabaseSidebarNew::renderEmpty() {
             Logger::info("Opening database connection dialog");
             showConnectionDialog();
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
+            const std::string path = FileDialog::openCSVFile();
+            if (!path.empty()) {
+                Application::getInstance().getTabManager()->createCsvEditorTab(path);
+            }
+        }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
@@ -88,11 +96,35 @@ void DatabaseSidebarNew::renderStructure() {
     syncHierarchyCache(databases);
 
     if (!databases.empty()) {
-        for (const auto& db : databases) {
+        // copy shared_ptrs so a removal during rendering doesn't invalidate the iterator
+        const auto snapshot = databases;
+        for (const auto& db : snapshot) {
             renderDatabaseNode(db);
         }
     } else {
         renderEmpty();
+    }
+
+    // right-click on empty sidebar space
+    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::IsAnyItemHovered()) {
+        ImGui::OpenPopup("SidebarContextMenu");
+    }
+    if (ImGui::BeginPopup("SidebarContextMenu")) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem("Add Database Connection")) {
+            showConnectionDialog();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
+            const std::string path = FileDialog::openCSVFile();
+            if (!path.empty()) {
+                Application::getInstance().getTabManager()->createCsvEditorTab(path);
+            }
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
     }
 
     ImGui::PopStyleVar(2);
@@ -635,7 +667,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 });
         }
 
-        if (db->isConnected()) {
+        if (db->isConnected() && db->getConnectionInfo().type != DatabaseType::SQLITE) {
             if (ImGui::MenuItem("Disconnect")) {
                 db->disconnect();
             }
@@ -649,7 +681,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 std::format("Remove '{}' and delete the saved connection?", connectionInfo.name),
                 {{"Cancel", []() {}, AlertButton::Style::Cancel},
                  {"Remove",
-                  [db, &app, connectionInfo]() {
+                  [db, connectionInfo]() {
+                      auto& app = Application::getInstance();
                       if (app.getAppState()->deleteConnection(db->getConnectionId())) {
                           Logger::info(
                               std::format("Removed saved connection: {}", connectionInfo.name));

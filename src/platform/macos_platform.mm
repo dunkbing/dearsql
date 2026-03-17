@@ -1031,6 +1031,29 @@ bool MacOSPlatform::initializePlatform(GLFWwindow* window) {
 
     std::cout << "Metal device and vibrancy layer initialized successfully" << std::endl;
 
+    // drag-and-drop: open supported files dropped onto the window
+    glfwSetDropCallback(window, [](GLFWwindow* w, int count, const char** paths) {
+        for (int i = 0; i < count; i++) {
+            Application::getInstance().openFile(std::string(paths[i]));
+        }
+        glfwFocusWindow(w);
+    });
+
+    // "Open With" / double-click in Finder: intercept application:openFile:
+    Class appDelegateClass = [NSApp.delegate class];
+    SEL openFileSel = @selector(application:openFile:);
+    if (![appDelegateClass instancesRespondToSelector:openFileSel]) {
+        IMP openFileImp =
+            imp_implementationWithBlock(^BOOL(id, NSApplication*, NSString* filename) {
+              std::string path([filename UTF8String]);
+              dispatch_async(dispatch_get_main_queue(), ^{
+                Application::getInstance().openFile(path);
+              });
+              return YES;
+            });
+        class_addMethod(appDelegateClass, openFileSel, openFileImp, "c@:@@");
+    }
+
     return true;
 }
 

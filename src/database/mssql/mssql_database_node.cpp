@@ -534,6 +534,10 @@ std::pair<bool, std::string> MSSQLDatabaseNode::createTable(const Table& table) 
     }
 }
 
+DatabaseInterface* MSSQLDatabaseNode::ownerDatabase() const {
+    return parentDb;
+}
+
 std::string MSSQLDatabaseNode::getFullPath() const {
     return name;
 }

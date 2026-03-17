@@ -13,7 +13,7 @@
       "default-features": false
     },
     "openssl",
-    "libmysql",
+    "libmariadb",
     {
       "name": "hiredis",
       "features": ["ssl"]

@@ -37,6 +37,10 @@ public:
         return DatabaseType::SQLITE;
     }
 
+    [[nodiscard]] DatabaseInterface* ownerDatabase() const override {
+        return const_cast<SQLiteDatabase*>(this);
+    }
+
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 

@@ -80,6 +80,7 @@ namespace dearsql {
         selectionActive_ = false;
         selectionAnchor_ = cursorIndex_;
         rebuildLineStarts();
+        contentDirty_ = false; // programmatic set is not a user edit
         highlightDirty_ = true;
         undoStack_.clear();
         redoStack_.clear();
@@ -362,6 +363,8 @@ namespace dearsql {
             if (content_[i] == '\n')
                 lineStarts_.push_back(static_cast<int>(i + 1));
         }
+        contentWidthDirty_ = true;
+        contentDirty_ = true;
     }
 
     int TextEditor::getLineFromPos(int pos) const {
@@ -464,26 +467,29 @@ namespace dearsql {
 
         // --- Text content area ---
         float textAreaWidth = ImGui::GetContentRegionAvail().x;
-        float contentWidth = 0.0f;
-
-        // Estimate max content width
-        ImFont* font = ImGui::GetFont();
         float spaceWidth = ImGui::CalcTextSize(" ").x;
-        for (size_t i = 0; i < lineStarts_.size(); ++i) {
-            int start = lineStarts_[i];
-            int end = getLineEnd(i);
-            if (end > start) {
-                float w = 0;
-                for (int j = start; j < end; ++j) {
-                    if (content_[j] == '\t')
-                        w += spaceWidth * tabSize_;
-                    else
-                        w += ImGui::CalcTextSize(&content_[j], &content_[j] + 1).x;
+
+        // recompute max content width only when content changed
+        if (contentWidthDirty_) {
+            float maxW = 0.0f;
+            for (size_t i = 0; i < lineStarts_.size(); ++i) {
+                int start = lineStarts_[i];
+                int end = getLineEnd(static_cast<int>(i));
+                if (end > start) {
+                    float w = 0;
+                    for (int j = start; j < end; ++j) {
+                        if (content_[j] == '\t')
+                            w += spaceWidth * tabSize_;
+                        else
+                            w += ImGui::CalcTextSize(&content_[j], &content_[j] + 1).x;
+                    }
+                    maxW = std::max(maxW, w);
                 }
-                contentWidth = std::max(contentWidth, w);
             }
+            cachedContentWidth_ = maxW + spaceWidth * 10;
+            contentWidthDirty_ = false;
         }
-        contentWidth += spaceWidth * 10;
+        float contentWidth = cachedContentWidth_;
         float contentHeight = lineStarts_.size() * lineHeight_ + lineHeight_;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

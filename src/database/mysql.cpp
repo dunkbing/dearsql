@@ -29,37 +29,37 @@ namespace {
             constexpr unsigned int connectTimeoutSeconds = 5;
             mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
 
-            // SSL mode
+            // SSL mode (MariaDB Connector/C API)
             switch (info.sslmode) {
             case SslMode::Disable: {
-                unsigned int mode = SSL_MODE_DISABLED;
-                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                my_bool enforce = 0;
+                mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
                 break;
             }
             case SslMode::Require: {
-                unsigned int mode = SSL_MODE_REQUIRED;
-                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                my_bool enforce = 1;
+                mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
                 break;
             }
             case SslMode::VerifyCA: {
-                unsigned int mode = SSL_MODE_VERIFY_CA;
-                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                my_bool enforce = 1;
+                mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
                 if (!info.sslCACertPath.empty())
                     mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
                 break;
             }
             case SslMode::VerifyFull: {
-                unsigned int mode = SSL_MODE_VERIFY_IDENTITY;
-                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+                my_bool enforce = 1;
+                my_bool verify = 1;
+                mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
+                mysql_options(conn, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
                 if (!info.sslCACertPath.empty())
                     mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
                 break;
             }
-            default: {
-                unsigned int mode = SSL_MODE_PREFERRED;
-                mysql_options(conn, MYSQL_OPT_SSL_MODE, &mode);
+            default:
+                // prefer: MariaDB negotiates SSL if server supports it (default behavior)
                 break;
-            }
             }
 
             // Enable multi-statement support

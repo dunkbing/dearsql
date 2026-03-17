@@ -859,6 +859,10 @@ std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table)
     }
 }
 
+DatabaseInterface* PostgresSchemaNode::ownerDatabase() const {
+    return (parentDbNode && parentDbNode->parentDb) ? parentDbNode->parentDb : nullptr;
+}
+
 std::string PostgresSchemaNode::getFullPath() const {
     if (!parentDbNode) {
         return name;

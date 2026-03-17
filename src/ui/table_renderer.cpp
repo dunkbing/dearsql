@@ -323,13 +323,15 @@ void TableRenderer::renderCell(int row, int col) {
             ImGui::PopStyleColor(3);
             ImGui::PopStyleVar(2);
 
-            if (shouldExitEditMode) {
-                exitEditMode(true);
-            }
+            const bool cancelEdit = ImGui::IsKeyPressed(ImGuiKey_Escape);
+            const bool deactivateEdit = ImGui::IsItemDeactivated();
 
-            // Exit edit mode on Escape
-            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            if (cancelEdit) {
                 exitEditMode(false);
+            } else if (shouldExitEditMode || deactivateEdit) {
+                // Commit when the editor loses focus so clicking another cell or toolbar action
+                // doesn't leave the edit stuck in the transient buffer.
+                exitEditMode(true);
             }
         }
     } else {

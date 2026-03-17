@@ -64,6 +64,9 @@ public:
     }
     void dockTabToCenter(const std::string& tabName) const;
 
+    // Open a file by path — routes to the right handler by extension
+    void openFile(const std::string& path);
+
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {
         return databases;

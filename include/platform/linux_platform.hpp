@@ -54,6 +54,8 @@ public:
                                 gpointer userData);
     static gboolean onScroll(GtkEventControllerScroll* controller, gdouble dx, gdouble dy,
                              gpointer userData);
+    static gboolean onDrop(GtkDropTarget* target, const GValue* value, double x, double y,
+                           gpointer userData);
     static void onSidebarToggle(GtkButton* button, gpointer userData);
     static void onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec, gpointer userData);
     static void onAddConnection(GtkButton* button, gpointer userData);

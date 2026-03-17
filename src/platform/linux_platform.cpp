@@ -122,6 +122,26 @@ bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
     return true;
 }
 
+gboolean LinuxPlatform::onDrop(GtkDropTarget*, const GValue* value, double, double,
+                               gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    if (!platform || !platform->app_ || !G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
+        return FALSE;
+
+    auto* files = static_cast<GSList*>(g_value_get_boxed(value));
+    for (GSList* l = files; l; l = l->next) {
+        char* path = g_file_get_path(G_FILE(l->data));
+        if (path) {
+            platform->app_->openFile(std::string(path));
+            g_free(path);
+        }
+    }
+    if (platform->window_) {
+        gtk_window_present(GTK_WINDOW(platform->window_));
+    }
+    return TRUE;
+}
+
 void LinuxPlatform::setupInputHandlers() {
     // Key controller
     GtkEventController* keyController = gtk_event_controller_key_new();
@@ -148,6 +168,11 @@ void LinuxPlatform::setupInputHandlers() {
         gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
     g_signal_connect(scrollController, "scroll", G_CALLBACK(onScroll), this);
     gtk_widget_add_controller(glArea_, scrollController);
+
+    // drop target: open supported files dropped onto the window
+    GtkDropTarget* dropTarget = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+    g_signal_connect(dropTarget, "drop", G_CALLBACK(LinuxPlatform::onDrop), this);
+    gtk_widget_add_controller(glArea_, GTK_EVENT_CONTROLLER(dropTarget));
 }
 
 bool LinuxPlatform::initializePlatform(GLFWwindow* window) {

@@ -10,7 +10,8 @@ enum class TabType {
     REDIS_EDITOR,
     REDIS_KEY_VIEWER,
     REDIS_PUBSUB,
-    MONGO_EDITOR
+    MONGO_EDITOR,
+    CSV_EDITOR
 };
 
 class Tab {
@@ -40,6 +41,9 @@ public:
     }
     void setOpen(const bool isOpen) {
         open = isOpen;
+    }
+    [[nodiscard]] virtual bool hasUnsavedChanges() const {
+        return false;
     }
 
     // Virtual method for rendering tab content

@@ -689,6 +689,10 @@ std::pair<bool, std::string> MySQLDatabaseNode::createTable(const Table& table) 
     }
 }
 
+DatabaseInterface* MySQLDatabaseNode::ownerDatabase() const {
+    return parentDb;
+}
+
 std::string MySQLDatabaseNode::getFullPath() const {
     return name;
 }

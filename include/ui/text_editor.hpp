@@ -72,6 +72,14 @@ namespace dearsql {
         // Callbacks
         void SetSubmitCallback(std::function<void()> cb);
 
+        // dirty flag — set on every user edit, cleared by SetText or ClearContentDirty
+        [[nodiscard]] bool IsContentDirty() const {
+            return contentDirty_;
+        }
+        void ClearContentDirty() {
+            contentDirty_ = false;
+        }
+
         // Language / highlighting mode
         enum class Language : uint8_t { SQL, Redis, JSON, PlainText };
         void SetLanguage(Language lang);
@@ -107,6 +115,9 @@ namespace dearsql {
         float lineHeight_ = 0.0f;
         float lineNumberWidth_ = 0.0f;
         ImVec2 textOrigin_;
+        float cachedContentWidth_ = 0.0f;
+        bool contentWidthDirty_ = true;
+        bool contentDirty_ = false;
 
         // --- Options ---
         bool showLineNumbers_ = true;

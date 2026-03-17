@@ -1,0 +1,37 @@
+Functional Source License, Version 1.1, Apache 2.0 Future License
+
+Copyright (c) 2026 dunkbing
+Contact: info@dearsql.dev
+
+"Software" means the DearSQL software and associated documentation.
+
+GRANT OF RIGHTS
+
+Subject to the terms of this License, the Licensor grants you a
+non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable
+license to use, copy, modify, create derivative works, redistribute, and
+make non-production use of the Software.
+
+The Licensor also grants you rights to make production use of the Software,
+provided that such production use does not constitute a Competing Use.
+
+COMPETING USE
+
+A "Competing Use" means making the Software available to third parties as a
+product or service whose value derives, entirely or substantially, from the
+functionality of the Software — specifically, a desktop or web-based SQL
+database client application.
+
+CHANGE DATE
+
+On 2028-03-14 ("Change Date"), the Licensor will make the Software available
+under the Apache License, Version 2.0, which will then apply instead of this
+License.
+
+NO WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+For the full FSL 1.1 text, see https://fsl.software

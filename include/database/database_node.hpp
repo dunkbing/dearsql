@@ -25,6 +25,14 @@ public:
     // ========== Identity ==========
 
     /**
+     * @brief Get the root DatabaseInterface that owns this node
+     * @return Pointer to the owning connection, or nullptr if not applicable
+     */
+    [[nodiscard]] virtual DatabaseInterface* ownerDatabase() const {
+        return nullptr;
+    }
+
+    /**
      * @brief Get the display name of this node
      * @return Node name (e.g., "public" schema, "app_db" database)
      */

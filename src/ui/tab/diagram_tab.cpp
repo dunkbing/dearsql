@@ -9,6 +9,57 @@
 #include <set>
 #include <utility>
 
+// Draws a 3-segment orthogonal path: p0 → (midX, p0.y) → (midX, p1.y) → p1
+// with rounded corners of the given radius.
+static void drawOrthogonalPath(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float midX, ImU32 color,
+                               float thickness, float radius) {
+    const float h1 = midX - p0.x;
+    const float h2 = p1.x - midX;
+    const float v = p1.y - p0.y;
+
+    // degenerate: nearly straight horizontal
+    if (std::abs(v) < 2.0f) {
+        dl->AddLine(p0, p1, color, thickness);
+        return;
+    }
+
+    const float sh1 = h1 >= 0.0f ? 1.0f : -1.0f;
+    const float sh2 = h2 >= 0.0f ? 1.0f : -1.0f;
+    const float sv = v >= 0.0f ? 1.0f : -1.0f;
+
+    // clamp radius so it never exceeds half of any segment
+    float r = std::min({radius, std::abs(h1), std::abs(h2), std::abs(v) * 0.5f});
+    r = std::max(r, 0.0f);
+
+    if (r < 0.5f) {
+        dl->AddLine(p0, ImVec2(midX, p0.y), color, thickness);
+        dl->AddLine(ImVec2(midX, p0.y), ImVec2(midX, p1.y), color, thickness);
+        dl->AddLine(ImVec2(midX, p1.y), p1, color, thickness);
+        return;
+    }
+
+    // corner 1: turn from h1 direction into vertical direction at (midX, p0.y)
+    const ImVec2 c1 = {midX, p0.y};
+    const ImVec2 c1i = {midX - sh1 * r, p0.y}; // enter corner 1
+    const ImVec2 c1o = {midX, p0.y + sv * r};  // exit corner 1
+
+    // corner 2: turn from vertical direction into h2 direction at (midX, p1.y)
+    const ImVec2 c2 = {midX, p1.y};
+    const ImVec2 c2i = {midX, p1.y - sv * r};  // enter corner 2
+    const ImVec2 c2o = {midX + sh2 * r, p1.y}; // exit corner 2
+
+    // Build path with cubic bezier corners (control points both at the corner vertex
+    // gives a smooth quarter-circle approximation)
+    dl->PathClear();
+    dl->PathLineTo(p0);
+    dl->PathLineTo(c1i);
+    dl->PathBezierCubicCurveTo(c1, c1, c1o);
+    dl->PathLineTo(c2i);
+    dl->PathBezierCubicCurveTo(c2, c2, c2o);
+    dl->PathLineTo(p1);
+    dl->PathStroke(color, false, thickness);
+}
+
 DiagramTab::DiagramTab(const std::string& name, IDatabaseNode* node)
     : Tab(name, TabType::DIAGRAM), node_(node) {
     initializeEditor();
@@ -44,7 +95,12 @@ void DiagramTab::initializeEditor() {
 
     if (!editorContext) {
         std::cerr << "Failed to create node editor context!" << std::endl;
+        return;
     }
+
+    ax::NodeEditor::SetCurrentEditor(editorContext);
+    ax::NodeEditor::GetStyle().NodeRounding = 0.0f;
+    ax::NodeEditor::SetCurrentEditor(nullptr);
 }
 
 void DiagramTab::render() {
@@ -94,7 +150,6 @@ void DiagramTab::render() {
 
     ImGui::Separator();
 
-    // Node editor
     if (!editorContext) {
         std::cout << "DiagramTab: Editor context is null, cannot render!" << std::endl;
         return;
@@ -104,13 +159,13 @@ void DiagramTab::render() {
 
     handleZoomShortcuts();
 
-    // Use a unique identifier for each diagram editor instance
     const std::string editorId =
         "Database Diagram##" + std::to_string(reinterpret_cast<uintptr_t>(this));
     ax::NodeEditor::Begin(editorId.c_str(), ImVec2(0.0, 0.0f));
 
-    renderNodes();
+    // Links drawn first so they land on the background draw channel (below nodes)
     renderLinks();
+    renderNodes();
     handleNodeInteraction();
 
     ax::NodeEditor::End();
@@ -213,8 +268,8 @@ void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
     node.isPrimaryTable =
         std::ranges::any_of(table.columns, [](const Column& col) { return col.isPrimaryKey; });
 
-    node.columnPinIds.clear();
     node.columnPinIds.resize(table.columns.size());
+    node.columnPinCanvasY.resize(table.columns.size(), 0.0f);
     for (size_t i = 0; i < table.columns.size(); ++i) {
         node.columnPinIds[i] = ax::NodeEditor::PinId(nextPinId++);
     }
@@ -242,44 +297,43 @@ void DiagramTab::renderNodes() {
         foreignKeyColumns.insert({link.fromTable, link.fromColumn});
     }
 
-    std::set<std::pair<std::string, std::string>> referencedColumns;
-    for (const auto& link : links) {
-        referencedColumns.insert({link.toTable, link.toColumn});
-    }
-
-    for (auto& [id, tableName, columns, position, isPrimaryTable, initialPositionSet,
-                columnPinIds] : nodes) {
-        if (!initialPositionSet) {
-            ax::NodeEditor::SetNodePosition(id, position);
-            initialPositionSet = true;
+    for (auto& node : nodes) {
+        if (!node.initialPositionSet) {
+            ax::NodeEditor::SetNodePosition(node.id, node.position);
+            node.initialPositionSet = true;
         }
 
-        ax::NodeEditor::BeginNode(id);
+        // Update stored size (valid after the first rendered frame)
+        node.size = ax::NodeEditor::GetNodeSize(node.id);
 
-        ImGui::PushStyleColor(ImGuiCol_Text, isPrimaryTable ? primaryTableColor : normalTableColor);
-        ImGui::Text(ICON_FA_TABLE " %s", tableName.c_str());
+        ax::NodeEditor::BeginNode(node.id);
+
+        ImGui::PushStyleColor(ImGuiCol_Text,
+                              node.isPrimaryTable ? primaryTableColor : normalTableColor);
+        ImGui::Text(ICON_FA_TABLE " %s", node.tableName.c_str());
         ImGui::PopStyleColor();
         ImGui::Separator();
 
-        for (size_t i = 0; i < columns.size(); ++i) {
-            const auto& column = columns[i];
+        // Extra spacing between column rows without creating layout items
+        const ImVec2 baseSpacing = ImGui::GetStyle().ItemSpacing;
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(baseSpacing.x, baseSpacing.y + 2.0f));
+
+        for (size_t i = 0; i < node.columns.size(); ++i) {
+            const auto& column = node.columns[i];
 
             if (column.name.empty()) {
                 continue;
             }
 
-            const bool isForeignKey = foreignKeyColumns.contains({tableName, column.name});
+            const bool isForeignKey = foreignKeyColumns.contains({node.tableName, column.name});
 
             ImGui::BeginGroup();
 
-            ax::NodeEditor::BeginPin(columnPinIds[i], ax::NodeEditor::PinKind::Input);
-            if (isForeignKey && showForeignKeys) {
-                ImGui::PushStyleColor(ImGuiCol_Text, foreignKeyColor);
-                ImGui::Text("●");
-                ImGui::PopStyleColor();
-            } else {
-                ImGui::Text("●");
-            }
+            ax::NodeEditor::BeginPin(node.columnPinIds[i], ax::NodeEditor::PinKind::Input);
+            node.columnPinCanvasY[i] =
+                ImGui::GetCursorScreenPos().y + ImGui::GetTextLineHeight() * 0.5f;
+            // 1px-wide placeholder: gives the pin a proper non-zero bounding rect
+            ImGui::Dummy(ImVec2(1.0f, ImGui::GetTextLineHeight()));
             ax::NodeEditor::EndPin();
 
             ImGui::SameLine();
@@ -294,7 +348,7 @@ void DiagramTab::renderNodes() {
                 ImGui::PopStyleColor();
 
                 if (ImGui::IsItemHovered()) {
-                    std::string cacheKey = tableName + "." + column.name;
+                    std::string cacheKey = node.tableName + "." + column.name;
                     auto fkIt = foreignKeyCache.find(cacheKey);
                     if (fkIt != foreignKeyCache.end()) {
                         ImGui::SetTooltip("Foreign Key -> %s.%s", fkIt->second.first.c_str(),
@@ -324,41 +378,156 @@ void DiagramTab::renderNodes() {
             ImGui::EndGroup();
         }
 
+        ImGui::PopStyleVar();
+
         ax::NodeEditor::EndNode();
 
-        position = ax::NodeEditor::GetNodePosition(id);
+        node.position = ax::NodeEditor::GetNodePosition(node.id);
     }
 }
 
 void DiagramTab::renderLinks() {
-    if (!showForeignKeys) {
-        return;
-    }
-
-    if (links.empty()) {
+    if (!showForeignKeys || links.empty()) {
         return;
     }
 
     const auto& colors = Application::getInstance().getCurrentColors();
+    const ImU32 linkColor = ImGui::ColorConvertFloat4ToU32(colors.sky);
+    const ImU32 linkHoverColor = ImGui::ColorConvertFloat4ToU32(colors.blue);
+    constexpr float thickness = 2.5f;
+    constexpr float cornerRadius = 8.0f;
+    constexpr float hoverThresh = 6.0f;
 
-    const ImVec4 foreignKeyLinkColor = colors.sky;
-    static constexpr float linkThickness = 2.5f;
+    auto* drawList = ImGui::GetWindowDrawList();
+    // Inside ax::NodeEditor::Begin/End, io.MousePos is already in canvas-local space.
+    const ImVec2 mouseCanvas = ImGui::GetMousePos();
+    bool anyDragActive = false;
 
-    for (const auto& link : links) {
-        ax::NodeEditor::Link(link.id, link.startPinId, link.endPinId, foreignKeyLinkColor,
-                             linkThickness);
-    }
+    for (auto& link : links) {
+        // Find nodes
+        auto fromIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.fromTable; });
+        auto toIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.toTable; });
+        if (fromIt == nodes.end() || toIt == nodes.end())
+            continue;
 
-    ax::NodeEditor::LinkId hoveredLinkId = ax::NodeEditor::GetHoveredLink();
-    if (hoveredLinkId) {
-        const auto linkIt = std::ranges::find_if(
-            links, [hoveredLinkId](const DiagramLink& link) { return link.id == hoveredLinkId; });
+        // Find column indices
+        int fromColIdx = -1, toColIdx = -1;
+        for (size_t i = 0; i < fromIt->columns.size(); ++i) {
+            if (fromIt->columns[i].name == link.fromColumn) {
+                fromColIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        for (size_t i = 0; i < toIt->columns.size(); ++i) {
+            if (toIt->columns[i].name == link.toColumn) {
+                toColIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (fromColIdx < 0 || toColIdx < 0)
+            continue;
 
-        if (linkIt != links.end() && ImGui::BeginTooltip()) {
-            ImGui::Text("%s.%s", linkIt->fromTable.c_str(), linkIt->fromColumn.c_str());
-            ImGui::Text("  ↓");
-            ImGui::Text("%s.%s", linkIt->toTable.c_str(), linkIt->toColumn.c_str());
-            ImGui::EndTooltip();
+        // Skip until canvas Y positions are captured (after first render frame)
+        if (fromIt->columnPinCanvasY[fromColIdx] == 0.0f ||
+            toIt->columnPinCanvasY[toColIdx] == 0.0f)
+            continue;
+
+        const ImVec2 fromPos = ax::NodeEditor::GetNodePosition(fromIt->id);
+        const ImVec2 fromSize = ax::NodeEditor::GetNodeSize(fromIt->id);
+        const ImVec2 toPos = ax::NodeEditor::GetNodePosition(toIt->id);
+        const ImVec2 toSize = ax::NodeEditor::GetNodeSize(toIt->id);
+
+        // Skip if node sizes haven't been computed yet
+        if (fromSize.x == 0.0f || toSize.x == 0.0f)
+            continue;
+
+        // Determine which node edge to attach to based on horizontal positions.
+        // The start pin exits from whichever side faces the other node.
+        const float fromCenterX = fromPos.x + fromSize.x * 0.5f;
+        const float toCenterX = toPos.x + toSize.x * 0.5f;
+        const bool fromRight = (toCenterX > fromCenterX);
+
+        const float startX = fromRight ? (fromPos.x + fromSize.x) : fromPos.x;
+        const float endX = fromRight ? toPos.x : (toPos.x + toSize.x);
+
+        const ImVec2 startPin = {startX, fromIt->columnPinCanvasY[fromColIdx]};
+        const ImVec2 endPin = {endX, toIt->columnPinCanvasY[toColIdx]};
+
+        // midX: centre between the two pins, adjusted by user drag offset
+        float midX = (startPin.x + endPin.x) * 0.5f + link.midXOffset;
+
+        // Clamp midX to stay in the gap between the two node edges (with a small margin)
+        const float gapLeft = std::min(startPin.x, endPin.x) + 20.0f;
+        const float gapRight = std::max(startPin.x, endPin.x) - 20.0f;
+        if (gapLeft < gapRight) {
+            midX = std::clamp(midX, gapLeft, gapRight);
+        }
+
+        // --- Hover & drag detection on the middle vertical segment ---
+        const float vSegYMin = std::min(startPin.y, endPin.y);
+        const float vSegYMax = std::max(startPin.y, endPin.y);
+
+        // Hover detection on all three segments — dragging any of them moves midX
+        const bool isHoveringVSeg =
+            !anyDragActive && (std::abs(mouseCanvas.x - midX) < hoverThresh) &&
+            (mouseCanvas.y >= vSegYMin - hoverThresh) && (mouseCanvas.y <= vSegYMax + hoverThresh);
+
+        const bool isHoveringSeg1 = !anyDragActive &&
+                                    (std::abs(mouseCanvas.y - startPin.y) < hoverThresh) &&
+                                    (mouseCanvas.x >= std::min(startPin.x, midX) - hoverThresh) &&
+                                    (mouseCanvas.x <= std::max(startPin.x, midX) + hoverThresh);
+
+        const bool isHoveringSeg3 = !anyDragActive &&
+                                    (std::abs(mouseCanvas.y - endPin.y) < hoverThresh) &&
+                                    (mouseCanvas.x >= std::min(midX, endPin.x) - hoverThresh) &&
+                                    (mouseCanvas.x <= std::max(midX, endPin.x) + hoverThresh);
+
+        const bool isHovered = isHoveringVSeg || isHoveringSeg1 || isHoveringSeg3;
+
+        // Update drag state — any segment drag moves midX horizontally
+        if (link.isDragging) {
+            anyDragActive = true;
+            if (ImGui::IsMouseDown(0)) {
+                link.midXOffset = link.dragStartOffset + (mouseCanvas.x - link.dragStartMouseX);
+            } else {
+                link.isDragging = false;
+            }
+        } else if (isHovered && ImGui::IsMouseClicked(0)) {
+            // Only start drag if no node is hovered (avoid conflict with node dragging)
+            if (!ax::NodeEditor::GetHoveredNode()) {
+                link.isDragging = true;
+                link.dragStartMouseX = mouseCanvas.x;
+                link.dragStartOffset = link.midXOffset;
+                anyDragActive = true;
+            }
+        }
+
+        if (isHovered || link.isDragging) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        }
+
+        // Suppress the editor's selection rect while dragging a link segment
+        if (link.isDragging) {
+            ax::NodeEditor::ClearSelection();
+        }
+
+        // --- Draw the orthogonal link ---
+        const bool highlight = isHovered || link.isDragging;
+        const ImU32 color = highlight ? linkHoverColor : linkColor;
+        const float lw = highlight ? thickness + 1.0f : thickness;
+
+        drawOrthogonalPath(drawList, startPin, endPin, midX, color, lw, cornerRadius);
+
+        // Tooltip on hover
+        if (isHovered) {
+            if (ImGui::BeginTooltip()) {
+                ImGui::Text("%s.%s", link.fromTable.c_str(), link.fromColumn.c_str());
+                ImGui::Text("  ↓");
+                ImGui::Text("%s.%s", link.toTable.c_str(), link.toColumn.c_str());
+                ImGui::EndTooltip();
+            }
         }
     }
 }

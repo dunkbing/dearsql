@@ -79,7 +79,7 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(unofficial-libmysql CONFIG REQUIRED)
+find_package(unofficial-libmariadb CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
 find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(mongocxx CONFIG REQUIRED)
@@ -226,6 +226,7 @@ set(APP_SOURCES
     src/ui/text_editor_input.cpp
     src/ui/text_editor_highlight.cpp
     src/ui/text_editor_format.cpp
+    src/ui/tab/csv_editor_tab.cpp
     # Redis
     src/ui/tab/redis_editor_tab.cpp
     src/ui/tab/redis_key_viewer_tab.cpp
@@ -236,6 +237,7 @@ set(APP_SOURCES
 
     # Utils
     src/utils/file_dialog.cpp
+    src/utils/table_exporter.cpp
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp
@@ -308,6 +310,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui-node-editor
     external/imgui-node-editor/external/stb_image
     external/IconFontCppHeaders
+    external/csv2/include
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
@@ -331,7 +334,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::sqlite3::sqlite3
     nlohmann_json::nlohmann_json
     PostgreSQL::PostgreSQL
-    unofficial::libmysql::libmysql
+    unofficial::libmariadb
     hiredis::hiredis
     hiredis::hiredis_ssl
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
@@ -487,7 +490,7 @@ target_link_libraries(database_tests PRIVATE
     GTest::gtest_main
     unofficial::sqlite3::sqlite3
     PostgreSQL::PostgreSQL
-    unofficial::libmysql::libmysql
+    unofficial::libmariadb
     hiredis::hiredis
     hiredis::hiredis_ssl
     $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
@@ -504,12 +507,14 @@ add_test(NAME database_tests COMMAND database_tests)
 # =============================================================================
 add_executable(sql_format_tests
     tests/ui/sql_format_test.cpp
+    tests/ui/csv_parser_test.cpp
     src/ui/text_editor_format.cpp
 )
 
 target_include_directories(sql_format_tests PRIVATE
     include
     external/imgui
+    external/csv2/include
 )
 
 target_link_libraries(sql_format_tests PRIVATE

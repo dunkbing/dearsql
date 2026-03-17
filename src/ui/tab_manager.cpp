@@ -3,6 +3,7 @@
 #include "database/database_node.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/mongo_editor_tab.hpp"
 #include "ui/tab/redis_editor_tab.hpp"
@@ -41,6 +42,41 @@ void TabManager::closeAllTabs() {
     tabs.clear();
     activeTabId_ = 0;
     pendingFocusTabId_ = 0;
+}
+
+void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
+    if (!db)
+        return;
+
+    auto* redisDb = dynamic_cast<RedisDatabase*>(db);
+
+    std::erase_if(tabs, [db, redisDb](const std::shared_ptr<Tab>& tab) {
+        IDatabaseNode* node = nullptr;
+        if (auto* t = dynamic_cast<SQLEditorTab*>(tab.get()))
+            node = t->getDatabaseNode();
+        else if (auto* t = dynamic_cast<TableViewerTab*>(tab.get()))
+            node = t->getDatabaseNode();
+        else if (auto* t = dynamic_cast<DiagramTab*>(tab.get()))
+            node = t->getDatabaseNode();
+        else if (auto* t = dynamic_cast<MongoEditorTab*>(tab.get()))
+            node = t->getDatabaseNode();
+
+        if (node)
+            return node->ownerDatabase() == db;
+
+        if (redisDb) {
+            if (auto* t = dynamic_cast<RedisEditorTab*>(tab.get()))
+                return t->getDatabase() == redisDb;
+            if (auto* t = dynamic_cast<RedisKeyViewerTab*>(tab.get()))
+                return t->getDatabase() == redisDb;
+            if (auto* t = dynamic_cast<RedisPubSubTab*>(tab.get()))
+                return t->getDatabase() == redisDb;
+        }
+
+        return false;
+    });
+
+    pruneTabState();
 }
 
 bool TabManager::hasTabId(const std::uint64_t id) const {
@@ -207,9 +243,11 @@ void TabManager::renderTabs() {
         bool isOpen = tab->isOpen();
 
         // Create a dockable window for each tab
-        constexpr ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar |
-                                                 ImGuiWindowFlags_NoScrollbar |
-                                                 ImGuiWindowFlags_NoScrollWithMouse;
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
+                                       ImGuiWindowFlags_NoScrollWithMouse;
+        if (tab->hasUnsavedChanges()) {
+            windowFlags |= ImGuiWindowFlags_UnsavedDocument;
+        }
 
         // Docked tabs copy tab item data into LastItemData on Begin(), so right-click on
         // the tab label can open a popup reliably from here.
@@ -436,6 +474,36 @@ std::shared_ptr<Tab> TabManager::createRedisPubSubTab(RedisDatabase* db) {
     }
 
     auto tab = std::make_shared<RedisPubSubTab>(tabName, db);
+    registerOpenedTab(tab);
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createCsvEditorTab(const std::string& filePath) {
+    if (filePath.empty())
+        return nullptr;
+
+    // reuse existing tab for the same file
+    for (auto& tab : tabs) {
+        if (tab->getType() == TabType::CSV_EDITOR) {
+            const auto csvTab = std::dynamic_pointer_cast<CsvEditorTab>(tab);
+            if (csvTab && csvTab->getFilePath() == filePath) {
+                requestTabFocus(tab->getId());
+                return tab;
+            }
+        }
+    }
+
+    const std::string filename = filePath.substr(
+        filePath.find_last_of("/\\") != std::string::npos ? filePath.find_last_of("/\\") + 1 : 0);
+
+    std::string tabName = filename;
+    int count = 1;
+    while (hasTabTitle(tabName)) {
+        ++count;
+        tabName = filename + " (" + std::to_string(count) + ")";
+    }
+
+    auto tab = std::make_shared<CsvEditorTab>(tabName, filePath);
     registerOpenedTab(tab);
     return tab;
 }

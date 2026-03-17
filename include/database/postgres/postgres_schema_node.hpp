@@ -53,6 +53,8 @@ public:
         return name;
     }
 
+    [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
+
     [[nodiscard]] std::string getFullPath() const override;
 
     [[nodiscard]] DatabaseType getDatabaseType() const override;

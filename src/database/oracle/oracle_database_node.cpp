@@ -852,6 +852,10 @@ std::pair<bool, std::string> OracleDatabaseNode::createTable(const Table& table)
     }
 }
 
+DatabaseInterface* OracleDatabaseNode::ownerDatabase() const {
+    return parentDb;
+}
+
 std::string OracleDatabaseNode::getFullPath() const {
     return name;
 }

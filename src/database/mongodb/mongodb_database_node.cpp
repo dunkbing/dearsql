@@ -69,6 +69,10 @@ namespace {
 
 } // namespace
 
+DatabaseInterface* MongoDBDatabaseNode::ownerDatabase() const {
+    return parentDb;
+}
+
 std::string MongoDBDatabaseNode::getFullPath() const {
     return name;
 }

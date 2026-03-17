@@ -32,6 +32,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
 #include <imgui_internal.h>
 #include <iostream>
@@ -434,6 +435,9 @@ void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
         return;
     }
 
+    if (tabManager)
+        tabManager->closeTabsForDatabase(db.get());
+
     if (*it) {
         (*it)->disconnect();
     }
@@ -787,8 +791,12 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &centerDockId);
 
-        ImGui::DockBuilderGetNode(leftDockId)->LocalFlags |=
-            ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDockingInCentralNode;
+        if (auto* leftNode = ImGui::DockBuilderGetNode(leftDockId)) {
+            const auto sidebarFlags = static_cast<ImGuiDockNodeFlags>(
+                ImGuiDockNodeFlags_NoTabBar |
+                static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoDockingInCentralNode));
+            leftNode->SetLocalFlags(leftNode->LocalFlags | sidebarFlags);
+        }
 
         ImGui::DockBuilderDockWindow("Databases", leftDockId);
         const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
@@ -940,6 +948,72 @@ void Application::renderMainUI() {
 #endif
 
     ImGui::End();
+}
+
+void Application::openFile(const std::string& rawPath) {
+    if (rawPath.empty() || !tabManager || !appState)
+        return;
+
+    // normalize to absolute path so duplicates and relative paths are detected correctly
+    std::error_code ec;
+    const std::string path =
+        std::filesystem::weakly_canonical(std::filesystem::absolute(rawPath), ec).string();
+    if (ec || path.empty())
+        return;
+
+    // case-insensitive extension check
+    const std::string ext = [&] {
+        auto e = std::filesystem::path(path).extension().string();
+        std::transform(e.begin(), e.end(), e.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return e;
+    }();
+
+    if (ext == ".csv") {
+        tabManager->createCsvEditorTab(path);
+        return;
+    }
+
+    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3")
+        return;
+
+    // reuse existing connection for this path if already open and connected
+    for (auto& db : databases) {
+        auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
+        if (sqliteDb && sqliteDb->getPath() == path) {
+            if (!sqliteDb->isConnected()) {
+                auto [ok, err] = sqliteDb->connect();
+                if (!ok) {
+                    Logger::error(std::format("Failed to reconnect SQLite file: {}", err));
+                    return;
+                }
+            }
+            setSelectedDatabase(db);
+            return;
+        }
+    }
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::SQLITE;
+    info.path = path;
+    info.name = std::filesystem::path(path).filename().string();
+
+    auto db = std::make_shared<SQLiteDatabase>(info);
+    auto [success, error] = db->connect();
+    if (!success) {
+        Logger::error(std::format("Failed to open file: {}", error));
+        return;
+    }
+
+    SavedConnection conn;
+    conn.connectionInfo = info;
+    conn.workspaceId = currentWorkspaceId;
+    int newId = appState->saveConnection(conn);
+    if (newId != -1)
+        db->setConnectionId(newId);
+
+    addDatabase(db);
+    setSelectedDatabase(db);
 }
 
 // Platform-specific methods that delegate to the platform implementation

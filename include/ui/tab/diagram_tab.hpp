@@ -14,9 +14,11 @@ struct DiagramNode {
     std::string tableName;
     std::vector<Column> columns;
     ImVec2 position;
+    ImVec2 size = ImVec2(0, 0);
     bool isPrimaryTable = false;
-    bool initialPositionSet = false;                 // Track if initial position has been set
-    std::vector<ax::NodeEditor::PinId> columnPinIds; // Cache pin IDs for each column
+    bool initialPositionSet = false;
+    std::vector<ax::NodeEditor::PinId> columnPinIds;
+    std::vector<float> columnPinCanvasY; // canvas-space Y center per column row
 };
 
 struct DiagramLink {
@@ -27,6 +29,10 @@ struct DiagramLink {
     std::string toTable;
     std::string fromColumn;
     std::string toColumn;
+    float midXOffset = 0.0f; // horizontal offset for the middle vertical segment
+    bool isDragging = false;
+    float dragStartMouseX = 0.0f;
+    float dragStartOffset = 0.0f;
 };
 
 class DiagramTab : public Tab {
@@ -35,6 +41,10 @@ public:
     ~DiagramTab() override;
 
     void render() override;
+
+    [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
+        return node_;
+    }
 
 private:
     void initializeEditor();

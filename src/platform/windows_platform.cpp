@@ -316,6 +316,15 @@ bool WindowsPlatform::initializePlatform(GLFWwindow* window) {
     }
 
     std::cout << "DirectX 11 device initialized successfully" << std::endl;
+
+    // drag-and-drop: open supported files dropped onto the window
+    glfwSetDropCallback(window, [](GLFWwindow* w, int count, const char** paths) {
+        for (int i = 0; i < count; i++) {
+            Application::getInstance().openFile(std::string(paths[i]));
+        }
+        glfwFocusWindow(w);
+    });
+
     return true;
 }
 

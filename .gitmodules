@@ -24,3 +24,6 @@
 [submodule "external/odpi"]
 	path = external/odpi
 	url = https://github.com/oracle/odpi.git
+[submodule "external/csv2"]
+	path = external/csv2
+	url = https://github.com/p-ranav/csv2

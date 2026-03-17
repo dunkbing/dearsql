@@ -16,13 +16,23 @@ public:
     using ConnValidator = std::function<bool(ConnHandle)>;
 
     ConnectionPool(size_t poolSize, ConnFactory factory, ConnCloser closer,
-                   ConnValidator validator = nullptr)
+                   ConnValidator validator = nullptr, int maxReconnectAttempts = 3)
         : factory_(std::move(factory)), closer_(std::move(closer)),
-          validator_(std::move(validator)) {
-        for (size_t i = 0; i < poolSize; ++i) {
-            ConnHandle conn = factory_();
-            all_.push_back(conn);
-            available_.push(conn);
+          validator_(std::move(validator)),
+          maxReconnectAttempts_(std::max(1, maxReconnectAttempts)) {
+        try {
+            for (size_t i = 0; i < poolSize; ++i) {
+                ConnHandle conn = factory_();
+                all_.push_back(conn);
+                available_.push(conn);
+            }
+        } catch (...) {
+            // destructor won't run on a half-constructed object; clean up manually
+            for (auto conn : all_) {
+                if (closer_)
+                    closer_(conn);
+            }
+            throw;
         }
     }
 
@@ -53,11 +63,11 @@ public:
     // RAII session handle -- returns connection to pool on destruction
     class Session {
     public:
-        Session(ConnectionPool& pool, ConnHandle conn) : pool_(pool), conn_(conn) {}
+        Session(ConnectionPool& pool, ConnHandle conn) : pool_(&pool), conn_(conn) {}
 
         ~Session() {
             if (conn_) {
-                pool_.release(conn_);
+                pool_->release(conn_);
             }
         }
 
@@ -68,8 +78,9 @@ public:
         Session& operator=(Session&& other) noexcept {
             if (this != &other) {
                 if (conn_) {
-                    pool_.release(conn_);
+                    pool_->release(conn_);
                 }
+                pool_ = other.pool_;
                 conn_ = other.conn_;
                 other.conn_ = ConnHandle{};
             }
@@ -84,52 +95,77 @@ public:
         }
 
     private:
-        ConnectionPool& pool_;
+        ConnectionPool* pool_;
         ConnHandle conn_;
     };
 
     Session acquire() {
-        std::unique_lock lock(mutex_);
+        ConnHandle conn;
+        {
+            std::unique_lock lock(mutex_);
 
-        constexpr auto timeout = std::chrono::seconds(30);
-        if (!cv_.wait_for(lock, timeout, [this] { return !available_.empty() || shutdown_; })) {
-            throw std::runtime_error("ConnectionPool: acquire timeout (30s)");
-        }
-
-        if (shutdown_) {
-            throw std::runtime_error("ConnectionPool: pool is shutting down");
-        }
-
-        ConnHandle conn = available_.front();
-        available_.pop();
-        ++inUse_;
-
-        // Validate connection, replace if dead
-        try {
-            if (validator_ && !validator_(conn)) {
-                if (closer_) {
-                    closer_(conn);
-                }
-                // Remove from all_ and create a replacement
-                auto it = std::find(all_.begin(), all_.end(), conn);
-                if (it != all_.end()) {
-                    *it = factory_();
-                    conn = *it;
-                } else {
-                    conn = factory_();
-                    all_.push_back(conn);
-                }
+            constexpr auto timeout = std::chrono::seconds(30);
+            if (!cv_.wait_for(lock, timeout, [this] { return !available_.empty() || shutdown_; })) {
+                throw std::runtime_error("ConnectionPool: acquire timeout (30s)");
             }
-        } catch (...) {
-            --inUse_;
-            cv_.notify_all();
-            throw;
+
+            if (shutdown_) {
+                throw std::runtime_error("ConnectionPool: pool is shutting down");
+            }
+
+            conn = available_.front();
+            available_.pop();
+            ++inUse_;
+        }
+
+        // validate + auto-reconnect outside the lock so other threads aren't blocked
+        if (validator_ && !validator_(conn)) {
+            try {
+                conn = reconnect_(conn);
+            } catch (...) {
+                // reconnect failed; old conn is still alive — return it to the pool so
+                // capacity isn't permanently lost; next acquire will re-validate it
+                {
+                    std::lock_guard lock(mutex_);
+                    --inUse_;
+                    available_.push(conn);
+                }
+                cv_.notify_all();
+                throw;
+            }
         }
 
         return Session(*this, conn);
     }
 
 private:
+    // retry factory up to maxReconnectAttempts_ times; old conn is closed only on success
+    // so the caller can safely return it to available_ if all retries fail
+    ConnHandle reconnect_(ConnHandle oldConn) {
+        std::exception_ptr lastEx;
+        for (int attempt = 0; attempt < maxReconnectAttempts_; ++attempt) {
+            try {
+                ConnHandle newConn = factory_();
+                // replace in all_ and close old only after a live replacement exists
+                {
+                    std::lock_guard lock(mutex_);
+                    auto it = std::find(all_.begin(), all_.end(), oldConn);
+                    if (it != all_.end())
+                        *it = newConn;
+                    else
+                        all_.push_back(newConn);
+                }
+                if (closer_)
+                    closer_(oldConn);
+                return newConn;
+            } catch (...) {
+                lastEx = std::current_exception();
+            }
+        }
+        // old conn untouched; caller restores it to available_ to preserve capacity
+        std::rethrow_exception(lastEx);
+    }
+
     void release(ConnHandle conn) {
         {
             std::lock_guard lock(mutex_);
@@ -150,6 +186,7 @@ private:
     ConnFactory factory_;
     ConnCloser closer_;
     ConnValidator validator_;
+    int maxReconnectAttempts_;
     size_t inUse_ = 0;
     bool shutdown_ = false;
 };

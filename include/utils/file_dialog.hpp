@@ -17,6 +17,9 @@ public:
     // File operations only
     static std::shared_ptr<DatabaseInterface> openSQLiteFile();
 
+    // returns the selected file path, or empty string if cancelled
+    static std::string openCSVFile();
+
 private:
     static bool isInitialized;
 };

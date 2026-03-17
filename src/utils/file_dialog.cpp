@@ -46,3 +46,19 @@ std::shared_ptr<DatabaseInterface> FileDialog::openSQLiteFile() {
     std::cerr << "File dialog error: " << NFD_GetError() << std::endl;
     return nullptr;
 }
+
+std::string FileDialog::openCSVFile() {
+    nfdchar_t* outPath;
+    constexpr nfdfilteritem_t filterItem[2] = {{"CSV Files", "csv"}, {"All Files", "*"}};
+
+    const nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 2, nullptr);
+    if (result == NFD_OKAY) {
+        std::string path(outPath);
+        NFD_FreePath(outPath);
+        return path;
+    }
+    if (result != NFD_CANCEL) {
+        std::cerr << "File dialog error: " << NFD_GetError() << std::endl;
+    }
+    return {};
+}

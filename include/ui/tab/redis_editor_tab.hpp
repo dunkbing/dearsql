@@ -25,6 +25,10 @@ public:
 
     void render() override;
 
+    [[nodiscard]] RedisDatabase* getDatabase() const {
+        return db_;
+    }
+
 private:
     RedisDatabase* db_;
     dearsql::TextEditor editor_;

@@ -12,7 +12,7 @@ namespace dearsql {
 
     void TextEditor::handleKeyboardInput() {
         ImGuiIO& io = ImGui::GetIO();
-        bool ctrl = io.KeyCtrl;
+        bool ctrl = io.KeyCtrl || io.KeySuper;
         bool shift = io.KeyShift;
         bool super = io.KeySuper; // Cmd on macOS
 

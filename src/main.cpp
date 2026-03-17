@@ -27,7 +27,7 @@ namespace {
     }
 } // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
     SentryInit::initialize();
 
     std::set_terminate([] { handleFatalException(); });
@@ -37,6 +37,11 @@ int main() {
     if (!app.initialize()) {
         SentryInit::close();
         return -1;
+    }
+
+    // open a file passed as a command-line argument (e.g. `dearsql my.db`, file association)
+    if (argc >= 2 && argv[1] != nullptr) {
+        app.openFile(std::string(argv[1]));
     }
 
     app.run();

@@ -17,8 +17,10 @@ struct DiagramNode {
     ImVec2 size = ImVec2(0, 0);
     bool isPrimaryTable = false;
     bool initialPositionSet = false;
-    std::vector<ax::NodeEditor::PinId> columnPinIds;
-    std::vector<float> columnPinCanvasY; // canvas-space Y center per column row
+    std::vector<ax::NodeEditor::PinId> columnPinIds;       // Input pins (FK target side)
+    std::vector<ax::NodeEditor::PinId> columnOutputPinIds; // Output pins (FK source side)
+    std::vector<float> columnPinCanvasY;
+    float separatorScreenY = 0.0f;
 };
 
 struct DiagramLink {
@@ -57,9 +59,6 @@ private:
 
     // Foreign key detection methods
     void detectForeignKeys();
-    void detectForeignKeysHeuristic(); // Fallback heuristic detection
-    bool isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
-                            std::string& referencedTable, std::string& referencedColumn);
 
 private:
     IDatabaseNode* node_ = nullptr;

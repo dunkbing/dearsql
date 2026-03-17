@@ -22,10 +22,12 @@ namespace {
     };
 
     constexpr ModelOption MODEL_OPTIONS[] = {
-        {"claude-sonnet-4-5", "claude-sonnet-4-5", AIProvider::ANTHROPIC},
-        {"claude-haiku-3-5", "claude-3-5-haiku-latest", AIProvider::ANTHROPIC},
+        {"claude-3-7-sonnet", "claude-3-7-sonnet-20250219", AIProvider::ANTHROPIC},
+        {"claude-3-5-haiku", "claude-3-5-haiku-latest", AIProvider::ANTHROPIC},
+        {"gemini-2.5-flash", "gemini-2.5-flash", AIProvider::GEMINI},
         {"gemini-2.0-flash", "gemini-2.0-flash", AIProvider::GEMINI},
-        {"gemini-2.5-pro", "gemini-2.5-pro", AIProvider::GEMINI},
+        {"gemini-1.5-pro", "gemini-1.5-pro-latest", AIProvider::GEMINI},
+        {"gemini-1.5-flash", "gemini-1.5-flash-latest", AIProvider::GEMINI},
     };
     constexpr int MODEL_COUNT = sizeof(MODEL_OPTIONS) / sizeof(MODEL_OPTIONS[0]);
 
@@ -51,6 +53,7 @@ void AIChatPanel::setInsertCallback(InsertSQLCallback cb) {
 }
 
 void AIChatPanel::render() {
+    chatState_->pollAsyncPrompt();
     pollStreaming();
 
     const auto& colors = Application::getInstance().getCurrentColors();
@@ -111,10 +114,14 @@ void AIChatPanel::renderMessages() {
         renderMessage(messages[i], i);
     }
 
-    // Show spinner during streaming
-    if (client_->isStreaming()) {
+    // Show spinner during streaming or prompt building
+    if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
         ImGui::Spacing();
         UIUtils::Spinner("##ai_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        if (chatState_->isBuildingPrompt()) {
+            ImGui::SameLine();
+            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "Analyzing database schema...");
+        }
     }
 }
 
@@ -327,7 +334,7 @@ void AIChatPanel::renderInputArea() {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
 
-        if (client_->isStreaming()) {
+        if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
             if (ImGui::Button(ICON_FA_STOP, ImVec2(sendBtnWidth, 0))) {
                 client_->cancel();
             }
@@ -385,8 +392,14 @@ void AIChatPanel::sendMessage() {
     }
 
     std::string model = getSelectedModel();
-    std::string systemPrompt = chatState_->buildSystemPrompt();
-    client_->sendStreaming(provider, apiKey, model, systemPrompt, requestMessages);
+
+    if (chatState_->isBuildingPrompt()) {
+        return; // Prevent multiple clicks
+    }
+
+    chatState_->buildSystemPromptAsync([this, provider, apiKey, model, requestMessages](std::string systemPrompt) {
+        client_->sendStreaming(provider, apiKey, model, systemPrompt, requestMessages);
+    });
 }
 
 void AIChatPanel::loadModelSettings() {

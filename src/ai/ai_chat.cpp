@@ -1,6 +1,22 @@
 #include "ai/ai_chat.hpp"
 #include "database/database_node.hpp"
+#include "utils/logger.hpp"
+#include <algorithm>
 #include <format>
+#include <string>
+
+namespace {
+    bool isStringColumnType(const std::string& typeStr) {
+        std::string lowerType = typeStr;
+        std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
+        return lowerType.find("varchar") != std::string::npos ||
+               lowerType.find("char") != std::string::npos ||
+               lowerType.find("text") != std::string::npos ||
+               lowerType.find("string") != std::string::npos ||
+               lowerType.find("enum") != std::string::npos ||
+               lowerType.find("json") != std::string::npos; // often json behaves as string logic
+    }
+}
 
 AIChatState::AIChatState(IDatabaseNode* node) : node_(node) {}
 
@@ -44,6 +60,39 @@ void AIChatState::setDatabaseNode(IDatabaseNode* node) {
     node_ = node;
 }
 
+void AIChatState::buildSystemPromptAsync(std::function<void(std::string)> callback) {
+    if (isBuildingPrompt()) {
+        return;
+    }
+
+    promptReadyCallback_ = std::move(callback);
+    promptBuilderOp_.startCancellable([this](std::stop_token stopToken) {
+        return buildSystemPrompt(stopToken);
+    });
+}
+
+void AIChatState::cancelAsyncPrompt() {
+    if (promptBuilderOp_.isRunning()) {
+        promptBuilderOp_.cancel();
+        promptReadyCallback_ = nullptr;
+    }
+}
+
+void AIChatState::pollAsyncPrompt() {
+    if (isBuildingPrompt()) {
+        promptBuilderOp_.check([this](std::string prompt) {
+            if (promptReadyCallback_) {
+                promptReadyCallback_(std::move(prompt));
+                promptReadyCallback_ = nullptr;
+            }
+        });
+    }
+}
+
+bool AIChatState::isBuildingPrompt() const {
+    return promptBuilderOp_.isRunning();
+}
+
 std::string AIChatState::dbTypeName() const {
     if (!node_) {
         return "SQL";
@@ -71,7 +120,7 @@ std::string AIChatState::dbTypeName() const {
     return "SQL";
 }
 
-std::string AIChatState::buildSchemaContext() const {
+std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
     if (!node_ || !node_->isTablesLoaded()) {
         return "(schema not loaded)";
     }
@@ -79,6 +128,8 @@ std::string AIChatState::buildSchemaContext() const {
     const bool isMongo = node_->getDatabaseType() == DatabaseType::MONGODB;
     std::string ctx;
     for (const auto& table : node_->getTables()) {
+        if (stopToken.stop_requested()) return "";
+
         if (isMongo) {
             ctx += std::format("Collection: {}", table.name);
             if (!table.columns.empty()) {
@@ -94,6 +145,7 @@ std::string AIChatState::buildSchemaContext() const {
         } else {
             ctx += std::format("Table: {} (", table.name);
             for (size_t i = 0; i < table.columns.size(); ++i) {
+                if (stopToken.stop_requested()) return "";
                 if (i > 0)
                     ctx += ", ";
                 const auto& col = table.columns[i];
@@ -102,6 +154,49 @@ std::string AIChatState::buildSchemaContext() const {
                     ctx += " PK";
                 if (col.isNotNull)
                     ctx += " NOT NULL";
+
+                // Add sample values for string columns
+                if (isStringColumnType(col.type)) {
+                    try {
+                        // Fast fetch: top 3 non-null values
+                        std::string sampleQuery = std::format(
+                            "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL LIMIT 3",
+                            col.name, table.name, col.name);
+
+                        // For MySQL/MariaDB use backticks instead of double quotes if preferred,
+                        // but double quotes are ANSI standard. We will fallback to raw name
+                        // if we want to be safe, but let's try standard quoting first or
+                        // ask the node to execute it.
+                        if (node_->getDatabaseType() == DatabaseType::MYSQL ||
+                            node_->getDatabaseType() == DatabaseType::MARIADB) {
+                            sampleQuery = std::format(
+                                "SELECT `{}` FROM `{}` WHERE `{}` IS NOT NULL LIMIT 3",
+                                col.name, table.name, col.name);
+                        }
+
+                        auto sampleRes = node_->executeQuery(sampleQuery, 3);
+                        if (stopToken.stop_requested()) return "";
+                        if (sampleRes.success() && !sampleRes.statements.empty() &&
+                            !sampleRes.statements[0].tableData.empty()) {
+
+                            std::string samplesStr = " (Samples: ";
+                            bool first = true;
+                            for (const auto& row : sampleRes.statements[0].tableData) {
+                                if (!row.empty()) {
+                                    if (!first) samplesStr += ", ";
+                                    samplesStr += "'" + row[0] + "'";
+                                    first = false;
+                                }
+                            }
+                            samplesStr += ")";
+                            if (!first) { // only append if we actually found samples
+                                ctx += samplesStr;
+                            }
+                        }
+                    } catch (...) {
+                        // ignore fetch errors
+                    }
+                }
             }
             ctx += ")\n";
 
@@ -121,9 +216,12 @@ std::string AIChatState::buildSchemaContext() const {
     return ctx;
 }
 
-std::string AIChatState::buildSystemPrompt() const {
+std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
     std::string dbType = dbTypeName();
-    std::string schema = buildSchemaContext();
+    std::string schema = buildSchemaContext(stopToken);
+
+    if (stopToken.stop_requested() || schema.empty()) return "";
+
     bool isMongo = node_ && node_->getDatabaseType() == DatabaseType::MONGODB;
 
     if (isMongo) {

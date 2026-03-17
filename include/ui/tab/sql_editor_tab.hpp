@@ -39,6 +39,9 @@ public:
     void setSelectedSchemaName(const std::string& schemaName) {
         selectedSchemaName = schemaName;
     }
+    void setSelectedTable(const std::string& tableName) {
+        selectedTableName_ = tableName;
+    }
     [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
         return node_;
     }
@@ -114,6 +117,7 @@ private:
 
     // Deferred database switch (PostgreSQL: waiting for schemas to load)
     std::string pendingDatabaseSwitch_;
+    std::string selectedTableName_; // The currently selected table in the UI
 
     // AI Chat panel
     std::unique_ptr<AIChatState> aiChatState_;

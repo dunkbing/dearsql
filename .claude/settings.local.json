@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -f \"DearSQL\" 2>/dev/null; sleep 0.5; open /Users/gianghoang/Desktop/dearsql/build/DearSQL.app)",
+      "Bash(ls -l src/ui/database_*.cpp)",
+      "Bash(cmake --build build -j10)",
+      "Bash(./build/DearSQL.app/Contents/MacOS/DearSQL)"
+    ]
+  },
+  "disabledMcpjsonServers": [
+    "filesystem",
+    "github-gianghoang9912",
+    "github-stitchg1612",
+    "google-search",
+    "memory",
+    "puppeteer",
+    "figma-desktop"
+  ]
+}

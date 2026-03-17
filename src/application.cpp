@@ -886,6 +886,7 @@ void Application::renderMainUI() {
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
 
     if (shouldShowSidebar) {
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.base);
         ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
         ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
         ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
@@ -900,7 +901,7 @@ void Application::renderMainUI() {
         ImGui::End();
 
         ImGui::PopStyleVar(1);
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(4);
     }
 
     // Main workspace area - positioning depends on sidebar visibility

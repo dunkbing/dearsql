@@ -515,6 +515,8 @@ void WindowsPlatform::renderTitlebarPopups() {
     }
     ImGui::SetNextWindowPos(workspacePopupPos_);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 8});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {6, 6});
     if (ImGui::BeginPopup("##WorkspacePopup")) {
         auto workspaces = app_->getWorkspaces();
         for (const auto& ws : workspaces) {
@@ -529,6 +531,7 @@ void WindowsPlatform::renderTitlebarPopups() {
         }
         ImGui::EndPopup();
     }
+    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 
     // --- Menu popup ---
@@ -536,17 +539,21 @@ void WindowsPlatform::renderTitlebarPopups() {
         ImGui::OpenPopup("##MenuPopup");
         openMenuPopup_ = false;
     }
-    ImGui::SetNextWindowPos(menuPopupPos_);
+    // Anchor popup so its RIGHT edge aligns with the menu button's right edge
+    const float popupW = 220.0f;
+    const float iconBtnSz = static_cast<float>(getTitlebarHeightPixels()) - 4.0f;
+    ImGui::SetNextWindowPos({menuPopupPos_.x + iconBtnSz - popupW, menuPopupPos_.y});
+    ImGui::SetNextWindowSize({popupW, 0});
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 8});
     if (ImGui::BeginPopup("##MenuPopup")) {
-        const float popupW = 180.0f;
+        const float contentW = popupW - 24.0f; // minus padding
 
         // --- Theme section ---
         ImGui::TextColored(colors.subtext0, "Theme");
         {
-            float btnW = (popupW - 8.0f * 2) / 3.0f;
+            float btnW = (contentW - 8.0f) / 2.0f; // 2 buttons with 8px gap
             auto themeBtn = [&](const char* label, bool selected, auto action) {
                 if (selected) {
                     ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
@@ -556,9 +563,9 @@ void WindowsPlatform::renderTitlebarPopups() {
                 if (ImGui::Button(label, {btnW, 0})) action();
                 if (selected) ImGui::PopStyleColor(3);
             };
-            themeBtn(ICON_FA_SUN " Light", !isDark, [&] { app_->setDarkTheme(false); });
+            themeBtn(ICON_FA_SUN "  Light", !isDark, [&] { app_->setDarkTheme(false); });
             ImGui::SameLine();
-            themeBtn(ICON_FA_MOON " Dark", isDark, [&] { app_->setDarkTheme(true); });
+            themeBtn(ICON_FA_MOON "  Dark", isDark, [&] { app_->setDarkTheme(true); });
         }
 
         ImGui::Spacing();
@@ -566,20 +573,22 @@ void WindowsPlatform::renderTitlebarPopups() {
         // --- Font size section ---
         ImGui::TextColored(colors.subtext0, "Font Size");
         {
-            float btnW = 36.0f;
+            float sideBtnW = 36.0f;
             float currentScale = app_->getFontScale();
-            if (ImGui::Button("A-", {btnW, 0})) {
+            if (ImGui::Button("A-", {sideBtnW, 0})) {
                 app_->setFontScale(currentScale - 0.1f);
             }
             ImGui::SameLine();
             char sizeLabel[16];
             snprintf(sizeLabel, sizeof(sizeLabel), "%d%%", static_cast<int>(currentScale * 100));
-            float labelW = popupW - btnW * 2 - 8.0f * 2;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (labelW - ImGui::CalcTextSize(sizeLabel).x) * 0.5f);
+            float centerW = contentW - sideBtnW * 2 - 8.0f * 2;
+            float textW = ImGui::CalcTextSize(sizeLabel).x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (centerW - textW) * 0.5f);
             ImGui::TextUnformatted(sizeLabel);
             ImGui::SameLine();
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelW - ImGui::CalcTextSize(sizeLabel).x);
-            if (ImGui::Button("A+", {btnW, 0})) {
+            float aplusX = ImGui::GetWindowContentRegionMax().x - sideBtnW;
+            ImGui::SetCursorPosX(aplusX);
+            if (ImGui::Button("A+", {sideBtnW, 0})) {
                 app_->setFontScale(currentScale + 0.1f);
             }
         }

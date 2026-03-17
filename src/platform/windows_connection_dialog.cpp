@@ -22,10 +22,16 @@
 #endif
 #include <atomic>
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <iostream>
 #include <thread>
+#include <uxtheme.h>
 #include <windows.h>
 #include <commdlg.h>
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -104,6 +110,16 @@ struct ConnectionDialogData {
 
     // Oracle client installer
     OracleClientInstaller oracleInstaller;
+
+    // Theme
+    bool isDark = false;
+    HBRUSH bgBrush = nullptr;
+    HBRUSH editBrush = nullptr;
+    HFONT hFont = nullptr;
+    COLORREF bgColor = RGB(255, 255, 255);
+    COLORREF editBgColor = RGB(255, 255, 255);
+    COLORREF textColor = RGB(0, 0, 0);
+    COLORREF dimTextColor = RGB(120, 120, 120);
 };
 
 struct AsyncConnectResult {
@@ -123,6 +139,11 @@ struct CreateDatabaseDialogData {
     std::shared_ptr<DatabaseInterface> db;
     HWND dialog = nullptr;
     HWND parentHwnd = nullptr;
+    HBRUSH bgBrush = nullptr;
+    HBRUSH editBrush = nullptr;
+    COLORREF bgColor = RGB(255, 255, 255);
+    COLORREF editBgColor = RGB(245, 245, 246);
+    COLORREF textColor = RGB(0, 0, 0);
 };
 
 static HWND sActiveConnectionDialog = nullptr;
@@ -210,6 +231,9 @@ static int defaultPort(DatabaseType type) {
     }
 }
 
+// forward declare
+static void resizeToFitContent(HWND hwnd, HWND parentHwnd, int contentWidth);
+
 // show/hide a control
 static void showCtrl(HWND dialog, int id, bool show) {
     HWND ctrl = GetDlgItem(dialog, id);
@@ -248,26 +272,35 @@ static void updateFieldVisibility(HWND dialog, DatabaseType type) {
 
     showCtrl(dialog, IDC_SHOW_ALL_DBS_CHECK, isServer && !isRedis);
 
-    // SSH fields
+    // SSH fields — always visible for server types, disabled when unchecked
     showCtrl(dialog, IDC_SSH_ENABLED_CHECK, isServer);
     bool sshEnabled = isServer && (SendMessage(GetDlgItem(dialog, IDC_SSH_ENABLED_CHECK),
                                                BM_GETCHECK, 0, 0) == BST_CHECKED);
-    showCtrl(dialog, IDC_LABEL_SSH_HOST, sshEnabled);
-    showCtrl(dialog, IDC_SSH_HOST_EDIT, sshEnabled);
-    showCtrl(dialog, IDC_LABEL_SSH_PORT, sshEnabled);
-    showCtrl(dialog, IDC_SSH_PORT_EDIT, sshEnabled);
-    showCtrl(dialog, IDC_LABEL_SSH_USERNAME, sshEnabled);
-    showCtrl(dialog, IDC_SSH_USERNAME_EDIT, sshEnabled);
-    showCtrl(dialog, IDC_SSH_AUTH_PASSWORD_RADIO, sshEnabled);
-    showCtrl(dialog, IDC_SSH_AUTH_KEY_RADIO, sshEnabled);
+    showCtrl(dialog, IDC_LABEL_SSH_HOST, isServer);
+    showCtrl(dialog, IDC_SSH_HOST_EDIT, isServer);
+    showCtrl(dialog, IDC_LABEL_SSH_PORT, isServer);
+    showCtrl(dialog, IDC_SSH_PORT_EDIT, isServer);
+    showCtrl(dialog, IDC_LABEL_SSH_USERNAME, isServer);
+    showCtrl(dialog, IDC_SSH_USERNAME_EDIT, isServer);
+    showCtrl(dialog, IDC_SSH_AUTH_PASSWORD_RADIO, isServer);
+    showCtrl(dialog, IDC_SSH_AUTH_KEY_RADIO, isServer);
+
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_HOST_EDIT), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_PORT_EDIT), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_USERNAME_EDIT), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_AUTH_PASSWORD_RADIO), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_AUTH_KEY_RADIO), sshEnabled);
 
     bool sshKeyAuth = sshEnabled && (SendMessage(GetDlgItem(dialog, IDC_SSH_AUTH_KEY_RADIO),
                                                  BM_GETCHECK, 0, 0) == BST_CHECKED);
-    showCtrl(dialog, IDC_LABEL_SSH_PASSWORD, sshEnabled && !sshKeyAuth);
-    showCtrl(dialog, IDC_SSH_PASSWORD_EDIT, sshEnabled && !sshKeyAuth);
-    showCtrl(dialog, IDC_LABEL_SSH_KEY, sshEnabled && sshKeyAuth);
-    showCtrl(dialog, IDC_SSH_KEY_EDIT, sshEnabled && sshKeyAuth);
-    showCtrl(dialog, IDC_SSH_KEY_BROWSE, sshEnabled && sshKeyAuth);
+    showCtrl(dialog, IDC_LABEL_SSH_PASSWORD, isServer && !sshKeyAuth);
+    showCtrl(dialog, IDC_SSH_PASSWORD_EDIT, isServer && !sshKeyAuth);
+    showCtrl(dialog, IDC_LABEL_SSH_KEY, isServer && sshKeyAuth);
+    showCtrl(dialog, IDC_SSH_KEY_EDIT, isServer && sshKeyAuth);
+    showCtrl(dialog, IDC_SSH_KEY_BROWSE, isServer && sshKeyAuth);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_PASSWORD_EDIT), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_KEY_EDIT), sshEnabled);
+    EnableWindow(GetDlgItem(dialog, IDC_SSH_KEY_BROWSE), sshEnabled);
 
     // SSL CA cert visibility
     if (isServer) {
@@ -294,6 +327,8 @@ static void updateFieldVisibility(HWND dialog, DatabaseType type) {
         EnableWindow(GetDlgItem(dialog, IDC_USERNAME_EDIT), authEnabled);
         EnableWindow(GetDlgItem(dialog, IDC_PASSWORD_EDIT), authEnabled);
     }
+
+    PostMessage(dialog, WM_APP + 2, 0, 0);
 }
 
 static void rebuildSslModes(HWND dialog, DatabaseType type) {
@@ -545,6 +580,158 @@ static void connectServerAsync(ConnectionDialogData* data) {
 // window procedure
 // ---------------------------------------------------------------------------
 
+// Find the bottom of the lowest visible child control (excluding status/buttons),
+// reposition the buttons below it, then resize the dialog to fit.
+static void resizeToFitContent(HWND hwnd, HWND parentHwnd, int contentWidth) {
+    // Find the bottom of the lowest visible field (skip status label and buttons)
+    HWND statusLabel = GetDlgItem(hwnd, IDC_STATUS_LABEL);
+    HWND cancelBtn = GetDlgItem(hwnd, IDC_CANCEL_BTN);
+    HWND connectBtn = GetDlgItem(hwnd, IDC_CONNECT_BTN);
+
+    int maxBottom = 0;
+    HWND child = GetWindow(hwnd, GW_CHILD);
+    while (child) {
+        if (IsWindowVisible(child) && child != statusLabel && child != cancelBtn && child != connectBtn) {
+            RECT rc;
+            GetWindowRect(child, &rc);
+            POINT pt = {0, rc.bottom};
+            ScreenToClient(hwnd, &pt);
+            if (pt.y > maxBottom) maxBottom = pt.y;
+        }
+        child = GetWindow(child, GW_HWNDNEXT);
+    }
+
+    // Position buttons below the last visible field
+    constexpr int FX = 110, FW = 350;
+    int btnY = maxBottom + 12;
+    constexpr int btnH = 32;
+    if (statusLabel) SetWindowPos(statusLabel, nullptr, 16, btnY + 8, FX + FW - 200, 22, SWP_NOZORDER);
+    if (cancelBtn)   SetWindowPos(cancelBtn, nullptr, FX + FW - 180, btnY, 84, btnH, SWP_NOZORDER);
+    if (connectBtn)  SetWindowPos(connectBtn, nullptr, FX + FW - 90, btnY, 90, btnH, SWP_NOZORDER);
+
+    // Resize the dialog
+    RECT rcWin, rcClient;
+    GetWindowRect(hwnd, &rcWin);
+    GetClientRect(hwnd, &rcClient);
+    int frameW = (rcWin.right - rcWin.left) - (rcClient.right - rcClient.left);
+    int frameH = (rcWin.bottom - rcWin.top) - (rcClient.bottom - rcClient.top);
+    int newW = contentWidth + frameW;
+    int newH = btnY + btnH + 16 + frameH;
+
+    int cx = rcWin.left, cy = rcWin.top;
+    if (parentHwnd) {
+        RECT rcParent;
+        GetWindowRect(parentHwnd, &rcParent);
+        cx = rcParent.left + ((rcParent.right - rcParent.left) - newW) / 2;
+        cy = rcParent.top + ((rcParent.bottom - rcParent.top) - newH) / 2;
+    }
+    SetWindowPos(hwnd, nullptr, cx, cy, newW, newH, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// Subclass proc for radio buttons and checkboxes to fix text color in dark mode.
+// Calls the original paint, then redraws just the text in the correct color.
+static LRESULT CALLBACK DarkButtonSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                                UINT_PTR subclassId, DWORD_PTR refData) {
+    auto* data = reinterpret_cast<ConnectionDialogData*>(refData);
+
+    if (msg == WM_PAINT && data && data->isDark) {
+        // Let the default paint happen first
+        LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+
+        // Now overdraw the text in the correct color
+        char text[256] = "";
+        GetWindowTextA(hwnd, text, sizeof(text));
+        if (text[0] == '\0') return result;
+
+        HDC hdc = GetDC(hwnd);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+
+        // Offset text past the checkbox/radio indicator (~20px)
+        rc.left += 20;
+
+        HFONT hFont = reinterpret_cast<HFONT>(SendMessage(hwnd, WM_GETFONT, 0, 0));
+        HFONT oldFont = hFont ? reinterpret_cast<HFONT>(SelectObject(hdc, hFont)) : nullptr;
+
+        SetBkColor(hdc, data->bgColor);
+        SetTextColor(hdc, data->textColor);
+        SetBkMode(hdc, OPAQUE);
+
+        // Clear the text area then redraw
+        RECT textRect = rc;
+        ExtTextOutA(hdc, 0, 0, ETO_OPAQUE, &textRect, nullptr, 0, nullptr);
+        DrawTextA(hdc, text, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+        if (oldFont) SelectObject(hdc, oldFont);
+        ReleaseDC(hwnd, hdc);
+        return result;
+    }
+
+    if (msg == WM_NCDESTROY) {
+        RemoveWindowSubclass(hwnd, DarkButtonSubclassProc, subclassId);
+    }
+
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+static void applyDialogTheme(ConnectionDialogData* data, HWND hwnd) {
+    if (!data || !data->app) return;
+
+    data->isDark = data->app->isDarkTheme();
+
+    if (data->isDark) {
+        data->bgColor = RGB(15, 15, 15);
+        data->editBgColor = RGB(30, 30, 30);
+        data->textColor = RGB(255, 255, 255);
+        data->dimTextColor = RGB(180, 180, 180);
+    } else {
+        data->bgColor = RGB(255, 255, 255);
+        data->editBgColor = RGB(245, 245, 246);
+        data->textColor = RGB(0, 0, 0);
+        data->dimTextColor = RGB(100, 100, 100);
+    }
+
+    if (data->bgBrush) DeleteObject(data->bgBrush);
+    if (data->editBrush) DeleteObject(data->editBrush);
+    data->bgBrush = CreateSolidBrush(data->bgColor);
+    data->editBrush = CreateSolidBrush(data->editBgColor);
+
+    // Dark mode title bar
+    BOOL useDark = data->isDark ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
+
+    // Apply dark mode explorer theme to controls for native dark scrollbars/combos
+    auto setDarkTheme = [&](int id) {
+        HWND ctrl = GetDlgItem(hwnd, id);
+        if (ctrl) {
+            SetWindowTheme(ctrl, data->isDark ? L"DarkMode_CFD" : L"Explorer", nullptr);
+        }
+    };
+    setDarkTheme(IDC_TYPE_COMBO);
+    setDarkTheme(IDC_SSL_MODE_COMBO);
+    setDarkTheme(IDC_CONNECT_BTN);
+    setDarkTheme(IDC_CANCEL_BTN);
+    setDarkTheme(IDC_SQLITE_BROWSE_BTN);
+    setDarkTheme(IDC_SSL_CA_CERT_BROWSE);
+    setDarkTheme(IDC_SSH_KEY_BROWSE);
+    // Subclass radio buttons and checkboxes for dark mode text
+    auto subclassBtn = [&](int id) {
+        HWND ctrl = GetDlgItem(hwnd, id);
+        if (ctrl) {
+            SetWindowSubclass(ctrl, DarkButtonSubclassProc, static_cast<UINT_PTR>(id),
+                              reinterpret_cast<DWORD_PTR>(data));
+        }
+    };
+    subclassBtn(IDC_AUTH_PASSWORD_RADIO);
+    subclassBtn(IDC_AUTH_NONE_RADIO);
+    subclassBtn(IDC_SHOW_ALL_DBS_CHECK);
+    subclassBtn(IDC_SSH_ENABLED_CHECK);
+    subclassBtn(IDC_SSH_AUTH_PASSWORD_RADIO);
+    subclassBtn(IDC_SSH_AUTH_KEY_RADIO);
+
+    InvalidateRect(hwnd, nullptr, TRUE);
+}
+
 static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     auto* data = reinterpret_cast<ConnectionDialogData*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 
@@ -555,7 +742,14 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(data));
         data->dialog = hwnd;
 
-        HFONT hFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        // Create a Segoe UI font at 15px (matches the app's UI feel)
+        data->hFont = CreateFontA(
+            -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+        HFONT hFont = data->hFont ? data->hFont
+                                  : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+
         auto makeCtrl = [&](const char* cls, const char* text, int id, DWORD style, int x, int y,
                             int w, int h) -> HWND {
             HWND ctrl = CreateWindowExA(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
@@ -565,13 +759,13 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
             return ctrl;
         };
 
-        constexpr int LX = 12;  // label x
-        constexpr int FX = 100; // field x
-        constexpr int FW = 340; // field width
-        constexpr int LW = 82;  // label width
-        constexpr int RH = 22;  // row height
-        constexpr int RS = 28;  // row spacing
-        int y = 12;
+        constexpr int LX = 16;  // label x
+        constexpr int FX = 110; // field x
+        constexpr int FW = 350; // field width
+        constexpr int LW = 88;  // label width
+        constexpr int RH = 26;  // row height
+        constexpr int RS = 34;  // row spacing
+        int y = 16;
 
         // connection name
         makeCtrl("STATIC", "Name:", IDC_LABEL_NAME, SS_RIGHT, LX, y + 3, LW, RH);
@@ -630,9 +824,9 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
         // auth radio buttons
         makeCtrl("BUTTON", "Username && Password", IDC_AUTH_PASSWORD_RADIO,
-                 BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, FX, y, 160, RH);
+                 BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, FX, y, 200, RH);
         makeCtrl("BUTTON", "No Auth", IDC_AUTH_NONE_RADIO, BS_AUTORADIOBUTTON | WS_TABSTOP,
-                 FX + 170, y, 100, RH);
+                 FX + 210, y, 100, RH);
         SendMessage(GetDlgItem(hwnd, IDC_AUTH_PASSWORD_RADIO), BM_SETCHECK, BST_CHECKED, 0);
         y += RS;
 
@@ -698,21 +892,75 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                  FX + FW - 74, y, 74, RH);
         y += RS + 4;
 
-        // status label
-        makeCtrl("STATIC", "", IDC_STATUS_LABEL, SS_LEFT, FX, y, FW, RH);
-        y += RS;
+        // status label (placed left of buttons on the same row)
+        makeCtrl("STATIC", "", IDC_STATUS_LABEL, SS_LEFT, LX, y + 8, FX + FW - 200, RH);
 
         // buttons
-        makeCtrl("BUTTON", "Cancel", IDC_CANCEL_BTN, WS_TABSTOP | BS_PUSHBUTTON, FX + FW - 170, y,
-                 80, 28);
-        makeCtrl("BUTTON", "Connect", IDC_CONNECT_BTN, WS_TABSTOP | BS_DEFPUSHBUTTON, FX + FW - 84,
-                 y, 84, 28);
+        constexpr int btnH = 32;
+        makeCtrl("BUTTON", "Cancel", IDC_CANCEL_BTN, WS_TABSTOP | BS_PUSHBUTTON, FX + FW - 180, y,
+                 84, btnH);
+        makeCtrl("BUTTON", "Connect", IDC_CONNECT_BTN, WS_TABSTOP | BS_DEFPUSHBUTTON, FX + FW - 90,
+                 y, 90, btnH);
+        y += btnH + 16; // final content height
 
         // initial type is SQLite — rebuild SSL modes and field visibility
         rebuildSslModes(hwnd, DatabaseType::SQLITE);
         updateFieldVisibility(hwnd, DatabaseType::SQLITE);
 
+        // Apply theme
+        applyDialogTheme(data, hwnd);
+
         return 0;
+    }
+
+    case WM_ERASEBKGND: {
+        if (data && data->bgBrush) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            FillRect(hdc, &rc, data->bgBrush);
+            return 1;
+        }
+        break;
+    }
+
+    case WM_CTLCOLORSTATIC: {
+        if (data) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, data->textColor);
+            SetBkColor(hdc, data->bgColor);
+            return reinterpret_cast<LRESULT>(data->bgBrush);
+        }
+        break;
+    }
+
+    case WM_CTLCOLOREDIT: {
+        if (data) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, data->textColor);
+            SetBkColor(hdc, data->editBgColor);
+            return reinterpret_cast<LRESULT>(data->editBrush);
+        }
+        break;
+    }
+
+    case WM_CTLCOLORLISTBOX: {
+        if (data) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, data->textColor);
+            SetBkColor(hdc, data->editBgColor);
+            return reinterpret_cast<LRESULT>(data->editBrush);
+        }
+        break;
+    }
+
+    case WM_CTLCOLORBTN: {
+        if (data && data->bgBrush) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetBkColor(hdc, data->bgColor);
+            return reinterpret_cast<LRESULT>(data->bgBrush);
+        }
+        break;
     }
 
     case WM_COMMAND: {
@@ -858,6 +1106,14 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
     }
 
+    case WM_APP + 2: {
+        // Deferred resize to fit visible content (posted after field visibility changes)
+        if (data) {
+            resizeToFitContent(hwnd, data->parentHwnd, 110 + 350 + 20);
+        }
+        return 0;
+    }
+
     case WM_CLOSE:
         if (data) {
             data->cancelled.store(true);
@@ -871,6 +1127,9 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         if (data) {
             data->oracleInstaller.cancel();
             data->editingDb.reset();
+            if (data->bgBrush) DeleteObject(data->bgBrush);
+            if (data->editBrush) DeleteObject(data->editBrush);
+            if (data->hFont) DeleteObject(data->hFont);
             delete data;
         }
         SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
@@ -926,8 +1185,9 @@ static void showConnectionDialogInternal(Application* app,
         data->editingConnectionId = editingDb->getConnectionId();
     }
 
-    constexpr int dialogW = 480;
-    constexpr int dialogH = 680;
+    // Initial size — will be resized to fit content in WM_CREATE
+    constexpr int dialogW = 500;
+    constexpr int dialogH = 600;
 
     const char* title = editingDb ? "Edit Connection" : "New Connection";
 
@@ -1030,7 +1290,12 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
         SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(data));
         data->dialog = hwnd;
 
-        HFONT hFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        HFONT hFont = CreateFontA(
+            -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+        if (!hFont) hFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+
         auto makeCtrl = [&](const char* cls, const char* text, int id, DWORD style, int x, int y,
                             int w, int h) -> HWND {
             HWND ctrl = CreateWindowExA(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h,
@@ -1041,17 +1306,59 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
         };
 
         int y = 16;
-        makeCtrl("STATIC", "Database name:", 2000, SS_LEFT, 16, y + 3, 100, 20);
-        makeCtrl("EDIT", "", 2001, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 120, y, 220, 22);
-        y += 36;
+        makeCtrl("STATIC", "Database name:", 2000, SS_LEFT, 16, y + 4, 110, 22);
+        makeCtrl("EDIT", "", 2001, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 130, y, 230, 26);
+        y += 40;
 
-        makeCtrl("STATIC", "", 2010, SS_LEFT, 16, y, 320, 20); // status
-        y += 28;
+        makeCtrl("STATIC", "", 2010, SS_LEFT, 16, y + 8, 230, 22); // status
+        makeCtrl("BUTTON", "Cancel", 2002, WS_TABSTOP | BS_PUSHBUTTON, 176, y, 84, 32);
+        makeCtrl("BUTTON", "Create", 2003, WS_TABSTOP | BS_DEFPUSHBUTTON, 266, y, 90, 32);
 
-        makeCtrl("BUTTON", "Cancel", 2002, WS_TABSTOP | BS_PUSHBUTTON, 170, y, 80, 28);
-        makeCtrl("BUTTON", "Create", 2003, WS_TABSTOP | BS_DEFPUSHBUTTON, 256, y, 84, 28);
+        // Apply theme
+        if (data && data->app) {
+            bool isDark = data->app->isDarkTheme();
+            data->bgColor = isDark ? RGB(15, 15, 15) : RGB(255, 255, 255);
+            data->editBgColor = isDark ? RGB(30, 30, 30) : RGB(245, 245, 246);
+            data->textColor = isDark ? RGB(255, 255, 255) : RGB(0, 0, 0);
+            data->bgBrush = CreateSolidBrush(data->bgColor);
+            data->editBrush = CreateSolidBrush(data->editBgColor);
+            BOOL useDark = isDark ? TRUE : FALSE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
+        }
 
         return 0;
+    }
+
+    case WM_ERASEBKGND: {
+        if (data && data->bgBrush) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            FillRect(hdc, &rc, data->bgBrush);
+            return 1;
+        }
+        break;
+    }
+
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN: {
+        if (data && data->bgBrush) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, data->textColor);
+            SetBkColor(hdc, data->bgColor);
+            return reinterpret_cast<LRESULT>(data->bgBrush);
+        }
+        break;
+    }
+
+    case WM_CTLCOLOREDIT: {
+        if (data && data->editBrush) {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, data->textColor);
+            SetBkColor(hdc, data->editBgColor);
+            return reinterpret_cast<LRESULT>(data->editBrush);
+        }
+        break;
     }
 
     case WM_COMMAND: {
@@ -1093,6 +1400,8 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
         sActiveCreateDatabaseDialog = nullptr;
         if (data) {
             data->db.reset();
+            if (data->bgBrush) DeleteObject(data->bgBrush);
+            if (data->editBrush) DeleteObject(data->editBrush);
             delete data;
         }
         SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
@@ -1118,9 +1427,19 @@ void showCreateDatabaseDialog(Application* app, std::shared_ptr<DatabaseInterfac
     data->db = db;
     data->parentHwnd = getParentHwnd(app);
 
+    // Center on parent
+    int dlgW = 390, dlgH = 140;
+    int cx = CW_USEDEFAULT, cy = CW_USEDEFAULT;
+    if (data->parentHwnd) {
+        RECT rcParent;
+        GetWindowRect(data->parentHwnd, &rcParent);
+        cx = rcParent.left + ((rcParent.right - rcParent.left) - dlgW) / 2;
+        cy = rcParent.top + ((rcParent.bottom - rcParent.top) - dlgH) / 2;
+    }
+
     HWND hwnd = CreateWindowExA(WS_EX_DLGMODALFRAME, kCreateDbDialogClass, "Create New Database",
-                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, CW_USEDEFAULT,
-                                CW_USEDEFAULT, 370, 160, data->parentHwnd, nullptr,
+                                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, cx, cy,
+                                dlgW, dlgH, data->parentHwnd, nullptr,
                                 GetModuleHandle(nullptr), data);
 
     sActiveCreateDatabaseDialog = hwnd;

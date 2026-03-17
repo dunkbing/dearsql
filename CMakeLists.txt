@@ -389,6 +389,7 @@ elseif(WIN32)
         dxgi
         dwmapi
         comctl32
+        uxtheme
         ws2_32
     )
 else()

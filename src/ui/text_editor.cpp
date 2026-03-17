@@ -101,6 +101,12 @@ namespace dearsql {
 
     void TextEditor::SetCompletionItems(const std::vector<CompletionItem>& items) {
         completionItems_ = items;
+        for (auto& item : completionItems_) {
+            if (item.insertText.empty())
+                item.insertText = item.text;
+            if (item.matchText.empty())
+                item.matchText = item.text;
+        }
     }
 
     void TextEditor::SetCompletionKeywords(const std::vector<std::string>& keywords) {

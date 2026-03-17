@@ -20,6 +20,7 @@
 #include <chrono>
 #include <format>
 #include <ranges>
+#include <string_view>
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
@@ -31,6 +32,76 @@ namespace {
         "No results to display. Execute a query to see results here.";
     constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
     constexpr int MAX_QUERY_ROWS = 1000;
+
+    using CompletionItem = dearsql::TextEditor::CompletionItem;
+    using CompletionKind = dearsql::TextEditor::CompletionKind;
+
+    std::string joinQualifiers(const std::vector<std::string>& qualifiers) {
+        std::string joined;
+        for (size_t i = 0; i < qualifiers.size(); ++i) {
+            if (i > 0)
+                joined += ".";
+            joined += qualifiers[i];
+        }
+        return joined;
+    }
+
+    CompletionItem makeCompletionItem(std::string label, CompletionKind kind,
+                                      std::vector<std::string> qualifiers = {}) {
+        CompletionItem item(std::move(label), kind);
+        item.insertText = item.text;
+        item.qualifiers = std::move(qualifiers);
+        item.detailText = joinQualifiers(item.qualifiers);
+        item.matchText = item.detailText.empty() ? item.text : item.detailText + "." + item.text;
+        return item;
+    }
+
+    void sortAndDeduplicateCompletionItems(std::vector<CompletionItem>& items) {
+        std::ranges::sort(items, [](const CompletionItem& a, const CompletionItem& b) {
+            if (a.text != b.text)
+                return a.text < b.text;
+            if (a.detailText != b.detailText)
+                return a.detailText < b.detailText;
+            if (a.matchText != b.matchText)
+                return a.matchText < b.matchText;
+            return static_cast<int>(a.kind) < static_cast<int>(b.kind);
+        });
+        auto ret = std::ranges::unique(items, [](const CompletionItem& a, const CompletionItem& b) {
+            return a.text == b.text && a.detailText == b.detailText && a.matchText == b.matchText &&
+                   a.kind == b.kind;
+        });
+        items.erase(ret.begin(), ret.end());
+    }
+
+    std::vector<std::string> parseMSSQLQualifierSegments(std::string_view objectName,
+                                                         const std::string& databaseName) {
+        std::vector<std::string> qualifiers;
+        qualifiers.push_back(databaseName);
+
+        const auto dotPos = objectName.find('.');
+        if (dotPos != std::string_view::npos)
+            qualifiers.push_back(std::string(objectName.substr(0, dotPos)));
+
+        return qualifiers;
+    }
+
+    std::string getMSSQLCompletionLabel(std::string_view objectName) {
+        const auto dotPos = objectName.find('.');
+        if (dotPos == std::string_view::npos)
+            return std::string(objectName);
+        return std::string(objectName.substr(dotPos + 1));
+    }
+
+    void scheduleMetadataLoad(IDatabaseNode* node) {
+        if (!node)
+            return;
+
+        node->checkLoadingStatus();
+        if (!node->isTablesLoaded() && !node->isLoadingTables())
+            node->startTablesLoadAsync();
+        if (!node->isViewsLoaded() && !node->isLoadingViews())
+            node->startViewsLoadAsync();
+    }
 } // namespace
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
@@ -693,62 +764,166 @@ void SQLEditorTab::formatSQL() {
 }
 
 void SQLEditorTab::updateCompletionKeywords() {
-    using CI = dearsql::TextEditor::CompletionItem;
-    using CK = dearsql::TextEditor::CompletionKind;
-
-    std::vector<CI> items;
+    std::vector<CompletionItem> items;
 
     // SQL keywords
     for (const auto& kw : dearsql::TextEditor::GetDefaultCompletionKeywords())
-        items.push_back({kw, CK::Keyword});
+        items.push_back({kw, CompletionKind::Keyword});
 
     if (node_) {
-        // Poll async loading results so isTablesLoaded()/isViewsLoaded() reflect latest state
-        node_->checkLoadingStatus();
+        auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
+            if (!sourceNode)
+                return;
+            for (const auto& table : sourceNode->getTables()) {
+                for (const auto& col : table.columns)
+                    items.push_back({col.name, CompletionKind::Column});
+            }
+        };
 
-        // Ensure tables and views loading has been triggered
-        if (!node_->isTablesLoaded() && !node_->isLoadingTables()) {
-            node_->startTablesLoadAsync();
-        }
-        if (!node_->isViewsLoaded() && !node_->isLoadingViews()) {
-            node_->startViewsLoadAsync();
-        }
+        auto addNodeObjects = [&](IDatabaseNode* sourceNode,
+                                  const std::vector<std::string>& qualifiers,
+                                  bool mssqlObjectNames = false) {
+            if (!sourceNode)
+                return;
 
-        const bool tablesLoaded = node_->isTablesLoaded();
-        const bool viewsLoaded = node_->isViewsLoaded();
+            for (const auto& table : sourceNode->getTables()) {
+                if (mssqlObjectNames) {
+                    items.push_back(makeCompletionItem(
+                        getMSSQLCompletionLabel(table.name), CompletionKind::Table,
+                        parseMSSQLQualifierSegments(table.name, qualifiers.front())));
+                } else {
+                    items.push_back(
+                        makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
+                }
+            }
 
-        // Always gather whatever tables/columns/views are available so far,
-        // even if not all schemas have finished loading yet.
-        for (const auto& table : node_->getTables()) {
-            items.push_back({table.name, CK::Table});
-            for (const auto& col : table.columns)
-                items.push_back({col.name, CK::Column});
-        }
+            for (const auto& view : sourceNode->getViews()) {
+                if (mssqlObjectNames) {
+                    items.push_back(makeCompletionItem(
+                        getMSSQLCompletionLabel(view.name), CompletionKind::View,
+                        parseMSSQLQualifierSegments(view.name, qualifiers.front())));
+                } else {
+                    items.push_back(
+                        makeCompletionItem(view.name, CompletionKind::View, qualifiers));
+                }
+            }
 
-        for (const auto& view : node_->getViews())
-            items.push_back({view.name, CK::View});
+            for (const auto& seq : sourceNode->getSequences())
+                items.push_back(makeCompletionItem(seq, CompletionKind::Sequence, qualifiers));
+        };
 
-        for (const auto& seq : node_->getSequences())
-            items.push_back({seq, CK::Sequence});
-
-        // Only mark as fully set if both tables and views are loaded
-        if (!tablesLoaded || !viewsLoaded) {
-            // Still loading — set what we have, retry on next render for more
-            std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
-            auto r = std::ranges::unique(items,
-                                         [](const CI& a, const CI& b) { return a.text == b.text; });
-            items.erase(r.begin(), r.end());
+        auto finalizePartialItems = [&]() {
+            sortAndDeduplicateCompletionItems(items);
             sqlEditor.SetCompletionItems(items);
-            return;
+        };
+
+        if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+            schemaNode && schemaNode->parentDbNode) {
+            auto* dbNode = schemaNode->parentDbNode;
+            dbNode->checkSchemasStatusAsync();
+            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+                dbNode->startSchemasLoadAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& schema : dbNode->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {schema->name});
+                if (schema.get() == schemaNode)
+                    addColumnsFromNode(schema.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* mySqlNode = dynamic_cast<MySQLDatabaseNode*>(node_);
+                   mySqlNode && mySqlNode->parentDb) {
+            auto* serverDb = mySqlNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!dbEntry)
+                    continue;
+                scheduleMetadataLoad(dbEntry.get());
+                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
+                addNodeObjects(dbEntry.get(), {dbEntry->name});
+                if (dbEntry.get() == mySqlNode)
+                    addColumnsFromNode(dbEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* msSqlNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
+                   msSqlNode && msSqlNode->parentDb) {
+            auto* serverDb = msSqlNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!dbEntry)
+                    continue;
+                scheduleMetadataLoad(dbEntry.get());
+                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
+                addNodeObjects(dbEntry.get(), {dbEntry->name}, true);
+                if (dbEntry.get() == msSqlNode)
+                    addColumnsFromNode(dbEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* oracleNode = dynamic_cast<OracleDatabaseNode*>(node_);
+                   oracleNode && oracleNode->parentDb) {
+            auto* serverDb = oracleNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& schemaEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!schemaEntry)
+                    continue;
+                scheduleMetadataLoad(schemaEntry.get());
+                tablesLoaded = tablesLoaded && schemaEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schemaEntry->isViewsLoaded();
+                addNodeObjects(schemaEntry.get(), {schemaEntry->name});
+                if (schemaEntry.get() == oracleNode)
+                    addColumnsFromNode(schemaEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else {
+            scheduleMetadataLoad(node_);
+            const bool tablesLoaded = node_->isTablesLoaded();
+            const bool viewsLoaded = node_->isViewsLoaded();
+
+            addNodeObjects(node_, {});
+            addColumnsFromNode(node_);
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
         }
     }
 
     // Sort and deduplicate by text
-    std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
-    auto ret =
-        std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; });
-    items.erase(ret.begin(), ret.end());
-
+    sortAndDeduplicateCompletionItems(items);
     sqlEditor.SetCompletionItems(items);
     completionKeywordsSet_ = true;
 }

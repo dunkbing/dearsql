@@ -36,19 +36,30 @@ public:
     [[nodiscard]] HWND getHWND() const;
 
 private:
-    // Keep stubs for interface compatibility (declared in base/used elsewhere)
-    static LRESULT CALLBACK TitlebarWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    // Stubs retained for interface compatibility
     void createTitlebarControls(HWND hWnd);
     void destroyTitlebarControls();
     void layoutTitlebarControls();
     void showCreateWorkspaceDialog();
     LRESULT handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, bool& handled);
 
+    // D3D11
     bool createD3DDevice(HWND hWnd);
     void cleanupD3DDevice();
     void createRenderTarget();
     void cleanupRenderTarget();
+
+    // Custom frame
+    void subclassWindow();
     void applyTitlebarTheme();
+    void renderTitlebar();
+    [[nodiscard]] int getTitlebarHeightPixels() const;
+    [[nodiscard]] int getResizeBorderWidth() const;
+    LRESULT hitTest(HWND hWnd, LPARAM lParam) const;
+
+    static LRESULT CALLBACK customWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    static WNDPROC originalWndProc_;
+    static WindowsPlatform* instance_;
 
     Application* app_;
     GLFWwindow* window_ = nullptr;
@@ -58,6 +69,7 @@ private:
     IDXGISwapChain* swapChain_ = nullptr;
     ID3D11RenderTargetView* mainRenderTargetView_ = nullptr;
     bool lastAppliedDarkTheme_ = true;
+    bool titlebarWidgetHovered_ = false;
 };
 
 #endif

@@ -763,7 +763,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
 
     ImGui::DockBuilderRemoveNode(dockSpaceId);
     ImGui::DockBuilderAddNode(dockSpaceId, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetMainViewport()->Size);
+    ImGui::DockBuilderSetNodeSize(dockSpaceId, ImGui::GetWindowSize());
 
     const std::string preferredTabWindowName =
         tabManager ? tabManager->getPreferredTabWindowNameForDocking() : std::string{};

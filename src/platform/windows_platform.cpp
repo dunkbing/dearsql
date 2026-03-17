@@ -2,15 +2,19 @@
 
 #include "platform/windows_platform.hpp"
 #include "application.hpp"
+#include "config.hpp"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_glfw.h"
 #include "themes.hpp"
+
+#include "IconsFontAwesome6.h"
 
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <dxgi.h>
 #include <iostream>
 #include <string>
+#include <windowsx.h>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -19,9 +23,146 @@
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-#ifndef DWMWA_CAPTION_COLOR
-#define DWMWA_CAPTION_COLOR 35
-#endif
+
+// ---------------------------------------------------------------------------
+// Static members
+// ---------------------------------------------------------------------------
+
+WNDPROC WindowsPlatform::originalWndProc_ = nullptr;
+WindowsPlatform* WindowsPlatform::instance_ = nullptr;
+
+// ---------------------------------------------------------------------------
+// Custom WndProc for DWM custom frame
+// ---------------------------------------------------------------------------
+
+LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Let DWM handle its messages first (shadow, etc.)
+    LRESULT dwmResult = 0;
+    if (DwmDefWindowProc(hWnd, msg, wParam, lParam, &dwmResult)) {
+        return dwmResult;
+    }
+
+    switch (msg) {
+    case WM_ACTIVATE: {
+        // Extend DWM frame by 1px at top for the window shadow effect
+        MARGINS margins = {0, 0, 1, 0};
+        DwmExtendFrameIntoClientArea(hWnd, &margins);
+        return 0;
+    }
+
+    case WM_NCCALCSIZE: {
+        if (wParam == TRUE) {
+            // Return 0 to remove the standard non-client frame.
+            // When maximized, the OS extends the window beyond the screen by the
+            // frame thickness. Compensate so the window doesn't cover the taskbar.
+            auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+            if (IsZoomed(hWnd)) {
+                HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+                MONITORINFO mi = {sizeof(mi)};
+                if (GetMonitorInfoW(monitor, &mi)) {
+                    params->rgrc[0] = mi.rcWork;
+                }
+            }
+            return 0;
+        }
+        break;
+    }
+
+    case WM_NCHITTEST: {
+        if (instance_) {
+            LRESULT hit = instance_->hitTest(hWnd, lParam);
+            if (hit != HTNOWHERE) {
+                return hit;
+            }
+        }
+        break;
+    }
+
+    case WM_GETMINMAXINFO: {
+        // Ensure maximized window fits in the work area (excludes taskbar).
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = {sizeof(mi)};
+        if (GetMonitorInfoW(monitor, &mi)) {
+            mmi->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
+            mmi->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
+            mmi->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
+            mmi->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
+        }
+        return 0;
+    }
+
+    case WM_SIZE: {
+        // Resize D3D11 swap chain when the window is resized.
+        if (wParam != SIZE_MINIMIZED && instance_ && instance_->swapChain_) {
+            instance_->cleanupRenderTarget();
+            instance_->swapChain_->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0);
+            instance_->createRenderTarget();
+        }
+        break; // Also let GLFW process this
+    }
+    }
+
+    return CallWindowProcW(originalWndProc_, hWnd, msg, wParam, lParam);
+}
+
+LRESULT WindowsPlatform::hitTest(HWND hWnd, LPARAM lParam) const {
+    POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    RECT rc;
+    GetWindowRect(hWnd, &rc);
+
+    const int border = getResizeBorderWidth();
+    const int titlebar = getTitlebarHeightPixels();
+    const bool maximized = IsZoomed(hWnd);
+
+    // --- Resize borders (disabled when maximized) ---
+    if (!maximized) {
+        // Top edge
+        if (pt.y >= rc.top && pt.y < rc.top + border) {
+            if (pt.x < rc.left + border) return HTTOPLEFT;
+            if (pt.x >= rc.right - border) return HTTOPRIGHT;
+            return HTTOP;
+        }
+        // Bottom edge
+        if (pt.y >= rc.bottom - border) {
+            if (pt.x < rc.left + border) return HTBOTTOMLEFT;
+            if (pt.x >= rc.right - border) return HTBOTTOMRIGHT;
+            return HTBOTTOM;
+        }
+        // Left edge
+        if (pt.x >= rc.left && pt.x < rc.left + border) return HTLEFT;
+        // Right edge
+        if (pt.x >= rc.right - border) return HTRIGHT;
+    }
+
+    // --- Titlebar area ---
+    if (pt.y < rc.top + titlebar) {
+        // Caption buttons zone (right side: 3 buttons * 46px)
+        if (pt.x >= rc.right - 138) {
+            return HTCLIENT;
+        }
+        // Sidebar toggle button zone (left side)
+        if (pt.x < rc.left + 44 && pt.y < rc.top + titlebar) {
+            return HTCLIENT;
+        }
+        return HTCAPTION;
+    }
+
+    // Everything else is normal client area.
+    return HTCLIENT;
+}
+
+int WindowsPlatform::getTitlebarHeightPixels() const {
+    return 32;
+}
+
+int WindowsPlatform::getResizeBorderWidth() const {
+    return GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+}
+
+// ---------------------------------------------------------------------------
+// WindowsPlatform core
+// ---------------------------------------------------------------------------
 
 WindowsPlatform::WindowsPlatform(Application* app) : app_(app) {
     lastAppliedDarkTheme_ = app ? app->isDarkTheme() : true;
@@ -47,6 +188,9 @@ bool WindowsPlatform::initializePlatform(GLFWwindow* window) {
 
     std::cout << "DirectX 11 device initialized successfully" << std::endl;
 
+    // Install custom frame (subclass the HWND created by GLFW)
+    subclassWindow();
+
     glfwSetDropCallback(window, [](GLFWwindow* w, int count, const char** paths) {
         for (int i = 0; i < count; i++) {
             Application::getInstance().openFile(std::string(paths[i]));
@@ -55,6 +199,26 @@ bool WindowsPlatform::initializePlatform(GLFWwindow* window) {
     });
 
     return true;
+}
+
+void WindowsPlatform::subclassWindow() {
+    HWND hWnd = getHWND();
+    if (!hWnd) return;
+
+    instance_ = this;
+    originalWndProc_ =
+        reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hWnd, GWLP_WNDPROC,
+                                                     reinterpret_cast<LONG_PTR>(customWndProc)));
+
+    // Extend DWM frame (1px top for shadow)
+    MARGINS margins = {0, 0, 1, 0};
+    DwmExtendFrameIntoClientArea(hWnd, &margins);
+
+    // Force a WM_NCCALCSIZE so the custom frame takes effect immediately
+    RECT rc;
+    GetWindowRect(hWnd, &rc);
+    SetWindowPos(hWnd, nullptr, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 bool WindowsPlatform::initializeImGuiBackend() {
@@ -74,15 +238,15 @@ void WindowsPlatform::setupTitlebar() {
     }
 
     applyTitlebarTheme();
-    std::cout << "Windows titlebar configured" << std::endl;
+    std::cout << "Windows custom titlebar configured" << std::endl;
 }
 
 float WindowsPlatform::getTitlebarHeight() const {
-    return 0.0f;
+    return static_cast<float>(getTitlebarHeightPixels());
 }
 
 float WindowsPlatform::getClientAreaTopInset() const {
-    return 0.0f;
+    return static_cast<float>(getTitlebarHeightPixels());
 }
 
 void WindowsPlatform::onSidebarToggleClicked() {
@@ -94,6 +258,161 @@ void WindowsPlatform::onSidebarToggleClicked() {
 void WindowsPlatform::cleanup() {
     cleanupD3DDevice();
 }
+
+// ---------------------------------------------------------------------------
+// Titlebar rendering (ImGui)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+void DrawMinimizeIcon(ImDrawList* dl, ImVec2 center, ImU32 col) {
+    dl->AddLine({center.x - 5, center.y}, {center.x + 5, center.y}, col, 1.0f);
+}
+
+void DrawMaximizeIcon(ImDrawList* dl, ImVec2 center, ImU32 col) {
+    dl->AddRect({center.x - 5, center.y - 5}, {center.x + 5, center.y + 5}, col, 0, 0, 1.0f);
+}
+
+void DrawRestoreIcon(ImDrawList* dl, ImVec2 center, ImU32 col, ImU32 bgCol) {
+    const float s = 4.0f, off = 2.0f;
+    // Back rectangle (top-right, partially occluded)
+    dl->AddRect({center.x - s + off, center.y - s - off},
+                {center.x + s + off, center.y + s - off}, col, 0, 0, 1.0f);
+    // Front rectangle (bottom-left) — fill to occlude back rect lines
+    ImVec2 p1{center.x - s, center.y - s + off};
+    ImVec2 p2{center.x + s - off, center.y + s};
+    dl->AddRectFilled(p1, p2, bgCol);
+    dl->AddRect(p1, p2, col, 0, 0, 1.0f);
+}
+
+void DrawCloseIcon(ImDrawList* dl, ImVec2 center, ImU32 col) {
+    dl->AddLine({center.x - 5, center.y - 5}, {center.x + 5, center.y + 5}, col, 1.0f);
+    dl->AddLine({center.x + 5, center.y - 5}, {center.x - 5, center.y + 5}, col, 1.0f);
+}
+
+} // namespace
+
+void WindowsPlatform::renderTitlebar() {
+    const float tbHeight = static_cast<float>(getTitlebarHeightPixels());
+    if (tbHeight <= 0) return;
+
+    const bool isDark = app_->isDarkTheme();
+    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const bool maximized = IsZoomed(getHWND());
+
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 origin = vp->Pos;
+    const float winW = vp->Size.x;
+    const ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = io.MousePos;
+
+    // --- Background ---
+    fg->AddRectFilled(origin, {origin.x + winW, origin.y + tbHeight},
+                      ImGui::GetColorU32(colors.mantle));
+
+    titlebarWidgetHovered_ = false;
+
+    // Helper: manual hit-test button drawn on the foreground draw list.
+    // Uses raw mouse state instead of ImGui helpers (no window context needed).
+    auto fgButton = [&](ImVec2 bMin, ImVec2 bMax, auto drawIcon,
+                        ImVec4 hBg, ImVec4 aBg, bool whiteIconOnHover) -> bool {
+        bool hovered = (mouse.x >= bMin.x && mouse.x < bMax.x &&
+                        mouse.y >= bMin.y && mouse.y < bMax.y);
+        bool held = hovered && io.MouseDown[0];
+        bool clicked = hovered && io.MouseReleased[0];
+        titlebarWidgetHovered_ |= hovered;
+
+        if (held)
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(aBg));
+        else if (hovered)
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(hBg));
+
+        ImVec2 center{(bMin.x + bMax.x) * 0.5f, (bMin.y + bMax.y) * 0.5f};
+        ImVec4 iCol = (hovered && whiteIconOnHover) ? ImVec4(1, 1, 1, 1) : colors.text;
+        drawIcon(fg, center, ImGui::GetColorU32(iCol));
+
+        return clicked;
+    };
+
+    // --- Caption buttons (right side) ---
+    const float btnW = 46.0f;
+    const ImVec4 hoverBg = isDark ? ImVec4(1, 1, 1, 0.1f) : ImVec4(0, 0, 0, 0.06f);
+    const ImVec4 activeBg = isDark ? ImVec4(1, 1, 1, 0.15f) : ImVec4(0, 0, 0, 0.10f);
+    const ImVec4 closeHoverBg = ImVec4(0.77f, 0.17f, 0.11f, 1.0f);
+    const ImVec4 closeActiveBg = ImVec4(0.67f, 0.14f, 0.09f, 1.0f);
+
+    float bx = origin.x + winW - btnW * 3;
+    float by = origin.y;
+
+    // Minimize
+    if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawMinimizeIcon, hoverBg, activeBg, false))
+        ShowWindow(getHWND(), SW_MINIMIZE);
+    bx += btnW;
+
+    // Maximize / Restore
+    if (maximized) {
+        if (fgButton(
+                {bx, by}, {bx + btnW, by + tbHeight},
+                [&](ImDrawList* d, ImVec2 c, ImU32 col) {
+                    DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.mantle));
+                },
+                hoverBg, activeBg, false))
+            ShowWindow(getHWND(), SW_RESTORE);
+    } else {
+        if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawMaximizeIcon, hoverBg, activeBg, false))
+            ShowWindow(getHWND(), SW_MAXIMIZE);
+    }
+    bx += btnW;
+
+    // Close
+    if (fgButton({bx, by}, {bx + btnW, by + tbHeight}, DrawCloseIcon, closeHoverBg, closeActiveBg, true))
+        PostMessageW(getHWND(), WM_CLOSE, 0, 0);
+
+    // --- Left side: sidebar toggle ---
+    const float leftPad = 8.0f;
+    const float iconBtnSize = tbHeight - 4.0f;
+    const float iconY = origin.y + (tbHeight - iconBtnSize) * 0.5f;
+    ImVec2 sbMin{origin.x + leftPad, iconY};
+    ImVec2 sbMax{sbMin.x + iconBtnSize, sbMin.y + iconBtnSize};
+
+    {
+        bool hovered = (mouse.x >= sbMin.x && mouse.x < sbMax.x &&
+                        mouse.y >= sbMin.y && mouse.y < sbMax.y);
+        bool held = hovered && io.MouseDown[0];
+        bool clicked = hovered && io.MouseReleased[0];
+        titlebarWidgetHovered_ |= hovered;
+
+        if (held)
+            fg->AddRectFilled(sbMin, sbMax, ImGui::GetColorU32(activeBg), 4.0f);
+        else if (hovered)
+            fg->AddRectFilled(sbMin, sbMax, ImGui::GetColorU32(hoverBg), 4.0f);
+
+        // Draw the hamburger icon (three horizontal lines)
+        ImVec2 center{(sbMin.x + sbMax.x) * 0.5f, (sbMin.y + sbMax.y) * 0.5f};
+        ImU32 iconCol = ImGui::GetColorU32(colors.text);
+        float hw = 5.0f;
+        fg->AddLine({center.x - hw, center.y - 4}, {center.x + hw, center.y - 4}, iconCol, 1.5f);
+        fg->AddLine({center.x - hw, center.y},     {center.x + hw, center.y},     iconCol, 1.5f);
+        fg->AddLine({center.x - hw, center.y + 4}, {center.x + hw, center.y + 4}, iconCol, 1.5f);
+
+        if (clicked) onSidebarToggleClicked();
+    }
+
+    // --- Title text ---
+    const float titleX = origin.x + leftPad + iconBtnSize + 8.0f;
+    const float titleY = origin.y + (tbHeight - ImGui::GetFontSize()) * 0.5f;
+#ifdef NDEBUG
+    const char* title = APP_NAME;
+#else
+    const char* title = "DearSQL (Debug)";
+#endif
+    fg->AddText({titleX, titleY}, ImGui::GetColorU32(colors.subtext1), title);
+}
+
+// ---------------------------------------------------------------------------
+// Frame rendering
+// ---------------------------------------------------------------------------
 
 void WindowsPlatform::renderFrame() {
     if (!d3dDevice_ || !swapChain_ || !mainRenderTargetView_) {
@@ -108,6 +427,7 @@ void WindowsPlatform::renderFrame() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    renderTitlebar();
     app_->renderMainUI();
 
     ImGui::Render();
@@ -146,10 +466,9 @@ LRESULT WindowsPlatform::handleWindowMessage(HWND, UINT, WPARAM, LPARAM, bool& h
     return 0;
 }
 
-LRESULT CALLBACK WindowsPlatform::TitlebarWindowProc(HWND hWnd, UINT msg, WPARAM wParam,
-                                                     LPARAM lParam) {
-    return DefWindowProcW(hWnd, msg, wParam, lParam);
-}
+// ---------------------------------------------------------------------------
+// D3D11 device
+// ---------------------------------------------------------------------------
 
 bool WindowsPlatform::createD3DDevice(HWND hWnd) {
     DXGI_SWAP_CHAIN_DESC sd = {};
@@ -207,6 +526,10 @@ void WindowsPlatform::cleanupRenderTarget() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Titlebar theme (DWM dark mode attribute)
+// ---------------------------------------------------------------------------
+
 void WindowsPlatform::applyTitlebarTheme() {
     HWND hWnd = getHWND();
     if (!hWnd || !app_) {
@@ -218,13 +541,11 @@ void WindowsPlatform::applyTitlebarTheme() {
 
     const BOOL useDarkMode = isDark ? TRUE : FALSE;
     DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
-
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-    const COLORREF captionColor =
-        RGB(static_cast<int>(colors.mantle.x * 255), static_cast<int>(colors.mantle.y * 255),
-            static_cast<int>(colors.mantle.z * 255));
-    DwmSetWindowAttribute(hWnd, DWMWA_CAPTION_COLOR, &captionColor, sizeof(captionColor));
 }
+
+// ---------------------------------------------------------------------------
+// Texture creation (D3D11)
+// ---------------------------------------------------------------------------
 
 ImTextureID WindowsPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
     if (!d3dDevice_ || !pixels) {

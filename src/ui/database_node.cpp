@@ -14,8 +14,8 @@
 #include "imgui.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
-#include "ui/tab_manager.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab_manager.hpp"
 #include "ui/table_dialog.hpp"
 #include "ui/text_editor.hpp"
 #include "utils/logger.hpp"
@@ -38,12 +38,14 @@ namespace {
 } // namespace
 
 namespace {
-    void openStructureTab(IDatabaseNode* node, const Table& table, const std::string& schemaPrefix = "") {
+    void openStructureTab(IDatabaseNode* node, const Table& table,
+                          const std::string& schemaPrefix = "") {
         auto& app = Application::getInstance();
         DDLBuilder ddl(node->getDatabaseType());
         std::string sql = ddl.createTable(table, schemaPrefix);
         std::string formatted = dearsql::TextEditor::FormatSQL(sql);
-        if (formatted.empty()) formatted = sql;
+        if (formatted.empty())
+            formatted = sql;
 
         std::string tabName = table.name + " (DDL)";
         auto tab = app.getTabManager()->createSQLEditorTab(tabName, node);
@@ -133,9 +135,14 @@ void DatabaseHierarchy::renderRootNode() {
                     // database was deleted while waiting
                     pendingEditorOpenDbName_.clear();
                 } else {
-                    // Open directly at database level (no need to wait for schemas)
-                    app.getTabManager()->createSQLEditorTab("", pendingDb);
-                    pendingEditorOpenDbName_.clear();
+                    pendingDb->checkSchemasStatusAsync();
+                    if (pendingDb->schemasLoaded) {
+                        if (!pendingDb->schemas.empty()) {
+                            app.getTabManager()->createSQLEditorTab("",
+                                                                    pendingDb->schemas[0].get());
+                        }
+                        pendingEditorOpenDbName_.clear();
+                    }
                 }
             }
 
@@ -528,9 +535,14 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
-            // PostgresDatabaseNode now implements IDatabaseNode — pass directly
-            // for database-level SQL editor (no SET search_path, cross-schema queries)
-            app.getTabManager()->createSQLEditorTab("", dbData);
+            if (dbData->schemasLoaded && !dbData->schemas.empty()) {
+                app.getTabManager()->createSQLEditorTab("", dbData->schemas[0].get());
+            } else {
+                if (!dbData->schemasLoader.isRunning()) {
+                    dbData->startSchemasLoadAsync();
+                }
+                pendingEditorOpenDbName_ = dbData->name;
+            }
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startSchemasLoadAsync(true, true);

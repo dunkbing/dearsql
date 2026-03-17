@@ -146,7 +146,7 @@ namespace dearsql {
         std::vector<CompletionItem> completionItems_;
         std::vector<CompletionItem> filteredCompletions_;
         bool autocompleteVisible_ = false;
-        bool autocompleteForced_ = false;  // Ctrl+Space: show all items even with empty word
+        bool autocompleteForced_ = false; // Ctrl+Space: show all items even with empty word
         int autocompleteIndex_ = 0;
         int autocompleteScrollOffset_ = 0;
         int autocompleteWordStart_ = 0;

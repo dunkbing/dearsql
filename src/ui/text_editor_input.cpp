@@ -895,9 +895,9 @@ namespace dearsql {
         Ctx ctx = Ctx::Other;
         {
             int p = wordStartPos;
-            while (p > 0 && (content_[p - 1] == ' ' || content_[p - 1] == '\n' ||
-                             content_[p - 1] == '\t' || content_[p - 1] == ',' ||
-                             content_[p - 1] == '\r'))
+            while (p > 0 &&
+                   (content_[p - 1] == ' ' || content_[p - 1] == '\n' || content_[p - 1] == '\t' ||
+                    content_[p - 1] == ',' || content_[p - 1] == '\r'))
                 --p;
             int kwEnd = p;
             while (p > 0 && isWordChar(content_[p - 1]))
@@ -907,8 +907,8 @@ namespace dearsql {
                 if (kw == "from" || kw == "join" || kw == "table" || kw == "into" || kw == "update")
                     ctx = Ctx::FromJoin;
                 else if (kw == "select" || kw == "where" || kw == "and" || kw == "or" ||
-                         kw == "on" || kw == "having" || kw == "by" || kw == "set" || kw == "case" ||
-                         kw == "when" || kw == "then")
+                         kw == "on" || kw == "having" || kw == "by" || kw == "set" ||
+                         kw == "case" || kw == "when" || kw == "then")
                     ctx = Ctx::SelectWhereOn;
             }
         }
@@ -961,8 +961,7 @@ namespace dearsql {
                 const std::string lt = toLower(item.text);
                 if ((item.kind == CompletionKind::Table || item.kind == CompletionKind::View ||
                      item.kind == CompletionKind::Sequence) &&
-                    lt.size() > dotPfx.size() &&
-                    lt.compare(0, dotPfx.size(), dotPfx) == 0) {
+                    lt.size() > dotPfx.size() && lt.compare(0, dotPfx.size(), dotPfx) == 0) {
                     // Strip schema prefix for display/insertion
                     std::string shortName = item.text.substr(dotPfx.size());
                     addScored({shortName, item.kind}, shortName);

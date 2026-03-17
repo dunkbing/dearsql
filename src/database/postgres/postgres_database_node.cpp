@@ -1,10 +1,12 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <iostream>
 #include <libpq-fe.h>
+#include <ranges>
 #include <unordered_map>
 
 namespace {
@@ -82,6 +84,13 @@ namespace {
         return result;
     }
 
+    std::pair<std::string, std::string> splitQualifiedObjectName(const std::string& objectName) {
+        const auto dotPos = objectName.find('.');
+        if (dotPos == std::string::npos)
+            return {"", objectName};
+        return {objectName.substr(0, dotPos), objectName.substr(dotPos + 1)};
+    }
+
 } // namespace
 
 void PostgresDatabaseNode::checkSchemasStatusAsync() {
@@ -107,6 +116,7 @@ void PostgresDatabaseNode::checkSchemasStatusAsync() {
         Logger::info(std::format("Async schema loading completed for database {}. Found {} schemas",
                                  name, schemas.size()));
         schemasLoaded = true;
+        invalidateAggregatedObjects();
         if (refreshChildrenAfterSchemasLoad) {
             refreshChildrenAfterSchemasLoad = false;
             triggerChildSchemaRefresh();
@@ -139,6 +149,8 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
     if (!forceRefresh && schemasLoaded) {
         return;
     }
+
+    invalidateAggregatedObjects();
 
     // Start async loading using AsyncOperation
     schemasLoader.start([this, refreshChildren]() {
@@ -284,6 +296,262 @@ QueryResult PostgresDatabaseNode::executeQuery(const std::string& query, int row
     return result;
 }
 
+DatabaseInterface* PostgresDatabaseNode::ownerDatabase() const {
+    return parentDb;
+}
+
+std::string PostgresDatabaseNode::getFullPath() const {
+    return name;
+}
+
+DatabaseType PostgresDatabaseNode::getDatabaseType() const {
+    if (parentDb)
+        return parentDb->getConnectionInfo().type;
+    return DatabaseType::POSTGRESQL;
+}
+
+void PostgresDatabaseNode::invalidateAggregatedObjects() const {
+    aggregatedObjectsDirty = true;
+}
+
+void PostgresDatabaseNode::rebuildAggregatedObjects() const {
+    if (!aggregatedObjectsDirty)
+        return;
+
+    allTables.clear();
+    allViews.clear();
+    allSequences.clear();
+
+    for (const auto& schema : schemas) {
+        if (!schema)
+            continue;
+
+        for (const auto& table : schema->tables) {
+            Table qualifiedTable = table;
+            qualifiedTable.name = schema->name + "." + table.name;
+            allTables.push_back(std::move(qualifiedTable));
+        }
+
+        for (const auto& view : schema->views) {
+            Table qualifiedView = view;
+            qualifiedView.name = schema->name + "." + view.name;
+            allViews.push_back(std::move(qualifiedView));
+        }
+
+        for (const auto& sequence : schema->sequences)
+            allSequences.push_back(schema->name + "." + sequence);
+    }
+
+    aggregatedObjectsDirty = false;
+}
+
+std::vector<Table>& PostgresDatabaseNode::getTables() {
+    rebuildAggregatedObjects();
+    return allTables;
+}
+
+const std::vector<Table>& PostgresDatabaseNode::getTables() const {
+    rebuildAggregatedObjects();
+    return allTables;
+}
+
+std::vector<Table>& PostgresDatabaseNode::getViews() {
+    rebuildAggregatedObjects();
+    return allViews;
+}
+
+const std::vector<Table>& PostgresDatabaseNode::getViews() const {
+    rebuildAggregatedObjects();
+    return allViews;
+}
+
+const std::vector<std::string>& PostgresDatabaseNode::getSequences() const {
+    rebuildAggregatedObjects();
+    return allSequences;
+}
+
+bool PostgresDatabaseNode::isTablesLoaded() const {
+    if (!schemasLoaded)
+        return false;
+    return std::ranges::all_of(
+        schemas, [](const auto& schema) { return schema && schema->isTablesLoaded(); });
+}
+
+bool PostgresDatabaseNode::isViewsLoaded() const {
+    if (!schemasLoaded)
+        return false;
+    return std::ranges::all_of(
+        schemas, [](const auto& schema) { return schema && schema->isViewsLoaded(); });
+}
+
+bool PostgresDatabaseNode::isLoadingTables() const {
+    if (schemasLoader.isRunning())
+        return true;
+    return std::ranges::any_of(
+        schemas, [](const auto& schema) { return schema && schema->isLoadingTables(); });
+}
+
+bool PostgresDatabaseNode::isLoadingViews() const {
+    if (schemasLoader.isRunning())
+        return true;
+    return std::ranges::any_of(
+        schemas, [](const auto& schema) { return schema && schema->isLoadingViews(); });
+}
+
+void PostgresDatabaseNode::startTablesLoadAsync(bool force) {
+    invalidateAggregatedObjects();
+    if (!schemasLoaded || force) {
+        startSchemasLoadAsync(force, true);
+        return;
+    }
+
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->startTablesLoadAsync(force);
+    }
+}
+
+void PostgresDatabaseNode::startViewsLoadAsync(bool force) {
+    invalidateAggregatedObjects();
+    if (!schemasLoaded || force) {
+        startSchemasLoadAsync(force, true);
+        return;
+    }
+
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->startViewsLoadAsync(force);
+    }
+}
+
+void PostgresDatabaseNode::checkLoadingStatus() {
+    checkSchemasStatusAsync();
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->checkLoadingStatus();
+    }
+    invalidateAggregatedObjects();
+}
+
+const std::string& PostgresDatabaseNode::getLastTablesError() const {
+    if (!lastSchemasError.empty())
+        return lastSchemasError;
+
+    aggregatedTablesError.clear();
+    for (const auto& schema : schemas) {
+        if (schema && !schema->getLastTablesError().empty()) {
+            aggregatedTablesError = schema->getLastTablesError();
+            break;
+        }
+    }
+    return aggregatedTablesError;
+}
+
+const std::string& PostgresDatabaseNode::getLastViewsError() const {
+    if (!lastSchemasError.empty())
+        return lastSchemasError;
+
+    aggregatedViewsError.clear();
+    for (const auto& schema : schemas) {
+        if (schema && !schema->getLastViewsError().empty()) {
+            aggregatedViewsError = schema->getLastViewsError();
+            break;
+        }
+    }
+    return aggregatedViewsError;
+}
+
+std::vector<std::vector<std::string>>
+PostgresDatabaseNode::getTableData(const std::string& tableName, int limit, int offset,
+                                   const std::string& whereClause,
+                                   const std::string& orderByClause) {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty()) {
+        auto it = std::ranges::find_if(
+            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
+        if (it != schemas.end() && *it)
+            schemaName = (*it)->name;
+        else if (!schemas.empty() && schemas.front())
+            schemaName = schemas.front()->name;
+    }
+
+    if (schemaName.empty())
+        return {};
+
+    return getTableData(schemaName, objectName, limit, offset, whereClause, orderByClause);
+}
+
+std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string& tableName) {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty()) {
+        auto it = std::ranges::find_if(
+            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
+        if (it != schemas.end() && *it)
+            schemaName = (*it)->name;
+        else if (!schemas.empty() && schemas.front())
+            schemaName = schemas.front()->name;
+    }
+
+    if (schemaName.empty())
+        return {};
+
+    return getColumnNames(schemaName, objectName);
+}
+
+int PostgresDatabaseNode::getRowCount(const std::string& tableName,
+                                      const std::string& whereClause) {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty()) {
+        auto it = std::ranges::find_if(
+            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
+        if (it != schemas.end() && *it)
+            schemaName = (*it)->name;
+        else if (!schemas.empty() && schemas.front())
+            schemaName = schemas.front()->name;
+    }
+
+    if (schemaName.empty())
+        return 0;
+
+    return getRowCount(schemaName, objectName, whereClause);
+}
+
+void PostgresDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty())
+        return;
+
+    auto it = std::ranges::find_if(
+        schemas, [&](const auto& schema) { return schema && schema->name == schemaName; });
+    if (it != schemas.end() && *it) {
+        (*it)->startTableRefreshAsync(objectName);
+        invalidateAggregatedObjects();
+    }
+}
+
+bool PostgresDatabaseNode::isTableRefreshing(const std::string& tableName) const {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty())
+        return false;
+
+    auto it = std::ranges::find_if(
+        schemas, [&](const auto& schema) { return schema && schema->name == schemaName; });
+    return it != schemas.end() && *it && (*it)->isTableRefreshing(objectName);
+}
+
+void PostgresDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableName) {
+    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
+    if (schemaName.empty())
+        return;
+
+    auto it = std::ranges::find_if(
+        schemas, [&](const auto& schema) { return schema && schema->name == schemaName; });
+    if (it != schemas.end() && *it) {
+        (*it)->checkTableRefreshStatusAsync(objectName);
+        invalidateAggregatedObjects();
+    }
+}
+
 std::vector<std::vector<std::string>>
 PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::string& tableName,
                                    int limit, int offset, const std::string& whereClause,
@@ -379,6 +647,7 @@ int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::
 
 void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     Logger::debug(std::format("Triggering child schema refresh for database: {}", name));
+    invalidateAggregatedObjects();
 
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& schema : schemas) {

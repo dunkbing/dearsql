@@ -128,24 +128,6 @@ void DatabaseHierarchy::renderRootNode() {
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (pgDb->areDatabasesLoaded()) {
-            // check deferred sql editor open
-            if (!pendingEditorOpenDbName_.empty()) {
-                auto* pendingDb = pgDb->getDatabaseData(pendingEditorOpenDbName_);
-                if (!pendingDb) {
-                    // database was deleted while waiting
-                    pendingEditorOpenDbName_.clear();
-                } else {
-                    pendingDb->checkSchemasStatusAsync();
-                    if (pendingDb->schemasLoaded) {
-                        if (!pendingDb->schemas.empty()) {
-                            app.getTabManager()->createSQLEditorTab("",
-                                                                    pendingDb->schemas[0].get());
-                        }
-                        pendingEditorOpenDbName_.clear();
-                    }
-                }
-            }
-
             const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
                 if (dbDataPtr) {
@@ -535,14 +517,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
-            if (dbData->schemasLoaded && !dbData->schemas.empty()) {
-                app.getTabManager()->createSQLEditorTab("", dbData->schemas[0].get());
-            } else {
-                if (!dbData->schemasLoader.isRunning()) {
-                    dbData->startSchemasLoadAsync();
-                }
-                pendingEditorOpenDbName_ = dbData->name;
-            }
+            app.getTabManager()->createSQLEditorTab("", dbData);
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startSchemasLoadAsync(true, true);

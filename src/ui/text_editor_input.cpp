@@ -1117,23 +1117,34 @@ namespace dearsql {
 
         pushUndoSnapshot();
 
-        const std::string completion = filteredCompletions_[autocompleteIndex_].insertText.empty()
-                                           ? filteredCompletions_[autocompleteIndex_].text
-                                           : filteredCompletions_[autocompleteIndex_].insertText;
+        const auto& selectedCompletion = filteredCompletions_[autocompleteIndex_];
+        const std::string completion = selectedCompletion.insertText.empty()
+                                           ? selectedCompletion.text
+                                           : selectedCompletion.insertText;
         std::string word = getCurrentWord();
 
-        // Replace the current word with the completion
         int wordStart = cursorIndex_ - static_cast<int>(word.size());
-        content_.erase(wordStart, word.size());
-        if (wordStart < static_cast<int>(colors_.size()))
-            colors_.erase(colors_.begin() + wordStart,
-                          colors_.begin() + std::min(wordStart + static_cast<int>(word.size()),
+        int qualifierStart = wordStart;
+        while (qualifierStart > 0 &&
+               (isWordChar(content_[qualifierStart - 1]) || content_[qualifierStart - 1] == '.'))
+            --qualifierStart;
+
+        int replaceStart = wordStart;
+        if (!selectedCompletion.qualifiers.empty())
+            replaceStart = qualifierStart;
+
+        // Replace the current word with the completion
+        const int replaceLength = cursorIndex_ - replaceStart;
+        content_.erase(replaceStart, replaceLength);
+        if (replaceStart < static_cast<int>(colors_.size()))
+            colors_.erase(colors_.begin() + replaceStart,
+                          colors_.begin() + std::min(replaceStart + replaceLength,
                                                      static_cast<int>(colors_.size())));
 
-        content_.insert(wordStart, completion);
-        colors_.insert(colors_.begin() + wordStart, completion.size(), palette_.text);
+        content_.insert(replaceStart, completion);
+        colors_.insert(colors_.begin() + replaceStart, completion.size(), palette_.text);
 
-        cursorIndex_ = wordStart + static_cast<int>(completion.size());
+        cursorIndex_ = replaceStart + static_cast<int>(completion.size());
         selectionAnchor_ = cursorIndex_;
         rebuildLineStarts();
         highlightDirty_ = true;

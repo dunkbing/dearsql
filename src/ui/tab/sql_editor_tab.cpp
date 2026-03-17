@@ -49,10 +49,10 @@ namespace {
     CompletionItem makeCompletionItem(std::string label, CompletionKind kind,
                                       std::vector<std::string> qualifiers = {}) {
         CompletionItem item(std::move(label), kind);
-        item.insertText = item.text;
         item.qualifiers = std::move(qualifiers);
         item.detailText = joinQualifiers(item.qualifiers);
         item.matchText = item.detailText.empty() ? item.text : item.detailText + "." + item.text;
+        item.insertText = item.matchText;
         return item;
     }
 
@@ -256,18 +256,46 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
+    auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_);
     auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
-    if (!schemaNode || !schemaNode->parentDbNode) {
+    if (!dbNode && schemaNode)
+        dbNode = schemaNode->parentDbNode;
+
+    if (!dbNode || !dbNode->parentDb) {
         ImGui::Text("Database: %s", node_->getFullPath().c_str());
         return;
     }
 
-    auto* dbNode = schemaNode->parentDbNode;
     auto* serverDb = dbNode->parentDb;
-    if (!serverDb) {
-        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+    const auto& connInfo = serverDb->getConnectionInfo();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    const auto& dbMap = serverDb->getDatabaseDataMap();
+    std::vector<std::string> dbNames;
+    dbNames.reserve(dbMap.size());
+    for (const auto& name : dbMap | std::views::keys) {
+        dbNames.push_back(name);
+    }
+    std::ranges::sort(dbNames);
+
+    if (!schemaNode) {
+        renderDatabaseCombo(connInfo.host, "Database:", dbNode->name, dbNames,
+                            [this, serverDb](const std::string& selectedDb) {
+                                if (auto* targetDb = serverDb->getDatabaseData(selectedDb))
+                                    switchNode(targetDb);
+                            });
         return;
     }
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", connInfo.host.c_str());
+    ImGui::SameLine(0, Theme::Spacing::L);
+
+    // Single "Schema" combo: database names as headers, schemas as selectable items
+    std::string preview = std::format("{}.{}", dbNode->name, schemaNode->name);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Schema:");
+    ImGui::SameLine(0, Theme::Spacing::S);
 
     // Handle pending database switch (schemas were loading when user selected)
     if (!pendingDatabaseSwitch_.empty()) {
@@ -286,27 +314,6 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
             pendingDatabaseSwitch_.clear();
         }
     }
-
-    const auto& connInfo = serverDb->getConnectionInfo();
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%s", connInfo.host.c_str());
-    ImGui::SameLine(0, Theme::Spacing::L);
-
-    // Single "Schema" combo: database names as headers, schemas as selectable items
-    std::string preview = std::format("{}.{}", dbNode->name, schemaNode->name);
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Schema:");
-    ImGui::SameLine(0, Theme::Spacing::S);
-
-    const auto& dbMap = serverDb->getDatabaseDataMap();
-    std::vector<std::string> dbNames;
-    dbNames.reserve(dbMap.size());
-    for (const auto& name : dbMap | std::views::keys) {
-        dbNames.push_back(name);
-    }
-    std::ranges::sort(dbNames);
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
@@ -660,6 +667,24 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         return;
     }
 
+    if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node); dbNode && dbNode->parentDb) {
+        const std::string dbName = dbNode->name;
+        binding_.resolveNode = [serverDb = dbNode->parentDb, dbName]() -> IDatabaseNode* {
+            if (auto* resolved = serverDb->getDatabaseData(dbName))
+                return resolved;
+
+            if (!serverDb->areDatabasesLoaded() && !serverDb->isLoadingDatabases()) {
+                serverDb->refreshDatabaseNames();
+            }
+            serverDb->checkDatabasesStatusAsync();
+            return serverDb->getDatabaseData(dbName);
+        };
+        binding_.resolveExecutor = [this]() -> IQueryExecutor* {
+            return binding_.resolveNode ? binding_.resolveNode() : nullptr;
+        };
+        return;
+    }
+
     if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
         schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
         const std::string dbName = schemaNode->parentDbNode->name;
@@ -817,8 +842,29 @@ void SQLEditorTab::updateCompletionKeywords() {
             sqlEditor.SetCompletionItems(items);
         };
 
-        if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
-            schemaNode && schemaNode->parentDbNode) {
+        if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_); dbNode) {
+            dbNode->checkSchemasStatusAsync();
+            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+                dbNode->startSchemasLoadAsync();
+
+            bool tablesLoaded = dbNode->schemasLoaded;
+            bool viewsLoaded = dbNode->schemasLoaded;
+            for (const auto& schema : dbNode->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {schema->name});
+                addColumnsFromNode(schema.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+                   schemaNode && schemaNode->parentDbNode) {
             auto* dbNode = schemaNode->parentDbNode;
             dbNode->checkSchemasStatusAsync();
             if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())

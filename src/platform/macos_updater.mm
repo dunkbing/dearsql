@@ -2,15 +2,32 @@
 
 #ifdef __APPLE__
 
-// Stub implementation - Sparkle not available
-// Auto-update functionality disabled
+#import <Sparkle/Sparkle.h>
+
+static SPUStandardUpdaterController* sUpdaterController = nil;
 
 void initializeSparkleUpdater() {
-    // Sparkle framework not available - skipping updater initialization
+    if (sUpdaterController) {
+        return;
+    }
+
+    // Skip if no EdDSA public key is configured (prevents "updater failed to start" error)
+    NSString* edKey = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"SUPublicEDKey"];
+    if (!edKey || edKey.length == 0) {
+        NSLog(@"Sparkle: SUPublicEDKey not set, skipping updater initialization");
+        return;
+    }
+
+    sUpdaterController = [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES
+                                                                       updaterDelegate:nil
+                                                                    userDriverDelegate:nil];
 }
 
 void checkForUpdates() {
-    // Auto-update not available
+    if (!sUpdaterController) {
+        return;
+    }
+    [sUpdaterController checkForUpdates:nil];
 }
 
 #endif

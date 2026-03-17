@@ -12,10 +12,11 @@
     <MediaTemplate EmbedCab="yes" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of DearSQL is already installed." />
 
-    <Icon Id="AppIcon" SourceFile="$(ProjectDir)\..\..\assets\appicon.ico" />
+    <Icon Id="AppIcon" SourceFile="$(SourceDir)\assets\appicon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPHELPLINK" Value="https://dearsql.com" />
 
+    <WixVariable Id="WixUILicenseRtf" Value="$(SourceDir)\packaging\windows\License.rtf" />
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
 
     <StandardDirectory Id="LocalAppDataFolder">

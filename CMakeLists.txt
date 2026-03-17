@@ -308,6 +308,13 @@ add_executable(${PROJECT_NAME}
     ${IMGUI_NODE_EDITOR_SOURCES}
 )
 
+# On Windows release builds, hide the console window while keeping main() entry point
+if(WIN32)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>
+        $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>)
+endif()
+
 target_include_directories(${PROJECT_NAME} PRIVATE
     include
     external/imgui

@@ -76,6 +76,7 @@ $OutputMsi = "$BuildDir\${AppName}-${AppVersion}-x64.msi"
 wix build $WxsFile `
     -ext WixToolset.UI.wixext `
     -d ProjectDir="$StageDir" `
+    -d SourceDir="$RootDir" `
     -d AppVersion="$AppVersion" `
     -o $OutputMsi `
     -arch x64

@@ -42,3 +42,8 @@ imgui.ini
 external/Sparkle/
 
 .test-certs/
+
+# WiX build artifacts
+WixToolset.*.dll
+*.wixpdb
+*.wixobj

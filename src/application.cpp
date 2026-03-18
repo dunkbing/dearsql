@@ -69,9 +69,9 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 10.0; // time after last activity before idling
-    constexpr double kMinimumWaitSeconds = 1.0 / 120.0;  // keep responsive when active
-    constexpr double kMaximumWaitSeconds = 0.2;          // cap sleep to keep UI responsive
+    constexpr double kIdleActivationDelaySeconds = 2.0; // time after last activity before idling
+    constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
+    constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
 
     bool isImGuiUserActive() {
         ImGuiIO& io = ImGui::GetIO();
@@ -258,6 +258,7 @@ void Application::run() {
     // D3D11 handles clear color in WindowsPlatform::renderFrame()
 
     double lastInteractionTime = glfwGetTime();
+    bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
 
     while (!glfwWindowShouldClose(window)) {
         if (isShutdownRequested()) {
@@ -265,13 +266,17 @@ void Application::run() {
         }
         const double frameStart = glfwGetTime();
         const double timeSinceInteraction = frameStart - lastInteractionTime;
-        const bool hadAsyncWork = hasPendingAsyncWork();
+        const bool windowFocusedAtFrameStart = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+        const bool hadAsyncWork = AsyncOperationControl::hasRunningTasks();
 
         double waitTimeout = 0.0;
-        // Only enter power-save mode when there has been no recent interaction and no async work
-        const bool allowIdle =
-            (timeSinceInteraction >= kIdleActivationDelaySeconds) && !hadAsyncWork;
-        if (allowIdle) {
+        const bool idleBecauseUnfocused = !windowFocusedAtFrameStart && !hadAsyncWork;
+        const bool idleBecauseInactive = windowFocusedAtFrameStart &&
+                                         (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
+                                         !hadAsyncWork;
+        if (idleBecauseUnfocused) {
+            waitTimeout = kMaximumWaitSeconds;
+        } else if (idleBecauseInactive) {
             const double idleTime =
                 std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
             waitTimeout = std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
@@ -283,21 +288,20 @@ void Application::run() {
             glfwPollEvents();
         }
 
-#ifdef __APPLE__
-        // Metal's nextDrawable blocks ~1s when the window is in the background,
-        // causing a visible delay when switching back to the app quickly.
-        // Skip rendering while unfocused; the focus event wakes us instantly.
-        if (!glfwGetWindowAttrib(window, GLFW_FOCUSED)) {
-            glfwWaitEventsTimeout(kMaximumWaitSeconds);
+        const bool windowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+        if (windowFocused && !lastWindowFocused) {
             lastInteractionTime = glfwGetTime();
+        }
+        lastWindowFocused = windowFocused;
+
+        if (!windowFocused && !AsyncOperationControl::hasRunningTasks()) {
             continue;
         }
-#endif
 
         platform_->renderFrame();
 
         const bool userActive = isImGuiUserActive();
-        const bool hasAsyncWork = hasPendingAsyncWork();
+        const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
 
         if (userActive || hasAsyncWork) {
             lastInteractionTime = glfwGetTime();

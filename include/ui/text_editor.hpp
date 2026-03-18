@@ -33,9 +33,14 @@ namespace dearsql {
         enum class CompletionKind : uint8_t { Keyword, Table, Column, View, Sequence, Function };
         struct CompletionItem {
             std::string text;
+            std::string insertText;
+            std::string matchText;
+            std::string detailText;
+            std::vector<std::string> qualifiers;
             CompletionKind kind = CompletionKind::Keyword;
             CompletionItem() = default;
-            CompletionItem(std::string t, CompletionKind k) : text(std::move(t)), kind(k) {}
+            CompletionItem(std::string t, CompletionKind k)
+                : text(std::move(t)), insertText(text), matchText(text), kind(k) {}
         };
         void SetCompletionItems(const std::vector<CompletionItem>& items);
         void SetCompletionKeywords(const std::vector<std::string>& keywords);
@@ -146,6 +151,7 @@ namespace dearsql {
         std::vector<CompletionItem> completionItems_;
         std::vector<CompletionItem> filteredCompletions_;
         bool autocompleteVisible_ = false;
+        bool autocompleteForced_ = false; // Ctrl+Space: show all items even with empty word
         int autocompleteIndex_ = 0;
         int autocompleteScrollOffset_ = 0;
         int autocompleteWordStart_ = 0;

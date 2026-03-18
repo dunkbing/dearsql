@@ -2,6 +2,7 @@
 build/
 build_*/
 out/
+vcpkg_installed/
 
 # IDE specific files
 .vscode/

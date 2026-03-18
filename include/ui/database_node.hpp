@@ -43,9 +43,6 @@ public:
 private:
     std::shared_ptr<DatabaseInterface> db;
 
-    // deferred sql editor open (waiting for schemas to load, stored by name for safety)
-    std::string pendingEditorOpenDbName_;
-
     // Database-specific renderers
     void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);
     void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,

@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include "database/connection_pool.hpp"
+#include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "database/query_executor.hpp"
@@ -21,7 +22,7 @@ class PostgresDatabase;
  * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
  * Each PostgresDatabaseNode represents one database within the PostgreSQL server.
  */
-class PostgresDatabaseNode : public IQueryExecutor {
+class PostgresDatabaseNode : public IDatabaseNode {
 public:
     PostgresDatabase* parentDb = nullptr;
 
@@ -52,6 +53,42 @@ public:
     // query execution with comprehensive result
     QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
+    [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
+    [[nodiscard]] std::string getName() const override {
+        return name;
+    }
+    [[nodiscard]] std::string getFullPath() const override;
+    [[nodiscard]] DatabaseType getDatabaseType() const override;
+
+    std::vector<Table>& getTables() override;
+    [[nodiscard]] const std::vector<Table>& getTables() const override;
+    std::vector<Table>& getViews() override;
+    [[nodiscard]] const std::vector<Table>& getViews() const override;
+    [[nodiscard]] const std::vector<std::string>& getSequences() const override;
+
+    std::vector<std::vector<std::string>>
+    getTableData(const std::string& tableName, int limit, int offset,
+                 const std::string& whereClause = "",
+                 const std::string& orderByClause = "") override;
+    std::vector<std::string> getColumnNames(const std::string& tableName) override;
+    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+
+    [[nodiscard]] bool isTablesLoaded() const override;
+    [[nodiscard]] bool isViewsLoaded() const override;
+    [[nodiscard]] bool isLoadingTables() const override;
+    [[nodiscard]] bool isLoadingViews() const override;
+
+    void startTablesLoadAsync(bool force = false) override;
+    void startViewsLoadAsync(bool force = false) override;
+    void checkLoadingStatus() override;
+
+    [[nodiscard]] const std::string& getLastTablesError() const override;
+    [[nodiscard]] const std::string& getLastViewsError() const override;
+
+    void startTableRefreshAsync(const std::string& tableName) override;
+    [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
+    void checkTableRefreshStatusAsync(const std::string& tableName) override;
+
     // database operations (schema-aware)
     std::vector<std::vector<std::string>>
     getTableData(const std::string& schemaName, const std::string& tableName, int limit, int offset,
@@ -63,13 +100,15 @@ public:
 
 private:
     bool refreshChildrenAfterSchemasLoad = false;
-
-    // cached aggregated tables/views across all schemas
     mutable std::vector<Table> allTables;
     mutable std::vector<Table> allViews;
-    mutable bool allTablesCached = false;
-    mutable bool allViewsCached = false;
+    mutable std::vector<std::string> allSequences;
+    mutable bool aggregatedObjectsDirty = true;
+    mutable std::string aggregatedTablesError;
+    mutable std::string aggregatedViewsError;
 
     // internal method to refresh all child schemas (tables, views, sequences)
     void triggerChildSchemaRefresh();
+    void invalidateAggregatedObjects() const;
+    void rebuildAggregatedObjects() const;
 };

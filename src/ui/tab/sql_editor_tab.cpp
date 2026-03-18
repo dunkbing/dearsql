@@ -20,6 +20,7 @@
 #include <chrono>
 #include <format>
 #include <ranges>
+#include <string_view>
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
@@ -31,6 +32,76 @@ namespace {
         "No results to display. Execute a query to see results here.";
     constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
     constexpr int MAX_QUERY_ROWS = 1000;
+
+    using CompletionItem = dearsql::TextEditor::CompletionItem;
+    using CompletionKind = dearsql::TextEditor::CompletionKind;
+
+    std::string joinQualifiers(const std::vector<std::string>& qualifiers) {
+        std::string joined;
+        for (size_t i = 0; i < qualifiers.size(); ++i) {
+            if (i > 0)
+                joined += ".";
+            joined += qualifiers[i];
+        }
+        return joined;
+    }
+
+    CompletionItem makeCompletionItem(std::string label, CompletionKind kind,
+                                      std::vector<std::string> qualifiers = {}) {
+        CompletionItem item(std::move(label), kind);
+        item.qualifiers = std::move(qualifiers);
+        item.detailText = joinQualifiers(item.qualifiers);
+        item.matchText = item.detailText.empty() ? item.text : item.detailText + "." + item.text;
+        item.insertText = item.matchText;
+        return item;
+    }
+
+    void sortAndDeduplicateCompletionItems(std::vector<CompletionItem>& items) {
+        std::ranges::sort(items, [](const CompletionItem& a, const CompletionItem& b) {
+            if (a.text != b.text)
+                return a.text < b.text;
+            if (a.detailText != b.detailText)
+                return a.detailText < b.detailText;
+            if (a.matchText != b.matchText)
+                return a.matchText < b.matchText;
+            return static_cast<int>(a.kind) < static_cast<int>(b.kind);
+        });
+        auto ret = std::ranges::unique(items, [](const CompletionItem& a, const CompletionItem& b) {
+            return a.text == b.text && a.detailText == b.detailText && a.matchText == b.matchText &&
+                   a.kind == b.kind;
+        });
+        items.erase(ret.begin(), ret.end());
+    }
+
+    std::vector<std::string> parseMSSQLQualifierSegments(std::string_view objectName,
+                                                         const std::string& databaseName) {
+        std::vector<std::string> qualifiers;
+        qualifiers.push_back(databaseName);
+
+        const auto dotPos = objectName.find('.');
+        if (dotPos != std::string_view::npos)
+            qualifiers.push_back(std::string(objectName.substr(0, dotPos)));
+
+        return qualifiers;
+    }
+
+    std::string getMSSQLCompletionLabel(std::string_view objectName) {
+        const auto dotPos = objectName.find('.');
+        if (dotPos == std::string_view::npos)
+            return std::string(objectName);
+        return std::string(objectName.substr(dotPos + 1));
+    }
+
+    void scheduleMetadataLoad(IDatabaseNode* node) {
+        if (!node)
+            return;
+
+        node->checkLoadingStatus();
+        if (!node->isTablesLoaded() && !node->isLoadingTables())
+            node->startTablesLoadAsync();
+        if (!node->isViewsLoaded() && !node->isLoadingViews())
+            node->startViewsLoadAsync();
+    }
 } // namespace
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
@@ -185,18 +256,46 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
+    auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_);
     auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
-    if (!schemaNode || !schemaNode->parentDbNode) {
+    if (!dbNode && schemaNode)
+        dbNode = schemaNode->parentDbNode;
+
+    if (!dbNode || !dbNode->parentDb) {
         ImGui::Text("Database: %s", node_->getFullPath().c_str());
         return;
     }
 
-    auto* dbNode = schemaNode->parentDbNode;
     auto* serverDb = dbNode->parentDb;
-    if (!serverDb) {
-        ImGui::Text("Database: %s", node_->getFullPath().c_str());
+    const auto& connInfo = serverDb->getConnectionInfo();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    const auto& dbMap = serverDb->getDatabaseDataMap();
+    std::vector<std::string> dbNames;
+    dbNames.reserve(dbMap.size());
+    for (const auto& name : dbMap | std::views::keys) {
+        dbNames.push_back(name);
+    }
+    std::ranges::sort(dbNames);
+
+    if (!schemaNode) {
+        renderDatabaseCombo(connInfo.host, "Database:", dbNode->name, dbNames,
+                            [this, serverDb](const std::string& selectedDb) {
+                                if (auto* targetDb = serverDb->getDatabaseData(selectedDb))
+                                    switchNode(targetDb);
+                            });
         return;
     }
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", connInfo.host.c_str());
+    ImGui::SameLine(0, Theme::Spacing::L);
+
+    // Single "Schema" combo: database names as headers, schemas as selectable items
+    std::string preview = std::format("{}.{}", dbNode->name, schemaNode->name);
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Schema:");
+    ImGui::SameLine(0, Theme::Spacing::S);
 
     // Handle pending database switch (schemas were loading when user selected)
     if (!pendingDatabaseSwitch_.empty()) {
@@ -215,27 +314,6 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
             pendingDatabaseSwitch_.clear();
         }
     }
-
-    const auto& connInfo = serverDb->getConnectionInfo();
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%s", connInfo.host.c_str());
-    ImGui::SameLine(0, Theme::Spacing::L);
-
-    // Single "Schema" combo: database names as headers, schemas as selectable items
-    std::string preview = std::format("{}.{}", dbNode->name, schemaNode->name);
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Schema:");
-    ImGui::SameLine(0, Theme::Spacing::S);
-
-    const auto& dbMap = serverDb->getDatabaseDataMap();
-    std::vector<std::string> dbNames;
-    dbNames.reserve(dbMap.size());
-    for (const auto& name : dbMap | std::views::keys) {
-        dbNames.push_back(name);
-    }
-    std::ranges::sort(dbNames);
 
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
@@ -589,6 +667,24 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
         return;
     }
 
+    if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node); dbNode && dbNode->parentDb) {
+        const std::string dbName = dbNode->name;
+        binding_.resolveNode = [serverDb = dbNode->parentDb, dbName]() -> IDatabaseNode* {
+            if (auto* resolved = serverDb->getDatabaseData(dbName))
+                return resolved;
+
+            if (!serverDb->areDatabasesLoaded() && !serverDb->isLoadingDatabases()) {
+                serverDb->refreshDatabaseNames();
+            }
+            serverDb->checkDatabasesStatusAsync();
+            return serverDb->getDatabaseData(dbName);
+        };
+        binding_.resolveExecutor = [this]() -> IQueryExecutor* {
+            return binding_.resolveNode ? binding_.resolveNode() : nullptr;
+        };
+        return;
+    }
+
     if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node);
         schemaNode && schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
         const std::string dbName = schemaNode->parentDbNode->name;
@@ -693,37 +789,187 @@ void SQLEditorTab::formatSQL() {
 }
 
 void SQLEditorTab::updateCompletionKeywords() {
-    using CI = dearsql::TextEditor::CompletionItem;
-    using CK = dearsql::TextEditor::CompletionKind;
-
-    std::vector<CI> items;
+    std::vector<CompletionItem> items;
 
     // SQL keywords
     for (const auto& kw : dearsql::TextEditor::GetDefaultCompletionKeywords())
-        items.push_back({kw, CK::Keyword});
+        items.push_back({kw, CompletionKind::Keyword});
 
     if (node_) {
-        for (const auto& table : node_->getTables()) {
-            items.push_back({table.name, CK::Table});
-            for (const auto& col : table.columns)
-                items.push_back({col.name, CK::Column});
-        }
+        auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
+            if (!sourceNode)
+                return;
+            for (const auto& table : sourceNode->getTables()) {
+                for (const auto& col : table.columns)
+                    items.push_back({col.name, CompletionKind::Column});
+            }
+        };
 
-        if (node_->isViewsLoaded()) {
-            for (const auto& view : node_->getViews())
-                items.push_back({view.name, CK::View});
-        }
+        auto addNodeObjects = [&](IDatabaseNode* sourceNode,
+                                  const std::vector<std::string>& qualifiers,
+                                  bool mssqlObjectNames = false) {
+            if (!sourceNode)
+                return;
 
-        for (const auto& seq : node_->getSequences())
-            items.push_back({seq, CK::Sequence});
+            for (const auto& table : sourceNode->getTables()) {
+                if (mssqlObjectNames) {
+                    items.push_back(makeCompletionItem(
+                        getMSSQLCompletionLabel(table.name), CompletionKind::Table,
+                        parseMSSQLQualifierSegments(table.name, qualifiers.front())));
+                } else {
+                    items.push_back(
+                        makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
+                }
+            }
+
+            for (const auto& view : sourceNode->getViews()) {
+                if (mssqlObjectNames) {
+                    items.push_back(makeCompletionItem(
+                        getMSSQLCompletionLabel(view.name), CompletionKind::View,
+                        parseMSSQLQualifierSegments(view.name, qualifiers.front())));
+                } else {
+                    items.push_back(
+                        makeCompletionItem(view.name, CompletionKind::View, qualifiers));
+                }
+            }
+
+            for (const auto& seq : sourceNode->getSequences())
+                items.push_back(makeCompletionItem(seq, CompletionKind::Sequence, qualifiers));
+        };
+
+        auto finalizePartialItems = [&]() {
+            sortAndDeduplicateCompletionItems(items);
+            sqlEditor.SetCompletionItems(items);
+        };
+
+        if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_); dbNode) {
+            dbNode->checkSchemasStatusAsync();
+            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+                dbNode->startSchemasLoadAsync();
+
+            bool tablesLoaded = dbNode->schemasLoaded;
+            bool viewsLoaded = dbNode->schemasLoaded;
+            for (const auto& schema : dbNode->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {schema->name});
+                addColumnsFromNode(schema.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+                   schemaNode && schemaNode->parentDbNode) {
+            auto* dbNode = schemaNode->parentDbNode;
+            dbNode->checkSchemasStatusAsync();
+            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+                dbNode->startSchemasLoadAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& schema : dbNode->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {schema->name});
+                if (schema.get() == schemaNode)
+                    addColumnsFromNode(schema.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* mySqlNode = dynamic_cast<MySQLDatabaseNode*>(node_);
+                   mySqlNode && mySqlNode->parentDb) {
+            auto* serverDb = mySqlNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!dbEntry)
+                    continue;
+                scheduleMetadataLoad(dbEntry.get());
+                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
+                addNodeObjects(dbEntry.get(), {dbEntry->name});
+                if (dbEntry.get() == mySqlNode)
+                    addColumnsFromNode(dbEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* msSqlNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
+                   msSqlNode && msSqlNode->parentDb) {
+            auto* serverDb = msSqlNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!dbEntry)
+                    continue;
+                scheduleMetadataLoad(dbEntry.get());
+                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
+                addNodeObjects(dbEntry.get(), {dbEntry->name}, true);
+                if (dbEntry.get() == msSqlNode)
+                    addColumnsFromNode(dbEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else if (auto* oracleNode = dynamic_cast<OracleDatabaseNode*>(node_);
+                   oracleNode && oracleNode->parentDb) {
+            auto* serverDb = oracleNode->parentDb;
+            serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& schemaEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!schemaEntry)
+                    continue;
+                scheduleMetadataLoad(schemaEntry.get());
+                tablesLoaded = tablesLoaded && schemaEntry->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schemaEntry->isViewsLoaded();
+                addNodeObjects(schemaEntry.get(), {schemaEntry->name});
+                if (schemaEntry.get() == oracleNode)
+                    addColumnsFromNode(schemaEntry.get());
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        } else {
+            scheduleMetadataLoad(node_);
+            const bool tablesLoaded = node_->isTablesLoaded();
+            const bool viewsLoaded = node_->isViewsLoaded();
+
+            addNodeObjects(node_, {});
+            addColumnsFromNode(node_);
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
+        }
     }
 
     // Sort and deduplicate by text
-    std::ranges::sort(items, [](const CI& a, const CI& b) { return a.text < b.text; });
-    auto ret =
-        std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; });
-    items.erase(ret.begin(), ret.end());
-
+    sortAndDeduplicateCompletionItems(items);
     sqlEditor.SetCompletionItems(items);
     completionKeywordsSet_ = true;
 }

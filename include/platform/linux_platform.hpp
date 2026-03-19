@@ -94,7 +94,6 @@ private:
     std::vector<int> workspaceIdsByIndex_;
 
     void updateThemeButtons();
-    void updateLicenseButton();
     void updateGtkTheme();
 
     bool shouldClose_;
@@ -108,7 +107,10 @@ private:
     void setupInputHandlers();
     void updateImGuiMousePos();
     void updateImGuiKeyMods(GdkModifierType state);
+    void noteInteraction();
     ImGuiKey gtkKeyToImGuiKey(guint keyval);
+
+    gint64 lastInteractionTimeUs_ = 0;
 };
 
 #endif // defined(__linux__)

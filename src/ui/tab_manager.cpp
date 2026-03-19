@@ -10,6 +10,7 @@
 #include "ui/tab/redis_key_viewer_tab.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include <algorithm>
 #include <format>
@@ -55,6 +56,8 @@ void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
         if (auto* t = dynamic_cast<SQLEditorTab*>(tab.get()))
             node = t->getDatabaseNode();
         else if (auto* t = dynamic_cast<TableViewerTab*>(tab.get()))
+            node = t->getDatabaseNode();
+        else if (auto* t = dynamic_cast<TableEditorTab*>(tab.get()))
             node = t->getDatabaseNode();
         else if (auto* t = dynamic_cast<DiagramTab*>(tab.get()))
             node = t->getDatabaseNode();
@@ -504,6 +507,24 @@ std::shared_ptr<Tab> TabManager::createCsvEditorTab(const std::string& filePath)
     }
 
     auto tab = std::make_shared<CsvEditorTab>(tabName, filePath);
+    registerOpenedTab(tab);
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createTableEditorTab(IDatabaseNode* node,
+                                                      const std::string& schema) {
+    if (!node)
+        return nullptr;
+    auto tab = std::make_shared<TableEditorTab>(node, schema);
+    registerOpenedTab(tab);
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createTableEditorTab(IDatabaseNode* node, const Table& table,
+                                                      const std::string& schema) {
+    if (!node)
+        return nullptr;
+    auto tab = std::make_shared<TableEditorTab>(node, table, schema);
     registerOpenedTab(tab);
     return tab;
 }

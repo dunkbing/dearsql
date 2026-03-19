@@ -10,6 +10,7 @@ class IDatabaseNode;
 class MongoDBDatabaseNode;
 class RedisDatabase;
 class DatabaseInterface;
+struct Table;
 
 class TabManager {
 public:
@@ -44,6 +45,10 @@ public:
                                             const std::string& schemaName = "");
 
     std::shared_ptr<Tab> createTableViewerTab(IDatabaseNode* node, const std::string& tableName);
+
+    std::shared_ptr<Tab> createTableEditorTab(IDatabaseNode* node, const std::string& schema = "");
+    std::shared_ptr<Tab> createTableEditorTab(IDatabaseNode* node, const Table& table,
+                                              const std::string& schema = "");
 
     std::shared_ptr<Tab> createDiagramTab(IDatabaseNode* node);
 

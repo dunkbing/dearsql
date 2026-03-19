@@ -32,6 +32,7 @@ public:
     int saveConnection(const SavedConnection& connection) const;
     bool updateConnection(const SavedConnection& connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
+    [[nodiscard]] int getConnectionCount() const;
     bool deleteConnection(int connectionId) const;
     bool renameConnection(int connectionId, const std::string& newName) const;
     bool updateLastUsed(int connectionId) const;

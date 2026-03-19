@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "imgui_impl_glfw.h"
 #include "license/license_manager.hpp"
+#include "platform/alert.hpp"
 #include "themes.hpp"
 #include <iostream>
 
@@ -101,7 +102,12 @@
 - (void)connectButtonClicked:(id)sender {
     @try {
         if (self.app) {
-            // Show the connection dialog directly
+            if (!self.app->canAddConnection()) {
+                Alert::show(
+                    "Connection Limit Reached",
+                    "Free tier is limited to 3 connections. Activate a license to add more.");
+                return;
+            }
             if (self.app->getDatabaseSidebar()) {
                 self.app->getDatabaseSidebar()->showConnectionDialog();
             }
@@ -185,6 +191,12 @@
     @try {
         if (!self.app)
             return;
+
+        if (!self.app->canAddWorkspace()) {
+            Alert::show("Workspace Limit Reached",
+                        "Free tier is limited to 1 workspace. Activate a license to create more.");
+            return;
+        }
 
         // Get the main window from the application
         NSWindow* mainWindow = nil;
@@ -309,7 +321,7 @@
 
     // License button
     NSButton* licenseButton = [[NSButton alloc] initWithFrame:NSMakeRect(rowX, y, rowW, 28)];
-    [licenseButton setTitle:@"Manage License..."];
+    [licenseButton setTitle:@"Manage License"];
     [licenseButton setButtonType:NSButtonTypeMomentaryPushIn];
     [licenseButton setBezelStyle:NSBezelStyleTexturedRounded];
     [licenseButton setTarget:self];
@@ -642,7 +654,7 @@
 
     if (licenseManager.hasValidLicense()) {
         // Licensed view
-        const auto& info = licenseManager.getLicenseInfo();
+        const auto info = licenseManager.getLicenseInfo();
 
         std::string maskedKey = info.licenseKey;
         if (maskedKey.length() > 8) {
@@ -864,8 +876,7 @@
 
 - (void)openPurchaseLink:(id)sender {
     NSURL* url = [NSURL
-        URLWithString:
-            @"https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673"];
+        URLWithString:@"https://buy.polar.sh/polar_cl_IpYdAWiNljfzsXgatypm2mg40Mm2c4hB0DcVX1L9P6p"];
     [[NSWorkspace sharedWorkspace] openURL:url];
 }
 

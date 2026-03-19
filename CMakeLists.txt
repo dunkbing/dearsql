@@ -214,7 +214,6 @@ set(APP_SOURCES
     src/database/ssh_config_parser.cpp
 
     # UI
-    src/ui/table_dialog.cpp
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
     src/ui/auto_complete_input.cpp
@@ -225,6 +224,7 @@ set(APP_SOURCES
     src/ui/tab/tab.cpp
     src/ui/tab/sql_editor_tab.cpp
     src/ui/tab/table_viewer_tab.cpp
+    src/ui/tab/table_editor_tab.cpp
     src/ui/tab/diagram_tab.cpp
     # Text Editor
     src/ui/text_editor.cpp
@@ -243,6 +243,7 @@ set(APP_SOURCES
     # Utils
     src/utils/file_dialog.cpp
     src/utils/table_exporter.cpp
+    src/utils/table_importer.cpp
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp
@@ -258,7 +259,6 @@ set(APP_SOURCES
 
     # License
     src/license/license_manager.cpp
-    src/ui/license_dialog.cpp
 )
 
 # application.cpp and platform-specific files

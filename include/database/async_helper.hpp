@@ -6,6 +6,7 @@
 #include <exception>
 #include <functional>
 #include <future>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -29,9 +30,38 @@ namespace AsyncOperationControl {
         return cancelledTaskCount().load(std::memory_order_relaxed);
     }
 
+    inline std::atomic<std::uint64_t>& runningTaskCount() {
+        static std::atomic<std::uint64_t> count{0};
+        return count;
+    }
+
+    inline std::uint64_t getRunningTaskCount() {
+        return runningTaskCount().load(std::memory_order_relaxed);
+    }
+
+    inline bool hasRunningTasks() {
+        return getRunningTaskCount() > 0;
+    }
+
     inline void resetCancelledTaskCount() {
         cancelledTaskCount().store(0, std::memory_order_relaxed);
     }
+
+    class RunningTaskScope {
+    public:
+        RunningTaskScope() {
+            runningTaskCount().fetch_add(1, std::memory_order_relaxed);
+        }
+
+        ~RunningTaskScope() {
+            runningTaskCount().fetch_sub(1, std::memory_order_relaxed);
+        }
+
+        RunningTaskScope(const RunningTaskScope&) = delete;
+        RunningTaskScope& operator=(const RunningTaskScope&) = delete;
+        RunningTaskScope(RunningTaskScope&&) = delete;
+        RunningTaskScope& operator=(RunningTaskScope&&) = delete;
+    };
 } // namespace AsyncOperationControl
 
 /**
@@ -97,32 +127,35 @@ public:
 
         std::promise<ResultType> resultPromise;
         auto resultFuture = resultPromise.get_future();
-        std::jthread worker([task = std::move(task), promise = std::move(resultPromise)](
-                                std::stop_token stopToken) mutable {
-            try {
-                promise.set_value(task(stopToken));
-            } catch (const std::exception& e) {
-                Logger::error(std::string("AsyncOperation: task threw exception: ") + e.what());
+        auto runningTaskScope = std::make_shared<AsyncOperationControl::RunningTaskScope>();
+        std::jthread worker(
+            [task = std::move(task), promise = std::move(resultPromise),
+             runningTaskScope = std::move(runningTaskScope)](std::stop_token stopToken) mutable {
+                [[maybe_unused]] auto keepRunningTaskScope = std::move(runningTaskScope);
                 try {
-                    promise.set_exception(std::current_exception());
-                } catch (const std::exception& e2) {
-                    Logger::error(
-                        std::string("AsyncOperation: failed to set exception on promise: ") +
-                        e2.what());
+                    promise.set_value(task(stopToken));
+                } catch (const std::exception& e) {
+                    Logger::error(std::string("AsyncOperation: task threw exception: ") + e.what());
+                    try {
+                        promise.set_exception(std::current_exception());
+                    } catch (const std::exception& e2) {
+                        Logger::error(
+                            std::string("AsyncOperation: failed to set exception on promise: ") +
+                            e2.what());
+                    } catch (...) {
+                        Logger::error(
+                            "AsyncOperation: failed to set exception on promise (unknown error)");
+                    }
                 } catch (...) {
-                    Logger::error(
-                        "AsyncOperation: failed to set exception on promise (unknown error)");
+                    Logger::error("AsyncOperation: task threw unknown exception");
+                    try {
+                        promise.set_exception(std::current_exception());
+                    } catch (...) {
+                        Logger::error(
+                            "AsyncOperation: failed to set exception on promise (unknown error)");
+                    }
                 }
-            } catch (...) {
-                Logger::error("AsyncOperation: task threw unknown exception");
-                try {
-                    promise.set_exception(std::current_exception());
-                } catch (...) {
-                    Logger::error(
-                        "AsyncOperation: failed to set exception on promise (unknown error)");
-                }
-            }
-        });
+            });
 
         activeOperation = OperationState{std::move(worker), std::move(resultFuture)};
         return true;

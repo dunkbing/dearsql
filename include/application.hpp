@@ -79,6 +79,12 @@ public:
     void restorePreviousConnections();
     [[nodiscard]] std::size_t findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const;
 
+    // License-aware connection/workspace helpers
+    // Returns new connection ID, or -1 on DB error, or -2 if the free-tier limit (3) is reached.
+    int saveConnection(const SavedConnection& conn);
+    [[nodiscard]] bool canAddConnection() const;
+    [[nodiscard]] bool canAddWorkspace() const;
+
     // Window reference (GLFW only on macOS/Windows)
 #if defined(__APPLE__) || defined(_WIN32)
     [[nodiscard]] GLFWwindow* getWindow() const {

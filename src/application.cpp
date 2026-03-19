@@ -24,7 +24,6 @@
 #endif
 
 #include "themes.hpp"
-#include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/sentry_utils.hpp"
@@ -69,9 +68,9 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 10.0; // time after last activity before idling
-    constexpr double kMinimumWaitSeconds = 1.0 / 120.0;  // keep responsive when active
-    constexpr double kMaximumWaitSeconds = 0.2;          // cap sleep to keep UI responsive
+    constexpr double kIdleActivationDelaySeconds = 2.0; // time after last activity before idling
+    constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
+    constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
 
     bool isImGuiUserActive() {
         ImGuiIO& io = ImGui::GetIO();
@@ -212,8 +211,9 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-    // Load stored license
+    // Load stored license and revalidate against server in background
     LicenseManager::instance().loadStoredLicense();
+    LicenseManager::instance().validateStoredLicense();
 
 #ifdef __APPLE__
     initializeSparkleUpdater();
@@ -258,6 +258,7 @@ void Application::run() {
     // D3D11 handles clear color in WindowsPlatform::renderFrame()
 
     double lastInteractionTime = glfwGetTime();
+    bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
 
     while (!glfwWindowShouldClose(window)) {
         if (isShutdownRequested()) {
@@ -265,13 +266,17 @@ void Application::run() {
         }
         const double frameStart = glfwGetTime();
         const double timeSinceInteraction = frameStart - lastInteractionTime;
-        const bool hadAsyncWork = hasPendingAsyncWork();
+        const bool windowFocusedAtFrameStart = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+        const bool hadAsyncWork = AsyncOperationControl::hasRunningTasks();
 
         double waitTimeout = 0.0;
-        // Only enter power-save mode when there has been no recent interaction and no async work
-        const bool allowIdle =
-            (timeSinceInteraction >= kIdleActivationDelaySeconds) && !hadAsyncWork;
-        if (allowIdle) {
+        const bool idleBecauseUnfocused = !windowFocusedAtFrameStart && !hadAsyncWork;
+        const bool idleBecauseInactive = windowFocusedAtFrameStart &&
+                                         (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
+                                         !hadAsyncWork;
+        if (idleBecauseUnfocused) {
+            waitTimeout = kMaximumWaitSeconds;
+        } else if (idleBecauseInactive) {
             const double idleTime =
                 std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
             waitTimeout = std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
@@ -283,21 +288,25 @@ void Application::run() {
             glfwPollEvents();
         }
 
-#ifdef __APPLE__
-        // Metal's nextDrawable blocks ~1s when the window is in the background,
-        // causing a visible delay when switching back to the app quickly.
-        // Skip rendering while unfocused; the focus event wakes us instantly.
-        if (!glfwGetWindowAttrib(window, GLFW_FOCUSED)) {
-            glfwWaitEventsTimeout(kMaximumWaitSeconds);
+        const bool windowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+        if (windowFocused && !lastWindowFocused) {
             lastInteractionTime = glfwGetTime();
+        }
+        lastWindowFocused = windowFocused;
+
+        const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
+
+        // Skip rendering when unfocused or when focused but idle (matching Linux behavior)
+        if (!windowFocused && !hasAsyncWork) {
             continue;
         }
-#endif
+        if (idleBecauseInactive && !hasAsyncWork) {
+            continue;
+        }
 
         platform_->renderFrame();
 
         const bool userActive = isImGuiUserActive();
-        const bool hasAsyncWork = hasPendingAsyncWork();
 
         if (userActive || hasAsyncWork) {
             lastInteractionTime = glfwGetTime();
@@ -423,6 +432,26 @@ void Application::clearSelectedDatabase() {
 
 void Application::addDatabase(const std::shared_ptr<DatabaseInterface>& db) {
     databases.push_back(db);
+}
+
+bool Application::canAddConnection() const {
+    if (LicenseManager::instance().hasValidLicense())
+        return true;
+    return databases.size() < 3;
+}
+
+bool Application::canAddWorkspace() const {
+    if (LicenseManager::instance().hasValidLicense())
+        return true;
+    return appState->getWorkspaces().size() < 1;
+}
+
+int Application::saveConnection(const SavedConnection& conn) {
+    if (!canAddConnection()) {
+        Logger::warn("Connection limit reached (free tier: 3). Upgrade to add more.");
+        return -2;
+    }
+    return appState->saveConnection(conn);
 }
 
 void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
@@ -685,6 +714,11 @@ int Application::createWorkspace(const std::string& name, const std::string& des
         return -1;
     }
 
+    if (!canAddWorkspace()) {
+        Logger::warn("Workspace limit reached (free tier: 1). Upgrade to create more.");
+        return -2;
+    }
+
     Workspace workspace;
     workspace.name = name;
     workspace.description = description;
@@ -940,9 +974,6 @@ void Application::renderMainUI() {
         ImGui::PopStyleVar(1);
     }
 
-    // Render license dialog
-    LicenseDialog::instance().render();
-
 #if defined(__linux__)
     UpdateDialog::instance().render();
     pollLinuxUpdater();
@@ -994,6 +1025,11 @@ void Application::openFile(const std::string& rawPath) {
         }
     }
 
+    if (!canAddConnection()) {
+        Logger::warn("Cannot open file: connection limit reached (free tier: 3).");
+        return;
+    }
+
     DatabaseConnectionInfo info;
     info.type = DatabaseType::SQLITE;
     info.path = path;
@@ -1009,8 +1045,8 @@ void Application::openFile(const std::string& rawPath) {
     SavedConnection conn;
     conn.connectionInfo = info;
     conn.workspaceId = currentWorkspaceId;
-    int newId = appState->saveConnection(conn);
-    if (newId != -1)
+    int newId = saveConnection(conn);
+    if (newId > 0)
         db->setConnectionId(newId);
 
     addDatabase(db);

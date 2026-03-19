@@ -10,10 +10,6 @@
 #include "imgui.h"
 #include <memory>
 
-// Forward declarations
-class TableDialog;
-class DropColumnDialog;
-
 /**
  * @brief Class for rendering database hierarchy nodes in the sidebar
  *

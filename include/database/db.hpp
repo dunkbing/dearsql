@@ -7,9 +7,11 @@
 struct Column {
     std::string name;
     std::string type;
+    std::string defaultValue;
     std::string comment;
     bool isPrimaryKey = false;
     bool isNotNull = false;
+    bool isUnique = false;
 };
 
 struct Index {

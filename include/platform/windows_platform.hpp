@@ -49,6 +49,9 @@ private:
     void createRenderTarget();
     void cleanupRenderTarget();
 
+    // License dialog
+    void showLicenseDialog();
+
     // Custom frame
     void subclassWindow();
     void applyTitlebarTheme();

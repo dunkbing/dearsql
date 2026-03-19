@@ -6,6 +6,7 @@
 enum class TabType {
     SQL_EDITOR,
     TABLE_VIEWER,
+    TABLE_EDITOR,
     DIAGRAM,
     REDIS_EDITOR,
     REDIS_KEY_VIEWER,
@@ -51,6 +52,9 @@ public:
 
 protected:
     void refreshWindowName();
+    void requestClose() {
+        open = false;
+    }
 
 private:
     std::uint64_t id_ = 0;

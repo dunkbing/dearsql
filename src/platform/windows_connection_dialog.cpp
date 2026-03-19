@@ -333,8 +333,8 @@ static void handleConnectionSuccess(AsyncConnectResult* r) {
         SavedConnection conn;
         conn.connectionInfo = r->info;
         conn.workspaceId = r->app->getCurrentWorkspaceId();
-        int newId = r->app->getAppState()->saveConnection(conn);
-        if (newId != -1) {
+        int newId = r->app->saveConnection(conn);
+        if (newId > 0) {
             r->db->setConnectionId(newId);
         }
         r->app->addDatabase(r->db);
@@ -379,8 +379,8 @@ static void connectSQLite(ConnectionDialogData* data) {
             SavedConnection conn;
             conn.connectionInfo = info;
             conn.workspaceId = data->app->getCurrentWorkspaceId();
-            int newId = data->app->getAppState()->saveConnection(conn);
-            if (newId != -1) {
+            int newId = data->app->saveConnection(conn);
+            if (newId > 0) {
                 db->setConnectionId(newId);
             }
             data->app->addDatabase(db);
@@ -787,6 +787,12 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         } else if (id == IDC_CONNECT_BTN) {
             if (!data)
                 break;
+            if (data->editingConnectionId == -1 && !data->app->canAddConnection()) {
+                setStatus(
+                    hwnd,
+                    "Connection limit reached (free tier: 3). Activate a license to add more.");
+                break;
+            }
             auto type = static_cast<DatabaseType>(data->currentTypeIndex);
             if (type == DatabaseType::SQLITE) {
                 connectSQLite(data);

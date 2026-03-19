@@ -1091,6 +1091,13 @@ static NSWindow* sActiveConnectionDialog = nil;
             return;
         }
 
+        if (self.editingConnectionId == -1 && !self.app->canAddConnection()) {
+            self.statusLabel.stringValue =
+                @"Connection limit reached (free tier: 3). Activate a license to add more.";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
+
         DatabaseType type = [self selectedDatabaseType];
 
         // SQLite: synchronous
@@ -1329,8 +1336,8 @@ static NSWindow* sActiveConnectionDialog = nil;
                 SavedConnection conn;
                 conn.connectionInfo = infoResult;
                 conn.workspaceId = appPtr->getCurrentWorkspaceId();
-                int newId = appPtr->getAppState()->saveConnection(conn);
-                if (newId != -1) {
+                int newId = appPtr->saveConnection(conn);
+                if (newId > 0) {
                     dbResult->setConnectionId(newId);
                 }
                 appPtr->addDatabase(dbResult);
@@ -1385,8 +1392,8 @@ static NSWindow* sActiveConnectionDialog = nil;
         SavedConnection conn;
         conn.connectionInfo = info;
         conn.workspaceId = appPtr->getCurrentWorkspaceId();
-        int newId = appPtr->getAppState()->saveConnection(conn);
-        if (newId != -1) {
+        int newId = appPtr->saveConnection(conn);
+        if (newId > 0) {
             db->setConnectionId(newId);
         }
         appPtr->addDatabase(db);

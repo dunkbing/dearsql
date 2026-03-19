@@ -24,7 +24,6 @@
 #endif
 
 #include "themes.hpp"
-#include "ui/license_dialog.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/sentry_utils.hpp"
@@ -212,8 +211,9 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-    // Load stored license
+    // Load stored license and revalidate against server in background
     LicenseManager::instance().loadStoredLicense();
+    LicenseManager::instance().validateStoredLicense();
 
 #ifdef __APPLE__
     initializeSparkleUpdater();
@@ -427,6 +427,26 @@ void Application::clearSelectedDatabase() {
 
 void Application::addDatabase(const std::shared_ptr<DatabaseInterface>& db) {
     databases.push_back(db);
+}
+
+bool Application::canAddConnection() const {
+    if (LicenseManager::instance().hasValidLicense())
+        return true;
+    return databases.size() < 3;
+}
+
+bool Application::canAddWorkspace() const {
+    if (LicenseManager::instance().hasValidLicense())
+        return true;
+    return appState->getWorkspaces().size() < 1;
+}
+
+int Application::saveConnection(const SavedConnection& conn) {
+    if (!canAddConnection()) {
+        Logger::warn("Connection limit reached (free tier: 3). Upgrade to add more.");
+        return -2;
+    }
+    return appState->saveConnection(conn);
 }
 
 void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
@@ -689,6 +709,11 @@ int Application::createWorkspace(const std::string& name, const std::string& des
         return -1;
     }
 
+    if (!canAddWorkspace()) {
+        Logger::warn("Workspace limit reached (free tier: 1). Upgrade to create more.");
+        return -2;
+    }
+
     Workspace workspace;
     workspace.name = name;
     workspace.description = description;
@@ -943,9 +968,6 @@ void Application::renderMainUI() {
         ImGui::PopStyleVar(1);
     }
 
-    // Render license dialog
-    LicenseDialog::instance().render();
-
 #if defined(__linux__)
     UpdateDialog::instance().render();
     pollLinuxUpdater();
@@ -997,6 +1019,11 @@ void Application::openFile(const std::string& rawPath) {
         }
     }
 
+    if (!canAddConnection()) {
+        Logger::warn("Cannot open file: connection limit reached (free tier: 3).");
+        return;
+    }
+
     DatabaseConnectionInfo info;
     info.type = DatabaseType::SQLITE;
     info.path = path;
@@ -1012,8 +1039,8 @@ void Application::openFile(const std::string& rawPath) {
     SavedConnection conn;
     conn.connectionInfo = info;
     conn.workspaceId = currentWorkspaceId;
-    int newId = appState->saveConnection(conn);
-    if (newId != -1)
+    int newId = saveConnection(conn);
+    if (newId > 0)
         db->setConnectionId(newId);
 
     addDatabase(db);

@@ -94,7 +94,6 @@ private:
     std::vector<int> workspaceIdsByIndex_;
 
     void updateThemeButtons();
-    void updateLicenseButton();
     void updateGtkTheme();
 
     bool shouldClose_;

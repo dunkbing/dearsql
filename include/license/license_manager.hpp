@@ -1,12 +1,16 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <mutex>
 #include <string>
 
 struct LicenseInfo {
     bool valid = false;
+    bool networkError =
+        false; // true when validation failed due to connectivity, not server rejection
     std::string licenseKey;
-    std::string instanceId;
+    std::string instanceId; // activation UUID returned by Polar on activation
     std::string customerEmail;
     std::string productName;
     std::string status; // "active", "inactive", "expired", "disabled"
@@ -27,35 +31,34 @@ public:
     LicenseManager& operator=(const LicenseManager&) = delete;
 
     [[nodiscard]] bool hasValidLicense() const;
-    [[nodiscard]] const LicenseInfo& getLicenseInfo() const;
+    [[nodiscard]] LicenseInfo getLicenseInfo() const;
     void loadStoredLicense();
+    // background-validates the stored license; only clears it if the server explicitly rejects it
+    void validateStoredLicense();
 
     void activateLicense(const std::string& licenseKey, ActivationCallback callback);
     void deactivateLicense(ActivationCallback callback);
     void validateLicense(ActivationCallback callback);
 
     [[nodiscard]] bool isActivating() const {
-        return activating;
+        return activating.load();
     }
 
-    // Generate a unique instance ID for this machine
+    // generate a unique instance ID for this machine
     [[nodiscard]] std::string getInstanceId() const;
 
 private:
     LicenseManager() = default;
     ~LicenseManager() = default;
 
+    mutable std::mutex licenseMutex_;
     LicenseInfo currentLicense;
-    bool activating = false;
+    std::atomic<bool> activating{false};
 
-    // Store license locally
     void storeLicense(const LicenseInfo& license);
-
-    // Clear stored license
     void clearStoredLicense();
 
-    // HTTP request to Lemon Squeezy API
-    LicenseInfo doActivation(const std::string& licenseKey, const std::string& instanceId);
-    LicenseInfo doDeactivation(const std::string& licenseKey, const std::string& instanceId);
-    LicenseInfo doValidation(const std::string& licenseKey, const std::string& instanceId);
+    LicenseInfo doActivation(const std::string& licenseKey, const std::string& instanceLabel);
+    LicenseInfo doDeactivation(const std::string& licenseKey, const std::string& activationId);
+    LicenseInfo doValidation(const std::string& licenseKey, const std::string& activationId);
 };

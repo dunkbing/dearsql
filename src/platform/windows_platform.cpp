@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_glfw.h"
+#include "platform/alert.hpp"
 #include "platform/connection_dialog.hpp"
 #include "themes.hpp"
 
@@ -680,7 +681,13 @@ LRESULT WindowsPlatform::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam,
 
         if (controlId == IDC_TITLEBAR_ADD_BUTTON && notification == BN_CLICKED) {
             if (app_) {
-                showConnectionDialog(app_);
+                if (!app_->canAddConnection()) {
+                    Alert::show(
+                        "Connection Limit Reached",
+                        "Free tier is limited to 3 connections. Activate a license to add more.");
+                } else {
+                    showConnectionDialog(app_);
+                }
             }
             return 0;
         }
@@ -742,7 +749,13 @@ LRESULT WindowsPlatform::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam,
 
             if (selectedIndex == newWorkspaceItemIndex_) {
                 updateWorkspaceDropdown();
-                showCreateWorkspaceDialog();
+                if (!app_->canAddWorkspace()) {
+                    Alert::show(
+                        "Workspace Limit Reached",
+                        "Free tier is limited to 1 workspace. Activate a license to create more.");
+                } else {
+                    showCreateWorkspaceDialog();
+                }
                 return 0;
             }
 

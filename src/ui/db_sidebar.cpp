@@ -16,7 +16,6 @@
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
-#include "ui/table_dialog.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
@@ -42,7 +41,13 @@ DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<Databa
 }
 
 void DatabaseSidebarNew::showConnectionDialog() {
-    ::showConnectionDialog(&Application::getInstance());
+    auto& app = Application::getInstance();
+    if (!app.canAddConnection()) {
+        Alert::show("Connection Limit Reached",
+                    "Free tier is limited to 3 connections. Activate a license to add more.");
+        return;
+    }
+    ::showConnectionDialog(&app);
 }
 
 void DatabaseSidebarNew::renderEmpty() {
@@ -449,11 +454,6 @@ void DatabaseSidebarNew::render() {
 
         const ImVec2 btnMin(contentMin.x, contentMax.y - buttonH);
         renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
-    }
-
-    // dialogs
-    if (TableDialog::instance().isOpen()) {
-        TableDialog::instance().render();
     }
 
     ImGui::PopStyleColor(3);

@@ -7,6 +7,7 @@
 #include "database/async_helper.hpp"
 #include "imgui_impl_opengl3.h"
 #include "license/license_manager.hpp"
+#include "platform/alert.hpp"
 #include "platform/connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
 #include "platform/linux_updater.hpp"
@@ -319,7 +320,7 @@ void LinuxPlatform::setupTitlebar() {
     gtk_box_append(GTK_BOX(menuBox), separator);
 
     // License button
-    licenseButton_ = gtk_button_new_with_label("Manage License...");
+    licenseButton_ = gtk_button_new_with_label("Manage License");
     gtk_widget_set_halign(licenseButton_, GTK_ALIGN_FILL);
     g_signal_connect(licenseButton_, "clicked", G_CALLBACK(onLicenseClicked), this);
     gtk_box_append(GTK_BOX(menuBox), licenseButton_);
@@ -363,7 +364,6 @@ void LinuxPlatform::setupTitlebar() {
     g_signal_connect(menuPopover_, "show", G_CALLBACK(+[](GtkWidget*, gpointer userData) {
                          auto* platform = static_cast<LinuxPlatform*>(userData);
                          platform->updateThemeButtons();
-                         platform->updateLicenseButton();
                          if (platform->fontSizeLabel_ && platform->app_) {
                              auto label = std::format(
                                  "{}%", static_cast<int>(platform->app_->getFontScale() * 100));
@@ -848,8 +848,13 @@ void LinuxPlatform::onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec,
         platform->workspaceSignalId_ = g_signal_connect(dropdown, "notify::selected",
                                                         G_CALLBACK(onWorkspaceChanged), platform);
     } else {
-        // "New Workspace..." selected - revert dropdown and show dialog
+        // "New Workspace..." selected - revert dropdown
         platform->updateWorkspaceDropdown();
+        if (!platform->app_->canAddWorkspace()) {
+            Alert::show("Workspace Limit Reached",
+                        "Free tier is limited to 1 workspace. Activate a license to create more.");
+            return;
+        }
         platform->showCreateWorkspaceDialog();
     }
 }
@@ -857,9 +862,14 @@ void LinuxPlatform::onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec,
 void LinuxPlatform::onAddConnection(GtkButton* button, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->noteInteraction();
-    if (platform->app_) {
-        showConnectionDialog(platform->app_);
+    if (!platform->app_)
+        return;
+    if (!platform->app_->canAddConnection()) {
+        Alert::show("Connection Limit Reached",
+                    "Free tier is limited to 3 connections. Activate a license to add more.");
+        return;
     }
+    showConnectionDialog(platform->app_);
 }
 
 void LinuxPlatform::showCreateWorkspaceDialog() {
@@ -1137,10 +1147,6 @@ void LinuxPlatform::updateGtkTheme() {
     gtk_css_provider_load_from_string(themeProvider, css.c_str());
 }
 
-void LinuxPlatform::updateLicenseButton() {
-    // License button text is always "Manage License..."
-}
-
 void LinuxPlatform::onThemeLightClicked(GtkButton* button, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->noteInteraction();
@@ -1211,7 +1217,7 @@ void LinuxPlatform::showLicenseDialog() {
 
     if (licenseManager.hasValidLicense()) {
         // Licensed view
-        const auto& info = licenseManager.getLicenseInfo();
+        const auto info = licenseManager.getLicenseInfo();
 
         std::string maskedKey = info.licenseKey;
         if (maskedKey.length() > 8) {
@@ -1332,7 +1338,7 @@ void LinuxPlatform::showLicenseDialog() {
         GtkWidget* linkText = gtk_label_new("Don't have a license?");
         gtk_widget_add_css_class(linkText, "dim-label");
         GtkWidget* linkButton = gtk_link_button_new_with_label(
-            "https://dearsql.lemonsqueezy.com/checkout/buy/8d4644a9-dfcb-4a06-aeab-a8890d082673",
+            "https://buy.polar.sh/polar_cl_IpYdAWiNljfzsXgatypm2mg40Mm2c4hB0DcVX1L9P6p",
             "Purchase one");
         gtk_box_append(GTK_BOX(linkBox), linkText);
         gtk_box_append(GTK_BOX(linkBox), linkButton);

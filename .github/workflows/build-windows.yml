@@ -31,6 +31,9 @@ jobs:
         dotnet tool install --global wix --version 5.0.0
         wix extension add WixToolset.UI.wixext/5.0.0
 
+    - name: Setup MSVC Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+
     - name: Configure CMake
       run: |
         cmake -S . -B build_release `

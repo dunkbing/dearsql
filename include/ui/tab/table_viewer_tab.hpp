@@ -5,6 +5,7 @@
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,22 @@ private:
     int lastSyncedRow = -1;
     int lastSyncedCol = -1;
     std::string metadataFilter;
+
+    // Main content tabs
+    int activeMainTab = 0; // 0 = Data, 1 = Chart
+    void renderDataTab();
+    void renderChartTab();
+
+    // Chart state
+    enum class ChartType { Bar, Line, Scatter };
+    ChartType chartType = ChartType::Bar;
+    int chartXColumn = -1;
+    int chartYColumn = -1;
+    std::vector<double> chartYValues;
+    std::vector<std::string> chartLabels;
+    bool chartNeedsUpdate = true;
+    void updateChartData();
+    std::optional<int> findFirstNumericColumn() const;
 
     // Helper methods
     void initializeTableRenderer();

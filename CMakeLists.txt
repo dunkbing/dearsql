@@ -160,6 +160,12 @@ else()
     list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
 endif()
 
+# ImPlot sources (from submodule)
+set(IMPLOT_SOURCES
+    external/implot/implot.cpp
+    external/implot/implot_items.cpp
+)
+
 # ImGui Node Editor sources (from submodule)
 set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
@@ -316,6 +322,7 @@ list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
+    ${IMPLOT_SOURCES}
     ${IMGUI_NODE_EDITOR_SOURCES}
 )
 
@@ -330,6 +337,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     include
     external/imgui
     external/imgui/backends
+    external/implot
     external/imgui-node-editor
     external/imgui-node-editor/external/stb_image
     external/IconFontCppHeaders

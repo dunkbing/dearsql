@@ -8,6 +8,7 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
+#include "implot.h"
 #include "license/license_manager.hpp"
 
 #include "platform/updater.hpp"
@@ -353,8 +354,9 @@ void Application::cleanup() {
         platform_.reset();
     }
 
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
-    spdlog::debug("ImGui context destroyed");
+    spdlog::debug("ImGui/ImPlot context destroyed");
 
 #if defined(__APPLE__) || defined(_WIN32)
     if (window) {
@@ -549,6 +551,7 @@ bool Application::initializeGLFW() {
 void Application::setupImGuiContext() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     setupFonts();

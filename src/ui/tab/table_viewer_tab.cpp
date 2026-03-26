@@ -3,13 +3,16 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "imgui.h"
+#include "implot.h"
 #include "themes.hpp"
 #include "ui/query_history.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
+#include <charconv>
 #include <cstring>
 #include <format>
 #include <iostream>
+#include <numeric>
 #include <spdlog/spdlog.h>
 #include <utility>
 
@@ -23,12 +26,34 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 }
 
 void TableViewerTab::render() {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
     checkAsyncLoadStatus();
 
     ImGui::Text("Table: %s", tableName.c_str());
     ImGui::Separator();
+
+    if (ImGui::BeginTabBar("##TableViewerTabs")) {
+        if (ImGui::BeginTabItem(ICON_FA_TABLE " Data")) {
+            activeMainTab = 0;
+            renderDataTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(ICON_FA_CHART_BAR " Chart")) {
+            activeMainTab = 1;
+            renderChartTab();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    // Check async SQL execution status
+    checkSQLExecutionStatus();
+
+    // Show save confirmation dialog if needed
+    showSaveConfirmationDialog();
+}
+
+void TableViewerTab::renderDataTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     // Style for buttons and inputs in this tab
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
@@ -41,11 +66,10 @@ void TableViewerTab::render() {
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
 
     // Filter input with auto-completion
-    ImGui::AlignTextToFramePadding(); // Center the label vertically with the input field
+    ImGui::AlignTextToFramePadding();
     ImGui::Text("Filters:");
     ImGui::SameLine();
 
-    // Use the AutoCompleteInput component
     if (filterAutoComplete &&
         filterAutoComplete->render("##filter", filterBuffer, sizeof(filterBuffer))) {
         applyFilter();
@@ -78,22 +102,16 @@ void TableViewerTab::render() {
         }
         if (!currentFilter.empty()) {
             spdlog::debug("Clearing filter for table: {}", tableName);
-            // Clear the filter FIRST, then reload
             currentFilter.clear();
             filterChanged = true;
-            // Reset to first page when filter is cleared
             currentPage = 0;
-            // Clear selection when filter changes
             selectedRow = -1;
             selectedCol = -1;
-            // Clear any error states
             hasLoadingError = false;
             loadingError.clear();
-            // Clear any existing table data to force fresh load
             tableData.clear();
             columnNames.clear();
             totalRows = 0;
-            // Reload data without filter
             loadDataAsync();
         }
     }
@@ -142,7 +160,6 @@ void TableViewerTab::render() {
         if (dataLoadOp.isRunning()) {
             ImGui::Text("Loading table data...");
         } else if (!columnNames.empty() && !tableData.empty()) {
-            // Update table renderer with current data
             tableRenderer->setColumns(columnNames);
             tableRenderer->setData(tableData);
             tableRenderer->setCellEditedStatus(editedCells);
@@ -152,7 +169,6 @@ void TableViewerTab::render() {
 
             tableRenderer->render("TableData");
 
-            // Handle keyboard navigation - skip when editing a cell so arrow keys work in the input
             if (selectedRow >= 0 && selectedCol >= 0 && !tableRenderer->isEditing()) {
                 handleKeyboardNavigation();
             }
@@ -216,7 +232,7 @@ void TableViewerTab::render() {
 
     // Page size selector
     ImGui::SameLine();
-    ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
+    ImGui::Dummy(ImVec2(20, 0));
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Rows per page:");
@@ -227,7 +243,6 @@ void TableViewerTab::render() {
     static const char* pageSizeLabels[] = {"10", "25", "50", "100", "200", "500"};
     int currentSizeIndex = -1;
 
-    // Find current size in options
     for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
         if (pageSizeOptions[i] == rowsPerPage) {
             currentSizeIndex = i;
@@ -235,7 +250,6 @@ void TableViewerTab::render() {
         }
     }
 
-    // Store the string to avoid dangling pointer
     std::string customSizeLabel;
     const char* currentSizeLabel;
     if (currentSizeIndex >= 0) {
@@ -250,17 +264,10 @@ void TableViewerTab::render() {
             const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
             if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
                 if (pageSizeOptions[i] != rowsPerPage) {
-                    // Calculate first row index with old page size
                     const int oldRowsPerPage = rowsPerPage;
                     const int firstRowOnCurrentPage = currentPage * oldRowsPerPage;
-
-                    // Update to new page size
                     rowsPerPage = pageSizeOptions[i];
-
-                    // Calculate new page to stay on approximately the same data
                     currentPage = firstRowOnCurrentPage / rowsPerPage;
-
-                    // Reload data with new page size
                     loadDataAsync();
                 }
             }
@@ -273,10 +280,9 @@ void TableViewerTab::render() {
 
     // Action buttons
     ImGui::SameLine();
-    ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
+    ImGui::Dummy(ImVec2(20, 0));
     ImGui::SameLine();
 
-    // Refresh button with blue color
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
     if (ImGui::Button(ICON_FA_ARROWS_ROTATE)) {
         refreshData();
@@ -286,7 +292,6 @@ void TableViewerTab::render() {
         ImGui::SetTooltip("Refresh");
     }
 
-    // Show loading indicator
     if (dataLoadOp.isRunning()) {
         ImGui::SameLine();
         ImGui::Text("Loading...");
@@ -294,7 +299,6 @@ void TableViewerTab::render() {
     ImGui::SameLine();
 
     if (hasChanges) {
-        // Save button with green color when enabled
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
         if (ImGui::Button(ICON_FA_FLOPPY_DISK)) {
             saveChanges();
@@ -314,7 +318,6 @@ void TableViewerTab::render() {
 
     ImGui::SameLine();
     if (hasChanges) {
-        // Cancel button with red color when enabled
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
         if (ImGui::Button(ICON_FA_XMARK)) {
             cancelChanges();
@@ -332,7 +335,6 @@ void TableViewerTab::render() {
         }
     }
 
-    // Add row button
     ImGui::SameLine();
     if (ImGui::Button(ICON_FA_PLUS)) {
         addRow();
@@ -348,12 +350,6 @@ void TableViewerTab::render() {
 
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar();
-
-    // Check async SQL execution status
-    checkSQLExecutionStatus();
-
-    // Show save confirmation dialog if needed
-    showSaveConfirmationDialog();
 }
 
 void TableViewerTab::nextPage() {
@@ -607,6 +603,7 @@ void TableViewerTab::loadDataAsync() {
 
 void TableViewerTab::checkAsyncLoadStatus() {
     dataLoadOp.check([this](bool) {
+        chartNeedsUpdate = true;
         // Auto-select first cell on initial load
         if (!initialSelectionDone && !tableData.empty() && !columnNames.empty()) {
             selectedRow = 0;
@@ -988,6 +985,266 @@ void TableViewerTab::initializeFilterAutoComplete() {
     }
 
     filterAutoComplete = std::make_unique<AutoCompleteInput>(config);
+}
+
+std::optional<int> TableViewerTab::findFirstNumericColumn() const {
+    for (int col = 0; col < static_cast<int>(columnNames.size()); col++) {
+        // check if at least one row has a parseable number
+        for (const auto& row : tableData) {
+            if (col >= static_cast<int>(row.size()) || row[col].empty() || row[col] == "NULL")
+                continue;
+            double val = 0;
+            auto [ptr, ec] =
+                std::from_chars(row[col].data(), row[col].data() + row[col].size(), val);
+            if (ec == std::errc{})
+                return col;
+            break; // only check first non-null row
+        }
+    }
+    return std::nullopt;
+}
+
+void TableViewerTab::updateChartData() {
+    chartYValues.clear();
+    chartLabels.clear();
+
+    if (tableData.empty() || columnNames.empty())
+        return;
+
+    // auto-select columns on first use
+    if (chartXColumn < 0)
+        chartXColumn = 0;
+    if (chartYColumn < 0) {
+        auto numCol = findFirstNumericColumn();
+        chartYColumn = numCol.value_or(0);
+        // avoid plotting same column on both axes
+        if (chartYColumn == chartXColumn && static_cast<int>(columnNames.size()) > 1) {
+            for (int i = 0; i < static_cast<int>(columnNames.size()); i++) {
+                if (i != chartXColumn) {
+                    auto alt = findFirstNumericColumn();
+                    // find a different numeric column
+                    for (const auto& row : tableData) {
+                        if (i >= static_cast<int>(row.size()) || row[i].empty() || row[i] == "NULL")
+                            continue;
+                        double val = 0;
+                        auto [ptr, ec] =
+                            std::from_chars(row[i].data(), row[i].data() + row[i].size(), val);
+                        if (ec == std::errc{} && i != chartXColumn) {
+                            chartYColumn = i;
+                            goto found;
+                        }
+                        break;
+                    }
+                }
+            }
+            // fallback: just pick a different column
+            chartYColumn = (chartXColumn + 1) % static_cast<int>(columnNames.size());
+        found:;
+        }
+    }
+
+    const int xCol = std::clamp(chartXColumn, 0, static_cast<int>(columnNames.size()) - 1);
+    const int yCol = std::clamp(chartYColumn, 0, static_cast<int>(columnNames.size()) - 1);
+
+    for (const auto& row : tableData) {
+        if (xCol >= static_cast<int>(row.size()) || yCol >= static_cast<int>(row.size()))
+            continue;
+
+        // label from x column
+        chartLabels.push_back(row[xCol].empty() ? "(empty)" : row[xCol]);
+
+        // value from y column
+        double val = 0;
+        const auto& cell = row[yCol];
+        if (!cell.empty() && cell != "NULL") {
+            std::from_chars(cell.data(), cell.data() + cell.size(), val);
+        }
+        chartYValues.push_back(val);
+    }
+
+    chartNeedsUpdate = false;
+}
+
+void TableViewerTab::renderChartTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    if (columnNames.empty() || tableData.empty()) {
+        ImGui::TextColored(colors.subtext0, "No data available for charting.");
+        return;
+    }
+
+    if (chartNeedsUpdate)
+        updateChartData();
+
+    // chart controls
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colors.surface0);
+
+    // chart type selector
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Type:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100.0f);
+    static const char* chartTypeLabels[] = {"Bar", "Line", "Scatter"};
+    int currentType = static_cast<int>(chartType);
+    if (ImGui::Combo("##charttype", &currentType, chartTypeLabels, IM_ARRAYSIZE(chartTypeLabels))) {
+        chartType = static_cast<ChartType>(currentType);
+    }
+
+    // x column selector
+    ImGui::SameLine(0, Theme::Spacing::L);
+    ImGui::Text("X:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::BeginCombo("##xcol",
+                          chartXColumn >= 0 && chartXColumn < static_cast<int>(columnNames.size())
+                              ? columnNames[chartXColumn].c_str()
+                              : "Select...")) {
+        for (int i = 0; i < static_cast<int>(columnNames.size()); i++) {
+            if (ImGui::Selectable(columnNames[i].c_str(), i == chartXColumn)) {
+                chartXColumn = i;
+                chartNeedsUpdate = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    // y column selector
+    ImGui::SameLine(0, Theme::Spacing::L);
+    ImGui::Text("Y:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    if (ImGui::BeginCombo("##ycol",
+                          chartYColumn >= 0 && chartYColumn < static_cast<int>(columnNames.size())
+                              ? columnNames[chartYColumn].c_str()
+                              : "Select...")) {
+        for (int i = 0; i < static_cast<int>(columnNames.size()); i++) {
+            if (ImGui::Selectable(columnNames[i].c_str(), i == chartYColumn)) {
+                chartYColumn = i;
+                chartNeedsUpdate = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar();
+
+    if (chartNeedsUpdate)
+        updateChartData();
+
+    if (chartYValues.empty()) {
+        ImGui::TextColored(colors.subtext0, "No plottable data.");
+        return;
+    }
+
+    // build tick positions
+    std::vector<const char*> labelPtrs;
+    std::vector<double> positions;
+    for (int i = 0; i < static_cast<int>(chartLabels.size()); i++) {
+        labelPtrs.push_back(chartLabels[i].c_str());
+        positions.push_back(static_cast<double>(i));
+    }
+
+    const auto yLabel = chartYColumn >= 0 ? columnNames[chartYColumn].c_str() : "";
+
+    // compute max label height when rotated 45 degrees for bottom padding
+    float maxLabelWidth = 0;
+    constexpr int maxLabelChars = 20;
+    for (const auto& label : chartLabels) {
+        std::string truncated = label.size() > maxLabelChars ? label.substr(0, maxLabelChars - 1) +
+                                                                   "\xe2\x80\xa6" // ellipsis
+                                                             : label;
+        const ImVec2 sz = ImGui::CalcTextSize(truncated.c_str());
+        maxLabelWidth = std::max(maxLabelWidth, sz.x);
+    }
+    // at 45 degrees, the vertical extent is width * sin(45) + height * cos(45)
+    constexpr float sin45 = 0.7071f;
+    const float labelAreaHeight =
+        maxLabelWidth * sin45 + ImGui::GetTextLineHeight() * sin45 + Theme::Spacing::M;
+    const float plotHeight = ImGui::GetContentRegionAvail().y - Theme::Spacing::M;
+
+    {
+        // hide default x tick labels; we draw them rotated after the plot
+        if (ImPlot::BeginPlot("##chart", ImVec2(-1, plotHeight))) {
+            ImPlot::SetupAxes(nullptr, yLabel, ImPlotAxisFlags_NoTickLabels);
+            ImPlot::SetupAxisTicks(ImAxis_X1, positions.data(), static_cast<int>(positions.size()),
+                                   nullptr);
+
+            // reserve space at the bottom for rotated labels
+            const double xMin = positions.empty() ? 0 : positions.front() - 0.5;
+            const double xMax = positions.empty() ? 1 : positions.back() + 0.5;
+            ImPlot::SetupAxisLimits(ImAxis_X1, xMin, xMax, ImPlotCond_Once);
+
+            const int count = static_cast<int>(chartYValues.size());
+
+            switch (chartType) {
+            case ChartType::Bar:
+                ImPlot::PlotBars(yLabel, chartYValues.data(), count, 0.67);
+                break;
+            case ChartType::Line:
+                ImPlot::PlotLine(yLabel, chartYValues.data(), count);
+                break;
+            case ChartType::Scatter:
+                ImPlot::PlotScatter(yLabel, chartYValues.data(), count);
+                break;
+            default:
+                break;
+            }
+
+            // draw rotated x-axis labels, skipping when too dense
+            ImDrawList* drawList = ImPlot::GetPlotDrawList();
+            const ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
+
+            // calculate how many labels we can fit without overlap
+            const float plotWidth = ImPlot::GetPlotSize().x;
+            const float avgLabelSpan = (maxLabelWidth * sin45) + Theme::Spacing::M;
+            const int maxVisibleLabels = std::max(1, static_cast<int>(plotWidth / avgLabelSpan));
+            const int totalLabels = static_cast<int>(chartLabels.size());
+            const int step = std::max(1, (totalLabels + maxVisibleLabels - 1) / maxVisibleLabels);
+
+            const float angle = -45.0f * 3.14159265f / 180.0f;
+            const float cosA = std::cos(angle);
+            const float sinA = std::sin(angle);
+
+            // clip labels to the plot area + label region below
+            const ImVec2 plotPos = ImPlot::GetPlotPos();
+            const ImVec2 plotSize = ImPlot::GetPlotSize();
+            const ImVec2 clipMin(plotPos.x, plotPos.y);
+            const ImVec2 clipMax(plotPos.x + plotSize.x, plotPos.y + plotSize.y + labelAreaHeight);
+
+            for (int i = 0; i < totalLabels; i += step) {
+                std::string label =
+                    chartLabels[i].size() > maxLabelChars
+                        ? chartLabels[i].substr(0, maxLabelChars - 1) + "\xe2\x80\xa6"
+                        : chartLabels[i];
+
+                const ImVec2 tickPos =
+                    ImPlot::PlotToPixels(positions[i], ImPlot::GetPlotLimits().Y.Min);
+
+                const float startX = tickPos.x;
+                const float startY = tickPos.y + Theme::Spacing::S;
+
+                drawList->PushClipRect(clipMin, clipMax, true);
+                const int vtxBegin = drawList->VtxBuffer.Size;
+                drawList->AddText(ImVec2(startX, startY), textColor, label.c_str());
+                const int vtxEnd = drawList->VtxBuffer.Size;
+
+                for (int v = vtxBegin; v < vtxEnd; v++) {
+                    ImDrawVert& vert = drawList->VtxBuffer[v];
+                    const float dx = vert.pos.x - startX;
+                    const float dy = vert.pos.y - startY;
+                    vert.pos.x = startX + dx * cosA - dy * sinA;
+                    vert.pos.y = startY + dx * sinA + dy * cosA;
+                }
+                drawList->PopClipRect();
+            }
+
+            ImPlot::EndPlot();
+        }
+    }
 }
 
 void TableViewerTab::renderRightPanelToggleStrip(float stripWidth, float availableHeight) {

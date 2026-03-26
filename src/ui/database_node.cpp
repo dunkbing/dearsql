@@ -19,6 +19,7 @@
 #include "ui/tab_manager.hpp"
 #include "ui/text_editor.hpp"
 #include "utils/spinner.hpp"
+#include "database/postgres/pg_table_dump.hpp"
 #include "utils/table_exporter.hpp"
 #include "utils/table_importer.hpp"
 #include <format>
@@ -1072,6 +1073,19 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         }
         TableExporter::renderExportMenu(schemaNode, table.name);
         TableImporter::renderImportMenu(schemaNode, table.name);
+        if (ImGui::MenuItem("Dump Table (.sql)")) {
+            const Table& t = table;
+            const std::string schema = schemaNode->name;
+            if (schemaNode->parentDbNode) {
+                try {
+                    auto session = schemaNode->parentDbNode->getSession();
+                    PgTableDump::dumpTableInteractive(session.get(), t, schema);
+                } catch (const std::exception& e) {
+                    spdlog::error("Failed to dump table: {}", e.what());
+                    Alert::show("Error", std::format("Failed to dump table: {}", e.what()));
+                }
+            }
+        }
         ImGui::Separator();
         if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = table.name;

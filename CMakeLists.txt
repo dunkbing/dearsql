@@ -203,6 +203,7 @@ set(APP_SOURCES
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
+    src/database/postgres/pg_table_dump.cpp
     src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
@@ -495,6 +496,7 @@ add_executable(database_tests
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
+    src/database/postgres/pg_table_dump.cpp
     src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp

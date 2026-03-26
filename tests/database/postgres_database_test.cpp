@@ -1,9 +1,12 @@
+#include "database/postgres/pg_table_dump.hpp"
 #include "database/postgresql.hpp"
 #include "test_helpers.hpp"
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <optional>
 #include <string>
@@ -403,4 +406,148 @@ TEST_F(PostgresSchemaNodeDDLTest, DropSchemaRemovesSchema) {
     ASSERT_TRUE(check.success());
     ASSERT_FALSE(check.empty());
     EXPECT_TRUE(check[0].tableData.empty());
+}
+
+// ========== Table Dump Tests ==========
+
+TEST_F(PostgresSchemaNodeDDLTest, GenerateCreateTableProducesValidDDL) {
+    auto r = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT 'unknown', score INTEGER))",
+        tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    Table table;
+    table.name = tableName;
+    table.columns = {
+        {"id", "integer", "nextval('\"" + tableName + "_id_seq\"'::regclass)", "", true, true, false},
+        {"name", "text", "'unknown'", "", false, true, false},
+        {"score", "integer", "", "", false, false, false},
+    };
+    table.indexes = {
+        {tableName + "_pkey", {"id"}, false, true, "btree"},
+    };
+
+    std::string ddl = PgTableDump::generateCreateTable(table, "public");
+
+    EXPECT_NE(ddl.find("CREATE TABLE"), std::string::npos);
+    EXPECT_NE(ddl.find("\"id\""), std::string::npos);
+    EXPECT_NE(ddl.find("\"name\""), std::string::npos);
+    EXPECT_NE(ddl.find("NOT NULL"), std::string::npos);
+    EXPECT_NE(ddl.find("PRIMARY KEY"), std::string::npos);
+    EXPECT_NE(ddl.find("DEFAULT"), std::string::npos);
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DumpTableWritesDDLAndData) {
+    auto r = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, val TEXT NOT NULL))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto ins = database->executeQuery(
+        std::format(R"(INSERT INTO public."{}" (val) VALUES ('alpha'), ('beta'), ('gamma'))",
+                    tableName));
+    ASSERT_TRUE(ins.success()) << ins.errorMessage();
+
+    Table table;
+    table.name = tableName;
+    table.columns = {
+        {"id", "integer", "", "", true, true, false},
+        {"val", "text", "", "", false, true, false},
+    };
+    table.indexes = {
+        {tableName + "_pkey", {"id"}, false, true, "btree"},
+    };
+
+    auto outputPath =
+        std::filesystem::temp_directory_path() / (tableName + "_dump.sql");
+    auto session = dbNode->getSession();
+    bool ok = PgTableDump::dumpTable(session.get(), table, "public", outputPath.string());
+    ASSERT_TRUE(ok);
+
+    std::ifstream file(outputPath);
+    ASSERT_TRUE(file.is_open());
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    file.close();
+    std::filesystem::remove(outputPath);
+
+    // DDL present
+    EXPECT_NE(content.find("CREATE TABLE"), std::string::npos);
+    EXPECT_NE(content.find("PRIMARY KEY"), std::string::npos);
+
+    // COPY header and terminator present
+    EXPECT_NE(content.find("COPY"), std::string::npos);
+    EXPECT_NE(content.find("FROM stdin"), std::string::npos);
+    EXPECT_NE(content.find("\\."), std::string::npos);
+
+    // data rows present
+    EXPECT_NE(content.find("alpha"), std::string::npos);
+    EXPECT_NE(content.find("beta"), std::string::npos);
+    EXPECT_NE(content.find("gamma"), std::string::npos);
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DumpEmptyTableWritesDDLOnly) {
+    auto r = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, val TEXT))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    Table table;
+    table.name = tableName;
+    table.columns = {
+        {"id", "integer", "", "", true, true, false},
+        {"val", "text", "", "", false, false, false},
+    };
+    table.indexes = {
+        {tableName + "_pkey", {"id"}, false, true, "btree"},
+    };
+
+    auto outputPath =
+        std::filesystem::temp_directory_path() / (tableName + "_empty_dump.sql");
+    auto session = dbNode->getSession();
+    bool ok = PgTableDump::dumpTable(session.get(), table, "public", outputPath.string());
+    ASSERT_TRUE(ok);
+
+    std::ifstream file(outputPath);
+    ASSERT_TRUE(file.is_open());
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    file.close();
+    std::filesystem::remove(outputPath);
+
+    EXPECT_NE(content.find("CREATE TABLE"), std::string::npos);
+    EXPECT_NE(content.find("COPY"), std::string::npos);
+    EXPECT_NE(content.find("\\."), std::string::npos);
+}
+
+TEST_F(PostgresSchemaNodeDDLTest, DumpTableWithForeignKeysIncludesConstraints) {
+    const std::string parentTable = tableName + "_parent";
+    auto r1 = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, name TEXT))", parentTable));
+    ASSERT_TRUE(r1.success()) << r1.errorMessage();
+
+    auto r2 = database->executeQuery(std::format(
+        R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, parent_id INTEGER REFERENCES public."{}"(id) ON DELETE CASCADE))",
+        tableName, parentTable));
+    ASSERT_TRUE(r2.success()) << r2.errorMessage();
+
+    Table table;
+    table.name = tableName;
+    table.columns = {
+        {"id", "integer", "", "", true, true, false},
+        {"parent_id", "integer", "", "", false, false, false},
+    };
+    table.indexes = {
+        {tableName + "_pkey", {"id"}, false, true, "btree"},
+    };
+    table.foreignKeys = {
+        {tableName + "_parent_id_fkey", "parent_id", parentTable, "id", "CASCADE", "NO ACTION"},
+    };
+
+    std::string ddl = PgTableDump::generateCreateTable(table, "public");
+
+    EXPECT_NE(ddl.find("FOREIGN KEY"), std::string::npos);
+    EXPECT_NE(ddl.find("REFERENCES"), std::string::npos);
+    EXPECT_NE(ddl.find("ON DELETE CASCADE"), std::string::npos);
+
+    // cleanup parent table
+    database->executeQuery(std::format(R"(DROP TABLE IF EXISTS public."{}" CASCADE)", parentTable));
 }

@@ -19,7 +19,8 @@ jobs:
       uses: lukka/run-vcpkg@v11
       with:
         vcpkgDirectory: ${{ github.workspace }}/vcpkg
-        vcpkgGitCommitId: 'latest'
+        # Use a stable recent vcpkg commit
+        vcpkgGitCommitId: '9f2fd82db2e86d0cf0c0ed1b874ed9381c814144'
 
     - name: Install .NET (for WiX toolset)
       uses: actions/setup-dotnet@v4

@@ -16,11 +16,10 @@ jobs:
         submodules: recursive
 
     - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgDirectory: ${{ github.workspace }}/vcpkg
-        # Use a stable recent vcpkg commit
-        vcpkgGitCommitId: '9f2fd82db2e86d0cf0c0ed1b874ed9381c814144'
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        cd vcpkg
+        .\bootstrap-vcpkg.bat
 
     - name: Install .NET (for WiX toolset)
       uses: actions/setup-dotnet@v4
@@ -38,7 +37,7 @@ jobs:
           -G "Visual Studio 17 2022" `
           -A x64 `
           -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
     - name: Build DearSQL executable

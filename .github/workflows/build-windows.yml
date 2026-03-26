@@ -2,7 +2,7 @@ name: Build Windows MSI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "features/giangnh/update-suggession" ]
   workflow_dispatch: # Cho phép bấm chạy bằng tay từ giao diện GitHub
 
 jobs:

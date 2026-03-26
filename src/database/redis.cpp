@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
+#include <map>
 #include <sstream>
 
 namespace {
@@ -167,6 +168,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
 
 void RedisDatabase::disconnect() {
     keysLoadOp_.cancel();
+    dbInfoLoadOp_.cancel();
     {
         std::lock_guard<std::mutex> lock(contextMutex_);
         if (context) {
@@ -185,6 +187,8 @@ void RedisDatabase::disconnect() {
 
     // Reset loading states
     loadingKeys = false;
+    loadingDbInfo_ = false;
+    dbInfoLoaded_ = false;
 }
 
 void RedisDatabase::refreshConnection() {
@@ -207,6 +211,8 @@ void RedisDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow_.check([this](const bool success) {
         if (success) {
             keysLoaded = false;
+            dbInfoLoaded_ = false;
+            startDbInfoLoadAsync(true);
             startKeysLoadAsync(true);
         }
     });
@@ -876,4 +882,174 @@ std::vector<Table> RedisDatabase::getKeysAsync() {
     }
 
     return result;
+}
+
+// Redis database enumeration (db0-db15)
+bool RedisDatabase::selectDatabase(int dbIndex) {
+    if (!isConnected() || dbIndex < 0 || dbIndex >= numDatabases_) {
+        return false;
+    }
+
+    try {
+        std::lock_guard<std::mutex> lock(contextMutex_);
+        if (!context) {
+            return false;
+        }
+
+        auto* reply = static_cast<redisReply*>(redisCommand(context, "SELECT %d", dbIndex));
+        if (!reply || reply->type == REDIS_REPLY_ERROR) {
+            if (reply)
+                freeReplyObject(reply);
+            return false;
+        }
+        freeReplyObject(reply);
+        selectedDbIndex_ = dbIndex;
+        return true;
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Error selecting Redis database {}: {}", dbIndex, e.what()));
+        return false;
+    }
+}
+
+std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
+    std::vector<RedisDbInfo> result;
+
+    if (!isConnected()) {
+        return result;
+    }
+
+    try {
+        // First, get the number of configured databases via CONFIG GET databases
+        {
+            std::lock_guard<std::mutex> lock(contextMutex_);
+            if (!context) {
+                return result;
+            }
+
+            auto* configReply =
+                static_cast<redisReply*>(redisCommand(context, "CONFIG GET databases"));
+            if (configReply && configReply->type == REDIS_REPLY_ARRAY &&
+                configReply->elements == 2 && configReply->element[1]->type == REDIS_REPLY_STRING) {
+                numDatabases_ = std::atoi(configReply->element[1]->str);
+                if (numDatabases_ <= 0)
+                    numDatabases_ = 16;
+            }
+            if (configReply)
+                freeReplyObject(configReply);
+        }
+
+        // Parse INFO keyspace to find which databases have keys
+        std::string keyspaceInfo;
+        {
+            std::lock_guard<std::mutex> lock(contextMutex_);
+            if (!context) {
+                return result;
+            }
+
+            auto* infoReply = static_cast<redisReply*>(redisCommand(context, "INFO keyspace"));
+            if (infoReply && infoReply->type == REDIS_REPLY_STRING) {
+                keyspaceInfo = std::string(infoReply->str, infoReply->len);
+            }
+            if (infoReply)
+                freeReplyObject(infoReply);
+        }
+
+        // Parse keyspace info: each line looks like "db0:keys=10,expires=2,avg_ttl=0"
+        std::map<int, RedisDbInfo> dbMap;
+        std::istringstream stream(keyspaceInfo);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.empty() || line[0] == '#' || line[0] == '\r')
+                continue;
+            // Remove trailing \r
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+
+            if (line.substr(0, 2) != "db")
+                continue;
+
+            auto colonPos = line.find(':');
+            if (colonPos == std::string::npos)
+                continue;
+
+            int dbIdx = 0;
+            try {
+                dbIdx = std::stoi(line.substr(2, colonPos - 2));
+            } catch (...) {
+                continue;
+            }
+
+            RedisDbInfo info;
+            info.index = dbIdx;
+            info.hasKeys = true;
+
+            // Parse key=value pairs after the colon
+            std::string kvPart = line.substr(colonPos + 1);
+            std::istringstream kvStream(kvPart);
+            std::string kv;
+            while (std::getline(kvStream, kv, ',')) {
+                auto eqPos = kv.find('=');
+                if (eqPos == std::string::npos)
+                    continue;
+                std::string key = kv.substr(0, eqPos);
+                std::string val = kv.substr(eqPos + 1);
+                try {
+                    if (key == "keys")
+                        info.keys = std::stoll(val);
+                    else if (key == "expires")
+                        info.expires = std::stoll(val);
+                    else if (key == "avg_ttl")
+                        info.avgTtl = std::stoll(val);
+                } catch (...) {
+                    // ignore parse errors
+                }
+            }
+
+            dbMap[dbIdx] = info;
+        }
+
+        // Build the full list: all databases from 0 to numDatabases_-1
+        result.resize(numDatabases_);
+        for (int i = 0; i < numDatabases_; ++i) {
+            result[i].index = i;
+            auto it = dbMap.find(i);
+            if (it != dbMap.end()) {
+                result[i] = it->second;
+            }
+        }
+
+    } catch (const std::exception& e) {
+        Logger::error(std::format("Error fetching Redis database info: {}", e.what()));
+    }
+
+    return result;
+}
+
+void RedisDatabase::startDbInfoLoadAsync(bool forceRefresh) {
+    if (dbInfoLoadOp_.isRunning()) {
+        return;
+    }
+
+    if (forceRefresh) {
+        dbInfoList_.clear();
+        dbInfoLoaded_ = false;
+    }
+
+    if (!forceRefresh && dbInfoLoaded_) {
+        return;
+    }
+
+    loadingDbInfo_ = true;
+    dbInfoLoadOp_.start([this]() { return fetchDatabaseInfo(); });
+}
+
+void RedisDatabase::checkDbInfoStatusAsync() {
+    dbInfoLoadOp_.check([this](std::vector<RedisDbInfo> info) {
+        dbInfoList_ = std::move(info);
+        dbInfoLoaded_ = true;
+        loadingDbInfo_ = false;
+        std::cout << std::format("Redis database info loaded. Found {} databases",
+                                 dbInfoList_.size())
+                  << std::endl;
+    });
 }

@@ -16,6 +16,15 @@ struct RedisKey {
     int64_t size = -1; // bytes, -1 if unavailable
 };
 
+// Information about a single Redis database (db0, db1, ..., db15)
+struct RedisDbInfo {
+    int index = 0;        // database index (0-15)
+    int64_t keys = 0;     // number of keys
+    int64_t expires = 0;  // number of keys with expiry
+    int64_t avgTtl = 0;   // average TTL in milliseconds
+    bool hasKeys = false; // whether this db has any keys
+};
+
 class RedisDatabase final : public DatabaseInterface, public IQueryExecutor {
 public:
     RedisDatabase(const DatabaseConnectionInfo& connInfo);
@@ -49,6 +58,26 @@ public:
     std::string getKeyType(const std::string& key) const;
     int64_t getKeyTTL(const std::string& key) const;
 
+    // Redis database enumeration (db0-db15)
+    bool selectDatabase(int dbIndex);
+    int getSelectedDatabase() const {
+        return selectedDbIndex_;
+    }
+    int getDatabaseCount() const {
+        return numDatabases_;
+    }
+    const std::vector<RedisDbInfo>& getDatabaseInfoList() const {
+        return dbInfoList_;
+    }
+    void startDbInfoLoadAsync(bool forceRefresh = false);
+    void checkDbInfoStatusAsync();
+    bool isDbInfoLoaded() const {
+        return dbInfoLoaded_;
+    }
+    bool isLoadingDbInfo() const {
+        return loadingDbInfo_.load();
+    }
+
     // Async key loading (combines RedisNode functionality)
     void startKeysLoadAsync(bool forceRefresh = false);
     void checkKeysStatusAsync();
@@ -61,7 +90,8 @@ public:
 
     // Async operation status
     [[nodiscard]] bool hasPendingAsyncWork() const override {
-        return isConnecting() || loadingKeys.load() || refreshWorkflow_.isRunning();
+        return isConnecting() || loadingKeys.load() || loadingDbInfo_.load() ||
+               refreshWorkflow_.isRunning();
     }
 
     // Loading state (public like SQLite)
@@ -83,6 +113,15 @@ private:
     // Async key loading
     AsyncOperation<std::vector<Table>> keysLoadOp_;
     std::vector<Table> tables;
+
+    // Database enumeration (db0-db15)
+    int selectedDbIndex_ = 0;
+    int numDatabases_ = 16; // default Redis has 16 databases
+    std::vector<RedisDbInfo> dbInfoList_;
+    std::atomic<bool> loadingDbInfo_ = false;
+    bool dbInfoLoaded_ = false;
+    AsyncOperation<std::vector<RedisDbInfo>> dbInfoLoadOp_;
+    std::vector<RedisDbInfo> fetchDatabaseInfo();
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

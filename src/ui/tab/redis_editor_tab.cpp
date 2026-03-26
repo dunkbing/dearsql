@@ -402,6 +402,11 @@ void RedisEditorTab::renderHeader() const {
     ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
 
     ImGui::SameLine(0, Theme::Spacing::L);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.blue));
+    ImGui::Text("db%d", db_->getSelectedDatabase());
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(0, Theme::Spacing::L);
     if (db_->isConnected()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.green));
         ImGui::Text(ICON_FA_CIRCLE " Connected");

@@ -329,6 +329,14 @@ void PostgresDatabaseNode::rebuildAggregatedObjects() const {
         for (const auto& table : schema->tables) {
             Table qualifiedTable = table;
             qualifiedTable.name = schema->name + "." + table.name;
+            // Qualify foreign key target table names with schema prefix
+            for (auto& fk : qualifiedTable.foreignKeys) {
+                // If targetTable doesn't already contain a dot (schema prefix),
+                // prefix it with the same schema
+                if (fk.targetTable.find('.') == std::string::npos) {
+                    fk.targetTable = schema->name + "." + fk.targetTable;
+                }
+            }
             allTables.push_back(std::move(qualifiedTable));
         }
 

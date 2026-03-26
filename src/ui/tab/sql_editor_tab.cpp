@@ -114,8 +114,12 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
       scriptName_(name) {
     sqlEditor.SetShowLineNumbers(true);
     sqlEditor.SetSubmitCallback([this] {
-        sqlQuery = sqlEditor.GetText();
-        startQueryExecutionAsync(sqlQuery);
+        if (sqlEditor.HasSelection()) {
+            startQueryExecutionAsync(sqlEditor.GetSelectedText());
+        } else {
+            sqlQuery = sqlEditor.GetText();
+            startQueryExecutionAsync(sqlQuery);
+        }
     });
     bindNode(node_);
     // seed rename buffer with initial name
@@ -278,9 +282,6 @@ void SQLEditorTab::renderConnectionInfo() {
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
-<<<<<<< HEAD
-    auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_);
-=======
     // Database-level editor: PostgresDatabaseNode bound directly
     if (auto* pgDbNode = dynamic_cast<PostgresDatabaseNode*>(node_)) {
         auto* serverDb = pgDbNode->parentDb;
@@ -305,7 +306,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
     }
 
     // Schema-level editor: PostgresSchemaNode bound (backward compat)
->>>>>>> 6d80dbc (fix editor suggesstion and create editor with only db selection)
+    auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_);
     auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
     if (!dbNode && schemaNode)
         dbNode = schemaNode->parentDbNode;
@@ -580,7 +581,11 @@ void SQLEditorTab::renderToolbar() {
         }
     } else {
         if (ImGui::Button(ICON_FA_PLAY " Run")) {
-            startQueryExecutionAsync(sqlQuery);
+            if (sqlEditor.HasSelection()) {
+                startQueryExecutionAsync(sqlEditor.GetSelectedText());
+            } else {
+                startQueryExecutionAsync(sqlQuery);
+            }
         }
         ImGui::SameLine(0, Theme::Spacing::M);
         if (ImGui::Button(ICON_FA_ALIGN_LEFT " Format")) {
@@ -846,12 +851,53 @@ void SQLEditorTab::updateCompletionKeywords() {
     for (const auto& kw : dearsql::TextEditor::GetDefaultCompletionKeywords())
         items.push_back({kw, CompletionKind::Keyword});
 
+    // SQL functions (aggregate, string, date, math, conditional)
+    static const std::vector<std::string> sqlFunctions = {
+        // Aggregate
+        "COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT", "STRING_AGG", "ARRAY_AGG",
+        // String
+        "CONCAT", "LENGTH", "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "SUBSTRING",
+        "REPLACE", "LEFT", "RIGHT", "REVERSE", "REPEAT", "POSITION", "STRPOS",
+        "SPLIT_PART", "INITCAP", "LPAD", "RPAD", "TRANSLATE", "FORMAT",
+        // Date/Time
+        "NOW", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
+        "DATE_TRUNC", "DATE_PART", "EXTRACT", "AGE", "DATE_ADD", "DATE_SUB",
+        "DATEDIFF", "DATEADD", "GETDATE", "SYSDATE", "TO_DATE", "TO_CHAR",
+        "TO_TIMESTAMP", "INTERVAL",
+        // Math
+        "ABS", "CEIL", "CEILING", "FLOOR", "ROUND", "MOD", "POWER", "SQRT",
+        "SIGN", "RANDOM", "LOG", "LN", "EXP", "PI", "GREATEST", "LEAST",
+        // Conditional
+        "COALESCE", "NULLIF", "IFNULL", "NVL", "NVL2", "DECODE", "IIF",
+        // Type conversion
+        "CAST", "CONVERT", "TRY_CAST",
+        // Window
+        "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD",
+        "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE",
+        // JSON (PostgreSQL/MySQL)
+        "JSON_AGG", "JSON_BUILD_OBJECT", "JSON_EXTRACT", "JSON_EXTRACT_PATH",
+        "JSONB_BUILD_OBJECT", "JSON_OBJECT", "JSON_ARRAY",
+        // Other
+        "EXISTS", "IN", "ANY", "ALL", "SOME",
+        "GENERATE_SERIES", "UNNEST", "ARRAY_LENGTH",
+    };
+    for (const auto& fn : sqlFunctions)
+        items.push_back({fn, CompletionKind::Function});
 
+        auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
             if (!sourceNode)
                 return;
             for (const auto& table : sourceNode->getTables()) {
-                for (const auto& col : table.columns)
-                    items.push_back({col.name, CompletionKind::Column});
+                for (const auto& col : table.columns) {
+                    CompletionItem colItem(col.name, CompletionKind::Column);
+                    // Show data type and table name as detail
+                    std::string detail = col.type;
+                    if (!table.name.empty()) {
+                        detail = table.name + "  " + detail;
+                    }
+                    colItem.detailText = detail;
+                    items.push_back(std::move(colItem));
+                }
             }
         };
 
@@ -1016,7 +1062,6 @@ void SQLEditorTab::updateCompletionKeywords() {
                 return;
             }
         }
-    }
 
     // Sort and deduplicate by text
     sortAndDeduplicateCompletionItems(items);

@@ -28,7 +28,8 @@ namespace {
 
 RedisKeyViewerTab::RedisKeyViewerTab(const std::string& name, RedisDatabase* db,
                                      const std::string& pattern)
-    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern), statusPanel_(db) {
+    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern),
+      dbIndex_(db ? db->getSelectedDatabase() : 0), statusPanel_(db) {
     initializeTableRenderer();
     loadDataAsync();
 }
@@ -109,8 +110,11 @@ void RedisKeyViewerTab::loadDataAsync() {
     const std::string pattern = pattern_;
     const int limit = rowsPerPage_;
     const int offset = currentPage_ * rowsPerPage_;
+    const int dbIdx = dbIndex_;
 
-    loadOp_.start([db, pattern, limit, offset] {
+    loadOp_.start([db, pattern, limit, offset, dbIdx] {
+        // Switch to the correct database before loading keys
+        db->selectDatabase(dbIdx);
         auto cols = db->getColumnNames(pattern);
         auto data = db->getTableData(pattern, limit, offset);
         return std::make_pair(std::move(cols), std::move(data));
@@ -172,6 +176,10 @@ void RedisKeyViewerTab::render() {
         if (db_) {
             const auto& connInfo = db_->getConnectionInfo();
             ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
+            ImGui::SameLine(0, Theme::Spacing::L);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.blue));
+            ImGui::Text("db%d", dbIndex_);
+            ImGui::PopStyleColor();
             ImGui::SameLine(0, Theme::Spacing::L);
         }
         ImGui::Text(ICON_FA_KEY " %s", displayName.c_str());

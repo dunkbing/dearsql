@@ -39,6 +39,7 @@ public:
 
 private:
     std::shared_ptr<DatabaseInterface> db;
+    std::string pendingEditorOpenDbName_;
 
     // Database-specific renderers
     void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);

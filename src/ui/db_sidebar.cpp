@@ -20,9 +20,11 @@
 #include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <memory>
+#include <ranges>
 
 DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
@@ -697,6 +699,64 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             Logger::info(std::format("Refreshing connection for database: {}",
                                      db->getConnectionInfo().name));
             db->refreshConnection();
+        }
+
+        // Filter Databases submenu (when connected and has multiple databases)
+        if (db->isConnected()) {
+            auto dbType = db->getConnectionInfo().type;
+            std::vector<std::string> dbNames;
+
+            if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
+                if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
+                    for (const auto& name : pgDb->getDatabaseDataMap() | std::views::keys) {
+                        dbNames.push_back(name);
+                    }
+                }
+            } else if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
+                if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+                    for (const auto& name : mysqlDb->getDatabaseDataMap() | std::views::keys) {
+                        dbNames.push_back(name);
+                    }
+                }
+            } else if (dbType == DatabaseType::MSSQL) {
+                if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
+                    for (const auto& name : mssqlDb->getDatabaseDataMap() | std::views::keys) {
+                        dbNames.push_back(name);
+                    }
+                }
+            } else if (dbType == DatabaseType::ORACLE) {
+                if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
+                    for (const auto& name : oracleDb->getDatabaseDataMap() | std::views::keys) {
+                        dbNames.push_back(name);
+                    }
+                }
+            } else if (dbType == DatabaseType::MONGODB) {
+                if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
+                    for (const auto& name : mongoDb->getDatabaseDataMap() | std::views::keys) {
+                        dbNames.push_back(name);
+                    }
+                }
+            } else if (dbType == DatabaseType::REDIS) {
+                if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
+                    for (const auto& info : redisDb->getDatabaseInfoList()) {
+                        dbNames.push_back(std::format("db{}", info.index));
+                    }
+                }
+            }
+
+            if (!dbNames.empty()) {
+                std::sort(dbNames.begin(), dbNames.end());
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Filter Databases")) {
+                    for (const auto& name : dbNames) {
+                        bool visible = !db->isDatabaseHidden(name);
+                        if (ImGui::Checkbox(name.c_str(), &visible)) {
+                            db->setDatabaseHidden(name, !visible);
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

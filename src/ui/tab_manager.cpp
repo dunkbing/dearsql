@@ -488,11 +488,14 @@ std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
     if (!db)
         return nullptr;
 
-    // reuse existing tab for same db + pattern
+    const int dbIdx = db->getSelectedDatabase();
+
+    // reuse existing tab for same db + pattern + database index
     for (auto& tab : tabs) {
         if (tab->getType() == TabType::REDIS_KEY_VIEWER) {
             const auto keyTab = std::dynamic_pointer_cast<RedisKeyViewerTab>(tab);
-            if (keyTab && keyTab->getDatabase() == db && keyTab->getPattern() == pattern) {
+            if (keyTab && keyTab->getDatabase() == db && keyTab->getPattern() == pattern &&
+                keyTab->getDatabaseIndex() == dbIdx) {
                 requestTabFocus(tab->getId());
                 return tab;
             }
@@ -500,7 +503,7 @@ std::shared_ptr<Tab> TabManager::createRedisKeyViewerTab(RedisDatabase* db,
     }
 
     const std::string displayName = (pattern == "*") ? "Browse" : pattern;
-    const std::string baseName = std::format("Redis: {}", displayName);
+    const std::string baseName = std::format("Redis db{}: {}", dbIdx, displayName);
     std::string tabName = baseName;
     int count = 1;
     while (hasTabTitle(tabName)) {

@@ -25,6 +25,8 @@ namespace dearsql {
         // --- Public API ---
         void SetText(const std::string& text);
         [[nodiscard]] std::string GetText() const;
+        [[nodiscard]] bool HasSelection() const { return selectionActive_ && selectionAnchor_ != cursorIndex_; }
+        [[nodiscard]] std::string GetSelectedText() const { return getSelectedText(); }
         void SetPlaceholder(const std::string& text);
         void Render(const char* label, ImVec2 size, bool border = false);
         void SetFocus();

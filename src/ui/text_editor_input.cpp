@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <set>
 
 namespace dearsql {
     namespace {
@@ -923,6 +924,113 @@ namespace dearsql {
             }
         }
 
+        // --- Parse FROM/JOIN tables for column relevance ---
+        std::set<std::string> referencedTables;
+        {
+            // Scan backwards from cursor to find the statement boundary, then look for FROM/JOIN
+            // Find statement start (beginning of content or after ';')
+            int stmtStart = 0;
+            for (int p = static_cast<int>(cursorIndex_) - 1; p >= 0; --p) {
+                if (content_[p] == ';') {
+                    stmtStart = p + 1;
+                    break;
+                }
+            }
+
+            // Extract statement text up to cursor
+            std::string stmt = content_.substr(stmtStart, cursorIndex_ - stmtStart);
+
+            // Convert to lowercase for keyword matching
+            std::string lStmt;
+            lStmt.reserve(stmt.size());
+            for (char c : stmt) lStmt.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+            // Find all FROM/JOIN positions and extract table names after them
+            auto extractTablesAfterKeyword = [&](const std::string& keyword) {
+                size_t searchPos = 0;
+                while ((searchPos = lStmt.find(keyword, searchPos)) != std::string::npos) {
+                    // Ensure it's a whole word
+                    if (searchPos > 0 && std::isalnum(static_cast<unsigned char>(lStmt[searchPos - 1]))) {
+                        searchPos += keyword.size();
+                        continue;
+                    }
+                    size_t afterKw = searchPos + keyword.size();
+                    if (afterKw < lStmt.size() && std::isalnum(static_cast<unsigned char>(lStmt[afterKw]))) {
+                        searchPos = afterKw;
+                        continue;
+                    }
+
+                    // Skip whitespace after keyword
+                    size_t p = afterKw;
+                    while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                        ++p;
+
+                    // Parse comma-separated table names (stop at keyword boundaries)
+                    while (p < stmt.size()) {
+                        // Skip whitespace
+                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                            ++p;
+                        if (p >= stmt.size()) break;
+
+                        // Check if we hit a SQL keyword (WHERE, ON, SET, ORDER, GROUP, HAVING, LIMIT, etc.)
+                        size_t kwCheck = p;
+                        std::string nextWord;
+                        while (kwCheck < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[kwCheck])) || stmt[kwCheck] == '_'))
+                            nextWord.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(stmt[kwCheck++]))));
+                        if (nextWord == "where" || nextWord == "on" || nextWord == "set" ||
+                            nextWord == "order" || nextWord == "group" || nextWord == "having" ||
+                            nextWord == "limit" || nextWord == "union" || nextWord == "inner" ||
+                            nextWord == "left" || nextWord == "right" || nextWord == "outer" ||
+                            nextWord == "cross" || nextWord == "full" || nextWord == "join" ||
+                            nextWord == "select" || nextWord == "values")
+                            break;
+
+                        // Read table name (may include schema: schema.table)
+                        std::string tableName;
+                        while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_' || stmt[p] == '.'))
+                            tableName.push_back(stmt[p++]);
+
+                        if (!tableName.empty()) {
+                            referencedTables.insert(tableName);
+                            // Also insert without schema prefix for matching
+                            auto dotPos = tableName.rfind('.');
+                            if (dotPos != std::string::npos)
+                                referencedTables.insert(tableName.substr(dotPos + 1));
+                        }
+
+                        // Skip alias (next word after table name)
+                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t'))
+                            ++p;
+                        // Skip alias word (if not a comma or keyword)
+                        if (p < stmt.size() && stmt[p] != ',' && stmt[p] != ';') {
+                            std::string maybeAlias;
+                            size_t aliasStart = p;
+                            while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_'))
+                                maybeAlias.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(stmt[p++]))));
+                            if (maybeAlias == "as") {
+                                while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\t'))
+                                    ++p;
+                                while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_'))
+                                    ++p;
+                            }
+                        }
+
+                        // Skip comma
+                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                            ++p;
+                        if (p < stmt.size() && stmt[p] == ',')
+                            ++p;
+                        else
+                            break;
+                    }
+                    searchPos = afterKw;
+                }
+            };
+            extractTablesAfterKeyword("from");
+            extractTablesAfterKeyword("join");
+            extractTablesAfterKeyword("update");
+        }
+
         // --- Scoring ---
         struct Scored {
             CompletionItem item;
@@ -953,26 +1061,69 @@ namespace dearsql {
             if (lowerWord.empty()) {
                 score = 100;
             } else if (lt.find(lowerWord) == 0) {
-                score = 200; // prefix match
+                score = 300; // prefix match (strong)
             } else if (lt.find(lowerWord) != std::string::npos) {
                 score = 100; // substring match
             } else {
                 return; // no match
             }
 
-            // Context bonus
+            // Kind-based base priority (tables/columns always above keywords)
+            switch (ci.kind) {
+            case CompletionKind::Column:
+                score += 30;
+                break;
+            case CompletionKind::Table:
+                score += 25;
+                break;
+            case CompletionKind::View:
+                score += 20;
+                break;
+            case CompletionKind::Function:
+                score += 15;
+                break;
+            case CompletionKind::Sequence:
+                score += 10;
+                break;
+            case CompletionKind::Keyword:
+                score -= 10; // keywords deprioritized
+                break;
+            }
+
+            // Context bonus (stronger)
             if (ctx == Ctx::FromJoin) {
                 if (ci.kind == CompletionKind::Table)
-                    score += 50;
+                    score += 80;
                 else if (ci.kind == CompletionKind::View)
-                    score += 40;
+                    score += 60;
+                else if (ci.kind == CompletionKind::Column)
+                    return; // skip columns entirely in FROM/JOIN context
                 else if (ci.kind == CompletionKind::Keyword)
-                    score -= 20;
+                    score -= 40;
             } else if (ctx == Ctx::SelectWhereOn) {
                 if (ci.kind == CompletionKind::Column)
-                    score += 50;
+                    score += 80;
                 else if (ci.kind == CompletionKind::Function)
-                    score += 30;
+                    score += 50;
+                else if (ci.kind == CompletionKind::Keyword)
+                    score -= 20;
+            }
+
+            // Shorter names slightly preferred (more specific)
+            if (lt.size() < 15)
+                score += 5;
+
+            // Boost columns that belong to tables referenced in FROM/JOIN
+            if (ci.kind == CompletionKind::Column && !referencedTables.empty() &&
+                !ci.detailText.empty()) {
+                const std::string lDetail = toLower(ci.detailText);
+                for (const auto& refTable : referencedTables) {
+                    const std::string lRef = toLower(refTable);
+                    if (lDetail.find(lRef) != std::string::npos) {
+                        score += 100; // strong boost for columns from referenced tables
+                        break;
+                    }
+                }
             }
 
             scored.push_back({ci, score});
@@ -1032,7 +1183,7 @@ namespace dearsql {
         int line = getLineFromPos(cursorIndex_);
         float cursorY = textOrigin_.y + (line + 1) * lineHeight_;
 
-        constexpr float popupWidth = 320.0f;
+        constexpr float popupWidth = 520.0f;
         constexpr float popupPadding = 6.0f;
         const int maxShow =
             std::min(static_cast<int>(filteredCompletions_.size()), kAutocompleteMaxVisible);
@@ -1098,14 +1249,27 @@ namespace dearsql {
 
             float iconX = pos.x + popupPadding;
             drawList->AddText(ImVec2(iconX, rowY), iconColor, icon);
-            drawList->AddText(ImVec2(pos.x + popupPadding + iconWidth, rowY), textColor,
-                              filteredCompletions_[itemIdx].text.c_str());
-            if (!filteredCompletions_[itemIdx].detailText.empty()) {
-                const ImVec2 detailSize =
-                    ImGui::CalcTextSize(filteredCompletions_[itemIdx].detailText.c_str());
-                drawList->AddText(ImVec2(pos.x + popupWidth - popupPadding - detailSize.x, rowY),
-                                  palette_.lineNumber,
-                                  filteredCompletions_[itemIdx].detailText.c_str());
+
+            const float textStartX = pos.x + popupPadding + iconWidth;
+            const auto& itemText = filteredCompletions_[itemIdx].text;
+            const auto& detailText = filteredCompletions_[itemIdx].detailText;
+
+            if (!detailText.empty()) {
+                // Calculate available space: left side for name, right side for detail
+                const ImVec2 detailSize = ImGui::CalcTextSize(detailText.c_str());
+                const float detailX = pos.x + popupWidth - popupPadding - detailSize.x;
+                const float maxNameWidth = detailX - textStartX - 12.0f; // 12px gap
+
+                // Clip the item name if it would overlap with detail
+                drawList->PushClipRect(ImVec2(textStartX, rowY),
+                                       ImVec2(textStartX + maxNameWidth, rowY + rowHeight));
+                drawList->AddText(ImVec2(textStartX, rowY), textColor, itemText.c_str());
+                drawList->PopClipRect();
+
+                // Draw detail text (right-aligned, dimmed)
+                drawList->AddText(ImVec2(detailX, rowY), palette_.lineNumber, detailText.c_str());
+            } else {
+                drawList->AddText(ImVec2(textStartX, rowY), textColor, itemText.c_str());
             }
         }
     }

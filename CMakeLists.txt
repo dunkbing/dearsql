@@ -95,6 +95,20 @@ find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+
+# clickhouse-cpp (no cmake config exported by vcpkg port)
+find_library(CLICKHOUSE_CPP_LIBRARY NAMES clickhouse-cpp-lib REQUIRED)
+find_path(CLICKHOUSE_CPP_INCLUDE_DIR clickhouse/client.h REQUIRED)
+find_library(CITYHASH_LIBRARY NAMES cityhash REQUIRED)
+find_package(lz4 CONFIG REQUIRED)
+find_package(zstd CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
+add_library(clickhouse-cpp-lib STATIC IMPORTED)
+set_target_properties(clickhouse-cpp-lib PROPERTIES
+    IMPORTED_LOCATION "${CLICKHOUSE_CPP_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${CLICKHOUSE_CPP_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "${CITYHASH_LIBRARY};lz4::lz4;$<IF:$<TARGET_EXISTS:zstd::libzstd_shared>,zstd::libzstd_shared,zstd::libzstd_static>;absl::int128"
+)
 include(cmake/FreeTDS.cmake)
 include(cmake/OracleOCI.cmake)
 
@@ -214,6 +228,8 @@ set(APP_SOURCES
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
+    src/database/clickhouse.cpp
+    src/database/clickhouse/clickhouse_database_node.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
@@ -380,6 +396,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
     spdlog::spdlog
+    clickhouse-cpp-lib
+)
+
+# clickhouse-cpp 2.6.0 headers use template member access patterns
+# incompatible with GCC 13 strict mode
+set_source_files_properties(
+    src/database/clickhouse.cpp
+    src/database/clickhouse/clickhouse_database_node.cpp
+    PROPERTIES COMPILE_OPTIONS "-fpermissive"
 )
 
 # platform-specific linking
@@ -504,6 +529,8 @@ add_executable(database_tests
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
+    src/database/clickhouse.cpp
+    src/database/clickhouse/clickhouse_database_node.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
 
@@ -538,6 +565,14 @@ target_link_libraries(database_tests PRIVATE
     ${SYBDB_DEPS}
     odpi
     spdlog::spdlog
+    clickhouse-cpp-lib
+)
+
+set_source_files_properties(
+    src/database/clickhouse.cpp
+    src/database/clickhouse/clickhouse_database_node.cpp
+    TARGET_DIRECTORY database_tests
+    PROPERTIES COMPILE_OPTIONS "-fpermissive"
 )
 
 add_test(NAME database_tests COMMAND database_tests)

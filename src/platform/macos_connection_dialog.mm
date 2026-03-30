@@ -361,6 +361,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup addItemWithTitle:@"MSSQL"];
     [self.typePopup addItemWithTitle:@"Oracle"];
     [self.typePopup addItemWithTitle:@"Redshift"];
+    [self.typePopup addItemWithTitle:@"ClickHouse"];
     [self.typePopup setTarget:self];
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
@@ -979,6 +980,10 @@ static NSWindow* sActiveConnectionDialog = nil;
         break;
     case DatabaseType::REDSHIFT:
         self.portField.stringValue = @"5439";
+        self.authSegment.selectedSegment = 0;
+        break;
+    case DatabaseType::CLICKHOUSE:
+        self.portField.stringValue = @"9000";
         self.authSegment.selectedSegment = 0;
         break;
     }

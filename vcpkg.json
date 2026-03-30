@@ -32,6 +32,10 @@
       "features": ["backend", "transport", "compression"]
     },
     "libiconv",
-    "spdlog"
+    "spdlog",
+    {
+      "name": "clickhouse-cpp",
+      "features": ["openssl"]
+    }
   ]
 }

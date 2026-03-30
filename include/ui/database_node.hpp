@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app_state.hpp"
+#include "database/clickhouse/clickhouse_database_node.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "database/mssql/mssql_database_node.hpp"
@@ -45,6 +46,7 @@ private:
     void renderPostgresSchemaNode(const PostgresDatabaseNode* dbData,
                                   PostgresSchemaNode* schemaData);
     void renderMySQLDatabaseNode(MySQLDatabaseNode* dbData);
+    void renderClickHouseDatabaseNode(ClickHouseDatabaseNode* dbData);
     void renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData);
     void renderOracleDatabaseNode(OracleDatabaseNode* dbData);
     void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
@@ -56,6 +58,8 @@ private:
                         bool isMaterializedView = false);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
+    void renderClickHouseTableNode(Table& table, ClickHouseDatabaseNode* dbData);
+    void renderClickHouseViewNode(Table& view, ClickHouseDatabaseNode* dbData);
     void renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData, MSSQLSchemaNode* schemaData);
     void renderMSSQLTableNode(Table& table, MSSQLSchemaNode* schemaData);
     void renderMSSQLViewNode(Table& view, MSSQLSchemaNode* schemaData);

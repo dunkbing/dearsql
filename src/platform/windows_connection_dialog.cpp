@@ -226,6 +226,8 @@ static int defaultPort(DatabaseType type) {
         return 1521;
     case DatabaseType::REDSHIFT:
         return 5439;
+    case DatabaseType::CLICKHOUSE:
+        return 9000;
     default:
         return 0;
     }
@@ -785,8 +787,8 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         makeCtrl("STATIC", "Type:", IDC_LABEL_TYPE, SS_RIGHT, LX, y + 3, LW, RH);
         HWND typeCombo =
             makeCtrl("COMBOBOX", "", IDC_TYPE_COMBO, CBS_DROPDOWNLIST | WS_TABSTOP, FX, y, FW, 200);
-        const char* types[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB", "Redis",
-                               "MongoDB", "MSSQL",      "Oracle", "Redshift"};
+        const char* types[] = {"SQLite",  "PostgreSQL", "MySQL",  "MariaDB",  "Redis",
+                               "MongoDB", "MSSQL",      "Oracle", "Redshift", "ClickHouse"};
         for (const char* t : types) {
             SendMessageA(typeCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t));
         }

@@ -12,6 +12,8 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
         return std::make_unique<MySQLBuilder>();
     case DatabaseType::MSSQL:
         return std::make_unique<MSSQLBuilder>();
+    case DatabaseType::CLICKHOUSE:
+        return std::make_unique<ClickHouseBuilder>();
     case DatabaseType::SQLITE:
     default:
         return std::make_unique<SQLiteBuilder>();
@@ -66,6 +68,8 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
 
     if (isMySQL)
         sql += " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    else if (dbType == DatabaseType::CLICKHOUSE)
+        sql += " ENGINE=MergeTree() ORDER BY tuple()";
 
     return sql;
 }
@@ -121,6 +125,33 @@ std::string MySQLBuilder::addColumn(const std::string& table, const Column& colu
 
 std::string MySQLBuilder::dropColumn(const std::string& table,
                                      const std::string& columnName) const {
+    return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
+}
+
+// ========== ClickHouse ==========
+
+std::string ClickHouseBuilder::quoteIdentifier(const std::string& identifier) const {
+    std::string result = "`";
+    for (char c : identifier) {
+        if (c == '`')
+            result += "``";
+        else
+            result += c;
+    }
+    result += "`";
+    return result;
+}
+
+std::string ClickHouseBuilder::addColumn(const std::string& table, const Column& column) const {
+    std::string sql = "ALTER TABLE " + quoteIdentifier(table);
+    sql += " ADD COLUMN " + quoteIdentifier(column.name) + " " + column.type;
+    if (column.isNotNull)
+        sql += " NOT NULL";
+    return sql;
+}
+
+std::string ClickHouseBuilder::dropColumn(const std::string& table,
+                                          const std::string& columnName) const {
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
 

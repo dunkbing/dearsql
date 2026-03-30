@@ -1,3 +1,4 @@
+#include "database/clickhouse.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -28,6 +29,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "oracle";
     case DatabaseType::REDSHIFT:
         return "redshift";
+    case DatabaseType::CLICKHOUSE:
+        return "clickhouse";
     }
     return "unknown";
 }
@@ -51,6 +54,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::ORACLE;
     if (typeStr == "redshift")
         return DatabaseType::REDSHIFT;
+    if (typeStr == "clickhouse")
+        return DatabaseType::CLICKHOUSE;
     return DatabaseType::SQLITE; // default
 }
 
@@ -117,6 +122,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::REDSHIFT:
         return std::make_shared<PostgresDatabase>(info);
+
+    case DatabaseType::CLICKHOUSE:
+        return std::make_shared<ClickHouseDatabase>(info);
 
     default:
         return nullptr;

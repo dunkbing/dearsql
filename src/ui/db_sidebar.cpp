@@ -1,6 +1,7 @@
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/clickhouse.hpp"
 #include "database/db_interface.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -544,6 +545,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
             redisDb->checkRefreshWorkflowAsync();
         }
+    } else if (type == DatabaseType::CLICKHOUSE) {
+        if (auto* chDb = dynamic_cast<ClickHouseDatabase*>(db.get())) {
+            chDb->checkRefreshWorkflowAsync();
+        }
     }
 
     if (dbOpen) {
@@ -634,7 +639,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT ||
                 dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB ||
-                dbType == DatabaseType::MSSQL) {
+                dbType == DatabaseType::MSSQL || dbType == DatabaseType::CLICKHOUSE) {
                 if (ImGui::MenuItem("Create New Database")) {
                     showCreateDatabaseDialog(&app, db);
                 }

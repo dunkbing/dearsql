@@ -419,6 +419,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::REDSHIFT:
         typeStr = "redshift";
         break;
+    case DatabaseType::CLICKHOUSE:
+        typeStr = "clickhouse";
+        break;
     }
 
     std::string saltBase64 =
@@ -533,6 +536,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         break;
     case DatabaseType::REDSHIFT:
         typeStr = "redshift";
+        break;
+    case DatabaseType::CLICKHOUSE:
+        typeStr = "clickhouse";
         break;
     }
 

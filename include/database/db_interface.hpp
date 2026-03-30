@@ -17,7 +17,8 @@ enum class DatabaseType {
     MONGODB,
     MSSQL,
     ORACLE,
-    REDSHIFT
+    REDSHIFT,
+    CLICKHOUSE
 };
 
 enum class SSHAuthMethod { Password, PrivateKey };
@@ -140,8 +141,8 @@ struct DatabaseConnectionInfo {
             return connStr;
         }
 
-        case DatabaseType::MSSQL: {
-            // FreeTDS uses host:port format for dbopen()
+        case DatabaseType::MSSQL:
+        case DatabaseType::CLICKHOUSE: {
             return host + ":" + std::to_string(port);
         }
 
@@ -297,6 +298,10 @@ public:
         }
         case DatabaseType::ORACLE: {
             connectionInfo.database = "ORCL";
+            break;
+        }
+        case DatabaseType::CLICKHOUSE: {
+            connectionInfo.database = "default";
             break;
         }
         default:

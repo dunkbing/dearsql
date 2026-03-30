@@ -61,6 +61,19 @@ public:
                                          const std::string& columnName) const override;
 };
 
+class ClickHouseBuilder : public ISQLBuilder {
+public:
+    [[nodiscard]] DatabaseType databaseType() const override {
+        return DatabaseType::CLICKHOUSE;
+    }
+    [[nodiscard]] std::string quoteIdentifier(const std::string& identifier) const override;
+
+    [[nodiscard]] std::string addColumn(const std::string& table,
+                                        const Column& column) const override;
+    [[nodiscard]] std::string dropColumn(const std::string& table,
+                                         const std::string& columnName) const override;
+};
+
 class SQLiteBuilder : public ISQLBuilder {
 public:
     [[nodiscard]] DatabaseType databaseType() const override {

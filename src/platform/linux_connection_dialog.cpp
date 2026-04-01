@@ -14,6 +14,7 @@
 #include "database/sqlite.hpp"
 #include "database/ssh_config_parser.hpp"
 #include "database/ssl_config.hpp"
+#include "embedded_images.hpp"
 #include "platform/connection_dialog.hpp"
 #include "platform/linux_platform.hpp"
 #include "utils/file_dialog.hpp"
@@ -21,10 +22,6 @@
 #include <cstring>
 #include <gtk/gtk.h>
 #include <thread>
-
-// ---------------------------------------------------------------------------
-// Internal state structs
-// ---------------------------------------------------------------------------
 
 struct ConnectionDialogData {
     Application* app = nullptr;
@@ -82,6 +79,9 @@ struct ConnectionDialogData {
     std::vector<SSHHostEntry> sshConfigHosts;
     bool sshConfigLoaded = false;
 
+    // Type icon
+    GtkWidget* typeIcon = nullptr;
+
     // Bottom
     GtkWidget* statusLabel = nullptr;
     GtkWidget* spinner = nullptr;
@@ -108,6 +108,8 @@ struct CreateDatabaseDialogData {
     GtkWidget* templateDropdown = nullptr;
     GtkWidget* encodingDropdown = nullptr;
     GtkWidget* tablespaceDropdown = nullptr;
+    GtkWidget* pgOptionsSpinnerRow = nullptr;
+    std::atomic<bool> pgOptionsLoading{false};
 
     // MySQL
     GtkWidget* charsetDropdown = nullptr;
@@ -118,22 +120,8 @@ struct CreateDatabaseDialogData {
     GtkWidget* createButton = nullptr;
 };
 
-// ---------------------------------------------------------------------------
-// Singleton guards
-// ---------------------------------------------------------------------------
-
 static GtkWidget* sActiveConnectionDialog = nullptr;
 static GtkWidget* sActiveCreateDatabaseDialog = nullptr;
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// SslModeConfig, getSslConfig(), sslModeNeedsCACert() from ssl_config.hpp
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 static GtkWidget* getParentWindow(Application* app) {
     auto* platform = dynamic_cast<LinuxPlatform*>(app->getPlatform());
@@ -172,6 +160,25 @@ static void clearBox(GtkWidget* box) {
     }
 }
 
+static void updateTypeIcon(GtkWidget* image, DatabaseType type) {
+    const std::string name = databaseTypeToString(type);
+    const EmbeddedImage* img = findEmbeddedImage(name.c_str());
+    if (!img) {
+        gtk_widget_set_visible(image, FALSE);
+        return;
+    }
+    GBytes* bytes = g_bytes_new_static(img->data, img->size);
+    GdkTexture* texture = gdk_texture_new_from_bytes(bytes, nullptr);
+    g_bytes_unref(bytes);
+    if (!texture) {
+        gtk_widget_set_visible(image, FALSE);
+        return;
+    }
+    gtk_image_set_from_paintable(GTK_IMAGE(image), GDK_PAINTABLE(texture));
+    gtk_widget_set_visible(image, TRUE);
+    g_object_unref(texture);
+}
+
 static GtkWidget* makeStringDropdown(const char* const items[], int count, int selected) {
     GtkStringList* model = gtk_string_list_new(nullptr);
     for (int i = 0; i < count; i++) {
@@ -181,10 +188,6 @@ static GtkWidget* makeStringDropdown(const char* const items[], int count, int s
     gtk_drop_down_set_selected(GTK_DROP_DOWN(dropdown), selected >= 0 ? selected : 0);
     return dropdown;
 }
-
-// ---------------------------------------------------------------------------
-// Connection dialog: field rebuilding
-// ---------------------------------------------------------------------------
 
 static void onAuthToggled(GtkCheckButton*, gpointer userData) {
     auto* data = static_cast<ConnectionDialogData*>(userData);
@@ -613,10 +616,6 @@ static void rebuildFieldsForType(ConnectionDialogData* data) {
                      data);
 }
 
-// ---------------------------------------------------------------------------
-// Connection dialog: async connection
-// ---------------------------------------------------------------------------
-
 struct AsyncConnectResult {
     GtkWidget* dialogRef;
     bool success;
@@ -918,10 +917,6 @@ static void connectServerAsync(ConnectionDialogData* data) {
     }).detach();
 }
 
-// ---------------------------------------------------------------------------
-// Connection dialog: build & show
-// ---------------------------------------------------------------------------
-
 static void destroyConnectionDialogData(gpointer ptr) {
     auto* data = static_cast<ConnectionDialogData*>(ptr);
     if (data->oraclePollingTimerId) {
@@ -959,7 +954,16 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
                                       "MongoDB", "MSSQL",      "Oracle", "Redshift"};
     data->typeDropdown = makeStringDropdown(typeNames, 9, static_cast<int>(initialType));
 
-    GtkWidget* typeRow = makeRow(makeLabel("Type"), data->typeDropdown);
+    // type icon next to dropdown
+    data->typeIcon = gtk_image_new();
+    gtk_widget_set_size_request(data->typeIcon, 24, 24);
+    updateTypeIcon(data->typeIcon, initialType);
+
+    GtkWidget* typeRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_append(GTK_BOX(typeRow), makeLabel("Type"));
+    gtk_box_append(GTK_BOX(typeRow), data->typeIcon);
+    gtk_box_append(GTK_BOX(typeRow), data->typeDropdown);
+    gtk_widget_set_hexpand(data->typeDropdown, TRUE);
     gtk_box_append(GTK_BOX(mainBox), typeRow);
 
     // Separator
@@ -975,6 +979,9 @@ static GtkWidget* buildConnectionDialog(ConnectionDialogData* data,
         g_signal_connect(data->typeDropdown, "notify::selected",
                          G_CALLBACK(+[](GtkDropDown*, GParamSpec*, gpointer ud) {
                              auto* d = static_cast<ConnectionDialogData*>(ud);
+                             auto type = static_cast<DatabaseType>(
+                                 gtk_drop_down_get_selected(GTK_DROP_DOWN(d->typeDropdown)));
+                             updateTypeIcon(d->typeIcon, type);
                              rebuildFieldsForType(d);
                              gtk_label_set_text(GTK_LABEL(d->statusLabel), "");
                          }),
@@ -1258,82 +1265,146 @@ static void populateFieldsFromConnection(ConnectionDialogData* data,
     refreshDynamicFieldState(data);
 }
 
-// ---------------------------------------------------------------------------
-// Create Database dialog
-// ---------------------------------------------------------------------------
-
 static void destroyCreateDbDialogData(gpointer ptr) {
     auto* data = static_cast<CreateDatabaseDialogData*>(ptr);
     data->db.reset();
     delete data;
 }
 
+struct PgOptionsResult {
+    std::vector<std::string> owners;
+    int defaultOwnerIdx = 0;
+    std::vector<std::string> templates;
+    std::vector<std::string> tablespaces;
+    CreateDatabaseDialogData* data = nullptr;
+};
+
+static void applyPgOptions(PgOptionsResult* result) {
+    auto* data = result->data;
+
+    if (data->ownerDropdown) {
+        auto* model = GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->ownerDropdown)));
+        while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
+            gtk_string_list_remove(model, 0);
+        for (const auto& name : result->owners)
+            gtk_string_list_append(model, name.c_str());
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(data->ownerDropdown), result->defaultOwnerIdx);
+        gtk_widget_set_sensitive(data->ownerDropdown, TRUE);
+    }
+
+    if (data->templateDropdown) {
+        auto* model =
+            GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->templateDropdown)));
+        while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
+            gtk_string_list_remove(model, 0);
+        for (const auto& name : result->templates)
+            gtk_string_list_append(model, name.c_str());
+        gtk_widget_set_sensitive(data->templateDropdown, TRUE);
+    }
+
+    if (data->tablespaceDropdown) {
+        auto* model =
+            GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->tablespaceDropdown)));
+        while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
+            gtk_string_list_remove(model, 0);
+        for (const auto& name : result->tablespaces)
+            gtk_string_list_append(model, name.c_str());
+        gtk_widget_set_sensitive(data->tablespaceDropdown, TRUE);
+    }
+
+    if (data->pgOptionsSpinnerRow)
+        gtk_widget_set_visible(data->pgOptionsSpinnerRow, FALSE);
+
+    data->pgOptionsLoading = false;
+    delete result;
+}
+
 static void populatePostgresOptions(CreateDatabaseDialogData* data) {
     if (!data->db)
         return;
-    auto* executor = dynamic_cast<IQueryExecutor*>(data->db.get());
-    if (!executor)
-        return;
 
-    // Owners
-    try {
-        auto result = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
-        if (result.success() && data->ownerDropdown) {
-            auto* model =
-                GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->ownerDropdown)));
-            // Clear
-            while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
-                gtk_string_list_remove(model, 0);
-            int pgIdx = 0;
-            int idx = 0;
-            for (const auto& row : result[0].tableData) {
-                if (!row.empty()) {
-                    gtk_string_list_append(model, row[0].c_str());
-                    if (row[0] == "postgres")
-                        pgIdx = idx;
-                    idx++;
-                }
-            }
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(data->ownerDropdown), pgIdx);
-        }
-    } catch (...) {
+    data->pgOptionsLoading = true;
+    gtk_widget_set_sensitive(data->ownerDropdown, FALSE);
+    gtk_widget_set_sensitive(data->templateDropdown, FALSE);
+    gtk_widget_set_sensitive(data->tablespaceDropdown, FALSE);
+    if (data->pgOptionsSpinnerRow) {
+        gtk_widget_set_visible(data->pgOptionsSpinnerRow, TRUE);
+        GtkWidget* spinner = gtk_widget_get_first_child(data->pgOptionsSpinnerRow);
+        if (spinner)
+            gtk_spinner_start(GTK_SPINNER(spinner));
     }
 
-    // Templates
-    try {
-        auto result = executor->executeQuery(
-            "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
-        if (result.success() && data->templateDropdown) {
-            auto* model =
-                GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->templateDropdown)));
-            while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
-                gtk_string_list_remove(model, 0);
-            gtk_string_list_append(model, "template1");
-            for (const auto& row : result[0].tableData) {
-                if (!row.empty() && row[0] != "template1") {
-                    gtk_string_list_append(model, row[0].c_str());
-                }
-            }
-        }
-    } catch (...) {
-    }
+    auto db = data->db;
+    std::thread([data, db]() {
+        auto* result = new PgOptionsResult();
+        result->data = data;
 
-    // Tablespaces
-    try {
-        auto result = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
-        if (result.success() && data->tablespaceDropdown) {
-            auto* model =
-                GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(data->tablespaceDropdown)));
-            while (g_list_model_get_n_items(G_LIST_MODEL(model)) > 0)
-                gtk_string_list_remove(model, 0);
-            for (const auto& row : result[0].tableData) {
-                if (!row.empty()) {
-                    gtk_string_list_append(model, row[0].c_str());
+        auto* executor = dynamic_cast<IQueryExecutor*>(db.get());
+        if (!executor) {
+            g_idle_add(
+                +[](gpointer ud) -> gboolean {
+                    auto* r = static_cast<PgOptionsResult*>(ud);
+                    if (r->data->pgOptionsSpinnerRow)
+                        gtk_widget_set_visible(r->data->pgOptionsSpinnerRow, FALSE);
+                    r->data->pgOptionsLoading = false;
+                    delete r;
+                    return G_SOURCE_REMOVE;
+                },
+                result);
+            return;
+        }
+
+        // owners
+        try {
+            auto qr = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
+            if (qr.success()) {
+                int idx = 0;
+                for (const auto& row : qr[0].tableData) {
+                    if (!row.empty()) {
+                        result->owners.push_back(row[0]);
+                        if (row[0] == "postgres")
+                            result->defaultOwnerIdx = idx;
+                        idx++;
+                    }
                 }
             }
+        } catch (...) {
         }
-    } catch (...) {
-    }
+
+        // templates
+        try {
+            auto qr = executor->executeQuery(
+                "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
+            if (qr.success()) {
+                result->templates.push_back("template1");
+                for (const auto& row : qr[0].tableData) {
+                    if (!row.empty() && row[0] != "template1")
+                        result->templates.push_back(row[0]);
+                }
+            }
+        } catch (...) {
+        }
+
+        // tablespaces
+        try {
+            auto qr = executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
+            if (qr.success()) {
+                for (const auto& row : qr[0].tableData) {
+                    if (!row.empty())
+                        result->tablespaces.push_back(row[0]);
+                }
+            }
+        } catch (...) {
+        }
+
+        g_idle_add(
+            +[](gpointer ud) -> gboolean {
+                auto* r = static_cast<PgOptionsResult*>(ud);
+                applyPgOptions(r);
+                return G_SOURCE_REMOVE;
+            },
+            result);
+    }).detach();
 }
 
 static void updateCollationForCharset(CreateDatabaseDialogData* data) {
@@ -1425,6 +1496,16 @@ static GtkWidget* buildCreateDatabaseDialog(CreateDatabaseDialogData* data) {
         gtk_widget_set_hexpand(data->tablespaceDropdown, TRUE);
         gtk_box_append(GTK_BOX(mainBox),
                        makeRow(makeLabel("Tablespace"), data->tablespaceDropdown));
+
+        // loading spinner for async option fetch
+        data->pgOptionsSpinnerRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_halign(data->pgOptionsSpinnerRow, GTK_ALIGN_CENTER);
+        GtkWidget* pgSpinner = gtk_spinner_new();
+        gtk_box_append(GTK_BOX(data->pgOptionsSpinnerRow), pgSpinner);
+        GtkWidget* loadingLabel = gtk_label_new("Loading options...");
+        gtk_widget_add_css_class(loadingLabel, "dim-label");
+        gtk_box_append(GTK_BOX(data->pgOptionsSpinnerRow), loadingLabel);
+        gtk_box_append(GTK_BOX(mainBox), data->pgOptionsSpinnerRow);
 
         populatePostgresOptions(data);
     } else {

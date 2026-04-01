@@ -2,7 +2,7 @@
 
 #include "database/db_interface.hpp"
 #include "database/ssh_tunnel.hpp"
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -161,9 +161,8 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
         return {false, "Failed to spawn ssh: " + std::string(std::strerror(rc))};
     }
 
-    Logger::info("SSH tunnel spawned (pid " + std::to_string(sshPid_) +
-                 ") forwarding 127.0.0.1:" + std::to_string(localPort_) + " -> " + remoteHost +
-                 ":" + std::to_string(remotePort) + " via " + ssh.host);
+    spdlog::info("SSH tunnel spawned (pid {}) forwarding 127.0.0.1:{} -> {}:{} via {}", sshPid_,
+                 localPort_, remoteHost, remotePort, ssh.host);
 
     // Wait for the tunnel port to become reachable
     const int failedLocalPort = localPort_;
@@ -204,7 +203,7 @@ void SSHTunnel::stop() {
             kill(sshPid_, SIGKILL);
             waitpid(sshPid_, &status, 0);
         }
-        Logger::info("SSH tunnel stopped (pid " + std::to_string(sshPid_) + ")");
+        spdlog::info("SSH tunnel stopped (pid {})", sshPid_);
         sshPid_ = -1;
     }
     localPort_ = 0;

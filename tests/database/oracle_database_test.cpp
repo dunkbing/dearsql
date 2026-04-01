@@ -393,6 +393,31 @@ TEST_F(OracleDatabaseNodeTest, DropTableRemovesTable) {
     EXPECT_TRUE(check[0].tableData.empty());
 }
 
+TEST_F(OracleDatabaseNodeTest, TruncateTableRemovesAllRows) {
+    auto r = dbNode->executeQuery(
+        std::format("CREATE TABLE \"{}\" (id NUMBER PRIMARY KEY, val VARCHAR2(255))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    for (const auto& [id, value] : {std::pair{1, "a"}, std::pair{2, "b"}, std::pair{3, "c"}}) {
+        auto ins = dbNode->executeQuery(
+            std::format("INSERT INTO \"{}\" (id, val) VALUES ({}, '{}')", tableName, id, value));
+        ASSERT_TRUE(ins.success()) << ins.errorMessage();
+    }
+
+    auto pre = dbNode->executeQuery(std::format("SELECT COUNT(*) FROM \"{}\"", tableName));
+    ASSERT_TRUE(pre.success());
+    ASSERT_FALSE(pre.empty());
+    EXPECT_EQ(pre[0].tableData[0][0], "3");
+
+    auto [ok, err] = dbNode->truncateTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = dbNode->executeQuery(std::format("SELECT COUNT(*) FROM \"{}\"", tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData[0][0], "0");
+}
+
 TEST_F(OracleDatabaseNodeTest, DropColumnRemovesColumn) {
     auto r = dbNode->executeQuery(std::format(
         "CREATE TABLE \"{}\" (id NUMBER PRIMARY KEY, keep_me VARCHAR2(255), drop_me VARCHAR2(255))",

@@ -94,6 +94,7 @@ find_package(httplib CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 include(cmake/FreeTDS.cmake)
 include(cmake/OracleOCI.cmake)
 
@@ -209,13 +210,14 @@ set(APP_SOURCES
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
+    src/database/mssql/mssql_schema_node.cpp
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
-    src/database/ddl_builder.cpp
+
     src/database/ssh_config_parser.cpp
 
     # UI
@@ -252,7 +254,6 @@ set(APP_SOURCES
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp
-    src/utils/logger.cpp
     src/utils/sentry_init.cpp
     src/utils/texture_manager.cpp
 
@@ -270,6 +271,8 @@ set(APP_SOURCES
 list(APPEND APP_SOURCES src/application.cpp)
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
+    list(APPEND APP_SOURCES src/platform/metal_backend.mm)
+    list(APPEND APP_SOURCES src/platform/macos_titlebar.mm)
     list(APPEND APP_SOURCES src/platform/macos_connection_dialog.mm)
     list(APPEND APP_SOURCES src/platform/macos_updater.mm)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
@@ -277,15 +280,18 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
+    list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
+    list(APPEND APP_SOURCES src/platform/linux_titlebar.cpp)
     list(APPEND APP_SOURCES src/platform/linux_connection_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
-    list(APPEND APP_SOURCES src/ui/update_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
     list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
     list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(WIN32)
     list(APPEND APP_SOURCES
         src/platform/windows_platform.cpp
+        src/platform/dx11_backend.cpp
+        src/platform/windows_titlebar.cpp
         src/platform/windows_connection_dialog.cpp
         src/platform/windows_updater.cpp
         src/platform/windows_alert.cpp
@@ -293,9 +299,6 @@ elseif(WIN32)
         src/platform/windows_ssh_tunnel.cpp
         assets/app.rc
     )
-else()
-    list(APPEND APP_SOURCES src/platform/default_platform.cpp)
-    list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 endif()
 
 # Include resource embedding functions
@@ -376,6 +379,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::tree-sitter::tree-sitter
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
+    spdlog::spdlog
 )
 
 # platform-specific linking
@@ -496,14 +500,14 @@ add_executable(database_tests
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
+    src/database/mssql/mssql_schema_node.cpp
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
-    src/database/ddl_builder.cpp
+
     src/database/ssh_config_parser.cpp
-    src/utils/logger.cpp
 )
 
 # platform-specific ssh tunnel for tests
@@ -533,6 +537,7 @@ target_link_libraries(database_tests PRIVATE
     ${SYBDB_LIBRARY}
     ${SYBDB_DEPS}
     odpi
+    spdlog::spdlog
 )
 
 add_test(NAME database_tests COMMAND database_tests)

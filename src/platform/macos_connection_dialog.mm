@@ -11,6 +11,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "database/ssl_config.hpp"
+#include "embedded_images.hpp"
 #include "platform/connection_dialog.hpp"
 #include "utils/file_dialog.hpp"
 
@@ -47,6 +48,7 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 @property(nonatomic, strong) NSTextField* nameField;
 @property(nonatomic, strong) NSTextField* typeLabel;
 @property(nonatomic, strong) NSPopUpButton* typePopup;
+@property(nonatomic, strong) NSImageView* typeIconView;
 @property(nonatomic, strong) NSBox* topSeparator;
 
 // SQLite
@@ -110,6 +112,11 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 - (void)showDialogForEdit:(std::shared_ptr<DatabaseInterface>)db connectionId:(int)connId;
 
 @end
+
+static NSRect centeredLabelRect(CGFloat x, CGFloat y, CGFloat w) {
+    constexpr CGFloat kLabelH = 17.0;
+    return NSMakeRect(x, y + (kRowHeight - kLabelH) * 0.5, w, kLabelH);
+}
 
 static NSWindow* sActiveConnectionDialog = nil;
 
@@ -365,6 +372,11 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.typePopup setAction:@selector(typeChanged:)];
     [cv addSubview:self.typePopup];
 
+    self.typeIconView = [[NSImageView alloc] init];
+    self.typeIconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    self.typeIconView.hidden = YES;
+    [cv addSubview:self.typeIconView];
+
     // Top separator
     self.topSeparator = [[NSBox alloc] init];
     self.topSeparator.boxType = NSBoxSeparator;
@@ -558,6 +570,23 @@ static NSWindow* sActiveConnectionDialog = nil;
     return field;
 }
 
+- (void)updateTypeIcon:(DatabaseType)type {
+    const std::string name = databaseTypeToString(type);
+    const EmbeddedImage* img = findEmbeddedImage(name.c_str());
+    if (!img) {
+        self.typeIconView.hidden = YES;
+        return;
+    }
+    NSData* imageData = [NSData dataWithBytes:img->data length:img->size];
+    NSImage* nsImage = [[NSImage alloc] initWithData:imageData];
+    if (nsImage) {
+        self.typeIconView.image = nsImage;
+        self.typeIconView.hidden = NO;
+    } else {
+        self.typeIconView.hidden = YES;
+    }
+}
+
 // MARK: - Layout
 
 - (void)setFormEnabled:(BOOL)enabled {
@@ -724,16 +753,21 @@ static NSWindow* sActiveConnectionDialog = nil;
     DatabaseType type = [self selectedDatabaseType];
     bool authIsCredentials = (self.authSegment.selectedSegment == 0);
 
+    [self updateTypeIcon:type];
+
     // Name row
     y -= kRowHeight;
-    self.nameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+    self.nameLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
     self.nameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
     y -= kRowSpacing;
 
     // Type row
+    constexpr CGFloat kIconSize = 20;
     y -= kRowHeight;
-    self.typeLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
-    self.typePopup.frame = NSMakeRect(kFieldX, y, 160, kRowHeight);
+    self.typeLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
+    self.typeIconView.frame =
+        NSMakeRect(kFieldX, y + (kRowHeight - kIconSize) / 2, kIconSize, kIconSize);
+    self.typePopup.frame = NSMakeRect(kFieldX + kIconSize + 4, y, 160, kRowHeight);
     y -= kRowSpacing;
 
     // Top separator
@@ -747,7 +781,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.sqlitePathField.hidden = NO;
         self.browseButton.hidden = NO;
         y -= kRowHeight;
-        self.sqlitePathLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.sqlitePathLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         CGFloat browseW = 80;
         self.sqlitePathField.frame = NSMakeRect(kFieldX, y, kFieldWidth - browseW - 8, kRowHeight);
         self.browseButton.frame =
@@ -760,12 +794,12 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.portLabel.hidden = NO;
         self.portField.hidden = NO;
         y -= kRowHeight;
-        self.hostLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.hostLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         CGFloat portW = 70;
         CGFloat portLabelW = 35;
         CGFloat hostW = kFieldWidth - portW - portLabelW - 8 - 8;
         self.hostField.frame = NSMakeRect(kFieldX, y, hostW, kRowHeight);
-        self.portLabel.frame = NSMakeRect(kFieldX + hostW + 8, y, portLabelW, kRowHeight);
+        self.portLabel.frame = centeredLabelRect(kFieldX + hostW + 8, y, portLabelW);
         self.portField.frame =
             NSMakeRect(kFieldX + hostW + 8 + portLabelW + 8, y, portW, kRowHeight);
         y -= kRowSpacing;
@@ -775,7 +809,7 @@ static NSWindow* sActiveConnectionDialog = nil;
             self.databaseLabel.hidden = NO;
             self.databaseField.hidden = NO;
             y -= kRowHeight;
-            self.databaseLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.databaseLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
             self.databaseField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
 
             if (type == DatabaseType::POSTGRESQL) {
@@ -793,7 +827,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.sslModeLabel.hidden = NO;
         self.sslModePopup.hidden = NO;
         y -= kRowHeight;
-        self.sslModeLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.sslModeLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.sslModePopup.frame = NSMakeRect(kFieldX, y, 150, kRowHeight);
         y -= kRowSpacing;
 
@@ -809,7 +843,7 @@ static NSWindow* sActiveConnectionDialog = nil;
                 self.sslCACertPathLabel.hidden = NO;
                 self.sslCACertPathField.hidden = NO;
                 y -= kRowHeight;
-                self.sslCACertPathLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                self.sslCACertPathLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
                 self.sslCACertPathField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
                 y -= kRowSpacing;
             }
@@ -819,7 +853,7 @@ static NSWindow* sActiveConnectionDialog = nil;
         self.authLabel.hidden = NO;
         self.authSegment.hidden = NO;
         y -= kRowHeight;
-        self.authLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.authLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.authSegment.frame = NSMakeRect(kFieldX, y, 260, kRowHeight);
         y -= kRowSpacing;
 
@@ -830,10 +864,10 @@ static NSWindow* sActiveConnectionDialog = nil;
             self.passwordLabel.hidden = NO;
             self.passwordField.hidden = NO;
             y -= kRowHeight;
-            self.usernameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.usernameLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
             CGFloat halfField = (kFieldWidth - 50) / 2;
             self.usernameField.frame = NSMakeRect(kFieldX, y, halfField, kRowHeight);
-            self.passwordLabel.frame = NSMakeRect(kFieldX + halfField + 8, y, 50, kRowHeight);
+            self.passwordLabel.frame = centeredLabelRect(kFieldX + halfField + 8, y, 50);
             self.passwordField.frame = NSMakeRect(kFieldX + halfField + 8 + 50 + 8, y,
                                                   kFieldWidth - halfField - 8 - 50 - 8, kRowHeight);
             y -= kRowSpacing;
@@ -869,13 +903,12 @@ static NSWindow* sActiveConnectionDialog = nil;
             self.sshPortLabel.hidden = NO;
             self.sshPortField.hidden = NO;
             y -= kRowHeight;
-            self.sshHostLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.sshHostLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
             CGFloat sshPortW = 70;
             CGFloat sshPortLabelW = 35;
             CGFloat sshHostW = kFieldWidth - sshPortW - sshPortLabelW - 8 - 8;
             self.sshHostField.frame = NSMakeRect(kFieldX, y, sshHostW, kRowHeight);
-            self.sshPortLabel.frame =
-                NSMakeRect(kFieldX + sshHostW + 8, y, sshPortLabelW, kRowHeight);
+            self.sshPortLabel.frame = centeredLabelRect(kFieldX + sshHostW + 8, y, sshPortLabelW);
             self.sshPortField.frame =
                 NSMakeRect(kFieldX + sshHostW + 8 + sshPortLabelW + 8, y, sshPortW, kRowHeight);
             y -= kRowSpacing;
@@ -884,7 +917,7 @@ static NSWindow* sActiveConnectionDialog = nil;
             self.sshUsernameLabel.hidden = NO;
             self.sshUsernameField.hidden = NO;
             y -= kRowHeight;
-            self.sshUsernameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.sshUsernameLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
             self.sshUsernameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
             y -= kRowSpacing;
 
@@ -892,7 +925,7 @@ static NSWindow* sActiveConnectionDialog = nil;
             self.sshAuthLabel.hidden = NO;
             self.sshAuthSegment.hidden = NO;
             y -= kRowHeight;
-            self.sshAuthLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+            self.sshAuthLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
             self.sshAuthSegment.frame = NSMakeRect(kFieldX, y, 220, kRowHeight);
             y -= kRowSpacing;
 
@@ -901,7 +934,7 @@ static NSWindow* sActiveConnectionDialog = nil;
                 self.sshPasswordLabel.hidden = NO;
                 self.sshPasswordField.hidden = NO;
                 y -= kRowHeight;
-                self.sshPasswordLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                self.sshPasswordLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
                 self.sshPasswordField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
                 y -= kRowSpacing;
             } else {
@@ -910,7 +943,7 @@ static NSWindow* sActiveConnectionDialog = nil;
                 self.sshKeyPathField.hidden = NO;
                 self.sshKeyBrowseButton.hidden = NO;
                 y -= kRowHeight;
-                self.sshKeyPathLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+                self.sshKeyPathLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
                 CGFloat browseW = 80;
                 self.sshKeyPathField.frame =
                     NSMakeRect(kFieldX, y, kFieldWidth - browseW - 8, kRowHeight);
@@ -944,6 +977,7 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 - (void)typeChanged:(id)sender {
     DatabaseType type = [self selectedDatabaseType];
+    [self updateTypeIcon:type];
 
     // Update default port
     switch (type) {
@@ -1846,51 +1880,51 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
 
     // Name row
     y -= kRowHeight;
-    self.nameLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+    self.nameLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
     self.nameField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
     y -= kRowSpacing;
 
     if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
         // Owner
         y -= kRowHeight;
-        self.ownerLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.ownerLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.ownerPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
 
         // Template
         y -= kRowHeight;
-        self.templateLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.templateLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.templatePopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
 
         // Encoding
         y -= kRowHeight;
-        self.encodingLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.encodingLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.encodingPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
 
         // Tablespace
         y -= kRowHeight;
-        self.tablespaceLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.tablespaceLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.tablespacePopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
     } else {
         // Charset
         y -= kRowHeight;
-        self.charsetLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.charsetLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.charsetPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
 
         // Collation
         y -= kRowHeight;
-        self.collationLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+        self.collationLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
         self.collationPopup.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
         y -= kRowSpacing;
     }
 
     // Comment
     y -= kRowHeight;
-    self.commentLabel.frame = NSMakeRect(kMargin, y, kLabelWidth, kRowHeight);
+    self.commentLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
     self.commentField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
     y -= kRowSpacing;
 

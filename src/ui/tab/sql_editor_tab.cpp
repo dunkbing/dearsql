@@ -1,5 +1,4 @@
 #include "ui/tab/sql_editor_tab.hpp"
-#include <cstring>
 #include "IconsFontAwesome6.h"
 #include "ai/ai_chat.hpp"
 #include "application.hpp"
@@ -14,17 +13,17 @@
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
-#include "utils/logger.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <ranges>
-#include <string_view>
+#include <spdlog/spdlog.h>
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
@@ -75,25 +74,6 @@ namespace {
                    a.kind == b.kind;
         });
         items.erase(ret.begin(), ret.end());
-    }
-
-    std::vector<std::string> parseMSSQLQualifierSegments(std::string_view objectName,
-                                                         const std::string& databaseName) {
-        std::vector<std::string> qualifiers;
-        qualifiers.push_back(databaseName);
-
-        const auto dotPos = objectName.find('.');
-        if (dotPos != std::string_view::npos)
-            qualifiers.push_back(std::string(objectName.substr(0, dotPos)));
-
-        return qualifiers;
-    }
-
-    std::string getMSSQLCompletionLabel(std::string_view objectName) {
-        const auto dotPos = objectName.find('.');
-        if (dotPos == std::string_view::npos)
-            return std::string(objectName);
-        return std::string(objectName.substr(dotPos + 1));
     }
 
     void scheduleMetadataLoad(IDatabaseNode* node) {
@@ -456,7 +436,16 @@ void SQLEditorTab::renderConnectionInfoMySQL() {
 }
 
 void SQLEditorTab::renderConnectionInfoMSSQL() {
-    auto* dbNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
+    MSSQLDatabaseNode* dbNode = nullptr;
+    MSSQLSchemaNode* schemaNode = nullptr;
+
+    if (auto* sn = dynamic_cast<MSSQLSchemaNode*>(node_)) {
+        schemaNode = sn;
+        dbNode = sn->parentDbNode;
+    } else {
+        dbNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
+    }
+
     if (!dbNode || !dbNode->parentDb) {
         ImGui::Text("Database: %s", node_->getFullPath().c_str());
         return;
@@ -472,9 +461,34 @@ void SQLEditorTab::renderConnectionInfoMSSQL() {
 
     renderDatabaseCombo(serverDb->getConnectionInfo().host, "Database:", dbNode->name, dbNames,
                         [serverDb, this](const std::string& name) {
-                            if (auto* n = serverDb->getDatabaseData(name))
-                                switchNode(n);
+                            if (auto* n = serverDb->getDatabaseData(name)) {
+                                // switch to first schema if available
+                                if (!n->schemas.empty())
+                                    switchNode(n->schemas.front().get());
+                                else
+                                    switchNode(n);
+                            }
                         });
+
+    // schema combo
+    if (dbNode->schemasLoaded && !dbNode->schemas.empty() && schemaNode) {
+        std::vector<std::string> schemaNames;
+        schemaNames.reserve(dbNode->schemas.size());
+        for (const auto& s : dbNode->schemas)
+            if (s)
+                schemaNames.push_back(s->name);
+
+        ImGui::SameLine(0, Theme::Spacing::L);
+        renderDatabaseCombo("", "Schema:", schemaNode->name, schemaNames,
+                            [dbNode, this](const std::string& name) {
+                                for (const auto& s : dbNode->schemas) {
+                                    if (s && s->name == name) {
+                                        switchNode(s.get());
+                                        return;
+                                    }
+                                }
+                            });
+    }
 }
 
 void SQLEditorTab::renderConnectionInfoOracle() {
@@ -902,32 +916,15 @@ void SQLEditorTab::updateCompletionKeywords() {
         };
 
         auto addNodeObjects = [&](IDatabaseNode* sourceNode,
-                                  const std::vector<std::string>& qualifiers,
-                                  bool mssqlObjectNames = false) {
+                                  const std::vector<std::string>& qualifiers) {
             if (!sourceNode)
                 return;
 
-            for (const auto& table : sourceNode->getTables()) {
-                if (mssqlObjectNames) {
-                    items.push_back(makeCompletionItem(
-                        getMSSQLCompletionLabel(table.name), CompletionKind::Table,
-                        parseMSSQLQualifierSegments(table.name, qualifiers.front())));
-                } else {
-                    items.push_back(
-                        makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
-                }
-            }
+            for (const auto& table : sourceNode->getTables())
+                items.push_back(makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
 
-            for (const auto& view : sourceNode->getViews()) {
-                if (mssqlObjectNames) {
-                    items.push_back(makeCompletionItem(
-                        getMSSQLCompletionLabel(view.name), CompletionKind::View,
-                        parseMSSQLQualifierSegments(view.name, qualifiers.front())));
-                } else {
-                    items.push_back(
-                        makeCompletionItem(view.name, CompletionKind::View, qualifiers));
-                }
-            }
+            for (const auto& view : sourceNode->getViews())
+                items.push_back(makeCompletionItem(view.name, CompletionKind::View, qualifiers));
 
             for (const auto& seq : sourceNode->getSequences())
                 items.push_back(makeCompletionItem(seq, CompletionKind::Sequence, qualifiers));
@@ -1005,6 +1002,43 @@ void SQLEditorTab::updateCompletionKeywords() {
                 finalizePartialItems();
                 return;
             }
+        } else if (auto* msSqlSchemaNode = dynamic_cast<MSSQLSchemaNode*>(node_);
+                   msSqlSchemaNode && msSqlSchemaNode->parentDbNode) {
+            auto* msSqlDbNode = msSqlSchemaNode->parentDbNode;
+            auto* serverDb = msSqlDbNode->parentDb;
+            if (serverDb)
+                serverDb->checkDatabasesStatusAsync();
+
+            bool tablesLoaded = true;
+            bool viewsLoaded = true;
+            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+                if (!dbEntry)
+                    continue;
+
+                dbEntry->checkSchemasStatusAsync();
+                if (!dbEntry->schemasLoaded) {
+                    if (!dbEntry->schemasLoader.isRunning())
+                        dbEntry->startSchemasLoadAsync();
+                    finalizePartialItems();
+                    return;
+                }
+
+                for (const auto& schema : dbEntry->schemas) {
+                    if (!schema)
+                        continue;
+                    scheduleMetadataLoad(schema.get());
+                    tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                    viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                    addNodeObjects(schema.get(), {dbEntry->name, schema->name});
+                    if (schema.get() == msSqlSchemaNode)
+                        addColumnsFromNode(schema.get());
+                }
+            }
+
+            if (!tablesLoaded || !viewsLoaded) {
+                finalizePartialItems();
+                return;
+            }
         } else if (auto* msSqlNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
                    msSqlNode && msSqlNode->parentDb) {
             auto* serverDb = msSqlNode->parentDb;
@@ -1015,12 +1049,25 @@ void SQLEditorTab::updateCompletionKeywords() {
             for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
                 if (!dbEntry)
                     continue;
-                scheduleMetadataLoad(dbEntry.get());
-                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
-                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
-                addNodeObjects(dbEntry.get(), {dbEntry->name}, true);
-                if (dbEntry.get() == msSqlNode)
-                    addColumnsFromNode(dbEntry.get());
+
+                dbEntry->checkSchemasStatusAsync();
+                if (!dbEntry->schemasLoaded) {
+                    if (!dbEntry->schemasLoader.isRunning())
+                        dbEntry->startSchemasLoadAsync();
+                    finalizePartialItems();
+                    return;
+                }
+
+                for (const auto& schema : dbEntry->schemas) {
+                    if (!schema)
+                        continue;
+                    scheduleMetadataLoad(schema.get());
+                    tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                    viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                    addNodeObjects(schema.get(), {dbEntry->name, schema->name});
+                }
+                if (dbEntry.get() == msSqlNode && !dbEntry->schemas.empty())
+                    addColumnsFromNode(dbEntry->schemas.front().get());
             }
 
             if (!tablesLoaded || !viewsLoaded) {
@@ -1195,7 +1242,7 @@ void SQLEditorTab::saveScript() {
     // write content to disk
     std::ofstream out(filePath_, std::ios::out | std::ios::trunc);
     if (!out) {
-        Logger::error(std::format("Failed to write script file: {}", filePath_));
+        spdlog::error("Failed to write script file: {}", filePath_);
         return;
     }
     out << sqlQuery;
@@ -1206,7 +1253,7 @@ void SQLEditorTab::saveScript() {
 
     // sync tab display name
     setName(scriptName_);
-    Logger::info(std::format("Saved script '{}' to {}", scriptName_, filePath_));
+    spdlog::debug("Saved script '{}' to {}", scriptName_, filePath_);
 }
 
 void SQLEditorTab::persistScriptToAppState() {
@@ -1292,13 +1339,11 @@ void SQLEditorTab::renderScriptHeader() {
                     std::error_code ec;
                     if (std::filesystem::exists(newPath) &&
                         !std::filesystem::equivalent(filePath_, newPath, ec)) {
-                        Logger::warn(
-                            std::format("Cannot rename: '{}' already exists", newPath.string()));
+                        spdlog::warn("Cannot rename: '{}' already exists", newPath.string());
                     } else {
                         std::filesystem::rename(filePath_, newPath, ec);
                         if (ec) {
-                            Logger::error(
-                                std::format("Failed to rename script file: {}", ec.message()));
+                            spdlog::error("Failed to rename script file: {}", ec.message());
                         } else {
                             filePath_ = newPath.string();
                             scriptName_ = newName;

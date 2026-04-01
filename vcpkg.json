@@ -31,6 +31,7 @@
       "name": "sentry-native",
       "features": ["backend", "transport", "compression"]
     },
-    "libiconv"
+    "libiconv",
+    "spdlog"
   ]
 }

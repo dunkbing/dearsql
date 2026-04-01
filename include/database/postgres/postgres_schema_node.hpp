@@ -138,6 +138,7 @@ public:
     std::pair<bool, std::string> renameTable(const std::string& oldName,
                                              const std::string& newName);
     std::pair<bool, std::string> dropTable(const std::string& tableName);
+    std::pair<bool, std::string> truncateTable(const std::string& tableName);
     std::pair<bool, std::string> dropColumn(const std::string& tableName,
                                             const std::string& columnName);
     std::pair<bool, std::string> dropView(const std::string& viewName, bool isMaterialized = false);

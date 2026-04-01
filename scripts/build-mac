@@ -1,9 +1,7 @@
 #!/bin/bash
 set -e
 
-# =============================================================================
 # Check vcpkg
-# =============================================================================
 VCPKG_ROOT="${VCPKG_ROOT:-$HOME/vcpkg}"
 if [ ! -f "$VCPKG_ROOT/vcpkg" ]; then
     echo "ERROR: vcpkg not found at $VCPKG_ROOT"
@@ -33,9 +31,6 @@ APP_PATH="${BUILD_DIR}/${APP_NAME}.app"
 DMG_PATH="${BUILD_DIR}/${APP_NAME}-${APP_VERSION}.dmg"
 ZIP_PATH="${BUILD_DIR}/${APP_NAME}.zip"
 
-# =============================================================================
-# Build (uses vcpkg for static libraries - no Homebrew deps)
-# =============================================================================
 echo "==> Building ${APP_NAME}..."
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
@@ -56,9 +51,7 @@ if otool -L "$APP_PATH/Contents/MacOS/$APP_NAME" | grep -q "/opt/homebrew"; then
 fi
 echo "    No Homebrew dependencies - good!"
 
-# =============================================================================
 # Sign with Developer ID
-# =============================================================================
 echo ""
 echo "==> Signing with Developer ID..."
 codesign --force --deep --sign "$IDENTITY" --options runtime "$APP_PATH"
@@ -67,9 +60,7 @@ echo ""
 echo "==> Verifying signature..."
 codesign -dv "$APP_PATH" 2>&1 | grep -E "Authority|Identifier"
 
-# =============================================================================
 # Notarize
-# =============================================================================
 echo ""
 echo "==> Creating ZIP for notarization..."
 rm -f "$ZIP_PATH"
@@ -84,9 +75,7 @@ echo "==> Stapling app..."
 xcrun stapler staple "$APP_PATH"
 rm -f "$ZIP_PATH"
 
-# =============================================================================
 # Create DMG
-# =============================================================================
 echo ""
 echo "==> Creating DMG with Applications shortcut..."
 rm -f "$DMG_PATH"
@@ -110,9 +99,7 @@ echo ""
 echo "==> Stapling DMG..."
 xcrun stapler staple "$DMG_PATH"
 
-# =============================================================================
-# Final verification
-# =============================================================================
+# verification
 echo ""
 echo "==> Verifying..."
 spctl --assess --verbose "$APP_PATH"

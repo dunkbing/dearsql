@@ -1,21 +1,12 @@
 #if defined(__linux__)
-// Must include epoxy BEFORE any other GL headers
-#include <epoxy/gl.h>
 
+#include "platform/linux_platform.hpp"
 #include "application.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
-#include "imgui_impl_opengl3.h"
-#include "license/license_manager.hpp"
-#include "platform/alert.hpp"
-#include "platform/connection_dialog.hpp"
-#include "platform/linux_platform.hpp"
-#include "platform/linux_updater.hpp"
-#include "platform/opengl_texture.hpp"
-#include "themes.hpp"
+#include "platform/updater.hpp"
 #include <algorithm>
 #include <cmath>
-#include <format>
 #include <iostream>
 
 #ifdef GDK_WINDOWING_X11
@@ -23,24 +14,8 @@
 #include <gdk/x11/gdkx.h>
 #endif
 
-// Clipboard support for GTK4
-static GdkClipboard* g_GtkClipboard = nullptr;
-static char* g_ClipboardText = nullptr;
-static bool g_ClipboardDirty = true;        // Need to fetch new content
-static bool g_ClipboardReadPending = false; // Async read in progress
-
-// Forward declarations for clipboard callbacks
-static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_data);
-
 namespace {
     constexpr double kIdleActivationDelaySeconds = 2.0;
-    constexpr double kMinimumWaitSeconds = 1.0 / 120.0;
-    constexpr double kMaximumWaitSeconds = 0.2;
-    constexpr gulong kActiveLoopSleepUs = 1000;
-
-    gulong secondsToMicroseconds(const double seconds) {
-        return static_cast<gulong>(seconds * 1000000.0);
-    }
 
     GdkModifierType normalizeModifierStateForKeyEvent(GdkModifierType state, guint keyval,
                                                       bool pressed) {
@@ -78,363 +53,74 @@ namespace {
 } // namespace
 
 LinuxPlatform::LinuxPlatform(Application* app)
-    : app_(app), window_(nullptr), glArea_(nullptr), headerBar_(nullptr), sidebarButton_(nullptr),
-      workspaceDropdown_(nullptr), addButton_(nullptr), menuButton_(nullptr), menuPopover_(nullptr),
-      updateButton_(nullptr), themeLightButton_(nullptr), themeDarkButton_(nullptr),
-      themeAutoButton_(nullptr), licenseButton_(nullptr), fontSizeLabel_(nullptr),
-      workspaceModel_(nullptr), shouldClose_(false), realized_(false), fbWidth_(1280),
-      fbHeight_(720), mouseX_(0), mouseY_(0), lastInteractionTimeUs_(g_get_monotonic_time()) {}
+    : app_(app), window_(nullptr), shouldClose_(false), mouseX_(0), mouseY_(0),
+      lastInteractionTimeUs_(g_get_monotonic_time()) {}
 
 LinuxPlatform::~LinuxPlatform() {
     cleanup();
 }
 
-bool LinuxPlatform::initializeGTK(int* argc, char*** argv) {
+bool LinuxPlatform::initializeGTK(int*, char***) {
     if (!gtk_init_check()) {
         std::cerr << "Failed to initialize GTK" << std::endl;
         return false;
     }
 
-    // Set runtime application ID for desktop entry / dock matching
     g_set_prgname(APP_IDENTIFIER);
     g_set_application_name(APP_NAME);
 
-    // Create main window
     window_ = gtk_window_new();
     gtk_widget_add_css_class(window_, "dearsql-main");
     gtk_window_set_title(GTK_WINDOW(window_), APP_NAME);
     gtk_window_set_default_size(GTK_WINDOW(window_), 1280, 720);
 
-    // Connect close signal
     g_signal_connect(window_, "close-request", G_CALLBACK(onClose), this);
 
-    // Create GL area
-    glArea_ = gtk_gl_area_new();
-    gtk_gl_area_set_required_version(GTK_GL_AREA(glArea_), 3, 3);
-    gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(glArea_), FALSE);
-    gtk_gl_area_set_has_stencil_buffer(GTK_GL_AREA(glArea_), FALSE);
-    gtk_widget_set_hexpand(glArea_, TRUE);
-    gtk_widget_set_vexpand(glArea_, TRUE);
-    gtk_widget_set_focusable(glArea_, TRUE);
-    gtk_widget_set_can_focus(glArea_, TRUE);
+    // create OpenGL backend (owns the GtkGLArea widget)
+    backend_ = std::make_unique<LinuxOpenGLBackend>();
+    GtkWidget* glArea = backend_->getGLArea();
 
-    // Connect GL area signals
-    g_signal_connect(glArea_, "realize", G_CALLBACK(onRealize), this);
-    g_signal_connect(glArea_, "render", G_CALLBACK(onRender), this);
-    g_signal_connect(glArea_, "resize", G_CALLBACK(onResize), this);
+    // connect GL area signals
+    g_signal_connect(glArea, "realize", G_CALLBACK(onRealize), this);
+    g_signal_connect(glArea, "render", G_CALLBACK(onRender), this);
+    g_signal_connect(glArea, "resize", G_CALLBACK(onResize), this);
 
-    // Setup input handlers
+    // setup input handlers (uses backend_->getGLArea())
     setupInputHandlers();
 
-    // Set GL area as window child
-    gtk_window_set_child(GTK_WINDOW(window_), glArea_);
+    gtk_window_set_child(GTK_WINDOW(window_), glArea);
 
     std::cout << "GTK window created successfully" << std::endl;
     return true;
 }
 
-gboolean LinuxPlatform::onDrop(GtkDropTarget*, const GValue* value, double, double,
-                               gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    if (!platform || !platform->app_ || !G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
-        return FALSE;
-
-    platform->noteInteraction();
-
-    auto* files = static_cast<GSList*>(g_value_get_boxed(value));
-    for (GSList* l = files; l; l = l->next) {
-        char* path = g_file_get_path(G_FILE(l->data));
-        if (path) {
-            platform->app_->openFile(std::string(path));
-            g_free(path);
-        }
-    }
-    if (platform->window_) {
-        gtk_window_present(GTK_WINDOW(platform->window_));
-    }
-    return TRUE;
-}
-
-void LinuxPlatform::setupInputHandlers() {
-    // Key controller
-    GtkEventController* keyController = gtk_event_controller_key_new();
-    // Capture key events before GTK's default focus navigation (Tab/Shift+Tab).
-    gtk_event_controller_set_propagation_phase(keyController, GTK_PHASE_CAPTURE);
-    g_signal_connect(keyController, "key-pressed", G_CALLBACK(onKeyPress), this);
-    g_signal_connect(keyController, "key-released", G_CALLBACK(onKeyRelease), this);
-    gtk_widget_add_controller(glArea_, keyController);
-
-    // Motion controller
-    GtkEventController* motionController = gtk_event_controller_motion_new();
-    g_signal_connect(motionController, "motion", G_CALLBACK(onMotionNotify), this);
-    gtk_widget_add_controller(glArea_, motionController);
-
-    // Click gesture for mouse buttons
-    GtkGesture* clickGesture = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(clickGesture), 0); // All buttons
-    g_signal_connect(clickGesture, "pressed", G_CALLBACK(onButtonPress), this);
-    g_signal_connect(clickGesture, "released", G_CALLBACK(onButtonRelease), this);
-    gtk_widget_add_controller(glArea_, GTK_EVENT_CONTROLLER(clickGesture));
-
-    // Scroll controller
-    GtkEventController* scrollController =
-        gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
-    g_signal_connect(scrollController, "scroll", G_CALLBACK(onScroll), this);
-    gtk_widget_add_controller(glArea_, scrollController);
-
-    // drop target: open supported files dropped onto the window
-    GtkDropTarget* dropTarget = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
-    g_signal_connect(dropTarget, "drop", G_CALLBACK(LinuxPlatform::onDrop), this);
-    gtk_widget_add_controller(glArea_, GTK_EVENT_CONTROLLER(dropTarget));
-}
-
-bool LinuxPlatform::initializePlatform(GLFWwindow* window) {
-    // We don't use GLFW on Linux with GTK
-    // This is called but we handle initialization in initializeGTK
+bool LinuxPlatform::initializePlatform(GLFWwindow*) {
     return true;
 }
 
 bool LinuxPlatform::initializeImGuiBackend() {
-    // OpenGL backend is initialized in onRealize() once the GL context is ready
-    return realized_;
+    // backend initializes inside onRealize once the GL context is ready
+    return backend_ && backend_->getGLArea() != nullptr;
 }
 
 void LinuxPlatform::setupTitlebar() {
-    // Create header bar
-    headerBar_ = gtk_header_bar_new();
-    gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(headerBar_), TRUE);
-
-    // Sidebar toggle button
-    sidebarButton_ = gtk_button_new_from_icon_name("sidebar-show-symbolic");
-    gtk_widget_set_tooltip_text(sidebarButton_, "Toggle Sidebar");
-    g_signal_connect(sidebarButton_, "clicked", G_CALLBACK(onSidebarToggle), this);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(headerBar_), sidebarButton_);
-
-    // Add connection button
-    addButton_ = gtk_button_new_from_icon_name("list-add-symbolic");
-    gtk_widget_set_tooltip_text(addButton_, "Add Database Connection");
-    g_signal_connect(addButton_, "clicked", G_CALLBACK(onAddConnection), this);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(headerBar_), addButton_);
-
-    // Workspace dropdown (packed later, after menu button)
-    workspaceModel_ = gtk_string_list_new(nullptr);
-    workspaceDropdown_ = gtk_drop_down_new(G_LIST_MODEL(workspaceModel_), nullptr);
-    gtk_widget_set_tooltip_text(workspaceDropdown_, "Select Workspace");
-    workspaceSignalId_ = g_signal_connect(workspaceDropdown_, "notify::selected",
-                                          G_CALLBACK(onWorkspaceChanged), this);
-
-    // Main menu button (hamburger menu)
-    menuButton_ = gtk_menu_button_new();
-    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menuButton_), "open-menu-symbolic");
-    gtk_widget_set_tooltip_text(menuButton_, "Main Menu");
-
-    // Create popover content
-    menuPopover_ = gtk_popover_new();
-    GtkWidget* menuBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_margin_start(menuBox, 12);
-    gtk_widget_set_margin_end(menuBox, 12);
-    gtk_widget_set_margin_top(menuBox, 12);
-    gtk_widget_set_margin_bottom(menuBox, 12);
-    gtk_widget_set_size_request(menuBox, 180, -1);
-
-    // Theme section
-    GtkWidget* themeLabel = gtk_label_new("Theme");
-    gtk_widget_set_halign(themeLabel, GTK_ALIGN_START);
-    gtk_widget_add_css_class(themeLabel, "dim-label");
-    gtk_box_append(GTK_BOX(menuBox), themeLabel);
-
-    // Theme buttons in a horizontal box with linked style
-    GtkWidget* themeButtonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_halign(themeButtonBox, GTK_ALIGN_FILL);
-    gtk_widget_add_css_class(themeButtonBox, "linked");
-
-    themeLightButton_ = gtk_button_new_from_icon_name("weather-clear-symbolic");
-    gtk_widget_set_tooltip_text(themeLightButton_, "Light");
-    gtk_widget_set_hexpand(themeLightButton_, TRUE);
-    g_signal_connect(themeLightButton_, "clicked", G_CALLBACK(onThemeLightClicked), this);
-    gtk_box_append(GTK_BOX(themeButtonBox), themeLightButton_);
-
-    themeDarkButton_ = gtk_button_new_from_icon_name("weather-clear-night-symbolic");
-    gtk_widget_set_tooltip_text(themeDarkButton_, "Dark");
-    gtk_widget_set_hexpand(themeDarkButton_, TRUE);
-    g_signal_connect(themeDarkButton_, "clicked", G_CALLBACK(onThemeDarkClicked), this);
-    gtk_box_append(GTK_BOX(themeButtonBox), themeDarkButton_);
-
-    themeAutoButton_ = gtk_button_new_from_icon_name("emblem-system-symbolic");
-    gtk_widget_set_tooltip_text(themeAutoButton_, "System");
-    gtk_widget_set_hexpand(themeAutoButton_, TRUE);
-    g_signal_connect(themeAutoButton_, "clicked", G_CALLBACK(onThemeAutoClicked), this);
-    gtk_box_append(GTK_BOX(themeButtonBox), themeAutoButton_);
-
-    gtk_box_append(GTK_BOX(menuBox), themeButtonBox);
-
-    // Font size section
-    GtkWidget* fontSizeHeaderLabel = gtk_label_new("Font Size");
-    gtk_widget_set_halign(fontSizeHeaderLabel, GTK_ALIGN_START);
-    gtk_widget_add_css_class(fontSizeHeaderLabel, "dim-label");
-    gtk_box_append(GTK_BOX(menuBox), fontSizeHeaderLabel);
-
-    GtkWidget* fontSizeBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_halign(fontSizeBox, GTK_ALIGN_FILL);
-    gtk_widget_add_css_class(fontSizeBox, "linked");
-
-    GtkWidget* fontDecButton = gtk_button_new_with_label("A-");
-    gtk_widget_set_tooltip_text(fontDecButton, "Decrease Font Size");
-    gtk_widget_set_hexpand(fontDecButton, TRUE);
-    g_signal_connect(fontDecButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
-                         auto* platform = static_cast<LinuxPlatform*>(userData);
-                         if (platform->app_) {
-                             platform->app_->setFontScale(platform->app_->getFontScale() - 0.1f);
-                             auto label = std::format(
-                                 "{}%", static_cast<int>(platform->app_->getFontScale() * 100));
-                             gtk_label_set_text(GTK_LABEL(platform->fontSizeLabel_), label.c_str());
-                         }
-                     }),
-                     this);
-    gtk_box_append(GTK_BOX(fontSizeBox), fontDecButton);
-
-    auto fontLabel = std::format("{}%", app_ ? static_cast<int>(app_->getFontScale() * 100) : 100);
-    fontSizeLabel_ = gtk_label_new(fontLabel.c_str());
-    gtk_widget_set_hexpand(fontSizeLabel_, TRUE);
-    gtk_box_append(GTK_BOX(fontSizeBox), fontSizeLabel_);
-
-    GtkWidget* fontIncButton = gtk_button_new_with_label("A+");
-    gtk_widget_set_tooltip_text(fontIncButton, "Increase Font Size");
-    gtk_widget_set_hexpand(fontIncButton, TRUE);
-    g_signal_connect(fontIncButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
-                         auto* platform = static_cast<LinuxPlatform*>(userData);
-                         if (platform->app_) {
-                             platform->app_->setFontScale(platform->app_->getFontScale() + 0.1f);
-                             auto label = std::format(
-                                 "{}%", static_cast<int>(platform->app_->getFontScale() * 100));
-                             gtk_label_set_text(GTK_LABEL(platform->fontSizeLabel_), label.c_str());
-                         }
-                     }),
-                     this);
-    gtk_box_append(GTK_BOX(fontSizeBox), fontIncButton);
-
-    gtk_box_append(GTK_BOX(menuBox), fontSizeBox);
-
-    // Separator
-    GtkWidget* separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_append(GTK_BOX(menuBox), separator);
-
-    // License button
-    licenseButton_ = gtk_button_new_with_label("Manage License");
-    gtk_widget_set_halign(licenseButton_, GTK_ALIGN_FILL);
-    g_signal_connect(licenseButton_, "clicked", G_CALLBACK(onLicenseClicked), this);
-    gtk_box_append(GTK_BOX(menuBox), licenseButton_);
-
-    // Check for Updates button
-    GtkWidget* checkUpdatesButton = gtk_button_new_with_label("Check for Updates...");
-    gtk_widget_set_halign(checkUpdatesButton, GTK_ALIGN_FILL);
-    g_signal_connect(checkUpdatesButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
-                         auto* platform = static_cast<LinuxPlatform*>(userData);
-                         gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
-                         checkForUpdatesLinux();
-                     }),
-                     this);
-    gtk_box_append(GTK_BOX(menuBox), checkUpdatesButton);
-
-    // Report Bug button
-    GtkWidget* reportBugButton = gtk_button_new_with_label("Report Bug...");
-    gtk_widget_set_halign(reportBugButton, GTK_ALIGN_FILL);
-    g_signal_connect(reportBugButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
-                         auto* platform = static_cast<LinuxPlatform*>(userData);
-                         gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
-                         std::string url =
-                             "https://github.com/dunkbing/dearsql-website/issues/new?labels=bug"
-                             "&title=%5BBug%5D+&body=%23%23+Description%0A%0A%23%23+Steps+"
-                             "to+Reproduce%0A1.+%0A2.+%0A3.+%0A%0A%23%23+Expected+Behavior"
-                             "%0A%0A%23%23+Actual+Behavior%0A%0A%23%23+Environment%0A-+**OS"
-                             "**%3A+Linux%0A-+**DearSQL+version**%3A+" APP_VERSION
-                             "%0A-+**Database**%3A+";
-                         GtkUriLauncher* launcher = gtk_uri_launcher_new(url.c_str());
-                         gtk_uri_launcher_launch(launcher, GTK_WINDOW(platform->window_), nullptr,
-                                                 nullptr, nullptr);
-                         g_object_unref(launcher);
-                     }),
-                     this);
-    gtk_box_append(GTK_BOX(menuBox), reportBugButton);
-
-    gtk_popover_set_child(GTK_POPOVER(menuPopover_), menuBox);
-    gtk_menu_button_set_popover(GTK_MENU_BUTTON(menuButton_), menuPopover_);
-
-    // Update theme and license button on popover show
-    g_signal_connect(menuPopover_, "show", G_CALLBACK(+[](GtkWidget*, gpointer userData) {
-                         auto* platform = static_cast<LinuxPlatform*>(userData);
-                         platform->updateThemeButtons();
-                         if (platform->fontSizeLabel_ && platform->app_) {
-                             auto label = std::format(
-                                 "{}%", static_cast<int>(platform->app_->getFontScale() * 100));
-                             gtk_label_set_text(GTK_LABEL(platform->fontSizeLabel_), label.c_str());
-                         }
-                     }),
-                     this);
-
-    // Update available button (initially hidden, shown when background check finds newer version)
-    updateButton_ = gtk_button_new_from_icon_name("dialog-warning-symbolic");
-    gtk_widget_set_visible(updateButton_, FALSE);
-    g_signal_connect(updateButton_, "clicked",
-                     G_CALLBACK(+[](GtkButton*, gpointer) { checkForUpdatesLinux(); }), nullptr);
-
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), menuButton_);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceDropdown_);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), updateButton_);
-
-    gtk_window_set_titlebar(GTK_WINDOW(window_), headerBar_);
-    updateGtkTheme();
-
-    std::cout << "GTK HeaderBar configured" << std::endl;
+    titlebar_ = std::make_unique<LinuxTitlebar>(app_, window_);
+    titlebar_->setInteractionCallback([this] { noteInteraction(); });
+    titlebar_->setup();
 }
 
 void LinuxPlatform::updateWorkspaceDropdown() {
-    if (!workspaceModel_ || !workspaceDropdown_ || !app_) {
-        return;
-    }
-
-    // Disconnect signal to prevent spurious notifications during model rebuild
-    if (workspaceSignalId_) {
-        g_signal_handler_disconnect(workspaceDropdown_, workspaceSignalId_);
-        workspaceSignalId_ = 0;
-    }
-
-    // Clear existing items
-    guint n = g_list_model_get_n_items(G_LIST_MODEL(workspaceModel_));
-    for (guint i = 0; i < n; i++) {
-        gtk_string_list_remove(workspaceModel_, 0);
-    }
-    workspaceIdsByIndex_.clear();
-
-    // Add workspaces
-    auto workspaces = app_->getWorkspaces();
-    int currentWorkspaceId = app_->getCurrentWorkspaceId();
-    guint selectedIndex = 0;
-
-    for (size_t i = 0; i < workspaces.size(); i++) {
-        gtk_string_list_append(workspaceModel_, workspaces[i].name.c_str());
-        workspaceIdsByIndex_.push_back(workspaces[i].id);
-        if (workspaces[i].id == currentWorkspaceId) {
-            selectedIndex = static_cast<guint>(i);
-        }
-    }
-
-    // Add "New Workspace..." option at the end
-    gtk_string_list_append(workspaceModel_, "New Workspace...");
-
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(workspaceDropdown_), selectedIndex);
-
-    // Reconnect signal after model is stable
-    workspaceSignalId_ = g_signal_connect(workspaceDropdown_, "notify::selected",
-                                          G_CALLBACK(onWorkspaceChanged), this);
+    if (titlebar_)
+        titlebar_->updateWorkspaceDropdown();
 }
 
 void LinuxPlatform::applyCurrentTheme() {
-    updateGtkTheme();
+    if (titlebar_)
+        titlebar_->applyTheme(app_ ? app_->isDarkTheme() : false);
 }
 
 float LinuxPlatform::getTitlebarHeight() const {
-    return 0.0f; // HeaderBar is outside the GL area
+    return titlebar_ ? titlebar_->getHeight() : 0.0f;
 }
 
 void LinuxPlatform::onSidebarToggleClicked() {
@@ -444,18 +130,8 @@ void LinuxPlatform::onSidebarToggleClicked() {
 }
 
 void LinuxPlatform::cleanup() {
-    // Cleanup clipboard
-    if (g_GtkClipboard) {
-        g_signal_handlers_disconnect_by_func(g_GtkClipboard, (gpointer)clipboard_changed_callback,
-                                             nullptr);
-    }
-    if (g_ClipboardText) {
-        g_free(g_ClipboardText);
-        g_ClipboardText = nullptr;
-    }
-    g_GtkClipboard = nullptr;
-    g_ClipboardDirty = true;
-    g_ClipboardReadPending = false;
+    titlebar_.reset();
+    backend_.reset();
 
     if (window_) {
         gtk_window_destroy(GTK_WINDOW(window_));
@@ -464,19 +140,18 @@ void LinuxPlatform::cleanup() {
 }
 
 void LinuxPlatform::renderFrame() {
-    if (glArea_ && realized_) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(glArea_));
+    if (backend_ && backend_->getGLArea()) {
+        gtk_gl_area_queue_render(GTK_GL_AREA(backend_->getGLArea()));
     }
 
-    // Process GTK events
     while (g_main_context_pending(nullptr)) {
         g_main_context_iteration(nullptr, FALSE);
     }
 }
 
 void LinuxPlatform::shutdownImGui() {
-    ImGui_ImplOpenGL3_Shutdown();
-    std::cout << "ImGui OpenGL backend shutdown" << std::endl;
+    if (backend_)
+        backend_->shutdown();
 }
 
 bool LinuxPlatform::shouldClose() const {
@@ -484,12 +159,12 @@ bool LinuxPlatform::shouldClose() const {
 }
 
 void LinuxPlatform::getFramebufferSize(int* width, int* height) const {
-    *width = fbWidth_;
-    *height = fbHeight_;
-}
-
-void LinuxPlatform::swapBuffers() {
-    // GTK handles buffer swapping
+    if (backend_) {
+        backend_->getFramebufferSize(*width, *height);
+    } else {
+        *width = 1280;
+        *height = 720;
+    }
 }
 
 void LinuxPlatform::pollEvents() {
@@ -498,29 +173,45 @@ void LinuxPlatform::pollEvents() {
     }
 }
 
-// Static callbacks
-gboolean LinuxPlatform::onRender(GtkGLArea* area, GdkGLContext* context, gpointer userData) {
+ImTextureID LinuxPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
+    return backend_ ? backend_->createTextureFromRGBA(pixels, width, height) : ImTextureID{};
+}
+
+// ---- static GL area callbacks ----
+
+void LinuxPlatform::onRealize(GtkGLArea* area, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
 
-    if (!platform->realized_) {
-        return FALSE;
+    gtk_gl_area_make_current(area);
+
+    if (gtk_gl_area_get_error(area) != nullptr) {
+        std::cerr << "Failed to initialize OpenGL context" << std::endl;
+        return;
     }
 
-    // Clear with theme color
+    if (platform->backend_) {
+        platform->backend_->initializeImGui();
+    }
+}
+
+gboolean LinuxPlatform::onRender(GtkGLArea*, GdkGLContext*, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+
+    if (!platform->backend_)
+        return FALSE;
+
     bool darkTheme = platform->app_->isDarkTheme();
-    glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
-                 darkTheme ? 0.137f : 0.957f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    ImVec4 clearColor =
+        darkTheme ? ImVec4(0.110f, 0.110f, 0.137f, 1.0f) : ImVec4(0.957f, 0.957f, 0.957f, 1.0f);
 
-    ImGui_ImplOpenGL3_NewFrame();
+    platform->backend_->beginFrame(clearColor);
 
-    // Setup ImGui IO
     ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize =
-        ImVec2(static_cast<float>(platform->fbWidth_), static_cast<float>(platform->fbHeight_));
+    int fbW = 1280, fbH = 720;
+    platform->backend_->getFramebufferSize(fbW, fbH);
+    io.DisplaySize = ImVec2(static_cast<float>(fbW), static_cast<float>(fbH));
     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 
-    // Update mouse position
     io.AddMousePosEvent(static_cast<float>(platform->mouseX_),
                         static_cast<float>(platform->mouseY_));
 
@@ -562,113 +253,76 @@ gboolean LinuxPlatform::onRender(GtkGLArea* area, GdkGLContext* context, gpointe
         cursorName = "default";
         break;
     }
-    gtk_widget_set_cursor_from_name(platform->glArea_, cursorName);
+    gtk_widget_set_cursor_from_name(platform->backend_->getGLArea(), cursorName);
 
-    glViewport(0, 0, platform->fbWidth_, platform->fbHeight_);
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    platform->backend_->renderDrawData(ImGui::GetDrawData());
 
     return TRUE;
 }
 
-static void clipboard_read_callback(GObject* source, GAsyncResult* result, gpointer user_data) {
-    g_ClipboardReadPending = false;
-
-    if (g_ClipboardText) {
-        g_free(g_ClipboardText);
-        g_ClipboardText = nullptr;
-    }
-
-    GError* error = nullptr;
-    g_ClipboardText = gdk_clipboard_read_text_finish(GDK_CLIPBOARD(source), result, &error);
-
-    if (error) {
-        g_error_free(error);
-    }
-
-    g_ClipboardDirty = false;
-}
-
-static void clipboard_changed_callback(GdkClipboard* clipboard, gpointer user_data) {
-    g_ClipboardDirty = true;
-
-    // Start fetching new content immediately
-    if (!g_ClipboardReadPending) {
-        g_ClipboardReadPending = true;
-        gdk_clipboard_read_text_async(clipboard, nullptr, clipboard_read_callback, nullptr);
-    }
-}
-
-static const char* ImGui_ImplGtk_GetClipboardText(void* user_data) {
-    if (!g_GtkClipboard) {
-        return "";
-    }
-
-    // If content is dirty and no read pending, start one
-    if (g_ClipboardDirty && !g_ClipboardReadPending) {
-        g_ClipboardReadPending = true;
-        gdk_clipboard_read_text_async(g_GtkClipboard, nullptr, clipboard_read_callback, nullptr);
-    }
-
-    // If a read is pending, wait for it to complete
-    if (g_ClipboardReadPending) {
-        GMainContext* context = g_main_context_default();
-        gint64 end_time = g_get_monotonic_time() + 200000; // 200ms timeout
-
-        while (g_ClipboardReadPending && g_get_monotonic_time() < end_time) {
-            g_main_context_iteration(context, TRUE);
-        }
-    }
-
-    return g_ClipboardText ? g_ClipboardText : "";
-}
-
-static void ImGui_ImplGtk_SetClipboardText(void* user_data, const char* text) {
-    if (g_GtkClipboard && text) {
-        gdk_clipboard_set_text(g_GtkClipboard, text);
-    }
-}
-
-void LinuxPlatform::onRealize(GtkGLArea* area, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-
-    gtk_gl_area_make_current(area);
-
-    if (gtk_gl_area_get_error(area) != nullptr) {
-        std::cerr << "Failed to initialize OpenGL context" << std::endl;
-        return;
-    }
-
-    platform->realized_ = true;
-
-    // Initialize ImGui OpenGL backend now that we have a context
-    ImGui_ImplOpenGL3_Init("#version 330");
-
-    // Setup clipboard
-    GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(area));
-    g_GtkClipboard = gdk_display_get_clipboard(display);
-
-    // Listen for clipboard changes to pre-fetch content
-    g_signal_connect(g_GtkClipboard, "changed", G_CALLBACK(clipboard_changed_callback), nullptr);
-
-    // Fetch initial clipboard content
-    g_ClipboardDirty = true;
-    g_ClipboardReadPending = true;
-    gdk_clipboard_read_text_async(g_GtkClipboard, nullptr, clipboard_read_callback, nullptr);
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.GetClipboardTextFn = ImGui_ImplGtk_GetClipboardText;
-    io.SetClipboardTextFn = ImGui_ImplGtk_SetClipboardText;
-
-    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-}
-
 void LinuxPlatform::onResize(GtkGLArea* area, gint width, gint height, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->fbWidth_ = width;
-    platform->fbHeight_ = height;
+    if (platform->backend_) {
+        platform->backend_->onResize(width, height);
+        // immediately redraw at the new size so there's no blank frame during resize
+        gtk_gl_area_queue_render(area);
+    }
 }
 
-gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyval, guint keycode,
+// ---- input callbacks ----
+
+gboolean LinuxPlatform::onDrop(GtkDropTarget*, const GValue* value, double, double,
+                               gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    if (!platform || !platform->app_ || !G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
+        return FALSE;
+
+    platform->noteInteraction();
+
+    auto* files = static_cast<GSList*>(g_value_get_boxed(value));
+    for (GSList* l = files; l; l = l->next) {
+        char* path = g_file_get_path(G_FILE(l->data));
+        if (path) {
+            platform->app_->openFile(std::string(path));
+            g_free(path);
+        }
+    }
+    if (platform->window_) {
+        gtk_window_present(GTK_WINDOW(platform->window_));
+    }
+    return TRUE;
+}
+
+void LinuxPlatform::setupInputHandlers() {
+    GtkWidget* glArea = backend_->getGLArea();
+
+    GtkEventController* keyController = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(keyController, GTK_PHASE_CAPTURE);
+    g_signal_connect(keyController, "key-pressed", G_CALLBACK(onKeyPress), this);
+    g_signal_connect(keyController, "key-released", G_CALLBACK(onKeyRelease), this);
+    gtk_widget_add_controller(glArea, keyController);
+
+    GtkEventController* motionController = gtk_event_controller_motion_new();
+    g_signal_connect(motionController, "motion", G_CALLBACK(onMotionNotify), this);
+    gtk_widget_add_controller(glArea, motionController);
+
+    GtkGesture* clickGesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(clickGesture), 0);
+    g_signal_connect(clickGesture, "pressed", G_CALLBACK(onButtonPress), this);
+    g_signal_connect(clickGesture, "released", G_CALLBACK(onButtonRelease), this);
+    gtk_widget_add_controller(glArea, GTK_EVENT_CONTROLLER(clickGesture));
+
+    GtkEventController* scrollController =
+        gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+    g_signal_connect(scrollController, "scroll", G_CALLBACK(onScroll), this);
+    gtk_widget_add_controller(glArea, scrollController);
+
+    GtkDropTarget* dropTarget = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+    g_signal_connect(dropTarget, "drop", G_CALLBACK(LinuxPlatform::onDrop), this);
+    gtk_widget_add_controller(glArea, GTK_EVENT_CONTROLLER(dropTarget));
+}
+
+gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey*, guint keyval, guint,
                                    GdkModifierType state, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
@@ -681,7 +335,6 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
         io.AddKeyEvent(key, true);
     }
 
-    // Handle text input - but NOT when Ctrl is pressed (for shortcuts like Ctrl+V)
     if (!(state & GDK_CONTROL_MASK)) {
         gunichar unicode = gdk_keyval_to_unicode(keyval);
         if (unicode != 0 && unicode < 0x10000) {
@@ -689,7 +342,6 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
         }
     }
 
-    // Prevent GTK focus traversal from stealing focus from the GL editor area.
     if (keyval == GDK_KEY_Tab || keyval == GDK_KEY_ISO_Left_Tab) {
         return TRUE;
     }
@@ -697,7 +349,7 @@ gboolean LinuxPlatform::onKeyPress(GtkEventControllerKey* controller, guint keyv
     return io.WantCaptureKeyboard ? TRUE : FALSE;
 }
 
-gboolean LinuxPlatform::onKeyRelease(GtkEventControllerKey* controller, guint keyval, guint keycode,
+gboolean LinuxPlatform::onKeyRelease(GtkEventControllerKey*, guint keyval, guint,
                                      GdkModifierType state, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
@@ -717,19 +369,19 @@ gboolean LinuxPlatform::onKeyRelease(GtkEventControllerKey* controller, guint ke
     return io.WantCaptureKeyboard ? TRUE : FALSE;
 }
 
-void LinuxPlatform::onMotionNotify(GtkEventControllerMotion* controller, gdouble x, gdouble y,
+void LinuxPlatform::onMotionNotify(GtkEventControllerMotion*, gdouble x, gdouble y,
                                    gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->noteInteraction();
     platform->mouseX_ = x;
     platform->mouseY_ = y;
 
-    if (platform->glArea_) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(platform->glArea_));
+    if (platform->backend_) {
+        gtk_gl_area_queue_render(GTK_GL_AREA(platform->backend_->getGLArea()));
     }
 }
 
-void LinuxPlatform::onButtonPress(GtkGestureClick* gesture, gint n_press, gdouble x, gdouble y,
+void LinuxPlatform::onButtonPress(GtkGestureClick* gesture, gint, gdouble, gdouble,
                                   gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
@@ -747,15 +399,13 @@ void LinuxPlatform::onButtonPress(GtkGestureClick* gesture, gint n_press, gdoubl
 
     io.AddMouseButtonEvent(imguiButton, true);
 
-    // Grab focus on click
-    gtk_widget_grab_focus(platform->glArea_);
-
-    if (platform->glArea_) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(platform->glArea_));
+    if (platform->backend_) {
+        gtk_widget_grab_focus(platform->backend_->getGLArea());
+        gtk_gl_area_queue_render(GTK_GL_AREA(platform->backend_->getGLArea()));
     }
 }
 
-void LinuxPlatform::onButtonRelease(GtkGestureClick* gesture, gint n_press, gdouble x, gdouble y,
+void LinuxPlatform::onButtonRelease(GtkGestureClick* gesture, gint, gdouble, gdouble,
                                     gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     ImGuiIO& io = ImGui::GetIO();
@@ -773,8 +423,8 @@ void LinuxPlatform::onButtonRelease(GtkGestureClick* gesture, gint n_press, gdou
 
     io.AddMouseButtonEvent(imguiButton, false);
 
-    if (platform->glArea_) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(platform->glArea_));
+    if (platform->backend_) {
+        gtk_gl_area_queue_render(GTK_GL_AREA(platform->backend_->getGLArea()));
     }
 }
 
@@ -789,13 +439,6 @@ gboolean LinuxPlatform::onScroll(GtkEventControllerScroll* controller, gdouble d
     float wheelX = static_cast<float>(-dx);
     float wheelY = static_cast<float>(-dy);
 
-    // ImGui handles Shift+scroll → horizontal conversion internally via
-    // MouseWheelRequestAxisSwap (swaps wheelY into wheelX). However, some
-    // GTK4 backends also convert Shift+vertical to horizontal at the GDK
-    // level, putting the value in dx instead of dy. If we pass that through
-    // as wheelX, ImGui's swap takes wheelY (which is 0) and zeros everything.
-    // Fix: when Shift is held and GTK already converted (wheelX ≠ 0,
-    // wheelY ≈ 0), move the value back to wheelY so ImGui's swap works.
     bool shiftHeld = (state & GDK_SHIFT_MASK) != 0 || ImGui::IsKeyDown(ImGuiKey_LeftShift) ||
                      ImGui::IsKeyDown(ImGuiKey_RightShift);
     if (shiftHeld && std::fabs(wheelY) < 1e-6f && std::fabs(wheelX) > 1e-6f) {
@@ -807,613 +450,22 @@ gboolean LinuxPlatform::onScroll(GtkEventControllerScroll* controller, gdouble d
         io.AddMouseWheelEvent(wheelX, wheelY);
     }
 
-    if (platform->glArea_) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(platform->glArea_));
+    if (platform->backend_) {
+        gtk_gl_area_queue_render(GTK_GL_AREA(platform->backend_->getGLArea()));
     }
 
     return TRUE;
 }
 
-void LinuxPlatform::onSidebarToggle(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    platform->onSidebarToggleClicked();
-}
-
-void LinuxPlatform::onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec,
-                                       gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-
-    if (!platform->app_)
-        return;
-
-    guint selected = gtk_drop_down_get_selected(dropdown);
-    if (selected == GTK_INVALID_LIST_POSITION)
-        return;
-
-    if (selected < platform->workspaceIdsByIndex_.size()) {
-        int workspaceId = platform->workspaceIdsByIndex_[selected];
-
-        // Disconnect signal before calling setCurrentWorkspace to prevent
-        // any re-entrant signals from reverting the change
-        if (platform->workspaceSignalId_) {
-            g_signal_handler_disconnect(dropdown, platform->workspaceSignalId_);
-            platform->workspaceSignalId_ = 0;
-        }
-
-        platform->app_->setCurrentWorkspace(workspaceId);
-
-        // Reconnect after workspace change is fully applied
-        platform->workspaceSignalId_ = g_signal_connect(dropdown, "notify::selected",
-                                                        G_CALLBACK(onWorkspaceChanged), platform);
-    } else {
-        // "New Workspace..." selected - revert dropdown
-        platform->updateWorkspaceDropdown();
-        if (!platform->app_->canAddWorkspace()) {
-            Alert::show("Workspace Limit Reached",
-                        "Free tier is limited to 1 workspace. Activate a license to create more.");
-            return;
-        }
-        platform->showCreateWorkspaceDialog();
-    }
-}
-
-void LinuxPlatform::onAddConnection(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    if (!platform->app_)
-        return;
-    if (!platform->app_->canAddConnection()) {
-        Alert::show("Connection Limit Reached",
-                    "Free tier is limited to 3 connections. Activate a license to add more.");
-        return;
-    }
-    showConnectionDialog(platform->app_);
-}
-
-void LinuxPlatform::showCreateWorkspaceDialog() {
-    GtkWidget* dialog = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(dialog), "Create New Workspace");
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window_));
-    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
-    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
-
-    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_margin_start(box, 24);
-    gtk_widget_set_margin_end(box, 24);
-    gtk_widget_set_margin_top(box, 24);
-    gtk_widget_set_margin_bottom(box, 24);
-
-    GtkWidget* label = gtk_label_new("Enter a name for the new workspace:");
-    gtk_widget_set_halign(label, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(box), label);
-
-    GtkWidget* entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Workspace name");
-    gtk_box_append(GTK_BOX(box), entry);
-
-    GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
-    gtk_widget_set_margin_top(buttonBox, 8);
-
-    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
-    GtkWidget* createButton = gtk_button_new_with_label("Create");
-    gtk_widget_add_css_class(createButton, "suggested-action");
-
-    gtk_box_append(GTK_BOX(buttonBox), cancelButton);
-    gtk_box_append(GTK_BOX(buttonBox), createButton);
-    gtk_box_append(GTK_BOX(box), buttonBox);
-
-    g_object_set_data(G_OBJECT(dialog), "entry", entry);
-    g_object_set_data(G_OBJECT(dialog), "platform", this);
-
-    g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                         auto* platform = static_cast<LinuxPlatform*>(
-                             g_object_get_data(G_OBJECT(dlg), "platform"));
-                         // Revert dropdown to current workspace
-                         platform->updateWorkspaceDropdown();
-                         gtk_window_destroy(GTK_WINDOW(dlg));
-                     }),
-                     dialog);
-
-    g_signal_connect(dialog, "close-request", G_CALLBACK(+[](GtkWindow* win, gpointer) -> gboolean {
-                         auto* platform = static_cast<LinuxPlatform*>(
-                             g_object_get_data(G_OBJECT(win), "platform"));
-                         platform->updateWorkspaceDropdown();
-                         return FALSE;
-                     }),
-                     nullptr);
-
-    g_signal_connect(createButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                         auto* platform = static_cast<LinuxPlatform*>(
-                             g_object_get_data(G_OBJECT(dlg), "platform"));
-                         GtkWidget* entry = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "entry"));
-
-                         const char* name = gtk_editable_get_text(GTK_EDITABLE(entry));
-                         if (name && strlen(name) > 0 && platform->app_) {
-                             platform->app_->createWorkspace(std::string(name));
-                         }
-                         gtk_window_destroy(GTK_WINDOW(dlg));
-                     }),
-                     dialog);
-
-    gtk_window_set_child(GTK_WINDOW(dialog), box);
-    gtk_window_present(GTK_WINDOW(dialog));
-}
-
-gboolean LinuxPlatform::onClose(GtkWindow* window, gpointer userData) {
+gboolean LinuxPlatform::onClose(GtkWindow*, gpointer userData) {
     auto* platform = static_cast<LinuxPlatform*>(userData);
     platform->shouldClose_ = true;
-    return TRUE; // prevent GTK auto-destroy; cleanup() handles it
-}
-
-void LinuxPlatform::updateThemeButtons() {
-    if (!app_ || !themeLightButton_ || !themeDarkButton_ || !themeAutoButton_) {
-        return;
-    }
-
-    bool isDark = app_->isDarkTheme();
-
-    // Remove suggested-action from all buttons first
-    gtk_widget_remove_css_class(themeLightButton_, "suggested-action");
-    gtk_widget_remove_css_class(themeDarkButton_, "suggested-action");
-    gtk_widget_remove_css_class(themeAutoButton_, "suggested-action");
-
-    // Add suggested-action to the currently selected theme
-    if (isDark) {
-        gtk_widget_add_css_class(themeDarkButton_, "suggested-action");
-    } else {
-        gtk_widget_add_css_class(themeLightButton_, "suggested-action");
-    }
-}
-
-void LinuxPlatform::updateGtkTheme() {
-    if (!app_ || !window_)
-        return;
-
-    bool isDark = app_->isDarkTheme();
-
-    GtkSettings* settings = gtk_settings_get_default();
-    g_object_set(settings, "gtk-application-prefer-dark-theme", isDark ? TRUE : FALSE, nullptr);
-
-    static GtkCssProvider* themeProvider = nullptr;
-    if (!themeProvider) {
-        themeProvider = gtk_css_provider_new();
-        gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-                                                   GTK_STYLE_PROVIDER(themeProvider),
-                                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    }
-
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
-
-    auto toHex = [](const ImVec4& c) -> std::string {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "#%02x%02x%02x", (int)(c.x * 255), (int)(c.y * 255),
-                 (int)(c.z * 255));
-        return buf;
-    };
-
-    std::string mantle = toHex(colors.mantle);
-    std::string base = toHex(colors.base);
-    std::string text = toHex(colors.text);
-    std::string surface0 = toHex(colors.surface0);
-    std::string surface1 = toHex(colors.surface1);
-    std::string overlay0 = toHex(colors.overlay0);
-
-    std::string css = "window.dearsql-main { background: " + base +
-                      "; }\n"
-
-                      /* headerbar background and text */
-                      "headerbar { background: " +
-                      mantle + "; color: " + text +
-                      "; }\n"
-
-                      /* headerbar buttons (flat style) */
-                      "headerbar button:not(.titlebutton) {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "  background: transparent;"
-                      "  border-color: transparent;"
-                      "  box-shadow: none;"
-                      "}\n"
-                      "headerbar button:not(.titlebutton):hover {"
-                      "  background: " +
-                      surface0 +
-                      ";"
-                      "}\n"
-                      "headerbar button:not(.titlebutton):active,"
-                      "headerbar button:not(.titlebutton):checked {"
-                      "  background: " +
-                      surface1 +
-                      ";"
-                      "}\n"
-
-                      /* icons inside headerbar buttons */
-                      "headerbar button image { color: " +
-                      text +
-                      "; -gtk-icon-filter: none; }\n"
-
-                      /* dropdown in headerbar */
-                      "headerbar dropdown > button {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "  background: " +
-                      surface0 +
-                      ";"
-                      "  border: 1px solid " +
-                      overlay0 +
-                      ";"
-                      "}\n"
-                      "headerbar dropdown > button:hover {"
-                      "  background: " +
-                      surface1 +
-                      ";"
-                      "}\n"
-
-                      /* window control buttons (min/max/close) */
-                      "headerbar windowcontrols button.titlebutton {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "}\n"
-                      "headerbar windowcontrols button.titlebutton image {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "  -gtk-icon-filter: none;"
-                      "}\n"
-
-                      /* popover background and arrow */
-                      "popover > contents {"
-                      "  background: " +
-                      surface0 +
-                      ";"
-                      "  color: " +
-                      text +
-                      ";"
-                      "}\n"
-                      "popover > arrow {"
-                      "  background: " +
-                      surface0 +
-                      ";"
-                      "}\n"
-                      "popover label { color: " +
-                      text +
-                      "; }\n"
-                      "popover button {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "  background: transparent;"
-                      "  border-color: " +
-                      overlay0 +
-                      ";"
-                      "}\n"
-                      "popover button:hover { background: " +
-                      surface1 +
-                      "; }\n"
-                      "popover button.suggested-action {"
-                      "  background: " +
-                      toHex(colors.blue) +
-                      ";"
-                      "  color: " +
-                      base +
-                      ";"
-                      "}\n"
-                      "popover button.suggested-action:hover {"
-                      "  background: " +
-                      toHex(colors.sky) +
-                      ";"
-                      "  color: " +
-                      base +
-                      ";"
-                      "}\n"
-                      "popover separator { background: " +
-                      overlay0 +
-                      "; }\n"
-
-                      /* dropdown popup list */
-                      "dropdown popover > contents { background: " +
-                      surface0 +
-                      "; }\n"
-                      "dropdown popover > arrow { background: " +
-                      surface0 +
-                      "; }\n"
-                      "dropdown popover listview { background: transparent; }\n"
-                      "dropdown popover listview row {"
-                      "  color: " +
-                      text +
-                      ";"
-                      "  background: transparent;"
-                      "}\n"
-                      "dropdown popover listview row:hover {"
-                      "  background: " +
-                      surface1 +
-                      ";"
-                      "}\n"
-                      "dropdown popover listview row:selected {"
-                      "  background: " +
-                      surface1 +
-                      ";"
-                      "  color: " +
-                      text +
-                      ";"
-                      "}\n";
-
-    gtk_css_provider_load_from_string(themeProvider, css.c_str());
-}
-
-void LinuxPlatform::onThemeLightClicked(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    if (platform->app_) {
-        platform->app_->setDarkTheme(false);
-    }
-    platform->updateThemeButtons();
-    platform->updateGtkTheme();
-}
-
-void LinuxPlatform::onThemeDarkClicked(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    if (platform->app_) {
-        platform->app_->setDarkTheme(true);
-    }
-    platform->updateThemeButtons();
-    platform->updateGtkTheme();
-}
-
-void LinuxPlatform::onThemeAutoClicked(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    if (platform->app_) {
-        // Detect system theme preference via GTK settings
-        GtkSettings* settings = gtk_settings_get_default();
-        gchar* themeName = nullptr;
-        g_object_get(settings, "gtk-theme-name", &themeName, nullptr);
-        bool systemIsDark = themeName && g_str_has_suffix(themeName, "-dark");
-        g_free(themeName);
-        platform->app_->setDarkTheme(systemIsDark);
-    }
-    platform->updateThemeButtons();
-    platform->updateGtkTheme();
-}
-
-void LinuxPlatform::onLicenseClicked(GtkButton* button, gpointer userData) {
-    auto* platform = static_cast<LinuxPlatform*>(userData);
-    platform->noteInteraction();
-    gtk_popover_popdown(GTK_POPOVER(platform->menuPopover_));
-    platform->showLicenseDialog();
+    return TRUE;
 }
 
 void LinuxPlatform::noteInteraction() {
     lastInteractionTimeUs_ = g_get_monotonic_time();
-}
-
-void LinuxPlatform::showLicenseDialog() {
-    auto& licenseManager = LicenseManager::instance();
-
-    // Create the dialog window
-    GtkWidget* dialog = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(dialog), "Manage License");
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window_));
-    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, -1);
-    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
-
-    GtkWidget* mainBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
-    gtk_widget_set_margin_start(mainBox, 24);
-    gtk_widget_set_margin_end(mainBox, 24);
-    gtk_widget_set_margin_top(mainBox, 24);
-    gtk_widget_set_margin_bottom(mainBox, 24);
-
-    // Status label for messages
-    GtkWidget* statusLabel = gtk_label_new("");
-    gtk_widget_set_halign(statusLabel, GTK_ALIGN_START);
-
-    if (licenseManager.hasValidLicense()) {
-        // Licensed view
-        const auto info = licenseManager.getLicenseInfo();
-
-        std::string maskedKey = info.licenseKey;
-        if (maskedKey.length() > 8) {
-            maskedKey = maskedKey.substr(0, 4) + "..." + maskedKey.substr(maskedKey.length() - 4);
-        }
-
-        // Status indicator
-        GtkWidget* statusBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        GtkWidget* statusIcon = gtk_image_new_from_icon_name("emblem-ok-symbolic");
-        gtk_widget_add_css_class(statusIcon, "success");
-        GtkWidget* statusText = gtk_label_new("License Active");
-        gtk_widget_add_css_class(statusText, "title-3");
-        gtk_box_append(GTK_BOX(statusBox), statusIcon);
-        gtk_box_append(GTK_BOX(statusBox), statusText);
-        gtk_box_append(GTK_BOX(mainBox), statusBox);
-
-        // License info
-        GtkWidget* infoGrid = gtk_grid_new();
-        gtk_grid_set_row_spacing(GTK_GRID(infoGrid), 8);
-        gtk_grid_set_column_spacing(GTK_GRID(infoGrid), 12);
-
-        GtkWidget* emailLabel = gtk_label_new("Email:");
-        gtk_widget_add_css_class(emailLabel, "dim-label");
-        gtk_widget_set_halign(emailLabel, GTK_ALIGN_END);
-        GtkWidget* emailValue =
-            gtk_label_new(info.customerEmail.empty() ? "N/A" : info.customerEmail.c_str());
-        gtk_widget_set_halign(emailValue, GTK_ALIGN_START);
-        gtk_label_set_selectable(GTK_LABEL(emailValue), TRUE);
-        gtk_grid_attach(GTK_GRID(infoGrid), emailLabel, 0, 0, 1, 1);
-        gtk_grid_attach(GTK_GRID(infoGrid), emailValue, 1, 0, 1, 1);
-
-        GtkWidget* keyLabel = gtk_label_new("Key:");
-        gtk_widget_add_css_class(keyLabel, "dim-label");
-        gtk_widget_set_halign(keyLabel, GTK_ALIGN_END);
-        GtkWidget* keyValue = gtk_label_new(maskedKey.c_str());
-        gtk_widget_set_halign(keyValue, GTK_ALIGN_START);
-        gtk_grid_attach(GTK_GRID(infoGrid), keyLabel, 0, 1, 1, 1);
-        gtk_grid_attach(GTK_GRID(infoGrid), keyValue, 1, 1, 1, 1);
-
-        gtk_box_append(GTK_BOX(mainBox), infoGrid);
-
-        // Status message
-        gtk_box_append(GTK_BOX(mainBox), statusLabel);
-
-        // Buttons
-        GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
-        gtk_widget_set_margin_top(buttonBox, 8);
-
-        GtkWidget* deactivateButton = gtk_button_new_with_label("Deactivate");
-        gtk_widget_add_css_class(deactivateButton, "destructive-action");
-        GtkWidget* closeButton = gtk_button_new_with_label("Close");
-
-        gtk_box_append(GTK_BOX(buttonBox), deactivateButton);
-        gtk_box_append(GTK_BOX(buttonBox), closeButton);
-        gtk_box_append(GTK_BOX(mainBox), buttonBox);
-
-        g_object_set_data(G_OBJECT(dialog), "status", statusLabel);
-        g_object_set_data(G_OBJECT(dialog), "deactivate_btn", deactivateButton);
-
-        g_signal_connect(closeButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                             gtk_window_destroy(GTK_WINDOW(dlg));
-                         }),
-                         dialog);
-
-        g_signal_connect(
-            deactivateButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer dlg) {
-                GtkWidget* status = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "status"));
-                gtk_label_set_text(GTK_LABEL(status), "Deactivating...");
-                gtk_widget_set_sensitive(GTK_WIDGET(btn), FALSE);
-
-                GtkWidget* dialogRef = GTK_WIDGET(dlg);
-                LicenseManager::instance().deactivateLicense([dialogRef](
-                                                                 const LicenseInfo& result) {
-                    g_idle_add(
-                        +[](gpointer data) -> gboolean {
-                            auto* info = static_cast<std::pair<GtkWidget*, LicenseInfo>*>(data);
-                            if (GTK_IS_WINDOW(info->first)) {
-                                if (info->second.error.empty()) {
-                                    gtk_window_destroy(GTK_WINDOW(info->first));
-                                } else {
-                                    GtkWidget* st = GTK_WIDGET(
-                                        g_object_get_data(G_OBJECT(info->first), "status"));
-                                    GtkWidget* btn = GTK_WIDGET(
-                                        g_object_get_data(G_OBJECT(info->first), "deactivate_btn"));
-                                    gtk_label_set_text(GTK_LABEL(st), info->second.error.c_str());
-                                    gtk_widget_set_sensitive(btn, TRUE);
-                                }
-                            }
-                            delete info;
-                            return G_SOURCE_REMOVE;
-                        },
-                        new std::pair<GtkWidget*, LicenseInfo>(dialogRef, result));
-                });
-            }),
-            dialog);
-
-    } else {
-        // Unlicensed view
-        GtkWidget* titleLabel = gtk_label_new("Register License");
-        gtk_widget_add_css_class(titleLabel, "title-3");
-        gtk_widget_set_halign(titleLabel, GTK_ALIGN_START);
-        gtk_box_append(GTK_BOX(mainBox), titleLabel);
-
-        GtkWidget* descLabel = gtk_label_new("Enter your license key to activate DearSQL:");
-        gtk_widget_set_halign(descLabel, GTK_ALIGN_START);
-        gtk_box_append(GTK_BOX(mainBox), descLabel);
-
-        GtkWidget* entry = gtk_entry_new();
-        gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "XXXX-XXXX-XXXX-XXXX");
-        gtk_box_append(GTK_BOX(mainBox), entry);
-
-        // Status message
-        gtk_box_append(GTK_BOX(mainBox), statusLabel);
-
-        GtkWidget* linkBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-        gtk_widget_set_halign(linkBox, GTK_ALIGN_START);
-        GtkWidget* linkText = gtk_label_new("Don't have a license?");
-        gtk_widget_add_css_class(linkText, "dim-label");
-        GtkWidget* linkButton = gtk_link_button_new_with_label(
-            "https://buy.polar.sh/polar_cl_IpYdAWiNljfzsXgatypm2mg40Mm2c4hB0DcVX1L9P6p",
-            "Purchase one");
-        gtk_box_append(GTK_BOX(linkBox), linkText);
-        gtk_box_append(GTK_BOX(linkBox), linkButton);
-        gtk_box_append(GTK_BOX(mainBox), linkBox);
-
-        // Buttons
-        GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
-        gtk_widget_set_margin_top(buttonBox, 8);
-
-        GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
-        GtkWidget* activateButton = gtk_button_new_with_label("Activate");
-        gtk_widget_add_css_class(activateButton, "suggested-action");
-
-        gtk_box_append(GTK_BOX(buttonBox), cancelButton);
-        gtk_box_append(GTK_BOX(buttonBox), activateButton);
-        gtk_box_append(GTK_BOX(mainBox), buttonBox);
-
-        g_object_set_data(G_OBJECT(dialog), "entry", entry);
-        g_object_set_data(G_OBJECT(dialog), "status", statusLabel);
-        g_object_set_data(G_OBJECT(dialog), "activate_btn", activateButton);
-
-        g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                             gtk_window_destroy(GTK_WINDOW(dlg));
-                         }),
-                         dialog);
-
-        g_signal_connect(
-            activateButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer dlg) {
-                GtkWidget* entry = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "entry"));
-                GtkWidget* status = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "status"));
-
-                const char* key = gtk_editable_get_text(GTK_EDITABLE(entry));
-                if (!key || strlen(key) == 0) {
-                    gtk_label_set_text(GTK_LABEL(status), "Please enter a license key");
-                    return;
-                }
-
-                gtk_label_set_text(GTK_LABEL(status), "Activating...");
-                gtk_widget_set_sensitive(GTK_WIDGET(btn), FALSE);
-
-                std::string licenseKey = key;
-                GtkWidget* dialogRef = GTK_WIDGET(dlg);
-
-                LicenseManager::instance().activateLicense(
-                    licenseKey, [dialogRef](const LicenseInfo& result) {
-                        g_idle_add(
-                            +[](gpointer data) -> gboolean {
-                                auto* info = static_cast<std::pair<GtkWidget*, LicenseInfo>*>(data);
-                                if (GTK_IS_WINDOW(info->first)) {
-                                    if (info->second.valid) {
-                                        gtk_window_destroy(GTK_WINDOW(info->first));
-                                    } else {
-                                        GtkWidget* st = GTK_WIDGET(
-                                            g_object_get_data(G_OBJECT(info->first), "status"));
-                                        GtkWidget* btn = GTK_WIDGET(g_object_get_data(
-                                            G_OBJECT(info->first), "activate_btn"));
-                                        std::string err = info->second.error.empty()
-                                                              ? "Activation failed"
-                                                              : info->second.error;
-                                        gtk_label_set_text(GTK_LABEL(st), err.c_str());
-                                        gtk_widget_set_sensitive(btn, TRUE);
-                                    }
-                                }
-                                delete info;
-                                return G_SOURCE_REMOVE;
-                            },
-                            new std::pair<GtkWidget*, LicenseInfo>(dialogRef, result));
-                    });
-            }),
-            dialog);
-    }
-
-    gtk_window_set_child(GTK_WINDOW(dialog), mainBox);
-    gtk_window_present(GTK_WINDOW(dialog));
+    ensureTickCallback();
 }
 
 void LinuxPlatform::updateImGuiKeyMods(GdkModifierType state) {
@@ -1668,81 +720,102 @@ ImGuiKey LinuxPlatform::gtkKeyToImGuiKey(guint keyval) {
     }
 }
 
+void LinuxPlatform::ensureTickCallback() {
+    if (tickCallbackId_ == 0 && backend_ && backend_->getGLArea()) {
+        tickCallbackId_ =
+            gtk_widget_add_tick_callback(backend_->getGLArea(), onTickCallback, this, nullptr);
+    }
+}
+
+gboolean LinuxPlatform::onTickCallback(GtkWidget* widget, GdkFrameClock*, gpointer userData) {
+    auto* platform = static_cast<LinuxPlatform*>(userData);
+    if (platform->shouldClose_) {
+        platform->tickCallbackId_ = 0;
+        return G_SOURCE_REMOVE;
+    }
+
+    // show/hide update button based on background version check
+    if (platform->titlebar_) {
+        GtkWidget* updateButton = platform->titlebar_->getUpdateButton();
+        if (updateButton) {
+            bool available = isUpdateAvailable();
+            if (available != static_cast<bool>(gtk_widget_get_visible(updateButton))) {
+                gtk_widget_set_visible(updateButton, available);
+                if (available) {
+                    auto version = getLatestVersion();
+                    auto tooltip = "Update available: v" + version;
+                    gtk_widget_set_tooltip_text(updateButton, tooltip.c_str());
+                }
+            }
+        }
+    }
+
+    const bool windowFocused = gtk_window_is_active(GTK_WINDOW(platform->window_));
+    if (windowFocused && !platform->lastWindowFocused_) {
+        platform->noteInteraction();
+    }
+    platform->lastWindowFocused_ = windowFocused;
+
+    const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
+    const bool asyncJustFinished = platform->lastHadAsyncWork_ && !hasAsyncWork;
+    platform->lastHadAsyncWork_ = hasAsyncWork;
+    const double timeSinceInteraction =
+        static_cast<double>(
+            std::max<gint64>(0, g_get_monotonic_time() - platform->lastInteractionTimeUs_)) /
+        1000000.0;
+    const bool idleBecauseUnfocused = !windowFocused && !hasAsyncWork && !asyncJustFinished;
+    const bool idleBecauseInactive = windowFocused &&
+                                     (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
+                                     !hasAsyncWork && !asyncJustFinished;
+
+    if (idleBecauseUnfocused || idleBecauseInactive) {
+        // stop the frame clock to save power; noteInteraction() re-enables it
+        platform->tickCallbackId_ = 0;
+        return G_SOURCE_REMOVE;
+    }
+
+    if (hasAsyncWork || asyncJustFinished || windowFocused) {
+        gtk_gl_area_queue_render(GTK_GL_AREA(widget));
+    }
+
+    return G_SOURCE_CONTINUE;
+}
+
 void LinuxPlatform::runMainLoop() {
     gtk_window_present(GTK_WINDOW(window_));
     noteInteraction();
-    bool lastWindowFocused = gtk_window_is_active(GTK_WINDOW(window_));
+    lastWindowFocused_ = gtk_window_is_active(GTK_WINDOW(window_));
+
+    // tick callback drives rendering in sync with the GDK frame clock
+    ensureTickCallback();
+
+    // low-frequency timer wakes the main loop when idle to check for async work
+    auto* self = this;
+    guint idleTimerId = g_timeout_add(
+        200,
+        +[](gpointer data) -> gboolean {
+            auto* platform = static_cast<LinuxPlatform*>(data);
+            if (platform->tickCallbackId_ == 0 && AsyncOperationControl::hasRunningTasks()) {
+                platform->ensureTickCallback();
+            }
+            return G_SOURCE_CONTINUE;
+        },
+        self);
 
     while (!shouldClose_) {
         if (app_ && app_->isShutdownRequested()) {
             shouldClose_ = true;
+            break;
         }
-
-        // Process GTK events
-        while (g_main_context_pending(nullptr)) {
-            g_main_context_iteration(nullptr, FALSE);
-        }
-
-        // Show/hide update button based on background version check
-        if (updateButton_) {
-            bool available = isLinuxUpdateAvailable();
-            if (available != static_cast<bool>(gtk_widget_get_visible(updateButton_))) {
-                gtk_widget_set_visible(updateButton_, available);
-                if (available) {
-                    auto version = getLinuxLatestVersion();
-                    auto tooltip = "Update available: v" + version;
-                    gtk_widget_set_tooltip_text(updateButton_, tooltip.c_str());
-                }
-            }
-        }
-
-        const bool windowFocused = gtk_window_is_active(GTK_WINDOW(window_));
-        if (windowFocused && !lastWindowFocused) {
-            noteInteraction();
-        }
-        lastWindowFocused = windowFocused;
-
-        const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
-        // force one extra render when async work just finished so AsyncOperation::check()
-        // can drain the ready future and deliver the result to the UI
-        const bool asyncJustFinished = lastHadAsyncWork_ && !hasAsyncWork;
-        lastHadAsyncWork_ = hasAsyncWork;
-        const double timeSinceInteraction =
-            static_cast<double>(
-                std::max<gint64>(0, g_get_monotonic_time() - lastInteractionTimeUs_)) /
-            1000000.0;
-        const bool idleBecauseUnfocused = !windowFocused && !hasAsyncWork && !asyncJustFinished;
-        const bool idleBecauseInactive = windowFocused &&
-                                         (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
-                                         !hasAsyncWork && !asyncJustFinished;
-        const bool shouldRender =
-            hasAsyncWork || asyncJustFinished || (windowFocused && !idleBecauseInactive);
-
-        if (glArea_ && realized_ && shouldRender) {
-            gtk_gl_area_queue_render(GTK_GL_AREA(glArea_));
-        }
-
-        if (idleBecauseUnfocused) {
-            g_usleep(secondsToMicroseconds(kMaximumWaitSeconds));
-            continue;
-        }
-
-        if (idleBecauseInactive) {
-            const double idleTime =
-                std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
-            const double waitSeconds =
-                std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
-            g_usleep(secondsToMicroseconds(waitSeconds));
-            continue;
-        }
-
-        // Small sleep to prevent 100% CPU usage
-        g_usleep(kActiveLoopSleepUs);
+        g_main_context_iteration(nullptr, TRUE);
     }
-}
 
-ImTextureID LinuxPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
-    return createOpenGLTextureFromRGBA(pixels, width, height);
+    g_source_remove(idleTimerId);
+
+    if (tickCallbackId_) {
+        gtk_widget_remove_tick_callback(backend_->getGLArea(), tickCallbackId_);
+        tickCallbackId_ = 0;
+    }
 }
 
 #endif // defined(__linux__)

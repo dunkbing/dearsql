@@ -1,5 +1,5 @@
 #include "ai/ai_client.hpp"
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
@@ -83,7 +83,7 @@ void AIClient::appendDelta(const std::string& text) {
 void AIClient::finishWithError(const std::string& err) {
     std::lock_guard lock(mutex_);
     error_ = err;
-    Logger::error(std::format("AIClient: {}", err));
+    spdlog::error("AIClient: {}", err);
 }
 
 void AIClient::updateCompletionState() {

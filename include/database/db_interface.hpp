@@ -3,9 +3,9 @@
 #include "async_helper.hpp"
 #include "db.hpp"
 #include "ssh_tunnel.hpp"
-#include "utils/logger.hpp"
 #include <memory>
 #include <set>
+#include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
 
@@ -182,38 +182,29 @@ class DatabaseInterface {
 public:
     virtual ~DatabaseInterface() = default;
 
-    // ========== Pure virtual methods (must be implemented by subclasses) ==========
-
     // Connection management
     virtual std::pair<bool, std::string> connect() = 0;
     virtual void disconnect() = 0;
 
-    // ========== Database operations (with default unsupported implementations) ==========
-
-    // Create a database (optional backend-specific comment/description)
+    // Database operations
     virtual std::pair<bool, std::string> createDatabase(const std::string& dbName,
                                                         const std::string& comment = "") {
         return {false, "Create database not supported for this database type"};
     }
 
-    // Create a database with extended options (owner, template, encoding, charset, etc.)
     virtual std::pair<bool, std::string>
     createDatabaseWithOptions(const CreateDatabaseOptions& options) {
         return createDatabase(options.name, options.comment);
     }
 
-    // Rename a database (returns success, error message)
     virtual std::pair<bool, std::string> renameDatabase(const std::string& oldName,
                                                         const std::string& newName) {
         return {false, "Rename database not supported for this database type"};
     }
 
-    // Drop a database (returns success, error message)
     virtual std::pair<bool, std::string> dropDatabase(const std::string& dbName) {
         return {false, "Drop database not supported for this database type"};
     }
-
-    // ========== Virtual methods with default implementations ==========
 
     // Connection status
     [[nodiscard]] virtual bool isConnected() const {
@@ -226,7 +217,7 @@ public:
 
     // Refresh connection and all child data
     virtual void refreshConnection() {
-        Logger::info("DatabaseInterface: refreshConnection");
+        spdlog::debug("DatabaseInterface: refreshConnection");
         disconnect();
         setAttemptedConnection(false);
         setLastConnectionError("");
@@ -253,7 +244,6 @@ public:
         });
     }
 
-    // Saved connection ID (for app state persistence)
     virtual void setConnectionId(int id) {
         savedConnectionId = id;
     }
@@ -262,7 +252,6 @@ public:
         return savedConnectionId;
     }
 
-    // Connection attempt tracking
     [[nodiscard]] virtual bool hasAttemptedConnection() const {
         return attemptedConnection;
     }

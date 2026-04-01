@@ -57,8 +57,9 @@ private:
                         bool isMaterializedView = false);
     void renderMySQLTableNode(Table& table, MySQLDatabaseNode* dbData);
     void renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbData);
-    void renderMSSQLTableNode(Table& table, MSSQLDatabaseNode* dbData);
-    void renderMSSQLViewNode(Table& view, MSSQLDatabaseNode* dbData);
+    void renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData, MSSQLSchemaNode* schemaData);
+    void renderMSSQLTableNode(Table& table, MSSQLSchemaNode* schemaData);
+    void renderMSSQLViewNode(Table& view, MSSQLSchemaNode* schemaData);
     void renderOracleTableNode(Table& table, OracleDatabaseNode* dbData);
     void renderOracleViewNode(Table& view, OracleDatabaseNode* dbData);
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
@@ -66,10 +67,10 @@ private:
     void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);
 
     // Scripts associated with this connection
-    void renderScriptsNode();
+    void renderQueriesNode();
 
     // Helper to resolve an IDatabaseNode from a SqlScript's metadata
-    IDatabaseNode* resolveNodeForScript(const SqlScript& script) const;
+    IDatabaseNode* resolveNodeForQuery(const SqlScript& script) const;
 
     // Helper function to render a tree node with icon
     static bool

@@ -5,8 +5,7 @@
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include "database/table_data_provider.hpp"
-#include <map>
+#include "mssql_schema_node.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,31 +14,20 @@
 
 class MSSQLDatabase;
 
-class MSSQLDatabaseNode : public IDatabaseNode, public ITableDataProvider {
+class MSSQLDatabaseNode : public IDatabaseNode {
 public:
     MSSQLDatabase* parentDb = nullptr;
     std::string name;
 
     std::unique_ptr<ConnectionPool<DBPROCESS*>> connectionPool;
 
-    std::vector<Table> tables;
-    std::vector<Table> views;
-    std::vector<std::string> sequences; // empty, for API compatibility
-
-    bool tablesLoaded = false;
-    bool viewsLoaded = false;
-    bool sequencesLoaded = false;
-
-    AsyncOperation<std::vector<Table>> tablesLoader;
-    AsyncOperation<std::vector<Table>> viewsLoader;
-    std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
-
-    std::string lastTablesError;
-    std::string lastViewsError;
+    // schema hierarchy: Database -> Schemas -> Tables/Views
+    std::vector<std::unique_ptr<MSSQLSchemaNode>> schemas;
+    bool schemasLoaded = false;
+    AsyncOperation<std::vector<std::unique_ptr<MSSQLSchemaNode>>> schemasLoader;
+    std::string lastSchemasError;
 
     bool expanded = false;
-    bool tablesExpanded = false;
-    bool viewsExpanded = false;
 
     // IDatabaseNode
     [[nodiscard]] std::string getName() const override {
@@ -47,23 +35,18 @@ public:
     }
     [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
     [[nodiscard]] std::string getFullPath() const override;
-    [[nodiscard]] DatabaseType getDatabaseType() const override;
+    [[nodiscard]] DatabaseType getDatabaseType() const override {
+        return DatabaseType::MSSQL;
+    }
 
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
 
-    std::vector<Table>& getTables() override {
-        return tables;
-    }
-    const std::vector<Table>& getTables() const override {
-        return tables;
-    }
-    std::vector<Table>& getViews() override {
-        return views;
-    }
-    const std::vector<Table>& getViews() const override {
-        return views;
-    }
+    // aggregated accessors (across all schemas)
+    std::vector<Table>& getTables() override;
+    const std::vector<Table>& getTables() const override;
+    std::vector<Table>& getViews() override;
+    const std::vector<Table>& getViews() const override;
 
     std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
                                                        int offset,
@@ -72,51 +55,42 @@ public:
     std::vector<std::string> getColumnNames(const std::string& tableName) override;
     int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
 
-    [[nodiscard]] bool isTablesLoaded() const override {
-        return tablesLoaded;
-    }
-    [[nodiscard]] bool isViewsLoaded() const override {
-        return viewsLoaded;
-    }
-    [[nodiscard]] bool isLoadingTables() const override {
-        return tablesLoader.isRunning();
-    }
-    [[nodiscard]] bool isLoadingViews() const override {
-        return viewsLoader.isRunning();
-    }
+    [[nodiscard]] bool isTablesLoaded() const override;
+    [[nodiscard]] bool isViewsLoaded() const override;
+    [[nodiscard]] bool isLoadingTables() const override;
+    [[nodiscard]] bool isLoadingViews() const override;
 
     void startTablesLoadAsync(bool force = false) override;
     void startViewsLoadAsync(bool force = false) override;
     void checkLoadingStatus() override;
 
-    [[nodiscard]] const std::string& getLastTablesError() const override {
-        return lastTablesError;
-    }
-    [[nodiscard]] const std::string& getLastViewsError() const override {
-        return lastViewsError;
-    }
+    [[nodiscard]] const std::string& getLastTablesError() const override;
+    [[nodiscard]] const std::string& getLastViewsError() const override;
 
     void startTableRefreshAsync(const std::string& tableName) override;
     [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
     void checkTableRefreshStatusAsync(const std::string& tableName) override;
 
+    // schemas
+    void startSchemasLoadAsync(bool forceRefresh = false, bool refreshChildren = false);
+    void checkSchemasStatusAsync();
+
     // internal
     void ensureConnectionPool();
     ConnectionPool<DBPROCESS*>::Session getSession() const;
     void initializeConnectionPool(const DatabaseConnectionInfo& info);
-
-    // schema modification
-    std::pair<bool, std::string> renameTable(const std::string& oldName,
-                                             const std::string& newName);
-    std::pair<bool, std::string> dropTable(const std::string& tableName);
-    std::pair<bool, std::string> dropColumn(const std::string& tableName,
-                                            const std::string& columnName);
-
-    void checkTablesStatusAsync();
-    void checkViewsStatusAsync();
+    void invalidateAggregatedObjects() const;
 
 private:
-    std::vector<Table> getTablesAsync();
-    std::vector<Table> getViewsForDatabaseAsync();
-    Table refreshTableAsync(const std::string& tableName);
+    bool refreshChildrenAfterSchemasLoad = false;
+    mutable std::vector<Table> allTables;
+    mutable std::vector<Table> allViews;
+    mutable bool aggregatedObjectsDirty = true;
+    mutable std::string aggregatedTablesError;
+    mutable std::string aggregatedViewsError;
+
+    void triggerChildSchemaRefresh();
+    void rebuildAggregatedObjects() const;
+    MSSQLSchemaNode* findSchema(const std::string& schemaName);
+    const MSSQLSchemaNode* findSchema(const std::string& schemaName) const;
 };

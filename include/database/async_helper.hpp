@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 namespace AsyncOperationControl {
     inline std::atomic<bool>& skipWaitOnDestroy() {
@@ -93,7 +93,7 @@ public:
             return;
         }
         if (activeOperation.has_value() || !zombieOperations.empty()) {
-            Logger::debug("AsyncOperation: waiting for pending futures on destruction");
+            spdlog::debug("AsyncOperation: waiting for pending futures on destruction");
         }
         waitForOperation(activeOperation);
         for (auto& zombie : zombieOperations) {
@@ -135,23 +135,23 @@ public:
                 try {
                     promise.set_value(task(stopToken));
                 } catch (const std::exception& e) {
-                    Logger::error(std::string("AsyncOperation: task threw exception: ") + e.what());
+                    spdlog::error("AsyncOperation: task threw exception: {}", e.what());
                     try {
                         promise.set_exception(std::current_exception());
                     } catch (const std::exception& e2) {
-                        Logger::error(
+                        spdlog::error(
                             std::string("AsyncOperation: failed to set exception on promise: ") +
                             e2.what());
                     } catch (...) {
-                        Logger::error(
+                        spdlog::error(
                             "AsyncOperation: failed to set exception on promise (unknown error)");
                     }
                 } catch (...) {
-                    Logger::error("AsyncOperation: task threw unknown exception");
+                    spdlog::error("AsyncOperation: task threw unknown exception");
                     try {
                         promise.set_exception(std::current_exception());
                     } catch (...) {
-                        Logger::error(
+                        spdlog::error(
                             "AsyncOperation: failed to set exception on promise (unknown error)");
                     }
                 }
@@ -268,7 +268,7 @@ private:
         }
 
         if (target->future.valid() && !isReady(target->future)) {
-            Logger::debug("AsyncOperation: stashing running future");
+            spdlog::debug("AsyncOperation: stashing running future");
             zombieOperations.emplace_back(std::move(*target));
         } else {
             waitForOperation(*target);
@@ -279,8 +279,7 @@ private:
         if (zombieOperations.empty()) {
             return;
         }
-        Logger::debug(std::string("AsyncOperation: reapZombies ") +
-                      std::to_string(zombieOperations.size()) + " completed futures");
+        spdlog::debug("AsyncOperation: reapZombies {} completed futures", zombieOperations.size());
 
         size_t reaped = 0;
         auto it = zombieOperations.begin();
@@ -294,8 +293,7 @@ private:
             }
         }
         if (reaped > 0) {
-            Logger::debug(std::string("AsyncOperation: reaped ") + std::to_string(reaped) +
-                          " completed futures");
+            spdlog::debug("AsyncOperation: reaped {} completed futures", reaped);
         }
     }
 

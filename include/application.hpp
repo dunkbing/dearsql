@@ -112,6 +112,7 @@ public:
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
     int createWorkspace(const std::string& name, const std::string& description = "");
     bool deleteWorkspace(int workspaceId);
+    bool renameWorkspace(int workspaceId, const std::string& name);
     void refreshWorkspaceConnections();
 
     // Platform-specific methods

@@ -10,23 +10,18 @@
 #include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
 
+#include "platform/updater.hpp"
+
 #if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
-#include "platform/macos_updater.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
-#include "platform/linux_updater.hpp"
-#include "ui/update_dialog.hpp"
 #elif defined(_WIN32)
 #include "platform/windows_platform.hpp"
-#include "platform/windows_updater.hpp"
-#else
-#include "platform/default_platform.hpp"
 #endif
 
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
-#include "utils/logger.hpp"
 #include "utils/sentry_utils.hpp"
 #include <algorithm>
 #include <chrono>
@@ -35,16 +30,8 @@
 #include <filesystem>
 #include <format>
 #include <imgui_internal.h>
-#include <iostream>
 #include <limits>
-
-#if defined(__APPLE__) || defined(_WIN32)
-#include "imgui_impl_glfw.h"
-#endif
-
-#if defined(_WIN32)
-#include "imgui_impl_dx11.h"
-#endif
+#include <spdlog/spdlog.h>
 
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
@@ -72,6 +59,9 @@ namespace {
     constexpr double kIdleActivationDelaySeconds = 2.0; // time after last activity before idling
     constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
     constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
+
+    constexpr std::size_t kFreeConnectionLimit = 3;
+    constexpr std::size_t kFreeWorkspaceLimit = 1;
 
     bool isImGuiUserActive() {
         ImGuiIO& io = ImGui::GetIO();
@@ -118,8 +108,8 @@ namespace {
 } // namespace
 
 bool Application::initialize() {
-    std::cout << "ImGui version: " << IMGUI_VERSION << std::endl;
-    std::cout << "Starting " << APP_NAME << "..." << std::endl;
+    spdlog::info("ImGui version: {}", IMGUI_VERSION);
+    spdlog::info("Starting {}...", APP_NAME);
 
     // Initialize platform-specific components
 #ifdef __APPLE__
@@ -128,7 +118,7 @@ bool Application::initialize() {
         return false;
     }
     if (!platform_->initializePlatform(window)) {
-        std::cerr << "Failed to initialize platform" << std::endl;
+        spdlog::error("Failed to initialize platform");
         return false;
     }
     if (!initializeImGui()) {
@@ -149,19 +139,7 @@ bool Application::initialize() {
         return false;
     }
     if (!platform_->initializePlatform(window)) {
-        std::cerr << "Failed to initialize platform" << std::endl;
-        return false;
-    }
-    if (!initializeImGui()) {
-        return false;
-    }
-#else
-    platform_ = std::make_unique<DefaultPlatform>(this);
-    if (!initializeGLFW()) {
-        return false;
-    }
-    if (!platform_->initializePlatform(window)) {
-        std::cerr << "Failed to initialize platform" << std::endl;
+        spdlog::error("Failed to initialize platform");
         return false;
     }
     if (!initializeImGui()) {
@@ -171,7 +149,7 @@ bool Application::initialize() {
 
     // Initialize NFD
     if (!FileDialog::initialize()) {
-        std::cerr << "Failed to initialize Native File Dialog" << std::endl;
+        spdlog::error("Failed to initialize Native File Dialog");
         return false;
     }
 
@@ -216,13 +194,7 @@ bool Application::initialize() {
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
-#ifdef __APPLE__
-    initializeSparkleUpdater();
-#elif defined(__linux__)
-    initializeLinuxUpdater();
-#elif defined(_WIN32)
-    initializeWinSparkleUpdater();
-#endif
+    initializeUpdater();
 
     restorePreviousConnections();
 
@@ -238,13 +210,13 @@ bool Application::initialize() {
     platform_->updateWorkspaceDropdown();
 
 #ifdef __APPLE__
-    std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
+    spdlog::info("Application initialized successfully (with Metal backend)");
 #elif defined(__linux__)
-    std::cout << "Application initialized successfully (with GTK4 + OpenGL backend)" << std::endl;
+    spdlog::info("Application initialized successfully (with GTK4 + OpenGL backend)");
 #elif defined(_WIN32)
-    std::cout << "Application initialized successfully (with DirectX 11 backend)" << std::endl;
+    spdlog::info("Application initialized successfully (with DirectX 11 backend)");
 #else
-    std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
+    spdlog::info("Application initialized successfully (with OpenGL backend)");
 #endif
 
     SentryUtils::addBreadcrumb("app", "Application initialized");
@@ -316,7 +288,7 @@ void Application::run() {
 }
 
 void Application::cleanup() {
-    std::cout << "Cleaning up " << APP_NAME << "..." << std::endl;
+    spdlog::info("Cleaning up {}...", APP_NAME);
     const bool signalShutdownRequested = isShutdownRequested();
     const bool pendingAsyncWork = hasPendingAsyncWork();
     const bool fastShutdown = signalShutdownRequested || pendingAsyncWork;
@@ -343,13 +315,12 @@ void Application::cleanup() {
             }
         }
         workspaceDatabaseCache.clear();
-        std::cout << "Databases disconnected" << std::endl;
+        spdlog::debug("Databases disconnected");
     } else {
         if (signalShutdownRequested) {
-            std::cout << "Skipping database teardown during signal shutdown" << std::endl;
+            spdlog::info("Skipping database teardown during signal shutdown");
         } else if (pendingAsyncWork) {
-            std::cout << "Skipping database teardown during shutdown (async work still running)"
-                      << std::endl;
+            spdlog::info("Skipping database teardown during shutdown (async work still running)");
         }
     }
 
@@ -357,15 +328,13 @@ void Application::cleanup() {
     tabManager.reset();
     databaseSidebar.reset();
     fileDialog.reset();
-    std::cout << "Components cleaned up" << std::endl;
+    spdlog::debug("Components cleaned up");
 
     // Cleanup NFD
     FileDialog::cleanup();
-    std::cout << "File dialog cleaned up" << std::endl;
+    spdlog::debug("File dialog cleaned up");
 
-#if defined(_WIN32)
-    cleanupWinSparkleUpdater();
-#endif
+    cleanupUpdater();
 
     if (platform_) {
         platform_->shutdownImGui();
@@ -373,13 +342,8 @@ void Application::cleanup() {
         platform_.reset();
     }
 
-#if defined(__APPLE__) || defined(_WIN32)
-    ImGui_ImplGlfw_Shutdown();
-    std::cout << "ImGui GLFW backend shutdown" << std::endl;
-#endif
-
     ImGui::DestroyContext();
-    std::cout << "ImGui context destroyed" << std::endl;
+    spdlog::debug("ImGui context destroyed");
 
 #if defined(__APPLE__) || defined(_WIN32)
     if (window) {
@@ -388,7 +352,7 @@ void Application::cleanup() {
     glfwTerminate();
 #endif
 
-    std::cout << "Application cleanup completed" << std::endl;
+    spdlog::debug("Application cleanup completed");
 }
 
 void Application::setDarkTheme(const bool dark) {
@@ -441,18 +405,19 @@ void Application::addDatabase(const std::shared_ptr<DatabaseInterface>& db) {
 bool Application::canAddConnection() const {
     if (LicenseManager::instance().hasValidLicense())
         return true;
-    return databases.size() < 3;
+    return databases.size() < kFreeConnectionLimit;
 }
 
 bool Application::canAddWorkspace() const {
     if (LicenseManager::instance().hasValidLicense())
         return true;
-    return appState->getWorkspaces().size() < 1;
+    return appState->getWorkspaces().size() < kFreeWorkspaceLimit;
 }
 
 int Application::saveConnection(const SavedConnection& conn) {
     if (!canAddConnection()) {
-        Logger::warn("Connection limit reached (free tier: 3). Upgrade to add more.");
+        spdlog::warn("Connection limit reached (free tier: {}). Upgrade to add more.",
+                     kFreeConnectionLimit);
         return -2;
     }
     return appState->saveConnection(conn);
@@ -497,8 +462,7 @@ void Application::restorePreviousConnections() {
 
     const auto restoreStart = std::chrono::steady_clock::now();
     const auto savedConnections = appState->getConnectionsForWorkspace(currentWorkspaceId);
-    Logger::info(
-        std::format("Restoring {} connections for current workspace", savedConnections.size()));
+    spdlog::debug("Restoring {} connections for current workspace", savedConnections.size());
     std::size_t restoredCount = 0;
 
     for (const auto& conn : savedConnections) {
@@ -521,17 +485,16 @@ void Application::restorePreviousConnections() {
         } else if (conn.connectionInfo.type == DatabaseType::ORACLE) {
             db = std::make_shared<OracleDatabase>(conn.connectionInfo);
         } else {
-            Logger::warn(std::format("Unknown database type {} for connection '{}', skipping",
-                                     static_cast<int>(conn.connectionInfo.type),
-                                     conn.connectionInfo.name));
+            spdlog::warn("Unknown database type {} for connection '{}', skipping",
+                         static_cast<int>(conn.connectionInfo.type), conn.connectionInfo.name);
             continue;
         }
 
         if (db) {
             // Store the saved connection ID in the database instance
             db->setConnectionId(conn.id);
-            Logger::debug(std::format("Added connection: {} {}", conn.connectionInfo.name,
-                                      conn.connectionInfo.database));
+            spdlog::debug("Added connection: {} {}", conn.connectionInfo.name,
+                          conn.connectionInfo.database);
             databases.push_back(db);
             ++restoredCount;
         }
@@ -540,22 +503,19 @@ void Application::restorePreviousConnections() {
     const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - restoreStart)
                                .count();
-    Logger::info(std::format("Restored {} connections for workspace {} in {} ms", restoredCount,
-                             currentWorkspaceId, elapsedMs));
+    spdlog::debug("Restored {} connections for workspace {} in {} ms", restoredCount,
+                  currentWorkspaceId, elapsedMs);
 }
 
 #if defined(__APPLE__) || defined(_WIN32)
 bool Application::initializeGLFW() {
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+        spdlog::error("Failed to initialize GLFW");
         return false;
     }
 
-#ifdef __APPLE__
-    // Metal backend doesn't need OpenGL context hints
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#elif defined(_WIN32)
-    // D3D11 backend — no OpenGL context needed
+#if defined(__APPLE__) || defined(_WIN32)
+    // Metal and D3D11 backend doesn't need OpenGL context hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
@@ -566,14 +526,12 @@ bool Application::initializeGLFW() {
 #endif
     window = glfwCreateWindow(1280, 720, title, nullptr, nullptr);
     if (!window) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
+        spdlog::error("Failed to create GLFW window");
         glfwTerminate();
         return false;
     }
 
-    // note: no glfwMakeContextCurrent on Windows (D3D11 — no OpenGL context)
-
-    std::cout << "GLFW window created successfully" << std::endl;
+    spdlog::info("GLFW window created successfully");
     return true;
 }
 #endif
@@ -592,17 +550,15 @@ void Application::setupImGuiContext() const {
 bool Application::initializeImGui() const {
     setupImGuiContext();
 
-    ImGui_ImplGlfw_InitForOther(window, true);
-
     if (!platform_->initializeImGuiBackend()) {
-        std::cerr << "Failed to initialize ImGui backend" << std::endl;
+        spdlog::error("Failed to initialize ImGui backend");
         return false;
     }
 
 #ifdef __APPLE__
-    std::cout << "ImGui initialized with Metal backend" << std::endl;
+    spdlog::info("ImGui initialized with Metal backend");
 #elif defined(_WIN32)
-    std::cout << "ImGui initialized with DirectX 11 backend" << std::endl;
+    spdlog::info("ImGui initialized with DirectX 11 backend");
 #endif
 
     return true;
@@ -660,16 +616,15 @@ void Application::setupFonts() {
         }
 
         if (loadedFont) {
-            Logger::info(std::format("loaded embedded font: {}", fontName));
+            spdlog::debug("loaded embedded font: {}", fontName);
         }
     }
 }
 
 void Application::setCurrentWorkspace(const int workspaceId) {
-    Logger::info(
-        std::format("setCurrentWorkspace({}) current={}", workspaceId, currentWorkspaceId));
+    spdlog::debug("setCurrentWorkspace({}) current={}", workspaceId, currentWorkspaceId);
     if (currentWorkspaceId == workspaceId) {
-        Logger::info("setCurrentWorkspace: early return (same id)");
+        spdlog::debug("setCurrentWorkspace: early return (same id)");
         return;
     }
 
@@ -719,7 +674,8 @@ int Application::createWorkspace(const std::string& name, const std::string& des
     }
 
     if (!canAddWorkspace()) {
-        Logger::warn("Workspace limit reached (free tier: 1). Upgrade to create more.");
+        spdlog::warn("Workspace limit reached (free tier: {}). Upgrade to create more.",
+                     kFreeWorkspaceLimit);
         return -2;
     }
 
@@ -728,15 +684,15 @@ int Application::createWorkspace(const std::string& name, const std::string& des
     workspace.description = description;
 
     const int newWorkspaceId = appState->saveWorkspace(workspace);
-    Logger::info(std::format("createWorkspace: saved with id={}", newWorkspaceId));
+    spdlog::debug("createWorkspace: saved with id={}", newWorkspaceId);
 
     if (newWorkspaceId > 0) {
         setCurrentWorkspace(newWorkspaceId);
-        Logger::info(std::format("createWorkspace: after setCurrentWorkspace, currentId={}",
-                                 currentWorkspaceId));
+        spdlog::debug("createWorkspace: after setCurrentWorkspace, currentId={}",
+                      currentWorkspaceId);
         platform_->updateWorkspaceDropdown();
-        Logger::info(std::format("createWorkspace: after updateWorkspaceDropdown, currentId={}",
-                                 currentWorkspaceId));
+        spdlog::debug("createWorkspace: after updateWorkspaceDropdown, currentId={}",
+                      currentWorkspaceId);
     }
 
     return newWorkspaceId;
@@ -766,6 +722,15 @@ bool Application::deleteWorkspace(const int workspaceId) {
         }
     }
 
+    return success;
+}
+
+bool Application::renameWorkspace(const int workspaceId, const std::string& name) {
+    if (!appState || name.empty())
+        return false;
+    bool success = appState->renameWorkspace(workspaceId, name);
+    if (success)
+        platform_->updateWorkspaceDropdown();
     return success;
 }
 
@@ -978,10 +943,7 @@ void Application::renderMainUI() {
         ImGui::PopStyleVar(1);
     }
 
-#if defined(__linux__)
-    UpdateDialog::instance().render();
-    pollLinuxUpdater();
-#endif
+    pollUpdater();
 
     ImGui::End();
 }
@@ -1020,7 +982,7 @@ void Application::openFile(const std::string& rawPath) {
             if (!sqliteDb->isConnected()) {
                 auto [ok, err] = sqliteDb->connect();
                 if (!ok) {
-                    Logger::error(std::format("Failed to reconnect SQLite file: {}", err));
+                    spdlog::error("Failed to reconnect SQLite file: {}", err);
                     return;
                 }
             }
@@ -1030,7 +992,7 @@ void Application::openFile(const std::string& rawPath) {
     }
 
     if (!canAddConnection()) {
-        Logger::warn("Cannot open file: connection limit reached (free tier: 3).");
+        spdlog::warn("Cannot open file: connection limit reached (free tier: 3).");
         return;
     }
 
@@ -1042,7 +1004,7 @@ void Application::openFile(const std::string& rawPath) {
     auto db = std::make_shared<SQLiteDatabase>(info);
     auto [success, error] = db->connect();
     if (!success) {
-        Logger::error(std::format("Failed to open file: {}", error));
+        spdlog::error("Failed to open file: {}", error);
         return;
     }
 

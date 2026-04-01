@@ -1,9 +1,9 @@
 #include "utils/table_exporter.hpp"
-#include "utils/logger.hpp"
-#include <format>
+#include "database/ddl_utils.hpp"
 #include <fstream>
 #include <nfd.h>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 namespace {
 
@@ -29,13 +29,13 @@ namespace {
                    const std::string& path) {
         std::ofstream file(path);
         if (!file.is_open()) {
-            Logger::error(std::format("Failed to open file for writing: {}", path));
+            spdlog::error("Failed to open file for writing: {}", path);
             return false;
         }
 
         auto columns = provider->getColumnNames(tableName);
         if (columns.empty()) {
-            Logger::error("Cannot export: table has no columns");
+            spdlog::error("Cannot export: table has no columns");
             return false;
         }
 
@@ -61,7 +61,7 @@ namespace {
             }
         }
 
-        Logger::info(std::format("Exported {} rows to CSV: {}", totalRows, path));
+        spdlog::info("Exported {} rows to CSV: {}", totalRows, path);
         return true;
     }
 
@@ -69,13 +69,13 @@ namespace {
                     const std::string& path) {
         std::ofstream file(path);
         if (!file.is_open()) {
-            Logger::error(std::format("Failed to open file for writing: {}", path));
+            spdlog::error("Failed to open file for writing: {}", path);
             return false;
         }
 
         auto columns = provider->getColumnNames(tableName);
         if (columns.empty()) {
-            Logger::error("Cannot export: table has no columns");
+            spdlog::error("Cannot export: table has no columns");
             return false;
         }
         int totalRows = provider->getRowCount(tableName);
@@ -103,13 +103,114 @@ namespace {
         }
         file << "\n]\n";
 
-        Logger::info(std::format("Exported {} rows to JSON: {}", totalRows, path));
+        spdlog::info("Exported {} rows to JSON: {}", totalRows, path);
+        return true;
+    }
+
+    std::string quoteSqlValue(const std::string& value) {
+        if (value == "NULL")
+            return "NULL";
+        return "'" + ddl_utils::escapeSingleQuotes(value) + "'";
+    }
+
+    void writeCreateTable(std::ofstream& file, const Table& table) {
+        file << "CREATE TABLE " << table.name << " (\n";
+
+        std::vector<std::string> pkColumns;
+        for (const auto& col : table.columns) {
+            if (col.isPrimaryKey)
+                pkColumns.push_back(col.name);
+        }
+
+        for (size_t i = 0; i < table.columns.size(); ++i) {
+            const auto& col = table.columns[i];
+            file << "    " << col.name << " " << col.type;
+            if (col.isNotNull)
+                file << " NOT NULL";
+            if (col.isUnique && !col.isPrimaryKey)
+                file << " UNIQUE";
+            if (!col.defaultValue.empty())
+                file << " DEFAULT " << col.defaultValue;
+            // inline PRIMARY KEY only for single-column PKs
+            if (col.isPrimaryKey && pkColumns.size() == 1)
+                file << " PRIMARY KEY";
+            if (i + 1 < table.columns.size() || pkColumns.size() > 1)
+                file << ',';
+            file << '\n';
+        }
+
+        if (pkColumns.size() > 1) {
+            file << "    PRIMARY KEY (";
+            for (size_t i = 0; i < pkColumns.size(); ++i) {
+                if (i > 0)
+                    file << ", ";
+                file << pkColumns[i];
+            }
+            file << ")\n";
+        }
+
+        file << ");\n\n";
+    }
+
+    bool exportSql(ITableDataProvider* provider, const Table& table, const std::string& path) {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            spdlog::error("Failed to open file for writing: {}", path);
+            return false;
+        }
+
+        auto columns = provider->getColumnNames(table.name);
+        if (columns.empty()) {
+            spdlog::error("Cannot export: table has no columns");
+            return false;
+        }
+
+        if (!table.columns.empty())
+            writeCreateTable(file, table);
+
+        // build column list for INSERTs
+        std::string columnList;
+        for (size_t i = 0; i < columns.size(); ++i) {
+            if (i > 0)
+                columnList += ", ";
+            columnList += columns[i];
+        }
+
+        int totalRows = provider->getRowCount(table.name);
+        for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
+            auto rows = provider->getTableData(table.name, BATCH_SIZE, offset);
+            for (const auto& row : rows) {
+                file << "INSERT INTO " << table.name << " (" << columnList << ") VALUES (";
+                for (size_t i = 0; i < columns.size() && i < row.size(); ++i) {
+                    if (i > 0)
+                        file << ", ";
+                    file << quoteSqlValue(row[i]);
+                }
+                file << ");\n";
+            }
+        }
+
+        spdlog::info("Exported {} rows to SQL: {}", totalRows, path);
         return true;
     }
 
     std::string showSaveDialog(ExportFormat format, const std::string& tableName) {
-        const char* ext = (format == ExportFormat::CSV) ? "csv" : "json";
-        const char* desc = (format == ExportFormat::CSV) ? "CSV Files" : "JSON Files";
+        const char* ext = nullptr;
+        const char* desc = nullptr;
+        switch (format) {
+        case ExportFormat::CSV:
+            ext = "csv";
+            desc = "CSV Files";
+            break;
+        case ExportFormat::JSON:
+            ext = "json";
+            desc = "JSON Files";
+            break;
+        case ExportFormat::SQL:
+            ext = "sql";
+            desc = "SQL Files";
+            break;
+        }
         nfdfilteritem_t filter = {desc, ext};
 
         std::string defaultName = tableName + "." + ext;
@@ -122,7 +223,7 @@ namespace {
             return path;
         }
         if (result == NFD_ERROR) {
-            Logger::error(std::format("File dialog error: {}", NFD_GetError()));
+            spdlog::error("File dialog error: {}", NFD_GetError());
         }
         return "";
     }
@@ -131,21 +232,25 @@ namespace {
 
 namespace TableExporter {
 
-    bool exportTable(ITableDataProvider* provider, const std::string& tableName,
-                     ExportFormat format) {
+    bool exportTable(ITableDataProvider* provider, const Table& table, ExportFormat format) {
         if (!provider) {
             return false;
         }
 
-        std::string path = showSaveDialog(format, tableName);
+        std::string path = showSaveDialog(format, table.name);
         if (path.empty()) {
             return false;
         }
 
-        if (format == ExportFormat::CSV) {
-            return exportCsv(provider, tableName, path);
+        switch (format) {
+        case ExportFormat::CSV:
+            return exportCsv(provider, table.name, path);
+        case ExportFormat::JSON:
+            return exportJson(provider, table.name, path);
+        case ExportFormat::SQL:
+            return exportSql(provider, table, path);
         }
-        return exportJson(provider, tableName, path);
+        return false;
     }
 
 } // namespace TableExporter

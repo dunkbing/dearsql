@@ -1,34 +1,26 @@
 #pragma once
 
 #include "database/async_helper.hpp"
-#include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
-#include "database/db_interface.hpp"
 #include "database/table_data_provider.hpp"
 #include <map>
-#include <memory>
 #include <string>
 #include <vector>
 
-#include "database/oracle/oracle_fwd.hpp"
+class MSSQLDatabaseNode;
 
-class OracleDatabase;
-
-class OracleDatabaseNode : public IDatabaseNode, public ITableDataProvider {
+class MSSQLSchemaNode : public IDatabaseNode, public ITableDataProvider {
 public:
-    OracleDatabase* parentDb = nullptr;
-    std::string name; // schema name (e.g. "HR", "SCOTT")
-
-    std::unique_ptr<ConnectionPool<dpiConn*>> connectionPool;
+    MSSQLDatabaseNode* parentDbNode = nullptr;
+    std::string name;
 
     std::vector<Table> tables;
     std::vector<Table> views;
-    std::vector<std::string> sequences;
+    std::vector<std::string> sequences; // empty, for API compatibility
 
     bool tablesLoaded = false;
     bool viewsLoaded = false;
-    bool sequencesLoaded = false;
 
     AsyncOperation<std::vector<Table>> tablesLoader;
     AsyncOperation<std::vector<Table>> viewsLoader;
@@ -37,17 +29,15 @@ public:
     std::string lastTablesError;
     std::string lastViewsError;
 
-    bool expanded = false;
-    bool tablesExpanded = false;
-    bool viewsExpanded = false;
-
     // IDatabaseNode
     [[nodiscard]] std::string getName() const override {
         return name;
     }
     [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
     [[nodiscard]] std::string getFullPath() const override;
-    [[nodiscard]] DatabaseType getDatabaseType() const override;
+    [[nodiscard]] DatabaseType getDatabaseType() const override {
+        return DatabaseType::MSSQL;
+    }
 
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
     std::pair<bool, std::string> createTable(const Table& table) override;
@@ -100,10 +90,8 @@ public:
     [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
     void checkTableRefreshStatusAsync(const std::string& tableName) override;
 
-    // internal
-    void ensureConnectionPool();
-    ConnectionPool<dpiConn*>::Session getSession() const;
-    void initializeConnectionPool(const DatabaseConnectionInfo& info);
+    void checkTablesStatusAsync();
+    void checkViewsStatusAsync();
 
     // schema modification
     std::pair<bool, std::string> renameTable(const std::string& oldName,
@@ -113,11 +101,11 @@ public:
     std::pair<bool, std::string> dropColumn(const std::string& tableName,
                                             const std::string& columnName);
 
-    void checkTablesStatusAsync();
-    void checkViewsStatusAsync();
-
 private:
     std::vector<Table> getTablesAsync();
-    std::vector<Table> getViewsForSchemaAsync();
+    std::vector<Table> getViewsAsync();
     Table refreshTableAsync(const std::string& tableName);
+
+    // build [schema].[table] qualified name
+    std::string qualifyName(const std::string& tableName) const;
 };

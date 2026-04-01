@@ -5,12 +5,12 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/query_history.hpp"
-#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
 #include <iostream>
+#include <spdlog/spdlog.h>
 #include <utility>
 
 TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath,
@@ -77,7 +77,7 @@ void TableViewerTab::render() {
             filterAutoComplete->hideAutoComplete();
         }
         if (!currentFilter.empty()) {
-            Logger::debug("Clearing filter for table: " + tableName);
+            spdlog::debug("Clearing filter for table: {}", tableName);
             // Clear the filter FIRST, then reload
             currentFilter.clear();
             filterChanged = true;
@@ -573,7 +573,7 @@ void TableViewerTab::loadDataAsync() {
         columnNames.clear();
         totalRows = 0;
         filterChanged = false;
-        Logger::debug("Cleared previous filtered data, starting fresh load");
+        spdlog::debug("Cleared previous filtered data, starting fresh load");
     }
 
     // Build ORDER BY clause from sort state

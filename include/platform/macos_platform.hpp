@@ -1,13 +1,9 @@
 #pragma once
 
+#include "platform/graphics_backend.hpp"
+#include "platform/titlebar.hpp"
 #include "platform_interface.hpp"
-
-// Forward declarations for Objective-C types
-#ifdef __OBJC__
-@class ToolbarDelegate;
-#else
-typedef void ToolbarDelegate;
-#endif
+#include <memory>
 
 class Application;
 
@@ -29,18 +25,7 @@ public:
 
 private:
     Application* app_;
-    GLFWwindow* window_;
-
-    ToolbarDelegate* toolbarDelegate_;
-#ifdef __OBJC__
-    id metalDevice_;
-    id metalCommandQueue_;
-    id metalLayer_;
-    id visualEffectView_;
-#else
-    void* metalDevice_;
-    void* metalCommandQueue_;
-    void* metalLayer_;
-    void* visualEffectView_;
-#endif
+    GLFWwindow* window_ = nullptr;
+    std::unique_ptr<MacOSMetalBackend> backend_;
+    std::unique_ptr<MacOSTitlebar> titlebar_;
 };

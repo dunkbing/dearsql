@@ -17,7 +17,6 @@
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "utils/file_dialog.hpp"
-#include "utils/logger.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
 #include <algorithm>
@@ -25,6 +24,7 @@
 #include <format>
 #include <memory>
 #include <ranges>
+#include <spdlog/spdlog.h>
 
 DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
@@ -61,7 +61,6 @@ void DatabaseSidebarNew::renderEmpty() {
     ImGui::TextWrapped("Right-click here to add a new database connection");
     ImGui::PopStyleColor();
 
-    // Show context menu for adding database when area is right-clicked
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         ImGui::OpenPopup("AddDatabasePopup");
     }
@@ -70,7 +69,7 @@ void DatabaseSidebarNew::renderEmpty() {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
-            Logger::info("Opening database connection dialog");
+            spdlog::debug("Opening database connection dialog");
             showConnectionDialog();
         }
         ImGui::Separator();
@@ -334,6 +333,8 @@ void DatabaseSidebarNew::render() {
                           ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.8f));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive,
                           ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
@@ -458,7 +459,7 @@ void DatabaseSidebarNew::render() {
         renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
     }
 
-    ImGui::PopStyleColor(3);
+    ImGui::PopStyleColor(5);
     ImGui::End();
 
     ImGui::PopStyleVar(); // PopupRounding
@@ -549,7 +550,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     if (dbOpen) {
         if (!db->isConnected() && !db->hasAttemptedConnection() && !db->isConnecting()) {
-            Logger::info(std::format("Starting connection to database: {}", connectionInfo.name));
+            spdlog::debug("Starting connection to database: {}", connectionInfo.name);
             db->startConnectionAsync();
         }
 
@@ -686,18 +687,16 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                   [db, connectionInfo]() {
                       auto& app = Application::getInstance();
                       if (app.getAppState()->deleteConnection(db->getConnectionId())) {
-                          Logger::info(
-                              std::format("Removed saved connection: {}", connectionInfo.name));
+                          spdlog::debug("Removed saved connection: {}", connectionInfo.name);
                       }
-                      Logger::info(std::format("Database removed: {}", connectionInfo.name));
+                      spdlog::debug("Database removed: {}", connectionInfo.name);
                       app.removeDatabase(db);
                   },
                   AlertButton::Style::Destructive}});
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Refresh")) {
-            Logger::info(std::format("Refreshing connection for database: {}",
-                                     db->getConnectionInfo().name));
+            spdlog::debug("Refreshing connection for database: {}", db->getConnectionInfo().name);
             db->refreshConnection();
         }
 

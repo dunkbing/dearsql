@@ -172,9 +172,9 @@ TEST_F(MSSQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMas
     EXPECT_TRUE(verifyResult[0].tableData.empty());
 }
 
-// ========== Database Node DDL Tests ==========
+// ========== Schema Node DDL Tests ==========
 
-class MSSQLDatabaseNodeDDLTest : public MSSQLDatabaseIntegrationTest {
+class MSSQLSchemaNodeDDLTest : public MSSQLDatabaseIntegrationTest {
 protected:
     void SetUp() override {
         MSSQLDatabaseIntegrationTest::SetUp();
@@ -183,6 +183,24 @@ protected:
 
         dbNode = database->getDatabaseData(config.database);
         ASSERT_NE(dbNode, nullptr);
+
+        // load schemas and wait for completion
+        dbNode->ensureConnectionPool();
+        dbNode->startSchemasLoadAsync();
+        for (int i = 0; i < 100 && !dbNode->schemasLoaded; ++i) {
+            dbNode->checkSchemasStatusAsync();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        ASSERT_TRUE(dbNode->schemasLoaded) << "Failed to load schemas";
+
+        // find the dbo schema
+        for (auto& s : dbNode->schemas) {
+            if (s && s->name == "dbo") {
+                schemaNode = s.get();
+                break;
+            }
+        }
+        ASSERT_NE(schemaNode, nullptr) << "dbo schema not found";
     }
 
     void TearDown() override {
@@ -193,16 +211,17 @@ protected:
     }
 
     MSSQLDatabaseNode* dbNode = nullptr;
+    MSSQLSchemaNode* schemaNode = nullptr;
     std::string renamedTableName;
 };
 
-TEST_F(MSSQLDatabaseNodeDDLTest, RenameTableRenamesSuccessfully) {
+TEST_F(MSSQLSchemaNodeDDLTest, RenameTableRenamesSuccessfully) {
     auto r = database->executeQuery(
         std::format("CREATE TABLE [{}] (id INT PRIMARY KEY, val NVARCHAR(255))", tableName));
     ASSERT_TRUE(r.success()) << r.errorMessage();
 
     renamedTableName = tableName + "_renamed";
-    auto [ok, err] = dbNode->renameTable(tableName, renamedTableName);
+    auto [ok, err] = schemaNode->renameTable(tableName, renamedTableName);
     ASSERT_TRUE(ok) << err;
 
     auto check =
@@ -214,12 +233,12 @@ TEST_F(MSSQLDatabaseNodeDDLTest, RenameTableRenamesSuccessfully) {
     EXPECT_EQ(check[0].tableData.size(), 1u);
 }
 
-TEST_F(MSSQLDatabaseNodeDDLTest, DropTableRemovesTable) {
+TEST_F(MSSQLSchemaNodeDDLTest, DropTableRemovesTable) {
     auto r =
         database->executeQuery(std::format("CREATE TABLE [{}] (id INT PRIMARY KEY)", tableName));
     ASSERT_TRUE(r.success()) << r.errorMessage();
 
-    auto [ok, err] = dbNode->dropTable(tableName);
+    auto [ok, err] = schemaNode->dropTable(tableName);
     ASSERT_TRUE(ok) << err;
 
     auto check =
@@ -231,13 +250,36 @@ TEST_F(MSSQLDatabaseNodeDDLTest, DropTableRemovesTable) {
     EXPECT_TRUE(check[0].tableData.empty());
 }
 
-TEST_F(MSSQLDatabaseNodeDDLTest, DropColumnRemovesColumn) {
+TEST_F(MSSQLSchemaNodeDDLTest, TruncateTableRemovesAllRows) {
+    auto r = database->executeQuery(
+        std::format("CREATE TABLE [{}] (id INT PRIMARY KEY, val NVARCHAR(255))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto ins = database->executeQuery(
+        std::format("INSERT INTO [{}] (id, val) VALUES (1, 'a'), (2, 'b'), (3, 'c')", tableName));
+    ASSERT_TRUE(ins.success()) << ins.errorMessage();
+
+    auto pre = database->executeQuery(std::format("SELECT COUNT(*) FROM [{}]", tableName));
+    ASSERT_TRUE(pre.success());
+    ASSERT_FALSE(pre.empty());
+    EXPECT_EQ(pre[0].tableData[0][0], "3");
+
+    auto [ok, err] = schemaNode->truncateTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(std::format("SELECT COUNT(*) FROM [{}]", tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData[0][0], "0");
+}
+
+TEST_F(MSSQLSchemaNodeDDLTest, DropColumnRemovesColumn) {
     auto r = database->executeQuery(std::format(
         "CREATE TABLE [{}] (id INT PRIMARY KEY, keep_me NVARCHAR(255), drop_me NVARCHAR(255))",
         tableName));
     ASSERT_TRUE(r.success()) << r.errorMessage();
 
-    auto [ok, err] = dbNode->dropColumn(tableName, "drop_me");
+    auto [ok, err] = schemaNode->dropColumn(tableName, "drop_me");
     ASSERT_TRUE(ok) << err;
 
     auto check = database->executeQuery(

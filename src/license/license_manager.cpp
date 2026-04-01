@@ -2,7 +2,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "config.hpp"
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #include <fstream>
 
@@ -116,7 +116,7 @@ void LicenseManager::loadStoredLicense() {
         currentLicense.customerEmail = storedEmail;
         currentLicense.activatedAt = storedActivatedAt;
 
-        Logger::info("Loaded stored license");
+        spdlog::info("Loaded stored license");
     }
 }
 
@@ -129,7 +129,7 @@ void LicenseManager::storeLicense(const LicenseInfo& license) {
     appState->setSetting(kSettingEmail, license.customerEmail);
     appState->setSetting(kSettingActivatedAt, license.activatedAt);
 
-    Logger::info("Stored license");
+    spdlog::info("Stored license");
 }
 
 void LicenseManager::clearStoredLicense() {
@@ -145,14 +145,14 @@ void LicenseManager::clearStoredLicense() {
         std::lock_guard lock(licenseMutex_);
         currentLicense = LicenseInfo{};
     }
-    Logger::info("Cleared stored license");
+    spdlog::info("Cleared stored license");
 }
 
 LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
                                          const std::string& instanceLabel) {
     LicenseInfo result;
 
-    Logger::info("License activation: starting for label: " + instanceLabel);
+    spdlog::info("License activation: starting for label: {}", instanceLabel);
 
     httplib::Client cli("https://api.polar.sh");
     cli.set_connection_timeout(10);
@@ -167,12 +167,12 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
         cli.Post("/v1/customer-portal/license-keys/activate", body.dump(), "application/json");
 
     if (!res) {
-        Logger::error("License activation: network error");
+        spdlog::error("License activation: network error");
         result.error = "Network error: could not connect to license server";
         return result;
     }
 
-    Logger::info("License activation: HTTP status: " + std::to_string(res->status));
+    spdlog::info("License activation: HTTP status: {}", res->status);
 
     if (res->status != 200) {
         try {
@@ -182,7 +182,7 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
         } catch (...) {
             result.error = "Activation failed (HTTP " + std::to_string(res->status) + ")";
         }
-        Logger::error("License activation: failed - " + result.error);
+        spdlog::error("License activation: failed - {}", result.error);
         return result;
     }
 
@@ -209,14 +209,14 @@ LicenseInfo LicenseManager::doActivation(const std::string& licenseKey,
         if (result.status == "granted") {
             result.valid = true;
             result.status = "active";
-            Logger::info("License activation: success, activation id: " + result.instanceId);
+            spdlog::info("License activation: success, activation id: {}", result.instanceId);
         } else {
             result.error = "License is not active (status: " + result.status + ")";
-            Logger::error("License activation: " + result.error);
+            spdlog::error("License activation: {}", result.error);
         }
     } catch (const std::exception& e) {
         result.error = std::string("Failed to parse response: ") + e.what();
-        Logger::error("License activation: parse error - " + result.error);
+        spdlog::error("License activation: parse error - {}", result.error);
     }
 
     return result;
@@ -226,7 +226,7 @@ LicenseInfo LicenseManager::doDeactivation(const std::string& licenseKey,
                                            const std::string& activationId) {
     LicenseInfo result;
 
-    Logger::info("License deactivation: starting for activation: " + activationId);
+    spdlog::info("License deactivation: starting for activation: {}", activationId);
 
     httplib::Client cli("https://api.polar.sh");
     cli.set_connection_timeout(10);
@@ -241,17 +241,17 @@ LicenseInfo LicenseManager::doDeactivation(const std::string& licenseKey,
         cli.Post("/v1/customer-portal/license-keys/deactivate", body.dump(), "application/json");
 
     if (!res) {
-        Logger::error("License deactivation: network error");
+        spdlog::error("License deactivation: network error");
         result.error = "Network error: could not connect to license server";
         return result;
     }
 
-    Logger::info("License deactivation: HTTP status: " + std::to_string(res->status));
+    spdlog::info("License deactivation: HTTP status: {}", res->status);
 
     if (res->status == 204) {
         result.valid = false;
         result.status = "deactivated";
-        Logger::info("License deactivation: success");
+        spdlog::info("License deactivation: success");
     } else {
         try {
             auto respJson = json::parse(res->body);
@@ -260,7 +260,7 @@ LicenseInfo LicenseManager::doDeactivation(const std::string& licenseKey,
         } catch (...) {
             result.error = "Deactivation failed (HTTP " + std::to_string(res->status) + ")";
         }
-        Logger::error("License deactivation: failed - " + result.error);
+        spdlog::error("License deactivation: failed - {}", result.error);
     }
 
     return result;
@@ -415,12 +415,12 @@ void LicenseManager::validateStoredLicense() {
         auto result = doValidation(key, instanceId);
 
         if (result.networkError) {
-            Logger::info("Startup license validation: network unavailable, keeping cached license");
+            spdlog::info("Startup license validation: network unavailable, keeping cached license");
         } else if (!result.valid) {
-            Logger::info("Startup license validation: server rejected license, clearing");
+            spdlog::info("Startup license validation: server rejected license, clearing");
             clearStoredLicense();
         } else {
-            Logger::info("Startup license validation: confirmed valid");
+            spdlog::info("Startup license validation: confirmed valid");
         }
     }).detach();
 }

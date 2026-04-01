@@ -1,4 +1,4 @@
-#include "platform/macos_updater.hpp"
+#include "platform/updater.hpp"
 
 #ifdef __APPLE__
 
@@ -6,7 +6,7 @@
 
 static SPUStandardUpdaterController* sUpdaterController = nil;
 
-void initializeSparkleUpdater() {
+void initializeUpdater() {
     if (sUpdaterController) {
         return;
     }
@@ -28,6 +28,15 @@ void checkForUpdates() {
         return;
     }
     [sUpdaterController checkForUpdates:nil];
+}
+
+void pollUpdater() {}
+void cleanupUpdater() {}
+bool isUpdateAvailable() {
+    return false;
+}
+std::string getLatestVersion() {
+    return "";
 }
 
 #endif

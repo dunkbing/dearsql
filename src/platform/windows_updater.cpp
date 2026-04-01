@@ -1,13 +1,13 @@
 #if defined(_WIN32)
 
-#include "platform/windows_updater.hpp"
 #include "config.hpp"
+#include "platform/updater.hpp"
 #include <iostream>
 #include <winsparkle.h>
 
 static bool sWinSparkleInitialized = false;
 
-void initializeWinSparkleUpdater() {
+void initializeUpdater() {
     if (sWinSparkleInitialized) {
         return;
     }
@@ -34,20 +34,28 @@ void initializeWinSparkleUpdater() {
     std::cout << "WinSparkle updater initialized" << std::endl;
 }
 
-void checkForUpdatesWindows() {
+void checkForUpdates() {
     if (!sWinSparkleInitialized) {
         return;
     }
     win_sparkle_check_update_with_ui();
 }
 
-void cleanupWinSparkleUpdater() {
+void cleanupUpdater() {
     if (!sWinSparkleInitialized) {
         return;
     }
     win_sparkle_cleanup();
     sWinSparkleInitialized = false;
     std::cout << "WinSparkle updater cleaned up" << std::endl;
+}
+
+void pollUpdater() {}
+bool isUpdateAvailable() {
+    return false;
+}
+std::string getLatestVersion() {
+    return "";
 }
 
 #endif

@@ -4,9 +4,9 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/csv_parser.hpp"
-#include "utils/logger.hpp"
 #include <filesystem>
 #include <format>
+#include <spdlog/spdlog.h>
 
 CsvEditorTab::CsvEditorTab(const std::string& name, std::string filePath)
     : Tab(name, TabType::CSV_EDITOR), filePath_(std::move(filePath)) {
@@ -25,7 +25,7 @@ void CsvEditorTab::clearValidationError() {
 void CsvEditorTab::setValidationError(std::string message) {
     hasValidationError_ = true;
     validationError_ = std::move(message);
-    Logger::warn(validationError_);
+    spdlog::warn(validationError_);
 }
 
 bool CsvEditorTab::hasPendingChanges() const {
@@ -48,7 +48,7 @@ void CsvEditorTab::loadFile() {
     if (!CsvParser::parseFile(filePath_, headers_, rows_)) {
         loadError_ = true;
         errorMessage_ = "Failed to open file: " + filePath_;
-        Logger::error(errorMessage_);
+        spdlog::error(errorMessage_);
         return;
     }
 
@@ -56,7 +56,7 @@ void CsvEditorTab::loadFile() {
     tableRendererDataDirty_ = true;
     hasChanges_ = false;
     rawDirty_ = false;
-    Logger::debug(std::format("CSV loaded: {} headers, {} rows", headers_.size(), rows_.size()));
+    spdlog::debug("CSV loaded: {} headers, {} rows", headers_.size(), rows_.size());
 }
 
 void CsvEditorTab::saveFile() {
@@ -71,14 +71,14 @@ void CsvEditorTab::saveFile() {
     }
 
     if (!CsvParser::writeFile(filePath_, headers_, rows_)) {
-        Logger::error("Failed to save CSV file: " + filePath_);
+        spdlog::error("Failed to save CSV file: {}", filePath_);
         return;
     }
 
     hasChanges_ = false;
     rawDirty_ = false;
     syncTableToRaw();
-    Logger::info("CSV saved: " + filePath_);
+    spdlog::debug("CSV saved: {}", filePath_);
 }
 
 void CsvEditorTab::syncTableToRaw() {

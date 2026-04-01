@@ -1,12 +1,12 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
 #include <iostream>
 #include <libpq-fe.h>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 
 namespace {
@@ -113,8 +113,8 @@ void PostgresDatabaseNode::checkSchemasStatusAsync() {
             }
         }
 
-        Logger::info(std::format("Async schema loading completed for database {}. Found {} schemas",
-                                 name, schemas.size()));
+        spdlog::debug("Async schema loading completed for database {}. Found {} schemas", name,
+                      schemas.size());
         schemasLoaded = true;
         invalidateAggregatedObjects();
         if (refreshChildrenAfterSchemasLoad) {
@@ -125,8 +125,8 @@ void PostgresDatabaseNode::checkSchemasStatusAsync() {
 }
 
 void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refreshChildren) {
-    Logger::debug("startSchemasLoadAsync for database: " + name +
-                  (forceRefresh ? " (force refresh)" : "") +
+    spdlog::debug("startSchemasLoadAsync for database: {}{}{}", name,
+                  (forceRefresh ? " (force refresh)" : ""),
                   (refreshChildren ? " (refresh children)" : ""));
     if (!parentDb) {
         return;
@@ -197,8 +197,7 @@ void PostgresDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refresh
                 }
             }
 
-            Logger::debug("Found " + std::to_string(schemaNames.size()) + " schemas in database " +
-                          name);
+            spdlog::debug("Found {} schemas in database {}", schemaNames.size(), name);
 
             if (schemaNames.empty() || !schemasLoader.isRunning()) {
                 return result;
@@ -235,16 +234,14 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
         return;
     }
 
-    Logger::debug(std::format("initializeConnectionPool {}", info.buildConnectionString()));
+    spdlog::debug("initializeConnectionPool {}", info.buildConnectionString());
     if (connectionPool) {
         return;
     }
 
-    constexpr size_t poolSize = 3;
     std::string connStr = buildPqConnStr(info);
 
     connectionPool = std::make_unique<ConnectionPool<PGconn*>>(
-        poolSize,
         // factory
         [connStr]() -> PGconn* {
             PGconn* conn = PQconnectdb(connStr.c_str());
@@ -654,7 +651,7 @@ int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::
 }
 
 void PostgresDatabaseNode::triggerChildSchemaRefresh() {
-    Logger::debug(std::format("Triggering child schema refresh for database: {}", name));
+    spdlog::debug("Triggering child schema refresh for database: {}", name);
     invalidateAggregatedObjects();
 
     // Invalidate caches when schemas are refreshed
@@ -665,7 +662,7 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& schema : schemas) {
         if (schema) {
-            Logger::debug(std::format("Refreshing schema: {}", schema->name));
+            spdlog::debug("Refreshing schema: {}", schema->name);
             schema->startTablesLoadAsync(true);
             schema->startViewsLoadAsync(true);
             schema->startMaterializedViewsLoadAsync(true);
@@ -673,8 +670,7 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
         }
     }
 
-    Logger::info(
-        std::format("Triggered refresh for {} schemas in database {}", schemas.size(), name));
+    spdlog::debug("Triggered refresh for {} schemas in database {}", schemas.size(), name);
 }
 
 

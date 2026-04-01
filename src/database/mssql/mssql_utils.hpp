@@ -5,8 +5,11 @@
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include <format>
+#include <map>
+#include <ranges>
 #include <string>
 #include <sybdb.h>
+#include <vector>
 
 // thread-local error string captured by db-lib error/message callbacks
 extern thread_local std::string tls_lastError;
@@ -123,13 +126,27 @@ inline std::pair<std::string, std::string> splitSchemaTable(const std::string& t
     return {"dbo", tableName};
 }
 
+// escape a MSSQL identifier: double any embedded ]
+inline std::string quoteMssqlId(const std::string& id) {
+    std::string out = "[";
+    out.reserve(id.size() + 2);
+    for (char c : id) {
+        if (c == ']')
+            out += ']';
+        out += c;
+    }
+    out += ']';
+    return out;
+}
+
 // bracket-quote a possibly schema-qualified table name: "schema.table" -> "[schema].[table]"
 inline std::string quoteTableName(const std::string& tableName) {
     auto dotPos = tableName.find('.');
     if (dotPos != std::string::npos) {
-        return std::format("[{}].[{}]", tableName.substr(0, dotPos), tableName.substr(dotPos + 1));
+        return quoteMssqlId(tableName.substr(0, dotPos)) + "." +
+               quoteMssqlId(tableName.substr(dotPos + 1));
     }
-    return std::format("[{}]", tableName);
+    return quoteMssqlId(tableName);
 }
 
 // open a DBPROCESS connection using the given connection info
@@ -206,6 +223,137 @@ inline QueryResult executeQueryOnProcess(DBPROCESS* dbproc, const std::string& q
         }
     }
     return result;
+}
+
+// load columns for a table/view
+inline std::vector<Column> loadColumns(DBPROCESS* dbproc, const std::string& schema,
+                                       const std::string& tableName) {
+    std::vector<Column> columns;
+    std::string query = std::format("SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, "
+                                    "COLUMNPROPERTY(OBJECT_ID('{}.{}'), COLUMN_NAME, 'IsIdentity') "
+                                    "FROM INFORMATION_SCHEMA.COLUMNS "
+                                    "WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = '{}' "
+                                    "AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
+                                    schema, tableName, schema, tableName);
+
+    if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
+        while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+            Column col;
+            col.name = colToString(dbproc, 1);
+            col.type = colToString(dbproc, 2);
+            col.isNotNull = colToString(dbproc, 3) == "NO";
+            columns.push_back(col);
+        }
+    }
+    drainResults(dbproc);
+    return columns;
+}
+
+// mark primary key columns
+inline void loadPrimaryKeys(DBPROCESS* dbproc, const std::string& schema,
+                            const std::string& tableName, std::vector<Column>& columns) {
+    std::string query = std::format("SELECT c.COLUMN_NAME "
+                                    "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
+                                    "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE c "
+                                    "ON c.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
+                                    "AND c.TABLE_SCHEMA = tc.TABLE_SCHEMA "
+                                    "WHERE tc.TABLE_SCHEMA = '{}' AND tc.TABLE_NAME = '{}' "
+                                    "AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'",
+                                    schema, tableName);
+
+    if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
+        while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+            std::string pkCol = colToString(dbproc, 1);
+            for (auto& col : columns) {
+                if (col.name == pkCol) {
+                    col.isPrimaryKey = true;
+                    break;
+                }
+            }
+        }
+    }
+    drainResults(dbproc);
+}
+
+// load foreign keys for a table
+inline std::vector<ForeignKey> loadForeignKeys(DBPROCESS* dbproc, const std::string& schema,
+                                               const std::string& tableName) {
+    std::vector<ForeignKey> fks;
+    std::string query =
+        std::format("SELECT fk.name, "
+                    "COL_NAME(fkc.parent_object_id, fkc.parent_column_id), "
+                    "OBJECT_NAME(fkc.referenced_object_id), "
+                    "COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) "
+                    "FROM sys.foreign_keys fk "
+                    "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
+                    "WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id) = '{}' "
+                    "AND OBJECT_NAME(fk.parent_object_id) = '{}'",
+                    schema, tableName);
+
+    if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
+        while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+            ForeignKey fk;
+            fk.name = colToString(dbproc, 1);
+            fk.sourceColumn = colToString(dbproc, 2);
+            fk.targetTable = colToString(dbproc, 3);
+            fk.targetColumn = colToString(dbproc, 4);
+            fks.push_back(fk);
+        }
+    }
+    drainResults(dbproc);
+    return fks;
+}
+
+// load indexes for a table
+inline std::vector<Index> loadIndexes(DBPROCESS* dbproc, const std::string& schema,
+                                      const std::string& tableName) {
+    std::vector<Index> indexes;
+    std::string query = std::format("SELECT i.name, i.is_unique, c.name AS column_name "
+                                    "FROM sys.indexes i "
+                                    "JOIN sys.index_columns ic ON i.object_id = ic.object_id "
+                                    "AND i.index_id = ic.index_id "
+                                    "JOIN sys.columns c ON ic.object_id = c.object_id "
+                                    "AND ic.column_id = c.column_id "
+                                    "WHERE i.object_id = OBJECT_ID('{}.{}') "
+                                    "AND i.is_primary_key = 0 AND i.type > 0 "
+                                    "ORDER BY i.name, ic.key_ordinal",
+                                    schema, tableName);
+
+    if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
+        std::map<std::string, Index> indexMap;
+        while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+            std::string idxName = colToString(dbproc, 1);
+            int isUnique = colToInt(dbproc, 2);
+            std::string colName = colToString(dbproc, 3);
+
+            if (!indexMap.contains(idxName)) {
+                Index idx;
+                idx.name = idxName;
+                idx.isUnique = (isUnique != 0);
+                indexMap[idxName] = idx;
+            }
+            indexMap[idxName].columns.push_back(colName);
+        }
+        for (auto& idx : indexMap | std::views::values) {
+            indexes.push_back(std::move(idx));
+        }
+    }
+    drainResults(dbproc);
+    return indexes;
+}
+
+// load all metadata for a single table
+inline Table loadTableMetadata(DBPROCESS* dbproc, const std::string& schema,
+                               const std::string& tableName, const std::string& displayName,
+                               const std::string& fullName) {
+    Table table;
+    table.name = displayName;
+    table.fullName = fullName;
+    table.columns = loadColumns(dbproc, schema, tableName);
+    loadPrimaryKeys(dbproc, schema, tableName, table.columns);
+    table.foreignKeys = loadForeignKeys(dbproc, schema, tableName);
+    table.indexes = loadIndexes(dbproc, schema, tableName);
+    return table;
 }
 
 // RAII wrapper for a raw DBPROCESS* (use for temporary connections outside the pool)

@@ -1,150 +1,12 @@
 #include "database/mssql/mssql_database_node.hpp"
 #include "database/db.hpp"
-#include "database/ddl_builder.hpp"
 #include "database/mssql.hpp"
+#include "database/sql_builder.hpp"
 #include "mssql_utils.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
-#include <format>
-#include <map>
-#include <ranges>
-
-namespace {
-
-    // load columns for a table/view
-    std::vector<Column> loadColumns(DBPROCESS* dbproc, const std::string& schema,
-                                    const std::string& tableName) {
-        std::vector<Column> columns;
-        std::string query =
-            std::format("SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, "
-                        "COLUMNPROPERTY(OBJECT_ID('{}.{}'), COLUMN_NAME, 'IsIdentity') "
-                        "FROM INFORMATION_SCHEMA.COLUMNS "
-                        "WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = '{}' "
-                        "AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
-                        schema, tableName, schema, tableName);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                Column col;
-                col.name = colToString(dbproc, 1);
-                col.type = colToString(dbproc, 2);
-                col.isNotNull = colToString(dbproc, 3) == "NO";
-                columns.push_back(col);
-            }
-        }
-        drainResults(dbproc);
-        return columns;
-    }
-
-    // mark primary key columns
-    void loadPrimaryKeys(DBPROCESS* dbproc, const std::string& schema, const std::string& tableName,
-                         std::vector<Column>& columns) {
-        std::string query = std::format("SELECT c.COLUMN_NAME "
-                                        "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc "
-                                        "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE c "
-                                        "ON c.CONSTRAINT_NAME = tc.CONSTRAINT_NAME "
-                                        "AND c.TABLE_SCHEMA = tc.TABLE_SCHEMA "
-                                        "WHERE tc.TABLE_SCHEMA = '{}' AND tc.TABLE_NAME = '{}' "
-                                        "AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'",
-                                        schema, tableName);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                std::string pkCol = colToString(dbproc, 1);
-                for (auto& col : columns) {
-                    if (col.name == pkCol) {
-                        col.isPrimaryKey = true;
-                        break;
-                    }
-                }
-            }
-        }
-        drainResults(dbproc);
-    }
-
-    // load foreign keys for a table
-    std::vector<ForeignKey> loadForeignKeys(DBPROCESS* dbproc, const std::string& schema,
-                                            const std::string& tableName) {
-        std::vector<ForeignKey> fks;
-        std::string query = std::format(
-            "SELECT fk.name, "
-            "COL_NAME(fkc.parent_object_id, fkc.parent_column_id), "
-            "OBJECT_NAME(fkc.referenced_object_id), "
-            "COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) "
-            "FROM sys.foreign_keys fk "
-            "JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id "
-            "WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id) = '{}' "
-            "AND OBJECT_NAME(fk.parent_object_id) = '{}'",
-            schema, tableName);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                ForeignKey fk;
-                fk.name = colToString(dbproc, 1);
-                fk.sourceColumn = colToString(dbproc, 2);
-                fk.targetTable = colToString(dbproc, 3);
-                fk.targetColumn = colToString(dbproc, 4);
-                fks.push_back(fk);
-            }
-        }
-        drainResults(dbproc);
-        return fks;
-    }
-
-    // load indexes for a table
-    std::vector<Index> loadIndexes(DBPROCESS* dbproc, const std::string& schema,
-                                   const std::string& tableName) {
-        std::vector<Index> indexes;
-        std::string query = std::format("SELECT i.name, i.is_unique, c.name AS column_name "
-                                        "FROM sys.indexes i "
-                                        "JOIN sys.index_columns ic ON i.object_id = ic.object_id "
-                                        "AND i.index_id = ic.index_id "
-                                        "JOIN sys.columns c ON ic.object_id = c.object_id "
-                                        "AND ic.column_id = c.column_id "
-                                        "WHERE i.object_id = OBJECT_ID('{}.{}') "
-                                        "AND i.is_primary_key = 0 AND i.type > 0 "
-                                        "ORDER BY i.name, ic.key_ordinal",
-                                        schema, tableName);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            std::map<std::string, Index> indexMap;
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                std::string idxName = colToString(dbproc, 1);
-                int isUnique = colToInt(dbproc, 2);
-                std::string colName = colToString(dbproc, 3);
-
-                if (!indexMap.contains(idxName)) {
-                    Index idx;
-                    idx.name = idxName;
-                    idx.isUnique = (isUnique != 0);
-                    indexMap[idxName] = idx;
-                }
-                indexMap[idxName].columns.push_back(colName);
-            }
-            for (auto& idx : indexMap | std::views::values) {
-                indexes.push_back(std::move(idx));
-            }
-        }
-        drainResults(dbproc);
-        return indexes;
-    }
-
-    // load all metadata for a single table
-    Table loadTableMetadata(DBPROCESS* dbproc, const std::string& schema,
-                            const std::string& tableName, const std::string& displayName,
-                            const std::string& fullName) {
-        Table table;
-        table.name = displayName;
-        table.fullName = fullName;
-        table.columns = loadColumns(dbproc, schema, tableName);
-        loadPrimaryKeys(dbproc, schema, tableName, table.columns);
-        table.foreignKeys = loadForeignKeys(dbproc, schema, tableName);
-        table.indexes = loadIndexes(dbproc, schema, tableName);
-        return table;
-    }
-
-} // namespace
+#include <spdlog/spdlog.h>
+#include <unordered_map>
 
 void MSSQLDatabaseNode::ensureConnectionPool() {
     if (!connectionPool && parentDb) {
@@ -158,14 +20,12 @@ void MSSQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& i
     if (!parentDb)
         return;
 
-    Logger::debug(std::format("initializeConnectionPool (MSSQL) {}:{} db={}", info.host, info.port,
-                              info.database));
+    spdlog::debug("initializeConnectionPool (MSSQL) {}:{} db={}", info.host, info.port,
+                  info.database);
     if (connectionPool)
         return;
 
-    constexpr size_t poolSize = 2;
     connectionPool = std::make_unique<ConnectionPool<DBPROCESS*>>(
-        poolSize,
         [info]() -> DBPROCESS* {
             MSSQLDatabase::initDbLib();
             return openDbLibConnection(info, info.database);
@@ -182,322 +42,309 @@ ConnectionPool<DBPROCESS*>::Session MSSQLDatabaseNode::getSession() const {
     return connectionPool->acquire();
 }
 
-void MSSQLDatabaseNode::checkTablesStatusAsync() {
-    tablesLoader.check([this](const std::vector<Table>& result) {
-        tables = result;
-        populateIncomingForeignKeys(tables);
-        Logger::info(std::format("Async table loading completed for database {}. Found {} tables",
-                                 name, tables.size()));
-        tablesLoaded = true;
+// schema loading
+
+void MSSQLDatabaseNode::checkSchemasStatusAsync() {
+    schemasLoader.check([this](std::vector<std::unique_ptr<MSSQLSchemaNode>> result) {
+        // merge: reuse existing schema nodes by name so raw pointers held by tabs stay valid
+        std::unordered_map<std::string, std::unique_ptr<MSSQLSchemaNode>> existingByName;
+        for (auto& s : schemas) {
+            existingByName[s->name] = std::move(s);
+        }
+        schemas.clear();
+
+        for (auto& newSchema : result) {
+            auto it = existingByName.find(newSchema->name);
+            if (it != existingByName.end()) {
+                schemas.push_back(std::move(it->second));
+                existingByName.erase(it);
+            } else {
+                schemas.push_back(std::move(newSchema));
+            }
+        }
+
+        spdlog::debug("Async schema loading completed for database {}. Found {} schemas", name,
+                      schemas.size());
+        schemasLoaded = true;
+        invalidateAggregatedObjects();
+        if (refreshChildrenAfterSchemasLoad) {
+            refreshChildrenAfterSchemasLoad = false;
+            triggerChildSchemaRefresh();
+        }
     });
 }
 
-void MSSQLDatabaseNode::startTablesLoadAsync(bool forceRefresh) {
-    Logger::debug("startTablesLoadAsync for db: " + name +
-                  (forceRefresh ? " (force refresh)" : ""));
+void MSSQLDatabaseNode::startSchemasLoadAsync(bool forceRefresh, bool refreshChildren) {
+    spdlog::debug("startSchemasLoadAsync for database: {}{}{}", name,
+                  (forceRefresh ? " (force refresh)" : ""),
+                  (refreshChildren ? " (refresh children)" : ""));
     if (!parentDb)
         return;
-    if (tablesLoader.isRunning())
+
+    if (schemasLoader.isRunning())
         return;
 
     if (forceRefresh) {
-        tablesLoaded = false;
-        lastTablesError.clear();
+        schemasLoaded = false;
+        lastSchemasError.clear();
     }
+    refreshChildrenAfterSchemasLoad = refreshChildren;
 
-    if (!forceRefresh && tablesLoaded)
+    if (!forceRefresh && schemasLoaded)
         return;
 
-    tables.clear();
-    tablesLoader.start([this]() { return getTablesAsync(); });
-}
+    invalidateAggregatedObjects();
 
-std::vector<Table> MSSQLDatabaseNode::getTablesAsync() {
-    std::vector<Table> result;
+    schemasLoader.start([this]() {
+        std::vector<std::unique_ptr<MSSQLSchemaNode>> result;
 
-    if (!tablesLoader.isRunning())
-        return result;
-
-    try {
-        ensureConnectionPool();
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-
-        // get table names with schema
-        struct TableInfo {
-            std::string schema;
-            std::string name;
-        };
-        std::vector<TableInfo> tableInfos;
-
-        {
-            const char* query = "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-                                "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = DB_NAME() "
-                                "ORDER BY TABLE_SCHEMA, TABLE_NAME";
-
-            if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-                while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                    if (!tablesLoader.isRunning())
-                        return result;
-                    tableInfos.push_back({colToString(dbproc, 1), colToString(dbproc, 2)});
-                }
-            }
-            drainResults(dbproc);
-        }
-
-        Logger::debug(std::format("Found {} tables in database {}", tableInfos.size(), name));
-
-        if (tableInfos.empty() || !tablesLoader.isRunning())
+        if (!schemasLoader.isRunning())
             return result;
 
-        const auto connName = parentDb->getConnectionInfo().name;
-        for (const auto& ti : tableInfos) {
-            if (!tablesLoader.isRunning())
-                break;
+        try {
+            ensureConnectionPool();
 
-            std::string displayName = (ti.schema == "dbo") ? ti.name : (ti.schema + "." + ti.name);
-            std::string fullName = connName + "." + name + "." + displayName;
+            if (!schemasLoader.isRunning())
+                return result;
 
-            result.push_back(loadTableMetadata(dbproc, ti.schema, ti.name, displayName, fullName));
+            std::vector<std::string> schemaNames;
+            const std::string sqlQuery = "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+                                         "WHERE CATALOG_NAME = DB_NAME() "
+                                         "ORDER BY SCHEMA_NAME";
+
+            {
+                auto session = getSession();
+                DBPROCESS* dbproc = session.get();
+                if (execQuery(dbproc, sqlQuery) && dbresults(dbproc) == SUCCEED) {
+                    while (dbnextrow(dbproc) != NO_MORE_ROWS) {
+                        if (!schemasLoader.isRunning())
+                            return result;
+                        schemaNames.push_back(colToString(dbproc, 1));
+                    }
+                }
+                drainResults(dbproc);
+            }
+
+            spdlog::debug("Found {} schemas in database {}", schemaNames.size(), name);
+
+            if (schemaNames.empty() || !schemasLoader.isRunning())
+                return result;
+
+            for (const auto& schemaName : schemaNames) {
+                if (!schemasLoader.isRunning())
+                    break;
+
+                auto schema = std::make_unique<MSSQLSchemaNode>();
+                schema->name = schemaName;
+                schema->parentDbNode = this;
+                result.push_back(std::move(schema));
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("Error getting schemas for database {}: {}", name, e.what());
+            lastSchemasError = e.what();
         }
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting tables for database {}: {}", name, e.what()));
-        lastTablesError = e.what();
-    }
-
-    return result;
-}
-
-void MSSQLDatabaseNode::checkViewsStatusAsync() {
-    viewsLoader.check([this](const std::vector<Table>& result) {
-        views = result;
-        Logger::info(std::format("Async view loading completed for database {}. Found {} views",
-                                 name, views.size()));
-        viewsLoaded = true;
+        return result;
     });
 }
 
-void MSSQLDatabaseNode::startViewsLoadAsync(bool forceRefresh) {
-    Logger::debug("startViewsLoadAsync for database: " + name);
-    if (!parentDb)
-        return;
-
-    if (viewsLoader.isRunning() || (viewsLoaded && !forceRefresh))
-        return;
-
-    if (forceRefresh) {
-        views.clear();
-        viewsLoaded = false;
-        lastViewsError.clear();
+void MSSQLDatabaseNode::triggerChildSchemaRefresh() {
+    for (auto& schema : schemas) {
+        if (schema) {
+            schema->startTablesLoadAsync(true);
+            schema->startViewsLoadAsync(true);
+        }
     }
-
-    viewsLoader.start([this]() { return getViewsForDatabaseAsync(); });
 }
 
-std::vector<Table> MSSQLDatabaseNode::getViewsForDatabaseAsync() {
-    std::vector<Table> result;
+// aggregated objects
 
-    if (!viewsLoader.isRunning())
-        return result;
+void MSSQLDatabaseNode::invalidateAggregatedObjects() const {
+    aggregatedObjectsDirty = true;
+}
 
-    try {
-        ensureConnectionPool();
+void MSSQLDatabaseNode::rebuildAggregatedObjects() const {
+    if (!aggregatedObjectsDirty)
+        return;
 
-        if (!viewsLoader.isRunning())
-            return result;
+    allTables.clear();
+    allViews.clear();
 
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
+    for (const auto& schema : schemas) {
+        if (!schema)
+            continue;
 
-        struct ViewInfo {
-            std::string schema;
-            std::string name;
-        };
-        std::vector<ViewInfo> viewInfos;
-
-        {
-            const char* query = "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS "
-                                "WHERE TABLE_CATALOG = DB_NAME() "
-                                "ORDER BY TABLE_SCHEMA, TABLE_NAME";
-
-            if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-                while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                    if (!viewsLoader.isRunning())
-                        return result;
-                    viewInfos.push_back({colToString(dbproc, 1), colToString(dbproc, 2)});
-                }
-            }
-            drainResults(dbproc);
+        for (const auto& table : schema->tables) {
+            Table qualifiedTable = table;
+            qualifiedTable.name = schema->name + "." + table.name;
+            allTables.push_back(std::move(qualifiedTable));
         }
 
-        Logger::debug(std::format("Found {} views in database {}", viewInfos.size(), name));
-
-        const auto connName = parentDb->getConnectionInfo().name;
-        for (const auto& vi : viewInfos) {
-            if (!viewsLoader.isRunning())
-                break;
-
-            std::string displayName = (vi.schema == "dbo") ? vi.name : (vi.schema + "." + vi.name);
-            std::string fullName = connName + "." + name + "." + displayName;
-
-            // views only get columns (no PKs, FKs, indexes)
-            Table view;
-            view.name = displayName;
-            view.fullName = fullName;
-            view.columns = loadColumns(dbproc, vi.schema, vi.name);
-            result.push_back(view);
+        for (const auto& view : schema->views) {
+            Table qualifiedView = view;
+            qualifiedView.name = schema->name + "." + view.name;
+            allViews.push_back(std::move(qualifiedView));
         }
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting views for database {}: {}", name, e.what()));
-        lastViewsError = e.what();
     }
 
-    return result;
+    aggregatedObjectsDirty = false;
+}
+
+std::vector<Table>& MSSQLDatabaseNode::getTables() {
+    rebuildAggregatedObjects();
+    return allTables;
+}
+
+const std::vector<Table>& MSSQLDatabaseNode::getTables() const {
+    rebuildAggregatedObjects();
+    return allTables;
+}
+
+std::vector<Table>& MSSQLDatabaseNode::getViews() {
+    rebuildAggregatedObjects();
+    return allViews;
+}
+
+const std::vector<Table>& MSSQLDatabaseNode::getViews() const {
+    rebuildAggregatedObjects();
+    return allViews;
+}
+
+// delegated IDatabaseNode methods
+
+bool MSSQLDatabaseNode::isTablesLoaded() const {
+    if (!schemasLoaded)
+        return false;
+    return std::ranges::all_of(schemas, [](const auto& s) { return !s || s->tablesLoaded; });
+}
+
+bool MSSQLDatabaseNode::isViewsLoaded() const {
+    if (!schemasLoaded)
+        return false;
+    return std::ranges::all_of(schemas, [](const auto& s) { return !s || s->viewsLoaded; });
+}
+
+bool MSSQLDatabaseNode::isLoadingTables() const {
+    if (schemasLoader.isRunning())
+        return true;
+    return std::ranges::any_of(schemas,
+                               [](const auto& s) { return s && s->tablesLoader.isRunning(); });
+}
+
+bool MSSQLDatabaseNode::isLoadingViews() const {
+    if (schemasLoader.isRunning())
+        return true;
+    return std::ranges::any_of(schemas,
+                               [](const auto& s) { return s && s->viewsLoader.isRunning(); });
+}
+
+void MSSQLDatabaseNode::startTablesLoadAsync(bool force) {
+    if (!schemasLoaded) {
+        startSchemasLoadAsync(force, true);
+        return;
+    }
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->startTablesLoadAsync(force);
+    }
+}
+
+void MSSQLDatabaseNode::startViewsLoadAsync(bool force) {
+    if (!schemasLoaded) {
+        startSchemasLoadAsync(force, true);
+        return;
+    }
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->startViewsLoadAsync(force);
+    }
+}
+
+void MSSQLDatabaseNode::checkLoadingStatus() {
+    checkSchemasStatusAsync();
+    for (auto& schema : schemas) {
+        if (schema)
+            schema->checkLoadingStatus();
+    }
+}
+
+const std::string& MSSQLDatabaseNode::getLastTablesError() const {
+    if (!lastSchemasError.empty())
+        return lastSchemasError;
+    for (const auto& schema : schemas) {
+        if (schema && !schema->lastTablesError.empty())
+            return schema->lastTablesError;
+    }
+    static const std::string empty;
+    return empty;
+}
+
+const std::string& MSSQLDatabaseNode::getLastViewsError() const {
+    if (!lastSchemasError.empty())
+        return lastSchemasError;
+    for (const auto& schema : schemas) {
+        if (schema && !schema->lastViewsError.empty())
+            return schema->lastViewsError;
+    }
+    static const std::string empty;
+    return empty;
+}
+
+MSSQLSchemaNode* MSSQLDatabaseNode::findSchema(const std::string& schemaName) {
+    for (auto& s : schemas) {
+        if (s && s->name == schemaName)
+            return s.get();
+    }
+    return nullptr;
+}
+
+const MSSQLSchemaNode* MSSQLDatabaseNode::findSchema(const std::string& schemaName) const {
+    for (const auto& s : schemas) {
+        if (s && s->name == schemaName)
+            return s.get();
+    }
+    return nullptr;
 }
 
 void MSSQLDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
-    Logger::debug(std::format("Starting async refresh for table: {}", tableName));
-
-    if (tableRefreshLoaders.contains(tableName) && tableRefreshLoaders[tableName].isRunning())
-        return;
-
-    tableRefreshLoaders[tableName].start(
-        [this, tableName]() { return refreshTableAsync(tableName); });
-}
-
-void MSSQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableName) {
-    auto it = tableRefreshLoaders.find(tableName);
-    if (it == tableRefreshLoaders.end())
-        return;
-
-    it->second.check([this, tableName](const Table& refreshedTable) {
-        const auto tableIt = std::ranges::find_if(
-            tables, [&tableName](const Table& t) { return t.name == tableName; });
-
-        if (tableIt != tables.end()) {
-            *tableIt = refreshedTable;
-            Logger::info(std::format("Table {} refreshed successfully", tableName));
-        }
-
-        tableRefreshLoaders.erase(tableName);
-    });
-}
-
-Table MSSQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
-    Logger::debug(std::format("Refreshing table: {}", tableName));
-
     auto [schema, tblName] = splitSchemaTable(tableName);
-    std::string fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
-
-    try {
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-        return loadTableMetadata(dbproc, schema, tblName, tableName, fullName);
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error refreshing table {}: {}", tableName, e.what()));
-        throw;
-    }
+    if (auto* s = findSchema(schema))
+        s->startTableRefreshAsync(tblName);
 }
 
 bool MSSQLDatabaseNode::isTableRefreshing(const std::string& tableName) const {
-    auto it = tableRefreshLoaders.find(tableName);
-    return it != tableRefreshLoaders.end() && it->second.isRunning();
+    auto [schema, tblName] = splitSchemaTable(tableName);
+    if (const auto* s = findSchema(schema))
+        return s->isTableRefreshing(tblName);
+    return false;
+}
+
+void MSSQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableName) {
+    auto [schema, tblName] = splitSchemaTable(tableName);
+    if (auto* s = findSchema(schema))
+        s->checkTableRefreshStatusAsync(tblName);
 }
 
 std::vector<std::vector<std::string>>
 MSSQLDatabaseNode::getTableData(const std::string& tableName, const int limit, const int offset,
                                 const std::string& whereClause, const std::string& orderByClause) {
-    std::vector<std::vector<std::string>> result;
-    std::string qualified = quoteTableName(tableName);
-
-    try {
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-
-        std::string query = std::format("SELECT * FROM {}", qualified);
-
-        if (!whereClause.empty())
-            query += " WHERE " + whereClause;
-
-        if (!orderByClause.empty()) {
-            query += " ORDER BY " + orderByClause;
-        } else {
-            query += " ORDER BY (SELECT NULL)";
-        }
-
-        query += std::format(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", offset, limit);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            int numCols = dbnumcols(dbproc);
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                std::vector<std::string> rowData;
-                rowData.reserve(numCols);
-                for (int i = 1; i <= numCols; i++) {
-                    rowData.push_back(colToString(dbproc, i));
-                }
-                result.push_back(std::move(rowData));
-            }
-        } else {
-            Logger::error(
-                std::format("Error getting table data for {}: {}", tableName, getLastError()));
-        }
-        drainResults(dbproc);
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting table data for {}: {}", tableName, e.what()));
-    }
-
-    return result;
+    auto [schema, tblName] = splitSchemaTable(tableName);
+    if (auto* s = findSchema(schema))
+        return s->getTableData(tblName, limit, offset, whereClause, orderByClause);
+    return {};
 }
 
 std::vector<std::string> MSSQLDatabaseNode::getColumnNames(const std::string& tableName) {
-    std::vector<std::string> columnNames;
     auto [schema, tblName] = splitSchemaTable(tableName);
-
-    try {
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-
-        std::string query = std::format("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                                        "WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = '{}' "
-                                        "AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
-                                        schema, tblName);
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            while (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                columnNames.push_back(colToString(dbproc, 1));
-            }
-        }
-        drainResults(dbproc);
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting column names for {}: {}", tableName, e.what()));
-    }
-
-    return columnNames;
+    if (auto* s = findSchema(schema))
+        return s->getColumnNames(tblName);
+    return {};
 }
 
 int MSSQLDatabaseNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
-    int count = 0;
-    std::string qualified = quoteTableName(tableName);
-
-    try {
-        auto session = getSession();
-        DBPROCESS* dbproc = session.get();
-
-        std::string query = std::format("SELECT COUNT(*) FROM {}", qualified);
-        if (!whereClause.empty())
-            query += " WHERE " + whereClause;
-
-        if (execQuery(dbproc, query) && dbresults(dbproc) == SUCCEED) {
-            if (dbnextrow(dbproc) != NO_MORE_ROWS) {
-                count = colToInt(dbproc, 1);
-            }
-        }
-        drainResults(dbproc);
-    } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting row count for {}: {}", tableName, e.what()));
-    }
-
-    return count;
+    auto [schema, tblName] = splitSchemaTable(tableName);
+    if (auto* s = findSchema(schema))
+        return s->getRowCount(tblName, whereClause);
+    return 0;
 }
 
 QueryResult MSSQLDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
@@ -505,6 +352,7 @@ QueryResult MSSQLDatabaseNode::executeQuery(const std::string& query, int rowLim
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     try {
+        ensureConnectionPool();
         auto session = getSession();
         result = executeQueryOnProcess(session.get(), query, rowLimit);
     } catch (const std::exception& e) {
@@ -521,8 +369,8 @@ QueryResult MSSQLDatabaseNode::executeQuery(const std::string& query, int rowLim
 
 std::pair<bool, std::string> MSSQLDatabaseNode::createTable(const Table& table) {
     try {
-        DDLBuilder builder(getDatabaseType());
-        std::string sql = builder.createTable(table);
+        const auto builder = createSQLBuilder(getDatabaseType());
+        std::string sql = builder->createTable(table);
 
         auto result = executeQuery(sql);
         if (!result.success()) {
@@ -540,49 +388,4 @@ DatabaseInterface* MSSQLDatabaseNode::ownerDatabase() const {
 
 std::string MSSQLDatabaseNode::getFullPath() const {
     return name;
-}
-
-DatabaseType MSSQLDatabaseNode::getDatabaseType() const {
-    if (parentDb) {
-        return parentDb->getConnectionInfo().type;
-    }
-    return DatabaseType::MSSQL;
-}
-
-void MSSQLDatabaseNode::checkLoadingStatus() {
-    checkTablesStatusAsync();
-    checkViewsStatusAsync();
-}
-
-std::pair<bool, std::string> MSSQLDatabaseNode::renameTable(const std::string& oldName,
-                                                            const std::string& newName) {
-    auto sql = std::format("EXEC sp_rename '{}', '{}'", oldName, newName);
-    auto r = executeQuery(sql);
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
-}
-
-std::pair<bool, std::string> MSSQLDatabaseNode::dropTable(const std::string& tableName) {
-    auto sql = std::format("DROP TABLE {}", quoteTableName(tableName));
-    auto r = executeQuery(sql);
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
-}
-
-std::pair<bool, std::string> MSSQLDatabaseNode::dropColumn(const std::string& tableName,
-                                                           const std::string& columnName) {
-    auto sql =
-        std::format("ALTER TABLE {} DROP COLUMN [{}]", quoteTableName(tableName), columnName);
-    auto r = executeQuery(sql);
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
 }

@@ -116,6 +116,17 @@ namespace ddl_utils {
         return escaped;
     }
 
+    inline bool isSafeSqlToken(const std::string& input) {
+        if (input.empty())
+            return false;
+        for (char ch : input) {
+            const unsigned char uch = static_cast<unsigned char>(ch);
+            if (!std::isalnum(uch) && ch != '_')
+                return false;
+        }
+        return true;
+    }
+
     inline std::string makeConstraintName(std::string_view prefix, const std::string& tableName) {
         std::string name(prefix);
         name += tableName;

@@ -6,12 +6,13 @@
 struct GLFWwindow;
 
 #include "imgui.h"
+#include "platform/graphics_backend.hpp"
+#include "platform/titlebar.hpp"
 #include "platform_interface.hpp"
 #include <gtk/gtk.h>
-#include <vector>
+#include <memory>
 
 class Application;
-struct Workspace;
 
 class LinuxPlatform final : public PlatformInterface {
 public:
@@ -35,13 +36,19 @@ public:
     void runMainLoop();
     bool shouldClose() const;
     void getFramebufferSize(int* width, int* height) const;
-    void swapBuffers();
     void pollEvents();
 
-    // Callbacks
+    [[nodiscard]] GtkWidget* getGtkWindow() const {
+        return window_;
+    }
+
+    // GL area signal callbacks (static — userData is LinuxPlatform*)
     static gboolean onRender(GtkGLArea* area, GdkGLContext* context, gpointer userData);
     static void onRealize(GtkGLArea* area, gpointer userData);
     static void onResize(GtkGLArea* area, gint width, gint height, gpointer userData);
+    static gboolean onTickCallback(GtkWidget* widget, GdkFrameClock* clock, gpointer userData);
+
+    // Input callbacks (static — userData is LinuxPlatform*)
     static gboolean onKeyPress(GtkEventControllerKey* controller, guint keyval, guint keycode,
                                GdkModifierType state, gpointer userData);
     static gboolean onKeyRelease(GtkEventControllerKey* controller, guint keyval, guint keycode,
@@ -56,62 +63,32 @@ public:
                              gpointer userData);
     static gboolean onDrop(GtkDropTarget* target, const GValue* value, double x, double y,
                            gpointer userData);
-    static void onSidebarToggle(GtkButton* button, gpointer userData);
-    static void onWorkspaceChanged(GtkDropDown* dropdown, GParamSpec* pspec, gpointer userData);
-    static void onAddConnection(GtkButton* button, gpointer userData);
     static gboolean onClose(GtkWindow* window, gpointer userData);
 
-    // Menu callbacks
-    static void onMenuButtonClicked(GtkButton* button, gpointer userData);
-    static void onThemeLightClicked(GtkButton* button, gpointer userData);
-    static void onThemeDarkClicked(GtkButton* button, gpointer userData);
-    static void onThemeAutoClicked(GtkButton* button, gpointer userData);
-    static void onLicenseClicked(GtkButton* button, gpointer userData);
-
-    void showLicenseDialog();
-    void showCreateWorkspaceDialog();
-    [[nodiscard]] GtkWidget* getGtkWindow() const {
-        return window_;
-    }
+    void noteInteraction();
 
 private:
     Application* app_;
     GtkWidget* window_;
-    GtkWidget* glArea_;
-    GtkWidget* headerBar_;
-    GtkWidget* sidebarButton_;
-    GtkWidget* workspaceDropdown_;
-    GtkWidget* addButton_;
-    GtkWidget* menuButton_;
-    GtkWidget* menuPopover_;
-    GtkWidget* updateButton_;
-    GtkWidget* themeLightButton_;
-    GtkWidget* themeDarkButton_;
-    GtkWidget* themeAutoButton_;
-    GtkWidget* licenseButton_;
-    GtkWidget* fontSizeLabel_;
-    GtkStringList* workspaceModel_;
-    std::vector<int> workspaceIdsByIndex_;
 
-    void updateThemeButtons();
-    void updateGtkTheme();
+    std::unique_ptr<LinuxOpenGLBackend> backend_;
+    std::unique_ptr<LinuxTitlebar> titlebar_;
 
     bool shouldClose_;
-    bool realized_;
-    gulong workspaceSignalId_ = 0;
-    int fbWidth_;
-    int fbHeight_;
     double mouseX_;
     double mouseY_;
 
     void setupInputHandlers();
     void updateImGuiMousePos();
     void updateImGuiKeyMods(GdkModifierType state);
-    void noteInteraction();
     ImGuiKey gtkKeyToImGuiKey(guint keyval);
 
     gint64 lastInteractionTimeUs_ = 0;
     bool lastHadAsyncWork_ = false;
+    bool lastWindowFocused_ = false;
+    guint tickCallbackId_ = 0;
+
+    void ensureTickCallback();
 };
 
 #endif // defined(__linux__)

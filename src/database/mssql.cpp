@@ -1,9 +1,9 @@
 #include "database/mssql.hpp"
 #include "mssql/mssql_utils.hpp"
-#include "utils/logger.hpp"
 #include <format>
 #include <mutex>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <vector>
 
 // thread-local error string captured by db-lib callbacks
@@ -47,8 +47,8 @@ void MSSQLDatabase::initDbLib() {
 
 MSSQLDatabase::MSSQLDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
-    Logger::debug(std::format("Creating MSSQLDatabase with database = '{}', showAllDatabases = {}",
-                              connectionInfo.database, connInfo.showAllDatabases));
+    spdlog::debug("Creating MSSQLDatabase with database = '{}', showAllDatabases = {}",
+                  connectionInfo.database, connInfo.showAllDatabases);
     if (connectionInfo.database.empty()) {
         connectionInfo.database = "master";
     }
@@ -61,8 +61,13 @@ MSSQLDatabase::~MSSQLDatabase() {
 
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
-            dbDataPtr->tablesLoader.cancel();
-            dbDataPtr->viewsLoader.cancel();
+            dbDataPtr->schemasLoader.cancel();
+            for (auto& schema : dbDataPtr->schemas) {
+                if (schema) {
+                    schema->tablesLoader.cancel();
+                    schema->viewsLoader.cancel();
+                }
+            }
         }
     }
 
@@ -97,18 +102,18 @@ std::pair<bool, std::string> MSSQLDatabase::connect() {
 
     try {
         ensureConnectionPoolForDatabase(connectionInfo);
-        Logger::info("Successfully connected to MSSQL database: " + connectionInfo.database);
+        spdlog::debug("Successfully connected to MSSQL database: {}", connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
         if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
-            Logger::debug("Starting async database loading after connection...");
+            spdlog::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Connection to database failed: {}", e.what()));
+        spdlog::error("Connection to database failed: {}", e.what());
         std::lock_guard lock(sessionMutex);
         auto it = databaseDataCache.find(connectionInfo.database);
         if (it != databaseDataCache.end() && it->second) {
@@ -125,7 +130,7 @@ void MSSQLDatabase::disconnect() {
     if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
         std::unique_lock lock(sessionMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
-            Logger::warn("MSSQLDatabase::disconnect: skipping pool teardown during shutdown");
+            spdlog::warn("MSSQLDatabase::disconnect: skipping pool teardown during shutdown");
             connected = false;
             return;
         }
@@ -160,17 +165,18 @@ void MSSQLDatabase::refreshConnection() {
 
         try {
             ensureConnectionPoolForDatabase(connectionInfo);
-            Logger::info("Successfully reconnected to MSSQL database: " + connectionInfo.database);
+            spdlog::debug("Successfully reconnected to MSSQL database: {}",
+                          connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const std::exception& e) {
-            Logger::error("MSSQL reconnection failed: " + std::string(e.what()));
+            spdlog::error("MSSQL reconnection failed: {}", e.what());
             setLastConnectionError(e.what());
             return false;
         }
 
         if (connectionInfo.showAllDatabases) {
-            Logger::debug("Loading database names synchronously for refresh...");
+            spdlog::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
             std::lock_guard lock(refreshStateMutex);
@@ -180,8 +186,8 @@ void MSSQLDatabase::refreshConnection() {
             pendingRefreshDatabaseNames.clear();
         }
 
-        Logger::info(std::format("MSSQL refresh workflow completed for {} databases",
-                                 databaseDataCache.size()));
+        spdlog::debug("MSSQL refresh workflow completed for {} databases",
+                      databaseDataCache.size());
         return true;
     });
 }
@@ -242,7 +248,8 @@ bool MSSQLDatabase::hasPendingAsyncWork() const {
     for (const auto& [_, dbNode] : databaseDataCache) {
         if (!dbNode)
             continue;
-        if (dbNode->tablesLoader.isRunning() || dbNode->viewsLoader.isRunning()) {
+        if (dbNode->schemasLoader.isRunning() || dbNode->isLoadingTables() ||
+            dbNode->isLoadingViews()) {
             return true;
         }
     }
@@ -251,8 +258,7 @@ bool MSSQLDatabase::hasPendingAsyncWork() const {
 
 void MSSQLDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& databases) {
-        Logger::info(
-            std::format("Async database loading completed. Found {} databases", databases.size()));
+        spdlog::debug("Async database loading completed. Found {} databases", databases.size());
 
         for (const auto& dbName : databases) {
             getDatabaseData(dbName);
@@ -265,7 +271,7 @@ void MSSQLDatabase::checkDatabasesStatusAsync() {
 void MSSQLDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
-            Logger::info("MSSQL refresh workflow completed successfully");
+            spdlog::debug("MSSQL refresh workflow completed successfully");
             std::vector<std::string> refreshedDatabases;
             {
                 std::lock_guard lock(refreshStateMutex);
@@ -286,18 +292,18 @@ void MSSQLDatabase::checkRefreshWorkflowAsync() {
                 }
             }
         } else {
-            Logger::error("MSSQL refresh workflow failed");
+            spdlog::error("MSSQL refresh workflow failed");
         }
     });
 }
 
 std::vector<std::string> MSSQLDatabase::getDatabaseNamesAsync() const {
-    Logger::info("getDatabaseNamesAsync (MSSQL)");
+    spdlog::debug("getDatabaseNamesAsync (MSSQL)");
     std::vector<std::string> result;
 
     try {
         if (!isConnected()) {
-            Logger::error("Cannot load databases: not connected");
+            spdlog::error("Cannot load databases: not connected");
             return result;
         }
 
@@ -321,10 +327,10 @@ std::vector<std::string> MSSQLDatabase::getDatabaseNamesAsync() const {
         }
         drainResults(dbproc);
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to execute async database query: {}", e.what()));
+        spdlog::error("Failed to execute async database query: {}", e.what());
     }
 
-    Logger::info(std::format("Async query completed. Found {} databases", result.size()));
+    spdlog::debug("Async query completed. Found {} databases", result.size());
     return result;
 }
 
@@ -341,9 +347,8 @@ void MSSQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo
         }
     }
 
-    constexpr size_t poolSize = 3;
     auto newPool = std::make_unique<ConnectionPool<DBPROCESS*>>(
-        poolSize, [info]() -> DBPROCESS* { return openDbLibConnection(info, info.database); },
+        [info]() -> DBPROCESS* { return openDbLibConnection(info, info.database); },
         [](DBPROCESS* dbproc) { dbclose(dbproc); },
         [](DBPROCESS* dbproc) -> bool { return !dbdead(dbproc); });
 
@@ -389,16 +394,16 @@ std::pair<bool, std::string> MSSQLDatabase::createDatabase(const std::string& db
 
         if (dbsqlexec(dbproc) == FAIL) {
             std::string err = getLastError();
-            Logger::error(std::format("Failed to create database: {}", err));
+            spdlog::error("Failed to create database: {}", err);
             return {false, err};
         }
 
         drainResults(dbproc);
 
-        Logger::info(std::format("Database '{}' created successfully", dbName));
+        spdlog::debug("Database '{}' created successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create database: {}", e.what()));
+        spdlog::error("Failed to create database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -446,7 +451,7 @@ std::pair<bool, std::string> MSSQLDatabase::dropDatabase(const std::string& dbNa
                 } catch (...) {
                 }
             }
-            Logger::error(std::format("Failed to drop database: {}", err));
+            spdlog::error("Failed to drop database: {}", err);
             return {false, err};
         }
 
@@ -463,15 +468,15 @@ std::pair<bool, std::string> MSSQLDatabase::dropDatabase(const std::string& dbNa
                 const std::string switchError = std::format(
                     "Database dropped, but failed to switch to master: {}", switchErr.what());
                 setLastConnectionError(switchError);
-                Logger::warn(switchError);
+                spdlog::warn(switchError);
                 return {true, switchError};
             }
         }
 
-        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        spdlog::debug("Database '{}' dropped successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        spdlog::error("Failed to drop database: {}", e.what());
         return {false, e.what()};
     }
 }

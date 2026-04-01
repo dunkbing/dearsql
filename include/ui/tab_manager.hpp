@@ -44,7 +44,7 @@ public:
     // Tab creation helpers (unified interface)
     std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, IDatabaseNode* node,
                                             const std::string& schemaName = "");
-    std::shared_ptr<Tab> createSQLEditorTabFromScript(IDatabaseNode* node, const SqlScript& script);
+    std::shared_ptr<Tab> createSQLEditorTabFromQuery(IDatabaseNode* node, const SqlScript& script);
 
     std::shared_ptr<Tab> createTableViewerTab(IDatabaseNode* node, const std::string& tableName);
 

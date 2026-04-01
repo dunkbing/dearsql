@@ -5,7 +5,6 @@
 #include "database/database_node.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
-#include "database/query_executor.hpp"
 #include "postgres_schema_node.hpp"
 #include <libpq-fe.h>
 #include <memory>

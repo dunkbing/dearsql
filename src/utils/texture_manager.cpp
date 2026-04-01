@@ -5,8 +5,8 @@
 
 #include "embedded_images.hpp"
 #include "platform/platform_interface.hpp"
-#include "utils/logger.hpp"
 #include "utils/texture_manager.hpp"
+#include <spdlog/spdlog.h>
 
 TextureManager& TextureManager::instance() {
     static TextureManager mgr;
@@ -24,7 +24,7 @@ void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
     };
 
     static constexpr IconMapping mappings[] = {
-        {DatabaseType::SQLITE, "sqlite"},     {DatabaseType::POSTGRESQL, "postgres"},
+        {DatabaseType::SQLITE, "sqlite"},     {DatabaseType::POSTGRESQL, "postgresql"},
         {DatabaseType::MYSQL, "mysql"},       {DatabaseType::MARIADB, "mariadb"},
         {DatabaseType::MONGODB, "mongodb"},   {DatabaseType::REDIS, "redis"},
         {DatabaseType::MSSQL, "mssql"},       {DatabaseType::ORACLE, "oracle"},
@@ -47,7 +47,7 @@ ImTextureID TextureManager::getIcon(DatabaseType type) const {
 ImTextureID TextureManager::loadFromEmbedded(PlatformInterface* platform, const char* name) {
     const EmbeddedImage* img = findEmbeddedImage(name);
     if (!img) {
-        Logger::debug(std::format("no embedded image for '{}'", name));
+        spdlog::debug("no embedded image for '{}'", name);
         return ImTextureID{};
     }
 
@@ -55,7 +55,7 @@ ImTextureID TextureManager::loadFromEmbedded(PlatformInterface* platform, const 
     unsigned char* pixels =
         stbi_load_from_memory(img->data, static_cast<int>(img->size), &w, &h, &channels, 4);
     if (!pixels) {
-        Logger::error(std::format("failed to decode image '{}'", name));
+        spdlog::error("failed to decode image '{}'", name);
         return ImTextureID{};
     }
 
@@ -63,7 +63,7 @@ ImTextureID TextureManager::loadFromEmbedded(PlatformInterface* platform, const 
     stbi_image_free(pixels);
 
     if (tex != ImTextureID{}) {
-        Logger::debug(std::format("loaded icon '{}' ({}x{})", name, w, h));
+        spdlog::debug("loaded icon '{}' ({}x{})", name, w, h);
     }
     return tex;
 }

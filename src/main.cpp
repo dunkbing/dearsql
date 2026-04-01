@@ -1,7 +1,7 @@
 #include "application.hpp"
 #include "database/async_helper.hpp"
-#include "utils/logger.hpp"
 #include "utils/sentry_init.hpp"
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <exception>
@@ -14,12 +14,12 @@ namespace {
             try {
                 std::rethrow_exception(current);
             } catch (const std::exception& e) {
-                Logger::error(std::string("Unhandled exception: ") + e.what());
+                spdlog::error("Unhandled exception: {}", e.what());
             } catch (...) {
-                Logger::error("Unhandled exception: unknown");
+                spdlog::error("Unhandled exception: unknown");
             }
         } else {
-            Logger::error("Unhandled exception: no active exception");
+            spdlog::error("Unhandled exception: no active exception");
         }
 
         SentryInit::close();
@@ -28,6 +28,12 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) {
+#ifdef NDEBUG
+    spdlog::set_level(spdlog::level::info);
+#else
+    spdlog::set_level(spdlog::level::debug);
+#endif
+
     SentryInit::initialize();
 
     std::set_terminate([] { handleFatalException(); });

@@ -285,12 +285,20 @@ inline bool dpiConnectionAlive(dpiConn* conn) {
     return dpiConn_ping(conn) == DPI_SUCCESS;
 }
 
-// double-quote an Oracle identifier
+// double-quote an Oracle identifier, escaping embedded quotes
 inline std::string quoteOracleId(const std::string& id) {
-    return std::format("\"{}\"", id);
+    std::string out = "\"";
+    out.reserve(id.size() + 2);
+    for (char c : id) {
+        if (c == '"')
+            out += '"';
+        out += c;
+    }
+    out += '"';
+    return out;
 }
 
 // fully qualified table name: "SCHEMA"."TABLE"
 inline std::string quoteOracleTable(const std::string& schema, const std::string& table) {
-    return std::format("\"{}\".\"{}\"", schema, table);
+    return quoteOracleId(schema) + "." + quoteOracleId(table);
 }

@@ -3,13 +3,13 @@
 #endif
 
 #include "database/redis.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <format>
 #include <iostream>
 #include <map>
+#include <spdlog/spdlog.h>
 #include <sstream>
 
 namespace {
@@ -510,7 +510,7 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
             freeReplyObject(valReply);
         }
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting Redis keys: {}", e.what()));
+        spdlog::error("Error getting Redis keys: {}", e.what());
     }
 
     return keys;

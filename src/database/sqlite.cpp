@@ -1,11 +1,11 @@
 #include "database/sqlite.hpp"
-#include "database/ddl_builder.hpp"
-#include "utils/logger.hpp"
+#include "database/sql_builder.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
 #include <iostream>
 #include <memory>
+#include <spdlog/spdlog.h>
 #include <utility>
 
 namespace {
@@ -230,8 +230,8 @@ std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& t
 }
 
 void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
-    Logger::debug("startTablesLoadAsync for SQLite database" +
-                  std::string(forceRefresh ? " (force refresh)" : ""));
+    spdlog::debug("startTablesLoadAsync for SQLite database{}",
+                  (forceRefresh ? " (force refresh)" : ""));
 
     if (forceRefresh) {
         tables.clear();
@@ -252,7 +252,7 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
 
     try {
         if (!connected || !db_) {
-            Logger::error("Database not connected");
+            spdlog::error("Database not connected");
             return result;
         }
 
@@ -262,7 +262,7 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
         queryRows(db_, tableNamesQuery,
                   [&](sqlite3_stmt* stmt) { tableNames.push_back(columnText(stmt, 0)); });
 
-        Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in database");
+        spdlog::debug("Found {} tables in database", tableNames.size());
 
         for (const auto& tableName : tableNames) {
             Table table;
@@ -309,17 +309,17 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
 
         populateIncomingForeignKeys(result);
 
-        Logger::info("Finished loading tables. Total tables: " + std::to_string(result.size()));
+        spdlog::debug("Finished loading tables. Total tables: {}", result.size());
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error loading tables: {}", e.what()));
+        spdlog::error("Error loading tables: {}", e.what());
     }
 
     return result;
 }
 
 void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
-    Logger::debug("startViewsLoadAsync for SQLite database" +
-                  std::string(forceRefresh ? " (force refresh)" : ""));
+    spdlog::debug("startViewsLoadAsync for SQLite database{}",
+                  (forceRefresh ? " (force refresh)" : ""));
 
     if (forceRefresh) {
         views.clear();
@@ -340,7 +340,7 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
 
     try {
         if (!connected || !db_) {
-            Logger::error("Database not connected");
+            spdlog::error("Database not connected");
             return result;
         }
 
@@ -349,7 +349,7 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
         queryRows(db_, viewNamesQuery,
                   [&](sqlite3_stmt* stmt) { viewNames.push_back(columnText(stmt, 0)); });
 
-        Logger::debug("Found " + std::to_string(viewNames.size()) + " views in database");
+        spdlog::debug("Found {} views in database", viewNames.size());
 
         for (const auto& viewName : viewNames) {
             Table view;
@@ -369,9 +369,9 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
             result.push_back(std::move(view));
         }
 
-        Logger::info("Finished loading views. Total views: " + std::to_string(result.size()));
+        spdlog::debug("Finished loading views. Total views: {}", result.size());
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error loading views: {}", e.what()));
+        spdlog::error("Error loading views: {}", e.what());
     }
 
     return result;
@@ -527,8 +527,8 @@ std::pair<bool, std::string> SQLiteDatabase::createTable(const Table& table) {
     }
 
     try {
-        DDLBuilder builder(DatabaseType::SQLITE);
-        std::string sql = builder.createTable(table);
+        const auto builder = createSQLBuilder(DatabaseType::SQLITE);
+        std::string sql = builder->createTable(table);
         auto result = executeQuery(sql);
         if (!result.success()) {
             return {false, result.errorMessage()};
@@ -563,12 +563,12 @@ void SQLiteDatabase::checkLoadingStatus() {
     tablesLoader.check([this](std::vector<Table> result) {
         tables = std::move(result);
         tablesLoaded = true;
-        Logger::info(std::format("Table loading completed. Found {} tables", tables.size()));
+        spdlog::debug("Table loading completed. Found {} tables", tables.size());
     });
     viewsLoader.check([this](std::vector<Table> result) {
         views = std::move(result);
         viewsLoaded = true;
-        Logger::info(std::format("View loading completed. Found {} views", views.size()));
+        spdlog::debug("View loading completed. Found {} views", views.size());
     });
     for (auto it = tableRefreshLoaders.begin(); it != tableRefreshLoaders.end();) {
         const auto& tableName = it->first;
@@ -578,7 +578,7 @@ void SQLiteDatabase::checkLoadingStatus() {
             });
             if (tableIt != tables.end()) {
                 *tableIt = std::move(refreshedTable);
-                Logger::info(std::format("Table {} refreshed successfully", tableName));
+                spdlog::debug("Table {} refreshed successfully", tableName);
             }
         });
         if (!it->second.isRunning()) {
@@ -612,7 +612,7 @@ void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
             buildForeignKeyLookup(refreshedTable);
 
         } catch (const std::exception& e) {
-            Logger::error(std::format("Error refreshing table {}: {}", tableName, e.what()));
+            spdlog::error("Error refreshing table {}: {}", tableName, e.what());
         }
 
         return refreshedTable;

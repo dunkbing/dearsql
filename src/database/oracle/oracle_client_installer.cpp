@@ -1,5 +1,5 @@
 #include "database/oracle/oracle_client_installer.hpp"
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
@@ -147,14 +147,14 @@ void OracleClientInstaller::checkStatus() {
         if (success) {
             status = Status::Done;
             statusMessage = "Oracle Instant Client installed successfully";
-            Logger::info(statusMessage);
+            spdlog::info(statusMessage);
         } else {
             status = Status::Failed;
             if (error.empty()) {
                 error = "Installation failed";
             }
             statusMessage = error;
-            Logger::error("Oracle Client install failed: " + error);
+            spdlog::error("Oracle Client install failed: {}", error);
         }
     });
 }
@@ -166,15 +166,14 @@ bool OracleClientInstaller::downloadAndExtract(std::stop_token stopToken) {
     std::error_code ec;
     fs::create_directories(parentDir, ec);
     if (ec) {
-        error = std::format("Failed to create directory {}: {}", parentDir.string(), ec.message());
+        error = "Failed to create directory " + parentDir.string() + ": " + ec.message();
         return false;
     }
 
     fs::path archivePath = parentDir / kArchiveName;
 
     // download
-    Logger::info(
-        std::format("Downloading Oracle Instant Client from {}{}", kDownloadHost, kDownloadPath));
+    spdlog::info("Downloading Oracle Instant Client from {}{}", kDownloadHost, kDownloadPath);
 
     httplib::Client cli(kDownloadHost);
     cli.set_connection_timeout(15);
@@ -209,7 +208,7 @@ bool OracleClientInstaller::downloadAndExtract(std::stop_token stopToken) {
 
     if (!res || res->status != 200) {
         error =
-            std::format("Download failed: {}", res ? std::to_string(res->status) : "no response");
+            "Download failed: " + (res ? std::to_string(res->status) : std::string("no response"));
         fs::remove(archivePath, ec);
         return false;
     }
@@ -219,7 +218,7 @@ bool OracleClientInstaller::downloadAndExtract(std::stop_token stopToken) {
         return false;
     }
 
-    Logger::info("Download complete, extracting...");
+    spdlog::info("Download complete, extracting...");
     status = Status::Extracting;
     statusMessage = "Extracting Oracle Instant Client...";
 
@@ -286,7 +285,7 @@ bool OracleClientInstaller::downloadAndExtract(std::stop_token stopToken) {
     ensureLibaio(installDir);
 #endif
 
-    Logger::info("Oracle Instant Client installed to: " + installDir.string());
+    spdlog::info("Oracle Instant Client installed to: {}", installDir.string());
     return true;
 }
 
@@ -302,7 +301,7 @@ void OracleClientInstaller::ensureLibaio(const fs::path& installDir) {
         if (std::system(checkCmd.c_str()) == 0) {
             return; // correct SONAME
         }
-        Logger::warn("Bundled libaio.so.1 has wrong SONAME, replacing...");
+        spdlog::warn("Bundled libaio.so.1 has wrong SONAME, replacing...");
         std::error_code ec;
         fs::remove(target, ec);
     }
@@ -336,18 +335,18 @@ void OracleClientInstaller::ensureLibaio(const fs::path& installDir) {
         }
         fs::copy_file(candidate, target, ec);
         if (!ec) {
-            Logger::info(std::format("Bundled libaio from {}", candidate));
+            spdlog::info("Bundled libaio from {}", candidate);
             return;
         }
     }
 
     // last resort: download libaio from Ubuntu package archive and extract the .so
-    Logger::info("libaio not found on system, downloading from package archive...");
+    spdlog::info("libaio not found on system, downloading from package archive...");
     if (downloadLibaio(installDir)) {
         return;
     }
 
-    Logger::warn("Could not obtain libaio.so.1. Oracle Client may fail to load.");
+    spdlog::warn("Could not obtain libaio.so.1. Oracle Client may fail to load.");
 }
 
 bool OracleClientInstaller::downloadLibaio(const fs::path& installDir) {
@@ -394,8 +393,8 @@ bool OracleClientInstaller::downloadLibaio(const fs::path& installDir) {
     if (!res || res->status != 200 || writeFailed) {
         std::error_code ec;
         fs::remove(debFile, ec);
-        Logger::warn(std::format("Failed to download libaio package: {}",
-                                 res ? std::to_string(res->status) : "no response"));
+        spdlog::warn("Failed to download libaio package: {}",
+                     res ? std::to_string(res->status) : "no response");
         return false;
     }
 
@@ -424,7 +423,7 @@ bool OracleClientInstaller::downloadLibaio(const fs::path& installDir) {
     fs::remove(debFile, ec);
 
     if (ret != 0) {
-        Logger::warn("Failed to extract libaio from package");
+        spdlog::warn("Failed to extract libaio from package");
         return false;
     }
 
@@ -444,7 +443,7 @@ bool OracleClientInstaller::downloadLibaio(const fs::path& installDir) {
     fs::remove_all(installDir / "usr", ec);
 
     if (fs::exists(target)) {
-        Logger::info("Downloaded and bundled libaio (SONAME=libaio.so.1) from Ubuntu 22.04");
+        spdlog::info("Downloaded and bundled libaio (SONAME=libaio.so.1) from Ubuntu 22.04");
         return true;
     }
 

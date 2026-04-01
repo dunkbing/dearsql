@@ -5,10 +5,10 @@
 #include "database/sql_builder.hpp"
 #include "imgui.h"
 #include "themes.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
+#include <spdlog/spdlog.h>
 
 namespace {
     ImVec4 withAlpha(ImVec4 color, const float alpha) {
@@ -614,7 +614,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
         if (dbNode) {
             if (editorMode == TableEditorMode::Create) {
                 Table resultTable = buildResultTable();
-                Logger::info("Creating table: " + resultTable.name);
+                spdlog::debug("Creating table: {}", resultTable.name);
                 auto [success, error] = dbNode->createTable(resultTable);
                 if (success) {
                     dbNode->startTablesLoadAsync(true);
@@ -624,7 +624,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
             } else {
                 const auto statements = generateAlterTableStatements();
                 for (const auto& sql : statements) {
-                    Logger::info("Executing: " + sql);
+                    spdlog::debug("Executing: {}", sql);
                     auto result = dbNode->executeQuery(sql);
                     if (!result.success()) {
                         errorMessage = result.errorMessage();

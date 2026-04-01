@@ -1,10 +1,12 @@
 #include "database/mysql.hpp"
-#include "utils/logger.hpp"
+#include "database/ddl_utils.hpp"
+#include "database/sql_builder.hpp"
 #include <cctype>
 #include <format>
 #include <iostream>
 #include <mysql/mysql.h>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 #include <vector>
 
@@ -137,39 +139,12 @@ namespace {
         return result;
     }
 
-    std::string quoteMysqlIdentifier(const std::string& input) {
-        std::string quoted = "`";
-        quoted.reserve(input.size() + 2);
-        for (char ch : input) {
-            quoted.push_back(ch);
-            if (ch == '`') {
-                quoted.push_back('`');
-            }
-        }
-        quoted.push_back('`');
-        return quoted;
-    }
-
-    bool isSafeSqlToken(const std::string& input) {
-        if (input.empty()) {
-            return false;
-        }
-        for (char ch : input) {
-            const unsigned char uch = static_cast<unsigned char>(ch);
-            if (!std::isalnum(uch) && ch != '_') {
-                return false;
-            }
-        }
-        return true;
-    }
-
 } // namespace
 
 MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
-    Logger::debug(
-        std::format("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
-                    connectionInfo.database, connInfo.showAllDatabases));
+    spdlog::debug("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
+                  connectionInfo.database, connInfo.showAllDatabases);
     if (connectionInfo.database.empty()) {
         connectionInfo.database = "mysql";
     }
@@ -221,19 +196,19 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
 
     try {
         ensureConnectionPoolForDatabase(connectionInfo);
-        Logger::info("Successfully connected to MySQL database: " + connectionInfo.database);
+        spdlog::debug("Successfully connected to MySQL database: {}", connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
         if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
-            Logger::debug("Starting async database loading after connection...");
+            spdlog::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Connection to database failed: {}", e.what()));
+        spdlog::error("Connection to database failed: {}", e.what());
         std::lock_guard lock(sessionMutex);
         // Clear connection pool if it exists — avoid getDatabaseData() here
         // because it calls ensureConnectionPool() which would throw again.
@@ -252,7 +227,7 @@ void MySQLDatabase::disconnect() {
     if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
         std::unique_lock lock(sessionMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
-            Logger::warn("MySQLDatabase::disconnect: skipping pool teardown during shutdown "
+            spdlog::warn("MySQLDatabase::disconnect: skipping pool teardown during shutdown "
                          "(connection setup still in progress)");
             connected = false;
             return;
@@ -293,18 +268,19 @@ void MySQLDatabase::refreshConnection() {
         // Step 2: Reconnect (synchronously, without triggering auto-refresh)
         try {
             ensureConnectionPoolForDatabase(connectionInfo);
-            Logger::info("Successfully reconnected to MySQL database: " + connectionInfo.database);
+            spdlog::debug("Successfully reconnected to MySQL database: {}",
+                          connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const std::exception& e) {
-            Logger::error("MySQL reconnection failed: " + std::string(e.what()));
+            spdlog::error("MySQL reconnection failed: {}", e.what());
             setLastConnectionError(e.what());
             return false;
         }
 
         // Step 3: If showAllDatabases is enabled, load database names synchronously
         if (connectionInfo.showAllDatabases) {
-            Logger::debug("Loading database names synchronously for refresh...");
+            spdlog::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
             std::lock_guard lock(refreshStateMutex);
@@ -314,8 +290,8 @@ void MySQLDatabase::refreshConnection() {
             pendingRefreshDatabaseNames.clear();
         }
 
-        Logger::info(std::format("MySQL refresh workflow completed for {} databases",
-                                 databaseDataCache.size()));
+        spdlog::debug("MySQL refresh workflow completed for {} databases",
+                      databaseDataCache.size());
         return true;
     });
 }
@@ -426,7 +402,7 @@ void MySQLDatabase::checkDatabasesStatusAsync() {
 void MySQLDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
-            Logger::info("MySQL refresh workflow completed successfully");
+            spdlog::debug("MySQL refresh workflow completed successfully");
             std::vector<std::string> refreshedDatabases;
             {
                 std::lock_guard lock(refreshStateMutex);
@@ -438,7 +414,7 @@ void MySQLDatabase::checkRefreshWorkflowAsync() {
                 getDatabaseData(dbName);
             }
 
-            Logger::debug("Ensuring connection pools for all databases...");
+            spdlog::debug("Ensuring connection pools for all databases...");
             for (auto& dbDataPtr : databaseDataCache | std::views::values) {
                 if (dbDataPtr) {
                     dbDataPtr->ensureConnectionPool();
@@ -455,13 +431,13 @@ void MySQLDatabase::checkRefreshWorkflowAsync() {
                 }
             }
         } else {
-            Logger::error("MySQL refresh workflow failed");
+            spdlog::error("MySQL refresh workflow failed");
         }
     });
 }
 
 std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
-    Logger::info("getDatabaseNamesAsync");
+    spdlog::debug("getDatabaseNamesAsync");
     std::vector<std::string> result;
 
     try {
@@ -502,7 +478,7 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
         std::cerr << "Failed to execute async database query: " << e.what() << std::endl;
     }
 
-    Logger::info(std::format("Async query completed. Found {} databases", result.size()));
+    spdlog::debug("Async query completed. Found {} databases", result.size());
     return result;
 }
 
@@ -519,9 +495,8 @@ void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo
         }
     }
 
-    constexpr size_t poolSize = 10;
     auto newPool = std::make_unique<ConnectionPool<MYSQL*>>(
-        poolSize, makeMysqlFactory(info),
+        makeMysqlFactory(info),
         // closer
         [](MYSQL* conn) { mysql_close(conn); },
         // validator
@@ -570,7 +545,7 @@ std::pair<bool, std::string> MySQLDatabase::createDatabase(const std::string& db
     try {
         std::string sql = std::format("CREATE DATABASE `{}`", dbName);
         if (!comment.empty()) {
-            Logger::warn(
+            spdlog::warn(
                 "MySQL database comments are not supported by this backend; ignoring comment");
         }
 
@@ -578,14 +553,14 @@ std::pair<bool, std::string> MySQLDatabase::createDatabase(const std::string& db
         MYSQL* conn = session.get();
         if (mysql_query(conn, sql.c_str()) != 0) {
             std::string err = mysql_error(conn);
-            Logger::error(std::format("Failed to create database: {}", err));
+            spdlog::error("Failed to create database: {}", err);
             return {false, err};
         }
 
-        Logger::info(std::format("Database '{}' created successfully", dbName));
+        spdlog::debug("Database '{}' created successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create database: {}", e.what()));
+        spdlog::error("Failed to create database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -599,21 +574,22 @@ MySQLDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
     if (opts.name.empty()) {
         return {false, "Database name cannot be empty"};
     }
-    if (!opts.charset.empty() && !isSafeSqlToken(opts.charset)) {
+    if (!opts.charset.empty() && !ddl_utils::isSafeSqlToken(opts.charset)) {
         return {false, "Invalid charset value"};
     }
-    if (!opts.collation.empty() && !isSafeSqlToken(opts.collation)) {
+    if (!opts.collation.empty() && !ddl_utils::isSafeSqlToken(opts.collation)) {
         return {false, "Invalid collation value"};
     }
 
     try {
-        std::string sql = std::format("CREATE DATABASE {}", quoteMysqlIdentifier(opts.name));
+        const auto builder = createSQLBuilder(DatabaseType::MYSQL);
+        std::string sql = std::format("CREATE DATABASE {}", builder->quoteIdentifier(opts.name));
         if (!opts.charset.empty())
             sql += std::format(" CHARACTER SET {}", opts.charset);
         if (!opts.collation.empty())
             sql += std::format(" COLLATE {}", opts.collation);
         if (!opts.comment.empty()) {
-            Logger::warn(
+            spdlog::warn(
                 "MySQL database comments are not supported by this backend; ignoring comment");
         }
 
@@ -621,14 +597,14 @@ MySQLDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
         MYSQL* conn = session.get();
         if (mysql_query(conn, sql.c_str()) != 0) {
             std::string err = mysql_error(conn);
-            Logger::error(std::format("Failed to create database: {}", err));
+            spdlog::error("Failed to create database: {}", err);
             return {false, err};
         }
 
-        Logger::info(std::format("Database '{}' created successfully", opts.name));
+        spdlog::debug("Database '{}' created successfully", opts.name);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create database: {}", e.what()));
+        spdlog::error("Failed to create database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -673,15 +649,15 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
 
             if (mysql_query(tempConn, sql.c_str()) != 0) {
                 std::string err = mysql_error(tempConn);
-                Logger::error(std::format("Failed to drop database: {}", err));
+                spdlog::error("Failed to drop database: {}", err);
                 mysql_close(tempConn);
 
                 // Best-effort recovery: restore the original active pool.
                 try {
                     ensureConnectionPoolForDatabase(connectionInfo);
                 } catch (const std::exception& restoreErr) {
-                    Logger::warn(std::format("Failed to restore connection pool for '{}': {}",
-                                             originalDb, restoreErr.what()));
+                    spdlog::warn("Failed to restore connection pool for '{}': {}", originalDb,
+                                 restoreErr.what());
                 }
                 return {false, err};
             }
@@ -691,7 +667,7 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
             MYSQL* conn = session.get();
             if (mysql_query(conn, sql.c_str()) != 0) {
                 std::string err = mysql_error(conn);
-                Logger::error(std::format("Failed to drop database: {}", err));
+                spdlog::error("Failed to drop database: {}", err);
                 return {false, err};
             }
         }
@@ -711,15 +687,15 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
                     "Database dropped, but failed to switch active connection to mysql: {}",
                     switchErr.what());
                 setLastConnectionError(switchError);
-                Logger::warn(switchError);
+                spdlog::warn(switchError);
                 return {true, switchError};
             }
         }
 
-        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        spdlog::debug("Database '{}' dropped successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        spdlog::error("Failed to drop database: {}", e.what());
         return {false, e.what()};
     }
 }

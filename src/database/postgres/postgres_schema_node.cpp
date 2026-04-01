@@ -1,18 +1,31 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/db.hpp"
-#include "database/ddl_builder.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
-#include "utils/logger.hpp"
+#include "database/sql_builder.hpp"
 #include <algorithm>
 #include <format>
 #include <iostream>
 #include <libpq-fe.h>
 #include <map>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 
 namespace {
+
+    // escape a PostgreSQL identifier: double any embedded quotes
+    std::string quotePgId(const std::string& id) {
+        std::string out = "\"";
+        out.reserve(id.size() + 2);
+        for (char c : id) {
+            if (c == '"')
+                out += '"';
+            out += c;
+        }
+        out += '"';
+        return out;
+    }
 
     struct PgResultDeleter {
         void operator()(PGresult* r) const {
@@ -35,14 +48,14 @@ void PostgresSchemaNode::checkTablesStatusAsync() {
     tablesLoader.check([this](const std::vector<Table>& result) {
         tables = result;
         populateIncomingForeignKeys(tables);
-        Logger::info(std::format("Async table loading completed for schema {}. Found {} tables",
-                                 name, tables.size()));
+        spdlog::debug("Async table loading completed for schema {}. Found {} tables", name,
+                      tables.size());
         tablesLoaded = true;
     });
 }
 
 void PostgresSchemaNode::startTablesLoadAsync(const bool forceRefresh) {
-    Logger::debug("startTablesLoadAsync for schema: " + name +
+    spdlog::debug("startTablesLoadAsync for schema: {}{}", name,
                   (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
@@ -104,7 +117,7 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
             }
         }
 
-        Logger::debug("Found " + std::to_string(tableNames.size()) + " tables in schema " + name);
+        spdlog::debug("Found {} tables in schema {}", tableNames.size(), name);
 
         if (tableNames.empty() || !tablesLoader.isRunning()) {
             return result;
@@ -226,9 +239,8 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
             table.foreignKeys = tableForeignKeys[tableName];
 
             result.push_back(table);
-            Logger::debug("Loaded table: " + tableName + " with " +
-                          std::to_string(table.columns.size()) + " columns and " +
-                          std::to_string(table.foreignKeys.size()) + " foreign keys");
+            spdlog::debug("Loaded table: {} with {} columns and {} foreign keys", tableName,
+                          table.columns.size(), table.foreignKeys.size());
         }
 
     } catch (const std::exception& e) {
@@ -243,14 +255,14 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
 void PostgresSchemaNode::checkViewsStatusAsync() {
     viewsLoader.check([this](const std::vector<Table>& result) {
         views = result;
-        Logger::info(std::format("Async view loading completed for schema {}. Found {} views", name,
-                                 views.size()));
+        spdlog::debug("Async view loading completed for schema {}. Found {} views", name,
+                      views.size());
         viewsLoaded = true;
     });
 }
 
 void PostgresSchemaNode::startViewsLoadAsync(bool forceRefresh) {
-    Logger::debug("startViewsLoadAsync for schema: " + name +
+    spdlog::debug("startViewsLoadAsync for schema: {}{}", name,
                   (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
@@ -312,7 +324,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             }
         }
 
-        Logger::debug("Found " + std::to_string(viewNames.size()) + " views in schema " + name);
+        spdlog::debug("Found {} views in schema {}", viewNames.size(), name);
 
         if (viewNames.empty() || !viewsLoader.isRunning()) {
             return result;
@@ -375,8 +387,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             view.columns = viewColumns[viewName];
 
             result.push_back(view);
-            Logger::debug("Loaded view: " + viewName + " with " +
-                          std::to_string(view.columns.size()) + " columns");
+            spdlog::debug("Loaded view: {} with {} columns", viewName, view.columns.size());
         }
 
     } catch (const std::exception& e) {
@@ -391,15 +402,15 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 void PostgresSchemaNode::checkMaterializedViewsStatusAsync() {
     materializedViewsLoader.check([this](const std::vector<Table>& result) {
         materializedViews = result;
-        Logger::info(std::format(
+        spdlog::debug(
             "Async materialized view loading completed for schema {}. Found {} materialized views",
-            name, materializedViews.size()));
+            name, materializedViews.size());
         materializedViewsLoaded = true;
     });
 }
 
 void PostgresSchemaNode::startMaterializedViewsLoadAsync(bool forceRefresh) {
-    Logger::debug("startMaterializedViewsLoadAsync for schema: " + name +
+    spdlog::debug("startMaterializedViewsLoadAsync for schema: {}{}", name,
                   (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
@@ -455,8 +466,7 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
             }
         }
 
-        Logger::debug("Found " + std::to_string(matviewNames.size()) +
-                      " materialized views in schema " + name);
+        spdlog::debug("Found {} materialized views in schema {}", matviewNames.size(), name);
 
         if (matviewNames.empty() || !materializedViewsLoader.isRunning()) {
             return result;
@@ -520,8 +530,8 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
             mv.columns = matviewColumns[mvName];
 
             result.push_back(mv);
-            Logger::debug("Loaded materialized view: " + mvName + " with " +
-                          std::to_string(mv.columns.size()) + " columns");
+            spdlog::debug("Loaded materialized view: {} with {} columns", mvName,
+                          mv.columns.size());
         }
 
     } catch (const std::exception& e) {
@@ -536,15 +546,14 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
 void PostgresSchemaNode::checkSequencesStatusAsync() {
     sequencesLoader.check([this](const std::vector<std::string>& result) {
         sequences = result;
-        Logger::info(
-            std::format("Async sequence loading completed for schema {}. Found {} sequences", name,
-                        sequences.size()));
+        spdlog::debug("Async sequence loading completed for schema {}. Found {} sequences", name,
+                      sequences.size());
         sequencesLoaded = true;
     });
 }
 
 void PostgresSchemaNode::startSequencesLoadAsync(bool forceRefresh) {
-    Logger::debug("startSequencesLoadAsync for schema: " + name +
+    spdlog::debug("startSequencesLoadAsync for schema: {}{}", name,
                   (forceRefresh ? " (force refresh)" : ""));
     if (!parentDbNode) {
         return;
@@ -606,7 +615,7 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
             }
         }
 
-        Logger::debug("Found " + std::to_string(result.size()) + " sequences in schema " + name);
+        spdlog::debug("Found {} sequences in schema {}", result.size(), name);
 
     } catch (const std::exception& e) {
         std::cerr << "Error getting sequences for schema " << name << ": " << e.what() << std::endl;
@@ -617,7 +626,7 @@ std::vector<std::string> PostgresSchemaNode::getSequencesAsync() {
 }
 
 void PostgresSchemaNode::startTableRefreshAsync(const std::string& tableName) {
-    Logger::debug(std::format("Starting async refresh for table: {}.{}", name, tableName));
+    spdlog::debug("Starting async refresh for table: {}.{}", name, tableName);
 
     // Check if already refreshing
     if (tableRefreshLoaders.contains(tableName) && tableRefreshLoaders[tableName].isRunning()) {
@@ -642,7 +651,7 @@ void PostgresSchemaNode::checkTableRefreshStatusAsync(const std::string& tableNa
 
         if (tableIt != tables.end()) {
             *tableIt = refreshedTable;
-            Logger::info(std::format("Table {}.{} refreshed successfully", name, tableName));
+            spdlog::debug("Table {}.{} refreshed successfully", name, tableName);
         }
 
         // Clean up the loader
@@ -651,13 +660,13 @@ void PostgresSchemaNode::checkTableRefreshStatusAsync(const std::string& tableNa
 }
 
 Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
-    Logger::debug(std::format("Refreshing table: {}.{}", name, tableName));
+    spdlog::debug("Refreshing table: {}.{}", name, tableName);
 
     Table refreshedTable;
     refreshedTable.name = tableName;
 
     if (!parentDbNode) {
-        Logger::error("Cannot refresh table: no parent database node");
+        spdlog::error("Cannot refresh table: no parent database node");
         return refreshedTable;
     }
 
@@ -779,7 +788,7 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
         }
 
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error refreshing table {}.{}: {}", name, tableName, e.what()));
+        spdlog::error("Error refreshing table {}.{}: {}", name, tableName, e.what());
         throw;
     }
 
@@ -844,8 +853,8 @@ std::pair<bool, std::string> PostgresSchemaNode::createTable(const Table& table)
     }
 
     try {
-        DDLBuilder builder(DatabaseType::POSTGRESQL);
-        std::string sql = builder.createTable(table, name);
+        const auto builder = createSQLBuilder(DatabaseType::POSTGRESQL);
+        std::string sql = builder->createTable(table, name);
 
         auto result = parentDbNode->executeQuery(sql);
         bool success = result.success();
@@ -926,6 +935,14 @@ std::pair<bool, std::string> PostgresSchemaNode::dropTable(const std::string& ta
         startTablesLoadAsync(true);
         return {true, ""};
     }
+    return {false, r.errorMessage()};
+}
+
+std::pair<bool, std::string> PostgresSchemaNode::truncateTable(const std::string& tableName) {
+    auto sql = std::format("TRUNCATE TABLE ONLY {}.{}", quotePgId(name), quotePgId(tableName));
+    auto r = executeQuery(sql);
+    if (r.success())
+        return {true, ""};
     return {false, r.errorMessage()};
 }
 

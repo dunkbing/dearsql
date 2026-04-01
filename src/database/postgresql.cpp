@@ -1,10 +1,11 @@
 #include "database/postgresql.hpp"
 #include "database/db.hpp"
 #include "database/ddl_utils.hpp"
-#include "utils/logger.hpp"
+#include "database/sql_builder.hpp"
 #include <format>
 #include <memory>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <unordered_map>
 #include <vector>
 
@@ -66,33 +67,6 @@ namespace {
         }
         return result;
     }
-
-    std::string quotePgIdentifier(const std::string& input) {
-        std::string quoted = "\"";
-        quoted.reserve(input.size() + 2);
-        for (char ch : input) {
-            quoted.push_back(ch);
-            if (ch == '"') {
-                quoted.push_back('"');
-            }
-        }
-        quoted.push_back('"');
-        return quoted;
-    }
-
-    bool isSafeSqlToken(const std::string& input) {
-        if (input.empty()) {
-            return false;
-        }
-        for (char ch : input) {
-            const unsigned char uch = static_cast<unsigned char>(ch);
-            if (!std::isalnum(uch) && ch != '_') {
-                return false;
-            }
-        }
-        return true;
-    }
-
 } // namespace
 
 PostgresDatabase::PostgresDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -159,19 +133,19 @@ std::pair<bool, std::string> PostgresDatabase::connect() {
 
     try {
         ensureConnectionPoolForDatabase(connectionInfo);
-        Logger::info("Successfully connected to PostgreSQL database: " + connectionInfo.database);
+        spdlog::debug("Successfully connected to PostgreSQL database: {}", connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
         // Start loading databases immediately if showAllDatabases is enabled
         if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
-            Logger::debug("Starting async database loading after connection...");
+            spdlog::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Connection to database failed: {}", e.what()));
+        spdlog::error("Connection to database failed: {}", e.what());
         std::lock_guard lock(sessionMutex);
         auto it = databaseDataCache.find(connectionInfo.database);
         if (it != databaseDataCache.end() && it->second) {
@@ -188,7 +162,7 @@ void PostgresDatabase::disconnect() {
     if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
         std::unique_lock lock(sessionMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
-            Logger::warn("PostgresDatabase::disconnect: skipping pool teardown during shutdown "
+            spdlog::warn("PostgresDatabase::disconnect: skipping pool teardown during shutdown "
                          "(connection setup still in progress)");
             connected = false;
             return;
@@ -232,19 +206,19 @@ void PostgresDatabase::refreshConnection() {
         // Step 2: Reconnect (synchronously, without triggering auto-refresh)
         try {
             ensureConnectionPoolForDatabase(connectionInfo);
-            Logger::info("Successfully reconnected to PostgreSQL database: " +
-                         connectionInfo.database);
+            spdlog::debug("Successfully reconnected to PostgreSQL database: {}",
+                          connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const std::exception& e) {
-            Logger::error("Reconnection failed: " + std::string(e.what()));
+            spdlog::error("Reconnection failed: {}", e.what());
             setLastConnectionError(e.what());
             return false;
         }
 
         // Step 3: If showAllDatabases is enabled, load database names synchronously
         if (connectionInfo.showAllDatabases) {
-            Logger::debug("Loading database names synchronously for refresh...");
+            spdlog::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
             std::lock_guard lock(refreshStateMutex);
             pendingRefreshDatabaseNames = std::move(databases);
@@ -253,8 +227,7 @@ void PostgresDatabase::refreshConnection() {
             pendingRefreshDatabaseNames.clear();
         }
 
-        Logger::info(
-            std::format("Refresh workflow completed for {} databases", databaseDataCache.size()));
+        spdlog::debug("Refresh workflow completed for {} databases", databaseDataCache.size());
         return true;
     });
 }
@@ -365,8 +338,7 @@ bool PostgresDatabase::hasPendingAsyncWork() const {
 
 void PostgresDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& databases) {
-        Logger::debug(
-            std::format("Async database loading completed. Found {} databases.", databases.size()));
+        spdlog::debug("Async database loading completed. Found {} databases.", databases.size());
 
         // Populate databaseDataCache with all available databases
         {
@@ -389,7 +361,7 @@ void PostgresDatabase::checkDatabasesStatusAsync() {
 void PostgresDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
-            Logger::info("Refresh workflow completed successfully");
+            spdlog::debug("Refresh workflow completed successfully");
             std::vector<std::string> refreshedDatabases;
             {
                 std::lock_guard lock(refreshStateMutex);
@@ -413,7 +385,7 @@ void PostgresDatabase::checkRefreshWorkflowAsync() {
                 }
             }
         } else {
-            Logger::error("Refresh workflow failed");
+            spdlog::error("Refresh workflow failed");
         }
     });
 }
@@ -435,13 +407,12 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
         const std::string sqlQuery =
             std::format("SELECT datname FROM pg_database WHERE {} ORDER BY datname", whereClause);
 
-        Logger::debug("Executing async query to get database names...");
+        spdlog::debug("Executing async query to get database names...");
         auto session = getSession();
         PGconn* conn = session.get();
         PgResultPtr res(PQexec(conn, sqlQuery.c_str()));
         if (!res || PQresultStatus(res.get()) != PGRES_TUPLES_OK) {
-            Logger::error(
-                std::format("Failed to execute async database query: {}", PQerrorMessage(conn)));
+            spdlog::error("Failed to execute async database query: {}", PQerrorMessage(conn));
             return result;
         }
 
@@ -451,14 +422,14 @@ std::vector<std::string> PostgresDatabase::getDatabaseNamesAsync() const {
                 break;
             }
             auto dbName = std::string(PQgetvalue(res.get(), i, 0));
-            Logger::debug(std::format("Found database: {}", dbName));
+            spdlog::debug("Found database: {}", dbName);
             result.push_back(dbName);
         }
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to execute async database query: {}", e.what()));
+        spdlog::error("Failed to execute async database query: {}", e.what());
     }
 
-    Logger::info(std::format("Async query completed. Found: {} databases", result.size()));
+    spdlog::debug("Async query completed. Found: {} databases", result.size());
     return result;
 }
 
@@ -487,11 +458,9 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
         }
     }
 
-    constexpr size_t poolSize = 3;
     std::string connStr = info.buildConnectionString();
 
     auto newPool = std::make_unique<ConnectionPool<PGconn*>>(
-        poolSize,
         // factory
         [connStr]() -> PGconn* {
             PGconn* conn = PQconnectdb(connStr.c_str());
@@ -532,19 +501,18 @@ ConnectionPool<PGconn*>::Session PostgresDatabase::getSession() const {
 }
 
 void PostgresDatabase::triggerChildDbRefresh() {
-    Logger::debug(
-        std::format("Triggering child db refresh for connection: {}", connectionInfo.name));
+    spdlog::debug("Triggering child db refresh for connection: {}", connectionInfo.name);
 
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& dbDataPtr : databaseDataCache | std::views::values) {
         if (dbDataPtr) {
-            Logger::debug(std::format("Refreshing db: {}", dbDataPtr->name));
+            spdlog::debug("Refreshing db: {}", dbDataPtr->name);
             dbDataPtr->startSchemasLoadAsync(true, true);
         }
     }
 
-    Logger::info(std::format("Triggered refresh for {} schemas in database {}",
-                             databaseDataCache.size(), connectionInfo.name));
+    spdlog::debug("Triggered refresh for {} schemas in database {}", databaseDataCache.size(),
+                  connectionInfo.name);
 }
 
 std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string& oldName,
@@ -562,7 +530,7 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
         PgResultPtr res(PQexec(conn, sql.c_str()));
         if (!res || PQresultStatus(res.get()) != PGRES_COMMAND_OK) {
             std::string err = res ? PQresultErrorMessage(res.get()) : PQerrorMessage(conn);
-            Logger::error(std::format("Failed to rename database: {}", err));
+            spdlog::error("Failed to rename database: {}", err);
             return {false, err};
         }
 
@@ -578,10 +546,10 @@ std::pair<bool, std::string> PostgresDatabase::renameDatabase(const std::string&
             }
         }
 
-        Logger::info(std::format("Database '{}' renamed to '{}'", oldName, newName));
+        spdlog::debug("Database '{}' renamed to '{}'", oldName, newName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to rename database: {}", e.what()));
+        spdlog::error("Failed to rename database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -605,7 +573,7 @@ std::pair<bool, std::string> PostgresDatabase::createDatabase(const std::string&
         if (!createRes || PQresultStatus(createRes.get()) != PGRES_COMMAND_OK) {
             std::string err =
                 createRes ? PQresultErrorMessage(createRes.get()) : PQerrorMessage(conn);
-            Logger::error(std::format("Failed to create database: {}", err));
+            spdlog::error("Failed to create database: {}", err);
             return {false, err};
         }
 
@@ -616,16 +584,15 @@ std::pair<bool, std::string> PostgresDatabase::createDatabase(const std::string&
             if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
                 std::string err =
                     commentRes ? PQresultErrorMessage(commentRes.get()) : PQerrorMessage(conn);
-                Logger::warn(std::format("Database '{}' created, but failed to set comment: {}",
-                                         dbName, err));
+                spdlog::warn("Database '{}' created, but failed to set comment: {}", dbName, err);
                 return {true, std::format("Created database, but failed to set comment: {}", err)};
             }
         }
 
-        Logger::info(std::format("Database '{}' created successfully", dbName));
+        spdlog::debug("Database '{}' created successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create database: {}", e.what()));
+        spdlog::error("Failed to create database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -639,50 +606,51 @@ PostgresDatabase::createDatabaseWithOptions(const CreateDatabaseOptions& opts) {
     if (opts.name.empty()) {
         return {false, "Database name cannot be empty"};
     }
-    if (!opts.encoding.empty() && !isSafeSqlToken(opts.encoding)) {
+    if (!opts.encoding.empty() && !ddl_utils::isSafeSqlToken(opts.encoding)) {
         return {false, "Invalid encoding value"};
     }
 
     try {
         auto session = getSession();
         PGconn* conn = session.get();
+        const auto builder = createSQLBuilder(DatabaseType::POSTGRESQL);
 
-        std::string sql = std::format("CREATE DATABASE {}", quotePgIdentifier(opts.name));
+        std::string sql = std::format("CREATE DATABASE {}", builder->quoteIdentifier(opts.name));
         if (!opts.owner.empty())
-            sql += std::format(" OWNER {}", quotePgIdentifier(opts.owner));
+            sql += std::format(" OWNER {}", builder->quoteIdentifier(opts.owner));
         if (!opts.templateDb.empty())
-            sql += std::format(" TEMPLATE {}", quotePgIdentifier(opts.templateDb));
+            sql += std::format(" TEMPLATE {}", builder->quoteIdentifier(opts.templateDb));
         if (!opts.encoding.empty())
             sql += std::format(" ENCODING '{}'", opts.encoding);
         if (!opts.tablespace.empty())
-            sql += std::format(" TABLESPACE {}", quotePgIdentifier(opts.tablespace));
+            sql += std::format(" TABLESPACE {}", builder->quoteIdentifier(opts.tablespace));
 
         PgResultPtr createRes(PQexec(conn, sql.c_str()));
         if (!createRes || PQresultStatus(createRes.get()) != PGRES_COMMAND_OK) {
             std::string err =
                 createRes ? PQresultErrorMessage(createRes.get()) : PQerrorMessage(conn);
-            Logger::error(std::format("Failed to create database: {}", err));
+            spdlog::error("Failed to create database: {}", err);
             return {false, err};
         }
 
         if (!opts.comment.empty()) {
             const std::string commentSql =
-                std::format("COMMENT ON DATABASE {} IS '{}'", quotePgIdentifier(opts.name),
+                std::format("COMMENT ON DATABASE {} IS '{}'", builder->quoteIdentifier(opts.name),
                             ddl_utils::escapeSingleQuotes(opts.comment));
             PgResultPtr commentRes(PQexec(conn, commentSql.c_str()));
             if (!commentRes || PQresultStatus(commentRes.get()) != PGRES_COMMAND_OK) {
                 std::string err =
                     commentRes ? PQresultErrorMessage(commentRes.get()) : PQerrorMessage(conn);
-                Logger::warn(std::format("Database '{}' created, but failed to set comment: {}",
-                                         opts.name, err));
+                spdlog::warn("Database '{}' created, but failed to set comment: {}", opts.name,
+                             err);
                 return {true, std::format("Created database, but failed to set comment: {}", err)};
             }
         }
 
-        Logger::info(std::format("Database '{}' created successfully", opts.name));
+        spdlog::debug("Database '{}' created successfully", opts.name);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create database: {}", e.what()));
+        spdlog::error("Failed to create database: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -750,8 +718,8 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
                 try {
                     ensureConnectionPoolForDatabase(connectionInfo);
                 } catch (const std::exception& restoreErr) {
-                    Logger::warn(std::format("Failed to restore connection pool for '{}': {}",
-                                             originalDb, restoreErr.what()));
+                    spdlog::warn("Failed to restore connection pool for '{}': {}", originalDb,
+                                 restoreErr.what());
                 }
             }
         } else {
@@ -760,7 +728,7 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
         }
 
         if (!dropResult.first) {
-            Logger::error(std::format("Failed to drop database: {}", dropResult.second));
+            spdlog::error("Failed to drop database: {}", dropResult.second);
             return dropResult;
         }
 
@@ -784,15 +752,15 @@ std::pair<bool, std::string> PostgresDatabase::dropDatabase(const std::string& d
                     "Database dropped, but failed to switch active connection to postgres: {}",
                     switchErr.what());
                 setLastConnectionError(switchError);
-                Logger::warn(switchError);
+                spdlog::warn(switchError);
                 return {true, switchError};
             }
         }
 
-        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        spdlog::debug("Database '{}' dropped successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        spdlog::error("Failed to drop database: {}", e.what());
         return {false, e.what()};
     }
 }

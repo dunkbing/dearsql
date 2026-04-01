@@ -91,9 +91,6 @@ static LRESULT CALLBACK inputDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             state->onCancel();
         DestroyWindow(hwnd);
         return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
@@ -112,6 +109,21 @@ static void registerInputDialogClass() {
     wc.lpszClassName = L"DearSQLInputDialog";
     RegisterClassExW(&wc);
     registered = true;
+}
+
+static void runModalLoop(HWND hwnd) {
+    MSG msg{};
+    while (IsWindow(hwnd)) {
+        const BOOL result = GetMessageW(&msg, nullptr, 0, 0);
+        if (result <= 0) {
+            break;
+        }
+        if (IsDialogMessageW(hwnd, &msg)) {
+            continue;
+        }
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
 }
 
 void InputDialog::show(const std::string& title, const std::string& label,
@@ -194,22 +206,19 @@ void InputDialog::show(const std::string& title, const std::string& label,
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+    SetForegroundWindow(hwnd);
     SetFocus(state->editControl);
 
     if (parent)
         EnableWindow(parent, FALSE);
 
-    // modal message loop
-    MSG msg;
-    while (GetMessageW(&msg, nullptr, 0, 0)) {
-        if (IsDialogMessageW(hwnd, &msg))
-            continue;
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
+    runModalLoop(hwnd);
 
-    if (parent)
+    if (parent) {
         EnableWindow(parent, TRUE);
+        SetActiveWindow(parent);
+        SetForegroundWindow(parent);
+    }
 
     delete state;
 }

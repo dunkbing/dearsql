@@ -57,6 +57,7 @@ public:
     [[nodiscard]] int saveWorkspace(const Workspace& workspace) const;
     [[nodiscard]] std::vector<Workspace> getWorkspaces() const;
     [[nodiscard]] bool deleteWorkspace(int workspaceId) const;
+    [[nodiscard]] bool renameWorkspace(int workspaceId, const std::string& name) const;
     bool updateWorkspaceLastUsed(int workspaceId) const;
     [[nodiscard]] std::vector<SavedConnection> getConnectionsForWorkspace(int workspaceId) const;
     [[nodiscard]] bool moveConnectionToWorkspace(int connectionId, int workspaceId) const;
@@ -67,7 +68,6 @@ public:
     bool updateScript(const SqlScript& script) const;
     bool deleteScript(int scriptId) const;
     [[nodiscard]] std::vector<SqlScript> getScriptsForConnection(int connectionId) const;
-    [[nodiscard]] std::vector<SqlScript> getAllScripts() const;
 
 private:
     sqlite3* db_ = nullptr;

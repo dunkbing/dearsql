@@ -2,9 +2,9 @@
 #include "database/ddl_utils.hpp"
 #include "database/oracle/oracle_client_installer.hpp"
 #include "oracle/oracle_utils.hpp"
-#include "utils/logger.hpp"
 #include <cstdlib>
 #include <format>
+#include <spdlog/spdlog.h>
 
 #if defined(__linux__)
 #include <dlfcn.h>
@@ -37,7 +37,7 @@ void OracleDatabase::initContext() {
     if (OracleClientInstaller::isInstalled()) {
         g_oracleClientLibDir = OracleClientInstaller::getInstallDir();
         params.oracleClientLibDir = g_oracleClientLibDir.c_str();
-        Logger::info("Using Oracle Client from: " + g_oracleClientLibDir);
+        spdlog::debug("Using Oracle Client from: {}", g_oracleClientLibDir);
 
 #if defined(__linux__)
         // ensure libaio.so.1 with correct SONAME is bundled
@@ -50,10 +50,9 @@ void OracleDatabase::initContext() {
         std::string libaioPath = g_oracleClientLibDir + "/libaio.so.1";
         void* h = dlopen(libaioPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (h) {
-            Logger::info("Pre-loaded " + libaioPath);
+            spdlog::debug("Pre-loaded {}", libaioPath);
         } else {
-            Logger::warn(std::format("Failed to pre-load libaio: {}",
-                                     dlerror() ? dlerror() : "unknown error"));
+            spdlog::warn("Failed to pre-load libaio: {}", dlerror() ? dlerror() : "unknown error");
         }
 #endif
     }
@@ -62,7 +61,7 @@ void OracleDatabase::initContext() {
     if (dpiContext_createWithParams(DPI_MAJOR_VERSION, DPI_MINOR_VERSION, &params, &g_dpiCtx,
                                     &errorInfo) != DPI_SUCCESS) {
         std::string msg(errorInfo.message, errorInfo.messageLength);
-        Logger::error(std::format("Failed to create ODPI-C context: {}", msg));
+        spdlog::error("Failed to create ODPI-C context: {}", msg);
         if (msg.find("DPI-1047") != std::string::npos) {
             g_dpiCtxInitError = "Oracle Instant Client is not installed.";
         } else {
@@ -92,8 +91,8 @@ OracleDatabase::OracleDatabase(const DatabaseConnectionInfo& connInfo) {
     if (connectionInfo.sslmode == SslMode::Prefer || connectionInfo.sslmode == SslMode::Allow) {
         connectionInfo.sslmode = SslMode::Disable;
     }
-    Logger::debug(std::format("Creating OracleDatabase with service = '{}', showAllDatabases = {}",
-                              connectionInfo.database, connInfo.showAllDatabases));
+    spdlog::debug("Creating OracleDatabase with service = '{}', showAllDatabases = {}",
+                  connectionInfo.database, connInfo.showAllDatabases);
     // service name can be empty — connect() will auto-detect
 }
 
@@ -158,11 +157,11 @@ std::pair<bool, std::string> OracleDatabase::connect() {
             try {
                 dpiConn* probe = openDpiConnection(connectionInfo);
                 closeDpiConnection(probe);
-                Logger::info(std::format("Auto-detected Oracle service: {}", candidate));
+                spdlog::debug("Auto-detected Oracle service: {}", candidate);
                 break;
             } catch (const std::exception& e) {
                 lastError = e.what();
-                Logger::debug(std::format("Oracle service '{}' not available", candidate));
+                spdlog::debug("Oracle service '{}' not available", candidate);
                 connectionInfo.database.clear();
             }
         }
@@ -176,18 +175,18 @@ std::pair<bool, std::string> OracleDatabase::connect() {
 
     try {
         ensureConnectionPoolForSchema(connectionInfo);
-        Logger::info("Successfully connected to Oracle: " + connectionInfo.database);
+        spdlog::debug("Successfully connected to Oracle: {}", connectionInfo.database);
         connected = true;
         setLastConnectionError("");
 
         if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
-            Logger::debug("Starting async schema loading after connection...");
+            spdlog::debug("Starting async schema loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Connection to Oracle failed: {}", e.what()));
+        spdlog::error("Connection to Oracle failed: {}", e.what());
         std::lock_guard lock(sessionMutex);
         std::string upperUser = ddl_utils::toUpper(connectionInfo.username);
         auto it = databaseDataCache.find(upperUser);
@@ -205,7 +204,7 @@ void OracleDatabase::disconnect() {
     if (AsyncOperationControl::skipWaitOnDestroy().load(std::memory_order_relaxed)) {
         std::unique_lock lock(sessionMutex, std::try_to_lock);
         if (!lock.owns_lock()) {
-            Logger::warn("OracleDatabase::disconnect: skipping pool teardown during shutdown");
+            spdlog::warn("OracleDatabase::disconnect: skipping pool teardown during shutdown");
             connected = false;
             return;
         }
@@ -241,17 +240,17 @@ void OracleDatabase::refreshConnection() {
 
         try {
             ensureConnectionPoolForSchema(connectionInfo);
-            Logger::info("Successfully reconnected to Oracle: " + connectionInfo.database);
+            spdlog::debug("Successfully reconnected to Oracle: {}", connectionInfo.database);
             connected = true;
             setLastConnectionError("");
         } catch (const std::exception& e) {
-            Logger::error("Oracle reconnection failed: " + std::string(e.what()));
+            spdlog::error("Oracle reconnection failed: {}", e.what());
             setLastConnectionError(e.what());
             return false;
         }
 
         if (connectionInfo.showAllDatabases) {
-            Logger::debug("Loading schema names synchronously for refresh...");
+            spdlog::debug("Loading schema names synchronously for refresh...");
             auto schemas = getDatabaseNamesAsync();
 
             std::lock_guard lock(refreshStateMutex);
@@ -261,8 +260,7 @@ void OracleDatabase::refreshConnection() {
             pendingRefreshDatabaseNames.clear();
         }
 
-        Logger::info(std::format("Oracle refresh workflow completed for {} schemas",
-                                 databaseDataCache.size()));
+        spdlog::debug("Oracle refresh workflow completed for {} schemas", databaseDataCache.size());
         return true;
     });
 }
@@ -332,8 +330,7 @@ bool OracleDatabase::hasPendingAsyncWork() const {
 
 void OracleDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& schemas) {
-        Logger::info(
-            std::format("Async schema loading completed. Found {} schemas", schemas.size()));
+        spdlog::debug("Async schema loading completed. Found {} schemas", schemas.size());
 
         for (const auto& schemaName : schemas) {
             getDatabaseData(schemaName);
@@ -346,7 +343,7 @@ void OracleDatabase::checkDatabasesStatusAsync() {
 void OracleDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
-            Logger::info("Oracle refresh workflow completed successfully");
+            spdlog::debug("Oracle refresh workflow completed successfully");
             std::vector<std::string> refreshedSchemas;
             {
                 std::lock_guard lock(refreshStateMutex);
@@ -367,18 +364,18 @@ void OracleDatabase::checkRefreshWorkflowAsync() {
                 }
             }
         } else {
-            Logger::error("Oracle refresh workflow failed");
+            spdlog::error("Oracle refresh workflow failed");
         }
     });
 }
 
 std::vector<std::string> OracleDatabase::getDatabaseNamesAsync() const {
-    Logger::info("getDatabaseNamesAsync (Oracle)");
+    spdlog::debug("getDatabaseNamesAsync (Oracle)");
     std::vector<std::string> result;
 
     try {
         if (!isConnected()) {
-            Logger::error("Cannot load schemas: not connected");
+            spdlog::error("Cannot load schemas: not connected");
             return result;
         }
 
@@ -400,10 +397,10 @@ std::vector<std::string> OracleDatabase::getDatabaseNamesAsync() const {
             "'GSMADMIN_INTERNAL','OJVMSYS','LBACSYS','GGSYS') "
             "ORDER BY OWNER");
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to execute async schema query: {}", e.what()));
+        spdlog::error("Failed to execute async schema query: {}", e.what());
     }
 
-    Logger::info(std::format("Async query completed. Found {} schemas", result.size()));
+    spdlog::debug("Async query completed. Found {} schemas", result.size());
     return result;
 }
 
@@ -418,9 +415,8 @@ void OracleDatabase::ensureConnectionPoolForSchema(const DatabaseConnectionInfo&
         }
     }
 
-    constexpr size_t poolSize = 3;
     auto newPool = std::make_unique<ConnectionPool<dpiConn*>>(
-        poolSize, [info]() -> dpiConn* { return openDpiConnection(info); },
+        [info]() -> dpiConn* { return openDpiConnection(info); },
         [](dpiConn* conn) { closeDpiConnection(conn); },
         [](dpiConn* conn) -> bool { return dpiConnectionAlive(conn); });
 
@@ -470,10 +466,10 @@ std::pair<bool, std::string> OracleDatabase::createDatabase(const std::string& d
         // grant basic privileges
         dpiExecuteQuery(conn, std::format("GRANT CONNECT, RESOURCE TO \"{}\"", dbName), 0);
 
-        Logger::info(std::format("Schema '{}' created successfully", dbName));
+        spdlog::debug("Schema '{}' created successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to create schema: {}", e.what()));
+        spdlog::error("Failed to create schema: {}", e.what());
         return {false, e.what()};
     }
 }
@@ -495,10 +491,10 @@ std::pair<bool, std::string> OracleDatabase::dropDatabase(const std::string& dbN
         }
 
         databaseDataCache.erase(dbName);
-        Logger::info(std::format("Schema '{}' dropped successfully", dbName));
+        spdlog::debug("Schema '{}' dropped successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to drop schema: {}", e.what()));
+        spdlog::error("Failed to drop schema: {}", e.what());
         return {false, e.what()};
     }
 }

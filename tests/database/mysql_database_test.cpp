@@ -282,6 +282,29 @@ TEST_F(MySQLDatabaseNodeDDLTest, DropTableRemovesTable) {
     EXPECT_TRUE(check[0].tableData.empty());
 }
 
+TEST_F(MySQLDatabaseNodeDDLTest, TruncateTableRemovesAllRows) {
+    auto r = database->executeQuery(
+        std::format("CREATE TABLE `{}` (id INT PRIMARY KEY, val TEXT)", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto ins = database->executeQuery(
+        std::format("INSERT INTO `{}` (id, val) VALUES (1, 'a'), (2, 'b'), (3, 'c')", tableName));
+    ASSERT_TRUE(ins.success()) << ins.errorMessage();
+
+    auto pre = database->executeQuery(std::format("SELECT COUNT(*) FROM `{}`", tableName));
+    ASSERT_TRUE(pre.success());
+    ASSERT_FALSE(pre.empty());
+    EXPECT_EQ(pre[0].tableData[0][0], "3");
+
+    auto [ok, err] = dbNode->truncateTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check = database->executeQuery(std::format("SELECT COUNT(*) FROM `{}`", tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData[0][0], "0");
+}
+
 TEST_F(MySQLDatabaseNodeDDLTest, DropColumnRemovesColumn) {
     auto r = database->executeQuery(std::format(
         "CREATE TABLE `{}` (id INT PRIMARY KEY, keep_me TEXT, drop_me TEXT)", tableName));

@@ -1,9 +1,9 @@
 #include "ui/text_editor.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <format>
+#include <spdlog/spdlog.h>
 #include <tree_sitter/api.h>
 #include <unordered_set>
 
@@ -357,7 +357,7 @@ namespace dearsql {
         tsQuery_ =
             ts_query_new(lang, queryStr, static_cast<uint32_t>(queryLen), &errorOffset, &errorType);
         if (!tsQuery_) {
-            Logger::error(
+            spdlog::error(
                 std::format("Tree-sitter query compilation failed at offset {}, error type {}",
                             errorOffset, static_cast<int>(errorType)));
         }

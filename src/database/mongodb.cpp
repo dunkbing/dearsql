@@ -1,7 +1,7 @@
 #include "database/mongodb.hpp"
-#include "utils/logger.hpp"
 #include <format>
 #include <ranges>
+#include <spdlog/spdlog.h>
 
 mongocxx::instance& MongoDBDatabase::getDriverInstance() {
     static mongocxx::instance instance{};
@@ -16,9 +16,8 @@ MongoDBDatabase::MongoDBDatabase(const DatabaseConnectionInfo& connInfo) {
     if (connectionInfo.port == 0 || connectionInfo.port == 5432) {
         connectionInfo.port = 27017; // Default MongoDB port
     }
-    Logger::debug(
-        std::format("Creating MongoDBDatabase with host = '{}', port = {}, showAllDatabases = {}",
-                    connectionInfo.host, connectionInfo.port, connInfo.showAllDatabases));
+    spdlog::debug("Creating MongoDBDatabase with host = '{}', port = {}, showAllDatabases = {}",
+                  connectionInfo.host, connectionInfo.port, connInfo.showAllDatabases);
 }
 
 MongoDBDatabase::~MongoDBDatabase() {
@@ -62,7 +61,7 @@ std::pair<bool, std::string> MongoDBDatabase::connect() {
 
     try {
         std::string uri = connectionInfo.buildConnectionString();
-        Logger::debug(std::format("Connecting to MongoDB: {}", uri));
+        spdlog::debug("Connecting to MongoDB: {}", uri);
 
         std::lock_guard lock(poolMutex);
         connectionPool = std::make_unique<mongocxx::pool>(mongocxx::uri{uri});
@@ -71,20 +70,20 @@ std::pair<bool, std::string> MongoDBDatabase::connect() {
         const auto client = connectionPool->acquire();
         auto databases = client->list_database_names();
 
-        Logger::info(std::format("Successfully connected to MongoDB at {}:{}", connectionInfo.host,
-                                 connectionInfo.port));
+        spdlog::debug("Successfully connected to MongoDB at {}:{}", connectionInfo.host,
+                      connectionInfo.port);
         connected = true;
         setLastConnectionError("");
 
         // Start loading databases if showAllDatabases is enabled
         if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
-            Logger::debug("Starting async database loading after connection...");
+            spdlog::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
 
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("MongoDB connection failed: {}", e.what()));
+        spdlog::error("MongoDB connection failed: {}", e.what());
         std::lock_guard lock(poolMutex);
         connectionPool.reset();
         connected = false;
@@ -114,7 +113,7 @@ void MongoDBDatabase::refreshConnection() {
         }
 
         if (connectionInfo.showAllDatabases) {
-            Logger::debug("Loading database names synchronously for refresh...");
+            spdlog::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
             std::lock_guard lock(refreshStateMutex);
@@ -124,8 +123,8 @@ void MongoDBDatabase::refreshConnection() {
             pendingRefreshDatabaseNames.clear();
         }
 
-        Logger::info(std::format("MongoDB refresh workflow completed for {} databases",
-                                 databaseDataCache.size()));
+        spdlog::debug("MongoDB refresh workflow completed for {} databases",
+                      databaseDataCache.size());
         return true;
     });
 }
@@ -321,8 +320,7 @@ bool MongoDBDatabase::hasPendingAsyncWork() const {
 
 void MongoDBDatabase::checkDatabasesStatusAsync() {
     databasesLoader.check([this](const std::vector<std::string>& databases) {
-        Logger::debug(
-            std::format("Async database loading completed. Found {} databases.", databases.size()));
+        spdlog::debug("Async database loading completed. Found {} databases.", databases.size());
 
         for (const auto& dbName : databases) {
             getDatabaseData(dbName);
@@ -335,7 +333,7 @@ void MongoDBDatabase::checkDatabasesStatusAsync() {
 void MongoDBDatabase::checkRefreshWorkflowAsync() {
     refreshWorkflow.check([this](const bool success) {
         if (success) {
-            Logger::info("MongoDB refresh workflow completed successfully");
+            spdlog::debug("MongoDB refresh workflow completed successfully");
             std::vector<std::string> refreshedDatabases;
             {
                 std::lock_guard lock(refreshStateMutex);
@@ -356,18 +354,18 @@ void MongoDBDatabase::checkRefreshWorkflowAsync() {
                 }
             }
         } else {
-            Logger::error("MongoDB refresh workflow failed");
+            spdlog::error("MongoDB refresh workflow failed");
         }
     });
 }
 
 std::vector<std::string> MongoDBDatabase::getDatabaseNamesAsync() const {
-    Logger::info("MongoDBDatabase::getDatabaseNamesAsync");
+    spdlog::debug("MongoDBDatabase::getDatabaseNamesAsync");
     std::vector<std::string> result;
 
     try {
         if (!isConnected()) {
-            Logger::error("Cannot load databases: not connected");
+            spdlog::error("Cannot load databases: not connected");
             return result;
         }
 
@@ -385,10 +383,10 @@ std::vector<std::string> MongoDBDatabase::getDatabaseNamesAsync() const {
             result.push_back(dbName);
         }
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to list databases: {}", e.what()));
+        spdlog::error("Failed to list databases: {}", e.what());
     }
 
-    Logger::debug(std::format("Found {} databases", result.size()));
+    spdlog::debug("Found {} databases", result.size());
     return result;
 }
 
@@ -403,10 +401,10 @@ std::pair<bool, std::string> MongoDBDatabase::dropDatabase(const std::string& db
 
         databaseDataCache.erase(dbName);
 
-        Logger::info(std::format("Database '{}' dropped successfully", dbName));
+        spdlog::debug("Database '{}' dropped successfully", dbName);
         return {true, ""};
     } catch (const std::exception& e) {
-        Logger::error(std::format("Failed to drop database: {}", e.what()));
+        spdlog::error("Failed to drop database: {}", e.what());
         return {false, e.what()};
     }
 }

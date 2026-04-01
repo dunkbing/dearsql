@@ -304,6 +304,31 @@ TEST_F(PostgresSchemaNodeDDLTest, DropTableRemovesTable) {
     EXPECT_TRUE(check[0].tableData.empty());
 }
 
+TEST_F(PostgresSchemaNodeDDLTest, TruncateTableRemovesAllRows) {
+    auto r = database->executeQuery(
+        std::format(R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, val TEXT))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    auto ins = database->executeQuery(
+        std::format(R"(INSERT INTO public."{}" (val) VALUES ('a'), ('b'), ('c'))", tableName));
+    ASSERT_TRUE(ins.success()) << ins.errorMessage();
+
+    auto pre =
+        database->executeQuery(std::format(R"(SELECT COUNT(*) FROM public."{}")", tableName));
+    ASSERT_TRUE(pre.success());
+    ASSERT_FALSE(pre.empty());
+    EXPECT_EQ(pre[0].tableData[0][0], "3");
+
+    auto [ok, err] = schemaNode->truncateTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    auto check =
+        database->executeQuery(std::format(R"(SELECT COUNT(*) FROM public."{}")", tableName));
+    ASSERT_TRUE(check.success());
+    ASSERT_FALSE(check.empty());
+    EXPECT_EQ(check[0].tableData[0][0], "0");
+}
+
 TEST_F(PostgresSchemaNodeDDLTest, DropColumnRemovesColumn) {
     auto r = database->executeQuery(std::format(
         R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY, keep_me TEXT, drop_me TEXT))",

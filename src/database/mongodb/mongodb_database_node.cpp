@@ -1,10 +1,10 @@
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "database/mongodb.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
 #include <set>
+#include <spdlog/spdlog.h>
 
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
@@ -91,7 +91,8 @@ void MongoDBDatabaseNode::startViewsLoadAsync(bool force) {
 }
 
 void MongoDBDatabaseNode::startCollectionsLoadAsync(bool force) {
-    Logger::debug("startCollectionsLoadAsync for db: " + name + (force ? " (force refresh)" : ""));
+    spdlog::debug("startCollectionsLoadAsync for db: {}{}", name,
+                  (force ? " (force refresh)" : ""));
     if (!parentDb) {
         return;
     }
@@ -116,9 +117,8 @@ void MongoDBDatabaseNode::startCollectionsLoadAsync(bool force) {
 void MongoDBDatabaseNode::checkCollectionsStatusAsync() {
     collectionsLoader.check([this](const std::vector<Table>& result) {
         collections = result;
-        Logger::info(
-            std::format("Async collection loading completed for database {}. Found {} collections",
-                        name, collections.size()));
+        spdlog::debug("Async collection loading completed for database {}. Found {} collections",
+                      name, collections.size());
         collectionsLoaded = true;
     });
 }
@@ -139,7 +139,7 @@ std::vector<Table> MongoDBDatabaseNode::getCollectionsAsync() {
         auto db = (*client)[name];
         auto collectionNames = db.list_collection_names();
 
-        Logger::debug(
+        spdlog::debug(
             std::format("Found {} collections in database {}", collectionNames.size(), name));
 
         for (const auto& collName : collectionNames) {
@@ -163,7 +163,7 @@ std::vector<Table> MongoDBDatabaseNode::getCollectionsAsync() {
             result.push_back(std::move(collection));
         }
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting collections for database {}: {}", name, e.what()));
+        spdlog::error("Error getting collections for database {}: {}", name, e.what());
         lastCollectionsError = e.what();
     }
 
@@ -259,7 +259,7 @@ std::vector<Column> MongoDBDatabaseNode::inferSchemaFromSample(const std::string
         });
 
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error inferring schema for {}: {}", collectionName, e.what()));
+        spdlog::error("Error inferring schema for {}: {}", collectionName, e.what());
     }
 
     return columns;
@@ -305,25 +305,24 @@ std::vector<Index> MongoDBDatabaseNode::getCollectionIndexes(const std::string& 
             indexes.push_back(std::move(idx));
         }
     } catch (const std::exception& e) {
-        Logger::error(
-            std::format("Error fetching indexes for {}.{}: {}", name, collectionName, e.what()));
+        spdlog::error("Error fetching indexes for {}.{}: {}", name, collectionName, e.what());
     }
 
     return indexes;
 }
 
 void MongoDBDatabaseNode::startTableRefreshAsync(const std::string& collectionName) {
-    Logger::debug(std::format("Starting async refresh for collection: {}", collectionName));
+    spdlog::debug("Starting async refresh for collection: {}", collectionName);
 
     if (collectionRefreshLoaders.contains(collectionName) &&
         collectionRefreshLoaders[collectionName].isRunning()) {
-        Logger::debug(std::format("Collection {} is already being refreshed", collectionName));
+        spdlog::debug("Collection {} is already being refreshed", collectionName);
         return;
     }
 
     collectionRefreshLoaders[collectionName].start(
         [this, collectionName]() { return refreshCollectionAsync(collectionName); });
-    Logger::debug(std::format("Async refresh started for collection: {}", collectionName));
+    spdlog::debug("Async refresh started for collection: {}", collectionName);
 }
 
 void MongoDBDatabaseNode::checkTableRefreshStatusAsync(const std::string& collectionName) {
@@ -338,7 +337,7 @@ void MongoDBDatabaseNode::checkTableRefreshStatusAsync(const std::string& collec
 
         if (collIt != collections.end()) {
             *collIt = refreshedCollection;
-            Logger::info(std::format("Collection {} refreshed successfully", collectionName));
+            spdlog::debug("Collection {} refreshed successfully", collectionName);
         }
 
         collectionRefreshLoaders.erase(collectionName);
@@ -346,7 +345,7 @@ void MongoDBDatabaseNode::checkTableRefreshStatusAsync(const std::string& collec
 }
 
 Table MongoDBDatabaseNode::refreshCollectionAsync(const std::string& collectionName) {
-    Logger::debug(std::format("Refreshing collection: {}", collectionName));
+    spdlog::debug("Refreshing collection: {}", collectionName);
 
     Table refreshedCollection;
     refreshedCollection.name = collectionName;
@@ -357,7 +356,7 @@ Table MongoDBDatabaseNode::refreshCollectionAsync(const std::string& collectionN
         refreshedCollection.columns = inferSchemaFromSample(collectionName, 100);
         refreshedCollection.indexes = getCollectionIndexes(collectionName);
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error refreshing collection {}: {}", collectionName, e.what()));
+        spdlog::error("Error refreshing collection {}: {}", collectionName, e.what());
         throw;
     }
 
@@ -368,7 +367,7 @@ bool MongoDBDatabaseNode::isTableRefreshing(const std::string& collectionName) c
     auto it = collectionRefreshLoaders.find(collectionName);
     bool isRefreshing = it != collectionRefreshLoaders.end() && it->second.isRunning();
     if (isRefreshing) {
-        Logger::debug(std::format("Collection {} is currently refreshing", collectionName));
+        spdlog::debug("Collection {} is currently refreshing", collectionName);
     }
     return isRefreshing;
 }
@@ -427,8 +426,7 @@ MongoDBDatabaseNode::getTableData(const std::string& collectionName, const int l
             result.push_back(std::move(row));
         }
     } catch (const std::exception& e) {
-        Logger::error(
-            std::format("Error getting collection data for {}: {}", collectionName, e.what()));
+        spdlog::error("Error getting collection data for {}: {}", collectionName, e.what());
     }
 
     return result;
@@ -470,7 +468,7 @@ int MongoDBDatabaseNode::getRowCount(const std::string& collectionName, const st
 
         return static_cast<int>(coll.count_documents(filterDoc));
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error getting row count for {}: {}", collectionName, e.what()));
+        spdlog::error("Error getting row count for {}: {}", collectionName, e.what());
         return 0;
     }
 }

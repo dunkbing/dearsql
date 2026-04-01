@@ -592,8 +592,8 @@ std::shared_ptr<Tab> TabManager::createTableEditorTab(IDatabaseNode* node, const
     return tab;
 }
 
-std::shared_ptr<Tab> TabManager::createSQLEditorTabFromScript(IDatabaseNode* node,
-                                                              const SqlScript& script) {
+std::shared_ptr<Tab> TabManager::createSQLEditorTabFromQuery(IDatabaseNode* node,
+                                                             const SqlScript& script) {
     // focus existing tab if the same script is already open
     for (auto& tab : tabs) {
         if (tab->getType() == TabType::SQL_EDITOR) {

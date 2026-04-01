@@ -9,7 +9,6 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -17,6 +16,7 @@
 #include <format>
 #include <hiredis/hiredis.h>
 #include <hiredis/hiredis_ssl.h>
+#include <spdlog/spdlog.h>
 
 RedisPubSubTab::RedisPubSubTab(const std::string& name, RedisDatabase* db)
     : Tab(name, TabType::REDIS_PUBSUB), db_(db), statusPanel_(db) {
@@ -268,7 +268,7 @@ void RedisPubSubTab::publish(const std::string& channel, const std::string& mess
     std::string cmd = std::format("PUBLISH {} {}", quote(channel), quote(message));
     auto result = db_->executeQuery(cmd);
     if (!result.empty() && !result[0].success) {
-        Logger::error(std::format("Pub/Sub publish failed: {}", result[0].errorMessage));
+        spdlog::error("Pub/Sub publish failed: {}", result[0].errorMessage);
     }
 }
 

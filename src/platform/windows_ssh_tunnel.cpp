@@ -2,7 +2,7 @@
 
 #include "database/db_interface.hpp"
 #include "database/ssh_tunnel.hpp"
-#include "utils/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -109,9 +109,8 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     CloseHandle(pi.hThread);
     processHandle_ = pi.hProcess;
 
-    Logger::info("SSH tunnel spawned (pid " + std::to_string(pi.dwProcessId) +
-                 ") forwarding 127.0.0.1:" + std::to_string(localPort_) + " -> " + remoteHost +
-                 ":" + std::to_string(remotePort) + " via " + ssh.host);
+    spdlog::info("SSH tunnel spawned (pid {}) forwarding 127.0.0.1:{} -> {}:{} via {}",
+                 pi.dwProcessId, localPort_, remoteHost, remotePort, ssh.host);
 
     const int failedLocalPort = localPort_;
     if (!waitForPortReady(failedLocalPort, 15000)) {
@@ -137,7 +136,7 @@ void SSHTunnel::stop() {
         TerminateProcess(static_cast<HANDLE>(processHandle_), 0);
         WaitForSingleObject(static_cast<HANDLE>(processHandle_), 2000);
         CloseHandle(static_cast<HANDLE>(processHandle_));
-        Logger::info("SSH tunnel stopped");
+        spdlog::info("SSH tunnel stopped");
         processHandle_ = nullptr;
     }
     localPort_ = 0;

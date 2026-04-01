@@ -4,13 +4,13 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
-#include "database/ddl_builder.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "database/sql_builder.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
@@ -45,8 +45,8 @@ namespace {
     void openStructureTab(IDatabaseNode* node, const Table& table,
                           const std::string& schemaPrefix = "") {
         auto& app = Application::getInstance();
-        DDLBuilder ddl(node->getDatabaseType());
-        std::string sql = ddl.createTable(table, schemaPrefix);
+        auto ddl = createSQLBuilder(node->getDatabaseType());
+        std::string sql = ddl->createTable(table, schemaPrefix);
         std::string formatted = dearsql::TextEditor::FormatSQL(sql);
         if (formatted.empty())
             formatted = sql;

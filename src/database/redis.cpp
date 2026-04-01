@@ -906,7 +906,7 @@ bool RedisDatabase::selectDatabase(int dbIndex) {
         selectedDbIndex_ = dbIndex;
         return true;
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error selecting Redis database {}: {}", dbIndex, e.what()));
+        spdlog::error("Error selecting Redis database {}: {}", dbIndex, e.what());
         return false;
     }
 }
@@ -1019,7 +1019,7 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
         }
 
     } catch (const std::exception& e) {
-        Logger::error(std::format("Error fetching Redis database info: {}", e.what()));
+        spdlog::error("Error fetching Redis database info: {}", e.what());
     }
 
     return result;

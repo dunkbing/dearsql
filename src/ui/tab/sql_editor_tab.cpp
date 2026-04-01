@@ -868,247 +868,326 @@ void SQLEditorTab::updateCompletionKeywords() {
     // SQL functions (aggregate, string, date, math, conditional)
     static const std::vector<std::string> sqlFunctions = {
         // Aggregate
-        "COUNT", "SUM", "AVG", "MIN", "MAX", "GROUP_CONCAT", "STRING_AGG", "ARRAY_AGG",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MIN",
+        "MAX",
+        "GROUP_CONCAT",
+        "STRING_AGG",
+        "ARRAY_AGG",
         // String
-        "CONCAT", "LENGTH", "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "SUBSTRING",
-        "REPLACE", "LEFT", "RIGHT", "REVERSE", "REPEAT", "POSITION", "STRPOS",
-        "SPLIT_PART", "INITCAP", "LPAD", "RPAD", "TRANSLATE", "FORMAT",
+        "CONCAT",
+        "LENGTH",
+        "UPPER",
+        "LOWER",
+        "TRIM",
+        "LTRIM",
+        "RTRIM",
+        "SUBSTRING",
+        "REPLACE",
+        "LEFT",
+        "RIGHT",
+        "REVERSE",
+        "REPEAT",
+        "POSITION",
+        "STRPOS",
+        "SPLIT_PART",
+        "INITCAP",
+        "LPAD",
+        "RPAD",
+        "TRANSLATE",
+        "FORMAT",
         // Date/Time
-        "NOW", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
-        "DATE_TRUNC", "DATE_PART", "EXTRACT", "AGE", "DATE_ADD", "DATE_SUB",
-        "DATEDIFF", "DATEADD", "GETDATE", "SYSDATE", "TO_DATE", "TO_CHAR",
-        "TO_TIMESTAMP", "INTERVAL",
+        "NOW",
+        "CURRENT_DATE",
+        "CURRENT_TIME",
+        "CURRENT_TIMESTAMP",
+        "DATE_TRUNC",
+        "DATE_PART",
+        "EXTRACT",
+        "AGE",
+        "DATE_ADD",
+        "DATE_SUB",
+        "DATEDIFF",
+        "DATEADD",
+        "GETDATE",
+        "SYSDATE",
+        "TO_DATE",
+        "TO_CHAR",
+        "TO_TIMESTAMP",
+        "INTERVAL",
         // Math
-        "ABS", "CEIL", "CEILING", "FLOOR", "ROUND", "MOD", "POWER", "SQRT",
-        "SIGN", "RANDOM", "LOG", "LN", "EXP", "PI", "GREATEST", "LEAST",
+        "ABS",
+        "CEIL",
+        "CEILING",
+        "FLOOR",
+        "ROUND",
+        "MOD",
+        "POWER",
+        "SQRT",
+        "SIGN",
+        "RANDOM",
+        "LOG",
+        "LN",
+        "EXP",
+        "PI",
+        "GREATEST",
+        "LEAST",
         // Conditional
-        "COALESCE", "NULLIF", "IFNULL", "NVL", "NVL2", "DECODE", "IIF",
+        "COALESCE",
+        "NULLIF",
+        "IFNULL",
+        "NVL",
+        "NVL2",
+        "DECODE",
+        "IIF",
         // Type conversion
-        "CAST", "CONVERT", "TRY_CAST",
+        "CAST",
+        "CONVERT",
+        "TRY_CAST",
         // Window
-        "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD",
-        "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE",
+        "ROW_NUMBER",
+        "RANK",
+        "DENSE_RANK",
+        "NTILE",
+        "LAG",
+        "LEAD",
+        "FIRST_VALUE",
+        "LAST_VALUE",
+        "NTH_VALUE",
         // JSON (PostgreSQL/MySQL)
-        "JSON_AGG", "JSON_BUILD_OBJECT", "JSON_EXTRACT", "JSON_EXTRACT_PATH",
-        "JSONB_BUILD_OBJECT", "JSON_OBJECT", "JSON_ARRAY",
+        "JSON_AGG",
+        "JSON_BUILD_OBJECT",
+        "JSON_EXTRACT",
+        "JSON_EXTRACT_PATH",
+        "JSONB_BUILD_OBJECT",
+        "JSON_OBJECT",
+        "JSON_ARRAY",
         // Other
-        "EXISTS", "IN", "ANY", "ALL", "SOME",
-        "GENERATE_SERIES", "UNNEST", "ARRAY_LENGTH",
+        "EXISTS",
+        "IN",
+        "ANY",
+        "ALL",
+        "SOME",
+        "GENERATE_SERIES",
+        "UNNEST",
+        "ARRAY_LENGTH",
     };
     for (const auto& fn : sqlFunctions)
         items.push_back({fn, CompletionKind::Function});
 
-        auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
-            if (!sourceNode)
-                return;
-            for (const auto& table : sourceNode->getTables()) {
-                for (const auto& col : table.columns) {
-                    CompletionItem colItem(col.name, CompletionKind::Column);
-                    // Show data type and table name as detail
-                    std::string detail = col.type;
-                    if (!table.name.empty()) {
-                        detail = table.name + "  " + detail;
-                    }
-                    colItem.detailText = detail;
-                    items.push_back(std::move(colItem));
+    auto addColumnsFromNode = [&](IDatabaseNode* sourceNode) {
+        if (!sourceNode)
+            return;
+        for (const auto& table : sourceNode->getTables()) {
+            for (const auto& col : table.columns) {
+                CompletionItem colItem(col.name, CompletionKind::Column);
+                // Show data type and table name as detail
+                std::string detail = col.type;
+                if (!table.name.empty()) {
+                    detail = table.name + "  " + detail;
                 }
-            }
-        };
-
-        auto addNodeObjects = [&](IDatabaseNode* sourceNode,
-                                  const std::vector<std::string>& qualifiers) {
-            if (!sourceNode)
-                return;
-
-            for (const auto& table : sourceNode->getTables())
-                items.push_back(makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
-
-            for (const auto& view : sourceNode->getViews())
-                items.push_back(makeCompletionItem(view.name, CompletionKind::View, qualifiers));
-
-            for (const auto& seq : sourceNode->getSequences())
-                items.push_back(makeCompletionItem(seq, CompletionKind::Sequence, qualifiers));
-        };
-
-        auto finalizePartialItems = [&]() {
-            sortAndDeduplicateCompletionItems(items);
-            sqlEditor.SetCompletionItems(items);
-        };
-
-        if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_); dbNode) {
-            dbNode->checkSchemasStatusAsync();
-            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
-                dbNode->startSchemasLoadAsync();
-
-            bool tablesLoaded = dbNode->schemasLoaded;
-            bool viewsLoaded = dbNode->schemasLoaded;
-            for (const auto& schema : dbNode->schemas) {
-                if (!schema)
-                    continue;
-                scheduleMetadataLoad(schema.get());
-                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
-                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
-                addNodeObjects(schema.get(), {schema->name});
-                addColumnsFromNode(schema.get());
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
-                   schemaNode && schemaNode->parentDbNode) {
-            auto* dbNode = schemaNode->parentDbNode;
-            dbNode->checkSchemasStatusAsync();
-            if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
-                dbNode->startSchemasLoadAsync();
-
-            bool tablesLoaded = true;
-            bool viewsLoaded = true;
-            for (const auto& schema : dbNode->schemas) {
-                if (!schema)
-                    continue;
-                scheduleMetadataLoad(schema.get());
-                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
-                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
-                addNodeObjects(schema.get(), {schema->name});
-                if (schema.get() == schemaNode)
-                    addColumnsFromNode(schema.get());
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else if (auto* mySqlNode = dynamic_cast<MySQLDatabaseNode*>(node_);
-                   mySqlNode && mySqlNode->parentDb) {
-            auto* serverDb = mySqlNode->parentDb;
-            serverDb->checkDatabasesStatusAsync();
-
-            bool tablesLoaded = true;
-            bool viewsLoaded = true;
-            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
-                if (!dbEntry)
-                    continue;
-                scheduleMetadataLoad(dbEntry.get());
-                tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
-                viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
-                addNodeObjects(dbEntry.get(), {dbEntry->name});
-                if (dbEntry.get() == mySqlNode)
-                    addColumnsFromNode(dbEntry.get());
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else if (auto* msSqlSchemaNode = dynamic_cast<MSSQLSchemaNode*>(node_);
-                   msSqlSchemaNode && msSqlSchemaNode->parentDbNode) {
-            auto* msSqlDbNode = msSqlSchemaNode->parentDbNode;
-            auto* serverDb = msSqlDbNode->parentDb;
-            if (serverDb)
-                serverDb->checkDatabasesStatusAsync();
-
-            bool tablesLoaded = true;
-            bool viewsLoaded = true;
-            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
-                if (!dbEntry)
-                    continue;
-
-                dbEntry->checkSchemasStatusAsync();
-                if (!dbEntry->schemasLoaded) {
-                    if (!dbEntry->schemasLoader.isRunning())
-                        dbEntry->startSchemasLoadAsync();
-                    finalizePartialItems();
-                    return;
-                }
-
-                for (const auto& schema : dbEntry->schemas) {
-                    if (!schema)
-                        continue;
-                    scheduleMetadataLoad(schema.get());
-                    tablesLoaded = tablesLoaded && schema->isTablesLoaded();
-                    viewsLoaded = viewsLoaded && schema->isViewsLoaded();
-                    addNodeObjects(schema.get(), {dbEntry->name, schema->name});
-                    if (schema.get() == msSqlSchemaNode)
-                        addColumnsFromNode(schema.get());
-                }
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else if (auto* msSqlNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
-                   msSqlNode && msSqlNode->parentDb) {
-            auto* serverDb = msSqlNode->parentDb;
-            serverDb->checkDatabasesStatusAsync();
-
-            bool tablesLoaded = true;
-            bool viewsLoaded = true;
-            for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
-                if (!dbEntry)
-                    continue;
-
-                dbEntry->checkSchemasStatusAsync();
-                if (!dbEntry->schemasLoaded) {
-                    if (!dbEntry->schemasLoader.isRunning())
-                        dbEntry->startSchemasLoadAsync();
-                    finalizePartialItems();
-                    return;
-                }
-
-                for (const auto& schema : dbEntry->schemas) {
-                    if (!schema)
-                        continue;
-                    scheduleMetadataLoad(schema.get());
-                    tablesLoaded = tablesLoaded && schema->isTablesLoaded();
-                    viewsLoaded = viewsLoaded && schema->isViewsLoaded();
-                    addNodeObjects(schema.get(), {dbEntry->name, schema->name});
-                }
-                if (dbEntry.get() == msSqlNode && !dbEntry->schemas.empty())
-                    addColumnsFromNode(dbEntry->schemas.front().get());
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else if (auto* oracleNode = dynamic_cast<OracleDatabaseNode*>(node_);
-                   oracleNode && oracleNode->parentDb) {
-            auto* serverDb = oracleNode->parentDb;
-            serverDb->checkDatabasesStatusAsync();
-
-            bool tablesLoaded = true;
-            bool viewsLoaded = true;
-            for (const auto& schemaEntry : serverDb->getDatabaseDataMap() | std::views::values) {
-                if (!schemaEntry)
-                    continue;
-                scheduleMetadataLoad(schemaEntry.get());
-                tablesLoaded = tablesLoaded && schemaEntry->isTablesLoaded();
-                viewsLoaded = viewsLoaded && schemaEntry->isViewsLoaded();
-                addNodeObjects(schemaEntry.get(), {schemaEntry->name});
-                if (schemaEntry.get() == oracleNode)
-                    addColumnsFromNode(schemaEntry.get());
-            }
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
-            }
-        } else {
-            scheduleMetadataLoad(node_);
-            const bool tablesLoaded = node_->isTablesLoaded();
-            const bool viewsLoaded = node_->isViewsLoaded();
-
-            addNodeObjects(node_, {});
-            addColumnsFromNode(node_);
-
-            if (!tablesLoaded || !viewsLoaded) {
-                finalizePartialItems();
-                return;
+                colItem.detailText = detail;
+                items.push_back(std::move(colItem));
             }
         }
+    };
+
+    auto addNodeObjects = [&](IDatabaseNode* sourceNode,
+                              const std::vector<std::string>& qualifiers) {
+        if (!sourceNode)
+            return;
+
+        for (const auto& table : sourceNode->getTables())
+            items.push_back(makeCompletionItem(table.name, CompletionKind::Table, qualifiers));
+
+        for (const auto& view : sourceNode->getViews())
+            items.push_back(makeCompletionItem(view.name, CompletionKind::View, qualifiers));
+
+        for (const auto& seq : sourceNode->getSequences())
+            items.push_back(makeCompletionItem(seq, CompletionKind::Sequence, qualifiers));
+    };
+
+    auto finalizePartialItems = [&]() {
+        sortAndDeduplicateCompletionItems(items);
+        sqlEditor.SetCompletionItems(items);
+    };
+
+    if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node_); dbNode) {
+        dbNode->checkSchemasStatusAsync();
+        if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+            dbNode->startSchemasLoadAsync();
+
+        bool tablesLoaded = dbNode->schemasLoaded;
+        bool viewsLoaded = dbNode->schemasLoaded;
+        for (const auto& schema : dbNode->schemas) {
+            if (!schema)
+                continue;
+            scheduleMetadataLoad(schema.get());
+            tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+            viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+            addNodeObjects(schema.get(), {schema->name});
+            addColumnsFromNode(schema.get());
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else if (auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node_);
+               schemaNode && schemaNode->parentDbNode) {
+        auto* dbNode = schemaNode->parentDbNode;
+        dbNode->checkSchemasStatusAsync();
+        if (!dbNode->schemasLoaded && !dbNode->schemasLoader.isRunning())
+            dbNode->startSchemasLoadAsync();
+
+        bool tablesLoaded = true;
+        bool viewsLoaded = true;
+        for (const auto& schema : dbNode->schemas) {
+            if (!schema)
+                continue;
+            scheduleMetadataLoad(schema.get());
+            tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+            viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+            addNodeObjects(schema.get(), {schema->name});
+            if (schema.get() == schemaNode)
+                addColumnsFromNode(schema.get());
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else if (auto* mySqlNode = dynamic_cast<MySQLDatabaseNode*>(node_);
+               mySqlNode && mySqlNode->parentDb) {
+        auto* serverDb = mySqlNode->parentDb;
+        serverDb->checkDatabasesStatusAsync();
+
+        bool tablesLoaded = true;
+        bool viewsLoaded = true;
+        for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+            if (!dbEntry)
+                continue;
+            scheduleMetadataLoad(dbEntry.get());
+            tablesLoaded = tablesLoaded && dbEntry->isTablesLoaded();
+            viewsLoaded = viewsLoaded && dbEntry->isViewsLoaded();
+            addNodeObjects(dbEntry.get(), {dbEntry->name});
+            if (dbEntry.get() == mySqlNode)
+                addColumnsFromNode(dbEntry.get());
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else if (auto* msSqlSchemaNode = dynamic_cast<MSSQLSchemaNode*>(node_);
+               msSqlSchemaNode && msSqlSchemaNode->parentDbNode) {
+        auto* msSqlDbNode = msSqlSchemaNode->parentDbNode;
+        auto* serverDb = msSqlDbNode->parentDb;
+        if (serverDb)
+            serverDb->checkDatabasesStatusAsync();
+
+        bool tablesLoaded = true;
+        bool viewsLoaded = true;
+        for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+            if (!dbEntry)
+                continue;
+
+            dbEntry->checkSchemasStatusAsync();
+            if (!dbEntry->schemasLoaded) {
+                if (!dbEntry->schemasLoader.isRunning())
+                    dbEntry->startSchemasLoadAsync();
+                finalizePartialItems();
+                return;
+            }
+
+            for (const auto& schema : dbEntry->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {dbEntry->name, schema->name});
+                if (schema.get() == msSqlSchemaNode)
+                    addColumnsFromNode(schema.get());
+            }
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else if (auto* msSqlNode = dynamic_cast<MSSQLDatabaseNode*>(node_);
+               msSqlNode && msSqlNode->parentDb) {
+        auto* serverDb = msSqlNode->parentDb;
+        serverDb->checkDatabasesStatusAsync();
+
+        bool tablesLoaded = true;
+        bool viewsLoaded = true;
+        for (const auto& dbEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+            if (!dbEntry)
+                continue;
+
+            dbEntry->checkSchemasStatusAsync();
+            if (!dbEntry->schemasLoaded) {
+                if (!dbEntry->schemasLoader.isRunning())
+                    dbEntry->startSchemasLoadAsync();
+                finalizePartialItems();
+                return;
+            }
+
+            for (const auto& schema : dbEntry->schemas) {
+                if (!schema)
+                    continue;
+                scheduleMetadataLoad(schema.get());
+                tablesLoaded = tablesLoaded && schema->isTablesLoaded();
+                viewsLoaded = viewsLoaded && schema->isViewsLoaded();
+                addNodeObjects(schema.get(), {dbEntry->name, schema->name});
+            }
+            if (dbEntry.get() == msSqlNode && !dbEntry->schemas.empty())
+                addColumnsFromNode(dbEntry->schemas.front().get());
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else if (auto* oracleNode = dynamic_cast<OracleDatabaseNode*>(node_);
+               oracleNode && oracleNode->parentDb) {
+        auto* serverDb = oracleNode->parentDb;
+        serverDb->checkDatabasesStatusAsync();
+
+        bool tablesLoaded = true;
+        bool viewsLoaded = true;
+        for (const auto& schemaEntry : serverDb->getDatabaseDataMap() | std::views::values) {
+            if (!schemaEntry)
+                continue;
+            scheduleMetadataLoad(schemaEntry.get());
+            tablesLoaded = tablesLoaded && schemaEntry->isTablesLoaded();
+            viewsLoaded = viewsLoaded && schemaEntry->isViewsLoaded();
+            addNodeObjects(schemaEntry.get(), {schemaEntry->name});
+            if (schemaEntry.get() == oracleNode)
+                addColumnsFromNode(schemaEntry.get());
+        }
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    } else {
+        scheduleMetadataLoad(node_);
+        const bool tablesLoaded = node_->isTablesLoaded();
+        const bool viewsLoaded = node_->isViewsLoaded();
+
+        addNodeObjects(node_, {});
+        addColumnsFromNode(node_);
+
+        if (!tablesLoaded || !viewsLoaded) {
+            finalizePartialItems();
+            return;
+        }
+    }
 
     // Sort and deduplicate by text
     sortAndDeduplicateCompletionItems(items);

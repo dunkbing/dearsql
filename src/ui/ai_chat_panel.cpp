@@ -120,7 +120,8 @@ void AIChatPanel::renderMessages() {
         UIUtils::Spinner("##ai_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (chatState_->isBuildingPrompt()) {
             ImGui::SameLine();
-            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "Analyzing database schema...");
+            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0,
+                               "Analyzing database schema...");
         }
     }
 }
@@ -397,9 +398,10 @@ void AIChatPanel::sendMessage() {
         return; // Prevent multiple clicks
     }
 
-    chatState_->buildSystemPromptAsync([this, provider, apiKey, model, requestMessages](std::string systemPrompt) {
-        client_->sendStreaming(provider, apiKey, model, systemPrompt, requestMessages);
-    });
+    chatState_->buildSystemPromptAsync(
+        [this, provider, apiKey, model, requestMessages](std::string systemPrompt) {
+            client_->sendStreaming(provider, apiKey, model, systemPrompt, requestMessages);
+        });
 }
 
 void AIChatPanel::loadModelSettings() {

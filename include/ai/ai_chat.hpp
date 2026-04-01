@@ -3,8 +3,8 @@
 #include "ai/ai_client.hpp"
 #include "database/async_helper.hpp"
 #include <functional>
-#include <string>
 #include <stop_token>
+#include <string>
 #include <vector>
 
 class IDatabaseNode;

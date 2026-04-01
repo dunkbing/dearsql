@@ -673,7 +673,6 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     spdlog::debug("Triggered refresh for {} schemas in database {}", schemas.size(), name);
 }
 
-
 PostgresSchemaNode* PostgresDatabaseNode::findSchema(const std::string& schemaName) const {
     for (const auto& schema : schemas) {
         if (schema && schema->name == schemaName) {
@@ -682,10 +681,6 @@ PostgresSchemaNode* PostgresDatabaseNode::findSchema(const std::string& schemaNa
     }
     return nullptr;
 }
-
-
-
-
 
 std::pair<bool, std::string> PostgresDatabaseNode::createTable(const Table& table) {
     // Delegate to "public" schema by default
@@ -699,7 +694,4 @@ std::pair<bool, std::string> PostgresDatabaseNode::createTable(const Table& tabl
     }
     return {false, "No schemas available"};
 }
-
-
-
 

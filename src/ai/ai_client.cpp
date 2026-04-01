@@ -254,7 +254,7 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
                         if (event.contains("error")) {
                             auto errObj = event["error"];
                             std::string errMsg = errObj.value("message", "Unknown Gemini error");
-                            Logger::error(std::format("Gemini Stream Error Object: {}", event.dump()));
+                            spdlog::error("Gemini Stream Error Object: {}", event.dump());
                             finishWithError(errMsg);
                             return false;
                         }
@@ -271,10 +271,10 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
     if (!res) {
         if (!stopToken.stop_requested()) {
             finishWithError("Connection to Gemini API failed completely (network issue)");
-            Logger::error("Gemini API Connection failed entirely");
+            spdlog::error("Gemini API Connection failed entirely");
         }
     } else if (res->status != 200 && !stopToken.stop_requested()) {
-        Logger::error(std::format("Gemini API HTTP Error {}: {}", res->status, res->body));
+        spdlog::error("Gemini API HTTP Error {}: {}", res->status, res->body);
         try {
             auto errBody = json::parse(res->body);
             auto errObj = errBody.value("error", json::object());
@@ -282,7 +282,8 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
 
             // Check if it's the model not found error and append a helpful message
             if (res->status == 404 && errMsg.find("models/") != std::string::npos) {
-                errMsg += "\nHint: Check if the selected model is supported by your API key/project.";
+                errMsg +=
+                    "\nHint: Check if the selected model is supported by your API key/project.";
             }
 
             finishWithError(std::format("Gemini API error ({}): {}", res->status, errMsg));

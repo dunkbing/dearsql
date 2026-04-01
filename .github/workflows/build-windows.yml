@@ -2,7 +2,7 @@ name: Build Windows MSI
 
 on:
   push:
-    branches: [ "main", "master", "features/giangnh/update-suggession" ]
+    branches: ["main", "master"]
   workflow_dispatch: # Cho phép bấm chạy bằng tay từ giao diện GitHub
 
 jobs:
@@ -10,79 +10,79 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Setup vcpkg
-      run: |
-        git clone https://github.com/microsoft/vcpkg.git
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat
 
-    - name: Install .NET (for WiX toolset)
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '8.0.x'
+      - name: Install .NET (for WiX toolset)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
 
-    - name: Setup WiX Toolset
-      run: |
-        dotnet tool install --global wix --version 5.0.0
-        wix extension add WixToolset.UI.wixext/5.0.0
+      - name: Setup WiX Toolset
+        run: |
+          dotnet tool install --global wix --version 5.0.0
+          wix extension add WixToolset.UI.wixext/5.0.0
 
-    - name: Setup MSVC Developer Command Prompt
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Configure CMake
-      run: |
-        cmake -S . -B build_release `
-          -G "Visual Studio 17 2022" `
-          -A x64 `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
-          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build_release `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
-    - name: Build DearSQL executable
-      run: |
-        cmake --build build_release --config Release --target dearsql
+      - name: Build DearSQL executable
+        run: |
+          cmake --build build_release --config Release --target dearsql
 
-    - name: Prepare MSI Staging Directory
-      run: |
-        mkdir -p build_release\msi_stage
-        copy build_release\Release\dearsql.exe build_release\msi_stage\
+      - name: Prepare MSI Staging Directory
+        run: |
+          mkdir -p build_release\msi_stage
+          copy build_release\Release\dearsql.exe build_release\msi_stage\
 
-        # Check if WinSparkle.dll exists and copy it (if applicable)
-        if (Test-Path "external\WinSparkle\x64\Release\WinSparkle.dll") {
-            copy external\WinSparkle\x64\Release\WinSparkle.dll build_release\msi_stage\
-        }
+          # Check if WinSparkle.dll exists and copy it (if applicable)
+          if (Test-Path "external\WinSparkle\x64\Release\WinSparkle.dll") {
+              copy external\WinSparkle\x64\Release\WinSparkle.dll build_release\msi_stage\
+          }
 
-    - name: Build MSI Installer
-      run: |
-        # Get AppVersion from APP_METADATA
-        $metadata = @{}
-        Get-Content "APP_METADATA" | ForEach-Object {
-            if ($_ -match '^(\w+)=(.*)$') {
-                $metadata[$Matches[1]] = $Matches[2]
-            }
-        }
-        $AppVersion = $metadata["APP_VERSION"]
-        $AppName = $metadata["APP_NAME"]
+      - name: Build MSI Installer
+        run: |
+          # Get AppVersion from APP_METADATA
+          $metadata = @{}
+          Get-Content "APP_METADATA" | ForEach-Object {
+              if ($_ -match '^(\w+)=(.*)$') {
+                  $metadata[$Matches[1]] = $Matches[2]
+              }
+          }
+          $AppVersion = $metadata["APP_VERSION"]
+          $AppName = $metadata["APP_NAME"]
 
-        $OutputMsi = "build_release\${AppName}-${AppVersion}-x64.msi"
+          $OutputMsi = "build_release\${AppName}-${AppVersion}-x64.msi"
 
-        wix build packaging\windows\DearSQL.wxs `
-            -ext WixToolset.UI.wixext `
-            -d ProjectDir="build_release\msi_stage" `
-            -d SourceDir="." `
-            -d AppVersion="$AppVersion" `
-            -o $OutputMsi `
-            -arch x64
+          wix build packaging\windows\DearSQL.wxs `
+              -ext WixToolset.UI.wixext `
+              -d ProjectDir="build_release\msi_stage" `
+              -d SourceDir="." `
+              -d AppVersion="$AppVersion" `
+              -o $OutputMsi `
+              -arch x64
 
-        echo "MSI_PATH=$OutputMsi" >> $env:GITHUB_ENV
+          echo "MSI_PATH=$OutputMsi" >> $env:GITHUB_ENV
 
-    - name: Upload Windows MSI Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: DearSQL-Windows-MSI
-        path: ${{ env.MSI_PATH }}
+      - name: Upload Windows MSI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DearSQL-Windows-MSI
+          path: ${{ env.MSI_PATH }}

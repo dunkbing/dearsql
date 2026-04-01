@@ -238,12 +238,13 @@ void DiagramTab::loadDatabaseSchema() {
 
     // Adaptive grid: number of columns ≈ ceil(sqrt(n)) for a roughly square layout
     const int tableCount = static_cast<int>(tables.size());
-    const int cols = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(tableCount)))));
+    const int cols =
+        std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(tableCount)))));
 
     constexpr float startX = 80.0f;
     constexpr float startY = 80.0f;
     constexpr float horizontalSpacing = 380.0f;
-    constexpr float verticalSpacing   = 320.0f;
+    constexpr float verticalSpacing = 320.0f;
 
     int col = 0, row = 0;
     for (const auto& table : tables) {
@@ -279,7 +280,7 @@ void DiagramTab::createTableNode(const Table& table, const ImVec2& position) {
     node.columnOutputPinIds.resize(table.columns.size());
     node.columnPinCanvasY.resize(table.columns.size(), 0.0f);
     for (size_t i = 0; i < table.columns.size(); ++i) {
-        node.columnPinIds[i]       = ax::NodeEditor::PinId(nextPinId++); // Input pin
+        node.columnPinIds[i] = ax::NodeEditor::PinId(nextPinId++);       // Input pin
         node.columnOutputPinIds[i] = ax::NodeEditor::PinId(nextPinId++); // Output pin
     }
 
@@ -400,8 +401,6 @@ void DiagramTab::renderNodes() {
         ImGui::PopStyleVar();
 
         ax::NodeEditor::EndNode();
-
-
 
         node.position = ax::NodeEditor::GetNodePosition(node.id);
     }

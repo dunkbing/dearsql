@@ -943,40 +943,50 @@ namespace dearsql {
             // Convert to lowercase for keyword matching
             std::string lStmt;
             lStmt.reserve(stmt.size());
-            for (char c : stmt) lStmt.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            for (char c : stmt)
+                lStmt.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
 
             // Find all FROM/JOIN positions and extract table names after them
             auto extractTablesAfterKeyword = [&](const std::string& keyword) {
                 size_t searchPos = 0;
                 while ((searchPos = lStmt.find(keyword, searchPos)) != std::string::npos) {
                     // Ensure it's a whole word
-                    if (searchPos > 0 && std::isalnum(static_cast<unsigned char>(lStmt[searchPos - 1]))) {
+                    if (searchPos > 0 &&
+                        std::isalnum(static_cast<unsigned char>(lStmt[searchPos - 1]))) {
                         searchPos += keyword.size();
                         continue;
                     }
                     size_t afterKw = searchPos + keyword.size();
-                    if (afterKw < lStmt.size() && std::isalnum(static_cast<unsigned char>(lStmt[afterKw]))) {
+                    if (afterKw < lStmt.size() &&
+                        std::isalnum(static_cast<unsigned char>(lStmt[afterKw]))) {
                         searchPos = afterKw;
                         continue;
                     }
 
                     // Skip whitespace after keyword
                     size_t p = afterKw;
-                    while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                    while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' ||
+                                               stmt[p] == '\t' || stmt[p] == '\r'))
                         ++p;
 
                     // Parse comma-separated table names (stop at keyword boundaries)
                     while (p < stmt.size()) {
                         // Skip whitespace
-                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' ||
+                                                   stmt[p] == '\t' || stmt[p] == '\r'))
                             ++p;
-                        if (p >= stmt.size()) break;
+                        if (p >= stmt.size())
+                            break;
 
-                        // Check if we hit a SQL keyword (WHERE, ON, SET, ORDER, GROUP, HAVING, LIMIT, etc.)
+                        // Check if we hit a SQL keyword (WHERE, ON, SET, ORDER, GROUP, HAVING,
+                        // LIMIT, etc.)
                         size_t kwCheck = p;
                         std::string nextWord;
-                        while (kwCheck < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[kwCheck])) || stmt[kwCheck] == '_'))
-                            nextWord.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(stmt[kwCheck++]))));
+                        while (kwCheck < stmt.size() &&
+                               (std::isalnum(static_cast<unsigned char>(stmt[kwCheck])) ||
+                                stmt[kwCheck] == '_'))
+                            nextWord.push_back(static_cast<char>(
+                                std::tolower(static_cast<unsigned char>(stmt[kwCheck++]))));
                         if (nextWord == "where" || nextWord == "on" || nextWord == "set" ||
                             nextWord == "order" || nextWord == "group" || nextWord == "having" ||
                             nextWord == "limit" || nextWord == "union" || nextWord == "inner" ||
@@ -987,7 +997,9 @@ namespace dearsql {
 
                         // Read table name (may include schema: schema.table)
                         std::string tableName;
-                        while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_' || stmt[p] == '.'))
+                        while (p < stmt.size() &&
+                               (std::isalnum(static_cast<unsigned char>(stmt[p])) ||
+                                stmt[p] == '_' || stmt[p] == '.'))
                             tableName.push_back(stmt[p++]);
 
                         if (!tableName.empty()) {
@@ -999,24 +1011,31 @@ namespace dearsql {
                         }
 
                         // Skip alias (next word after table name)
-                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t'))
+                        while (p < stmt.size() &&
+                               (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t'))
                             ++p;
                         // Skip alias word (if not a comma or keyword)
                         if (p < stmt.size() && stmt[p] != ',' && stmt[p] != ';') {
                             std::string maybeAlias;
                             size_t aliasStart = p;
-                            while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_'))
-                                maybeAlias.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(stmt[p++]))));
+                            while (p < stmt.size() &&
+                                   (std::isalnum(static_cast<unsigned char>(stmt[p])) ||
+                                    stmt[p] == '_'))
+                                maybeAlias.push_back(static_cast<char>(
+                                    std::tolower(static_cast<unsigned char>(stmt[p++]))));
                             if (maybeAlias == "as") {
                                 while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\t'))
                                     ++p;
-                                while (p < stmt.size() && (std::isalnum(static_cast<unsigned char>(stmt[p])) || stmt[p] == '_'))
+                                while (p < stmt.size() &&
+                                       (std::isalnum(static_cast<unsigned char>(stmt[p])) ||
+                                        stmt[p] == '_'))
                                     ++p;
                             }
                         }
 
                         // Skip comma
-                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' || stmt[p] == '\t' || stmt[p] == '\r'))
+                        while (p < stmt.size() && (stmt[p] == ' ' || stmt[p] == '\n' ||
+                                                   stmt[p] == '\t' || stmt[p] == '\r'))
                             ++p;
                         if (p < stmt.size() && stmt[p] == ',')
                             ++p;

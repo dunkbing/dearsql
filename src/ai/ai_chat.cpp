@@ -1,6 +1,5 @@
 #include "ai/ai_chat.hpp"
 #include "database/database_node.hpp"
-#include "utils/logger.hpp"
 #include <algorithm>
 #include <format>
 #include <string>
@@ -16,7 +15,7 @@ namespace {
                lowerType.find("enum") != std::string::npos ||
                lowerType.find("json") != std::string::npos; // often json behaves as string logic
     }
-}
+} // namespace
 
 AIChatState::AIChatState(IDatabaseNode* node) : node_(node) {}
 
@@ -66,9 +65,8 @@ void AIChatState::buildSystemPromptAsync(std::function<void(std::string)> callba
     }
 
     promptReadyCallback_ = std::move(callback);
-    promptBuilderOp_.startCancellable([this](std::stop_token stopToken) {
-        return buildSystemPrompt(stopToken);
-    });
+    promptBuilderOp_.startCancellable(
+        [this](std::stop_token stopToken) { return buildSystemPrompt(stopToken); });
 }
 
 void AIChatState::cancelAsyncPrompt() {
@@ -128,7 +126,8 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
     const bool isMongo = node_->getDatabaseType() == DatabaseType::MONGODB;
     std::string ctx;
     for (const auto& table : node_->getTables()) {
-        if (stopToken.stop_requested()) return "";
+        if (stopToken.stop_requested())
+            return "";
 
         if (isMongo) {
             ctx += std::format("Collection: {}", table.name);
@@ -145,7 +144,8 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
         } else {
             ctx += std::format("Table: {} (", table.name);
             for (size_t i = 0; i < table.columns.size(); ++i) {
-                if (stopToken.stop_requested()) return "";
+                if (stopToken.stop_requested())
+                    return "";
                 if (i > 0)
                     ctx += ", ";
                 const auto& col = table.columns[i];
@@ -160,8 +160,8 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
                     try {
                         // Fast fetch: top 3 non-null values
                         std::string sampleQuery = std::format(
-                            "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL LIMIT 3",
-                            col.name, table.name, col.name);
+                            "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL LIMIT 3", col.name,
+                            table.name, col.name);
 
                         // For MySQL/MariaDB use backticks instead of double quotes if preferred,
                         // but double quotes are ANSI standard. We will fallback to raw name
@@ -169,13 +169,14 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
                         // ask the node to execute it.
                         if (node_->getDatabaseType() == DatabaseType::MYSQL ||
                             node_->getDatabaseType() == DatabaseType::MARIADB) {
-                            sampleQuery = std::format(
-                                "SELECT `{}` FROM `{}` WHERE `{}` IS NOT NULL LIMIT 3",
-                                col.name, table.name, col.name);
+                            sampleQuery =
+                                std::format("SELECT `{}` FROM `{}` WHERE `{}` IS NOT NULL LIMIT 3",
+                                            col.name, table.name, col.name);
                         }
 
                         auto sampleRes = node_->executeQuery(sampleQuery, 3);
-                        if (stopToken.stop_requested()) return "";
+                        if (stopToken.stop_requested())
+                            return "";
                         if (sampleRes.success() && !sampleRes.statements.empty() &&
                             !sampleRes.statements[0].tableData.empty()) {
 
@@ -183,7 +184,8 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
                             bool first = true;
                             for (const auto& row : sampleRes.statements[0].tableData) {
                                 if (!row.empty()) {
-                                    if (!first) samplesStr += ", ";
+                                    if (!first)
+                                        samplesStr += ", ";
                                     samplesStr += "'" + row[0] + "'";
                                     first = false;
                                 }
@@ -220,7 +222,8 @@ std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
     std::string dbType = dbTypeName();
     std::string schema = buildSchemaContext(stopToken);
 
-    if (stopToken.stop_requested() || schema.empty()) return "";
+    if (stopToken.stop_requested() || schema.empty())
+        return "";
 
     bool isMongo = node_ && node_->getDatabaseType() == DatabaseType::MONGODB;
 

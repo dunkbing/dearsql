@@ -165,74 +165,36 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name, IDa
         return nullptr;
     }
 
-    std::string tabName = name;
-    if (tabName.empty()) {
-        std::string baseName = "SQL";
-
-        if (node) {
-            if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node)) {
-                if (schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-                    baseName += " - " + schemaNode->parentDbNode->name;
-                    baseName += " - " + schemaNode->name;
-                }
-            } else if (auto* postgresDbNode = dynamic_cast<PostgresDatabaseNode*>(node)) {
-                baseName += " - " + postgresDbNode->name;
-            } else if (auto* mysqlDbNode = dynamic_cast<MySQLDatabaseNode*>(node)) {
-                baseName += " - " + mysqlDbNode->name;
-            } else if (auto* sqliteDbNode = dynamic_cast<SQLiteDatabase*>(node)) {
-                baseName += " - " + sqliteDbNode->getName();
-            } else if (auto* mssqlDbNode = dynamic_cast<MSSQLDatabaseNode*>(node)) {
-                baseName += " - " + mssqlDbNode->name;
-            } else if (auto* oracleDbNode = dynamic_cast<OracleDatabaseNode*>(node)) {
-                baseName += " - " + oracleDbNode->name;
-            } else if (auto* dbNode = node->ownerDatabase()) {
-                baseName += " - " + dbNode->getConnectionInfo().host;
-            } else {
-                baseName += " - " + node->getName();
-            }
+    std::string baseName = "SQL";
+    if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node)) {
+        if (schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
+            baseName += " - " + schemaNode->parentDbNode->name;
+            baseName += " - " + schemaNode->name;
         }
-
-        int count = 1;
-        tabName = baseName;
-        while (hasTabTitle(tabName)) {
-            count++;
-            tabName = baseName + " (" + std::to_string(count) + ")";
-        }
+    } else if (auto* postgresDbNode = dynamic_cast<PostgresDatabaseNode*>(node)) {
+        baseName += " - " + postgresDbNode->name;
+    } else if (auto* mysqlDbNode = dynamic_cast<MySQLDatabaseNode*>(node)) {
+        baseName += " - " + mysqlDbNode->name;
+    } else if (auto* sqliteDbNode = dynamic_cast<SQLiteDatabase*>(node)) {
+        baseName += " - " + sqliteDbNode->getName();
+    } else if (auto* mssqlDbNode = dynamic_cast<MSSQLDatabaseNode*>(node)) {
+        baseName += " - " + mssqlDbNode->name;
+    } else if (auto* oracleDbNode = dynamic_cast<OracleDatabaseNode*>(node)) {
+        baseName += " - " + oracleDbNode->name;
+    } else if (auto* dbNode = node->ownerDatabase()) {
+        baseName += " - " + dbNode->getConnectionInfo().host;
     } else {
-        // If a name is provided (like table name), we construct "SQL - db - schema - table"
-        std::string baseName = "SQL";
+        baseName += " - " + node->getName();
+    }
 
-        if (node) {
-            if (const auto* schemaNode = dynamic_cast<PostgresSchemaNode*>(node)) {
-                if (schemaNode->parentDbNode && schemaNode->parentDbNode->parentDb) {
-                    baseName += " - " + schemaNode->parentDbNode->name;
-                    baseName += " - " + schemaNode->name;
-                }
-            } else if (auto* postgresDbNode = dynamic_cast<PostgresDatabaseNode*>(node)) {
-                baseName += " - " + postgresDbNode->name;
-            } else if (auto* mysqlDbNode = dynamic_cast<MySQLDatabaseNode*>(node)) {
-                baseName += " - " + mysqlDbNode->name;
-            } else if (auto* sqliteDbNode = dynamic_cast<SQLiteDatabase*>(node)) {
-                baseName += " - " + sqliteDbNode->getName();
-            } else if (auto* mssqlDbNode = dynamic_cast<MSSQLDatabaseNode*>(node)) {
-                baseName += " - " + mssqlDbNode->name;
-            } else if (auto* oracleDbNode = dynamic_cast<OracleDatabaseNode*>(node)) {
-                baseName += " - " + oracleDbNode->name;
-            } else if (auto* dbNode = node->ownerDatabase()) {
-                baseName += " - " + dbNode->getConnectionInfo().host;
-            } else {
-                baseName += " - " + node->getName();
-            }
-        }
-
+    if (!name.empty()) {
         baseName += " - " + name;
+    }
 
-        int count = 1;
-        tabName = baseName;
-        while (hasTabTitle(tabName)) {
-            count++;
-            tabName = baseName + " (" + std::to_string(count) + ")";
-        }
+    int count = 1;
+    std::string tabName = baseName;
+    while (hasTabTitle(tabName)) {
+        tabName = baseName + " (" + std::to_string(++count) + ")";
     }
 
     auto tab = std::make_shared<SQLEditorTab>(tabName, node, schemaName);

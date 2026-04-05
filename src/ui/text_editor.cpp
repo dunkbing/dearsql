@@ -26,7 +26,8 @@ namespace dearsql {
           palette_(other.palette_), undoStack_(std::move(other.undoStack_)),
           redoStack_(std::move(other.redoStack_)),
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
-          completionItems_(std::move(other.completionItems_)), language_(other.language_),
+          completionItems_(std::move(other.completionItems_)),
+          completionFilter_(std::move(other.completionFilter_)), language_(other.language_),
           tsParser_(other.tsParser_), tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
           tsPreviousContent_(std::move(other.tsPreviousContent_)),
           highlightDirty_(other.highlightDirty_) {
@@ -47,6 +48,7 @@ namespace dearsql {
             undoStack_ = std::move(other.undoStack_);
             redoStack_ = std::move(other.redoStack_);
             completionItems_ = std::move(other.completionItems_);
+            completionFilter_ = std::move(other.completionFilter_);
             language_ = other.language_;
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
@@ -114,6 +116,10 @@ namespace dearsql {
         completionItems_.reserve(keywords.size());
         for (const auto& kw : keywords)
             completionItems_.push_back({kw, CompletionKind::Keyword});
+    }
+
+    void TextEditor::SetCompletionFilter(CompletionFilter filter) {
+        completionFilter_ = std::move(filter);
     }
 
     const std::vector<std::string>& TextEditor::GetDefaultCompletionKeywords() {

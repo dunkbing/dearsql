@@ -60,7 +60,6 @@ private:
     std::shared_ptr<DatabaseInterface> db;
     std::string pendingEditorOpenDbName_;
 
-    // database visibility filter (UI state only, not persisted)
     std::set<std::string> hiddenDatabases_;
 
     // multi-selection state

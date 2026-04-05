@@ -145,6 +145,30 @@ target_include_directories(tree-sitter-json-grammar PRIVATE external/tree-sitter
 target_link_libraries(tree-sitter-json-grammar PRIVATE unofficial::tree-sitter::tree-sitter)
 set_target_properties(tree-sitter-json-grammar PROPERTIES C_STANDARD 11)
 
+# Hyrise SQL Parser (from submodule)
+add_library(hsql-parser STATIC
+    external/sql-parser/src/SQLParser.cpp
+    external/sql-parser/src/SQLParserResult.cpp
+    external/sql-parser/src/sql/CreateStatement.cpp
+    external/sql-parser/src/sql/Expr.cpp
+    external/sql-parser/src/sql/PrepareStatement.cpp
+    external/sql-parser/src/sql/SQLStatement.cpp
+    external/sql-parser/src/sql/statements.cpp
+    external/sql-parser/src/util/sqlhelper.cpp
+    external/sql-parser/src/parser/bison_parser.cpp
+    external/sql-parser/src/parser/flex_lexer.cpp
+)
+target_include_directories(hsql-parser PUBLIC external/sql-parser/src)
+set_target_properties(hsql-parser PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+set_source_files_properties(
+    external/sql-parser/src/parser/bison_parser.cpp
+    PROPERTIES COMPILE_OPTIONS "-Wno-unused-but-set-variable"
+)
+set_source_files_properties(
+    external/sql-parser/src/parser/flex_lexer.cpp
+    PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare;-Wno-unneeded-internal-declaration;-Wno-register"
+)
+
 # ImGui (from submodule - tightly integrated with platform backends)
 set(IMGUI_SOURCES
     external/imgui/imgui.cpp
@@ -380,6 +404,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
     spdlog::spdlog
+    hsql-parser
 )
 
 # platform-specific linking

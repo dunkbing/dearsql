@@ -27,3 +27,6 @@
 [submodule "external/csv2"]
 	path = external/csv2
 	url = https://github.com/p-ranav/csv2
+[submodule "external/sql-parser"]
+	path = external/sql-parser
+	url = https://github.com/hyrise/sql-parser.git

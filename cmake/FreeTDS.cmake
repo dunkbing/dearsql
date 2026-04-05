@@ -42,7 +42,7 @@ elseif(WIN32)
         BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release --target db-lib tds replacements tdsutils
         INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${FREETDS_INSTALL_DIR}/lib
             # merge all FreeTDS static libs into one (db-lib depends on tds, replacements, tdsutils)
-            COMMAND ${CMAKE_AR} /NOLOGO /OUT:${FREETDS_INSTALL_DIR}/lib/sybdb.lib
+            COMMAND lib /NOLOGO /OUT:${FREETDS_INSTALL_DIR}/lib/sybdb.lib
                 <BINARY_DIR>/src/dblib/Release/db-lib.lib
                 <BINARY_DIR>/src/tds/Release/tds.lib
                 <BINARY_DIR>/src/replacements/Release/replacements.lib

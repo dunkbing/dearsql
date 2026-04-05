@@ -18,8 +18,6 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     }
 }
 
-// ========== Base ==========
-
 std::string ISQLBuilder::createTable(const Table& table, const std::string& schemaPrefix) const {
     std::string qualifiedName;
     if (!schemaPrefix.empty())
@@ -70,8 +68,6 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
     return sql;
 }
 
-// ========== PostgreSQL ==========
-
 std::string PostgreSQLBuilder::quoteIdentifier(const std::string& identifier) const {
     std::string result = "\"";
     for (char c : identifier) {
@@ -96,8 +92,6 @@ std::string PostgreSQLBuilder::dropColumn(const std::string& table,
                                           const std::string& columnName) const {
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
-
-// ========== MySQL ==========
 
 std::string MySQLBuilder::quoteIdentifier(const std::string& identifier) const {
     std::string result = "`";
@@ -124,8 +118,6 @@ std::string MySQLBuilder::dropColumn(const std::string& table,
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
 
-// ========== MSSQL ==========
-
 std::string MSSQLBuilder::quoteIdentifier(const std::string& identifier) const {
     std::string result = "[";
     for (char c : identifier) {
@@ -150,8 +142,6 @@ std::string MSSQLBuilder::dropColumn(const std::string& table,
                                      const std::string& columnName) const {
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
-
-// ========== SQLite ==========
 
 std::string SQLiteBuilder::quoteIdentifier(const std::string& identifier) const {
     std::string result = "\"";

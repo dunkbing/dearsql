@@ -3,10 +3,10 @@
 
 namespace Theme {
     struct Colors {
-        ImVec4 rosewater;
-        ImVec4 flamingo;
-        ImVec4 pink;
-        ImVec4 mauve;
+        ImVec4 rose;
+        ImVec4 coral;
+        ImVec4 magenta;
+        ImVec4 purple;
         ImVec4 red;
         ImVec4 maroon;
         ImVec4 peach;
@@ -31,92 +31,90 @@ namespace Theme {
         ImVec4 crust;
     };
 
-    // Native Dark Theme (inspired by macOS/Windows dark modes)
-    constexpr Colors NATIVE_DARK = {
-        ImVec4(0.95f, 0.85f, 0.85f, 1.0f), // rosewater
-        ImVec4(0.93f, 0.79f, 0.81f, 1.0f), // flamingo
-        ImVec4(0.96f, 0.76f, 0.82f, 1.0f), // pink
-        ImVec4(0.91f, 0.76f, 0.96f, 1.0f), // mauve
-        ImVec4(0.94f, 0.67f, 0.66f, 1.0f), // red
-        ImVec4(0.94f, 0.68f, 0.74f, 1.0f), // maroon
-        ImVec4(0.96f, 0.79f, 0.69f, 1.0f), // peach
-        ImVec4(0.96f, 0.89f, 0.69f, 1.0f), // yellow
-        ImVec4(0.65f, 0.90f, 0.67f, 1.0f), // green
-        ImVec4(0.65f, 0.90f, 0.81f, 1.0f), // teal
-        ImVec4(0.40f, 0.72f, 1.00f, 1.0f), // sky - system blue
-        ImVec4(0.51f, 0.84f, 0.96f, 1.0f), // sapphire
-        ImVec4(0.00f, 0.48f, 1.00f, 1.0f), // blue - system accent
-        ImVec4(0.74f, 0.78f, 0.96f, 1.0f), // lavender
-        ImVec4(1.00f, 1.00f, 1.00f, 1.0f), // text - pure white for contrast
-        ImVec4(0.90f, 0.90f, 0.90f, 1.0f), // subtext1
-        ImVec4(0.75f, 0.75f, 0.75f, 1.0f), // subtext0
-        ImVec4(0.45f, 0.45f, 0.45f, 1.0f), // overlay2
-        ImVec4(0.35f, 0.35f, 0.35f, 1.0f), // overlay1
-        ImVec4(0.25f, 0.25f, 0.25f, 1.0f), // overlay0
-        ImVec4(0.20f, 0.20f, 0.20f, 1.0f), // surface2
-        ImVec4(0.15f, 0.15f, 0.15f, 1.0f), // surface1
-        ImVec4(0.12f, 0.12f, 0.12f, 1.0f), // surface0
-        ImVec4(0.08f, 0.08f, 0.08f, 1.0f), // base - darker for better contrast
-        ImVec4(0.06f, 0.06f, 0.06f, 1.0f), // mantle
-        ImVec4(0.04f, 0.04f, 0.04f, 1.0f)  // crust
+    // Zed One Dark
+    constexpr Colors ONE_DARK = {
+        ImVec4(0.88f, 0.67f, 0.69f, 1.0f), // rose       #e0abb0
+        ImVec4(0.84f, 0.51f, 0.56f, 1.0f), // coral      #d5818e
+        ImVec4(0.84f, 0.37f, 0.87f, 1.0f), // magenta    #d55fde
+        ImVec4(0.78f, 0.47f, 0.87f, 1.0f), // purple     #c678dd
+        ImVec4(0.88f, 0.42f, 0.46f, 1.0f), // red        #e06c75
+        ImVec4(0.75f, 0.31f, 0.27f, 1.0f), // maroon     #be5046
+        ImVec4(0.82f, 0.60f, 0.40f, 1.0f), // peach      #d19a66
+        ImVec4(0.90f, 0.75f, 0.48f, 1.0f), // yellow     #e5c07b
+        ImVec4(0.60f, 0.76f, 0.47f, 1.0f), // green      #98c379
+        ImVec4(0.34f, 0.71f, 0.76f, 1.0f), // teal       #56b6c2
+        ImVec4(0.38f, 0.69f, 0.94f, 1.0f), // sky        #61afef
+        ImVec4(0.17f, 0.73f, 0.77f, 1.0f), // sapphire   #2bbac5
+        ImVec4(0.38f, 0.69f, 0.94f, 1.0f), // blue       #61afef
+        ImVec4(0.32f, 0.55f, 1.00f, 1.0f), // lavender   #528bff
+        ImVec4(0.67f, 0.70f, 0.75f, 1.0f), // text       #abb2bf
+        ImVec4(0.62f, 0.65f, 0.71f, 1.0f), // subtext1   #9da5b4
+        ImVec4(0.51f, 0.54f, 0.59f, 1.0f), // subtext0   #828997
+        ImVec4(0.39f, 0.43f, 0.51f, 1.0f), // overlay2   #636d83
+        ImVec4(0.36f, 0.39f, 0.44f, 1.0f), // overlay1   #5c6370
+        ImVec4(0.29f, 0.32f, 0.39f, 1.0f), // overlay0   #4b5263
+        ImVec4(0.24f, 0.26f, 0.31f, 1.0f), // surface2   #3d4350
+        ImVec4(0.21f, 0.23f, 0.27f, 1.0f), // surface1   #353b45
+        ImVec4(0.17f, 0.19f, 0.24f, 1.0f), // surface0   #2c313c
+        ImVec4(0.16f, 0.17f, 0.20f, 1.0f), // base       #282c34
+        ImVec4(0.13f, 0.15f, 0.17f, 1.0f), // mantle     #21252b
+        ImVec4(0.10f, 0.11f, 0.14f, 1.0f)  // crust      #1a1d23
     };
 
-    // Native Light Theme (inspired by macOS/Windows light modes)
-    constexpr Colors NATIVE_LIGHT = {
-        ImVec4(0.86f, 0.56f, 0.54f, 1.0f), // rosewater
-        ImVec4(0.84f, 0.48f, 0.48f, 1.0f), // flamingo
-        ImVec4(0.53f, 0.46f, 0.85f, 1.0f), // pink
-        ImVec4(0.53f, 0.46f, 0.85f, 1.0f), // mauve
-        ImVec4(0.82f, 0.26f, 0.26f, 1.0f), // red
-        ImVec4(0.83f, 0.33f, 0.38f, 1.0f), // maroon
-        ImVec4(0.98f, 0.55f, 0.33f, 1.0f), // peach
-        ImVec4(0.85f, 0.66f, 0.13f, 1.0f), // yellow
-        ImVec4(0.20f, 0.78f, 0.35f, 1.0f), // green - system green
-        ImVec4(0.23f, 0.64f, 0.59f, 1.0f), // teal
-        ImVec4(0.00f, 0.48f, 1.00f, 1.0f), // sky - system blue
-        ImVec4(0.15f, 0.58f, 0.76f, 1.0f), // sapphire
-        ImVec4(0.00f, 0.48f, 1.00f, 1.0f), // blue - system accent
-        ImVec4(0.47f, 0.48f, 0.73f, 1.0f), // lavender
-        ImVec4(0.00f, 0.00f, 0.00f, 1.0f), // text - pure black for contrast
-        ImVec4(0.30f, 0.30f, 0.30f, 1.0f), // subtext1
-        ImVec4(0.45f, 0.45f, 0.45f, 1.0f), // subtext0
-        ImVec4(0.60f, 0.60f, 0.60f, 1.0f), // overlay2
-        ImVec4(0.70f, 0.70f, 0.70f, 1.0f), // overlay1
-        ImVec4(0.80f, 0.80f, 0.80f, 1.0f), // overlay0
-        ImVec4(0.82f, 0.82f, 0.84f, 1.0f), // surface2
-        ImVec4(0.88f, 0.88f, 0.90f, 1.0f), // surface1
-        ImVec4(0.93f, 0.93f, 0.94f, 1.0f), // surface0
-        ImVec4(1.00f, 1.00f, 1.00f, 1.0f), // base - pure white
-        ImVec4(0.95f, 0.95f, 0.96f, 1.0f), // mantle
-        ImVec4(0.90f, 0.90f, 0.92f, 1.0f)  // crust
+    // Zed One Light
+    constexpr Colors ONE_LIGHT = {
+        ImVec4(0.88f, 0.38f, 0.44f, 1.0f), // rose       #e06070
+        ImVec4(0.82f, 0.25f, 0.38f, 1.0f), // coral      #d04060
+        ImVec4(0.77f, 0.27f, 0.61f, 1.0f), // magenta    #c4449c
+        ImVec4(0.65f, 0.15f, 0.64f, 1.0f), // purple     #a626a4
+        ImVec4(0.89f, 0.34f, 0.29f, 1.0f), // red        #e45649
+        ImVec4(0.79f, 0.07f, 0.26f, 1.0f), // maroon     #ca1243
+        ImVec4(0.84f, 0.37f, 0.00f, 1.0f), // peach      #d75f00
+        ImVec4(0.76f, 0.51f, 0.00f, 1.0f), // yellow     #c18401
+        ImVec4(0.31f, 0.63f, 0.31f, 1.0f), // green      #50a14f
+        ImVec4(0.00f, 0.52f, 0.74f, 1.0f), // teal       #0184bc
+        ImVec4(0.25f, 0.47f, 0.95f, 1.0f), // sky        #4078f2
+        ImVec4(0.13f, 0.63f, 0.77f, 1.0f), // sapphire   #20a0c5
+        ImVec4(0.25f, 0.47f, 0.95f, 1.0f), // blue       #4078f2
+        ImVec4(0.45f, 0.36f, 0.87f, 1.0f), // lavender   #735cde
+        ImVec4(0.22f, 0.23f, 0.26f, 1.0f), // text       #383a42
+        ImVec4(0.29f, 0.33f, 0.39f, 1.0f), // subtext1   #4b5563
+        ImVec4(0.41f, 0.42f, 0.47f, 1.0f), // subtext0   #696c77
+        ImVec4(0.63f, 0.63f, 0.65f, 1.0f), // overlay2   #a0a1a7
+        ImVec4(0.72f, 0.72f, 0.72f, 1.0f), // overlay1   #b8b8b8
+        ImVec4(0.83f, 0.83f, 0.83f, 1.0f), // overlay0   #d4d4d4
+        ImVec4(0.82f, 0.82f, 0.82f, 1.0f), // surface2   #d0d0d0 (borders/dividers)
+        ImVec4(0.88f, 0.88f, 0.88f, 1.0f), // surface1   #e0e0e0
+        ImVec4(0.93f, 0.93f, 0.94f, 1.0f), // surface0   #edeef0
+        ImVec4(0.98f, 0.98f, 0.98f, 1.0f), // base       #fafafa
+        ImVec4(0.94f, 0.94f, 0.94f, 1.0f), // mantle     #f0f0f0
+        ImVec4(0.90f, 0.90f, 0.91f, 1.0f)  // crust      #e6e6e8
     };
 
-    // Legacy themes for compatibility
-    constexpr Colors MOCHA = NATIVE_DARK;
-    constexpr Colors LATTE = NATIVE_LIGHT;
+    constexpr Colors NATIVE_DARK = ONE_DARK;
+    constexpr Colors NATIVE_LIGHT = ONE_LIGHT;
+    constexpr Colors MOCHA = ONE_DARK;
+    constexpr Colors LATTE = ONE_LIGHT;
 
     inline void ApplyNativeTheme(const Colors& colors) {
         ImGuiStyle& style = ImGui::GetStyle();
 
-        // Native-like padding and spacing
-        style.WindowPadding = ImVec2(16.0f, 16.0f);   // Larger padding for native feel
-        style.FramePadding = ImVec2(8.0f, 6.0f);      // Taller frames like native controls
-        style.CellPadding = ImVec2(8.0f, 6.0f);       // Consistent with frame padding
-        style.ItemSpacing = ImVec2(8.0f, 8.0f);       // Tighter spacing like native apps
-        style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);  // Consistent inner spacing
-        style.TouchExtraPadding = ImVec2(0.0f, 0.0f); // No extra padding for desktop
-        style.IndentSpacing = 20.0f;                  // Standard indent
-        style.ScrollbarSize = 16.0f;                  // Standard scrollbar width
-        style.GrabMinSize = 12.0f;                    // Minimum grab size
+        style.WindowPadding = ImVec2(16.0f, 16.0f);
+        style.FramePadding = ImVec2(8.0f, 6.0f);
+        style.CellPadding = ImVec2(8.0f, 6.0f);
+        style.ItemSpacing = ImVec2(8.0f, 8.0f);
+        style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
+        style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
+        style.IndentSpacing = 20.0f;
+        style.ScrollbarSize = 16.0f;
+        style.GrabMinSize = 12.0f;
 
-        // Platform-appropriate borders
-        style.WindowBorderSize = 0.0f; // No window borders for modern look
-        style.ChildBorderSize = 0.0f;  // No child borders
-        style.PopupBorderSize = 1.0f;  // Subtle popup borders
-        style.FrameBorderSize = 0.0f;  // No frame borders for clean look
-        style.TabBorderSize = 1.0f;    // Tab borders
+        style.WindowBorderSize = 0.0f;
+        style.ChildBorderSize = 0.0f;
+        style.PopupBorderSize = 1.0f;
+        style.FrameBorderSize = 0.0f;
+        style.TabBorderSize = 1.0f;
 
-        // Sharp corners throughout
         style.WindowRounding = 0.0f;
         style.ChildRounding = 0.0f;
         style.FrameRounding = 0.0f;
@@ -125,88 +123,87 @@ namespace Theme {
         style.GrabRounding = 0.0f;
         style.TabRounding = 0.0f;
 
-        // Native-like alignment
-        style.WindowTitleAlign = ImVec2(0.5f, 0.5f);    // Centered title
-        style.WindowMenuButtonPosition = ImGuiDir_Left; // Standard position
-        style.ColorButtonPosition = ImGuiDir_Right;     // Standard position
-        style.ButtonTextAlign = ImVec2(0.5f, 0.5f);     // Centered button text
-        style.SelectableTextAlign = ImVec2(0.0f, 0.5f); // Left-aligned, vertically centered
+        style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+        style.WindowMenuButtonPosition = ImGuiDir_Left;
+        style.ColorButtonPosition = ImGuiDir_Right;
+        style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+        style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
 
-        // Enhanced styling for native look
-        style.Alpha = 1.0f;                           // Full opacity
-        style.DisabledAlpha = 0.5f;                   // Standard disabled alpha
-        style.WindowMinSize = ImVec2(200.0f, 200.0f); // Reasonable minimum size
+        style.Alpha = 1.0f;
+        style.DisabledAlpha = 0.5f;
+        style.WindowMinSize = ImVec2(200.0f, 200.0f);
 
-        // Colors with native appearance
-        ImVec4* colors_array = style.Colors;
-        colors_array[ImGuiCol_Text] = colors.text;
-        colors_array[ImGuiCol_InputTextCursor] = colors.text;
-        colors_array[ImGuiCol_TextDisabled] = colors.subtext0;
-        colors_array[ImGuiCol_WindowBg] = colors.base;
-        colors_array[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // Transparent
-        colors_array[ImGuiCol_PopupBg] = colors.surface0;
-        colors_array[ImGuiCol_Border] = colors.overlay0;
-        colors_array[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // No shadow
-        colors_array[ImGuiCol_FrameBg] = colors.surface0;
-        colors_array[ImGuiCol_FrameBgHovered] = colors.surface1;
-        colors_array[ImGuiCol_FrameBgActive] = colors.surface2;
-        colors_array[ImGuiCol_TitleBg] = colors.mantle;
-        colors_array[ImGuiCol_TitleBgActive] = colors.surface0;
-        colors_array[ImGuiCol_TitleBgCollapsed] = colors.surface0;
-        colors_array[ImGuiCol_MenuBarBg] = colors.base;
-        colors_array[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // Transparent
-        colors_array[ImGuiCol_ScrollbarGrab] = colors.overlay0;
-        colors_array[ImGuiCol_ScrollbarGrabHovered] = colors.overlay1;
-        colors_array[ImGuiCol_ScrollbarGrabActive] = colors.overlay2;
-        colors_array[ImGuiCol_CheckMark] = colors.blue;
-        colors_array[ImGuiCol_SliderGrab] = colors.blue;
-        colors_array[ImGuiCol_SliderGrabActive] = colors.sky;
-        colors_array[ImGuiCol_Button] = colors.surface0;
-        colors_array[ImGuiCol_ButtonHovered] = colors.surface1;
-        colors_array[ImGuiCol_ButtonActive] = colors.surface2;
-        colors_array[ImGuiCol_Header] = colors.surface0;
-        colors_array[ImGuiCol_HeaderHovered] = colors.surface1;
-        colors_array[ImGuiCol_HeaderActive] = colors.surface2;
-        colors_array[ImGuiCol_Separator] = colors.overlay0;
-        colors_array[ImGuiCol_SeparatorHovered] = colors.overlay1;
-        colors_array[ImGuiCol_SeparatorActive] = colors.blue;
-        colors_array[ImGuiCol_ResizeGrip] = colors.overlay0;
-        colors_array[ImGuiCol_ResizeGripHovered] = colors.overlay1;
-        colors_array[ImGuiCol_ResizeGripActive] = colors.blue;
-        colors_array[ImGuiCol_Tab] = colors.mantle;
-        colors_array[ImGuiCol_TabHovered] = colors.surface1;
-        colors_array[ImGuiCol_TabActive] = colors.surface0;
-        colors_array[ImGuiCol_TabUnfocused] = colors.mantle;
-        colors_array[ImGuiCol_TabUnfocusedActive] = colors.surface0;
-        colors_array[ImGuiCol_DockingPreview] =
-            ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
-        colors_array[ImGuiCol_DockingEmptyBg] = colors.base;
-        colors_array[ImGuiCol_PlotLines] = colors.text;
-        colors_array[ImGuiCol_PlotLinesHovered] = colors.blue;
-        colors_array[ImGuiCol_PlotHistogram] = colors.blue;
-        colors_array[ImGuiCol_PlotHistogramHovered] = colors.sky;
-        colors_array[ImGuiCol_TableHeaderBg] = colors.surface0;
-        colors_array[ImGuiCol_TableBorderStrong] = colors.overlay1;
-        colors_array[ImGuiCol_TableBorderLight] = colors.overlay0;
-        colors_array[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // Transparent
-        colors_array[ImGuiCol_TableRowBgAlt] =
+        ImVec4* c = style.Colors;
+        c[ImGuiCol_Text] = colors.text;
+        c[ImGuiCol_InputTextCursor] = colors.text;
+        c[ImGuiCol_TextDisabled] = colors.subtext0;
+        c[ImGuiCol_TextLink] = colors.blue;
+        c[ImGuiCol_WindowBg] = colors.base;
+        c[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        c[ImGuiCol_PopupBg] = colors.surface0;
+        c[ImGuiCol_Border] = colors.overlay0;
+        c[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        c[ImGuiCol_FrameBg] = colors.surface0;
+        c[ImGuiCol_FrameBgHovered] = colors.surface1;
+        c[ImGuiCol_FrameBgActive] = colors.surface2;
+        c[ImGuiCol_TitleBg] = colors.mantle;
+        c[ImGuiCol_TitleBgActive] = colors.surface0;
+        c[ImGuiCol_TitleBgCollapsed] = colors.surface0;
+        c[ImGuiCol_MenuBarBg] = colors.base;
+        c[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        c[ImGuiCol_ScrollbarGrab] = colors.overlay0;
+        c[ImGuiCol_ScrollbarGrabHovered] = colors.overlay1;
+        c[ImGuiCol_ScrollbarGrabActive] = colors.overlay2;
+        c[ImGuiCol_CheckMark] = colors.blue;
+        c[ImGuiCol_SliderGrab] = colors.blue;
+        c[ImGuiCol_SliderGrabActive] = colors.sky;
+        c[ImGuiCol_Button] = colors.surface0;
+        c[ImGuiCol_ButtonHovered] = colors.surface1;
+        c[ImGuiCol_ButtonActive] = colors.surface2;
+        c[ImGuiCol_Header] = colors.surface0;
+        c[ImGuiCol_HeaderHovered] = colors.surface1;
+        c[ImGuiCol_HeaderActive] = colors.surface2;
+        c[ImGuiCol_Separator] = colors.overlay0;
+        c[ImGuiCol_SeparatorHovered] = colors.overlay1;
+        c[ImGuiCol_SeparatorActive] = colors.blue;
+        c[ImGuiCol_ResizeGrip] = colors.overlay0;
+        c[ImGuiCol_ResizeGripHovered] = colors.overlay1;
+        c[ImGuiCol_ResizeGripActive] = colors.blue;
+        c[ImGuiCol_Tab] = colors.mantle;
+        c[ImGuiCol_TabHovered] = colors.surface1;
+        c[ImGuiCol_TabSelected] = colors.surface0;
+        c[ImGuiCol_TabSelectedOverline] = colors.blue;
+        c[ImGuiCol_TabDimmed] = colors.mantle;
+        c[ImGuiCol_TabDimmedSelected] = colors.surface0;
+        c[ImGuiCol_TabDimmedSelectedOverline] = colors.overlay0;
+        c[ImGuiCol_DockingPreview] = ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
+        c[ImGuiCol_DockingEmptyBg] = colors.base;
+        c[ImGuiCol_PlotLines] = colors.text;
+        c[ImGuiCol_PlotLinesHovered] = colors.blue;
+        c[ImGuiCol_PlotHistogram] = colors.blue;
+        c[ImGuiCol_PlotHistogramHovered] = colors.sky;
+        c[ImGuiCol_TableHeaderBg] = colors.surface0;
+        c[ImGuiCol_TableBorderStrong] = colors.overlay1;
+        c[ImGuiCol_TableBorderLight] = colors.overlay0;
+        c[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        c[ImGuiCol_TableRowBgAlt] =
             ImVec4(colors.surface0.x, colors.surface0.y, colors.surface0.z, 0.5f);
-        colors_array[ImGuiCol_TextSelectedBg] =
-            ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
-        colors_array[ImGuiCol_DragDropTarget] =
-            ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f);
-        colors_array[ImGuiCol_NavHighlight] = colors.blue;
-        colors_array[ImGuiCol_NavWindowingHighlight] = colors.blue;
-        colors_array[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.2f);
-        colors_array[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.4f);
+        c[ImGuiCol_TreeLines] = colors.overlay0;
+        c[ImGuiCol_TextSelectedBg] = ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
+        c[ImGuiCol_DragDropTarget] = ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f);
+        c[ImGuiCol_DragDropTargetBg] =
+            ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.15f);
+        c[ImGuiCol_UnsavedMarker] = colors.yellow;
+        c[ImGuiCol_NavCursor] = colors.blue;
+        c[ImGuiCol_NavWindowingHighlight] = colors.blue;
+        c[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.2f);
+        c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.4f);
     }
 
-    // Legacy function for backward compatibility
     inline void ApplyTheme(const Colors& colors) {
         ApplyNativeTheme(colors);
     }
 
-    // App-wide spacing constants
     namespace Spacing {
         constexpr float XS = 2.0f;
         constexpr float S = 4.0f;

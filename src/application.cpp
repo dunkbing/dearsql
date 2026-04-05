@@ -111,7 +111,6 @@ bool Application::initialize() {
     spdlog::info("ImGui version: {}", IMGUI_VERSION);
     spdlog::info("Starting {}...", APP_NAME);
 
-    // Initialize platform-specific components
 #ifdef __APPLE__
     platform_ = std::make_unique<MacOSPlatform>(this);
     if (!initializeGLFW()) {
@@ -131,7 +130,6 @@ bool Application::initialize() {
         return false;
     }
     setupImGuiContext();
-    // Setup titlebar before showing window
     platform_->setupTitlebar();
 #elif defined(_WIN32)
     platform_ = std::make_unique<WindowsPlatform>(this);
@@ -147,25 +145,21 @@ bool Application::initialize() {
     }
 #endif
 
-    // Initialize NFD
     if (!FileDialog::initialize()) {
         spdlog::error("Failed to initialize Native File Dialog");
         return false;
     }
 
-    // Create managers
     tabManager = std::make_unique<TabManager>();
     databaseSidebar = std::make_unique<DatabaseSidebarNew>();
     fileDialog = std::make_unique<FileDialog>();
 
-    // Initialize app state
     appState = std::make_unique<AppState>();
     if (!appState->initialize()) {
         std::cerr << "Failed to initialize app state" << std::endl;
         return false;
     }
 
-    // Restore current workspace from settings
     const std::string workspaceIdStr = appState->getSetting("current_workspace", "1");
     try {
         currentWorkspaceId = std::stoi(workspaceIdStr);
@@ -173,7 +167,6 @@ bool Application::initialize() {
         currentWorkspaceId = 1;
     }
 
-    // Restore theme from settings
     const std::string themeStr = appState->getSetting("theme", "dark");
     darkTheme = (themeStr != "light");
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
@@ -181,7 +174,6 @@ bool Application::initialize() {
     static_cast<LinuxPlatform*>(platform_.get())->applyCurrentTheme();
 #endif
 
-    // Restore font scale from settings
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
     try {
         fontScale_ = std::clamp(std::stof(fontScaleStr), 0.7f, 2.0f);
@@ -190,7 +182,6 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-    // Load stored license and revalidate against server in background
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
@@ -198,12 +189,10 @@ bool Application::initialize() {
 
     restorePreviousConnections();
 
-    // Register signal handler
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
 #ifndef __linux__
-    // Setup title bar after window creation (Linux does it earlier)
     platform_->setupTitlebar();
 #endif
 
@@ -225,13 +214,9 @@ bool Application::initialize() {
 
 void Application::run() {
 #if defined(__linux__)
-    // Linux uses GTK main loop
     auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
     linuxPlatform->runMainLoop();
 #else
-    // macOS and Windows use GLFW main loop
-    // D3D11 handles clear color in WindowsPlatform::renderFrame()
-
     double lastInteractionTime = glfwGetTime();
     bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
     while (!glfwWindowShouldClose(window)) {
@@ -297,7 +282,6 @@ void Application::cleanup() {
         AsyncOperationControl::skipWaitOnDestroy().store(true);
     }
 
-    // Cleanup databases
     if (!fastShutdown) {
         for (auto& db : databases) {
             if (db) {
@@ -324,13 +308,11 @@ void Application::cleanup() {
         }
     }
 
-    // Cleanup components
     tabManager.reset();
     databaseSidebar.reset();
     fileDialog.reset();
     spdlog::debug("Components cleaned up");
 
-    // Cleanup NFD
     FileDialog::cleanup();
     spdlog::debug("File dialog cleaned up");
 
@@ -491,7 +473,6 @@ void Application::restorePreviousConnections() {
         }
 
         if (db) {
-            // Store the saved connection ID in the database instance
             db->setConnectionId(conn.id);
             spdlog::debug("Added connection: {} {}", conn.connectionInfo.name,
                           conn.connectionInfo.database);
@@ -515,7 +496,6 @@ bool Application::initializeGLFW() {
     }
 
 #if defined(__APPLE__) || defined(_WIN32)
-    // Metal and D3D11 backend doesn't need OpenGL context hints
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
@@ -575,7 +555,6 @@ void Application::setupFonts() {
     const EmbeddedFont* embeddedFonts = getEmbeddedFonts();
     ImFontConfig fontConfig;
 
-    // icon glyph ranges (only load codepoints we actually need)
     static const ImWchar faRanges[] = {ICON_MIN_FA, ICON_MAX_16_FA, 0};
     static const ImWchar fkRanges[] = {ICON_MIN_FK, ICON_MAX_16_FK, 0};
 
@@ -602,7 +581,6 @@ void Application::setupFonts() {
         ImFontConfig embeddedFontConfig = fontConfig;
         embeddedFontConfig.FontDataOwnedByAtlas = false;
 
-        // icon fonts don't need oversampling
         if (isIconFont) {
             embeddedFontConfig.OversampleH = 1;
             embeddedFontConfig.OversampleV = 1;
@@ -633,7 +611,6 @@ void Application::setCurrentWorkspace(const int workspaceId) {
 
     currentWorkspaceId = workspaceId;
 
-    // Save current workspace to settings
     if (appState) {
         appState->setSetting("current_workspace", std::to_string(currentWorkspaceId));
         appState->updateWorkspaceLastUsed(currentWorkspaceId);
@@ -642,7 +619,6 @@ void Application::setCurrentWorkspace(const int workspaceId) {
     SentryUtils::addBreadcrumb("app", "Workspace switched", "workspace_id",
                                std::to_string(workspaceId));
 
-    // Refresh connections for new workspace
     refreshWorkspaceConnections();
 }
 
@@ -665,7 +641,7 @@ std::string Application::getCurrentWorkspaceName() const {
         }
     }
 
-    return "Default"; // Fallback
+    return "Default";
 }
 
 int Application::createWorkspace(const std::string& name, const std::string& description) {
@@ -699,18 +675,16 @@ int Application::createWorkspace(const std::string& name, const std::string& des
 }
 
 bool Application::deleteWorkspace(const int workspaceId) {
-    if (!appState || workspaceId == 1) { // Can't delete default workspace
+    if (!appState || workspaceId == 1) {
         return false;
     }
 
     bool success = appState->deleteWorkspace(workspaceId);
 
     if (success) {
-        // If we deleted the current workspace, switch to default
         if (currentWorkspaceId == workspaceId) {
             setCurrentWorkspace(1);
         }
-        // disconnect cached connections before dropping them
         if (auto cacheIt = workspaceDatabaseCache.find(workspaceId);
             cacheIt != workspaceDatabaseCache.end()) {
             for (auto& db : cacheIt->second) {
@@ -737,18 +711,15 @@ bool Application::renameWorkspace(const int workspaceId, const std::string& name
 void Application::refreshWorkspaceConnections() {
     databases.clear();
 
-    // close tabs that reference nodes from the previous workspace
     if (tabManager) {
         tabManager->closeAllTabs();
     }
 
-    // First switch to cached connections if this workspace was loaded before.
     if (auto cacheIt = workspaceDatabaseCache.find(currentWorkspaceId);
         cacheIt != workspaceDatabaseCache.end()) {
         databases = std::move(cacheIt->second);
         workspaceDatabaseCache.erase(cacheIt);
     } else {
-        // First time visiting this workspace in this session: load from app state.
         restorePreviousConnections();
     }
 
@@ -786,11 +757,9 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         }
     };
 
-    // Check if we should use docking for sidebar
     const bool shouldUseSidebar = targetSidebarWidth > 0.01f;
 
     if (shouldUseSidebar) {
-        // Two-panel layout: sidebar | center
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
                                     &centerDockId);
 
@@ -808,7 +777,6 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
 
         rightDockId = 0;
     } else {
-        // Single panel layout: just center
         const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
         ImGui::DockBuilderDockWindow(wsTitle.c_str(), dockSpaceId);
         dockTabs(dockSpaceId);
@@ -823,16 +791,12 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
 }
 
 void Application::renderMainUI() {
-    // DockSpace setup
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    // Direct show/hide sidebar without animation
     sidebarWidth = targetSidebarWidth;
 
-    // Always use docking when sidebar is visible for proper resizing
     const bool shouldUseDocking = targetSidebarWidth > 0.01f;
 
-    // Rebuild layout when sidebar visibility changes
     const bool currentSidebarVisible = targetSidebarWidth > 0.01f;
     if (lastSidebarVisible_ != currentSidebarVisible) {
         if (tabManager) {
@@ -867,7 +831,6 @@ void Application::renderMainUI() {
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.mantle);
     ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.mantle);
 
-    // Add border around dock windows using Theme colors (only when using docking)
     if (shouldUseDocking) {
         ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -885,7 +848,6 @@ void Application::renderMainUI() {
 
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
 
-    // Database sidebar rendering
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
 
     if (shouldShowSidebar) {
@@ -907,14 +869,12 @@ void Application::renderMainUI() {
         ImGui::PopStyleColor(4);
     }
 
-    // Main workspace area - positioning depends on sidebar visibility
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     if (tabManager->isEmpty()) {
-        // Show empty state — stable ###ID so the window keeps its dock position across switches
         const std::string workspaceTitle = getCurrentWorkspaceName() + "###workspace_main";
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
@@ -931,10 +891,8 @@ void Application::renderMainUI() {
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);
 
-    // Pop titlebar colors
     ImGui::PopStyleColor(3); // TitleBg, TitleBgActive, TitleBgCollapsed
 
-    // Pop styles and end DockSpace
     if (shouldUseDocking) {
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(1);
@@ -952,14 +910,12 @@ void Application::openFile(const std::string& rawPath) {
     if (rawPath.empty() || !tabManager || !appState)
         return;
 
-    // normalize to absolute path so duplicates and relative paths are detected correctly
     std::error_code ec;
     const std::string path =
         std::filesystem::weakly_canonical(std::filesystem::absolute(rawPath), ec).string();
     if (ec || path.empty())
         return;
 
-    // case-insensitive extension check
     const std::string ext = [&] {
         auto e = std::filesystem::path(path).extension().string();
         std::transform(e.begin(), e.end(), e.begin(),
@@ -975,7 +931,6 @@ void Application::openFile(const std::string& rawPath) {
     if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3")
         return;
 
-    // reuse existing connection for this path if already open and connected
     for (auto& db : databases) {
         auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
         if (sqliteDb && sqliteDb->getPath() == path) {
@@ -1019,7 +974,6 @@ void Application::openFile(const std::string& rawPath) {
     setSelectedDatabase(db);
 }
 
-// Platform-specific methods that delegate to the platform implementation
 #ifdef __APPLE__
 void Application::onSidebarToggleClicked() const {
     if (platform_) {

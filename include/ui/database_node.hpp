@@ -9,7 +9,10 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include <functional>
 #include <memory>
+#include <unordered_set>
+#include <vector>
 
 /**
  * @brief Class for rendering database hierarchy nodes in the sidebar
@@ -37,9 +40,24 @@ public:
      */
     void renderRootNode();
 
+    [[nodiscard]] const std::unordered_set<const Table*>& getSelectedTables() const {
+        return selectedTables_;
+    }
+
 private:
     std::shared_ptr<DatabaseInterface> db;
     std::string pendingEditorOpenDbName_;
+
+    // multi-selection state
+    std::unordered_set<const Table*> selectedTables_;
+    const Table* lastAnchorTable_ = nullptr;
+    std::vector<const Table*> prevVisibleTables_;
+    std::vector<const Table*> currVisibleTables_;
+
+    void handleTableClick(const Table* table);
+    void renderMultiSelectMenuContent(ITableDataProvider* provider,
+                                      const std::vector<Table>& nodeTables,
+                                      std::function<void(const std::string&)> dropOne);
 
     // Database-specific renderers
     void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);

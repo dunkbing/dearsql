@@ -1,4 +1,5 @@
 #include "app_state.hpp"
+#include "config.hpp"
 #include "utils/crypto.hpp"
 #include <filesystem>
 #include <iostream>
@@ -84,7 +85,7 @@ namespace {
             if (!saltStr.empty()) {
                 auto saltData = CryptoUtils::base64Decode(saltStr);
                 std::string salt(saltData.begin(), saltData.end());
-                encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
+                encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
 
                 if (!encryptedUsername.empty()) {
                     try {
@@ -372,7 +373,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
+    std::string encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""
@@ -487,7 +488,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey("dearsql-master-key", salt);
+    std::string encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""

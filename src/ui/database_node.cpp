@@ -39,6 +39,7 @@ namespace {
     constexpr const char* NEW_QUERY_EDITOR_LABEL = "New Query Editor";
     constexpr const char* SHOW_DIAGRAM_LABEL = "Show Diagram";
     constexpr const char* SHOW_STRUCTURE_LABEL = "Show Structure";
+    constexpr const char* LOADING_LABEL = "  Loading...";
 } // namespace
 
 namespace {
@@ -61,6 +62,79 @@ namespace {
 
 DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface)
     : db(std::move(dbInterface)) {}
+
+void DatabaseHierarchy::handleTableClick(const Table* table) {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyCtrl) {
+        if (selectedTables_.count(table)) {
+            selectedTables_.erase(table);
+        } else {
+            selectedTables_.insert(table);
+        }
+        lastAnchorTable_ = table;
+    } else if (io.KeyShift && lastAnchorTable_) {
+        const auto anchorIt = std::ranges::find(prevVisibleTables_, lastAnchorTable_);
+        const auto currentIt = std::ranges::find(prevVisibleTables_, table);
+        if (anchorIt != prevVisibleTables_.end() && currentIt != prevVisibleTables_.end()) {
+            selectedTables_.clear();
+            const auto [first, last] = anchorIt < currentIt ? std::pair{anchorIt, currentIt}
+                                                            : std::pair{currentIt, anchorIt};
+            for (auto it = first; it <= last; ++it) {
+                selectedTables_.insert(*it);
+            }
+        } else {
+            selectedTables_.clear();
+            selectedTables_.insert(table);
+            lastAnchorTable_ = table;
+        }
+    } else {
+        selectedTables_.clear();
+        selectedTables_.insert(table);
+        lastAnchorTable_ = table;
+    }
+}
+
+void DatabaseHierarchy::renderMultiSelectMenuContent(
+    ITableDataProvider* provider, const std::vector<Table>& nodeTables,
+    std::function<void(const std::string&)> dropOne) {
+    std::vector<const Table*> selectedNodeTables;
+    std::vector<std::string> selectedNames;
+    for (const auto& t : nodeTables) {
+        if (selectedTables_.count(&t)) {
+            selectedNodeTables.push_back(&t);
+            selectedNames.push_back(t.name);
+        }
+    }
+
+    if (ImGui::BeginMenu("Export")) {
+        if (ImGui::MenuItem("CSV")) {
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::CSV);
+        }
+        if (ImGui::MenuItem("JSON")) {
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::JSON);
+        }
+        if (ImGui::MenuItem("SQL")) {
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::SQL);
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem(DELETE_LABEL)) {
+        const std::vector<std::string> names = std::move(selectedNames);
+        const size_t count = names.size();
+        Alert::show("Delete Tables",
+                    std::format("Permanently delete {} table{}? This is irreversible.", count,
+                                count == 1 ? "" : "s"),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [names, dropOne]() {
+                          for (const auto& n : names) {
+                              dropOne(n);
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+    }
+}
 
 bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const std::string& nodeId,
                                                const std::string& icon, const ImU32 iconColor,
@@ -107,6 +181,9 @@ void DatabaseHierarchy::renderRootNode() {
         return;
     }
 
+    prevVisibleTables_ = std::move(currVisibleTables_);
+    currVisibleTables_.clear();
+
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -127,7 +204,7 @@ void DatabaseHierarchy::renderRootNode() {
         if (pgDb->isLoadingDatabases()) {
             pgDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading databases...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -166,7 +243,7 @@ void DatabaseHierarchy::renderRootNode() {
         if (mysqlDb->isLoadingDatabases()) {
             mysqlDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading databases...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -191,7 +268,7 @@ void DatabaseHierarchy::renderRootNode() {
         if (mongoDb->isLoadingDatabases()) {
             mongoDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading databases...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -216,7 +293,7 @@ void DatabaseHierarchy::renderRootNode() {
         if (mssqlDb->isLoadingDatabases()) {
             mssqlDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading databases...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -241,7 +318,7 @@ void DatabaseHierarchy::renderRootNode() {
         if (oracleDb->isLoadingDatabases()) {
             oracleDb->checkDatabasesStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading schemas...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_schemas_spinner", 6.0f, 2,
                              ImGui::GetColorU32(colors.peach));
@@ -299,7 +376,7 @@ void DatabaseHierarchy::renderRootNode() {
                 ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                        ImGui::GetItemRectMin().y +
                            (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-            ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.mauve),
+            ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.purple),
                                                 ICON_FA_TERMINAL);
 
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -503,7 +580,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
             if (sqliteDb->isLoadingTables()) {
                 sqliteDb->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                ImGui::Text("  Loading tables...");
+                ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
                 UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
@@ -550,7 +627,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
             if (sqliteDb->isLoadingViews()) {
                 sqliteDb->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                ImGui::Text("  Loading views...");
+                ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
                 UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
@@ -661,7 +738,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         if (dbData->schemasLoader.isRunning()) {
             dbData->checkSchemasStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading schemas...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -772,7 +849,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 if (schemaData->tablesLoader.isRunning()) {
                     schemaData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading tables...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -817,7 +894,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 if (schemaData->viewsLoader.isRunning()) {
                     schemaData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading views...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -865,7 +942,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 if (schemaData->materializedViewsLoader.isRunning()) {
                     schemaData->checkMaterializedViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading materialized views...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_matviews", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
@@ -889,8 +966,9 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
         {
             const std::string seqNodeId = std::format("sequences_{}_{:p}", schemaData->name,
                                                       static_cast<void*>(&schemaData->sequences));
-            const bool seqOpen = renderTreeNodeWithIcon(
-                "Sequences", seqNodeId, ICON_FK_SORT_NUMERIC_ASC, ImGui::GetColorU32(colors.mauve));
+            const bool seqOpen =
+                renderTreeNodeWithIcon("Sequences", seqNodeId, ICON_FK_SORT_NUMERIC_ASC,
+                                       ImGui::GetColorU32(colors.purple));
 
             // Context menu for Sequences node
             if (ImGui::BeginPopupContextItem(nullptr)) {
@@ -911,7 +989,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                 if (schemaData->sequencesLoader.isRunning()) {
                     schemaData->checkSequencesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading sequences...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_sequences", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
@@ -937,7 +1015,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                                     (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) *
                                         0.5f);
                             ImGui::GetWindowDrawList()->AddText(iconPos,
-                                                                ImGui::GetColorU32(colors.mauve),
+                                                                ImGui::GetColorU32(colors.purple),
                                                                 ICON_FK_SORT_NUMERIC_ASC);
                         }
                     }
@@ -1044,7 +1122,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 if (dbData->tablesLoader.isRunning()) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading tables...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -1089,7 +1167,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 if (dbData->viewsLoader.isRunning()) {
                     dbData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading views...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -1116,13 +1194,20 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&table);
+    const bool isSelected = selectedTables_.count(&table) > 0;
+    const ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                          ImGuiTreeNodeFlags_FramePadding |
+                                          (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string tableNodeId =
         std::format("pg_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&table);
+    }
 
     // Check if table is refreshing
     const bool isRefreshing = schemaNode->isTableRefreshing(table.name);
@@ -1152,67 +1237,75 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(schemaNode, table.name);
-        }
-        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
-            app.getTabManager()->createTableEditorTab(schemaNode, table, schemaNode->name);
-        }
-        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
-            openStructureTab(schemaNode, table, schemaNode->name);
-        }
-        if (ImGui::MenuItem(REFRESH_LABEL)) {
-            schemaNode->startTableRefreshAsync(table.name);
-        }
-        TableExporter::renderExportMenu(schemaNode, table);
-        TableImporter::renderImportMenu(schemaNode, table.name);
-        ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
-            const std::string oldName = table.name;
-            InputDialog::show(
-                "Rename Table", "New name:", oldName, "Rename",
-                [schemaNode, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = schemaNode->renameTable(oldName, newName);
-                    return success ? "" : error;
-                },
-                nullptr,
-                [oldName](const std::string& newName) -> std::string {
-                    if (newName == oldName)
-                        return "New name must be different";
-                    return "";
-                });
-        }
-        if (ImGui::MenuItem(TRUNCATE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show("Truncate Table",
-                        std::format("Remove all rows from '{}.{}'? This is irreversible.",
-                                    schemaNode->name, tableName),
-                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Truncate",
-                          [schemaNode, tableName]() {
-                              auto [success, error] = schemaNode->truncateTable(tableName);
-                              if (!success) {
-                                  Alert::show("Error",
-                                              std::format("Failed to truncate table: {}", error));
-                              }
-                          },
-                          AlertButton::Style::Destructive}});
-        }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show("Delete Table",
-                        std::format("Permanently delete '{}.{}'? This is irreversible.",
-                                    schemaNode->name, tableName),
-                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Delete",
-                          [schemaNode, tableName]() {
-                              auto [success, error] = schemaNode->dropTable(tableName);
-                              if (!success) {
-                                  Alert::show("Error",
-                                              std::format("Failed to delete table: {}", error));
-                              }
-                          },
-                          AlertButton::Style::Destructive}});
+        const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(
+                schemaNode, schemaNode->getTables(),
+                [schemaNode](const std::string& n) { schemaNode->dropTable(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(schemaNode, table.name);
+            }
+            if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+                app.getTabManager()->createTableEditorTab(schemaNode, table, schemaNode->name);
+            }
+            if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+                openStructureTab(schemaNode, table, schemaNode->name);
+            }
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
+                schemaNode->startTableRefreshAsync(table.name);
+            }
+            TableExporter::renderExportMenu(schemaNode, table);
+            TableImporter::renderImportMenu(schemaNode, table.name);
+            ImGui::Separator();
+            if (ImGui::MenuItem(RENAME_LABEL)) {
+                const std::string oldName = table.name;
+                InputDialog::show(
+                    "Rename Table", "New name:", oldName, "Rename",
+                    [schemaNode, oldName](const std::string& newName) -> std::string {
+                        auto [success, error] = schemaNode->renameTable(oldName, newName);
+                        return success ? "" : error;
+                    },
+                    nullptr,
+                    [oldName](const std::string& newName) -> std::string {
+                        if (newName == oldName)
+                            return "New name must be different";
+                        return "";
+                    });
+            }
+            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show("Truncate Table",
+                            std::format("Remove all rows from '{}.{}'? This is irreversible.",
+                                        schemaNode->name, tableName),
+                            {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                             {"Truncate",
+                              [schemaNode, tableName]() {
+                                  auto [success, error] = schemaNode->truncateTable(tableName);
+                                  if (!success) {
+                                      Alert::show(
+                                          "Error",
+                                          std::format("Failed to truncate table: {}", error));
+                                  }
+                              },
+                              AlertButton::Style::Destructive}});
+            }
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show("Delete Table",
+                            std::format("Permanently delete '{}.{}'? This is irreversible.",
+                                        schemaNode->name, tableName),
+                            {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                             {"Delete",
+                              [schemaNode, tableName]() {
+                                  auto [success, error] = schemaNode->dropTable(tableName);
+                                  if (!success) {
+                                      Alert::show("Error",
+                                                  std::format("Failed to delete table: {}", error));
+                                  }
+                              },
+                              AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1445,13 +1538,20 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&table);
+    const bool isSelected = selectedTables_.count(&table) > 0;
+    const ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                          ImGuiTreeNodeFlags_FramePadding |
+                                          (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string tableNodeId =
         std::format("mysql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&table);
+    }
 
     // Check if table is refreshing
     const bool isRefreshing = dbData->isTableRefreshing(table.name);
@@ -1481,66 +1581,74 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(dbData, table.name);
-        }
-        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
-            app.getTabManager()->createTableEditorTab(dbData, table);
-        }
-        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
-            openStructureTab(dbData, table);
-        }
-        if (ImGui::MenuItem(REFRESH_LABEL)) {
-            dbData->startTableRefreshAsync(table.name);
-        }
-        TableExporter::renderExportMenu(dbData, table);
-        TableImporter::renderImportMenu(dbData, table.name);
-        ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
-            const std::string oldName = table.name;
-            InputDialog::show(
-                "Rename Table", "New name:", oldName, "Rename",
-                [dbData, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = dbData->renameTable(oldName, newName);
-                    return success ? "" : error;
-                },
-                nullptr,
-                [oldName](const std::string& newName) -> std::string {
-                    if (newName == oldName)
-                        return "New name must be different";
-                    return "";
-                });
-        }
-        if (ImGui::MenuItem(TRUNCATE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show("Truncate Table",
-                        std::format("Remove all rows from '{}'? This is irreversible.", tableName),
-                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Truncate",
-                          [dbData, tableName]() {
-                              auto [success, error] = dbData->truncateTable(tableName);
-                              if (!success) {
-                                  Alert::show("Error",
-                                              std::format("Failed to truncate table: {}", error));
-                              }
-                          },
-                          AlertButton::Style::Destructive}});
-        }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show(
-                "Delete Table",
-                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
-                            tableName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [dbData, tableName]() {
-                      auto [success, error] = dbData->dropTable(tableName);
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete table: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+        const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(dbData, dbData->getTables(),
+                                         [dbData](const std::string& n) { dbData->dropTable(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(dbData, table.name);
+            }
+            if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+                app.getTabManager()->createTableEditorTab(dbData, table);
+            }
+            if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+                openStructureTab(dbData, table);
+            }
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
+                dbData->startTableRefreshAsync(table.name);
+            }
+            TableExporter::renderExportMenu(dbData, table);
+            TableImporter::renderImportMenu(dbData, table.name);
+            ImGui::Separator();
+            if (ImGui::MenuItem(RENAME_LABEL)) {
+                const std::string oldName = table.name;
+                InputDialog::show(
+                    "Rename Table", "New name:", oldName, "Rename",
+                    [dbData, oldName](const std::string& newName) -> std::string {
+                        auto [success, error] = dbData->renameTable(oldName, newName);
+                        return success ? "" : error;
+                    },
+                    nullptr,
+                    [oldName](const std::string& newName) -> std::string {
+                        if (newName == oldName)
+                            return "New name must be different";
+                        return "";
+                    });
+            }
+            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Truncate Table",
+                    std::format("Remove all rows from '{}'? This is irreversible.", tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Truncate",
+                      [dbData, tableName]() {
+                          auto [success, error] = dbData->truncateTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to truncate table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Delete Table",
+                    std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                                tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [dbData, tableName]() {
+                          auto [success, error] = dbData->dropTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to delete table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -1758,7 +1866,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
 
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
-                                               ImGui::GetColorU32(colors.mauve));
+                                               ImGui::GetColorU32(colors.purple));
 
     if (ImGui::IsItemToggledOpen()) {
         dbData->expanded = isOpen;
@@ -1814,7 +1922,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
         if (dbData->schemasLoader.isRunning()) {
             dbData->checkSchemasStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-            ImGui::Text("  Loading schemas...");
+            ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
             UIUtils::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
@@ -1888,7 +1996,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                 if (schemaData->tablesLoader.isRunning()) {
                     schemaData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading tables...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -1932,7 +2040,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                 if (schemaData->viewsLoader.isRunning()) {
                     schemaData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading views...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -1959,13 +2067,20 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&table);
+    const bool isSelected = selectedTables_.count(&table) > 0;
+    const ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                          ImGuiTreeNodeFlags_FramePadding |
+                                          (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string tableNodeId =
         std::format("mssql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&table);
+    }
 
     const bool isRefreshing = schemaData->isTableRefreshing(table.name);
     if (isRefreshing) {
@@ -1990,63 +2105,72 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(schemaData, table.name);
-        }
-        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
-            app.getTabManager()->createTableEditorTab(schemaData, table);
-        }
-        if (ImGui::MenuItem(REFRESH_LABEL)) {
-            schemaData->startTableRefreshAsync(table.name);
-        }
-        TableExporter::renderExportMenu(schemaData, table);
-        TableImporter::renderImportMenu(schemaData, table.name);
-        ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
-            const std::string oldName = table.name;
-            InputDialog::show(
-                "Rename Table", "New name:", oldName, "Rename",
-                [schemaData, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = schemaData->renameTable(oldName, newName);
-                    return success ? "" : error;
-                },
-                nullptr,
-                [oldName](const std::string& newName) -> std::string {
-                    if (newName == oldName)
-                        return "New name must be different";
-                    return "";
-                });
-        }
-        if (ImGui::MenuItem(TRUNCATE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show("Truncate Table",
-                        std::format("Remove all rows from '{}'? This is irreversible.", tableName),
-                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Truncate",
-                          [schemaData, tableName]() {
-                              auto [success, error] = schemaData->truncateTable(tableName);
-                              if (!success) {
-                                  Alert::show("Error",
-                                              std::format("Failed to truncate table: {}", error));
-                              }
-                          },
-                          AlertButton::Style::Destructive}});
-        }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show(
-                "Delete Table",
-                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
-                            tableName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [schemaData, tableName]() {
-                      auto [success, error] = schemaData->dropTable(tableName);
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete table: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+        const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(
+                schemaData, schemaData->getTables(),
+                [schemaData](const std::string& n) { schemaData->dropTable(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(schemaData, table.name);
+            }
+            if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+                app.getTabManager()->createTableEditorTab(schemaData, table);
+            }
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
+                schemaData->startTableRefreshAsync(table.name);
+            }
+            TableExporter::renderExportMenu(schemaData, table);
+            TableImporter::renderImportMenu(schemaData, table.name);
+            ImGui::Separator();
+            if (ImGui::MenuItem(RENAME_LABEL)) {
+                const std::string oldName = table.name;
+                InputDialog::show(
+                    "Rename Table", "New name:", oldName, "Rename",
+                    [schemaData, oldName](const std::string& newName) -> std::string {
+                        auto [success, error] = schemaData->renameTable(oldName, newName);
+                        return success ? "" : error;
+                    },
+                    nullptr,
+                    [oldName](const std::string& newName) -> std::string {
+                        if (newName == oldName)
+                            return "New name must be different";
+                        return "";
+                    });
+            }
+            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Truncate Table",
+                    std::format("Remove all rows from '{}'? This is irreversible.", tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Truncate",
+                      [schemaData, tableName]() {
+                          auto [success, error] = schemaData->truncateTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to truncate table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Delete Table",
+                    std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                                tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [schemaData, tableName]() {
+                          auto [success, error] = schemaData->dropTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to delete table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -2233,7 +2357,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
 
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
-                                               ImGui::GetColorU32(colors.mauve));
+                                               ImGui::GetColorU32(colors.purple));
 
     if (ImGui::IsItemToggledOpen()) {
         dbData->expanded = isOpen;
@@ -2309,7 +2433,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                 if (dbData->tablesLoader.isRunning()) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading tables...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -2353,7 +2477,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                 if (dbData->viewsLoader.isRunning()) {
                     dbData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading views...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
@@ -2380,13 +2504,20 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&table);
+    const bool isSelected = selectedTables_.count(&table) > 0;
+    const ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                          ImGuiTreeNodeFlags_FramePadding |
+                                          (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string tableNodeId =
         std::format("oracle_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&table);
+    }
 
     const bool isRefreshing = dbData->isTableRefreshing(table.name);
     if (isRefreshing) {
@@ -2411,63 +2542,71 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(dbData, table.name);
-        }
-        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
-            app.getTabManager()->createTableEditorTab(dbData, table);
-        }
-        if (ImGui::MenuItem(REFRESH_LABEL)) {
-            dbData->startTableRefreshAsync(table.name);
-        }
-        TableExporter::renderExportMenu(dbData, table);
-        TableImporter::renderImportMenu(dbData, table.name);
-        ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
-            const std::string oldName = table.name;
-            InputDialog::show(
-                "Rename Table", "New name:", oldName, "Rename",
-                [dbData, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = dbData->renameTable(oldName, newName);
-                    return success ? "" : error;
-                },
-                nullptr,
-                [oldName](const std::string& newName) -> std::string {
-                    if (newName == oldName)
-                        return "New name must be different";
-                    return "";
-                });
-        }
-        if (ImGui::MenuItem(TRUNCATE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show("Truncate Table",
-                        std::format("Remove all rows from '{}'? This is irreversible.", tableName),
-                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Truncate",
-                          [dbData, tableName]() {
-                              auto [success, error] = dbData->truncateTable(tableName);
-                              if (!success) {
-                                  Alert::show("Error",
-                                              std::format("Failed to truncate table: {}", error));
-                              }
-                          },
-                          AlertButton::Style::Destructive}});
-        }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show(
-                "Delete Table",
-                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
-                            tableName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [dbData, tableName]() {
-                      auto [success, error] = dbData->dropTable(tableName);
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete table: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+        const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(dbData, dbData->getTables(),
+                                         [dbData](const std::string& n) { dbData->dropTable(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(dbData, table.name);
+            }
+            if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+                app.getTabManager()->createTableEditorTab(dbData, table);
+            }
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
+                dbData->startTableRefreshAsync(table.name);
+            }
+            TableExporter::renderExportMenu(dbData, table);
+            TableImporter::renderImportMenu(dbData, table.name);
+            ImGui::Separator();
+            if (ImGui::MenuItem(RENAME_LABEL)) {
+                const std::string oldName = table.name;
+                InputDialog::show(
+                    "Rename Table", "New name:", oldName, "Rename",
+                    [dbData, oldName](const std::string& newName) -> std::string {
+                        auto [success, error] = dbData->renameTable(oldName, newName);
+                        return success ? "" : error;
+                    },
+                    nullptr,
+                    [oldName](const std::string& newName) -> std::string {
+                        if (newName == oldName)
+                            return "New name must be different";
+                        return "";
+                    });
+            }
+            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Truncate Table",
+                    std::format("Remove all rows from '{}'? This is irreversible.", tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Truncate",
+                      [dbData, tableName]() {
+                          auto [success, error] = dbData->truncateTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to truncate table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Delete Table",
+                    std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                                tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [dbData, tableName]() {
+                          auto [success, error] = dbData->dropTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to delete table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -2723,7 +2862,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                 if (dbData->collectionsLoader.isRunning()) {
                     dbData->checkCollectionsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-                    ImGui::Text("  Loading collections...");
+                    ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_collections", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
@@ -2752,14 +2891,21 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags collectionFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&collection);
+    const bool isSelected = selectedTables_.count(&collection) > 0;
+    const ImGuiTreeNodeFlags collectionFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                               ImGuiTreeNodeFlags_FramePadding |
+                                               (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string collectionNodeId =
         std::format("mongo_coll_{}_{:p}", collection.name, static_cast<const void*>(&collection));
     const bool collectionOpen =
         renderTreeNodeWithIcon(collection.name, collectionNodeId, ICON_FK_TABLE,
                                ImGui::GetColorU32(colors.green), collectionFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&collection);
+    }
 
     // Check if collection is refreshing
     const bool isRefreshing = dbData->isTableRefreshing(collection.name);
@@ -2788,29 +2934,38 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(dbData, collection.name);
-        }
-        if (ImGui::MenuItem(REFRESH_LABEL)) {
-            dbData->startTableRefreshAsync(collection.name);
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string collName = collection.name;
-            Alert::show(
-                "Delete Collection",
-                std::format("Permanently delete '{}' and ALL its documents? This is irreversible.",
-                            collName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [dbData, collName]() {
-                      auto [success, error] = dbData->dropCollection(collName);
-                      if (!success) {
-                          Alert::show("Error",
-                                      std::format("Failed to delete collection: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+        const bool isMultiSelect =
+            selectedTables_.size() > 1 && selectedTables_.count(&collection) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(
+                dbData, dbData->getTables(),
+                [dbData](const std::string& n) { dbData->dropCollection(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(dbData, collection.name);
+            }
+            if (ImGui::MenuItem(REFRESH_LABEL)) {
+                dbData->startTableRefreshAsync(collection.name);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string collName = collection.name;
+                Alert::show(
+                    "Delete Collection",
+                    std::format(
+                        "Permanently delete '{}' and ALL its documents? This is irreversible.",
+                        collName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [dbData, collName]() {
+                          auto [success, error] = dbData->dropCollection(collName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to delete collection: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -2898,13 +3053,20 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    constexpr ImGuiTreeNodeFlags tableFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding;
+    currVisibleTables_.push_back(&table);
+    const bool isSelected = selectedTables_.count(&table) > 0;
+    const ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                          ImGuiTreeNodeFlags_FramePadding |
+                                          (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
 
     const std::string tableNodeId =
         std::format("sqlite_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+
+    if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
+        handleTableClick(&table);
+    }
 
     // Double-click to open table viewer
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
@@ -2915,48 +3077,56 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
-            app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
-        }
-        if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
-            app.getTabManager()->createTableEditorTab(sqliteDb, table);
-        }
-        if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
-            openStructureTab(sqliteDb, table);
-        }
-        TableExporter::renderExportMenu(sqliteDb, table);
-        TableImporter::renderImportMenu(sqliteDb, table.name);
-        ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
-            const std::string oldName = table.name;
-            InputDialog::show(
-                "Rename Table", "New name:", oldName, "Rename",
-                [sqliteDb, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = sqliteDb->renameTable(oldName, newName);
-                    return success ? "" : error;
-                },
-                nullptr,
-                [oldName](const std::string& newName) -> std::string {
-                    if (newName == oldName)
-                        return "New name must be different";
-                    return "";
-                });
-        }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
-            const std::string tableName = table.name;
-            Alert::show(
-                "Delete Table",
-                std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
-                            tableName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [sqliteDb, tableName]() {
-                      auto [success, error] = sqliteDb->dropTable(tableName);
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete table: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+        const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
+        if (isMultiSelect) {
+            renderMultiSelectMenuContent(
+                sqliteDb, sqliteDb->getTables(),
+                [sqliteDb](const std::string& n) { sqliteDb->dropTable(n); });
+        } else {
+            if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
+                app.getTabManager()->createTableViewerTab(sqliteDb, table.name);
+            }
+            if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
+                app.getTabManager()->createTableEditorTab(sqliteDb, table);
+            }
+            if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
+                openStructureTab(sqliteDb, table);
+            }
+            TableExporter::renderExportMenu(sqliteDb, table);
+            TableImporter::renderImportMenu(sqliteDb, table.name);
+            ImGui::Separator();
+            if (ImGui::MenuItem(RENAME_LABEL)) {
+                const std::string oldName = table.name;
+                InputDialog::show(
+                    "Rename Table", "New name:", oldName, "Rename",
+                    [sqliteDb, oldName](const std::string& newName) -> std::string {
+                        auto [success, error] = sqliteDb->renameTable(oldName, newName);
+                        return success ? "" : error;
+                    },
+                    nullptr,
+                    [oldName](const std::string& newName) -> std::string {
+                        if (newName == oldName)
+                            return "New name must be different";
+                        return "";
+                    });
+            }
+            if (ImGui::MenuItem(DELETE_LABEL)) {
+                const std::string tableName = table.name;
+                Alert::show(
+                    "Delete Table",
+                    std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
+                                tableName),
+                    {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [sqliteDb, tableName]() {
+                          auto [success, error] = sqliteDb->dropTable(tableName);
+                          if (!success) {
+                              Alert::show("Error",
+                                          std::format("Failed to delete table: {}", error));
+                          }
+                      },
+                      AlertButton::Style::Destructive}});
+            }
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -3195,7 +3365,7 @@ void DatabaseHierarchy::renderQueriesNode() {
 
     const std::string queriesNodeId = std::format("scripts_conn_{}", static_cast<void*>(db.get()));
     const bool queriesOpen = renderTreeNodeWithIcon("Queries", queriesNodeId, ICON_FA_FILE_CODE,
-                                                    ImGui::GetColorU32(colors.mauve));
+                                                    ImGui::GetColorU32(colors.purple));
 
     // context menu on the Queriess header
     if (ImGui::BeginPopupContextItem(nullptr)) {
@@ -3263,7 +3433,7 @@ void DatabaseHierarchy::renderQueriesNode() {
                 const std::string queryItemId =
                     std::format("script_{}_{}", query.id, static_cast<const void*>(&query));
                 renderTreeNodeWithIcon(query.name, queryItemId, ICON_FA_FILE_CODE,
-                                       ImGui::GetColorU32(colors.mauve), queryItemFlags);
+                                       ImGui::GetColorU32(colors.purple), queryItemFlags);
 
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     IDatabaseNode* node = resolveNodeForQuery(query);

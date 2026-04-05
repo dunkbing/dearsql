@@ -7,13 +7,11 @@
 #include <format>
 
 TableRenderer::TableRenderer() {
-    // Set default table flags
     config.tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX |
                         ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
 }
 
 TableRenderer::TableRenderer(const Config& config) : config(config) {
-    // Set default table flags if none provided
     if (this->config.tableFlags == 0) {
         this->config.tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                   ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
@@ -61,34 +59,24 @@ void TableRenderer::render(const char* tableId) {
         availableHeight = config.minHeight;
     }
 
-    // Check for keyboard input to start editing when a cell is selected
     if (config.allowEditing && selectedRow >= 0 && selectedCol >= 0 && editingRow == -1 &&
         editingCol == -1 && !config.nonEditableColumns.contains(selectedCol) &&
         (!cellEditableCb || cellEditableCb(selectedRow, selectedCol))) {
-        // Check if window is focused
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
-            // Check for Enter key to enter edit mode with existing value
             if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
-                // Enter edit mode preserving the current cell value
                 enterEditMode(selectedRow, selectedCol);
             } else if (!config.columnDropdownOptions.contains(selectedCol)) {
-                // Get the input character from ImGui (skip for dropdown columns)
                 ImGuiIO& io = ImGui::GetIO();
                 if (io.InputQueueCharacters.Size > 0) {
-                    // A character was typed - enter edit mode
                     ImWchar c = io.InputQueueCharacters[0];
                     // Check if it's a printable character (not a control character)
                     if (c >= 32 && c != 127) { // 32 is space, 127 is DEL
-                        // Enter edit mode with the typed character
                         editingRow = selectedRow;
                         editingCol = selectedCol;
-                        // Start with just the typed character
                         editBuffer[0] = static_cast<char>(c);
                         editBuffer[1] = '\0';
-                        // Set flag to position cursor after the first character
                         justEnteredEditWithChar = true;
                         initialCursorPos = 1;
-                        // Clear the input queue so the character doesn't get processed again
                         io.InputQueueCharacters.Size = 0;
                     }
                 }
@@ -97,13 +85,10 @@ void TableRenderer::render(const char* tableId) {
     }
 
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
-        // Setup columns
         if (config.showRowNumbers) {
-            // Calculate width needed for row numbers
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
             std::string maxRowStr = std::to_string(maxRowNum);
             float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
-            // Add padding for right alignment
             float columnWidth = textWidth + 10.0f;      // More padding for right alignment
             columnWidth = std::max(columnWidth, 30.0f); // Minimum width
             ImGui::TableSetupColumn("",
@@ -117,22 +102,18 @@ void TableRenderer::render(const char* tableId) {
             ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
         }
 
-        // Custom header row with sort controls
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
 
         // Skip row number column header if present
         if (config.showRowNumbers) {
             ImGui::TableNextColumn();
-            // Empty header for row number column
         }
 
-        // Render each column header with sort control
         for (int colIdx = 0; colIdx < static_cast<int>(columns.size()); colIdx++) {
             ImGui::TableNextColumn();
             renderColumnHeader(colIdx, columns[colIdx]);
         }
 
-        // Use ImGuiListClipper for efficient row rendering
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(data.size()));
 
@@ -141,7 +122,6 @@ void TableRenderer::render(const char* tableId) {
                 const auto& row = data[rowIdx];
                 ImGui::TableNextRow();
 
-                // Subtle highlight on the entire selected row
                 if (config.allowSelection && selectedRow == rowIdx) {
                     ImGui::TableSetBgColor(
                         ImGuiTableBgTarget_RowBg1,
@@ -149,29 +129,24 @@ void TableRenderer::render(const char* tableId) {
                             ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.4f)));
                 }
 
-                // Row number column
                 if (config.showRowNumbers) {
                     ImGui::TableNextColumn();
 
-                    // Right-align the row number text
                     int rowNum = rowNumberOffset + rowIdx + 1;
                     std::string rowNumStr = std::to_string(rowNum);
                     float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
                     float columnWidth = ImGui::GetColumnWidth();
                     float padding = 5.0f; // Right padding
 
-                    // Calculate position for right alignment
                     float cursorX = ImGui::GetCursorPosX();
                     ImGui::SetCursorPosX(cursorX + columnWidth - textWidth - padding);
 
-                    // Render with subdued color
                     ImGui::PushStyleColor(ImGuiCol_Text,
                                           ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                     ImGui::Text("%d", rowNum);
                     ImGui::PopStyleColor();
                 }
 
-                // Data columns
                 for (int colIdx = 0; colIdx < static_cast<int>(row.size()) &&
                                      colIdx < static_cast<int>(columns.size());
                      colIdx++) {
@@ -179,44 +154,34 @@ void TableRenderer::render(const char* tableId) {
 
                     renderCell(rowIdx, colIdx);
 
-                    // Handle scrolling to target cell after rendering (so we can check visibility)
                     if (shouldScrollToCell && rowIdx == scrollTargetRow &&
                         colIdx == scrollTargetCol) {
-                        // Check if the cell is actually visible before scrolling
                         const ImVec2 cellMin = ImGui::GetItemRectMin();
                         const ImVec2 cellMax = ImGui::GetItemRectMax();
                         const ImVec2 windowContentMin = ImGui::GetWindowContentRegionMin();
                         const ImVec2 windowContentMax = ImGui::GetWindowContentRegionMax();
                         const ImVec2 windowPos = ImGui::GetWindowPos();
 
-                        // Convert to absolute coordinates
                         const ImVec2 contentMin = ImVec2(windowPos.x + windowContentMin.x,
                                                          windowPos.y + windowContentMin.y);
                         const ImVec2 contentMax = ImVec2(windowPos.x + windowContentMax.x,
                                                          windowPos.y + windowContentMax.y);
 
-                        // Check if cell is visible horizontally
                         const bool cellVisibleX =
                             (cellMax.x > contentMin.x && cellMin.x < contentMax.x);
-                        // Check if cell is visible vertically
                         const bool cellVisibleY =
                             (cellMax.y > contentMin.y && cellMin.y < contentMax.y);
 
-                        // Only scroll if the cell is not fully visible
                         if (!cellVisibleY) {
                             ImGui::SetScrollHereY(0.5f); // Center the row vertically
                         }
 
-                        // For horizontal scrolling, handle first column specially
                         if (colIdx == 0) {
-                            // Always scroll to the leftmost position for the first column
-                            // Check if we're not already at the leftmost scroll position
                             float currentScrollX = ImGui::GetScrollX();
                             if (currentScrollX > 0.0f) {
                                 ImGui::SetScrollHereX(0.0f);
                             }
                         } else if (!cellVisibleX) {
-                            // For other columns, only scroll if not visible
                             float scrollRatio = 0.5f; // Default to center
 
                             if (colIdx == static_cast<int>(columns.size()) - 1) {
@@ -227,7 +192,6 @@ void TableRenderer::render(const char* tableId) {
                             ImGui::SetScrollHereX(scrollRatio);
                         }
 
-                        // Reset the scroll flag after checking
                         shouldScrollToCell = false;
                     }
                 }
@@ -251,7 +215,6 @@ void TableRenderer::renderCell(int row, int col) {
 
         auto dropdownIt = config.columnDropdownOptions.find(col);
         if (dropdownIt != config.columnDropdownOptions.end()) {
-            // Dropdown combo editing
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -281,7 +244,6 @@ void TableRenderer::renderCell(int row, int col) {
                 exitEditMode(false);
             }
         } else {
-            // Text input editing
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::SetKeyboardFocusHere();
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
@@ -290,16 +252,13 @@ void TableRenderer::renderCell(int row, int col) {
             ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
 
-            // per-column input flags
             int extraFlags = 0;
             if (auto it = config.columnInputFlags.find(col); it != config.columnInputFlags.end()) {
                 extraFlags = it->second;
             }
 
-            // Handle cursor positioning when we just entered edit mode with a character
             bool shouldExitEditMode = false;
             if (justEnteredEditWithChar) {
-                // Use callback to set cursor position after the input field is created
                 shouldExitEditMode = ImGui::InputText(
                     "##edit", editBuffer, sizeof(editBuffer),
                     ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways |
@@ -335,7 +294,6 @@ void TableRenderer::renderCell(int row, int col) {
             }
         }
     } else {
-        // Display mode - show cell content
         ImGui::PushID(row * static_cast<int>(columns.size()) + col);
 
         const bool isSelected = (selectedRow == row && selectedCol == col);
@@ -343,7 +301,6 @@ void TableRenderer::renderCell(int row, int col) {
             (row < static_cast<int>(editedCells.size()) &&
              col < static_cast<int>(editedCells[row].size()) && editedCells[row][col]);
 
-        // Apply cell background colors
         if (isEdited && isSelected) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
@@ -358,7 +315,6 @@ void TableRenderer::renderCell(int row, int col) {
 
         const std::string& cellValue = data[row][col];
 
-        // apply per-cell color override
         bool hasColorOverride = false;
         if (cellColorCb) {
             if (ImU32 color = cellColorCb(row, col, cellValue); color != 0) {
@@ -370,10 +326,8 @@ void TableRenderer::renderCell(int row, int col) {
         if (config.allowSelection) {
             handleCellInteraction(row, col, isSelected);
         } else {
-            // Just display the text
             ImGui::Text("%s", cellValue.c_str());
 
-            // Add tooltip for long text
             if (ImGui::IsItemHovered() && cellValue.length() > 50) {
                 ImGui::SetTooltip("%s", cellValue.c_str());
             }
@@ -396,7 +350,6 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
 
     if (ImGui::Selectable(cellValue.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
-        // Single click - select cell
         selectedRow = row;
         selectedCol = col;
 
@@ -404,7 +357,6 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
             onCellSelect(row, col);
         }
 
-        // Double click - enter edit mode or trigger callback
         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             if (config.allowEditing) {
                 enterEditMode(row, col);
@@ -418,13 +370,11 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 
     ImGui::PopStyleColor(3);
 
-    // Apply hover highlight at cell level (skip non-editable cells)
     if (ImGui::IsItemHovered() && !isSelected && !config.nonEditableColumns.contains(col) &&
         (!cellEditableCb || cellEditableCb(row, col))) {
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
     }
 
-    // Add tooltip for long text
     if (ImGui::IsItemHovered() && cellValue.length() > 50) {
         ImGui::SetTooltip("%s", cellValue.c_str());
     }
@@ -441,7 +391,6 @@ void TableRenderer::enterEditMode(int row, int col) {
         editingRow = row;
         editingCol = col;
 
-        // Copy current cell value to edit buffer
         const std::string& currentValue = data[row][col];
         strncpy(editBuffer, currentValue.c_str(), sizeof(editBuffer) - 1);
         editBuffer[sizeof(editBuffer) - 1] = '\0';
@@ -460,7 +409,6 @@ void TableRenderer::exitEditMode(bool saveEdit) {
             onCellEdit(editingRow, editingCol, newValue);
         }
 
-        // Clear edit state
         editingRow = -1;
         editingCol = -1;
         memset(editBuffer, 0, sizeof(editBuffer));
@@ -473,7 +421,6 @@ void TableRenderer::scrollToCell(int row, int col) {
         return;
     }
 
-    // Set flag to scroll to this cell on next render
     shouldScrollToCell = true;
     scrollTargetRow = row;
     scrollTargetCol = col;
@@ -484,13 +431,10 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     const bool isSorted = (sortColumn == colIdx && sortDirection != SortDirection::None);
     const std::string popupId = std::format("##sort_popup_{}", colIdx);
 
-    // Calculate widths
     float columnWidth = ImGui::GetColumnWidth();
 
-    // Display column name
     ImGui::Text("%s", colName.c_str());
 
-    // Show sort indicator if this column is sorted (clickable to clear)
     if (isSorted) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
@@ -503,7 +447,6 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
                                ? ICON_FA_ARROW_UP_SHORT_WIDE
                                : ICON_FA_ARROW_DOWN_WIDE_SHORT;
         if (ImGui::SmallButton(icon)) {
-            // Clear sort when clicking the indicator
             sortColumn = -1;
             sortDirection = SortDirection::None;
             if (onSortChanged) {
@@ -518,10 +461,8 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         ImGui::PopStyleColor(4);
     }
 
-    // Chevron button on the right side of the header
     ImGui::SameLine();
 
-    // Position chevron at the right edge of the column
     float chevronWidth =
         ImGui::CalcTextSize(ICON_FA_CHEVRON_DOWN).x + ImGui::GetStyle().FramePadding.x * 2;
     float availableWidth = ImGui::GetContentRegionAvail().x;
@@ -529,7 +470,6 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + availableWidth - chevronWidth);
     }
 
-    // Chevron button
     ImGui::PushID(colIdx);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
@@ -541,17 +481,14 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
     ImGui::PopStyleColor(3);
 
-    // Sort popup menu
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
     if (ImGui::BeginPopup(popupId.c_str())) {
-        // Order by ASC option
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
         if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {
             if (isAsc) {
-                // Clicking again clears the sort
                 sortColumn = -1;
                 sortDirection = SortDirection::None;
                 if (onSortChanged) {
@@ -566,11 +503,9 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
             }
         }
 
-        // Order by DESC option
         bool isDesc = (sortColumn == colIdx && sortDirection == SortDirection::Descending);
         if (ImGui::MenuItem(ICON_FA_ARROW_DOWN_WIDE_SHORT " Order by DESC", nullptr, isDesc)) {
             if (isDesc) {
-                // Clicking again clears the sort
                 sortColumn = -1;
                 sortDirection = SortDirection::None;
                 if (onSortChanged) {

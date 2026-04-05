@@ -187,7 +187,7 @@ void WindowsTitlebar::render() {
 
     // background
     fg->AddRectFilled(origin, {origin.x + winW, origin.y + tbHeight},
-                      ImGui::GetColorU32(colors.mantle));
+                      ImGui::GetColorU32(colors.base));
 
     titlebarWidgetHovered_ = false;
 
@@ -255,7 +255,7 @@ void WindowsTitlebar::render() {
         if (fgButton(
                 {rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
                 [&](ImDrawList* d, ImVec2 c, ImU32 col) {
-                    DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.mantle));
+                    DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.base));
                 },
                 hoverBg, activeBg, false))
             ShowWindow(hWnd, SW_RESTORE);

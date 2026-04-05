@@ -169,7 +169,6 @@ void DatabaseSidebarNew::renderHistory() {
         return std::format("{}d ago", days);
     };
 
-    // Get query type label and color
     auto getQueryTypeInfo = [&colors](QueryType type) -> std::pair<std::string, ImVec4> {
         switch (type) {
         case QueryType::Select:
@@ -181,7 +180,7 @@ void DatabaseSidebarNew::renderHistory() {
         case QueryType::Delete:
             return {"DELETE", colors.red};
         case QueryType::Create:
-            return {"CREATE", colors.mauve};
+            return {"CREATE", colors.purple};
         case QueryType::Alter:
             return {"ALTER", colors.yellow};
         case QueryType::Drop:
@@ -200,7 +199,6 @@ void DatabaseSidebarNew::renderHistory() {
 
         ImGui::PushID(static_cast<int>(i));
 
-        // Query type badge
         ImGui::PushStyleColor(ImGuiCol_Button, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
@@ -210,21 +208,18 @@ void DatabaseSidebarNew::renderHistory() {
 
         ImGui::SameLine();
 
-        // Truncated query text
         const float availWidth = ImGui::GetContentRegionAvail().x - 30.0f;
         std::string displayQuery = entry.query;
         if (displayQuery.length() > 30) {
             displayQuery = displayQuery.substr(0, 27) + "...";
         }
 
-        // Make the query text clickable (selectable)
         ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
         if (ImGui::Selectable(displayQuery.c_str(), false, 0, ImVec2(availWidth, 0))) {
             // TODO: Could copy to clipboard or open in SQL editor
         }
         ImGui::PopStyleColor();
 
-        // Tooltip with full query on hover
         if (ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
             ImGui::PushTextWrapPos(400.0f);
@@ -233,7 +228,6 @@ void DatabaseSidebarNew::renderHistory() {
             ImGui::EndTooltip();
         }
 
-        // Context menu
         if (ImGui::BeginPopupContextItem("history_entry_menu")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -244,7 +238,6 @@ void DatabaseSidebarNew::renderHistory() {
             ImGui::EndPopup();
         }
 
-        // Metadata line (time, rows, duration)
         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
         std::string metaInfo = formatRelativeTime(entry.timestamp);
         if (entry.rowCount > 0) {
@@ -320,7 +313,6 @@ void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    // Square popup corners
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 0.0f);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, 0.0f));
@@ -338,19 +330,16 @@ void DatabaseSidebarNew::render() {
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
-    // Calculate available height for the sections
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float sidebarWidth = ImGui::GetContentRegionAvail().x;
     constexpr float historyHeight = 300.0f;
     constexpr float stripWidth = 22.0f;
     const float historyButtonH = getHistoryButtonHeight();
 
-    // Structure section height depends on whether history is open
     const float structureSectionHeight =
         historyPanelOpen ? availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y
                          : availableHeight - historyButtonH;
 
-    // Structure section (top) - scrollbar visible only on hover
     {
         const bool structureHovered = ImGui::IsMouseHoveringRect(
             ImGui::GetCursorScreenPos(),
@@ -363,11 +352,9 @@ void DatabaseSidebarNew::render() {
         ImGui::EndChild();
     }
 
-    // Bottom area: strip on the left + history content on the right (when open)
     if (historyPanelOpen) {
         const float bottomHeight = ImGui::GetContentRegionAvail().y;
 
-        // Vertical toggle strip on the left
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         if (ImGui::BeginChild("HistoryToggleStrip", ImVec2(stripWidth, bottomHeight),
@@ -375,15 +362,12 @@ void DatabaseSidebarNew::render() {
             ImDrawList* drawList = ImGui::GetWindowDrawList();
             const ImVec2 stripPos = ImGui::GetCursorScreenPos();
 
-            // Draw right border
             drawList->AddLine(ImVec2(stripPos.x + stripWidth, stripPos.y),
                               ImVec2(stripPos.x + stripWidth, stripPos.y + bottomHeight),
                               ImGui::GetColorU32(colors.overlay0), 1.0f);
-            // Draw top border
             drawList->AddLine(stripPos, ImVec2(stripPos.x + stripWidth, stripPos.y),
                               ImGui::GetColorU32(colors.overlay0), 1.0f);
 
-            // Rotated "History" button at the bottom of the strip
             constexpr float buttonW = stripWidth;
             const float buttonH = historyButtonH;
             const float buttonY = stripPos.y + bottomHeight - buttonH;
@@ -394,7 +378,6 @@ void DatabaseSidebarNew::render() {
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
 
-        // History content to the right of the strip
         ImGui::SameLine(0, 0);
 
         const float contentWidth = sidebarWidth - stripWidth;
@@ -432,7 +415,6 @@ void DatabaseSidebarNew::render() {
             ImGui::PopStyleColor(3);
             ImGui::Spacing();
 
-            // Scrollable history list
             const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
             const bool historyHovered = ImGui::IsMouseHoveringRect(
                 historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
@@ -484,7 +466,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     const bool showSpinner = db->isConnecting();
 
-    // lazy-load database icon textures on first use
     auto& texMgr = TextureManager::instance();
     if (!texturesLoaded_) {
         texMgr.loadDatabaseIcons(app.getPlatform());
@@ -501,7 +482,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                ImGui::GetItemRectMin().y + (ImGui::GetItemRectSize().y - iconSize) * 0.5f);
 
     if (showSpinner) {
-        // replace icon with spinner while connecting
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
         UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
                                 ImGui::GetColorU32(colors.peach));
@@ -521,7 +501,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     db->checkConnectionStatusAsync();
 
-    // Check refresh workflow status
     if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
         if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
             pgDb->checkRefreshWorkflowAsync();
@@ -570,7 +549,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
 
-            // offer Oracle Client install when not available
             if (connectionInfo.type == DatabaseType::ORACLE &&
                 OracleDatabase::needsClientInstall()) {
                 auto& installer = oracleClientInstaller_;
@@ -599,7 +577,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                 }
             }
         } else if (db->isConnected()) {
-            // Use cached hierarchy for rendering (avoids creating new objects every frame)
             if (auto* hierarchy = getHierarchy(db)) {
                 hierarchy->renderRootNode();
             }
@@ -616,7 +593,6 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        // SQLite-specific menu items (only when connected)
         if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
             if (sqliteDb) {
@@ -631,7 +607,6 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
         auto& app = Application::getInstance();
 
-        // Create New Database (when connected)
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
             if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT ||

@@ -17,33 +17,28 @@ namespace CryptoUtils {
             throw std::runtime_error("Failed to create cipher context");
         }
 
-        // Generate random IV
         unsigned char iv[12]; // 96-bit IV for GCM
         if (RAND_bytes(iv, sizeof(iv)) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to generate IV");
         }
 
-        // Initialize encryption
         if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to initialize encryption");
         }
 
-        // Set IV length
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, sizeof(iv), nullptr) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set IV length");
         }
 
-        // Set key and IV
         if (EVP_EncryptInit_ex(ctx, nullptr, nullptr,
                                reinterpret_cast<const unsigned char*>(key.c_str()), iv) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set key and IV");
         }
 
-        // Encrypt the plaintext
         std::vector<unsigned char> ciphertext(plaintext.length() +
                                               EVP_CIPHER_block_size(EVP_aes_256_gcm()));
         int len;
@@ -56,14 +51,12 @@ namespace CryptoUtils {
 
         int ciphertext_len = len;
 
-        // Finalize encryption
         if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to finalize encryption");
         }
         ciphertext_len += len;
 
-        // Get the tag
         unsigned char tag[16];
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, sizeof(tag), tag) != 1) {
             EVP_CIPHER_CTX_free(ctx);
@@ -106,26 +99,22 @@ namespace CryptoUtils {
             throw std::runtime_error("Failed to create cipher context");
         }
 
-        // Initialize decryption
         if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to initialize decryption");
         }
 
-        // Set IV length
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, sizeof(iv), nullptr) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set IV length");
         }
 
-        // Set key and IV
         if (EVP_DecryptInit_ex(ctx, nullptr, nullptr,
                                reinterpret_cast<const unsigned char*>(key.c_str()), iv) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set key and IV");
         }
 
-        // Decrypt the ciphertext
         std::vector<unsigned char> plaintext(cipher_len);
         int len;
         if (EVP_DecryptUpdate(ctx, plaintext.data(), &len, data.data() + 12, cipher_len) != 1) {
@@ -135,13 +124,11 @@ namespace CryptoUtils {
 
         int plaintext_len = len;
 
-        // Set the tag
         if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, sizeof(tag), tag) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Failed to set authentication tag");
         }
 
-        // Finalize decryption
         if (EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len) != 1) {
             EVP_CIPHER_CTX_free(ctx);
             throw std::runtime_error("Decryption failed - authentication error");

@@ -479,8 +479,8 @@ void LinuxTitlebar::applyTheme(bool isDark) {
                       "; }\n"
 
                       "headerbar { background: " +
-                      mantle + "; color: " + text +
-                      "; }\n"
+                      base + "; color: " + text + "; border-bottom: 1px solid " + overlay0 +
+                      "; box-shadow: none; }\n"
 
                       "headerbar button:not(.titlebutton) {"
                       "  color: " +
@@ -538,10 +538,17 @@ void LinuxTitlebar::applyTheme(bool isDark) {
                       "  color: " +
                       text +
                       ";"
+                      "  border: 1px solid " +
+                      overlay0 +
+                      ";"
+                      "  border-radius: 6px;"
                       "}\n"
                       "popover > arrow {"
                       "  background: " +
                       surface0 +
+                      ";"
+                      "  border-color: " +
+                      overlay0 +
                       ";"
                       "}\n"
                       "popover label { color: " +

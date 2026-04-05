@@ -1,5 +1,6 @@
 #include "utils/table_exporter.hpp"
 #include "database/ddl_utils.hpp"
+#include <filesystem>
 #include <fstream>
 #include <nfd.h>
 #include <nlohmann/json.hpp>
@@ -194,6 +195,28 @@ namespace {
         return true;
     }
 
+    constexpr std::string_view PORTAL_CANCEL_MSG = "response code 2";
+
+    bool isPortalCancel() {
+        const char* err = NFD_GetError();
+        return err && std::string_view(err).find(PORTAL_CANCEL_MSG) != std::string_view::npos;
+    }
+
+    std::string showFolderDialog() {
+        nfdchar_t* outPath = nullptr;
+        // use save dialog so the user can type a folder name
+        const nfdresult_t result = NFD_SaveDialog(&outPath, nullptr, 0, nullptr, "data");
+        if (result == NFD_OKAY) {
+            std::string path(outPath);
+            NFD_FreePath(outPath);
+            return path;
+        }
+        if (result == NFD_ERROR && !isPortalCancel()) {
+            spdlog::error("Folder dialog error: {}", NFD_GetError());
+        }
+        return "";
+    }
+
     std::string showSaveDialog(ExportFormat format, const std::string& tableName) {
         const char* ext = nullptr;
         const char* desc = nullptr;
@@ -222,7 +245,7 @@ namespace {
             NFD_FreePath(outPath);
             return path;
         }
-        if (result == NFD_ERROR) {
+        if (result == NFD_ERROR && !isPortalCancel()) {
             spdlog::error("File dialog error: {}", NFD_GetError());
         }
         return "";
@@ -232,25 +255,74 @@ namespace {
 
 namespace TableExporter {
 
-    bool exportTable(ITableDataProvider* provider, const Table& table, ExportFormat format) {
-        if (!provider) {
+    bool exportTables(ITableDataProvider* provider, const std::vector<const Table*>& tables,
+                      ExportFormat format) {
+        if (!provider || tables.empty()) {
             return false;
         }
 
-        std::string path = showSaveDialog(format, table.name);
-        if (path.empty()) {
-            return false;
-        }
-
+        const char* ext = nullptr;
         switch (format) {
         case ExportFormat::CSV:
-            return exportCsv(provider, table.name, path);
+            ext = "csv";
+            break;
         case ExportFormat::JSON:
-            return exportJson(provider, table.name, path);
+            ext = "json";
+            break;
         case ExportFormat::SQL:
-            return exportSql(provider, table, path);
+            ext = "sql";
+            break;
         }
-        return false;
+
+        if (tables.size() == 1) {
+            const std::string path = showSaveDialog(format, tables[0]->name);
+            if (path.empty()) {
+                return false;
+            }
+            switch (format) {
+            case ExportFormat::CSV:
+                return exportCsv(provider, tables[0]->name, path);
+            case ExportFormat::JSON:
+                return exportJson(provider, tables[0]->name, path);
+            case ExportFormat::SQL:
+                return exportSql(provider, *tables[0], path);
+            }
+            return false;
+        }
+
+        const std::string folder = showFolderDialog();
+        if (folder.empty()) {
+            return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::create_directories(folder, ec);
+        if (ec) {
+            spdlog::error("Failed to create export folder '{}': {}", folder, ec.message());
+            return false;
+        }
+
+        bool allOk = true;
+        for (const Table* table : tables) {
+            const std::string path =
+                (std::filesystem::path(folder) / (table->name + "." + ext)).string();
+            bool ok = false;
+            switch (format) {
+            case ExportFormat::CSV:
+                ok = exportCsv(provider, table->name, path);
+                break;
+            case ExportFormat::JSON:
+                ok = exportJson(provider, table->name, path);
+                break;
+            case ExportFormat::SQL:
+                ok = exportSql(provider, *table, path);
+                break;
+            }
+            if (!ok) {
+                allOk = false;
+            }
+        }
+        return allOk;
     }
 
 } // namespace TableExporter

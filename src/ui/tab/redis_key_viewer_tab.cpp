@@ -87,7 +87,7 @@ void RedisKeyViewerTab::initializeTableRenderer() {
             if (value == "list")
                 return ImGui::GetColorU32(colors.blue);
             if (value == "set")
-                return ImGui::GetColorU32(colors.mauve);
+                return ImGui::GetColorU32(colors.purple);
             if (value == "zset")
                 return ImGui::GetColorU32(colors.peach);
             if (value == "hash")

@@ -344,7 +344,7 @@ namespace dearsql {
         Palette p{};
         p.background = toImU32(colors.base);
         p.text = toImU32(colors.text);
-        p.keyword = toImU32(colors.mauve);
+        p.keyword = toImU32(colors.purple);
         p.string = toImU32(colors.green);
         p.number = toImU32(colors.peach);
         p.comment = toImU32(colors.overlay2);

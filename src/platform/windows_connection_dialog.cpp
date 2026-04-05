@@ -15,6 +15,7 @@
 #include "database/ssl_config.hpp"
 #include "platform/connection_dialog.hpp"
 #include "platform/windows_platform.hpp"
+#include "themes.hpp"
 #include "utils/file_dialog.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -115,11 +116,16 @@ struct ConnectionDialogData {
     bool isDark = false;
     HBRUSH bgBrush = nullptr;
     HBRUSH editBrush = nullptr;
+    HBRUSH btnBrush = nullptr;
+    HBRUSH btnHoverBrush = nullptr;
     HFONT hFont = nullptr;
     COLORREF bgColor = RGB(255, 255, 255);
     COLORREF editBgColor = RGB(255, 255, 255);
     COLORREF textColor = RGB(0, 0, 0);
     COLORREF dimTextColor = RGB(120, 120, 120);
+    COLORREF btnColor = RGB(255, 255, 255);
+    COLORREF btnHoverColor = RGB(240, 240, 240);
+    COLORREF btnTextColor = RGB(0, 0, 0);
 };
 
 struct AsyncConnectResult {
@@ -141,9 +147,14 @@ struct CreateDatabaseDialogData {
     HWND parentHwnd = nullptr;
     HBRUSH bgBrush = nullptr;
     HBRUSH editBrush = nullptr;
+    HBRUSH btnBrush = nullptr;
+    HBRUSH btnHoverBrush = nullptr;
     COLORREF bgColor = RGB(255, 255, 255);
     COLORREF editBgColor = RGB(245, 245, 246);
     COLORREF textColor = RGB(0, 0, 0);
+    COLORREF btnColor = RGB(255, 255, 255);
+    COLORREF btnHoverColor = RGB(240, 240, 240);
+    COLORREF btnTextColor = RGB(0, 0, 0);
 };
 
 static HWND sActiveConnectionDialog = nullptr;
@@ -158,6 +169,11 @@ static HWND getParentHwnd(Application* app) {
     return platform ? platform->getHWND() : nullptr;
 }
 
+static COLORREF imVec4ToColorRef(const ImVec4& c) {
+    return RGB(static_cast<int>(c.x * 255.0f), static_cast<int>(c.y * 255.0f),
+               static_cast<int>(c.z * 255.0f));
+}
+
 static std::string getWindowText(HWND hwnd) {
     int len = GetWindowTextLengthA(hwnd);
     if (len <= 0)
@@ -166,6 +182,40 @@ static std::string getWindowText(HWND hwnd) {
     GetWindowTextA(hwnd, buf.data(), len + 1);
     buf.resize(len);
     return buf;
+}
+
+static void drawThemedButton(const DRAWITEMSTRUCT* dis, COLORREF btnColor, COLORREF btnHoverColor,
+                             COLORREF btnTextColor, HBRUSH btnBrush, HBRUSH btnHoverBrush) {
+    bool isHot = (dis->itemState & ODS_HOTLIGHT) || (dis->itemState & ODS_SELECTED);
+    bool isDisabled = (dis->itemState & ODS_DISABLED) != 0;
+    bool isFocused = (dis->itemState & ODS_FOCUS) != 0;
+
+    RECT rc = dis->rcItem;
+    HBRUSH fill = isHot ? btnHoverBrush : btnBrush;
+    FillRect(dis->hDC, &rc, fill);
+
+    // Draw a subtle border
+    HPEN borderPen = CreatePen(PS_SOLID, 1, isHot ? btnTextColor : btnHoverColor);
+    HPEN oldPen = static_cast<HPEN>(SelectObject(dis->hDC, borderPen));
+    HBRUSH oldBrush = static_cast<HBRUSH>(SelectObject(dis->hDC, GetStockObject(NULL_BRUSH)));
+    RoundRect(dis->hDC, rc.left, rc.top, rc.right, rc.bottom, 4, 4);
+    SelectObject(dis->hDC, oldBrush);
+    SelectObject(dis->hDC, oldPen);
+    DeleteObject(borderPen);
+
+    // Draw focus rect
+    if (isFocused) {
+        RECT focusRc = {rc.left + 2, rc.top + 2, rc.right - 2, rc.bottom - 2};
+        DrawFocusRect(dis->hDC, &focusRc);
+    }
+
+    // Draw text
+    SetBkMode(dis->hDC, TRANSPARENT);
+    COLORREF textCol = isDisabled ? btnHoverColor : btnTextColor;
+    SetTextColor(dis->hDC, textCol);
+    char text[128] = {};
+    GetWindowTextA(dis->hwndItem, text, sizeof(text));
+    DrawTextA(dis->hDC, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 static void setStatus(HWND dialog, const std::string& text) {
@@ -687,24 +737,28 @@ static void applyDialogTheme(ConnectionDialogData* data, HWND hwnd) {
 
     data->isDark = data->app->isDarkTheme();
 
-    if (data->isDark) {
-        data->bgColor = RGB(15, 15, 15);
-        data->editBgColor = RGB(30, 30, 30);
-        data->textColor = RGB(255, 255, 255);
-        data->dimTextColor = RGB(180, 180, 180);
-    } else {
-        data->bgColor = RGB(255, 255, 255);
-        data->editBgColor = RGB(245, 245, 246);
-        data->textColor = RGB(0, 0, 0);
-        data->dimTextColor = RGB(100, 100, 100);
-    }
+    const auto& colors = data->app->getCurrentColors();
+    data->bgColor = imVec4ToColorRef(colors.base);
+    data->editBgColor = imVec4ToColorRef(colors.surface0);
+    data->textColor = imVec4ToColorRef(colors.text);
+    data->dimTextColor = imVec4ToColorRef(colors.subtext0);
+
+    data->btnColor = imVec4ToColorRef(colors.surface0);
+    data->btnHoverColor = imVec4ToColorRef(colors.surface1);
+    data->btnTextColor = imVec4ToColorRef(colors.text);
 
     if (data->bgBrush)
         DeleteObject(data->bgBrush);
     if (data->editBrush)
         DeleteObject(data->editBrush);
+    if (data->btnBrush)
+        DeleteObject(data->btnBrush);
+    if (data->btnHoverBrush)
+        DeleteObject(data->btnHoverBrush);
     data->bgBrush = CreateSolidBrush(data->bgColor);
     data->editBrush = CreateSolidBrush(data->editBgColor);
+    data->btnBrush = CreateSolidBrush(data->btnColor);
+    data->btnHoverBrush = CreateSolidBrush(data->btnHoverColor);
 
     // Dark mode title bar
     BOOL useDark = data->isDark ? TRUE : FALSE;
@@ -791,13 +845,14 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
             SendMessageA(typeCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t));
         }
         SendMessage(typeCombo, CB_SETCURSEL, 0, 0);
+        SetWindowTextA(GetDlgItem(hwnd, IDC_NAME_EDIT), "untitled connection");
         y += RS;
 
         // SQLite path
         makeCtrl("STATIC", "Path:", IDC_LABEL_PATH, SS_RIGHT, LX, y + 3, LW, RH);
         makeCtrl("EDIT", "", IDC_SQLITE_PATH_EDIT, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, FX, y,
                  FW - 80, RH);
-        makeCtrl("BUTTON", "Browse...", IDC_SQLITE_BROWSE_BTN, WS_TABSTOP | BS_PUSHBUTTON,
+        makeCtrl("BUTTON", "Browse...", IDC_SQLITE_BROWSE_BTN, WS_TABSTOP | BS_OWNERDRAW,
                  FX + FW - 74, y, 74, RH);
         y += RS;
 
@@ -827,7 +882,7 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         makeCtrl("STATIC", "CA cert:", IDC_SSL_CA_CERT_LABEL, SS_RIGHT, LX, y + 3, LW, RH);
         makeCtrl("EDIT", "", IDC_SSL_CA_CERT_EDIT, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, FX, y,
                  FW - 80, RH);
-        makeCtrl("BUTTON", "Browse...", IDC_SSL_CA_CERT_BROWSE, WS_TABSTOP | BS_PUSHBUTTON,
+        makeCtrl("BUTTON", "Browse...", IDC_SSL_CA_CERT_BROWSE, WS_TABSTOP | BS_OWNERDRAW,
                  FX + FW - 74, y, 74, RH);
         y += RS;
 
@@ -897,8 +952,8 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
         makeCtrl("STATIC", "Key file:", IDC_LABEL_SSH_KEY, SS_RIGHT, LX, y + 3, LW, RH);
         makeCtrl("EDIT", "", IDC_SSH_KEY_EDIT, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, FX, y,
                  FW - 80, RH);
-        makeCtrl("BUTTON", "Browse...", IDC_SSH_KEY_BROWSE, WS_TABSTOP | BS_PUSHBUTTON,
-                 FX + FW - 74, y, 74, RH);
+        makeCtrl("BUTTON", "Browse...", IDC_SSH_KEY_BROWSE, WS_TABSTOP | BS_OWNERDRAW, FX + FW - 74,
+                 y, 74, RH);
         y += RS + 4;
 
         // status label (placed left of buttons on the same row)
@@ -906,10 +961,10 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
 
         // buttons
         constexpr int btnH = 32;
-        makeCtrl("BUTTON", "Cancel", IDC_CANCEL_BTN, WS_TABSTOP | BS_PUSHBUTTON, FX + FW - 180, y,
+        makeCtrl("BUTTON", "Cancel", IDC_CANCEL_BTN, WS_TABSTOP | BS_OWNERDRAW, FX + FW - 180, y,
                  84, btnH);
-        makeCtrl("BUTTON", "Connect", IDC_CONNECT_BTN, WS_TABSTOP | BS_DEFPUSHBUTTON, FX + FW - 90,
-                 y, 90, btnH);
+        makeCtrl("BUTTON", "Connect", IDC_CONNECT_BTN, WS_TABSTOP | BS_OWNERDRAW, FX + FW - 90, y,
+                 90, btnH);
         y += btnH + 16; // final content height
 
         // initial type is SQLite — rebuild SSL modes and field visibility
@@ -968,6 +1023,22 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
             HDC hdc = reinterpret_cast<HDC>(wParam);
             SetBkColor(hdc, data->bgColor);
             return reinterpret_cast<LRESULT>(data->bgBrush);
+        }
+        break;
+    }
+
+    case WM_DRAWITEM: {
+        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (data && dis->CtlType == ODT_BUTTON && data->btnBrush) {
+            // Use the dialog's font for the button text
+            HFONT oldFont = nullptr;
+            if (data->hFont)
+                oldFont = static_cast<HFONT>(SelectObject(dis->hDC, data->hFont));
+            drawThemedButton(dis, data->btnColor, data->btnHoverColor, data->btnTextColor,
+                             data->btnBrush, data->btnHoverBrush);
+            if (oldFont)
+                SelectObject(dis->hDC, oldFont);
+            return TRUE;
         }
         break;
     }
@@ -1146,6 +1217,10 @@ static LRESULT CALLBACK ConnectionDialogProc(HWND hwnd, UINT msg, WPARAM wParam,
                 DeleteObject(data->bgBrush);
             if (data->editBrush)
                 DeleteObject(data->editBrush);
+            if (data->btnBrush)
+                DeleteObject(data->btnBrush);
+            if (data->btnHoverBrush)
+                DeleteObject(data->btnHoverBrush);
             if (data->hFont)
                 DeleteObject(data->hFont);
             delete data;
@@ -1329,18 +1404,23 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
         y += 40;
 
         makeCtrl("STATIC", "", 2010, SS_LEFT, 16, y + 8, 230, 22); // status
-        makeCtrl("BUTTON", "Cancel", 2002, WS_TABSTOP | BS_PUSHBUTTON, 176, y, 84, 32);
-        makeCtrl("BUTTON", "Create", 2003, WS_TABSTOP | BS_DEFPUSHBUTTON, 266, y, 90, 32);
+        makeCtrl("BUTTON", "Cancel", 2002, WS_TABSTOP | BS_OWNERDRAW, 176, y, 84, 32);
+        makeCtrl("BUTTON", "Create", 2003, WS_TABSTOP | BS_OWNERDRAW, 266, y, 90, 32);
 
         // Apply theme
         if (data && data->app) {
-            bool isDark = data->app->isDarkTheme();
-            data->bgColor = isDark ? RGB(15, 15, 15) : RGB(255, 255, 255);
-            data->editBgColor = isDark ? RGB(30, 30, 30) : RGB(245, 245, 246);
-            data->textColor = isDark ? RGB(255, 255, 255) : RGB(0, 0, 0);
+            const auto& colors = data->app->getCurrentColors();
+            data->bgColor = imVec4ToColorRef(colors.base);
+            data->editBgColor = imVec4ToColorRef(colors.surface0);
+            data->textColor = imVec4ToColorRef(colors.text);
+            data->btnColor = imVec4ToColorRef(colors.surface0);
+            data->btnHoverColor = imVec4ToColorRef(colors.surface1);
+            data->btnTextColor = imVec4ToColorRef(colors.text);
             data->bgBrush = CreateSolidBrush(data->bgColor);
             data->editBrush = CreateSolidBrush(data->editBgColor);
-            BOOL useDark = isDark ? TRUE : FALSE;
+            data->btnBrush = CreateSolidBrush(data->btnColor);
+            data->btnHoverBrush = CreateSolidBrush(data->btnHoverColor);
+            BOOL useDark = data->app->isDarkTheme() ? TRUE : FALSE;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDark, sizeof(useDark));
         }
 
@@ -1365,6 +1445,16 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
             SetTextColor(hdc, data->textColor);
             SetBkColor(hdc, data->bgColor);
             return reinterpret_cast<LRESULT>(data->bgBrush);
+        }
+        break;
+    }
+
+    case WM_DRAWITEM: {
+        auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (data && dis->CtlType == ODT_BUTTON && data->btnBrush) {
+            drawThemedButton(dis, data->btnColor, data->btnHoverColor, data->btnTextColor,
+                             data->btnBrush, data->btnHoverBrush);
+            return TRUE;
         }
         break;
     }
@@ -1422,6 +1512,10 @@ static LRESULT CALLBACK CreateDatabaseDialogProc(HWND hwnd, UINT msg, WPARAM wPa
                 DeleteObject(data->bgBrush);
             if (data->editBrush)
                 DeleteObject(data->editBrush);
+            if (data->btnBrush)
+                DeleteObject(data->btnBrush);
+            if (data->btnHoverBrush)
+                DeleteObject(data->btnHoverBrush);
             delete data;
         }
         SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);

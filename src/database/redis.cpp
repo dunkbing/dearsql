@@ -856,8 +856,7 @@ void RedisDatabase::startKeysLoadAsync(bool forceRefresh) {
 void RedisDatabase::checkKeysStatusAsync() {
     keysLoadOp_.check([this](std::vector<Table> loadedTables) {
         tables = std::move(loadedTables);
-        std::cout << std::format("Key loading completed. Found {} key groups", tables.size())
-                  << std::endl;
+        spdlog::info("Key loading completed. Found {} key groups", tables.size());
         keysLoaded = true;
         loadingKeys = false;
     });
@@ -868,17 +867,17 @@ std::vector<Table> RedisDatabase::getKeysAsync() {
 
     try {
         if (!isConnected()) {
-            std::cerr << "Database not connected" << std::endl;
+            spdlog::error("getKeysAsync: database not connected");
             return result;
         }
 
-        // Group keys by pattern
+        // Hold operationMutex_ to prevent racing with getTableDataForDatabase
+        std::lock_guard<std::mutex> opLock(operationMutex_);
         groupKeysByPattern(result);
 
-        std::cout << "Finished loading keys. Total key groups: " << std::to_string(result.size())
-                  << std::endl;
+        spdlog::debug("Finished loading keys. Total key groups: {}", result.size());
     } catch (const std::exception& e) {
-        std::cerr << std::format("Error loading keys: {}", e.what()) << std::endl;
+        spdlog::error("Error loading keys: {}", e.what());
     }
 
     return result;
@@ -1048,8 +1047,18 @@ void RedisDatabase::checkDbInfoStatusAsync() {
         dbInfoList_ = std::move(info);
         dbInfoLoaded_ = true;
         loadingDbInfo_ = false;
-        std::cout << std::format("Redis database info loaded. Found {} databases",
-                                 dbInfoList_.size())
-                  << std::endl;
+        spdlog::info("Redis database info loaded. Found {} databases", dbInfoList_.size());
     });
+}
+
+std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+RedisDatabase::getTableDataForDatabase(int dbIndex, const std::string& pattern, int limit,
+                                       int offset) {
+    // Hold operationMutex_ for the entire SELECT + query sequence so no other async
+    // operation can change the selected database between the two steps.
+    std::lock_guard<std::mutex> opLock(operationMutex_);
+    selectDatabase(dbIndex);
+    auto cols = getColumnNames(pattern);
+    auto data = getTableData(pattern, limit, offset);
+    return {std::move(cols), std::move(data)};
 }

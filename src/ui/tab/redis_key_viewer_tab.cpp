@@ -113,11 +113,8 @@ void RedisKeyViewerTab::loadDataAsync() {
     const int dbIdx = dbIndex_;
 
     loadOp_.start([db, pattern, limit, offset, dbIdx] {
-        // Switch to the correct database before loading keys
-        db->selectDatabase(dbIdx);
-        auto cols = db->getColumnNames(pattern);
-        auto data = db->getTableData(pattern, limit, offset);
-        return std::make_pair(std::move(cols), std::move(data));
+        // Atomically select database and fetch data in a single locked operation
+        return db->getTableDataForDatabase(dbIdx, pattern, limit, offset);
     });
 }
 

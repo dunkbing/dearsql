@@ -326,14 +326,6 @@ void PostgresDatabaseNode::rebuildAggregatedObjects() const {
         for (const auto& table : schema->tables) {
             Table qualifiedTable = table;
             qualifiedTable.name = schema->name + "." + table.name;
-            // Qualify foreign key target table names with schema prefix
-            for (auto& fk : qualifiedTable.foreignKeys) {
-                // If targetTable doesn't already contain a dot (schema prefix),
-                // prefix it with the same schema
-                if (fk.targetTable.find('.') == std::string::npos) {
-                    fk.targetTable = schema->name + "." + fk.targetTable;
-                }
-            }
             allTables.push_back(std::move(qualifiedTable));
         }
 
@@ -654,11 +646,6 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
     spdlog::debug("Triggering child schema refresh for database: {}", name);
     invalidateAggregatedObjects();
 
-    // Invalidate caches when schemas are refreshed
-    allTablesCached = false;
-    allViewsCached = false;
-    allSequencesCached = false;
-
     // loop through all schemas and trigger refresh for tables, views, and sequences
     for (auto& schema : schemas) {
         if (schema) {
@@ -672,26 +659,3 @@ void PostgresDatabaseNode::triggerChildSchemaRefresh() {
 
     spdlog::debug("Triggered refresh for {} schemas in database {}", schemas.size(), name);
 }
-
-PostgresSchemaNode* PostgresDatabaseNode::findSchema(const std::string& schemaName) const {
-    for (const auto& schema : schemas) {
-        if (schema && schema->name == schemaName) {
-            return schema.get();
-        }
-    }
-    return nullptr;
-}
-
-std::pair<bool, std::string> PostgresDatabaseNode::createTable(const Table& table) {
-    // Delegate to "public" schema by default
-    auto* publicSchema = findSchema("public");
-    if (publicSchema) {
-        return publicSchema->createTable(table);
-    }
-    // Fallback: first available schema
-    if (!schemas.empty() && schemas.front()) {
-        return schemas.front()->createTable(table);
-    }
-    return {false, "No schemas available"};
-}
-

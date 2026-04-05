@@ -722,10 +722,12 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 std::sort(dbNames.begin(), dbNames.end());
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Filter Databases")) {
+                    auto* hierarchy = getHierarchy(db);
                     for (const auto& name : dbNames) {
-                        bool visible = !db->isDatabaseHidden(name);
+                        bool visible = !(hierarchy && hierarchy->isDatabaseHidden(name));
                         if (ImGui::Checkbox(name.c_str(), &visible)) {
-                            db->setDatabaseHidden(name, !visible);
+                            if (hierarchy)
+                                hierarchy->setDatabaseHidden(name, !visible);
                         }
                     }
                     ImGui::EndMenu();

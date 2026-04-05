@@ -1,21 +1,7 @@
 #include "ai/ai_chat.hpp"
 #include "database/database_node.hpp"
-#include <algorithm>
 #include <format>
 #include <string>
-
-namespace {
-    bool isStringColumnType(const std::string& typeStr) {
-        std::string lowerType = typeStr;
-        std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
-        return lowerType.find("varchar") != std::string::npos ||
-               lowerType.find("char") != std::string::npos ||
-               lowerType.find("text") != std::string::npos ||
-               lowerType.find("string") != std::string::npos ||
-               lowerType.find("enum") != std::string::npos ||
-               lowerType.find("json") != std::string::npos; // often json behaves as string logic
-    }
-} // namespace
 
 AIChatState::AIChatState(IDatabaseNode* node) : node_(node) {}
 
@@ -154,51 +140,6 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
                     ctx += " PK";
                 if (col.isNotNull)
                     ctx += " NOT NULL";
-
-                // Add sample values for string columns
-                if (isStringColumnType(col.type)) {
-                    try {
-                        // Fast fetch: top 3 non-null values
-                        std::string sampleQuery = std::format(
-                            "SELECT \"{}\" FROM \"{}\" WHERE \"{}\" IS NOT NULL LIMIT 3", col.name,
-                            table.name, col.name);
-
-                        // For MySQL/MariaDB use backticks instead of double quotes if preferred,
-                        // but double quotes are ANSI standard. We will fallback to raw name
-                        // if we want to be safe, but let's try standard quoting first or
-                        // ask the node to execute it.
-                        if (node_->getDatabaseType() == DatabaseType::MYSQL ||
-                            node_->getDatabaseType() == DatabaseType::MARIADB) {
-                            sampleQuery =
-                                std::format("SELECT `{}` FROM `{}` WHERE `{}` IS NOT NULL LIMIT 3",
-                                            col.name, table.name, col.name);
-                        }
-
-                        auto sampleRes = node_->executeQuery(sampleQuery, 3);
-                        if (stopToken.stop_requested())
-                            return "";
-                        if (sampleRes.success() && !sampleRes.statements.empty() &&
-                            !sampleRes.statements[0].tableData.empty()) {
-
-                            std::string samplesStr = " (Samples: ";
-                            bool first = true;
-                            for (const auto& row : sampleRes.statements[0].tableData) {
-                                if (!row.empty()) {
-                                    if (!first)
-                                        samplesStr += ", ";
-                                    samplesStr += "'" + row[0] + "'";
-                                    first = false;
-                                }
-                            }
-                            samplesStr += ")";
-                            if (!first) { // only append if we actually found samples
-                                ctx += samplesStr;
-                            }
-                        }
-                    } catch (...) {
-                        // ignore fetch errors
-                    }
-                }
             }
             ctx += ")\n";
 
@@ -222,7 +163,7 @@ std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
     std::string dbType = dbTypeName();
     std::string schema = buildSchemaContext(stopToken);
 
-    if (stopToken.stop_requested() || schema.empty())
+    if (stopToken.stop_requested())
         return "";
 
     bool isMongo = node_ && node_->getDatabaseType() == DatabaseType::MONGODB;

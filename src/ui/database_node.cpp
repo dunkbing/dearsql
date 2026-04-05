@@ -40,9 +40,7 @@ namespace {
     constexpr const char* SHOW_DIAGRAM_LABEL = "Show Diagram";
     constexpr const char* SHOW_STRUCTURE_LABEL = "Show Structure";
     constexpr const char* LOADING_LABEL = "  Loading...";
-} // namespace
 
-namespace {
     void openStructureTab(IDatabaseNode* node, const Table& table,
                           const std::string& schemaPrefix = "") {
         auto& app = Application::getInstance();
@@ -224,7 +222,7 @@ void DatabaseHierarchy::renderRootNode() {
 
             const auto& databases = pgDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
-                if (dbDataPtr && !db->isDatabaseHidden(dbDataPtr->name)) {
+                if (dbDataPtr && !hiddenDatabases_.contains(dbDataPtr->name)) {
                     renderPostgresDatabaseNode(dbDataPtr.get());
                 }
             }
@@ -250,7 +248,7 @@ void DatabaseHierarchy::renderRootNode() {
         } else if (mysqlDb->areDatabasesLoaded()) {
             const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
-                if (dbDataPtr && !db->isDatabaseHidden(dbDataPtr->name)) {
+                if (dbDataPtr && !hiddenDatabases_.contains(dbDataPtr->name)) {
                     renderMySQLDatabaseNode(dbDataPtr.get());
                 }
             }
@@ -275,7 +273,7 @@ void DatabaseHierarchy::renderRootNode() {
         } else if (mongoDb->areDatabasesLoaded()) {
             const auto& databases = mongoDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
-                if (dbDataPtr && !db->isDatabaseHidden(dbDataPtr->name)) {
+                if (dbDataPtr && !hiddenDatabases_.contains(dbDataPtr->name)) {
                     renderMongoDBDatabaseNode(dbDataPtr.get());
                 }
             }
@@ -300,7 +298,7 @@ void DatabaseHierarchy::renderRootNode() {
         } else if (mssqlDb->areDatabasesLoaded()) {
             const auto& databases = mssqlDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
-                if (dbDataPtr && !db->isDatabaseHidden(dbDataPtr->name)) {
+                if (dbDataPtr && !hiddenDatabases_.contains(dbDataPtr->name)) {
                     renderMSSQLDatabaseNode(dbDataPtr.get());
                 }
             }
@@ -326,7 +324,7 @@ void DatabaseHierarchy::renderRootNode() {
         } else if (oracleDb->areDatabasesLoaded()) {
             const auto& schemas = oracleDb->getDatabaseDataMap() | std::views::values;
             for (const auto& schemaPtr : schemas) {
-                if (schemaPtr && !db->isDatabaseHidden(schemaPtr->name)) {
+                if (schemaPtr && !hiddenDatabases_.contains(schemaPtr->name)) {
                     renderOracleDatabaseNode(schemaPtr.get());
                 }
             }
@@ -455,7 +453,7 @@ void DatabaseHierarchy::renderRootNode() {
                 const std::string dbName = std::format("db{}", dbInfo.index);
 
                 // Skip hidden databases
-                if (db->isDatabaseHidden(dbName))
+                if (hiddenDatabases_.contains(dbName))
                     continue;
 
                 const std::string dbNodeId = std::format("redis_db_{}_{:p}", dbInfo.index,
@@ -674,9 +672,6 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
             // PostgresDatabaseNode now implements IDatabaseNode — pass directly
             // for database-level SQL editor (no SET search_path, cross-schema queries)
             app.getTabManager()->createSQLEditorTab("", dbData);
-        }
-        if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
-            app.getTabManager()->createDiagramTab(dbData);
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startSchemasLoadAsync(true, true);

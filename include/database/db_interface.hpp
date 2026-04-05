@@ -4,7 +4,6 @@
 #include "db.hpp"
 #include "ssh_tunnel.hpp"
 #include <memory>
-#include <set>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -310,31 +309,6 @@ public:
         return false;
     }
 
-    // Database visibility filtering
-    [[nodiscard]] bool isDatabaseHidden(const std::string& dbName) const {
-        return hiddenDatabases_.contains(dbName);
-    }
-
-    void toggleDatabaseVisibility(const std::string& dbName) {
-        if (hiddenDatabases_.contains(dbName)) {
-            hiddenDatabases_.erase(dbName);
-        } else {
-            hiddenDatabases_.insert(dbName);
-        }
-    }
-
-    void setDatabaseHidden(const std::string& dbName, bool hidden) {
-        if (hidden) {
-            hiddenDatabases_.insert(dbName);
-        } else {
-            hiddenDatabases_.erase(dbName);
-        }
-    }
-
-    [[nodiscard]] const std::set<std::string>& getHiddenDatabases() const {
-        return hiddenDatabases_;
-    }
-
 protected:
     std::pair<bool, std::string> prepareConnectionForConnect() {
         // SSH disabled: ensure any previous tunnel is gone and restore remote endpoint.
@@ -398,9 +372,6 @@ protected:
     AsyncOperation<std::vector<Table>> tablesOp;
     AsyncOperation<std::vector<Table>> viewsOp;
     AsyncOperation<std::vector<std::string>> sequencesOp;
-
-    // Database visibility filter (runtime state)
-    std::set<std::string> hiddenDatabases_;
 };
 
 // Helper functions to convert between DatabaseType enum and strings

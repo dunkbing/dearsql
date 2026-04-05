@@ -60,6 +60,13 @@ public:
 
     // Redis database enumeration (db0-db15)
     bool selectDatabase(int dbIndex);
+
+    // Atomically select a database and fetch column names + table data.
+    // Use this instead of calling selectDatabase + getColumnNames + getTableData separately,
+    // as those three calls are not atomic on a shared connection.
+    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
+    getTableDataForDatabase(int dbIndex, const std::string& pattern, int limit, int offset);
+
     int getSelectedDatabase() const {
         return selectedDbIndex_;
     }
@@ -122,6 +129,9 @@ private:
     bool dbInfoLoaded_ = false;
     AsyncOperation<std::vector<RedisDbInfo>> dbInfoLoadOp_;
     std::vector<RedisDbInfo> fetchDatabaseInfo();
+
+    // Serializes multi-step operations (SELECT + query) to prevent DB-index races
+    mutable std::mutex operationMutex_;
 
     // Helper methods
     redisReply* executeRedisCommand(const std::string& command) const;

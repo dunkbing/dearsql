@@ -11,6 +11,7 @@
 #include "imgui.h"
 #include <functional>
 #include <memory>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -44,9 +45,23 @@ public:
         return selectedTables_;
     }
 
+    [[nodiscard]] bool isDatabaseHidden(const std::string& dbName) const {
+        return hiddenDatabases_.contains(dbName);
+    }
+
+    void setDatabaseHidden(const std::string& dbName, bool hidden) {
+        if (hidden)
+            hiddenDatabases_.insert(dbName);
+        else
+            hiddenDatabases_.erase(dbName);
+    }
+
 private:
     std::shared_ptr<DatabaseInterface> db;
     std::string pendingEditorOpenDbName_;
+
+    // database visibility filter (UI state only, not persisted)
+    std::set<std::string> hiddenDatabases_;
 
     // multi-selection state
     std::unordered_set<const Table*> selectedTables_;

@@ -502,66 +502,70 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     db->checkConnectionStatusAsync();
 
-    if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
-        if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-            pgDb->checkRefreshWorkflowAsync();
-        }
-    } else if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) {
-        if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-            mysqlDb->checkRefreshWorkflowAsync();
-        }
-    } else if (type == DatabaseType::MONGODB) {
-        if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
-            mongoDb->checkRefreshWorkflowAsync();
-        }
-    } else if (type == DatabaseType::MSSQL) {
-        if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
-            mssqlDb->checkRefreshWorkflowAsync();
-        }
-    } else if (type == DatabaseType::ORACLE) {
-        if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
-            oracleDb->checkRefreshWorkflowAsync();
-        }
-    } else if (type == DatabaseType::REDIS) {
-        if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
-            redisDb->checkRefreshWorkflowAsync();
-        }
+    auto tryRefresh = [&]<typename T>() {
+        if (auto* d = dynamic_cast<T*>(db.get()))
+            d->checkRefreshWorkflowAsync();
+    };
+
+    switch (type) {
+    case DatabaseType::POSTGRESQL:
+    case DatabaseType::REDSHIFT:
+        tryRefresh.template operator()<PostgresDatabase>();
+        break;
+    case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
+        tryRefresh.template operator()<MySQLDatabase>();
+        break;
+    case DatabaseType::MONGODB:
+        tryRefresh.template operator()<MongoDBDatabase>();
+        break;
+    case DatabaseType::MSSQL:
+        tryRefresh.template operator()<MSSQLDatabase>();
+        break;
+    case DatabaseType::ORACLE:
+        tryRefresh.template operator()<OracleDatabase>();
+        break;
+    case DatabaseType::REDIS:
+        tryRefresh.template operator()<RedisDatabase>();
+        break;
+    default:
+        break;
     }
 
-    // filter count badge — right-aligned on the connection row
     if (db->isConnected() && type != DatabaseType::SQLITE) {
         std::vector<std::string> dbNames;
 
-        if (type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT) {
-            if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                for (const auto& name : pgDb->getDatabaseDataMap() | std::views::keys)
+        auto collectNames = [&]<typename T>() {
+            if (auto* d = dynamic_cast<T*>(db.get()))
+                for (const auto& name : d->getDatabaseDataMap() | std::views::keys)
                     dbNames.push_back(name);
-            }
-        } else if (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) {
-            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                for (const auto& name : mysqlDb->getDatabaseDataMap() | std::views::keys)
-                    dbNames.push_back(name);
-            }
-        } else if (type == DatabaseType::MSSQL) {
-            if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
-                for (const auto& name : mssqlDb->getDatabaseDataMap() | std::views::keys)
-                    dbNames.push_back(name);
-            }
-        } else if (type == DatabaseType::ORACLE) {
-            if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
-                for (const auto& name : oracleDb->getDatabaseDataMap() | std::views::keys)
-                    dbNames.push_back(name);
-            }
-        } else if (type == DatabaseType::MONGODB) {
-            if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
-                for (const auto& name : mongoDb->getDatabaseDataMap() | std::views::keys)
-                    dbNames.push_back(name);
-            }
-        } else if (type == DatabaseType::REDIS) {
-            if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get())) {
+        };
+
+        switch (type) {
+        case DatabaseType::POSTGRESQL:
+        case DatabaseType::REDSHIFT:
+            collectNames.template operator()<PostgresDatabase>();
+            break;
+        case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB:
+            collectNames.template operator()<MySQLDatabase>();
+            break;
+        case DatabaseType::MSSQL:
+            collectNames.template operator()<MSSQLDatabase>();
+            break;
+        case DatabaseType::ORACLE:
+            collectNames.template operator()<OracleDatabase>();
+            break;
+        case DatabaseType::MONGODB:
+            collectNames.template operator()<MongoDBDatabase>();
+            break;
+        case DatabaseType::REDIS:
+            if (auto* redisDb = dynamic_cast<RedisDatabase*>(db.get()))
                 for (const auto& info : redisDb->getDatabaseInfoList())
                     dbNames.push_back(std::format("db{}", info.index));
-            }
+            break;
+        default:
+            break;
         }
 
         if (!dbNames.empty()) {

@@ -20,7 +20,6 @@ void AIChatState::appendToAssistant(const std::string& delta) {
 }
 
 void AIChatState::finalizeAssistant() {
-    // Trim trailing whitespace from the last assistant message
     if (!messages_.empty() && messages_.back().role == "assistant") {
         auto& content = messages_.back().content;
         while (!content.empty() && (content.back() == ' ' || content.back() == '\n')) {
@@ -59,6 +58,10 @@ void AIChatState::cancelAsyncPrompt() {
     if (promptBuilderOp_.isRunning()) {
         promptBuilderOp_.cancel();
         promptReadyCallback_ = nullptr;
+    }
+    if (!messages_.empty() && messages_.back().role == "assistant" &&
+        messages_.back().content.empty()) {
+        messages_.pop_back();
     }
 }
 

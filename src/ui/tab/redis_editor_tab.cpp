@@ -7,6 +7,7 @@
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <sstream>
 
@@ -221,6 +222,133 @@ namespace {
         "ZUNIONSTORE",
     };
 
+    std::string toLowerCopy(std::string_view value) {
+        std::string out;
+        out.reserve(value.size());
+        for (const char ch : value) {
+            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        }
+        return out;
+    }
+
+    std::vector<std::string> tokenizeRedisLine(std::string_view line) {
+        std::vector<std::string> tokens;
+        std::string current;
+        bool inQuotes = false;
+        char quoteChar = '\0';
+
+        for (const char ch : line) {
+            if (!inQuotes) {
+                if (ch == '"' || ch == '\'') {
+                    inQuotes = true;
+                    quoteChar = ch;
+                } else if (std::isspace(static_cast<unsigned char>(ch))) {
+                    if (!current.empty()) {
+                        tokens.push_back(std::move(current));
+                        current.clear();
+                    }
+                } else {
+                    current.push_back(ch);
+                }
+            } else if (ch == quoteChar) {
+                inQuotes = false;
+                quoteChar = '\0';
+            } else {
+                current.push_back(ch);
+            }
+        }
+
+        if (!current.empty()) {
+            tokens.push_back(std::move(current));
+        }
+
+        return tokens;
+    }
+
+    std::vector<dearsql::TextEditor::CompletionItem>
+    filterRedisCompletions(const dearsql::TextEditor::CompletionRequest& request,
+                           const std::vector<dearsql::TextEditor::CompletionItem>& items) {
+        using CompletionItem = dearsql::TextEditor::CompletionItem;
+
+        if (request.forced) {
+            return items;
+        }
+
+        int lineStart = request.cursorIndex;
+        while (lineStart > 0) {
+            const char ch = request.content[static_cast<size_t>(lineStart - 1)];
+            if (ch == '\n' || ch == '\r') {
+                break;
+            }
+            --lineStart;
+        }
+
+        const std::string_view linePrefix = request.content.substr(
+            static_cast<size_t>(lineStart), static_cast<size_t>(request.cursorIndex - lineStart));
+        const auto tokens = tokenizeRedisLine(linePrefix);
+        const bool currentWordEmpty = request.currentWord.empty();
+
+        int activeTokenIndex = static_cast<int>(tokens.size()) - (currentWordEmpty ? 0 : 1);
+        if (activeTokenIndex < 0) {
+            activeTokenIndex = 0;
+        }
+
+        if (activeTokenIndex != 0) {
+            return {};
+        }
+
+        const std::string lowerWord = toLowerCopy(request.currentWord);
+
+        struct ScoredItem {
+            CompletionItem item;
+            int score;
+        };
+        std::vector<ScoredItem> scored;
+        scored.reserve(items.size());
+
+        for (const auto& item : items) {
+            const std::string matchText = item.matchText.empty() ? item.text : item.matchText;
+            const std::string insertText = item.insertText.empty() ? item.text : item.insertText;
+            const std::string lowerMatchText = toLowerCopy(matchText);
+
+            if (!lowerWord.empty() && toLowerCopy(insertText) == lowerWord) {
+                continue;
+            }
+
+            int score = 0;
+            if (lowerWord.empty()) {
+                score = 100;
+            } else if (lowerMatchText.find(lowerWord) == 0) {
+                score = 200;
+            } else if (lowerMatchText.find(lowerWord) != std::string::npos) {
+                score = 100;
+            } else {
+                continue;
+            }
+
+            scored.push_back({item, score});
+        }
+
+        std::sort(scored.begin(), scored.end(), [](const ScoredItem& a, const ScoredItem& b) {
+            if (a.score != b.score) {
+                return a.score > b.score;
+            }
+            return std::lexicographical_compare(
+                a.item.text.begin(), a.item.text.end(), b.item.text.begin(), b.item.text.end(),
+                [](char x, char y) {
+                    return std::tolower(static_cast<unsigned char>(x)) <
+                           std::tolower(static_cast<unsigned char>(y));
+                });
+        });
+
+        std::vector<CompletionItem> filtered;
+        filtered.reserve(scored.size());
+        for (auto& entry : scored) {
+            filtered.push_back(std::move(entry.item));
+        }
+        return filtered;
+    }
+
     // split multi-line input into individual commands
     std::vector<std::string> splitCommands(const std::string& input) {
         std::vector<std::string> commands;
@@ -256,6 +384,7 @@ RedisEditorTab::RedisEditorTab(const std::string& name, RedisDatabase* db)
     editor_.SetShowLineNumbers(false);
     editor_.SetLanguage(dearsql::TextEditor::Language::Redis);
     editor_.SetCompletionKeywords(REDIS_COMPLETION_KEYWORDS);
+    editor_.SetCompletionFilter(filterRedisCompletions);
     editor_.SetSubmitCallback([this] {
         command_ = editor_.GetText();
         startCommandExecutionAsync(command_);

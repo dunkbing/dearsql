@@ -271,11 +271,46 @@ namespace {
         auto qualifiersMatch = [&](const CompletionItem& ci) {
             if (lowerQualifierParts.empty())
                 return true;
-            if (ci.qualifiers.size() < lowerQualifierParts.size())
+
+            if (!ci.qualifiers.empty()) {
+                if (ci.qualifiers.size() < lowerQualifierParts.size())
+                    return false;
+                const size_t offset = ci.qualifiers.size() - lowerQualifierParts.size();
+                for (size_t i = 0; i < lowerQualifierParts.size(); ++i) {
+                    if (toLowerCopy(ci.qualifiers[offset + i]) != lowerQualifierParts[i])
+                        return false;
+                }
+                return true;
+            }
+
+            if (ci.kind != CompletionKind::Column || ci.matchText.empty())
                 return false;
-            const size_t offset = ci.qualifiers.size() - lowerQualifierParts.size();
+
+            const auto lastDot = ci.matchText.rfind('.');
+            if (lastDot == std::string::npos)
+                return false;
+
+            std::vector<std::string> ownerParts;
+            std::string currentPart;
+            for (const char ch : ci.matchText.substr(0, lastDot)) {
+                if (ch == '.') {
+                    if (!currentPart.empty()) {
+                        ownerParts.push_back(toLowerCopy(currentPart));
+                        currentPart.clear();
+                    }
+                } else {
+                    currentPart.push_back(ch);
+                }
+            }
+            if (!currentPart.empty())
+                ownerParts.push_back(toLowerCopy(currentPart));
+
+            if (ownerParts.size() < lowerQualifierParts.size())
+                return false;
+
+            const size_t offset = ownerParts.size() - lowerQualifierParts.size();
             for (size_t i = 0; i < lowerQualifierParts.size(); ++i) {
-                if (toLowerCopy(ci.qualifiers[offset + i]) != lowerQualifierParts[i])
+                if (ownerParts[offset + i] != lowerQualifierParts[i])
                     return false;
             }
             return true;
@@ -290,7 +325,8 @@ namespace {
         for (const auto& item : items) {
             if (!qualifiersMatch(item))
                 continue;
-            if (!lowerQualifierParts.empty() && item.qualifiers.empty())
+            if (!lowerQualifierParts.empty() && item.qualifiers.empty() &&
+                item.kind != CompletionKind::Column)
                 continue;
 
             const std::string insertText = item.insertText.empty() ? item.text : item.insertText;

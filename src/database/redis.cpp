@@ -9,8 +9,10 @@
 #include <format>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <string_view>
 
 namespace {
     struct RedisSSLInit {
@@ -19,6 +21,108 @@ namespace {
         }
     };
     static RedisSSLInit redisSSLInitOnce;
+
+    using RedisReplyPtr = std::unique_ptr<redisReply, decltype(&freeReplyObject)>;
+
+    RedisReplyPtr wrapRedisReply(redisReply* reply) {
+        return RedisReplyPtr(reply, &freeReplyObject);
+    }
+
+    std::string formatRedisPreview(redisReply* reply, std::string_view type) {
+        if (!reply) {
+            return "[error]";
+        }
+
+        if (type == "string") {
+            return (reply->type == REDIS_REPLY_STRING) ? std::string(reply->str, reply->len)
+                                                       : "[nil]";
+        }
+
+        if (type == "list") {
+            if (reply->type != REDIS_REPLY_ARRAY) {
+                return "[nil]";
+            }
+
+            std::stringstream ss;
+            ss << "[";
+            for (size_t i = 0; i < reply->elements && i < 5; ++i) {
+                if (i > 0)
+                    ss << ", ";
+                ss << "\"" << reply->element[i]->str << "\"";
+            }
+            if (reply->elements > 5)
+                ss << ", ...";
+            ss << "]";
+            return ss.str();
+        }
+
+        if (type == "set") {
+            const redisReply* members = reply;
+            if (reply->type == REDIS_REPLY_ARRAY && reply->elements == 2 &&
+                reply->element[1]->type == REDIS_REPLY_ARRAY) {
+                members = reply->element[1];
+            }
+            if (members->type != REDIS_REPLY_ARRAY) {
+                return "[nil]";
+            }
+
+            std::stringstream ss;
+            ss << "{";
+            for (size_t i = 0; i < members->elements && i < 5; ++i) {
+                if (i > 0)
+                    ss << ", ";
+                ss << "\"" << members->element[i]->str << "\"";
+            }
+            if (members->elements > 5)
+                ss << ", ...";
+            ss << "}";
+            return ss.str();
+        }
+
+        if (type == "hash") {
+            const redisReply* pairs = reply;
+            if (reply->type == REDIS_REPLY_ARRAY && reply->elements == 2 &&
+                reply->element[1]->type == REDIS_REPLY_ARRAY) {
+                pairs = reply->element[1];
+            }
+            if (pairs->type != REDIS_REPLY_ARRAY) {
+                return "[nil]";
+            }
+
+            std::stringstream ss;
+            ss << "{";
+            for (size_t i = 0; i + 1 < pairs->elements && i < 10; i += 2) {
+                if (i > 0)
+                    ss << ", ";
+                ss << "\"" << pairs->element[i]->str << "\": \"" << pairs->element[i + 1]->str
+                   << "\"";
+            }
+            if (pairs->elements > 10)
+                ss << ", ...";
+            ss << "}";
+            return ss.str();
+        }
+
+        if (type == "zset") {
+            if (reply->type != REDIS_REPLY_ARRAY) {
+                return "[nil]";
+            }
+
+            std::stringstream ss;
+            ss << "[";
+            for (size_t i = 0; i + 1 < reply->elements && i < 10; i += 2) {
+                if (i > 0)
+                    ss << ", ";
+                ss << "\"" << reply->element[i]->str << "\":" << reply->element[i + 1]->str;
+            }
+            if (reply->elements > 10)
+                ss << ", ...";
+            ss << "]";
+            return ss.str();
+        }
+
+        return "";
+    }
 } // namespace
 
 RedisDatabase::RedisDatabase(const DatabaseConnectionInfo& connInfo) {
@@ -36,7 +140,6 @@ std::pair<bool, std::string> RedisDatabase::connect() {
         return {true, ""};
     }
 
-    // Reset connection state
     if (context) {
         redisFree(context);
         context = nullptr;
@@ -68,8 +171,7 @@ std::pair<bool, std::string> RedisDatabase::connect() {
     };
 
     try {
-        // Use redisConnectWithTimeout for better timeout handling
-        constexpr timeval timeout = {5, 0}; // 5 seconds timeout
+        constexpr timeval timeout = {5, 0};
         context =
             redisConnectWithTimeout(connectionInfo.host.c_str(), connectionInfo.port, timeout);
         if (!context || context->err) {
@@ -80,13 +182,10 @@ std::pair<bool, std::string> RedisDatabase::connect() {
             return {false, error};
         }
 
-        // TLS negotiation
         if (connectionInfo.sslmode == SslMode::Require ||
             connectionInfo.sslmode == SslMode::VerifyCA ||
             connectionInfo.sslmode == SslMode::VerifyFull) {
             redisSSLContextError sslErr = REDIS_SSL_CTX_NONE;
-            // pass CA cert if available; for Require mode without a CA cert,
-            // hiredis falls back to system CAs which rejects self-signed certs
             const char* caPath = !connectionInfo.sslCACertPath.empty()
                                      ? connectionInfo.sslCACertPath.c_str()
                                      : nullptr;
@@ -109,13 +208,11 @@ std::pair<bool, std::string> RedisDatabase::connect() {
             }
         }
 
-        // Authenticate if password is provided
         if (!connectionInfo.password.empty()) {
             std::cout << "Authenticating with Redis server..." << std::endl;
 
             redisReply* reply = nullptr;
 
-            // Use Redis 6+ ACL authentication if username is provided
             if (!connectionInfo.username.empty()) {
                 std::cout << "Using Redis ACL authentication with username: "
                           << connectionInfo.username << std::endl;
@@ -141,7 +238,6 @@ std::pair<bool, std::string> RedisDatabase::connect() {
             std::cout << "Redis authentication successful" << std::endl;
         }
 
-        // Test connection with PING
         auto* reply = (redisReply*)redisCommand(context, "PING");
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
             std::string error = reply ? reply->str : "Connection test failed";
@@ -185,7 +281,6 @@ void RedisDatabase::disconnect() {
     }
     stopSshTunnel();
 
-    // Reset loading states
     loadingKeys = false;
     loadingDbInfo_ = false;
     dbInfoLoaded_ = false;
@@ -243,7 +338,7 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
             return result;
         }
 
-        redisReply* reply = executeRedisCommandParsed(commandParts);
+        RedisReplyPtr reply = wrapRedisReply(executeRedisCommandParsed(commandParts));
         if (!reply) {
             s.success = false;
             s.errorMessage = "Failed to execute command";
@@ -254,14 +349,12 @@ QueryResult RedisDatabase::executeQuery(const std::string& command, int rowLimit
         if (reply->type == REDIS_REPLY_ERROR) {
             s.success = false;
             s.errorMessage = reply->str;
-            freeReplyObject(reply);
             result.statements.push_back(std::move(s));
             return result;
         }
 
         s.columnNames.push_back("result");
-        s.tableData.push_back({formatRedisReply(reply)});
-        freeReplyObject(reply);
+        s.tableData.push_back({formatRedisReply(reply.get())});
     } catch (const std::exception& e) {
         s.success = false;
         s.errorMessage = e.what();
@@ -285,7 +378,6 @@ std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::str
     try {
         auto keys = getKeys(keyPattern, limit + offset);
 
-        // Apply offset
         if (offset >= static_cast<int>(keys.size())) {
             return data;
         }
@@ -300,7 +392,6 @@ std::vector<std::vector<std::string>> RedisDatabase::getTableData(const std::str
             row.push_back(it->value);
             row.push_back(std::to_string(it->ttl));
 
-            // format size
             if (it->size < 0) {
                 row.push_back("-");
             } else if (it->size < 1024) {
@@ -330,7 +421,7 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
     }
 
     try {
-        const auto keys = getKeys(keyPattern, 10000); // Get up to 10k keys for count
+        const auto keys = getKeys(keyPattern, 10000);
         return static_cast<int>(keys.size());
     } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key count: " << e.what() << std::endl;
@@ -338,7 +429,6 @@ int RedisDatabase::getRowCount(const std::string& keyPattern) {
     }
 }
 
-// Redis-specific methods
 std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const int limit) const {
     std::vector<RedisKey> keys;
 
@@ -352,7 +442,6 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
             return keys;
         }
 
-        // collect key names using SCAN (non-blocking, safe for production)
         std::vector<std::string> keyNames;
         unsigned long long cursor = 0;
         do {
@@ -369,7 +458,7 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
                 if (keysArray->element[i]->type == REDIS_REPLY_STRING) {
                     keyNames.emplace_back(keysArray->element[i]->str);
                     if (static_cast<int>(keyNames.size()) >= limit) {
-                        cursor = 0; // stop scanning
+                        cursor = 0;
                         break;
                     }
                 }
@@ -379,19 +468,16 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
 
         std::sort(keyNames.begin(), keyNames.end());
 
-        // pipeline TYPE + TTL + MEMORY USAGE for all keys in one batch
         for (const auto& name : keyNames) {
             redisAppendCommand(context, "TYPE %s", name.c_str());
             redisAppendCommand(context, "TTL %s", name.c_str());
             redisAppendCommand(context, "MEMORY USAGE %s", name.c_str());
         }
 
-        // read pipelined replies and populate key metadata
         keys.resize(keyNames.size());
         for (size_t i = 0; i < keyNames.size(); ++i) {
             keys[i].name = keyNames[i];
 
-            // TYPE reply
             redisReply* typeReply = nullptr;
             redisGetReply(context, reinterpret_cast<void**>(&typeReply));
             if (typeReply && typeReply->type == REDIS_REPLY_STATUS) {
@@ -402,7 +488,6 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
             if (typeReply)
                 freeReplyObject(typeReply);
 
-            // TTL reply
             redisReply* ttlReply = nullptr;
             redisGetReply(context, reinterpret_cast<void**>(&ttlReply));
             if (ttlReply && ttlReply->type == REDIS_REPLY_INTEGER) {
@@ -411,7 +496,6 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
             if (ttlReply)
                 freeReplyObject(ttlReply);
 
-            // MEMORY USAGE reply
             redisReply* memReply = nullptr;
             redisGetReply(context, reinterpret_cast<void**>(&memReply));
             if (memReply && memReply->type == REDIS_REPLY_INTEGER) {
@@ -421,7 +505,6 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
                 freeReplyObject(memReply);
         }
 
-        // fetch values in a second pipeline batch (command varies by type)
         for (const auto& key : keys) {
             if (key.type == "string") {
                 redisAppendCommand(context, "GET %s", key.name.c_str());
@@ -434,80 +517,20 @@ std::vector<RedisKey> RedisDatabase::getKeys(const std::string& pattern, const i
             } else if (key.type == "hash") {
                 redisAppendCommand(context, "HSCAN %s 0 COUNT 5", key.name.c_str());
             } else {
-                redisAppendCommand(context, "TYPE %s", key.name.c_str()); // dummy
+                redisAppendCommand(context, "TYPE %s", key.name.c_str());
             }
         }
 
         for (size_t i = 0; i < keys.size(); ++i) {
-            redisReply* valReply = nullptr;
-            redisGetReply(context, reinterpret_cast<void**>(&valReply));
+            redisReply* rawReply = nullptr;
+            redisGetReply(context, reinterpret_cast<void**>(&rawReply));
+            RedisReplyPtr valReply = wrapRedisReply(rawReply);
             if (!valReply) {
                 keys[i].value = "[error]";
                 continue;
             }
 
-            if (keys[i].type == "string") {
-                keys[i].value = (valReply->type == REDIS_REPLY_STRING) ? valReply->str : "[nil]";
-            } else if (keys[i].type == "list") {
-                if (valReply->type == REDIS_REPLY_ARRAY) {
-                    std::string s = "[";
-                    for (size_t j = 0; j < valReply->elements; ++j) {
-                        if (j > 0)
-                            s += ", ";
-                        s += std::string("\"") + valReply->element[j]->str + "\"";
-                    }
-                    s += "]";
-                    keys[i].value = s;
-                }
-            } else if (keys[i].type == "set") {
-                // SSCAN returns [cursor, [members...]]
-                if (valReply->type == REDIS_REPLY_ARRAY && valReply->elements == 2 &&
-                    valReply->element[1]->type == REDIS_REPLY_ARRAY) {
-                    auto* members = valReply->element[1];
-                    std::string s = "{";
-                    for (size_t j = 0; j < members->elements && j < 5; ++j) {
-                        if (j > 0)
-                            s += ", ";
-                        s += std::string("\"") + members->element[j]->str + "\"";
-                    }
-                    if (members->elements > 5)
-                        s += ", ...";
-                    s += "}";
-                    keys[i].value = s;
-                }
-            } else if (keys[i].type == "zset") {
-                if (valReply->type == REDIS_REPLY_ARRAY) {
-                    std::string s = "[";
-                    for (size_t j = 0; j + 1 < valReply->elements; j += 2) {
-                        if (j > 0)
-                            s += ", ";
-                        s += std::string("\"") + valReply->element[j]->str +
-                             "\":" + valReply->element[j + 1]->str;
-                    }
-                    if (valReply->elements > 10)
-                        s += ", ...";
-                    s += "]";
-                    keys[i].value = s;
-                }
-            } else if (keys[i].type == "hash") {
-                // HSCAN returns [cursor, [field, value, field, value, ...]]
-                if (valReply->type == REDIS_REPLY_ARRAY && valReply->elements == 2 &&
-                    valReply->element[1]->type == REDIS_REPLY_ARRAY) {
-                    auto* pairs = valReply->element[1];
-                    std::string s = "{";
-                    for (size_t j = 0; j + 1 < pairs->elements && j < 10; j += 2) {
-                        if (j > 0)
-                            s += ", ";
-                        s += std::string("\"") + pairs->element[j]->str + "\": \"" +
-                             pairs->element[j + 1]->str + "\"";
-                    }
-                    if (pairs->elements > 10)
-                        s += ", ...";
-                    s += "}";
-                    keys[i].value = s;
-                }
-            }
-            freeReplyObject(valReply);
+            keys[i].value = formatRedisPreview(valReply.get(), keys[i].type);
         }
     } catch (const std::exception& e) {
         spdlog::error("Error getting Redis keys: {}", e.what());
@@ -528,94 +551,29 @@ std::string RedisDatabase::getKeyValue(const std::string& key, const std::string
             return "[Unable to retrieve value]";
         }
 
+        RedisReplyPtr reply(nullptr, &freeReplyObject);
         if (type == "string") {
-            auto* reply = static_cast<redisReply*>(redisCommand(context, "GET %s", key.c_str()));
-            if (reply && reply->type == REDIS_REPLY_STRING) {
-                std::string value = reply->str;
-                freeReplyObject(reply);
-                return value;
-            }
-            if (reply)
-                freeReplyObject(reply);
+            reply = wrapRedisReply(
+                static_cast<redisReply*>(redisCommand(context, "GET %s", key.c_str())));
         } else if (type == "list") {
-            auto* reply = (redisReply*)redisCommand(context, "LRANGE %s 0 4", key.c_str());
-            if (reply && reply->type == REDIS_REPLY_ARRAY) {
-                std::stringstream ss;
-                ss << "[";
-                for (size_t i = 0; i < reply->elements && i < 5; ++i) {
-                    if (i > 0)
-                        ss << ", ";
-                    ss << "\"" << reply->element[i]->str << "\"";
-                }
-                if (reply->elements > 5)
-                    ss << ", ...";
-                ss << "]";
-                std::string value = ss.str();
-                freeReplyObject(reply);
-                return value;
-            }
-            if (reply)
-                freeReplyObject(reply);
+            reply = wrapRedisReply(
+                static_cast<redisReply*>(redisCommand(context, "LRANGE %s 0 4", key.c_str())));
         } else if (type == "set") {
-            auto* reply = (redisReply*)redisCommand(context, "SMEMBERS %s", key.c_str());
-            if (reply && reply->type == REDIS_REPLY_ARRAY) {
-                std::stringstream ss;
-                ss << "{";
-                for (size_t i = 0; i < reply->elements && i < 5; ++i) {
-                    if (i > 0)
-                        ss << ", ";
-                    ss << "\"" << reply->element[i]->str << "\"";
-                }
-                if (reply->elements > 5)
-                    ss << ", ...";
-                ss << "}";
-                std::string value = ss.str();
-                freeReplyObject(reply);
-                return value;
-            }
-            if (reply)
-                freeReplyObject(reply);
+            reply = wrapRedisReply(
+                static_cast<redisReply*>(redisCommand(context, "SMEMBERS %s", key.c_str())));
         } else if (type == "hash") {
-            auto* reply =
-                static_cast<redisReply*>(redisCommand(context, "HGETALL %s", key.c_str()));
-            if (reply && reply->type == REDIS_REPLY_ARRAY) {
-                std::stringstream ss;
-                ss << "{";
-                for (size_t i = 0; i < reply->elements && i < 10; i += 2) {
-                    if (i > 0)
-                        ss << ", ";
-                    ss << "\"" << reply->element[i]->str << "\": \"" << reply->element[i + 1]->str
-                       << "\"";
-                }
-                if (reply->elements > 10)
-                    ss << ", ...";
-                ss << "}";
-                std::string value = ss.str();
-                freeReplyObject(reply);
-                return value;
-            }
-            if (reply)
-                freeReplyObject(reply);
+            reply = wrapRedisReply(
+                static_cast<redisReply*>(redisCommand(context, "HGETALL %s", key.c_str())));
         } else if (type == "zset") {
-            auto* reply =
-                (redisReply*)redisCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.c_str());
-            if (reply && reply->type == REDIS_REPLY_ARRAY) {
-                std::stringstream ss;
-                ss << "[";
-                for (size_t i = 0; i < reply->elements && i < 10; i += 2) {
-                    if (i > 0)
-                        ss << ", ";
-                    ss << "\"" << reply->element[i]->str << "\":" << reply->element[i + 1]->str;
-                }
-                if (reply->elements > 10)
-                    ss << ", ...";
-                ss << "]";
-                std::string value = ss.str();
-                freeReplyObject(reply);
+            reply = wrapRedisReply(static_cast<redisReply*>(
+                redisCommand(context, "ZRANGE %s 0 4 WITHSCORES", key.c_str())));
+        }
+
+        if (reply) {
+            const std::string value = formatRedisPreview(reply.get(), type);
+            if (!value.empty()) {
                 return value;
             }
-            if (reply)
-                freeReplyObject(reply);
         }
     } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key value: " << e.what() << std::endl;
@@ -635,14 +593,11 @@ std::string RedisDatabase::getKeyType(const std::string& key) const {
             return "unknown";
         }
 
-        auto* reply = (redisReply*)redisCommand(context, "TYPE %s", key.c_str());
+        RedisReplyPtr reply =
+            wrapRedisReply(static_cast<redisReply*>(redisCommand(context, "TYPE %s", key.c_str())));
         if (reply && reply->type == REDIS_REPLY_STATUS) {
-            std::string type = reply->str;
-            freeReplyObject(reply);
-            return type;
+            return reply->str;
         }
-        if (reply)
-            freeReplyObject(reply);
     } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key type: " << e.what() << std::endl;
     }
@@ -661,14 +616,11 @@ int64_t RedisDatabase::getKeyTTL(const std::string& key) const {
             return -1;
         }
 
-        auto* reply = (redisReply*)redisCommand(context, "TTL %s", key.c_str());
+        RedisReplyPtr reply =
+            wrapRedisReply(static_cast<redisReply*>(redisCommand(context, "TTL %s", key.c_str())));
         if (reply && reply->type == REDIS_REPLY_INTEGER) {
-            const int64_t ttl = reply->integer;
-            freeReplyObject(reply);
-            return ttl;
+            return reply->integer;
         }
-        if (reply)
-            freeReplyObject(reply);
     } catch (const std::exception& e) {
         std::cerr << "Error getting Redis key TTL: " << e.what() << std::endl;
     }
@@ -676,7 +628,6 @@ int64_t RedisDatabase::getKeyTTL(const std::string& key) const {
     return -1;
 }
 
-// Protected methods
 std::vector<std::string> RedisDatabase::getTableNames() {
     std::vector<std::string> patterns;
 
@@ -684,35 +635,9 @@ std::vector<std::string> RedisDatabase::getTableNames() {
         return patterns;
     }
 
-    // For Redis, we'll return common key patterns
-    patterns.emplace_back("*"); // All keys
+    patterns.emplace_back("*");
 
     return patterns;
-}
-
-// Private helper methods
-redisReply* RedisDatabase::executeRedisCommand(const std::string& command) const {
-    if (!isConnected()) {
-        std::cerr << "Redis command failed: Not connected" << std::endl;
-        return nullptr;
-    }
-
-    try {
-        std::lock_guard<std::mutex> lock(contextMutex_);
-        if (!context) {
-            std::cerr << "Redis command failed: Context unavailable" << std::endl;
-            return nullptr;
-        }
-
-        auto* reply = (redisReply*)redisCommand(context, "%s", command.c_str());
-        if (reply && reply->type == REDIS_REPLY_ERROR) {
-            std::cerr << "Redis command error: " << reply->str << std::endl;
-        }
-        return reply;
-    } catch (const std::exception& e) {
-        std::cerr << "Error executing Redis command: " << e.what() << std::endl;
-        return nullptr;
-    }
 }
 
 redisReply*
@@ -729,7 +654,6 @@ RedisDatabase::executeRedisCommandParsed(const std::vector<std::string>& command
             return nullptr;
         }
 
-        // Convert string vector to char* array for redisCommandArgv
         std::vector<const char*> argv;
         std::vector<size_t> argvlen;
 
@@ -825,18 +749,15 @@ void RedisDatabase::groupKeysByPattern(std::vector<Table>& out) const {
         return;
     }
 
-    // Create a single "table" representing all keys
-    // Use "*" as the name so it can be used as a Redis key pattern
     Table allKeys;
     allKeys.name = "*";
     allKeys.fullName = connectionInfo.name + ".*";
     out.push_back(std::move(allKeys));
 }
 
-// Async key loading methods (merged from RedisNode)
 void RedisDatabase::startKeysLoadAsync(bool forceRefresh) {
     if (keysLoadOp_.isRunning()) {
-        return; // already loading
+        return;
     }
 
     if (forceRefresh) {
@@ -871,7 +792,6 @@ std::vector<Table> RedisDatabase::getKeysAsync() {
             return result;
         }
 
-        // Hold operationMutex_ to prevent racing with getTableDataForDatabase
         std::lock_guard<std::mutex> opLock(operationMutex_);
         groupKeysByPattern(result);
 
@@ -883,7 +803,6 @@ std::vector<Table> RedisDatabase::getKeysAsync() {
     return result;
 }
 
-// Redis database enumeration (db0-db15)
 bool RedisDatabase::selectDatabase(int dbIndex) {
     if (!isConnected() || dbIndex < 0 || dbIndex >= numDatabases_) {
         return false;
@@ -895,18 +814,27 @@ bool RedisDatabase::selectDatabase(int dbIndex) {
             return false;
         }
 
-        auto* reply = static_cast<redisReply*>(redisCommand(context, "SELECT %d", dbIndex));
+        RedisReplyPtr reply =
+            wrapRedisReply(static_cast<redisReply*>(redisCommand(context, "SELECT %d", dbIndex)));
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
-            if (reply)
-                freeReplyObject(reply);
             return false;
         }
-        freeReplyObject(reply);
         selectedDbIndex_ = dbIndex;
         return true;
     } catch (const std::exception& e) {
         spdlog::error("Error selecting Redis database {}: {}", dbIndex, e.what());
         return false;
+    }
+}
+
+bool RedisDatabase::beginDatabaseScopedOperation(int dbIndex, int& previousDbIndex) {
+    previousDbIndex = selectedDbIndex_;
+    return selectDatabase(dbIndex);
+}
+
+void RedisDatabase::endDatabaseScopedOperation(int previousDbIndex, int activeDbIndex) {
+    if (previousDbIndex != activeDbIndex) {
+        selectDatabase(previousDbIndex);
     }
 }
 
@@ -918,7 +846,8 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
     }
 
     try {
-        // First, get the number of configured databases via CONFIG GET databases
+        bool configuredDbCountKnown = false;
+
         {
             std::lock_guard<std::mutex> lock(contextMutex_);
             if (!context) {
@@ -929,15 +858,16 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
                 static_cast<redisReply*>(redisCommand(context, "CONFIG GET databases"));
             if (configReply && configReply->type == REDIS_REPLY_ARRAY &&
                 configReply->elements == 2 && configReply->element[1]->type == REDIS_REPLY_STRING) {
-                numDatabases_ = std::atoi(configReply->element[1]->str);
-                if (numDatabases_ <= 0)
-                    numDatabases_ = 16;
+                const int configuredDbCount = std::atoi(configReply->element[1]->str);
+                if (configuredDbCount > 0) {
+                    numDatabases_ = configuredDbCount;
+                    configuredDbCountKnown = true;
+                }
             }
             if (configReply)
                 freeReplyObject(configReply);
         }
 
-        // Parse INFO keyspace to find which databases have keys
         std::string keyspaceInfo;
         {
             std::lock_guard<std::mutex> lock(contextMutex_);
@@ -953,14 +883,12 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
                 freeReplyObject(infoReply);
         }
 
-        // Parse keyspace info: each line looks like "db0:keys=10,expires=2,avg_ttl=0"
         std::map<int, RedisDbInfo> dbMap;
         std::istringstream stream(keyspaceInfo);
         std::string line;
         while (std::getline(stream, line)) {
             if (line.empty() || line[0] == '#' || line[0] == '\r')
                 continue;
-            // Remove trailing \r
             if (!line.empty() && line.back() == '\r')
                 line.pop_back();
 
@@ -982,7 +910,6 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
             info.index = dbIdx;
             info.hasKeys = true;
 
-            // Parse key=value pairs after the colon
             std::string kvPart = line.substr(colonPos + 1);
             std::istringstream kvStream(kvPart);
             std::string kv;
@@ -1000,14 +927,20 @@ std::vector<RedisDbInfo> RedisDatabase::fetchDatabaseInfo() {
                     else if (key == "avg_ttl")
                         info.avgTtl = std::stoll(val);
                 } catch (...) {
-                    // ignore parse errors
                 }
             }
 
             dbMap[dbIdx] = info;
         }
 
-        // Build the full list: all databases from 0 to numDatabases_-1
+        if (!configuredDbCountKnown) {
+            int inferredDbCount = selectedDbIndex_ + 1;
+            if (!dbMap.empty()) {
+                inferredDbCount = std::max(inferredDbCount, dbMap.rbegin()->first + 1);
+            }
+            numDatabases_ = std::max(1, inferredDbCount);
+        }
+
         result.resize(numDatabases_);
         for (int i = 0; i < numDatabases_; ++i) {
             result[i].index = i;
@@ -1054,11 +987,31 @@ void RedisDatabase::checkDbInfoStatusAsync() {
 std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
 RedisDatabase::getTableDataForDatabase(int dbIndex, const std::string& pattern, int limit,
                                        int offset) {
-    // Hold operationMutex_ for the entire SELECT + query sequence so no other async
-    // operation can change the selected database between the two steps.
     std::lock_guard<std::mutex> opLock(operationMutex_);
-    selectDatabase(dbIndex);
+    int previousDbIndex = 0;
+    if (!beginDatabaseScopedOperation(dbIndex, previousDbIndex)) {
+        return {};
+    }
     auto cols = getColumnNames(pattern);
     auto data = getTableData(pattern, limit, offset);
+    endDatabaseScopedOperation(previousDbIndex, dbIndex);
     return {std::move(cols), std::move(data)};
+}
+
+QueryResult RedisDatabase::executeQueryInDatabase(int dbIndex, const std::string& query,
+                                                  int rowLimit) {
+    std::lock_guard<std::mutex> opLock(operationMutex_);
+    int previousDbIndex = 0;
+    if (!beginDatabaseScopedOperation(dbIndex, previousDbIndex)) {
+        QueryResult result;
+        StatementResult s;
+        s.success = false;
+        s.errorMessage = std::format("Failed to switch to Redis database db{}", dbIndex);
+        result.statements.push_back(std::move(s));
+        return result;
+    }
+
+    QueryResult result = executeQuery(query, rowLimit);
+    endDatabaseScopedOperation(previousDbIndex, dbIndex);
+    return result;
 }

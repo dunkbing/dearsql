@@ -450,11 +450,11 @@ void DatabaseHierarchy::renderRootNode() {
                     dbLabel = std::format("   {}###{}", dbName, dbNodeId);
                 }
 
-                constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                                           ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                constexpr ImGuiTreeNodeFlags dbNodeFlags = ImGuiTreeNodeFlags_Leaf |
+                                                           ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                                            ImGuiTreeNodeFlags_FramePadding;
 
-                const bool dbNodeOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbNodeFlags);
+                ImGui::TreeNodeEx(dbLabel.c_str(), dbNodeFlags);
 
                 // Database icon
                 const auto dbIconPos =
@@ -465,58 +465,24 @@ void DatabaseHierarchy::renderRootNode() {
                     dbIconPos, ImGui::GetColorU32(dbInfo.hasKeys ? colors.blue : colors.overlay1),
                     ICON_FA_DATABASE);
 
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    Application::getInstance().getTabManager()->createRedisKeyViewerTab(
+                        redisDb.get(), "*", dbInfo.index);
+                }
+
                 // Context menu for database node
                 if (ImGui::BeginPopupContextItem(dbNodeId.c_str())) {
                     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                         ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                     if (ImGui::MenuItem("Browse Keys")) {
-                        redisDb->selectDatabase(dbInfo.index);
-                        redisDb->startKeysLoadAsync(true);
                         Application::getInstance().getTabManager()->createRedisKeyViewerTab(
-                            redisDb.get(), "*");
+                            redisDb.get(), "*", dbInfo.index);
                     }
                     if (ImGui::MenuItem("Refresh")) {
                         redisDb->startDbInfoLoadAsync(true);
                     }
                     ImGui::PopStyleVar();
                     ImGui::EndPopup();
-                }
-
-                if (dbNodeOpen) {
-                    // When expanded, switch to this database and show Browse leaf node
-                    constexpr ImGuiTreeNodeFlags browseFlags = ImGuiTreeNodeFlags_Leaf |
-                                                               ImGuiTreeNodeFlags_NoTreePushOnOpen |
-                                                               ImGuiTreeNodeFlags_FramePadding;
-
-                    const std::string browseId =
-                        std::format("redis_browse_db{}_{:p}", dbInfo.index,
-                                    static_cast<const void*>(redisDb.get()));
-                    const std::string browseLabel = std::format("   Browse###{}", browseId);
-
-                    renderTreeNodeWithIcon("Browse", browseId, ICON_FA_KEY,
-                                           ImGui::GetColorU32(colors.yellow), browseFlags);
-
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                        redisDb->selectDatabase(dbInfo.index);
-                        redisDb->startKeysLoadAsync(true);
-                        Application::getInstance().getTabManager()->createRedisKeyViewerTab(
-                            redisDb.get(), "*");
-                    }
-
-                    if (ImGui::BeginPopupContextItem(browseId.c_str())) {
-                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem("View Keys")) {
-                            redisDb->selectDatabase(dbInfo.index);
-                            redisDb->startKeysLoadAsync(true);
-                            Application::getInstance().getTabManager()->createRedisKeyViewerTab(
-                                redisDb.get(), "*");
-                        }
-                        ImGui::PopStyleVar();
-                        ImGui::EndPopup();
-                    }
-
-                    ImGui::TreePop();
                 }
             }
         }

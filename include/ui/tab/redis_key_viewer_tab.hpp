@@ -12,7 +12,8 @@ class TableRenderer;
 
 class RedisKeyViewerTab final : public Tab {
 public:
-    RedisKeyViewerTab(const std::string& name, RedisDatabase* db, const std::string& pattern);
+    RedisKeyViewerTab(const std::string& name, RedisDatabase* db, const std::string& pattern,
+                      int dbIndex);
     ~RedisKeyViewerTab() override;
 
     void render() override;

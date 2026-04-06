@@ -27,9 +27,9 @@ namespace {
 } // namespace
 
 RedisKeyViewerTab::RedisKeyViewerTab(const std::string& name, RedisDatabase* db,
-                                     const std::string& pattern)
-    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern),
-      dbIndex_(db ? db->getSelectedDatabase() : 0), statusPanel_(db) {
+                                     const std::string& pattern, int dbIndex)
+    : Tab(name, TabType::REDIS_KEY_VIEWER), db_(db), pattern_(pattern), dbIndex_(dbIndex),
+      statusPanel_(db) {
     initializeTableRenderer();
     loadDataAsync();
 }
@@ -317,9 +317,10 @@ void RedisKeyViewerTab::saveChanges() {
     }
 
     RedisDatabase* db = db_;
-    saveOp_.start([commands = std::move(commands), db]() -> SaveResult {
+    const int dbIdx = dbIndex_;
+    saveOp_.start([commands = std::move(commands), db, dbIdx]() -> SaveResult {
         for (const auto& cmd : commands) {
-            auto result = db->executeQuery(cmd);
+            auto result = db->executeQueryInDatabase(dbIdx, cmd);
             if (!result.empty() && !result[0].success) {
                 return {false, std::format("'{}': {}", cmd, result[0].errorMessage)};
             }

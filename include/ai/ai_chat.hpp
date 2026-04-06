@@ -23,16 +23,9 @@ public:
     void setCurrentSQL(const std::string& sql);
     void setDatabaseNode(IDatabaseNode* node);
 
-    // Initiates async generation of system prompt
     void buildSystemPromptAsync(std::function<void(std::string)> callback);
-
-    // Cancel the async prompt building process
     void cancelAsyncPrompt();
-
-    // Call this inside the main loop to check if async generation is done
     void pollAsyncPrompt();
-
-    // Returns true if the prompt is currently being built in the background
     [[nodiscard]] bool isBuildingPrompt() const;
 
 private:

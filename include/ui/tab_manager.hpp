@@ -57,7 +57,8 @@ public:
     std::shared_ptr<Tab> createMongoEditorTab(MongoDBDatabaseNode* node);
 
     std::shared_ptr<Tab> createRedisCommandEditorTab(RedisDatabase* db);
-    std::shared_ptr<Tab> createRedisKeyViewerTab(RedisDatabase* db, const std::string& pattern);
+    std::shared_ptr<Tab> createRedisKeyViewerTab(RedisDatabase* db, const std::string& pattern,
+                                                 int dbIndex);
     std::shared_ptr<Tab> createRedisPubSubTab(RedisDatabase* db);
 
     std::shared_ptr<Tab> createCsvEditorTab(const std::string& filePath);

@@ -50,6 +50,7 @@ public:
 
     // Set table data
     void setColumns(const std::vector<std::string>& columnNames);
+    void setColumnTypes(const std::vector<std::string>& types) { columnTypes_ = types; }
     void setData(const std::vector<std::vector<std::string>>& tableData);
     void setCellEditedStatus(const std::vector<std::vector<bool>>& editedCells);
     void setSelectedCell(int row, int col);
@@ -89,6 +90,20 @@ public:
         return sortDirection;
     }
 
+    // Column visibility
+    void setColumnHidden(int col, bool hidden) {
+        if (hidden)
+            hiddenColumns_.insert(col);
+        else
+            hiddenColumns_.erase(col);
+    }
+    [[nodiscard]] bool isColumnHidden(int col) const {
+        return hiddenColumns_.contains(col);
+    }
+    [[nodiscard]] const std::set<int>& getHiddenColumns() const {
+        return hiddenColumns_;
+    }
+
     // Render the table
     void render(const char* tableId = "##table");
 
@@ -113,6 +128,7 @@ public:
 private:
     Config config;
     std::vector<std::string> columns;
+    std::vector<std::string> columnTypes_;
     std::vector<std::vector<std::string>> data;
     std::vector<std::vector<bool>> editedCells;
 
@@ -146,6 +162,9 @@ private:
     // Sorting state
     int sortColumn = -1;
     SortDirection sortDirection = SortDirection::None;
+
+    // Column visibility
+    std::set<int> hiddenColumns_;
 
     void renderCell(int row, int col);
     void handleCellInteraction(int row, int col, bool isSelected);

@@ -94,6 +94,7 @@ find_package(httplib CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
+find_package(toml11 CONFIG REQUIRED)
 include(cmake/FreeTDS.cmake)
 include(cmake/OracleOCI.cmake)
 
@@ -217,6 +218,9 @@ set(APP_SOURCES
     src/database/sql_builder.cpp
     src/database/ddl_builder.cpp
     src/database/ssh_config_parser.cpp
+
+    # Config
+    src/config/app_config.cpp
 
     # UI
     src/ui/query_history.cpp
@@ -376,6 +380,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     unofficial::tree-sitter::tree-sitter
     tree-sitter-sql-grammar
     tree-sitter-json-grammar
+    toml11::toml11
 )
 
 # platform-specific linking

@@ -668,6 +668,25 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                     return "";
                 });
         }
+        if (ImGui::MenuItem("Duplicate")) {
+            if (app.canAddConnection()) {
+                auto connInfo = db->getConnectionInfo();
+                connInfo.name = connInfo.name + " (copy)";
+                SavedConnection newConn;
+                newConn.connectionInfo = connInfo;
+                int newId = app.saveConnection(newConn);
+                if (newId > 0) {
+                    auto newDb = DatabaseFactory::createDatabase(connInfo);
+                    newDb->setConnectionId(newId);
+                    app.addDatabase(newDb);
+                    Logger::info(
+                        std::format("Duplicated connection: {}", connInfo.name));
+                }
+            } else {
+                Alert::show("Connection Limit Reached",
+                            "Free tier is limited to 3 connections. Activate a license to add more.");
+            }
+        }
 
         if (db->isConnected() && db->getConnectionInfo().type != DatabaseType::SQLITE) {
             if (ImGui::MenuItem("Disconnect")) {
@@ -752,6 +771,22 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                         bool visible = !db->isDatabaseHidden(name);
                         if (ImGui::Checkbox(name.c_str(), &visible)) {
                             db->setDatabaseHidden(name, !visible);
+
+                            // Persist to saved connection
+                            if (db->getConnectionId() > 0) {
+                                const auto& hidden = db->getHiddenDatabases();
+                                std::string hiddenStr;
+                                for (const auto& h : hidden) {
+                                    if (!hiddenStr.empty())
+                                        hiddenStr += ",";
+                                    hiddenStr += h;
+                                }
+                                SavedConnection sc;
+                                sc.id = db->getConnectionId();
+                                sc.connectionInfo = db->getConnectionInfo();
+                                sc.hiddenDatabases = hiddenStr;
+                                app.getAppState()->updateConnection(sc);
+                            }
                         }
                     }
                     ImGui::EndMenu();

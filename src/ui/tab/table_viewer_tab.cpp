@@ -17,6 +17,13 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
                                std::string tableName, IDatabaseNode* node)
     : Tab(name, TabType::TABLE_VIEWER), databasePath(std::move(databasePath)),
       tableName(std::move(tableName)), node_(node) {
+
+    valueEditor_ = std::make_unique<dearsql::TextEditor>();
+    valueEditor_->SetShowLineNumbers(false);
+    valueEditor_->SetSubmitCallback([this] {
+        valueEditorDirty_ = true;
+    });
+
     initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();
@@ -144,6 +151,43 @@ void TableViewerTab::render() {
         } else if (!columnNames.empty() && !tableData.empty()) {
             // Update table renderer with current data
             tableRenderer->setColumns(columnNames);
+            // Pass column types for smart display (bool, etc.)
+            if (columnTypes_.empty() && node_) {
+                bool found = false;
+                for (const auto& table : node_->getTables()) {
+                    if (table.name == tableName || table.name.ends_with("." + tableName)) {
+                        columnTypes_.resize(columnNames.size());
+                        for (size_t ci = 0; ci < columnNames.size(); ++ci) {
+                            for (const auto& col : table.columns) {
+                                if (col.name == columnNames[ci]) {
+                                    columnTypes_[ci] = col.type;
+                                    break;
+                                }
+                            }
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    for (const auto& view : node_->getViews()) {
+                        if (view.name == tableName || view.name.ends_with("." + tableName)) {
+                            columnTypes_.resize(columnNames.size());
+                            for (size_t ci = 0; ci < columnNames.size(); ++ci) {
+                                for (const auto& col : view.columns) {
+                                    if (col.name == columnNames[ci]) {
+                                        columnTypes_[ci] = col.type;
+                                        break;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            tableRenderer->setColumnTypes(columnTypes_);
             tableRenderer->setData(tableData);
             tableRenderer->setCellEditedStatus(editedCells);
             tableRenderer->setSelectedCell(selectedRow, selectedCol);
@@ -571,6 +615,7 @@ void TableViewerTab::loadDataAsync() {
     if (filterChanged) {
         tableData.clear();
         columnNames.clear();
+        columnTypes_.clear();
         totalRows = 0;
         filterChanged = false;
         Logger::debug("Cleared previous filtered data, starting fresh load");
@@ -1117,7 +1162,7 @@ void TableViewerTab::syncValuePanelBuffer() {
         selectedRow < static_cast<int>(tableData.size()) &&
         selectedCol < static_cast<int>(columnNames.size())) {
         const std::string& currentValue = tableData[selectedRow][selectedCol];
-        if (!valuePanelBufferDirty && std::string(valuePanelBuffer) != currentValue) {
+        if (!valueEditorDirty_ && valueEditor_->GetText() != currentValue) {
             valueChanged = true;
         }
     }
@@ -1125,16 +1170,33 @@ void TableViewerTab::syncValuePanelBuffer() {
     if (selectionChanged || valueChanged) {
         lastSyncedRow = selectedRow;
         lastSyncedCol = selectedCol;
-        valuePanelBufferDirty = false;
+        valueEditorDirty_ = false;
 
         if (selectedRow >= 0 && selectedCol >= 0 &&
             selectedRow < static_cast<int>(tableData.size()) &&
             selectedCol < static_cast<int>(columnNames.size())) {
             const std::string& value = tableData[selectedRow][selectedCol];
-            std::strncpy(valuePanelBuffer, value.c_str(), sizeof(valuePanelBuffer) - 1);
-            valuePanelBuffer[sizeof(valuePanelBuffer) - 1] = '\0';
+
+            // Try to format as JSON if it looks like one
+            std::string formatted = value;
+            if (!value.empty() && ((value.front() == '{' && value.back() == '}') ||
+                                   (value.front() == '[' && value.back() == ']'))) {
+                std::string pretty = dearsql::TextEditor::FormatJSON(value);
+                if (!pretty.empty()) {
+                    formatted = pretty;
+                    valueEditor_->SetLanguage(dearsql::TextEditor::Language::JSON);
+                } else {
+                    valueEditor_->SetLanguage(dearsql::TextEditor::Language::PlainText);
+                }
+            } else {
+                valueEditor_->SetLanguage(dearsql::TextEditor::Language::PlainText);
+            }
+
+            valueEditor_->SetText(formatted);
+            valueEditor_->ClearContentDirty();
         } else {
-            valuePanelBuffer[0] = '\0';
+            valueEditor_->SetText("");
+            valueEditor_->ClearContentDirty();
         }
     }
 }
@@ -1156,31 +1218,30 @@ void TableViewerTab::renderValueTab() {
     ImGui::TextColored(colors.subtext0, "(Row %d)", currentPage * rowsPerPage + selectedRow + 1);
     ImGui::Separator();
 
-    // Multiline text editor for the cell value
+    // Text editor for the cell value
     const float availH = ImGui::GetContentRegionAvail().y -
-                         (valuePanelBufferDirty ? ImGui::GetFrameHeightWithSpacing() + 4.0f : 0.0f);
-    if (ImGui::InputTextMultiline("##value_panel_edit", valuePanelBuffer, sizeof(valuePanelBuffer),
-                                  ImVec2(-1, availH))) {
-        // Check if user modified the buffer
-        const std::string& currentValue = tableData[selectedRow][selectedCol];
-        valuePanelBufferDirty = (std::string(valuePanelBuffer) != currentValue);
-    }
+                         (valueEditorDirty_ ? ImGui::GetFrameHeightWithSpacing() + 4.0f : 0.0f);
+
+    // Set palette and render
+    const bool dark = Application::getInstance().isDarkTheme();
+    valueEditor_->SetPalette(dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+    valueEditor_->Render("##value_panel_edit", ImVec2(-1, availH), true);
 
     // Apply / Revert buttons when buffer is dirty
-    if (valuePanelBufferDirty) {
+    if (valueEditorDirty_) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.green.x * 0.3f, colors.green.y * 0.3f,
                                                       colors.green.z * 0.3f, 1.0f));
         ImGui::PushStyleColor(
             ImGuiCol_ButtonHovered,
             ImVec4(colors.green.x * 0.5f, colors.green.y * 0.5f, colors.green.z * 0.5f, 1.0f));
         if (ImGui::Button("Apply")) {
-            tableData[selectedRow][selectedCol] = std::string(valuePanelBuffer);
+            tableData[selectedRow][selectedCol] = valueEditor_->GetText();
             if (selectedRow < static_cast<int>(editedCells.size()) &&
                 selectedCol < static_cast<int>(editedCells[selectedRow].size())) {
                 editedCells[selectedRow][selectedCol] = true;
             }
             hasChanges = true;
-            valuePanelBufferDirty = false;
+            valueEditorDirty_ = false;
         }
         ImGui::PopStyleColor(2);
 
@@ -1194,9 +1255,19 @@ void TableViewerTab::renderValueTab() {
         if (ImGui::Button("Revert")) {
             // Restore from current cell value
             const std::string& currentValue = tableData[selectedRow][selectedCol];
-            std::strncpy(valuePanelBuffer, currentValue.c_str(), sizeof(valuePanelBuffer) - 1);
-            valuePanelBuffer[sizeof(valuePanelBuffer) - 1] = '\0';
-            valuePanelBufferDirty = false;
+
+            std::string formatted = currentValue;
+            if (!currentValue.empty() && ((currentValue.front() == '{' && currentValue.back() == '}') ||
+                                          (currentValue.front() == '[' && currentValue.back() == ']'))) {
+                std::string pretty = dearsql::TextEditor::FormatJSON(currentValue);
+                if (!pretty.empty()) {
+                    formatted = pretty;
+                }
+            }
+
+            valueEditor_->SetText(formatted);
+            valueEditor_->ClearContentDirty();
+            valueEditorDirty_ = false;
         }
         ImGui::PopStyleColor(2);
     }

@@ -21,6 +21,7 @@ struct SavedConnection {
     DatabaseConnectionInfo connectionInfo;
     std::string lastUsed;
     int workspaceId = 1; // default workspace
+    std::string hiddenDatabases; // comma-separated list of hidden database names
 };
 
 struct Workspace {

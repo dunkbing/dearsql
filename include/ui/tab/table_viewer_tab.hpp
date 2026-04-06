@@ -4,6 +4,7 @@
 #include "ui/auto_complete_input.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
+#include "ui/text_editor.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,6 +53,7 @@ private:
     std::vector<std::vector<std::string>> tableData;
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;
+    std::vector<std::string> columnTypes_;
     std::vector<std::vector<bool>> editedCells;
     std::vector<bool> isNewRow;
     bool initialSelectionDone = false;
@@ -95,8 +97,10 @@ private:
     bool rightPanelOpen = false;
     float rightPanelWidth = 300.0f;
     int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata
-    char valuePanelBuffer[4096] = {0};
-    bool valuePanelBufferDirty = false;
+
+    // Value editor state
+    std::unique_ptr<dearsql::TextEditor> valueEditor_;
+    bool valueEditorDirty_ = false;
     int lastSyncedRow = -1;
     int lastSyncedCol = -1;
     std::string metadataFilter;

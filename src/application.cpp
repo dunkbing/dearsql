@@ -9,6 +9,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
+#include <sstream>
 
 #if defined(__APPLE__)
 #include "platform/macos_platform.hpp"
@@ -530,6 +531,18 @@ void Application::restorePreviousConnections() {
         if (db) {
             // Store the saved connection ID in the database instance
             db->setConnectionId(conn.id);
+
+            // Restore hidden databases filter
+            if (!conn.hiddenDatabases.empty()) {
+                std::istringstream ss(conn.hiddenDatabases);
+                std::string dbName;
+                while (std::getline(ss, dbName, ',')) {
+                    if (!dbName.empty()) {
+                        db->setDatabaseHidden(dbName, true);
+                    }
+                }
+            }
+
             Logger::debug(std::format("Added connection: {} {}", conn.connectionInfo.name,
                                       conn.connectionInfo.database));
             databases.push_back(db);

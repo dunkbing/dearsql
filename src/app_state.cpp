@@ -165,6 +165,9 @@ namespace {
         std::string sslCACertPath = columnText(stmt, 21);
         conn.connectionInfo.sslCACertPath = (sslCACertPath == "NULL") ? "" : sslCACertPath;
 
+        std::string hiddenDbs = columnText(stmt, 22);
+        conn.hiddenDatabases = (hiddenDbs == "NULL") ? "" : hiddenDbs;
+
         // Decrypt SSH credentials reusing the same per-row key
         if (!saltStr.empty() && !encryptionKey.empty()) {
             if (!encryptedSshUsername.empty()) {
@@ -341,6 +344,8 @@ bool AppState::createTables() {
                        "ALTER TABLE saved_connections ADD COLUMN ssh_password TEXT;");
     ensureColumnExists("ssl_ca_cert_path",
                        "ALTER TABLE saved_connections ADD COLUMN ssl_ca_cert_path TEXT;");
+    ensureColumnExists("hidden_databases",
+                       "ALTER TABLE saved_connections ADD COLUMN hidden_databases TEXT;");
 
     // Ensure default workspace exists
     if (success) {
@@ -367,8 +372,8 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
          show_all_databases, sslmode,
          ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_auth_method, ssh_private_key_path, ssh_password,
-         ssl_ca_cert_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+         ssl_ca_cert_path, hidden_databases)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     )";
 
     // Encrypt sensitive data
@@ -464,6 +469,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 21, connection.hiddenDatabases.c_str(), -1, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -482,7 +488,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             workspace_id = ?, show_all_databases = ?, sslmode = ?,
             ssh_enabled = ?, ssh_host = ?, ssh_port = ?, ssh_username = ?,
             ssh_auth_method = ?, ssh_private_key_path = ?, ssh_password = ?,
-            ssl_ca_cert_path = ?
+            ssl_ca_cert_path = ?, hidden_databases = ?
         WHERE id = ?;
     )";
 
@@ -579,7 +585,8 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 21, connection.id);
+    sqlite3_bind_text(stmt.get(), 21, connection.hiddenDatabases.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 22, connection.id);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -602,7 +609,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                ssh_host, COALESCE(ssh_port, 22) as ssh_port,
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
-               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
+               COALESCE(hidden_databases, '') as hidden_databases
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -874,7 +882,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                ssh_host, COALESCE(ssh_port, 22) as ssh_port,
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
-               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
+               COALESCE(hidden_databases, '') as hidden_databases
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;

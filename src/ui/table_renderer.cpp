@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include <algorithm>
 #include <cstring>
 #include <format>
 
@@ -51,7 +52,14 @@ void TableRenderer::render(const char* tableId) {
 
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    int colCount = static_cast<int>(columns.size());
+    int colCount = 0;
+    std::vector<int> visibleColIndices;
+    for (int i = 0; i < static_cast<int>(columns.size()); ++i) {
+        if (!hiddenColumns_.contains(i)) {
+            visibleColIndices.push_back(i);
+            colCount++;
+        }
+    }
     if (config.showRowNumbers) {
         colCount++; // Add one for row number column
     }
@@ -113,8 +121,23 @@ void TableRenderer::render(const char* tableId) {
                                     columnWidth);
         }
 
-        for (const auto& colName : columns) {
-            ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        for (int vi = 0; vi < static_cast<int>(visibleColIndices.size()); ++vi) {
+            int colIdx = visibleColIndices[vi];
+            const auto& colName = columns[colIdx];
+            // Auto-width: measure header and sample data
+            float maxWidth = ImGui::CalcTextSize(colName.c_str()).x + 20.0f;
+            int sampleRows = std::min(static_cast<int>(data.size()), 50);
+            for (int r = 0; r < sampleRows; ++r) {
+                if (colIdx < static_cast<int>(data[r].size())) {
+                    // Limit measured string length to avoid huge widths
+                    const auto& val = data[r][colIdx];
+                    std::string measureVal = val.length() > 60 ? val.substr(0, 60) + "..." : val;
+                    float w = ImGui::CalcTextSize(measureVal.c_str()).x + 16.0f;
+                    if (w > maxWidth) maxWidth = w;
+                }
+            }
+            maxWidth = std::clamp(maxWidth, 50.0f, 400.0f);
+            ImGui::TableSetupColumn(colName.c_str(), ImGuiTableColumnFlags_WidthFixed, maxWidth);
         }
 
         // Custom header row with sort controls
@@ -127,9 +150,38 @@ void TableRenderer::render(const char* tableId) {
         }
 
         // Render each column header with sort control
-        for (int colIdx = 0; colIdx < static_cast<int>(columns.size()); colIdx++) {
+        for (int vi = 0; vi < static_cast<int>(visibleColIndices.size()); vi++) {
+            int colIdx = visibleColIndices[vi];
             ImGui::TableNextColumn();
             renderColumnHeader(colIdx, columns[colIdx]);
+        }
+
+        // Right-click anywhere on the header row opens column visibility popup
+        {
+            ImVec2 headerMin = ImGui::GetItemRectMin();
+            headerMin.y -= ImGui::GetTextLineHeightWithSpacing(); // approximate header row top
+            ImVec2 headerMax(headerMin.x + ImGui::GetContentRegionAvail().x + 500.0f,
+                             ImGui::GetItemRectMax().y);
+            if (ImGui::IsMouseHoveringRect(headerMin, headerMax) &&
+                ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                ImGui::OpenPopup("##col_vis_popup");
+            }
+        }
+
+        // Column visibility popup
+        if (ImGui::BeginPopup("##col_vis_popup")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            ImGui::TextDisabled("Show/Hide Columns");
+            ImGui::Separator();
+            for (int i = 0; i < static_cast<int>(columns.size()); ++i) {
+                bool visible = !hiddenColumns_.contains(i);
+                if (ImGui::Checkbox(columns[i].c_str(), &visible)) {
+                    setColumnHidden(i, !visible);
+                }
+            }
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
         }
 
         // Use ImGuiListClipper for efficient row rendering
@@ -171,10 +223,11 @@ void TableRenderer::render(const char* tableId) {
                     ImGui::PopStyleColor();
                 }
 
-                // Data columns
-                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) &&
-                                     colIdx < static_cast<int>(columns.size());
-                     colIdx++) {
+                // Data columns (only visible ones)
+                for (int vi = 0; vi < static_cast<int>(visibleColIndices.size()); ++vi) {
+                    int colIdx = visibleColIndices[vi];
+                    if (colIdx >= static_cast<int>(row.size()))
+                        continue;
                     ImGui::TableNextColumn();
 
                     renderCell(rowIdx, colIdx);
@@ -358,24 +411,120 @@ void TableRenderer::renderCell(int row, int col) {
 
         const std::string& cellValue = data[row][col];
 
+        // Detect special display types
+        enum class CellDisplayType { Normal, Null, BoolTrue, BoolFalse };
+        CellDisplayType displayType = CellDisplayType::Normal;
+
+        // Check if this column has a boolean type
+        bool isBoolColumn = false;
+        if (col < static_cast<int>(columnTypes_.size())) {
+            const auto& colType = columnTypes_[col];
+            isBoolColumn = (colType == "boolean" || colType == "bool" || colType == "BOOLEAN" ||
+                            colType == "BOOL" || colType == "tinyint(1)");
+        }
+
+        if (cellValue == "NULL" || cellValue == "null") {
+            displayType = CellDisplayType::Null;
+        } else if (isBoolColumn) {
+            if (cellValue == "t" || cellValue == "true" || cellValue == "TRUE" ||
+                cellValue == "1" || cellValue == "yes" || cellValue == "YES") {
+                displayType = CellDisplayType::BoolTrue;
+            } else if (cellValue == "f" || cellValue == "false" || cellValue == "FALSE" ||
+                       cellValue == "0" || cellValue == "no" || cellValue == "NO") {
+                displayType = CellDisplayType::BoolFalse;
+            }
+        }
+
         // apply per-cell color override
         bool hasColorOverride = false;
-        if (cellColorCb) {
+        if (cellColorCb && displayType == CellDisplayType::Normal) {
             if (ImU32 color = cellColorCb(row, col, cellValue); color != 0) {
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
                 hasColorOverride = true;
             }
         }
 
-        if (config.allowSelection) {
-            handleCellInteraction(row, col, isSelected);
-        } else {
-            // Just display the text
-            ImGui::Text("%s", cellValue.c_str());
+        if (displayType == CellDisplayType::Null) {
+            // NULL badge — dimmed italic style
+            if (config.allowSelection) {
+                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.overlay1));
+                if (ImGui::Selectable("NULL", isSelected,
+                                      ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0) && onCellDoubleClick) {
+                        onCellDoubleClick(row, col);
+                    }
+                    if (onCellSelect) {
+                        onCellSelect(row, col);
+                    }
+                }
+                ImGui::PopStyleColor(4);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.overlay1));
+                ImGui::Text("NULL");
+                ImGui::PopStyleColor();
+            }
+        } else if (displayType == CellDisplayType::BoolTrue ||
+                   displayType == CellDisplayType::BoolFalse) {
+            // Boolean badge
+            const bool boolVal = (displayType == CellDisplayType::BoolTrue);
+            const ImVec4& badgeColor = boolVal ? colors.green : colors.red;
+            const char* badgeText = boolVal ? "TRUE" : "FALSE";
 
-            // Add tooltip for long text
-            if (ImGui::IsItemHovered() && cellValue.length() > 50) {
-                ImGui::SetTooltip("%s", cellValue.c_str());
+            if (config.allowSelection) {
+                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+
+                // Draw selectable first (invisible text)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0));
+                if (ImGui::Selectable("##bool", isSelected,
+                                      ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0) && onCellDoubleClick) {
+                        onCellDoubleClick(row, col);
+                    }
+                    if (onCellSelect) {
+                        onCellSelect(row, col);
+                    }
+                }
+                ImGui::PopStyleColor();
+
+                // Draw badge overlay
+                ImVec2 cellMin = ImGui::GetItemRectMin();
+                ImVec2 textSize = ImGui::CalcTextSize(badgeText);
+                float badgePadX = 4.0f;
+                float badgePadY = 1.0f;
+                ImVec2 badgeMin(cellMin.x, cellMin.y + 1.0f);
+                ImVec2 badgeMax(badgeMin.x + textSize.x + badgePadX * 2,
+                                badgeMin.y + textSize.y + badgePadY * 2);
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddRectFilled(badgeMin, badgeMax,
+                                  ImGui::GetColorU32(ImVec4(badgeColor.x, badgeColor.y,
+                                                            badgeColor.z, 0.2f)),
+                                  3.0f);
+                dl->AddText(ImVec2(badgeMin.x + badgePadX, badgeMin.y + badgePadY),
+                            ImGui::GetColorU32(badgeColor), badgeText);
+
+                ImGui::PopStyleColor(3);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(badgeColor));
+                ImGui::Text("%s", badgeText);
+                ImGui::PopStyleColor();
+            }
+        } else {
+            // Normal display — use original interaction handling
+            if (config.allowSelection) {
+                handleCellInteraction(row, col, isSelected);
+            } else {
+                // Just display the text
+                ImGui::Text("%s", cellValue.c_str());
+
+                // Add tooltip for long text
+                if (ImGui::IsItemHovered() && cellValue.length() > 50) {
+                    ImGui::SetTooltip("%s", cellValue.c_str());
+                }
             }
         }
 

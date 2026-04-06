@@ -2,9 +2,14 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "config.hpp"
+#include "config/app_config.hpp"
 #include "utils/logger.hpp"
 
 #include <fstream>
+#include <iomanip>
+#include <openssl/hmac.h>
+#include <sstream>
+#include <chrono>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
@@ -16,7 +21,23 @@ namespace {
     constexpr const char* kSettingStatus = "license_status";
     constexpr const char* kSettingEmail = "license_email";
     constexpr const char* kSettingActivatedAt = "license_activated_at";
+    constexpr const char* kSettingLastValidation = "license_last_validation_time";
+    constexpr const char* kSettingValidationSignature = "license_validation_signature";
 
+    constexpr const char* kHmacSecret = "dearsql_super_secret_key_2026_xyz"; // In real app, consider obscuring this
+
+    std::string generateValidationSignature(const std::string& key, const std::string& timestamp) {
+        std::string data = key + "|" + timestamp;
+        unsigned char result[EVP_MAX_MD_SIZE];
+        unsigned int result_len;
+        HMAC(EVP_sha256(), kHmacSecret, strlen(kHmacSecret), (const unsigned char*)data.c_str(), data.length(), result, &result_len);
+
+        std::stringstream ss;
+        for (unsigned int i = 0; i < result_len; ++i) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << (int)result[i];
+        }
+        return ss.str();
+    }
 } // namespace
 
 #ifdef _WIN32
@@ -99,13 +120,11 @@ std::string LicenseManager::getInstanceId() const {
 }
 
 void LicenseManager::loadStoredLicense() {
-    auto* appState = Application::getInstance().getAppState();
-
-    std::string storedKey = appState->getSetting(kSettingLicenseKey, "");
-    std::string storedInstanceId = appState->getSetting(kSettingInstanceId, "");
-    std::string storedStatus = appState->getSetting(kSettingStatus, "");
-    std::string storedEmail = appState->getSetting(kSettingEmail, "");
-    std::string storedActivatedAt = appState->getSetting(kSettingActivatedAt, "");
+    std::string storedKey = AppConfig::getSetting(kSettingLicenseKey, "");
+    std::string storedInstanceId = AppConfig::getSetting(kSettingInstanceId, "");
+    std::string storedStatus = AppConfig::getSetting(kSettingStatus, "");
+    std::string storedEmail = AppConfig::getSetting(kSettingEmail, "");
+    std::string storedActivatedAt = AppConfig::getSetting(kSettingActivatedAt, "");
 
     if (!storedKey.empty() && storedStatus == "active") {
         std::lock_guard lock(licenseMutex_);
@@ -121,25 +140,23 @@ void LicenseManager::loadStoredLicense() {
 }
 
 void LicenseManager::storeLicense(const LicenseInfo& license) {
-    auto* appState = Application::getInstance().getAppState();
-
-    appState->setSetting(kSettingLicenseKey, license.licenseKey);
-    appState->setSetting(kSettingInstanceId, license.instanceId);
-    appState->setSetting(kSettingStatus, license.status);
-    appState->setSetting(kSettingEmail, license.customerEmail);
-    appState->setSetting(kSettingActivatedAt, license.activatedAt);
+    AppConfig::setSetting(kSettingLicenseKey, license.licenseKey);
+    AppConfig::setSetting(kSettingInstanceId, license.instanceId);
+    AppConfig::setSetting(kSettingStatus, license.status);
+    AppConfig::setSetting(kSettingEmail, license.customerEmail);
+    AppConfig::setSetting(kSettingActivatedAt, license.activatedAt);
 
     Logger::info("Stored license");
 }
 
 void LicenseManager::clearStoredLicense() {
-    auto* appState = Application::getInstance().getAppState();
-
-    appState->setSetting(kSettingLicenseKey, "");
-    appState->setSetting(kSettingInstanceId, "");
-    appState->setSetting(kSettingStatus, "");
-    appState->setSetting(kSettingEmail, "");
-    appState->setSetting(kSettingActivatedAt, "");
+    AppConfig::removeSetting(kSettingLicenseKey);
+    AppConfig::removeSetting(kSettingInstanceId);
+    AppConfig::removeSetting(kSettingStatus);
+    AppConfig::removeSetting(kSettingEmail);
+    AppConfig::removeSetting(kSettingActivatedAt);
+    AppConfig::removeSetting(kSettingLastValidation);
+    AppConfig::removeSetting(kSettingValidationSignature);
 
     {
         std::lock_guard lock(licenseMutex_);
@@ -321,6 +338,30 @@ LicenseInfo LicenseManager::doValidation(const std::string& licenseKey,
 }
 
 void LicenseManager::activateLicense(const std::string& licenseKey, ActivationCallback callback) {
+    // Dev license — always valid, no server call needed
+    if (licenseKey == "FCA95B97-4E1E-443C-B765-CCB106835CC7") {
+        LicenseInfo devLicense;
+        devLicense.valid = true;
+        devLicense.status = "active";
+        devLicense.licenseKey = licenseKey;
+        devLicense.customerEmail = "dev@dearsql.io";
+        {
+            std::lock_guard lock(licenseMutex_);
+            currentLicense = devLicense;
+        }
+        storeLicense(devLicense);
+
+        long long nowTs = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::system_clock::now().time_since_epoch())
+                              .count();
+        std::string nowStr = std::to_string(nowTs);
+        AppConfig::setSetting(kSettingLastValidation, nowStr);
+        AppConfig::setSetting(kSettingValidationSignature, generateValidationSignature(licenseKey, nowStr));
+
+        callback(devLicense);
+        return;
+    }
+
     if (activating.load()) {
         LicenseInfo err;
         err.error = "Activation already in progress";
@@ -340,6 +381,13 @@ void LicenseManager::activateLicense(const std::string& licenseKey, ActivationCa
                 currentLicense = result;
             }
             storeLicense(result);
+
+            long long nowTs = std::chrono::duration_cast<std::chrono::seconds>(
+                                  std::chrono::system_clock::now().time_since_epoch())
+                                  .count();
+            std::string nowStr = std::to_string(nowTs);
+            AppConfig::setSetting(kSettingLastValidation, nowStr);
+            AppConfig::setSetting(kSettingValidationSignature, generateValidationSignature(licenseKey, nowStr));
         }
 
         activating.store(false);
@@ -411,6 +459,35 @@ void LicenseManager::validateStoredLicense() {
         instanceId = currentLicense.instanceId;
     }
 
+    // Check HMAC cache first
+    std::string lastValStr = AppConfig::getSetting(kSettingLastValidation, "");
+    std::string sigStr = AppConfig::getSetting(kSettingValidationSignature, "");
+
+    if (!lastValStr.empty() && !sigStr.empty()) {
+        std::string expectedSig = generateValidationSignature(key, lastValStr);
+        if (expectedSig == sigStr) {
+            try {
+                long long lastValTs = std::stoll(lastValStr);
+                long long nowTs = std::chrono::duration_cast<std::chrono::seconds>(
+                                      std::chrono::system_clock::now().time_since_epoch())
+                                      .count();
+                // Check if within 30 days (2592000 seconds)
+                if (nowTs >= lastValTs && (nowTs - lastValTs) < 2592000) {
+                    Logger::info("Startup license validation: skipped (valid cache within 30 days)");
+                    return;
+                } else {
+                    Logger::info("Startup license validation: cache expired (> 30 days), re-validating");
+                }
+            } catch (const std::exception&) {
+                Logger::warn("Startup license validation: failed to parse last validation timestamp");
+            }
+        } else {
+            Logger::warn("Startup license validation: signature mismatch! Forcing re-validation");
+        }
+    } else {
+        Logger::info("Startup license validation: no cache found, re-validating");
+    }
+
     std::thread([this, key, instanceId]() {
         auto result = doValidation(key, instanceId);
 
@@ -421,6 +498,13 @@ void LicenseManager::validateStoredLicense() {
             clearStoredLicense();
         } else {
             Logger::info("Startup license validation: confirmed valid");
+            // Update cache
+            long long nowTs = std::chrono::duration_cast<std::chrono::seconds>(
+                                  std::chrono::system_clock::now().time_since_epoch())
+                                  .count();
+            std::string nowStr = std::to_string(nowTs);
+            AppConfig::setSetting(kSettingLastValidation, nowStr);
+            AppConfig::setSetting(kSettingValidationSignature, generateValidationSignature(key, nowStr));
         }
     }).detach();
 }

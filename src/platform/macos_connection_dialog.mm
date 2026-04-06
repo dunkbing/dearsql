@@ -104,6 +104,7 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSProgressIndicator* spinner;
 @property(nonatomic, strong) NSButton* connectButton;
+@property(nonatomic, strong) NSButton* testButton;
 @property(nonatomic, strong) NSButton* cancelButton;
 
 - (void)showDialog;
@@ -530,6 +531,14 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self.connectButton setAction:@selector(connectClicked:)];
     [cv addSubview:self.connectButton];
 
+    // Test Connection button
+    self.testButton = [[NSButton alloc] init];
+    [self.testButton setTitle:@"Test"];
+    [self.testButton setBezelStyle:NSBezelStyleRounded];
+    [self.testButton setTarget:self];
+    [self.testButton setAction:@selector(testConnectionClicked:)];
+    [cv addSubview:self.testButton];
+
     // Cancel button
     self.cancelButton = [[NSButton alloc] init];
     [self.cancelButton setTitle:@"Cancel"];
@@ -935,9 +944,12 @@ static NSWindow* sActiveConnectionDialog = nil;
     // Buttons
     y -= kRowHeight;
     CGFloat btnW = 90;
+    CGFloat testBtnW = 70;
     self.connectButton.frame = NSMakeRect(kDialogWidth - kMargin - btnW, y, btnW, kRowHeight);
+    self.testButton.frame =
+        NSMakeRect(kDialogWidth - kMargin - btnW - 10 - testBtnW, y, testBtnW, kRowHeight);
     self.cancelButton.frame =
-        NSMakeRect(kDialogWidth - kMargin - btnW - 10 - btnW, y, btnW, kRowHeight);
+        NSMakeRect(kMargin, y, btnW, kRowHeight);
 }
 
 // MARK: - Actions
@@ -1035,6 +1047,93 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 - (void)cancelClicked:(id)sender {
     [self.dialogWindow close];
+}
+
+- (void)testConnectionClicked:(id)sender {
+    DatabaseType type = [self selectedDatabaseType];
+
+    if (type == DatabaseType::SQLITE) {
+        std::string path = [self.sqlitePathField.stringValue UTF8String];
+        if (path.empty()) {
+            self.statusLabel.stringValue = @"Please select a database file";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+            return;
+        }
+        if (access(path.c_str(), R_OK) == 0) {
+            self.statusLabel.stringValue = @"✓ Connection successful";
+            self.statusLabel.textColor = [NSColor systemGreenColor];
+        } else {
+            self.statusLabel.stringValue = @"✗ File not found or not readable";
+            self.statusLabel.textColor = [NSColor systemRedColor];
+        }
+        return;
+    }
+
+    // Build connection info from form
+    DatabaseConnectionInfo info;
+    info.type = type;
+    info.name = "test";
+    info.host = [self.hostField.stringValue UTF8String];
+    info.port = [self.portField.stringValue intValue];
+    if (info.port <= 0) info.port = 1;
+    if (info.port > 65535) info.port = 65535;
+    info.database = [self.databaseField.stringValue UTF8String];
+    bool authEnabled = (self.authSegment.selectedSegment == 0);
+    info.username = authEnabled ? std::string([self.usernameField.stringValue UTF8String]) : "";
+    info.password = authEnabled ? std::string([self.passwordField.stringValue UTF8String]) : "";
+    info.showAllDatabases = (self.showAllDbsCheckbox.state == NSControlStateValueOn);
+    int sslModeIdx = (int)[self.sslModePopup indexOfSelectedItem];
+    auto sslCfg = getSslConfig(type);
+    info.sslmode = (sslModeIdx >= 0 && sslModeIdx < sslCfg.count) ? sslCfg.values[sslModeIdx] : SslMode::Disable;
+    info.sslCACertPath = [self.sslCACertPathField.stringValue UTF8String];
+
+    info.ssh.enabled = (self.sshEnabledCheckbox.state == NSControlStateValueOn);
+    if (info.ssh.enabled) {
+        info.ssh.host = [self.sshHostField.stringValue UTF8String];
+        info.ssh.port = [self.sshPortField.stringValue intValue];
+        if (info.ssh.port <= 0 || info.ssh.port > 65535) info.ssh.port = 22;
+        info.ssh.username = [self.sshUsernameField.stringValue UTF8String];
+        info.ssh.authMethod = (self.sshAuthSegment.selectedSegment == 0) ? SSHAuthMethod::Password : SSHAuthMethod::PrivateKey;
+        if (info.ssh.authMethod == SSHAuthMethod::Password) {
+            info.ssh.password = [self.sshPasswordField.stringValue UTF8String];
+        } else {
+            info.ssh.privateKeyPath = [self.sshKeyPathField.stringValue UTF8String];
+        }
+    }
+
+    [self setFormEnabled:NO];
+    self.testButton.enabled = NO;
+    self.connectButton.enabled = NO;
+    [self.spinner startAnimation:nil];
+    self.statusLabel.stringValue = @"Testing connection...";
+    self.statusLabel.textColor = [NSColor secondaryLabelColor];
+
+    __unsafe_unretained auto weakSelf = self;
+    std::thread([info, weakSelf]() {
+        auto db = DatabaseFactory::createDatabase(info);
+        auto result = db->connect();
+        bool success = result.first;
+        std::string error = result.second;
+        db->disconnect();
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            auto strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.spinner stopAnimation:nil];
+            [strongSelf setFormEnabled:YES];
+            strongSelf.testButton.enabled = YES;
+            strongSelf.connectButton.enabled = YES;
+
+            if (success) {
+                strongSelf.statusLabel.stringValue = @"✓ Connection successful";
+                strongSelf.statusLabel.textColor = [NSColor systemGreenColor];
+            } else {
+                NSString* errMsg = [NSString stringWithFormat:@"✗ %s", error.c_str()];
+                strongSelf.statusLabel.stringValue = errMsg;
+                strongSelf.statusLabel.textColor = [NSColor systemRedColor];
+            }
+        });
+    }).detach();
 }
 
 - (void)installOracleClientThenConnect {

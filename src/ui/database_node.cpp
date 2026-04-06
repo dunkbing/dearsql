@@ -801,6 +801,16 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem("Create View")) {
+                    std::string tmpl =
+                        std::format("CREATE VIEW {}.new_view_name AS\nSELECT\n    column1,\n    "
+                                    "column2\nFROM {}.table_name\nWHERE condition;",
+                                    schemaData->name, schemaData->name);
+                    auto tab = app.getTabManager()->createSQLEditorTab("", schemaData);
+                    if (auto* editorTab = dynamic_cast<SQLEditorTab*>(tab.get())) {
+                        editorTab->setQuery(tmpl);
+                    }
+                }
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startViewsLoadAsync(true); // Force refresh
                 }
@@ -848,6 +858,16 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             if (ImGui::BeginPopupContextItem(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem("Create Materialized View")) {
+                    std::string tmpl =
+                        std::format("CREATE MATERIALIZED VIEW {}.new_matview_name AS\nSELECT\n    "
+                                    "column1,\n    column2\nFROM {}.table_name\nWHERE condition;",
+                                    schemaData->name, schemaData->name);
+                    auto tab = app.getTabManager()->createSQLEditorTab("", schemaData);
+                    if (auto* editorTab = dynamic_cast<SQLEditorTab*>(tab.get())) {
+                        editorTab->setQuery(tmpl);
+                    }
+                }
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
                     schemaData->startMaterializedViewsLoadAsync(true);
                 }
@@ -1400,6 +1420,31 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
         }
         if (ImGui::MenuItem(SHOW_STRUCTURE_LABEL)) {
             openStructureTab(schemaData, view, schemaData->name);
+        }
+        if (isMaterializedView) {
+            if (ImGui::MenuItem("Refresh Data")) {
+                std::string refreshSQL =
+                    std::format("REFRESH MATERIALIZED VIEW {}.{}", schemaData->name, view.name);
+                auto tab = app.getTabManager()->createSQLEditorTab("", schemaData);
+                if (auto* editorTab = dynamic_cast<SQLEditorTab*>(tab.get())) {
+                    editorTab->setQuery(refreshSQL);
+                }
+            }
+        }
+        if (ImGui::MenuItem("View Definition")) {
+            std::string defSQL;
+            if (isMaterializedView) {
+                defSQL = std::format("SELECT definition FROM pg_matviews WHERE schemaname = '{}' "
+                                     "AND matviewname = '{}';",
+                                     schemaData->name, view.name);
+            } else {
+                defSQL = std::format("SELECT pg_get_viewdef('{}.{}', true) AS definition;",
+                                     schemaData->name, view.name);
+            }
+            auto tab = app.getTabManager()->createSQLEditorTab("", schemaData);
+            if (auto* editorTab = dynamic_cast<SQLEditorTab*>(tab.get())) {
+                editorTab->setQuery(defSQL);
+            }
         }
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {

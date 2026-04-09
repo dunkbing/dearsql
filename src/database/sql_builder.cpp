@@ -1,6 +1,76 @@
 #include "database/sql_builder.hpp"
 #include "database/ddl_utils.hpp"
+#include <algorithm>
 #include <format>
+
+std::string autoIncrementClause(DatabaseType type) {
+    switch (type) {
+    case DatabaseType::MYSQL:
+    case DatabaseType::MARIADB:
+        return " AUTO_INCREMENT";
+    case DatabaseType::SQLITE:
+        return " AUTOINCREMENT";
+    case DatabaseType::MSSQL:
+        return " IDENTITY(1,1)";
+    case DatabaseType::ORACLE:
+        return " GENERATED ALWAYS AS IDENTITY";
+    default:
+        return "";
+    }
+}
+
+namespace {
+    std::string normalizeTypeName(const std::string& type) {
+        std::string lower = type;
+        std::ranges::transform(lower, lower.begin(), ::tolower);
+
+        const auto parenPos = lower.find('(');
+        if (parenPos != std::string::npos) {
+            lower = lower.substr(0, parenPos);
+        }
+
+        const auto spacePos = lower.find(' ');
+        if (spacePos != std::string::npos) {
+            lower = lower.substr(0, spacePos);
+        }
+
+        const auto first = lower.find_first_not_of(" \t");
+        if (first == std::string::npos) {
+            return "";
+        }
+        const auto last = lower.find_last_not_of(" \t");
+        return lower.substr(first, last - first + 1);
+    }
+
+    bool isIntegerType(const std::string& type) {
+        const std::string lower = normalizeTypeName(type);
+        return lower == "integer" || lower == "int" || lower == "bigint" || lower == "smallint" ||
+               lower == "tinyint" || lower == "mediumint";
+    }
+
+    // map integer types to their SERIAL equivalents for PostgreSQL
+    std::string serialTypeForColumn(const std::string& type) {
+        const std::string lower = normalizeTypeName(type);
+        if (lower == "bigint")
+            return "BIGSERIAL";
+        if (lower == "smallint")
+            return "SMALLSERIAL";
+        return "SERIAL";
+    }
+} // namespace
+
+bool supportsAutoIncrement(DatabaseType dbType, const std::string& columnType) {
+    if (dbType == DatabaseType::SQLITE) {
+        const std::string lower = normalizeTypeName(columnType);
+        return lower == "integer";
+    }
+    if (dbType == DatabaseType::ORACLE) {
+        const std::string lower = normalizeTypeName(columnType);
+        // Oracle uses NUMBER for integer types; also accept standard names
+        return lower == "number" || isIntegerType(lower);
+    }
+    return isIntegerType(columnType);
+}
 
 std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
     switch (type) {
@@ -12,10 +82,25 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
         return std::make_unique<MySQLBuilder>();
     case DatabaseType::MSSQL:
         return std::make_unique<MSSQLBuilder>();
+    case DatabaseType::ORACLE:
+        return std::make_unique<OracleBuilder>();
     case DatabaseType::SQLITE:
     default:
         return std::make_unique<SQLiteBuilder>();
     }
+}
+
+// default: double-quote escaping (PostgreSQL/Oracle/SQLite standard)
+std::string ISQLBuilder::quoteIdentifier(const std::string& identifier) const {
+    std::string result = "\"";
+    for (char c : identifier) {
+        if (c == '"')
+            result += "\"\"";
+        else
+            result += c;
+    }
+    result += "\"";
+    return result;
 }
 
 std::string ISQLBuilder::createTable(const Table& table, const std::string& schemaPrefix) const {
@@ -31,31 +116,48 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
 
     std::string sql = std::format("CREATE TABLE {} (", qualifiedName);
 
-    std::vector<std::string> primaryKeyColumns;
+    // SQLite AUTOINCREMENT must be inline: INTEGER PRIMARY KEY AUTOINCREMENT
+    // so track which PK columns were emitted inline to exclude from trailing constraint
+    std::vector<std::string> trailingPkColumns;
 
     for (size_t i = 0; i < table.columns.size(); ++i) {
         const auto& col = table.columns[i];
         if (i > 0)
             sql += ", ";
 
-        sql += std::format("{} {}", quoteIdentifier(col.name), col.type);
+        std::string colType = col.type;
+        if (col.isAutoIncrement && dbType == DatabaseType::POSTGRESQL)
+            colType = serialTypeForColumn(col.type);
+
+        sql += std::format("{} {}", quoteIdentifier(col.name), colType);
+
+        // SQLite: emit PRIMARY KEY inline when AUTOINCREMENT is needed
+        bool inlinePk = false;
+        if (col.isPrimaryKey && col.isAutoIncrement && dbType == DatabaseType::SQLITE) {
+            sql += " PRIMARY KEY AUTOINCREMENT";
+            inlinePk = true;
+        }
 
         if (col.isNotNull && !col.isPrimaryKey)
             sql += " NOT NULL";
 
+        if (col.isAutoIncrement && dbType != DatabaseType::SQLITE &&
+            dbType != DatabaseType::POSTGRESQL)
+            sql += autoIncrementClause(dbType);
+
         if (isMySQL && !col.comment.empty())
             sql += std::format(" COMMENT '{}'", ddl_utils::escapeSingleQuotes(col.comment));
 
-        if (col.isPrimaryKey)
-            primaryKeyColumns.push_back(col.name);
+        if (col.isPrimaryKey && !inlinePk)
+            trailingPkColumns.push_back(col.name);
     }
 
-    if (!primaryKeyColumns.empty()) {
+    if (!trailingPkColumns.empty()) {
         sql += ", PRIMARY KEY (";
-        for (size_t i = 0; i < primaryKeyColumns.size(); ++i) {
+        for (size_t i = 0; i < trailingPkColumns.size(); ++i) {
             if (i > 0)
                 sql += ", ";
-            sql += quoteIdentifier(primaryKeyColumns[i]);
+            sql += quoteIdentifier(trailingPkColumns[i]);
         }
         sql += ")";
     }
@@ -68,21 +170,11 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
     return sql;
 }
 
-std::string PostgreSQLBuilder::quoteIdentifier(const std::string& identifier) const {
-    std::string result = "\"";
-    for (char c : identifier) {
-        if (c == '"')
-            result += "\"\"";
-        else
-            result += c;
-    }
-    result += "\"";
-    return result;
-}
-
 std::string PostgreSQLBuilder::addColumn(const std::string& table, const Column& column) const {
+    std::string colType =
+        column.isAutoIncrement ? serialTypeForColumn(column.type) : column.type;
     std::string sql = "ALTER TABLE " + quoteIdentifier(table);
-    sql += " ADD COLUMN " + quoteIdentifier(column.name) + " " + column.type;
+    sql += " ADD COLUMN " + quoteIdentifier(column.name) + " " + colType;
     if (column.isNotNull)
         sql += " NOT NULL";
     return sql;
@@ -110,6 +202,8 @@ std::string MySQLBuilder::addColumn(const std::string& table, const Column& colu
     sql += " ADD COLUMN " + quoteIdentifier(column.name) + " " + column.type;
     if (column.isNotNull)
         sql += " NOT NULL";
+    if (column.isAutoIncrement)
+        sql += autoIncrementClause(DatabaseType::MYSQL);
     return sql;
 }
 
@@ -133,6 +227,8 @@ std::string MSSQLBuilder::quoteIdentifier(const std::string& identifier) const {
 std::string MSSQLBuilder::addColumn(const std::string& table, const Column& column) const {
     std::string sql = "ALTER TABLE " + quoteIdentifier(table);
     sql += " ADD " + quoteIdentifier(column.name) + " " + column.type;
+    if (column.isAutoIncrement)
+        sql += autoIncrementClause(DatabaseType::MSSQL);
     if (column.isNotNull)
         sql += " NOT NULL";
     return sql;
@@ -143,16 +239,19 @@ std::string MSSQLBuilder::dropColumn(const std::string& table,
     return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
 
-std::string SQLiteBuilder::quoteIdentifier(const std::string& identifier) const {
-    std::string result = "\"";
-    for (char c : identifier) {
-        if (c == '"')
-            result += "\"\"";
-        else
-            result += c;
-    }
-    result += "\"";
-    return result;
+std::string OracleBuilder::addColumn(const std::string& table, const Column& column) const {
+    std::string sql = "ALTER TABLE " + quoteIdentifier(table);
+    sql += " ADD " + quoteIdentifier(column.name) + " " + column.type;
+    if (column.isAutoIncrement)
+        sql += autoIncrementClause(DatabaseType::ORACLE);
+    if (column.isNotNull)
+        sql += " NOT NULL";
+    return sql;
+}
+
+std::string OracleBuilder::dropColumn(const std::string& table,
+                                      const std::string& columnName) const {
+    return "ALTER TABLE " + quoteIdentifier(table) + " DROP COLUMN " + quoteIdentifier(columnName);
 }
 
 std::string SQLiteBuilder::addColumn(const std::string& table, const Column& column) const {

@@ -378,6 +378,9 @@ void TableEditorTab::renderColumnsNode() {
             if (column.isUnique) {
                 columnDisplay += ", UNIQUE";
             }
+            if (column.isAutoIncrement) {
+                columnDisplay += ", AI";
+            }
 
             ImGui::PushID(static_cast<int>(i));
             ImGui::TreeNodeEx(columnDisplay.c_str(), columnFlags);
@@ -537,6 +540,57 @@ void TableEditorTab::renderColumnEditor() {
     ImGui::SameLine();
     if (ImGui::Checkbox("UNIQUE", &isUnique)) {
         updateCurrentColumn();
+    }
+
+    {
+        const char* label = nullptr;
+        const char* tooltip = nullptr;
+        switch (databaseType) {
+        case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB:
+        case DatabaseType::SQLITE:
+            label = "AUTO_INCREMENT";
+            break;
+        case DatabaseType::POSTGRESQL:
+            label = "SERIAL";
+            tooltip = "Uses SERIAL/BIGSERIAL type for auto-incrementing columns";
+            break;
+        case DatabaseType::MSSQL:
+            label = "IDENTITY";
+            tooltip = "IDENTITY(1,1)";
+            break;
+        case DatabaseType::ORACLE:
+            label = "IDENTITY";
+            tooltip = "GENERATED ALWAYS AS IDENTITY";
+            break;
+        default:
+            break;
+        }
+        if (label) {
+            const bool typeSupported = supportsAutoIncrement(databaseType, columnType);
+            // clear flag if the type was changed to something incompatible
+            if (!typeSupported && isAutoIncrement) {
+                isAutoIncrement = false;
+                updateCurrentColumn();
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!typeSupported);
+            if (ImGui::Checkbox(label, &isAutoIncrement)) {
+                updateCurrentColumn();
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (!typeSupported) {
+                    if (databaseType == DatabaseType::SQLITE) {
+                        ImGui::SetTooltip("Only INTEGER PRIMARY KEY supports AUTOINCREMENT");
+                    } else {
+                        ImGui::SetTooltip("Only integer types support auto-increment");
+                    }
+                } else if (tooltip) {
+                    ImGui::SetTooltip("%s", tooltip);
+                }
+            }
+        }
     }
 
     ImGui::Spacing();
@@ -714,6 +768,7 @@ void TableEditorTab::startAddColumn() {
     newColumn.isPrimaryKey = false;
     newColumn.isNotNull = false;
     newColumn.isUnique = false;
+    newColumn.isAutoIncrement = false;
 
     editingTable.columns.push_back(newColumn);
     columnEditMode = ColumnEditMode::Add;
@@ -751,6 +806,7 @@ void TableEditorTab::resetColumnForm() {
     isPrimaryKey = false;
     isNotNull = false;
     isUnique = false;
+    isAutoIncrement = false;
 }
 
 void TableEditorTab::populateColumnFormFromColumn(const Column& column) {
@@ -765,6 +821,7 @@ void TableEditorTab::populateColumnFormFromColumn(const Column& column) {
     isPrimaryKey = column.isPrimaryKey;
     isNotNull = column.isNotNull;
     isUnique = column.isUnique;
+    isAutoIncrement = column.isAutoIncrement;
 }
 
 std::string TableEditorTab::generateAddColumnSQL() const {
@@ -778,11 +835,26 @@ std::string TableEditorTab::generateAddColumnSQL() const {
         }
     }
 
+    std::string colType = std::string(columnType);
+    if (isAutoIncrement && databaseType == DatabaseType::POSTGRESQL) {
+        std::string lower = colType;
+        std::ranges::transform(lower, lower.begin(), ::tolower);
+        if (lower == "bigint")
+            colType = "BIGSERIAL";
+        else if (lower == "smallint")
+            colType = "SMALLSERIAL";
+        else
+            colType = "SERIAL";
+    }
+
     std::string sql = "ALTER TABLE " + qualifiedTableName + " ADD COLUMN " +
-                      std::string(columnName) + " " + std::string(columnType);
+                      std::string(columnName) + " " + colType;
 
     if (isNotNull) {
         sql += " NOT NULL";
+    }
+    if (isAutoIncrement && databaseType != DatabaseType::POSTGRESQL) {
+        sql += autoIncrementClause(databaseType);
     }
     if (isUnique) {
         sql += " UNIQUE";
@@ -861,11 +933,30 @@ std::string TableEditorTab::generateEditColumnSQL() const {
         if (isNotNull) {
             sql += " NOT NULL";
         }
+        if (isAutoIncrement) {
+            sql += autoIncrementClause(databaseType);
+        }
         if (std::strlen(defaultValue) > 0) {
             sql += " DEFAULT " + std::string(defaultValue);
         }
         if (std::strlen(columnComment) > 0) {
             sql += " COMMENT '" + std::string(columnComment) + "'";
+        }
+        break;
+
+    case DatabaseType::MSSQL:
+        sql = "ALTER TABLE " + tableName + " ALTER COLUMN " + std::string(columnName) + " " +
+              std::string(columnType);
+        if (isNotNull) {
+            sql += " NOT NULL";
+        }
+        break;
+
+    case DatabaseType::ORACLE:
+        sql = "ALTER TABLE " + tableName + " MODIFY " + std::string(columnName) + " " +
+              std::string(columnType);
+        if (isNotNull) {
+            sql += " NOT NULL";
         }
         break;
 
@@ -996,6 +1087,20 @@ bool TableEditorTab::validateTableInput() {
         return false;
     }
 
+    for (const auto& col : editingTable.columns) {
+        if (!col.isAutoIncrement)
+            continue;
+        if (!supportsAutoIncrement(databaseType, col.type)) {
+            errorMessage = "Column '" + col.name + "' must be an integer type for auto-increment";
+            return false;
+        }
+        if (databaseType == DatabaseType::SQLITE && !col.isPrimaryKey) {
+            errorMessage =
+                "SQLite AUTOINCREMENT requires '" + col.name + "' to be a PRIMARY KEY";
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -1032,10 +1137,34 @@ std::string TableEditorTab::generateCreateTableSQL() const {
 
     for (size_t i = 0; i < editingTable.columns.size(); ++i) {
         const auto& column = editingTable.columns[i];
-        sql += "    " + column.name + " " + column.type;
+        std::string colType = column.type;
+        if (column.isAutoIncrement && databaseType == DatabaseType::POSTGRESQL) {
+            // use SERIAL type family for PostgreSQL
+            std::string lower = colType;
+            std::ranges::transform(lower, lower.begin(), ::tolower);
+            if (lower == "bigint")
+                colType = "BIGSERIAL";
+            else if (lower == "smallint")
+                colType = "SMALLSERIAL";
+            else
+                colType = "SERIAL";
+        }
+        sql += "    " + column.name + " " + colType;
 
-        if (column.isNotNull) {
+        // SQLite: emit PRIMARY KEY inline when AUTOINCREMENT is needed
+        bool inlinePk = false;
+        if (column.isPrimaryKey && column.isAutoIncrement &&
+            databaseType == DatabaseType::SQLITE) {
+            sql += " PRIMARY KEY AUTOINCREMENT";
+            inlinePk = true;
+        }
+
+        if (column.isNotNull && !inlinePk) {
             sql += " NOT NULL";
+        }
+        if (column.isAutoIncrement && databaseType != DatabaseType::SQLITE &&
+            databaseType != DatabaseType::POSTGRESQL) {
+            sql += autoIncrementClause(databaseType);
         }
         if (!column.comment.empty() &&
             (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB)) {
@@ -1049,7 +1178,9 @@ std::string TableEditorTab::generateCreateTableSQL() const {
 
     std::vector<std::string> primaryKeyColumns;
     for (const auto& column : editingTable.columns) {
-        if (column.isPrimaryKey) {
+        // exclude columns already emitted as inline PRIMARY KEY (SQLite AUTOINCREMENT)
+        if (column.isPrimaryKey &&
+            !(column.isAutoIncrement && databaseType == DatabaseType::SQLITE)) {
             primaryKeyColumns.push_back(column.name);
         }
     }
@@ -1124,6 +1255,7 @@ void TableEditorTab::updateCurrentColumn() {
         column.isPrimaryKey = isPrimaryKey;
         column.isNotNull = isNotNull;
         column.isUnique = isUnique;
+        column.isAutoIncrement = isAutoIncrement;
         markDirty();
     }
 }

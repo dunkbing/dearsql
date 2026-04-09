@@ -17,7 +17,8 @@ namespace {
                                     const std::string& tableName) {
         std::vector<Column> columns;
         std::string query = std::format(
-            "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE "
+            "SELECT COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, "
+            "IDENTITY_COLUMN "
             "FROM ALL_TAB_COLUMNS "
             "WHERE OWNER = '{}' AND TABLE_NAME = '{}' "
             "ORDER BY COLUMN_ID",
@@ -82,6 +83,10 @@ namespace {
             } else {
                 col.type = dataType;
             }
+
+            // IDENTITY_COLUMN
+            dpiStmt_getQueryValue(stmt, 7, &nt, &d);
+            col.isAutoIncrement = dpiDataToString(nt, d) == "YES";
 
             columns.push_back(col);
         }
@@ -241,7 +246,7 @@ namespace {
         std::unordered_map<std::string, std::vector<Column>> result;
         std::string query =
             std::format("SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_LENGTH, "
-                        "DATA_PRECISION, DATA_SCALE "
+                        "DATA_PRECISION, DATA_SCALE, IDENTITY_COLUMN "
                         "FROM ALL_TAB_COLUMNS "
                         "WHERE OWNER = '{}' ORDER BY TABLE_NAME, COLUMN_ID",
                         schema);
@@ -277,10 +282,13 @@ namespace {
             std::string prec = dpiDataToString(nt, d);
             dpiStmt_getQueryValue(stmt, 7, &nt, &d);
             std::string scale = dpiDataToString(nt, d);
+            dpiStmt_getQueryValue(stmt, 8, &nt, &d);
+            std::string identityCol = dpiDataToString(nt, d);
 
             Column col;
             col.name = colName;
             col.isNotNull = (nullable == "N");
+            col.isAutoIncrement = (identityCol == "YES");
 
             if (prec != "NULL") {
                 if (scale != "NULL" && scale != "0") {

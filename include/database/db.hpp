@@ -32,6 +32,7 @@ struct Column {
     bool isPrimaryKey = false;
     bool isNotNull = false;
     bool isUnique = false;
+    bool isAutoIncrement = false;
 };
 
 struct Index {

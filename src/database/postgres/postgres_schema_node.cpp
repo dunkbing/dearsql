@@ -131,7 +131,9 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
             "c.data_type, "
             "c.is_nullable, "
             "CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 'true' ELSE 'false' END "
-            "as is_primary_key "
+            "as is_primary_key, "
+            "CASE WHEN c.column_default LIKE 'nextval(%' OR c.is_identity = 'YES' "
+            "THEN 'true' ELSE 'false' END as is_auto_increment "
             "FROM information_schema.columns c "
             "LEFT JOIN information_schema.key_column_usage kcu ON c.column_name = "
             "kcu.column_name AND c.table_name = kcu.table_name AND c.table_schema = "
@@ -170,6 +172,7 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
                     col.type = PQgetvalue(res.get(), i, 2);
                     col.isNotNull = std::string(PQgetvalue(res.get(), i, 3)) == "NO";
                     col.isPrimaryKey = std::string(PQgetvalue(res.get(), i, 4)) == "true";
+                    col.isAutoIncrement = std::string(PQgetvalue(res.get(), i, 5)) == "true";
 
                     tableColumns[tableName].push_back(col);
                 }
@@ -762,7 +765,9 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
 
         // Get table columns
         const std::string columnsQuery =
-            std::format("SELECT column_name, data_type, is_nullable, column_default "
+            std::format("SELECT column_name, data_type, is_nullable, column_default, "
+                        "CASE WHEN column_default LIKE 'nextval(%%' OR is_identity = 'YES' "
+                        "THEN 'true' ELSE 'false' END as is_auto_increment "
                         "FROM information_schema.columns "
                         "WHERE table_schema = '{}' AND table_name = '{}' "
                         "ORDER BY ordinal_position",
@@ -777,6 +782,7 @@ Table PostgresSchemaNode::refreshTableAsync(const std::string& tableName) {
                     col.name = PQgetvalue(res.get(), i, 0);
                     col.type = PQgetvalue(res.get(), i, 1);
                     col.isNotNull = std::string(PQgetvalue(res.get(), i, 2)) == "NO";
+                    col.isAutoIncrement = std::string(PQgetvalue(res.get(), i, 4)) == "true";
                     refreshedTable.columns.push_back(col);
                 }
             }

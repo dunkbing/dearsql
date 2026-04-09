@@ -242,6 +242,7 @@ inline std::vector<Column> loadColumns(DBPROCESS* dbproc, const std::string& sch
             col.name = colToString(dbproc, 1);
             col.type = colToString(dbproc, 2);
             col.isNotNull = colToString(dbproc, 3) == "NO";
+            col.isAutoIncrement = colToString(dbproc, 4) == "1";
             columns.push_back(col);
         }
     }

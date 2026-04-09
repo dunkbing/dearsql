@@ -218,6 +218,9 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
                         col.type = row[1] ? row[1] : "";                           // Type
                         col.isNotNull = row[2] && std::string(row[2]) == "NO";     // Null
                         col.isPrimaryKey = row[3] && std::string(row[3]) == "PRI"; // Key
+                        // row[4] = Default, row[5] = Extra
+                        col.isAutoIncrement =
+                            row[5] && std::string(row[5]).find("auto_increment") != std::string::npos;
                         table.columns.push_back(col);
                     }
                 }
@@ -539,6 +542,8 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
                     col.type = row[1] ? row[1] : "";
                     col.isNotNull = row[2] && std::string(row[2]) == "NO";
                     col.isPrimaryKey = row[3] && std::string(row[3]) == "PRI";
+                    col.isAutoIncrement =
+                        row[5] && std::string(row[5]).find("auto_increment") != std::string::npos;
                     refreshedTable.columns.push_back(col);
                 }
             }

@@ -144,6 +144,7 @@ std::vector<Table> MSSQLSchemaNode::getTablesAsync() {
                     col.name = colToString(dbproc, 2);
                     col.type = colToString(dbproc, 3);
                     col.isNotNull = colToString(dbproc, 4) == "NO";
+                    col.isAutoIncrement = colToString(dbproc, 5) == "1";
                     tableColumns[tbl].push_back(col);
                 }
             }

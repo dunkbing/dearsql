@@ -50,6 +50,7 @@ private:
     bool isPrimaryKey = false;
     bool isNotNull = false;
     bool isUnique = false;
+    bool isAutoIncrement = false;
     char defaultValue[256] = "";
 
     std::string errorMessage;

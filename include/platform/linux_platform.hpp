@@ -77,6 +77,7 @@ private:
     bool shouldClose_;
     double mouseX_;
     double mouseY_;
+    ImGuiMouseCursor lastCursor_ = ImGuiMouseCursor_COUNT;
 
     void setupInputHandlers();
     void updateImGuiMousePos();

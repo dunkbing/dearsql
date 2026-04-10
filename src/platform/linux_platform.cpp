@@ -221,39 +221,44 @@ gboolean LinuxPlatform::onRender(GtkGLArea*, GdkGLContext*, gpointer userData) {
 
     ImGui::Render();
 
-    // update GTK cursor to match ImGui's requested cursor
+    // update GTK cursor only when ImGui's requested cursor changes —
+    // gtk_widget_set_cursor_from_name loads an XCursor image each call and
+    // was the top allocation hot spot in heaptrack profiling.
     ImGuiMouseCursor imguiCursor = ImGui::GetMouseCursor();
-    const char* cursorName = nullptr;
-    switch (imguiCursor) {
-    case ImGuiMouseCursor_Arrow:
-        cursorName = "default";
-        break;
-    case ImGuiMouseCursor_TextInput:
-        cursorName = "text";
-        break;
-    case ImGuiMouseCursor_ResizeNS:
-        cursorName = "ns-resize";
-        break;
-    case ImGuiMouseCursor_ResizeEW:
-        cursorName = "ew-resize";
-        break;
-    case ImGuiMouseCursor_ResizeNESW:
-        cursorName = "nesw-resize";
-        break;
-    case ImGuiMouseCursor_ResizeNWSE:
-        cursorName = "nwse-resize";
-        break;
-    case ImGuiMouseCursor_Hand:
-        cursorName = "pointer";
-        break;
-    case ImGuiMouseCursor_NotAllowed:
-        cursorName = "not-allowed";
-        break;
-    default:
-        cursorName = "default";
-        break;
+    if (imguiCursor != platform->lastCursor_) {
+        const char* cursorName = nullptr;
+        switch (imguiCursor) {
+        case ImGuiMouseCursor_Arrow:
+            cursorName = "default";
+            break;
+        case ImGuiMouseCursor_TextInput:
+            cursorName = "text";
+            break;
+        case ImGuiMouseCursor_ResizeNS:
+            cursorName = "ns-resize";
+            break;
+        case ImGuiMouseCursor_ResizeEW:
+            cursorName = "ew-resize";
+            break;
+        case ImGuiMouseCursor_ResizeNESW:
+            cursorName = "nesw-resize";
+            break;
+        case ImGuiMouseCursor_ResizeNWSE:
+            cursorName = "nwse-resize";
+            break;
+        case ImGuiMouseCursor_Hand:
+            cursorName = "pointer";
+            break;
+        case ImGuiMouseCursor_NotAllowed:
+            cursorName = "not-allowed";
+            break;
+        default:
+            cursorName = "default";
+            break;
+        }
+        gtk_widget_set_cursor_from_name(platform->backend_->getGLArea(), cursorName);
+        platform->lastCursor_ = imguiCursor;
     }
-    gtk_widget_set_cursor_from_name(platform->backend_->getGLArea(), cursorName);
 
     platform->backend_->renderDrawData(ImGui::GetDrawData());
 

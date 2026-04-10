@@ -3,13 +3,25 @@
 #include "imgui.h"
 #include <functional>
 #include <string>
+#include <vector>
 
 class AutoCompleteInput {
 public:
+    enum class MatchMode { Prefix, Substring };
+    enum class CompletionMode { CurrentToken, WholeInput };
+
     struct Config {
         std::string hint = "Enter text...";
         float width = 400.0f;
         std::vector<std::string> keywords;
+        MatchMode matchMode = MatchMode::Prefix;
+        CompletionMode completionMode = CompletionMode::CurrentToken;
+        bool appendSpaceOnComplete = true;
+        bool showSuggestionsOnEmpty = false;
+        bool caseSensitive = false;
+        int maxSuggestionsShown = 10;
+        bool refocusOnComplete = true;
+        std::function<void()> onChange = nullptr;
         std::function<void()> onSubmit = nullptr;
         ImGuiInputTextFlags flags =
             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackEdit |
@@ -51,6 +63,7 @@ private:
     bool shouldRefocusInput = false;
     bool needsCursorReposition = false;
     bool autoCompleteConsumedEnter = false;
+    bool suppressNextActivationRefresh = false;
 
     // Current text buffer reference
     char* currentBuffer = nullptr;
@@ -60,7 +73,9 @@ private:
     static int inputTextCallback(ImGuiInputTextCallbackData* data);
 
     // Internal methods
+    void updateSuggestions(const char* buffer, int textLength, int cursorPos);
     void updateAutoCompleteSuggestions(const ImGuiInputTextCallbackData* data);
+    void commitSuggestion(const std::string& suggestion);
     void triggerAutoComplete(ImGuiInputTextCallbackData* data);
     void renderAutoCompletePopup(const ImVec2& anchorPos, const ImVec2& anchorSize);
     void applyPendingAutoComplete(ImGuiInputTextCallbackData* data);

@@ -219,8 +219,8 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
                         col.isNotNull = row[2] && std::string(row[2]) == "NO";     // Null
                         col.isPrimaryKey = row[3] && std::string(row[3]) == "PRI"; // Key
                         // row[4] = Default, row[5] = Extra
-                        col.isAutoIncrement =
-                            row[5] && std::string(row[5]).find("auto_increment") != std::string::npos;
+                        col.isAutoIncrement = row[5] && std::string(row[5]).find(
+                                                            "auto_increment") != std::string::npos;
                         table.columns.push_back(col);
                     }
                 }

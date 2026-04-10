@@ -171,8 +171,7 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
 }
 
 std::string PostgreSQLBuilder::addColumn(const std::string& table, const Column& column) const {
-    std::string colType =
-        column.isAutoIncrement ? serialTypeForColumn(column.type) : column.type;
+    std::string colType = column.isAutoIncrement ? serialTypeForColumn(column.type) : column.type;
     std::string sql = "ALTER TABLE " + quoteIdentifier(table);
     sql += " ADD COLUMN " + quoteIdentifier(column.name) + " " + colType;
     if (column.isNotNull)

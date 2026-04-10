@@ -1,6 +1,7 @@
 #include "ui/auto_complete_input.hpp"
 #include "application.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 
 AutoCompleteInput::AutoCompleteInput(Config config) : config(std::move(config)) {}
@@ -9,6 +10,7 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
     const auto& colors = Application::getInstance().getCurrentColors();
     currentBuffer = buffer;
     currentBufferSize = bufferSize;
+    const std::string previousText = getText();
 
     const bool hasEndIcon = !config.endIcon.empty();
     const float iconAreaW = hasEndIcon ? ImGui::GetFrameHeight() : 0.0f;
@@ -35,6 +37,17 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
 
     enterPressed = ImGui::InputTextWithHint(label, config.hint.c_str(), buffer, bufferSize,
                                             inputFlags, inputTextCallback, this);
+
+    if (ImGui::IsItemActivated()) {
+        if (suppressNextActivationRefresh) {
+            suppressNextActivationRefresh = false;
+        } else {
+            updateSuggestions(buffer, static_cast<int>(std::strlen(buffer)),
+                              static_cast<int>(std::strlen(buffer)));
+        }
+    } else if (suppressNextActivationRefresh && !ImGui::IsItemActive()) {
+        suppressNextActivationRefresh = false;
+    }
 
     const bool showFocusedVisual = ImGui::IsItemActive() || showAutoComplete ||
                                    !pendingAutoComplete.empty() || shouldRefocusInput;
@@ -112,6 +125,10 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
         config.onEndIconClick();
     }
 
+    if (config.onChange && getText() != previousText) {
+        config.onChange();
+    }
+
     return shouldProcessEnter || endIconClicked;
 }
 
@@ -185,54 +202,89 @@ int AutoCompleteInput::inputTextCallback(ImGuiInputTextCallbackData* data) {
     return 0;
 }
 
-void AutoCompleteInput::updateAutoCompleteSuggestions(const ImGuiInputTextCallbackData* data) {
-    std::string currentText(data->Buf, data->BufTextLen);
+void AutoCompleteInput::updateSuggestions(const char* buffer, const int textLength,
+                                          const int cursorPos) {
     autoCompleteSuggestions.clear();
     selectedSuggestionIndex = -1;
 
-    // Find the word at cursor position
-    int wordStart = data->CursorPos;
-    while (wordStart > 0 && data->Buf[wordStart - 1] != ' ' && data->Buf[wordStart - 1] != '(' &&
-           data->Buf[wordStart - 1] != ',' && data->Buf[wordStart - 1] != '=' &&
-           data->Buf[wordStart - 1] != '<' && data->Buf[wordStart - 1] != '>' &&
-           data->Buf[wordStart - 1] != '!') {
-        wordStart--;
+    int matchStart = 0;
+    int matchEnd = textLength;
+    std::string currentMatchText;
+
+    if (config.completionMode == CompletionMode::CurrentToken) {
+        matchStart = cursorPos;
+        while (matchStart > 0 && buffer[matchStart - 1] != ' ' && buffer[matchStart - 1] != '(' &&
+               buffer[matchStart - 1] != ',' && buffer[matchStart - 1] != '=' &&
+               buffer[matchStart - 1] != '<' && buffer[matchStart - 1] != '>' &&
+               buffer[matchStart - 1] != '!') {
+            matchStart--;
+        }
+        matchEnd = cursorPos;
+        currentMatchText.assign(buffer + matchStart, cursorPos - matchStart);
+    } else {
+        currentMatchText.assign(buffer, textLength);
     }
 
-    const std::string currentWord(data->Buf + wordStart, data->CursorPos - wordStart);
-    if (currentWord.empty()) {
+    if (currentMatchText.empty() && !config.showSuggestionsOnEmpty) {
         showAutoComplete = false;
         return;
     }
 
-    // Convert current word to lowercase for comparison
-    std::string lowerWord = currentWord;
-    std::ranges::transform(lowerWord, lowerWord.begin(), ::tolower);
+    auto normalize = [this](std::string value) {
+        if (!config.caseSensitive) {
+            std::ranges::transform(value, value.begin(), [](const unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+        }
+        return value;
+    };
 
-    // Add keyword suggestions
+    const std::string normalizedMatchText = normalize(currentMatchText);
+
     for (const auto& keyword : config.keywords) {
-        std::string lowerKeyword = keyword;
-        std::ranges::transform(lowerKeyword, lowerKeyword.begin(), ::tolower);
-        if (lowerKeyword.find(lowerWord) == 0) {
+        const std::string normalizedKeyword = normalize(keyword);
+        const bool matches =
+            normalizedMatchText.empty() ||
+            (config.matchMode == MatchMode::Prefix
+                 ? normalizedKeyword.find(normalizedMatchText) == 0
+                 : normalizedKeyword.find(normalizedMatchText) != std::string::npos);
+        if (matches) {
             autoCompleteSuggestions.push_back(keyword);
         }
     }
 
-    // Sort suggestions alphabetically
     std::ranges::sort(autoCompleteSuggestions);
-
-    // Remove duplicates
     auto ret = std::ranges::unique(autoCompleteSuggestions);
     autoCompleteSuggestions.erase(ret.begin(), ret.end());
 
     showAutoComplete = !autoCompleteSuggestions.empty();
-    autoCompleteWordStart = wordStart;
-    autoCompleteWordEnd = data->CursorPos;
+    autoCompleteWordStart = matchStart;
+    autoCompleteWordEnd = matchEnd;
 
-    // Auto-select first suggestion when popup appears
     if (!autoCompleteSuggestions.empty()) {
         selectedSuggestionIndex = 0;
     }
+}
+
+void AutoCompleteInput::updateAutoCompleteSuggestions(const ImGuiInputTextCallbackData* data) {
+    updateSuggestions(data->Buf, data->BufTextLen, data->CursorPos);
+}
+
+void AutoCompleteInput::commitSuggestion(const std::string& suggestion) {
+    if (config.completionMode == CompletionMode::WholeInput) {
+        setText(suggestion);
+        hideAutoComplete();
+        shouldRefocusInput = config.refocusOnComplete;
+        suppressNextActivationRefresh = config.refocusOnComplete;
+        return;
+    }
+
+    pendingAutoComplete = suggestion;
+    pendingAutoCompleteStart = autoCompleteWordStart;
+    pendingAutoCompleteEnd = autoCompleteWordEnd;
+    hideAutoComplete();
+    shouldRefocusInput = config.refocusOnComplete;
+    suppressNextActivationRefresh = config.refocusOnComplete;
 }
 
 void AutoCompleteInput::triggerAutoComplete(ImGuiInputTextCallbackData* data) {
@@ -247,16 +299,7 @@ void AutoCompleteInput::triggerAutoComplete(ImGuiInputTextCallbackData* data) {
 
     // If we have suggestions and one is selected, apply it
     if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < autoCompleteSuggestions.size()) {
-        const std::string& suggestion = autoCompleteSuggestions[selectedSuggestionIndex];
-
-        // Delete the current partial word
-        data->DeleteChars(autoCompleteWordStart, autoCompleteWordEnd - autoCompleteWordStart);
-
-        // Insert the suggestion
-        data->InsertChars(autoCompleteWordStart, suggestion.c_str());
-
-        // Hide auto-complete
-        hideAutoComplete();
+        commitSuggestion(autoCompleteSuggestions[selectedSuggestionIndex]);
     } else if (!autoCompleteSuggestions.empty()) {
         // No selection, select the first one
         selectedSuggestionIndex = 0;
@@ -268,28 +311,26 @@ void AutoCompleteInput::renderAutoCompletePopup(const ImVec2& anchorPos, const I
         return;
     }
 
-    // Position the popup below the input field (anchor is passed in, since
-    // GetItemRect* would otherwise resolve to the end-icon button).
     ImGui::SetNextWindowPos(ImVec2(anchorPos.x, anchorPos.y + anchorSize.y));
 
-    // Calculate popup size
-    constexpr float maxWidth = 300.0f;
+    const int visibleSuggestionCount =
+        config.maxSuggestionsShown > 0
+            ? std::min(static_cast<int>(autoCompleteSuggestions.size()), config.maxSuggestionsShown)
+            : static_cast<int>(autoCompleteSuggestions.size());
     const float itemHeight = ImGui::GetTextLineHeightWithSpacing();
     constexpr float verticalPadding = 8.0f;
     const float maxHeight =
-        static_cast<float>(autoCompleteSuggestions.size()) * itemHeight + verticalPadding;
+        static_cast<float>(visibleSuggestionCount) * itemHeight + verticalPadding;
 
-    ImGui::SetNextWindowSize(ImVec2(maxWidth, maxHeight));
+    ImGui::SetNextWindowSize(ImVec2(anchorSize.x, maxHeight));
 
-    // Create popup window - remove scrollbar entirely
     constexpr ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoScrollWithMouse;
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
 
+    bool popupHovered = false;
     if (ImGui::Begin("##AutoComplete", nullptr, flags)) {
-        // Handle keyboard navigation
+        popupHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
         if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
             if (selectedSuggestionIndex > 0) {
                 selectedSuggestionIndex--;
@@ -303,11 +344,7 @@ void AutoCompleteInput::renderAutoCompletePopup(const ImVec2& anchorPos, const I
             // Handle Enter key to apply selected suggestion
             if (selectedSuggestionIndex >= 0 &&
                 selectedSuggestionIndex < autoCompleteSuggestions.size()) {
-                pendingAutoComplete = autoCompleteSuggestions[selectedSuggestionIndex];
-                pendingAutoCompleteStart = autoCompleteWordStart;
-                pendingAutoCompleteEnd = autoCompleteWordEnd;
-                hideAutoComplete();
-                shouldRefocusInput = true;
+                commitSuggestion(autoCompleteSuggestions[selectedSuggestionIndex]);
                 // Mark that Enter was consumed by auto-complete
                 autoCompleteConsumedEnter = true;
             }
@@ -320,12 +357,7 @@ void AutoCompleteInput::renderAutoCompletePopup(const ImVec2& anchorPos, const I
             const bool isSelected = (i == selectedSuggestionIndex);
 
             if (ImGui::Selectable(autoCompleteSuggestions[i].c_str(), isSelected)) {
-                // Store the suggestion to apply after this frame
-                pendingAutoComplete = autoCompleteSuggestions[i];
-                pendingAutoCompleteStart = autoCompleteWordStart;
-                pendingAutoCompleteEnd = autoCompleteWordEnd;
-                hideAutoComplete();
-                shouldRefocusInput = true;
+                commitSuggestion(autoCompleteSuggestions[i]);
             }
 
             if (isSelected) {
@@ -336,6 +368,15 @@ void AutoCompleteInput::renderAutoCompletePopup(const ImVec2& anchorPos, const I
         }
     }
     ImGui::End();
+
+    const bool inputHovered = ImGui::IsMouseHoveringRect(
+        anchorPos, ImVec2(anchorPos.x + anchorSize.x, anchorPos.y + anchorSize.y));
+    const bool clickedOutside = (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                                 ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
+                                !inputHovered && !popupHovered;
+    if (clickedOutside) {
+        hideAutoComplete();
+    }
 }
 
 void AutoCompleteInput::applyPendingAutoComplete(ImGuiInputTextCallbackData* data) {
@@ -345,7 +386,8 @@ void AutoCompleteInput::applyPendingAutoComplete(ImGuiInputTextCallbackData* dat
 
     data->DeleteChars(pendingAutoCompleteStart, pendingAutoCompleteEnd - pendingAutoCompleteStart);
 
-    const std::string completedText = pendingAutoComplete + " ";
+    const std::string completedText =
+        config.appendSpaceOnComplete ? pendingAutoComplete + " " : pendingAutoComplete;
     data->InsertChars(pendingAutoCompleteStart, completedText.c_str());
 
     data->CursorPos = pendingAutoCompleteStart + static_cast<int>(completedText.size());

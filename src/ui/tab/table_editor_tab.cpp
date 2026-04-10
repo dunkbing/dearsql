@@ -114,6 +114,7 @@ TableEditorTab::TableEditorTab(IDatabaseNode* node, const std::string& schema)
     editingTable = Table{};
     editingTable.columns.clear();
     rightPanelMode = RightPanelMode::TableProperties;
+    initializeColumnTypeAutoComplete();
 }
 
 TableEditorTab::TableEditorTab(IDatabaseNode* node, const Table& table, const std::string& schema)
@@ -129,6 +130,7 @@ TableEditorTab::TableEditorTab(IDatabaseNode* node, const Table& table, const st
     tableNameBuffer[sizeof(tableNameBuffer) - 1] = '\0';
     std::memset(tableCommentBuffer, 0, sizeof(tableCommentBuffer));
     rightPanelMode = RightPanelMode::TableProperties;
+    initializeColumnTypeAutoComplete();
 }
 
 void TableEditorTab::render() {
@@ -463,6 +465,7 @@ void TableEditorTab::renderKeysNode() const {
 
 void TableEditorTab::renderColumnEditor() {
     const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     const char* editorTitle =
         (columnEditMode == ColumnEditMode::Add) ? "Add New Column" : "Edit Column";
     renderSectionTitle(colors, colors.blue, ICON_FA_PEN_TO_SQUARE, editorTitle,
@@ -479,6 +482,10 @@ void TableEditorTab::renderColumnEditor() {
     ImGui::Text("Column Name:");
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-Theme::Spacing::M);
+    if (focusColumnName) {
+        ImGui::SetKeyboardFocusHere();
+        focusColumnName = false;
+    }
     if (ImGui::InputText("##column_name", columnName, sizeof(columnName))) {
         updateCurrentColumn();
     }
@@ -488,42 +495,10 @@ void TableEditorTab::renderColumnEditor() {
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
     ImGui::Text("Data Type:");
     ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-Theme::Spacing::M);
-    if (ImGui::BeginCombo("##column_type", columnType, ImGuiComboFlags_None)) {
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::IsWindowAppearing()) {
-            ImGui::SetKeyboardFocusHere();
-        }
-
-        if (ImGui::InputText("##type_filter", columnType, sizeof(columnType))) {
-            updateCurrentColumn();
-        }
-
-        ImGui::Separator();
-
-        const auto commonTypes = getCommonDataTypes();
-        const auto currentInput = std::string(columnType);
-
-        for (const auto& type : commonTypes) {
-            std::string lowerType = type;
-            std::string lowerInput = currentInput;
-            std::ranges::transform(lowerType, lowerType.begin(), ::tolower);
-            std::ranges::transform(lowerInput, lowerInput.begin(), ::tolower);
-
-            if (lowerInput.empty() || lowerType.find(lowerInput) != std::string::npos) {
-                const bool isSelected = (type == currentInput);
-                if (ImGui::Selectable(type.c_str(), isSelected)) {
-                    std::strncpy(columnType, type.c_str(), sizeof(columnType) - 1);
-                    columnType[sizeof(columnType) - 1] = '\0';
-                    updateCurrentColumn();
-                }
-                if (isSelected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-        }
-        ImGui::EndCombo();
+    if (columnTypeAutoComplete == nullptr) {
+        initializeColumnTypeAutoComplete();
     }
+    columnTypeAutoComplete->render("##column_type", columnType, sizeof(columnType));
 
     ImGui::Spacing();
 
@@ -621,9 +596,6 @@ void TableEditorTab::renderColumnEditor() {
     ImGui::PopStyleVar();
 
     ImGui::Spacing();
-    renderNoticeBox(colors, "column_editor_note", ICON_FA_WAND_MAGIC_SPARKLES,
-                    "Changes update the selected column entry in the structure tree immediately.",
-                    colors.blue);
 }
 
 void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
@@ -762,7 +734,7 @@ void TableEditorTab::renderButtons(bool& closeRequested) {
 void TableEditorTab::startAddColumn() {
     Column newColumn;
     newColumn.name = "column_name";
-    newColumn.type = "VARCHAR(255)";
+    newColumn.type = getCommonDataTypes().front();
     newColumn.comment.clear();
     newColumn.defaultValue.clear();
     newColumn.isPrimaryKey = false;
@@ -775,6 +747,7 @@ void TableEditorTab::startAddColumn() {
     selectedColumnIndex = static_cast<int>(editingTable.columns.size() - 1);
     rightPanelMode = RightPanelMode::ColumnEditor;
     populateColumnFormFromColumn(newColumn);
+    focusColumnName = true;
     errorMessage.clear();
     markDirty();
 }
@@ -807,6 +780,9 @@ void TableEditorTab::resetColumnForm() {
     isNotNull = false;
     isUnique = false;
     isAutoIncrement = false;
+    if (columnTypeAutoComplete) {
+        columnTypeAutoComplete->hideAutoComplete();
+    }
 }
 
 void TableEditorTab::populateColumnFormFromColumn(const Column& column) {
@@ -822,6 +798,23 @@ void TableEditorTab::populateColumnFormFromColumn(const Column& column) {
     isNotNull = column.isNotNull;
     isUnique = column.isUnique;
     isAutoIncrement = column.isAutoIncrement;
+    if (columnTypeAutoComplete) {
+        columnTypeAutoComplete->hideAutoComplete();
+    }
+}
+
+void TableEditorTab::initializeColumnTypeAutoComplete() {
+    AutoCompleteInput::Config config;
+    config.width = -Theme::Spacing::M;
+    config.keywords = getCommonDataTypes();
+    config.matchMode = AutoCompleteInput::MatchMode::Substring;
+    config.completionMode = AutoCompleteInput::CompletionMode::WholeInput;
+    config.appendSpaceOnComplete = false;
+    config.showSuggestionsOnEmpty = true;
+    config.maxSuggestionsShown = 6;
+    config.refocusOnComplete = false;
+    config.onChange = [this]() { updateCurrentColumn(); };
+    columnTypeAutoComplete = std::make_unique<AutoCompleteInput>(std::move(config));
 }
 
 std::string TableEditorTab::generateAddColumnSQL() const {
@@ -1095,8 +1088,7 @@ bool TableEditorTab::validateTableInput() {
             return false;
         }
         if (databaseType == DatabaseType::SQLITE && !col.isPrimaryKey) {
-            errorMessage =
-                "SQLite AUTOINCREMENT requires '" + col.name + "' to be a PRIMARY KEY";
+            errorMessage = "SQLite AUTOINCREMENT requires '" + col.name + "' to be a PRIMARY KEY";
             return false;
         }
     }
@@ -1153,8 +1145,7 @@ std::string TableEditorTab::generateCreateTableSQL() const {
 
         // SQLite: emit PRIMARY KEY inline when AUTOINCREMENT is needed
         bool inlinePk = false;
-        if (column.isPrimaryKey && column.isAutoIncrement &&
-            databaseType == DatabaseType::SQLITE) {
+        if (column.isPrimaryKey && column.isAutoIncrement && databaseType == DatabaseType::SQLITE) {
             sql += " PRIMARY KEY AUTOINCREMENT";
             inlinePk = true;
         }

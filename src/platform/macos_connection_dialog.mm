@@ -69,6 +69,7 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 @property(nonatomic, strong) NSPopUpButton* sslModePopup;
 @property(nonatomic, strong) NSTextField* sslCACertPathLabel;
 @property(nonatomic, strong) NSTextField* sslCACertPathField;
+@property(nonatomic, strong) NSButton* sslCACertBrowseButton;
 
 // Auth
 @property(nonatomic, strong) NSTextField* authLabel;
@@ -116,6 +117,30 @@ static const CGFloat kFieldWidth = kDialogWidth - kFieldX - kMargin;
 static NSRect centeredLabelRect(CGFloat x, CGFloat y, CGFloat w) {
     constexpr CGFloat kLabelH = 17.0;
     return NSMakeRect(x, y + (kRowHeight - kLabelH) * 0.5, w, kLabelH);
+}
+
+static bool shouldShowCACertField(DatabaseType type, SslMode mode) {
+    if (sslModeNeedsCACert(mode)) {
+        return true;
+    }
+
+    return (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) &&
+           mode == SslMode::Require;
+}
+
+static bool sslModesMatchForType(DatabaseType type, SslMode lhs, SslMode rhs) {
+    if (lhs == rhs) {
+        return true;
+    }
+
+    const bool mysqlFamily = type == DatabaseType::MYSQL || type == DatabaseType::MARIADB;
+    if (!mysqlFamily) {
+        return false;
+    }
+
+    const bool lhsVerifiesIdentity = lhs == SslMode::VerifyFull || lhs == SslMode::VerifyIdentity;
+    const bool rhsVerifiesIdentity = rhs == SslMode::VerifyFull || rhs == SslMode::VerifyIdentity;
+    return lhsVerifiesIdentity && rhsVerifiesIdentity;
 }
 
 static NSWindow* sActiveConnectionDialog = nil;
@@ -229,6 +254,7 @@ static NSWindow* sActiveConnectionDialog = nil;
 
     // Set database type (disable changing it in edit mode)
     [self.typePopup selectItemAtIndex:static_cast<int>(info.type)];
+    [self typeChanged:self.typePopup];
     [self.typePopup setEnabled:NO];
 
     switch (info.type) {
@@ -295,7 +321,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     if (info.type != DatabaseType::SQLITE) {
         auto sslCfg = getSslConfig(info.type);
         for (int i = 0; i < sslCfg.count; i++) {
-            if (info.sslmode == sslCfg.values[i]) {
+            if (sslModesMatchForType(info.type, info.sslmode, sslCfg.values[i])) {
                 [self.sslModePopup selectItemAtIndex:i];
                 break;
             }
@@ -427,6 +453,12 @@ static NSWindow* sActiveConnectionDialog = nil;
     [cv addSubview:self.sslCACertPathLabel];
     self.sslCACertPathField = [self makeTextField:@"/path/to/ca-cert.pem"];
     [cv addSubview:self.sslCACertPathField];
+    self.sslCACertBrowseButton = [[NSButton alloc] init];
+    [self.sslCACertBrowseButton setTitle:@"Browse…"];
+    [self.sslCACertBrowseButton setBezelStyle:NSBezelStyleRounded];
+    [self.sslCACertBrowseButton setTarget:self];
+    [self.sslCACertBrowseButton setAction:@selector(sslCACertBrowseClicked:)];
+    [cv addSubview:self.sslCACertBrowseButton];
 
     // Auth
     self.authLabel = [self makeLabel:@"Auth"];
@@ -599,6 +631,7 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.databaseField.enabled = enabled;
     self.sslModePopup.enabled = enabled;
     self.sslCACertPathField.enabled = enabled;
+    self.sslCACertBrowseButton.enabled = enabled;
     self.authSegment.enabled = enabled;
     self.usernameField.enabled = enabled;
     self.passwordField.enabled = enabled;
@@ -615,17 +648,23 @@ static NSWindow* sActiveConnectionDialog = nil;
 
 - (void)hideAllOptionalFields {
     for (NSView* v in @[
-             self.sqlitePathLabel,    self.sqlitePathField,    self.browseButton,
-             self.hostLabel,          self.hostField,          self.portLabel,
-             self.portField,          self.databaseLabel,      self.databaseField,
-             self.sslModeLabel,       self.sslModePopup,       self.sslCACertPathLabel,
-             self.sslCACertPathField, self.authLabel,          self.authSegment,
-             self.usernameLabel,      self.usernameField,      self.passwordLabel,
-             self.passwordField,      self.showAllDbsCheckbox, self.sshSeparator,
-             self.sshEnabledCheckbox, self.sshHostLabel,       self.sshHostField,
-             self.sshPortLabel,       self.sshPortField,       self.sshUsernameLabel,
-             self.sshUsernameField,   self.sshAuthLabel,       self.sshAuthSegment,
-             self.sshPasswordLabel,   self.sshPasswordField,   self.sshKeyPathLabel,
+             self.sqlitePathLabel,    self.sqlitePathField,
+             self.browseButton,       self.hostLabel,
+             self.hostField,          self.portLabel,
+             self.portField,          self.databaseLabel,
+             self.databaseField,      self.sslModeLabel,
+             self.sslModePopup,       self.sslCACertPathLabel,
+             self.sslCACertPathField, self.sslCACertBrowseButton,
+             self.authLabel,          self.authSegment,
+             self.usernameLabel,      self.usernameField,
+             self.passwordLabel,      self.passwordField,
+             self.showAllDbsCheckbox, self.sshSeparator,
+             self.sshEnabledCheckbox, self.sshHostLabel,
+             self.sshHostField,       self.sshPortLabel,
+             self.sshPortField,       self.sshUsernameLabel,
+             self.sshUsernameField,   self.sshAuthLabel,
+             self.sshAuthSegment,     self.sshPasswordLabel,
+             self.sshPasswordField,   self.sshKeyPathLabel,
              self.sshKeyPathField,    self.sshKeyBrowseButton
          ]) {
         v.hidden = YES;
@@ -700,7 +739,8 @@ static NSWindow* sActiveConnectionDialog = nil;
         {
             auto cfg = getSslConfig(type);
             int sslIdx = (int)[self.sslModePopup indexOfSelectedItem];
-            if (sslIdx >= 0 && sslIdx < cfg.count && sslModeNeedsCACert(cfg.values[sslIdx])) {
+            if (sslIdx >= 0 && sslIdx < cfg.count &&
+                shouldShowCACertField(type, cfg.values[sslIdx])) {
                 h += kRowHeight + kRowSpacing; // CA cert path
             }
         }
@@ -835,16 +875,22 @@ static NSWindow* sActiveConnectionDialog = nil;
         {
             auto cfg = getSslConfig(type);
             int sslIdx = (int)[self.sslModePopup indexOfSelectedItem];
-            if (sslIdx >= 0 && sslIdx < cfg.count && sslModeNeedsCACert(cfg.values[sslIdx])) {
+            if (sslIdx >= 0 && sslIdx < cfg.count &&
+                shouldShowCACertField(type, cfg.values[sslIdx])) {
                 self.sslCACertPathLabel.stringValue =
                     (type == DatabaseType::ORACLE) ? @"Wallet" : @"CA Cert";
                 self.sslCACertPathField.placeholderString =
                     (type == DatabaseType::ORACLE) ? @"/path/to/wallet" : @"/path/to/ca-cert.pem";
                 self.sslCACertPathLabel.hidden = NO;
                 self.sslCACertPathField.hidden = NO;
+                self.sslCACertBrowseButton.hidden = NO;
                 y -= kRowHeight;
                 self.sslCACertPathLabel.frame = centeredLabelRect(kMargin, y, kLabelWidth);
-                self.sslCACertPathField.frame = NSMakeRect(kFieldX, y, kFieldWidth, kRowHeight);
+                CGFloat browseW = 80;
+                self.sslCACertPathField.frame =
+                    NSMakeRect(kFieldX, y, kFieldWidth - browseW - 8, kRowHeight);
+                self.sslCACertBrowseButton.frame =
+                    NSMakeRect(kFieldX + kFieldWidth - browseW, y, browseW, kRowHeight);
                 y -= kRowSpacing;
             }
         }
@@ -1063,6 +1109,36 @@ static NSWindow* sActiveConnectionDialog = nil;
         NSURL* url = panel.URL;
         if (url) {
             self.sshKeyPathField.stringValue = url.path;
+        }
+    }
+}
+
+- (void)sslCACertBrowseClicked:(id)sender {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    // Oracle wallets live in a directory containing cwallet.sso etc.;
+    // other backends take a single CA cert file.
+    BOOL isOracleWallet = ([self selectedDatabaseType] == DatabaseType::ORACLE);
+    panel.canChooseFiles = !isOracleWallet;
+    panel.canChooseDirectories = isOracleWallet;
+    panel.allowsMultipleSelection = NO;
+    panel.prompt = @"Select";
+
+    // Seed the picker with the current path's directory if set, else $HOME.
+    NSString* current = self.sslCACertPathField.stringValue;
+    if (current.length > 0) {
+        BOOL isDir = NO;
+        if ([[NSFileManager defaultManager] fileExistsAtPath:current isDirectory:&isDir]) {
+            panel.directoryURL = [NSURL
+                fileURLWithPath:(isDir ? current : [current stringByDeletingLastPathComponent])];
+        }
+    } else {
+        panel.directoryURL = [NSURL fileURLWithPath:NSHomeDirectory()];
+    }
+
+    if ([panel runModal] == NSModalResponseOK) {
+        NSURL* url = panel.URL;
+        if (url) {
+            self.sslCACertPathField.stringValue = url.path;
         }
     }
 }

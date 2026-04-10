@@ -12,6 +12,22 @@
 
 namespace {
 
+    bool shouldApplySslCA(const DatabaseConnectionInfo& info) {
+        if (info.sslCACertPath.empty()) {
+            return false;
+        }
+
+        switch (info.sslmode) {
+        case SslMode::Require:
+        case SslMode::VerifyCA:
+        case SslMode::VerifyFull:
+        case SslMode::VerifyIdentity:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     struct MysqlResDeleter {
         void operator()(MYSQL_RES* r) const {
             if (r)
@@ -31,6 +47,10 @@ namespace {
             constexpr unsigned int connectTimeoutSeconds = 5;
             mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
 
+            if (shouldApplySslCA(info)) {
+                mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
+            }
+
             // SSL mode (MariaDB Connector/C API)
             switch (info.sslmode) {
             case SslMode::Disable: {
@@ -46,17 +66,14 @@ namespace {
             case SslMode::VerifyCA: {
                 my_bool enforce = 1;
                 mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
-                if (!info.sslCACertPath.empty())
-                    mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
                 break;
             }
-            case SslMode::VerifyFull: {
+            case SslMode::VerifyFull:
+            case SslMode::VerifyIdentity: {
                 my_bool enforce = 1;
                 my_bool verify = 1;
                 mysql_options(conn, MYSQL_OPT_SSL_ENFORCE, &enforce);
                 mysql_options(conn, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
-                if (!info.sslCACertPath.empty())
-                    mysql_options(conn, MYSQL_OPT_SSL_CA, info.sslCACertPath.c_str());
                 break;
             }
             default:

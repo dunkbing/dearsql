@@ -18,9 +18,9 @@ inline constexpr SslMode kPgSslValues[] = {SslMode::Disable,  SslMode::Allow,
 
 // MySQL: no "allow" (maps to same as "prefer")
 inline constexpr const char* kMySqlSslLabels[] = {"disable", "prefer", "require", "verify-ca",
-                                                  "verify-full"};
+                                                  "verify-identity"};
 inline constexpr SslMode kMySqlSslValues[] = {SslMode::Disable, SslMode::Prefer, SslMode::Require,
-                                              SslMode::VerifyCA, SslMode::VerifyFull};
+                                              SslMode::VerifyCA, SslMode::VerifyIdentity};
 
 // MSSQL: Encrypt attribute modes
 inline constexpr const char* kMssqlSslLabels[] = {"Off", "Encrypt", "Encrypt + Verify", "Strict"};
@@ -55,5 +55,6 @@ inline SslModeConfig getSslConfig(DatabaseType type) {
 }
 
 inline bool sslModeNeedsCACert(SslMode mode) {
-    return mode == SslMode::VerifyCA || mode == SslMode::VerifyFull;
+    return mode == SslMode::VerifyCA || mode == SslMode::VerifyFull ||
+           mode == SslMode::VerifyIdentity;
 }

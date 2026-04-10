@@ -22,7 +22,7 @@ enum class DatabaseType {
 
 enum class SSHAuthMethod { Password, PrivateKey };
 
-enum class SslMode { Disable, Allow, Prefer, Require, VerifyCA, VerifyFull };
+enum class SslMode { Disable, Allow, Prefer, Require, VerifyCA, VerifyFull, VerifyIdentity };
 
 // Forward declarations (defined in db_factory.cpp)
 std::string sslModeToString(SslMode mode);

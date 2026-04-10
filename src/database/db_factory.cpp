@@ -68,6 +68,8 @@ std::string sslModeToString(const SslMode mode) {
         return "verify-ca";
     case SslMode::VerifyFull:
         return "verify-full";
+    case SslMode::VerifyIdentity:
+        return "verify-identity";
     }
     return "prefer";
 }
@@ -85,6 +87,8 @@ SslMode stringToSslMode(const std::string& str) {
         return SslMode::VerifyCA;
     if (str == "verify-full")
         return SslMode::VerifyFull;
+    if (str == "verify-identity")
+        return SslMode::VerifyIdentity;
     return SslMode::Prefer;
 }
 

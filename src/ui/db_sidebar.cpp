@@ -595,24 +595,22 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(badgeColor),
                                                 countStr.c_str());
 
-            // invisible button for hover/click
-            const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
-            const std::string btnId =
-                std::format("##filter_btn_{:p}", static_cast<const void*>(db.get()));
             const std::string popupId =
                 std::format("##filter_popup_{:p}", static_cast<const void*>(db.get()));
-            ImGui::SetCursorScreenPos(ImVec2(btnX, nodeMin.y));
-            if (ImGui::InvisibleButton(btnId.c_str(), ImVec2(btnW, rowH))) {
+            const ImVec2 badgeMin(btnX, nodeMin.y);
+            const ImVec2 badgeMax(btnX + btnW, nodeMax.y);
+            const bool badgeHovered = ImGui::IsMouseHoveringRect(badgeMin, badgeMax);
+
+            if (badgeHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 ImGui::OpenPopup(popupId.c_str());
             }
-            if (ImGui::IsItemHovered()) {
+
+            if (badgeHovered) {
                 ImGui::GetWindowDrawList()->AddRectFilled(
-                    ImVec2(btnX, nodeMin.y), ImVec2(btnX + btnW, nodeMax.y),
-                    ImGui::GetColorU32(colors.surface1), 3.0f);
+                    badgeMin, badgeMax, ImGui::GetColorU32(colors.surface1), 3.0f);
                 ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(badgeColor),
                                                     countStr.c_str());
             }
-            ImGui::SetCursorScreenPos(savedCursor);
 
             if (ImGui::BeginPopup(popupId.c_str())) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,

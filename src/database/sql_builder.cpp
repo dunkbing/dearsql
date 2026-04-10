@@ -116,9 +116,9 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
 
     std::string sql = std::format("CREATE TABLE {} (", qualifiedName);
 
-    // SQLite AUTOINCREMENT must be inline: INTEGER PRIMARY KEY AUTOINCREMENT
-    // so track which PK columns were emitted inline to exclude from trailing constraint
+    // SQLite AUTOINCREMENT must be inline and remain the only PRIMARY KEY clause
     std::vector<std::string> trailingPkColumns;
+    bool hasInlineSQLitePrimaryKey = false;
 
     for (size_t i = 0; i < table.columns.size(); ++i) {
         const auto& col = table.columns[i];
@@ -136,6 +136,8 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
         if (col.isPrimaryKey && col.isAutoIncrement && dbType == DatabaseType::SQLITE) {
             sql += " PRIMARY KEY AUTOINCREMENT";
             inlinePk = true;
+            hasInlineSQLitePrimaryKey = true;
+            trailingPkColumns.clear();
         }
 
         if (col.isNotNull && !col.isPrimaryKey)
@@ -148,7 +150,8 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
         if (isMySQL && !col.comment.empty())
             sql += std::format(" COMMENT '{}'", ddl_utils::escapeSingleQuotes(col.comment));
 
-        if (col.isPrimaryKey && !inlinePk)
+        if (col.isPrimaryKey && !inlinePk &&
+            !(dbType == DatabaseType::SQLITE && hasInlineSQLitePrimaryKey))
             trailingPkColumns.push_back(col.name);
     }
 

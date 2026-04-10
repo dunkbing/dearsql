@@ -210,6 +210,37 @@ TEST_F(SQLBuilderTest, SQLiteCreateTableAutoIncrement) {
     EXPECT_EQ(secondPk, std::string::npos);
 }
 
+TEST_F(SQLBuilderTest, SQLiteCreateTableAutoIncrementIgnoresTrailingPrimaryKeyColumns) {
+    Table table;
+    table.name = "orders";
+
+    Column codeCol;
+    codeCol.name = "code";
+    codeCol.type = "TEXT";
+    codeCol.isPrimaryKey = true;
+    table.columns.push_back(codeCol);
+
+    Column idCol;
+    idCol.name = "id";
+    idCol.type = "INTEGER";
+    idCol.isPrimaryKey = true;
+    idCol.isAutoIncrement = true;
+    table.columns.push_back(idCol);
+
+    Column nameCol;
+    nameCol.name = "name";
+    nameCol.type = "TEXT";
+    nameCol.isPrimaryKey = true;
+    table.columns.push_back(nameCol);
+
+    std::string sql = sqliteBuilder->createTable(table);
+    EXPECT_NE(sql.find("\"id\" INTEGER PRIMARY KEY AUTOINCREMENT"), std::string::npos);
+
+    auto firstPk = sql.find("PRIMARY KEY");
+    auto secondPk = sql.find("PRIMARY KEY", firstPk + 1);
+    EXPECT_EQ(secondPk, std::string::npos);
+}
+
 TEST_F(SQLBuilderTest, PostgreSQLCreateTableSerial) {
     Table table;
     table.name = "orders";

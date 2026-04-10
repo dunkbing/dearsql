@@ -1106,84 +1106,17 @@ std::string TableEditorTab::generateCreateTableSQL() const {
         return "";
     }
 
-    std::string qualifiedTableName = std::string(tableNameBuffer);
+    auto builder = createSQLBuilder(databaseType);
+    Table table = editingTable;
+    table.name = std::string(tableNameBuffer);
+    table.comment = std::string(tableCommentBuffer);
+
+    std::string schema;
     if (databaseType == DatabaseType::POSTGRESQL) {
-        if (qualifiedTableName.find('.') == std::string::npos) {
-            const std::string schema = schemaName.empty() ? "public" : schemaName;
-            qualifiedTableName = schema + "." + qualifiedTableName;
-        }
+        schema = schemaName.empty() ? "public" : schemaName;
     }
 
-    std::string sql = "CREATE TABLE " + qualifiedTableName + " (\n";
-
-    for (size_t i = 0; i < editingTable.columns.size(); ++i) {
-        const auto& column = editingTable.columns[i];
-        std::string colType = column.type;
-        if (column.isAutoIncrement && databaseType == DatabaseType::POSTGRESQL) {
-            // use SERIAL type family for PostgreSQL
-            std::string lower = colType;
-            std::ranges::transform(lower, lower.begin(), ::tolower);
-            if (lower == "bigint")
-                colType = "BIGSERIAL";
-            else if (lower == "smallint")
-                colType = "SMALLSERIAL";
-            else
-                colType = "SERIAL";
-        }
-        sql += "    " + column.name + " " + colType;
-
-        // SQLite: emit PRIMARY KEY inline when AUTOINCREMENT is needed
-        bool inlinePk = false;
-        if (column.isPrimaryKey && column.isAutoIncrement && databaseType == DatabaseType::SQLITE) {
-            sql += " PRIMARY KEY AUTOINCREMENT";
-            inlinePk = true;
-        }
-
-        if (column.isNotNull && !inlinePk) {
-            sql += " NOT NULL";
-        }
-        if (column.isAutoIncrement && databaseType != DatabaseType::SQLITE &&
-            databaseType != DatabaseType::POSTGRESQL) {
-            sql += autoIncrementClause(databaseType);
-        }
-        if (!column.comment.empty() &&
-            (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB)) {
-            sql += " COMMENT '" + column.comment + "'";
-        }
-        if (i < editingTable.columns.size() - 1) {
-            sql += ",";
-        }
-        sql += "\n";
-    }
-
-    std::vector<std::string> primaryKeyColumns;
-    for (const auto& column : editingTable.columns) {
-        // exclude columns already emitted as inline PRIMARY KEY (SQLite AUTOINCREMENT)
-        if (column.isPrimaryKey &&
-            !(column.isAutoIncrement && databaseType == DatabaseType::SQLITE)) {
-            primaryKeyColumns.push_back(column.name);
-        }
-    }
-
-    if (!primaryKeyColumns.empty()) {
-        sql += ",\n    PRIMARY KEY (";
-        for (size_t i = 0; i < primaryKeyColumns.size(); ++i) {
-            sql += primaryKeyColumns[i];
-            if (i < primaryKeyColumns.size() - 1) {
-                sql += ", ";
-            }
-        }
-        sql += ")\n";
-    }
-
-    sql += ")";
-
-    if ((databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB) &&
-        std::strlen(tableCommentBuffer) > 0) {
-        sql += " COMMENT = '" + std::string(tableCommentBuffer) + "'";
-    }
-
-    return sql;
+    return builder->createTable(table, schema);
 }
 
 std::vector<std::string> TableEditorTab::generateAlterTableStatements() const {

@@ -164,8 +164,22 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
 
     sql += ")";
 
-    if (isMySQL)
+    if (isMySQL) {
         sql += " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        if (!table.comment.empty())
+            sql += std::format(" COMMENT='{}'", ddl_utils::escapeSingleQuotes(table.comment));
+    }
+
+    // PostgreSQL column comments as separate statements
+    if (dbType == DatabaseType::POSTGRESQL) {
+        for (const auto& col : table.columns) {
+            if (!col.comment.empty()) {
+                sql += std::format(";\nCOMMENT ON COLUMN {}.{} IS '{}'", qualifiedName,
+                                   quoteIdentifier(col.name),
+                                   ddl_utils::escapeSingleQuotes(col.comment));
+            }
+        }
+    }
 
     return sql;
 }

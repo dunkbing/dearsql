@@ -53,7 +53,8 @@ struct ForeignKey {
 };
 
 struct Table {
-    std::string name;     // Simple table/view name (e.g., "users")
+    std::string name; // Simple table/view name (e.g., "users")
+    std::string comment;
     std::string fullName; // Fully qualified name for unique identification:
                           // SQLite: "connection.table"
                           // PostgreSQL: "connection.database.schema.table"

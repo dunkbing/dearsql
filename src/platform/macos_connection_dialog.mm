@@ -143,6 +143,35 @@ static bool sslModesMatchForType(DatabaseType type, SslMode lhs, SslMode rhs) {
     return lhsVerifiesIdentity && rhsVerifiesIdentity;
 }
 
+static NSWindow* getMainAppWindow(Application* app) {
+    if (!app) {
+        return nil;
+    }
+
+    GLFWwindow* glfwWindow = app->getWindow();
+    return glfwWindow ? glfwGetCocoaWindow(glfwWindow) : nil;
+}
+
+static void attachDialogToMainWindow(NSWindow* dialogWindow, NSWindow* mainWindow) {
+    if (!dialogWindow || !mainWindow) {
+        return;
+    }
+
+    [dialogWindow setLevel:NSNormalWindowLevel];
+    [dialogWindow setHidesOnDeactivate:YES];
+
+    NSRect mainFrame = mainWindow.frame;
+    NSRect dialogFrame = dialogWindow.frame;
+    CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
+    CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
+    [dialogWindow setFrameOrigin:NSMakePoint(x, y)];
+
+    if (dialogWindow.parentWindow != mainWindow) {
+        [dialogWindow.parentWindow removeChildWindow:dialogWindow];
+        [mainWindow addChildWindow:dialogWindow ordered:NSWindowAbove];
+    }
+}
+
 static NSWindow* sActiveConnectionDialog = nil;
 
 // SslModeConfig, getSslConfig(), sslModeNeedsCACert() from ssl_config.hpp
@@ -210,23 +239,8 @@ static NSWindow* sActiveConnectionDialog = nil;
     [self buildControls];
     [self layoutFields];
 
-    // Center on main window
-    NSWindow* mainWindow = nil;
-    if (self.app) {
-        GLFWwindow* glfwWindow = self.app->getWindow();
-        if (glfwWindow) {
-            mainWindow = glfwGetCocoaWindow(glfwWindow);
-        }
-    }
-
-    if (mainWindow) {
-        [self.dialogWindow setLevel:NSModalPanelWindowLevel];
-        NSRect mainFrame = mainWindow.frame;
-        NSRect dialogFrame = self.dialogWindow.frame;
-        CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
-        CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
-        [self.dialogWindow setFrameOrigin:NSMakePoint(x, y)];
-    }
+    NSWindow* mainWindow = getMainAppWindow(self.app);
+    attachDialogToMainWindow(self.dialogWindow, mainWindow);
 
     // Match app theme
     if (self.app) {
@@ -1518,13 +1532,13 @@ static NSWindow* sActiveConnectionDialog = nil;
     self.oraclePollingTimer = nil;
     _oracleInstaller.cancel();
 
+    if (self.dialogWindow.parentWindow) {
+        [self.dialogWindow.parentWindow removeChildWindow:self.dialogWindow];
+    }
+
     // Refocus main app window
-    if (self.app) {
-        GLFWwindow* glfwWindow = self.app->getWindow();
-        if (glfwWindow) {
-            NSWindow* mainWindow = glfwGetCocoaWindow(glfwWindow);
-            [mainWindow makeKeyAndOrderFront:nil];
-        }
+    if (NSWindow* mainWindow = getMainAppWindow(self.app)) {
+        [mainWindow makeKeyAndOrderFront:nil];
     }
 
     _editingDb.reset();
@@ -1666,23 +1680,8 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
     [self buildControls];
     [self layoutFields];
 
-    // Center on main window
-    NSWindow* mainWindow = nil;
-    if (self.app) {
-        GLFWwindow* glfwWindow = self.app->getWindow();
-        if (glfwWindow) {
-            mainWindow = glfwGetCocoaWindow(glfwWindow);
-        }
-    }
-
-    if (mainWindow) {
-        [self.dialogWindow setLevel:NSModalPanelWindowLevel];
-        NSRect mainFrame = mainWindow.frame;
-        NSRect dialogFrame = self.dialogWindow.frame;
-        CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
-        CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
-        [self.dialogWindow setFrameOrigin:NSMakePoint(x, y)];
-    }
+    NSWindow* mainWindow = getMainAppWindow(self.app);
+    attachDialogToMainWindow(self.dialogWindow, mainWindow);
 
     // Match app theme
     if (self.app) {
@@ -2107,12 +2106,12 @@ static NSWindow* sActiveCreateDatabaseDialog = nil;
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
-    if (self.app) {
-        GLFWwindow* glfwWindow = self.app->getWindow();
-        if (glfwWindow) {
-            NSWindow* mainWindow = glfwGetCocoaWindow(glfwWindow);
-            [mainWindow makeKeyAndOrderFront:nil];
-        }
+    if (self.dialogWindow.parentWindow) {
+        [self.dialogWindow.parentWindow removeChildWindow:self.dialogWindow];
+    }
+
+    if (NSWindow* mainWindow = getMainAppWindow(self.app)) {
+        [mainWindow makeKeyAndOrderFront:nil];
     }
 
     _db.reset();

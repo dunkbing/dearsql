@@ -14,6 +14,26 @@
 #import <GLFW/glfw3.h>
 #import <GLFW/glfw3native.h>
 
+static void attachDialogToMainWindow(NSWindow* dialog, NSWindow* mainWindow) {
+    if (!dialog || !mainWindow) {
+        return;
+    }
+
+    [dialog setLevel:NSNormalWindowLevel];
+    [dialog setHidesOnDeactivate:YES];
+
+    NSRect mainFrame = mainWindow.frame;
+    NSRect dialogFrame = dialog.frame;
+    CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
+    CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
+    [dialog setFrameOrigin:NSMakePoint(x, y)];
+
+    if (dialog.parentWindow != mainWindow) {
+        [dialog.parentWindow removeChildWindow:dialog];
+        [mainWindow addChildWindow:dialog ordered:NSWindowAbove];
+    }
+}
+
 // Workspace row view — shows edit/delete buttons and a hover background
 @interface WorkspaceRowView : NSView
 @property(nonatomic, strong) NSButton* editButton;
@@ -971,14 +991,7 @@
         dialog.initialFirstResponder = keyFieldToFocus;
     }
 
-    if (mainWindow) {
-        [dialog setLevel:NSModalPanelWindowLevel];
-        NSRect mainFrame = mainWindow.frame;
-        NSRect dialogFrame = dialog.frame;
-        CGFloat x = NSMidX(mainFrame) - dialogFrame.size.width / 2;
-        CGFloat y = NSMidY(mainFrame) - dialogFrame.size.height / 2;
-        [dialog setFrameOrigin:NSMakePoint(x, y)];
-    }
+    attachDialogToMainWindow(dialog, mainWindow);
 
     [dialog makeKeyAndOrderFront:nil];
     if (keyFieldToFocus) {

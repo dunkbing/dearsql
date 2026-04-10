@@ -112,6 +112,8 @@ TableEditorTab::TableEditorTab(IDatabaseNode* node, const std::string& schema)
     }
     schemaName = schema;
     editingTable = Table{};
+    editingTable.name = "New Table";
+    std::strncpy(tableNameBuffer, "New Table", sizeof(tableNameBuffer) - 1);
     editingTable.columns.clear();
     rightPanelMode = RightPanelMode::TableProperties;
     initializeColumnTypeAutoComplete();
@@ -144,26 +146,24 @@ void TableEditorTab::render() {
 void TableEditorTab::renderContent(bool& closeRequested) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
-    ImGui::TextUnformatted(editorMode == TableEditorMode::Edit ? "Table Editor" : "Create Table");
-    ImGui::PopStyleColor();
-    if (!schemaName.empty()) {
-        ImGui::SameLine(0.0f, Theme::Spacing::M);
-        renderStateChip(colors, std::format("Schema: {}", schemaName).c_str(), colors.teal);
-    }
-    ImGui::SameLine(0.0f, Theme::Spacing::S);
-    renderStateChip(colors, dirty ? "Unsaved Changes" : "Ready",
-                    dirty ? colors.yellow : colors.subtext0);
-
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.surface1, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay0, 0.5f));
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
-    if (editorMode == TableEditorMode::Edit) {
-        ImGui::Text("Table: %s", originalTable.name.c_str());
-    } else {
-        ImGui::Text("Table: %s", std::strlen(tableNameBuffer) > 0 ? tableNameBuffer : "New Table");
-    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Table: ");
     ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Spacing();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::InputText("##table_name_header", tableNameBuffer, sizeof(tableNameBuffer))) {
+        editingTable.name = tableNameBuffer;
+        markDirty();
+    }
+    ImGui::PopStyleColor(4);
+    ImGui::PopStyleVar();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
 
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
@@ -690,13 +690,17 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 void TableEditorTab::renderButtons(bool& closeRequested) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.blue, 0.55f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
+    ImGui::PushStyleColor(
+        ImGuiCol_ButtonActive,
+        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
-    if (ImGui::Button("Save", ImVec2(120, 0))) {
+    if (ImGui::Button(ICON_FA_FLOPPY_DISK " Save", ImVec2(120, 0))) {
         if (validateTableInput()) {
             errorMessage.clear();
             std::string sql;
@@ -1008,16 +1012,6 @@ void TableEditorTab::renderTableProperties() {
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
-    ImGui::Text("Table Name:");
-    ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-Theme::Spacing::M);
-    if (ImGui::InputText("##table_name", tableNameBuffer, sizeof(tableNameBuffer))) {
-        editingTable.name = tableNameBuffer;
-        markDirty();
-    }
-    ImGui::Spacing();
-
     if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB ||
         databaseType == DatabaseType::POSTGRESQL) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
@@ -1038,11 +1032,6 @@ void TableEditorTab::renderTableProperties() {
     ImGui::Spacing();
 
     if (editorMode == TableEditorMode::Create) {
-        renderNoticeBox(colors, "create_table_note", ICON_FA_CIRCLE_INFO,
-                        "Add columns from the tree on the left using the + control or the context "
-                        "menu on the Columns node.",
-                        colors.teal);
-
         if (editingTable.columns.empty()) {
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),

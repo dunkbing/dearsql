@@ -643,6 +643,50 @@ void TableRenderer::scrollToCell(int row, int col) {
     scrollTargetCol = col;
 }
 
+// render a button with an optional keyboard shortcut badge
+static bool buttonWithBadge(const char* label, const char* badge, const Theme::Colors& colors) {
+    auto& style = ImGui::GetStyle();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    float labelW = ImGui::CalcTextSize(label).x;
+    float h = ImGui::GetFrameHeight();
+    float badgeTextW = badge ? ImGui::CalcTextSize(badge).x : 0;
+    float badgePadX = Theme::Spacing::S;
+    float badgeFullW = badge ? badgeTextW + badgePadX * 2 : 0;
+    float gap = badge ? Theme::Spacing::S : 0;
+    float totalW = style.FramePadding.x + labelW + gap + badgeFullW + style.FramePadding.x;
+
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::PushID(label);
+    bool pressed = ImGui::InvisibleButton("##btn", ImVec2(totalW, h));
+    ImGui::PopID();
+    bool hovered = ImGui::IsItemHovered();
+
+    ImU32 bgCol = hovered ? ImGui::GetColorU32(colors.surface1) : IM_COL32(0, 0, 0, 0);
+    ImVec2 max = ImVec2(pos.x + totalW, pos.y + h);
+    dl->AddRectFilled(pos, max, bgCol, style.FrameRounding);
+    dl->AddRect(pos, max, ImGui::GetColorU32(colors.overlay0), style.FrameRounding);
+
+    float textY = pos.y + (h - ImGui::GetTextLineHeight()) * 0.5f;
+    dl->AddText(ImVec2(pos.x + style.FramePadding.x, textY), ImGui::GetColorU32(ImGuiCol_Text),
+                label);
+
+    if (badge) {
+        float badgeH = h - Theme::Spacing::S;
+        float badgeX = pos.x + style.FramePadding.x + labelW + gap;
+        float badgeY = pos.y + (h - badgeH) * 0.5f;
+        ImVec2 bMin(badgeX, badgeY);
+        ImVec2 bMax(badgeX + badgeFullW, badgeY + badgeH);
+        dl->AddRectFilled(bMin, bMax, ImGui::GetColorU32(colors.surface1), 3.0f);
+        dl->AddRect(bMin, bMax, ImGui::GetColorU32(colors.overlay0), 3.0f);
+        dl->AddText(
+            ImVec2(badgeX + badgePadX, badgeY + (badgeH - ImGui::GetTextLineHeight()) * 0.5f),
+            ImGui::GetColorU32(colors.overlay1), badge);
+    }
+
+    return pressed;
+}
+
 void TableRenderer::renderEditOverlay() {
     if (editingRow < 0 || editingCol < 0)
         return;
@@ -657,7 +701,8 @@ void TableRenderer::renderEditOverlay() {
     }
     float lineHeight = ImGui::GetTextLineHeightWithSpacing();
     float lines = std::min(std::max(static_cast<float>(lineCount + 1), 3.0f), 15.0f);
-    float height = lineHeight * lines + 12.0f;
+    float buttonBarH = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::XS;
+    float height = lineHeight * lines + 12.0f + buttonBarH;
 
     ImGui::SetNextWindowPos(ImVec2(editOverlayPosX, editOverlayPosY));
     ImGui::SetNextWindowSize(ImVec2(width, height));
@@ -671,6 +716,10 @@ void TableRenderer::renderEditOverlay() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.surface0);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.blue);
 
+    bool wantSave = false;
+    bool wantCancel = false;
+    bool wantSetNull = false;
+
     if (ImGui::Begin("##edit_overlay", nullptr, flags)) {
         if (editOverlayFrames < 3) {
             ImGui::SetKeyboardFocusHere();
@@ -683,9 +732,11 @@ void TableRenderer::renderEditOverlay() {
             extraFlags = it->second;
         }
 
+        float inputH = ImGui::GetContentRegionAvail().y - buttonBarH;
+
         if (justEnteredEditWithChar) {
             ImGui::InputTextMultiline(
-                "##edit_overlay_input", editBuffer, sizeof(editBuffer), ImVec2(-FLT_MIN, -FLT_MIN),
+                "##edit_overlay_input", editBuffer, sizeof(editBuffer), ImVec2(-FLT_MIN, inputH),
                 ImGuiInputTextFlags_CallbackAlways | extraFlags,
                 [](ImGuiInputTextCallbackData* cbData) {
                     auto* renderer = static_cast<TableRenderer*>(cbData->UserData);
@@ -700,21 +751,68 @@ void TableRenderer::renderEditOverlay() {
                 this);
         } else {
             ImGui::InputTextMultiline("##edit_overlay_input", editBuffer, sizeof(editBuffer),
-                                      ImVec2(-FLT_MIN, -FLT_MIN), extraFlags);
+                                      ImVec2(-FLT_MIN, inputH), extraFlags);
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            exitEditMode(false);
+        // button bar
+        ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+
+        bool showSetNull = columnNullableCb && columnNullableCb(editingCol);
+        if (showSetNull) {
+            if (buttonWithBadge("Set NULL", nullptr, colors))
+                wantSetNull = true;
+            ImGui::SameLine();
+        }
+
+#ifdef __APPLE__
+        const char* saveShortcut = "Cmd+Enter";
+#else
+        const char* saveShortcut = "Ctrl+Enter";
+#endif
+
+        // right-align Cancel and Save
+        auto& style = ImGui::GetStyle();
+        float cancelW = style.FramePadding.x + ImGui::CalcTextSize("Cancel").x + Theme::Spacing::S +
+                        ImGui::CalcTextSize("Esc").x + Theme::Spacing::S * 2 + style.FramePadding.x;
+        float saveW = style.FramePadding.x + ImGui::CalcTextSize("Save").x + Theme::Spacing::S +
+                      ImGui::CalcTextSize(saveShortcut).x + Theme::Spacing::S * 2 +
+                      style.FramePadding.x;
+        float rightW = cancelW + style.ItemSpacing.x + saveW;
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > rightW)
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - rightW);
+
+        if (buttonWithBadge("Cancel", "Esc", colors))
+            wantCancel = true;
+        ImGui::SameLine();
+        if (buttonWithBadge("Save", saveShortcut, colors))
+            wantSave = true;
+
+        // Ctrl/Cmd+Enter saves
+        if ((ImGui::GetIO().KeyMods & ImGuiMod_Shortcut) &&
+            (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))) {
+            wantSave = true;
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            wantCancel = true;
         } else if (editOverlayFrames >= 3 &&
                    !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
-            // commit when clicking outside the overlay
-            exitEditMode(true);
+            wantSave = true;
         }
     }
     ImGui::End();
 
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(2);
+
+    if (wantSetNull) {
+        if (onSetNull)
+            onSetNull(editingRow, editingCol);
+        exitEditMode(false);
+    } else if (wantCancel) {
+        exitEditMode(false);
+    } else if (wantSave) {
+        exitEditMode(true);
+    }
 }
 
 void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {

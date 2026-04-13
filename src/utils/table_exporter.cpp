@@ -1,6 +1,7 @@
 #include "utils/table_exporter.hpp"
 #include "database/db.hpp"
 #include "database/ddl_utils.hpp"
+#include "database/sql_builder.hpp"
 #include <filesystem>
 #include <fstream>
 #include <nfd.h>
@@ -124,74 +125,32 @@ namespace {
         return "'" + ddl_utils::escapeSingleQuotes(value) + "'";
     }
 
-    void writeCreateTable(std::ofstream& file, const Table& table) {
-        file << "CREATE TABLE " << table.name << " (\n";
-
-        std::vector<std::string> pkColumns;
-        for (const auto& col : table.columns) {
-            if (col.isPrimaryKey)
-                pkColumns.push_back(col.name);
-        }
-
-        for (size_t i = 0; i < table.columns.size(); ++i) {
-            const auto& col = table.columns[i];
-            file << "    " << col.name << " " << col.type;
-            if (col.isNotNull)
-                file << " NOT NULL";
-            if (col.isUnique && !col.isPrimaryKey)
-                file << " UNIQUE";
-            if (!col.defaultValue.empty())
-                file << " DEFAULT " << col.defaultValue;
-            // inline PRIMARY KEY only for single-column PKs
-            if (col.isPrimaryKey && pkColumns.size() == 1)
-                file << " PRIMARY KEY";
-            if (i + 1 < table.columns.size() || pkColumns.size() > 1)
-                file << ',';
-            file << '\n';
-        }
-
-        if (pkColumns.size() > 1) {
-            file << "    PRIMARY KEY (";
-            for (size_t i = 0; i < pkColumns.size(); ++i) {
-                if (i > 0)
-                    file << ", ";
-                file << pkColumns[i];
-            }
-            file << ")\n";
-        }
-
-        file << ");\n\n";
-    }
-
-    bool exportSql(ITableDataProvider* provider, const Table& table, const std::string& path) {
-        std::ofstream file(path);
-        if (!file.is_open()) {
-            spdlog::error("Failed to open file for writing: {}", path);
-            return false;
-        }
-
+    void writeSqlTable(std::ofstream& file, ITableDataProvider* provider, const Table& table,
+                       const ISQLBuilder& builder) {
         auto columns = provider->getColumnNames(table.name);
         if (columns.empty()) {
-            spdlog::error("Cannot export: table has no columns");
-            return false;
+            spdlog::error("Cannot export: table '{}' has no columns", table.name);
+            return;
         }
 
         if (!table.columns.empty())
-            writeCreateTable(file, table);
+            file << builder.createTable(table) << ";\n\n";
+
+        auto quotedName = builder.quoteIdentifier(table.name);
 
         // build column list for INSERTs
         std::string columnList;
         for (size_t i = 0; i < columns.size(); ++i) {
             if (i > 0)
                 columnList += ", ";
-            columnList += columns[i];
+            columnList += builder.quoteIdentifier(columns[i]);
         }
 
         int totalRows = provider->getRowCount(table.name);
         for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
             auto rows = provider->getTableData(table.name, BATCH_SIZE, offset);
             for (const auto& row : rows) {
-                file << "INSERT INTO " << table.name << " (" << columnList << ") VALUES (";
+                file << "INSERT INTO " << quotedName << " (" << columnList << ") VALUES (";
                 for (size_t i = 0; i < columns.size() && i < row.size(); ++i) {
                     if (i > 0)
                         file << ", ";
@@ -201,7 +160,38 @@ namespace {
             }
         }
 
-        spdlog::info("Exported {} rows to SQL: {}", totalRows, path);
+        spdlog::info("Exported {} rows for table '{}'", totalRows, table.name);
+    }
+
+    bool exportSql(ITableDataProvider* provider, const Table& table, const std::string& path,
+                   DatabaseType dbType) {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            spdlog::error("Failed to open file for writing: {}", path);
+            return false;
+        }
+
+        auto builder = createSQLBuilder(dbType);
+        writeSqlTable(file, provider, table, *builder);
+        return true;
+    }
+
+    bool exportSqlMulti(ITableDataProvider* provider, const std::vector<const Table*>& tables,
+                        const std::string& path, DatabaseType dbType) {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            spdlog::error("Failed to open file for writing: {}", path);
+            return false;
+        }
+
+        auto builder = createSQLBuilder(dbType);
+        for (size_t i = 0; i < tables.size(); ++i) {
+            if (i > 0)
+                file << "\n";
+            writeSqlTable(file, provider, *tables[i], *builder);
+        }
+
+        spdlog::info("Exported {} tables to SQL: {}", tables.size(), path);
         return true;
     }
 
@@ -266,7 +256,7 @@ namespace {
 namespace TableExporter {
 
     bool exportTables(ITableDataProvider* provider, const std::vector<const Table*>& tables,
-                      ExportFormat format) {
+                      ExportFormat format, DatabaseType dbType) {
         if (!provider || tables.empty()) {
             return false;
         }
@@ -284,6 +274,14 @@ namespace TableExporter {
             break;
         }
 
+        // SQL multi-table: single file
+        if (format == ExportFormat::SQL && tables.size() > 1) {
+            const std::string path = showSaveDialog(format, "export");
+            if (path.empty())
+                return false;
+            return exportSqlMulti(provider, tables, path, dbType);
+        }
+
         if (tables.size() == 1) {
             const std::string path = showSaveDialog(format, tables[0]->name);
             if (path.empty()) {
@@ -295,7 +293,7 @@ namespace TableExporter {
             case ExportFormat::JSON:
                 return exportJson(provider, tables[0]->name, path);
             case ExportFormat::SQL:
-                return exportSql(provider, *tables[0], path);
+                return exportSql(provider, *tables[0], path, dbType);
             }
             return false;
         }
@@ -323,9 +321,6 @@ namespace TableExporter {
                 break;
             case ExportFormat::JSON:
                 ok = exportJson(provider, table->name, path);
-                break;
-            case ExportFormat::SQL:
-                ok = exportSql(provider, *table, path);
                 break;
             }
             if (!ok) {

@@ -109,7 +109,7 @@ void DatabaseHierarchy::handleTableClick(const Table* table) {
 
 void DatabaseHierarchy::renderMultiSelectMenuContent(
     ITableDataProvider* provider, const std::vector<Table>& nodeTables,
-    std::function<void(const std::string&)> dropOne) {
+    std::function<void(const std::string&)> dropOne, DatabaseType dbType) {
     std::vector<const Table*> selectedNodeTables;
     std::vector<std::string> selectedNames;
     for (const auto& t : nodeTables) {
@@ -121,13 +121,13 @@ void DatabaseHierarchy::renderMultiSelectMenuContent(
 
     if (ImGui::BeginMenu("Export")) {
         if (ImGui::MenuItem("CSV")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::CSV);
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::CSV, dbType);
         }
         if (ImGui::MenuItem("JSON")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::JSON);
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::JSON, dbType);
         }
         if (ImGui::MenuItem("SQL")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::SQL);
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::SQL, dbType);
         }
         ImGui::EndMenu();
     }
@@ -1303,7 +1303,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 schemaNode, schemaNode->getTables(),
-                [schemaNode](const std::string& n) { schemaNode->dropTable(n); });
+                [schemaNode](const std::string& n) { schemaNode->dropTable(n); },
+                schemaNode->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(schemaNode, table);
@@ -1314,7 +1315,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 schemaNode->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(schemaNode, table);
+            TableExporter::renderExportMenu(schemaNode, table, schemaNode->getDatabaseType());
             TableImporter::renderImportMenu(schemaNode, table.name);
             ImGui::Separator();
             if (ImGui::MenuItem(RENAME_LABEL)) {
@@ -1639,8 +1640,10 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
         if (isMultiSelect) {
-            renderMultiSelectMenuContent(dbData, dbData->getTables(),
-                                         [dbData](const std::string& n) { dbData->dropTable(n); });
+            renderMultiSelectMenuContent(
+                dbData, dbData->getTables(),
+                [dbData](const std::string& n) { dbData->dropTable(n); },
+                dbData->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, table);
@@ -1651,7 +1654,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 dbData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(dbData, table);
+            TableExporter::renderExportMenu(dbData, table, dbData->getDatabaseType());
             TableImporter::renderImportMenu(dbData, table.name);
             ImGui::Separator();
             if (ImGui::MenuItem(RENAME_LABEL)) {
@@ -2202,7 +2205,8 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 schemaData, schemaData->getTables(),
-                [schemaData](const std::string& n) { schemaData->dropTable(n); });
+                [schemaData](const std::string& n) { schemaData->dropTable(n); },
+                schemaData->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(schemaData, table);
@@ -2213,7 +2217,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 schemaData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(schemaData, table);
+            TableExporter::renderExportMenu(schemaData, table, schemaData->getDatabaseType());
             TableImporter::renderImportMenu(schemaData, table.name);
             ImGui::Separator();
             if (ImGui::MenuItem(RENAME_LABEL)) {
@@ -2680,8 +2684,10 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
         if (isMultiSelect) {
-            renderMultiSelectMenuContent(dbData, dbData->getTables(),
-                                         [dbData](const std::string& n) { dbData->dropTable(n); });
+            renderMultiSelectMenuContent(
+                dbData, dbData->getTables(),
+                [dbData](const std::string& n) { dbData->dropTable(n); },
+                dbData->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, table);
@@ -2692,7 +2698,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 dbData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(dbData, table);
+            TableExporter::renderExportMenu(dbData, table, dbData->getDatabaseType());
             TableImporter::renderImportMenu(dbData, table.name);
             ImGui::Separator();
             if (ImGui::MenuItem(RENAME_LABEL)) {
@@ -3075,7 +3081,8 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 dbData, dbData->getTables(),
-                [dbData](const std::string& n) { dbData->dropCollection(n); });
+                [dbData](const std::string& n) { dbData->dropCollection(n); },
+                dbData->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, collection);

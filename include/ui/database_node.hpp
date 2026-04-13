@@ -71,7 +71,8 @@ private:
     void handleTableClick(const Table* table);
     void renderMultiSelectMenuContent(ITableDataProvider* provider,
                                       const std::vector<Table>& nodeTables,
-                                      std::function<void(const std::string&)> dropOne);
+                                      std::function<void(const std::string&)> dropOne,
+                                      DatabaseType dbType = DatabaseType::SQLITE);
 
     // Database-specific renderers
     void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);

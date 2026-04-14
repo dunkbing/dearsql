@@ -308,10 +308,13 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             return result;
         }
 
-        // Get view names using the connection pool
+        // Get view names + definitions using the connection pool
         std::vector<std::string> viewNames;
-        const std::string viewNamesQuery = std::format(
-            "SELECT viewname FROM pg_views WHERE schemaname = '{}' ORDER BY viewname", name);
+        std::unordered_map<std::string, std::string> viewDefinitions;
+        const std::string viewNamesQuery =
+            std::format("SELECT viewname, definition FROM pg_views WHERE schemaname = '{}' "
+                        "ORDER BY viewname",
+                        name);
 
         {
             auto session = parentDbNode->getSession();
@@ -323,7 +326,9 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
                     if (!viewsLoader.isRunning()) {
                         return result;
                     }
-                    viewNames.emplace_back(PQgetvalue(res.get(), i, 0));
+                    std::string viewName = PQgetvalue(res.get(), i, 0);
+                    viewDefinitions[viewName] = PQgetvalue(res.get(), i, 1);
+                    viewNames.push_back(std::move(viewName));
                 }
             }
         }
@@ -390,6 +395,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
             view.schema = name;
             view.fullName = parentDbNode->name + "." + name + "." + viewName;
             view.columns = std::move(viewColumns[viewName]);
+            view.definition = std::move(viewDefinitions[viewName]);
 
             result.push_back(view);
             spdlog::debug("Loaded view: {} with {} columns", viewName, view.columns.size());
@@ -452,9 +458,11 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
         }
 
         std::vector<std::string> matviewNames;
-        const std::string matviewNamesQuery = std::format(
-            "SELECT matviewname FROM pg_matviews WHERE schemaname = '{}' ORDER BY matviewname",
-            name);
+        std::unordered_map<std::string, std::string> matviewDefinitions;
+        const std::string matviewNamesQuery =
+            std::format("SELECT matviewname, definition FROM pg_matviews WHERE schemaname = '{}' "
+                        "ORDER BY matviewname",
+                        name);
 
         {
             auto session = parentDbNode->getSession();
@@ -466,7 +474,9 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
                     if (!materializedViewsLoader.isRunning()) {
                         return result;
                     }
-                    matviewNames.emplace_back(PQgetvalue(res.get(), i, 0));
+                    std::string mvName = PQgetvalue(res.get(), i, 0);
+                    matviewDefinitions[mvName] = PQgetvalue(res.get(), i, 1);
+                    matviewNames.push_back(std::move(mvName));
                 }
             }
         }
@@ -534,6 +544,7 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
             mv.schema = name;
             mv.fullName = parentDbNode->name + "." + name + "." + mvName;
             mv.columns = std::move(matviewColumns[mvName]);
+            mv.definition = std::move(matviewDefinitions[mvName]);
 
             result.push_back(mv);
             spdlog::debug("Loaded materialized view: {} with {} columns", mvName,

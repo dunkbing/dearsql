@@ -61,11 +61,13 @@ struct Table {
                         // MySQL: database name
                         // SQLite: empty
     std::string comment;
-    std::string fullName; // Fully qualified name for unique identification:
-                          // SQLite: "connection.table"
-                          // PostgreSQL: "connection.database.schema.table"
-                          // MySQL: "connection.database.table"
-                          // Redis: "connection.pattern"
+    std::string definition; // View/materialized-view SQL body (the SELECT after `AS`).
+                            // Empty for ordinary tables.
+    std::string fullName;   // Fully qualified name for unique identification:
+                            // SQLite: "connection.table"
+                            // PostgreSQL: "connection.database.schema.table"
+                            // MySQL: "connection.database.table"
+                            // Redis: "connection.pattern"
     std::vector<Column> columns;
     std::vector<Index> indexes;
     std::vector<ForeignKey> foreignKeys;

@@ -51,3 +51,5 @@ external/Sparkle/
 WixToolset.*.dll
 *.wixpdb
 *.wixobj
+
+SECRETS

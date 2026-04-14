@@ -1,2 +1,3 @@
 APP_NAME=DearSQL
 APP_IDENTIFIER=io.gitlab.dunkbing.dearsql
+APP_VERSION=0.4.3

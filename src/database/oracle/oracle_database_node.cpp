@@ -232,6 +232,7 @@ namespace {
                             const std::string& fullName) {
         Table table;
         table.name = tableName;
+        table.schema = schema;
         table.fullName = fullName;
         table.columns = loadColumns(conn, schema, tableName);
         loadPrimaryKeys(conn, schema, tableName, table.columns);
@@ -576,6 +577,7 @@ std::vector<Table> OracleDatabaseNode::getTablesAsync() {
 
             Table table;
             table.name = tblName;
+            table.schema = name;
             table.fullName = connName + "." + name + "." + tblName;
 
             // columns
@@ -676,6 +678,7 @@ std::vector<Table> OracleDatabaseNode::getViewsForSchemaAsync() {
 
             Table view;
             view.name = viewName;
+            view.schema = name;
             view.fullName = connName + "." + name + "." + viewName;
 
             if (auto it = allColumns.find(viewName); it != allColumns.end()) {
@@ -742,41 +745,31 @@ bool OracleDatabaseNode::isTableRefreshing(const std::string& tableName) const {
 }
 
 std::vector<std::vector<std::string>>
-OracleDatabaseNode::getTableData(const std::string& tableName, const int limit, const int offset,
+OracleDatabaseNode::getTableData(const Table& table, const int limit, const int offset,
                                  const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> result;
-    std::string qualified = quoteOracleTable(name, tableName);
 
     try {
         ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
 
-        std::string query = std::format("SELECT * FROM {}", qualified);
-
-        if (!whereClause.empty())
-            query += " WHERE " + whereClause;
-
-        if (!orderByClause.empty()) {
-            query += " ORDER BY " + orderByClause;
-        } else {
-            query += " ORDER BY 1";
-        }
-
-        query += std::format(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", offset, limit);
+        const auto builder = createSQLBuilder(DatabaseType::ORACLE);
+        const std::string query =
+            builder->selectAll(table, whereClause, orderByClause, limit, offset);
 
         auto qr = dpiExecuteQuery(conn, query, limit);
         if (!qr.statements.empty() && qr.statements[0].success) {
             result = std::move(qr.statements[0].tableData);
         }
     } catch (const std::exception& e) {
-        spdlog::error("Error getting table data for {}: {}", tableName, e.what());
+        spdlog::error("Error getting table data for {}: {}", table.name, e.what());
     }
 
     return result;
 }
 
-std::vector<std::string> OracleDatabaseNode::getColumnNames(const std::string& tableName) {
+std::vector<std::string> OracleDatabaseNode::getColumnNames(const Table& table) {
     std::vector<std::string> columnNames;
 
     try {
@@ -784,38 +777,34 @@ std::vector<std::string> OracleDatabaseNode::getColumnNames(const std::string& t
         auto session = getSession();
         dpiConn* conn = session.get();
 
-        std::string query =
-            std::format("SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS "
-                        "WHERE OWNER = '{}' AND TABLE_NAME = '{}' ORDER BY COLUMN_ID",
-                        name, tableName);
+        const auto builder = createSQLBuilder(DatabaseType::ORACLE);
+        const std::string query = builder->columnNames(table);
 
         columnNames = dpiQueryStringList(conn, query);
     } catch (const std::exception& e) {
-        spdlog::error("Error getting column names for {}: {}", tableName, e.what());
+        spdlog::error("Error getting column names for {}: {}", table.name, e.what());
     }
 
     return columnNames;
 }
 
-int OracleDatabaseNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
+int OracleDatabaseNode::getRowCount(const Table& table, const std::string& whereClause) {
     int count = 0;
-    std::string qualified = quoteOracleTable(name, tableName);
 
     try {
         ensureConnectionPool();
         auto session = getSession();
         dpiConn* conn = session.get();
 
-        std::string query = std::format("SELECT COUNT(*) FROM {}", qualified);
-        if (!whereClause.empty())
-            query += " WHERE " + whereClause;
+        const auto builder = createSQLBuilder(DatabaseType::ORACLE);
+        const std::string query = builder->countRows(table, whereClause);
 
         std::string result = dpiQueryScalar(conn, query);
         if (!result.empty() && result != "NULL") {
             count = std::stoi(result);
         }
     } catch (const std::exception& e) {
-        spdlog::error("Error getting row count for {}: {}", tableName, e.what());
+        spdlog::error("Error getting row count for {}: {}", table.name, e.what());
     }
 
     return count;

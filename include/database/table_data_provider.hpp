@@ -24,15 +24,15 @@ public:
      * @return Vector of rows, where each row is a vector of string values
      */
     virtual std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "", const std::string& orderByClause = "") = 0;
+    getTableData(const Table& table, int limit, int offset, const std::string& whereClause = "",
+                 const std::string& orderByClause = "") = 0;
 
     /**
      * @brief Get column names for a table/view
      * @param tableName Name of the table or view
      * @return Vector of column names in order
      */
-    virtual std::vector<std::string> getColumnNames(const std::string& tableName) = 0;
+    virtual std::vector<std::string> getColumnNames(const Table& table) = 0;
 
     /**
      * @brief Get total row count for a table/view
@@ -40,7 +40,7 @@ public:
      * @param whereClause Optional WHERE clause for filtering
      * @return Total number of rows
      */
-    virtual int getRowCount(const std::string& tableName, const std::string& whereClause = "") = 0;
+    virtual int getRowCount(const Table& table, const std::string& whereClause = "") = 0;
 
     /**
      * @brief Get access to tables for metadata (e.g., primary keys)

@@ -253,6 +253,7 @@ std::vector<Table> MySQLDatabaseNode::getTablesAsync() {
 
             Table table;
             table.name = tableName;
+            table.schema = name;
             table.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
             // Get table columns via DESCRIBE
@@ -404,6 +405,7 @@ std::vector<Table> MySQLDatabaseNode::getViewsForDatabaseAsync() {
 
             Table view;
             view.name = viewName;
+            view.schema = name;
             view.fullName = parentDb->getConnectionInfo().name + "." + name + "." + viewName;
 
             const std::string columnsQuery = std::format("DESCRIBE `{}`", viewName);
@@ -576,6 +578,7 @@ Table MySQLDatabaseNode::refreshTableAsync(const std::string& tableName) {
 
     Table refreshedTable;
     refreshedTable.name = tableName;
+    refreshedTable.schema = name;
     refreshedTable.fullName = parentDb->getConnectionInfo().name + "." + name + "." + tableName;
 
     try {
@@ -703,26 +706,20 @@ void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& i
 }
 
 std::vector<std::vector<std::string>>
-MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, const int offset,
+MySQLDatabaseNode::getTableData(const Table& table, const int limit, const int offset,
                                 const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> result;
 
     try {
         auto session = getSession();
         MYSQL* conn = session.get();
-        std::string query = std::format("SELECT * FROM `{}` ", tableName);
 
-        if (!whereClause.empty()) {
-            query += " WHERE " + whereClause;
-        }
-        if (!orderByClause.empty()) {
-            query += " ORDER BY " + orderByClause;
-        }
-
-        query += std::format(" LIMIT {} OFFSET {}", limit, offset);
+        const auto builder = createSQLBuilder(getDatabaseType());
+        const std::string query =
+            builder->selectAll(table, whereClause, orderByClause, limit, offset);
 
         if (mysql_query(conn, query.c_str()) != 0) {
-            spdlog::error("Error getting table data for {}: {}", tableName, mysql_error(conn));
+            spdlog::error("Error getting table data for {}: {}", table.name, mysql_error(conn));
             return result;
         }
 
@@ -757,19 +754,20 @@ MySQLDatabaseNode::getTableData(const std::string& tableName, const int limit, c
             result.push_back(std::move(rowData));
         }
     } catch (const std::exception& e) {
-        spdlog::error("Error getting table data for {}: {}", tableName, e.what());
+        spdlog::error("Error getting table data for {}: {}", table.name, e.what());
     }
 
     return result;
 }
 
-std::vector<std::string> MySQLDatabaseNode::getColumnNames(const std::string& tableName) {
+std::vector<std::string> MySQLDatabaseNode::getColumnNames(const Table& table) {
     std::vector<std::string> columnNames;
 
     try {
         auto session = getSession();
         MYSQL* conn = session.get();
-        const std::string query = std::format("DESCRIBE `{}`", tableName);
+        const auto builder = createSQLBuilder(getDatabaseType());
+        const std::string query = builder->columnNames(table);
 
         if (mysql_query(conn, query.c_str()) == 0) {
             MysqlResPtr res(mysql_store_result(conn));
@@ -787,23 +785,21 @@ std::vector<std::string> MySQLDatabaseNode::getColumnNames(const std::string& ta
                 mysql_free_result(extra);
         }
     } catch (const std::exception& e) {
-        spdlog::error("Error getting column names for {}: {}", tableName, e.what());
+        spdlog::error("Error getting column names for {}: {}", table.name, e.what());
     }
 
     return columnNames;
 }
 
-int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
+int MySQLDatabaseNode::getRowCount(const Table& table, const std::string& whereClause) {
     int count = 0;
 
     try {
         auto session = getSession();
         MYSQL* conn = session.get();
-        std::string query = std::format("SELECT COUNT(*) FROM `{}`", tableName);
 
-        if (!whereClause.empty()) {
-            query += " WHERE " + whereClause;
-        }
+        const auto builder = createSQLBuilder(getDatabaseType());
+        const std::string query = builder->countRows(table, whereClause);
 
         if (mysql_query(conn, query.c_str()) == 0) {
             MysqlResPtr res(mysql_store_result(conn));
@@ -820,7 +816,7 @@ int MySQLDatabaseNode::getRowCount(const std::string& tableName, const std::stri
                 mysql_free_result(extra);
         }
     } catch (const std::exception& e) {
-        spdlog::error("Error getting row count for {}: {}", tableName, e.what());
+        spdlog::error("Error getting row count for {}: {}", table.name, e.what());
     }
 
     return count;

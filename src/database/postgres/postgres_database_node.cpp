@@ -1,5 +1,6 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/sql_builder.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -468,61 +469,6 @@ const std::string& PostgresDatabaseNode::getLastViewsError() const {
     return aggregatedViewsError;
 }
 
-std::vector<std::vector<std::string>>
-PostgresDatabaseNode::getTableData(const std::string& tableName, int limit, int offset,
-                                   const std::string& whereClause,
-                                   const std::string& orderByClause) {
-    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
-    if (schemaName.empty()) {
-        auto it = std::ranges::find_if(
-            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
-        if (it != schemas.end() && *it)
-            schemaName = (*it)->name;
-        else if (!schemas.empty() && schemas.front())
-            schemaName = schemas.front()->name;
-    }
-
-    if (schemaName.empty())
-        return {};
-
-    return getTableData(schemaName, objectName, limit, offset, whereClause, orderByClause);
-}
-
-std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string& tableName) {
-    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
-    if (schemaName.empty()) {
-        auto it = std::ranges::find_if(
-            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
-        if (it != schemas.end() && *it)
-            schemaName = (*it)->name;
-        else if (!schemas.empty() && schemas.front())
-            schemaName = schemas.front()->name;
-    }
-
-    if (schemaName.empty())
-        return {};
-
-    return getColumnNames(schemaName, objectName);
-}
-
-int PostgresDatabaseNode::getRowCount(const std::string& tableName,
-                                      const std::string& whereClause) {
-    auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
-    if (schemaName.empty()) {
-        auto it = std::ranges::find_if(
-            schemas, [](const auto& schema) { return schema && schema->name == "public"; });
-        if (it != schemas.end() && *it)
-            schemaName = (*it)->name;
-        else if (!schemas.empty() && schemas.front())
-            schemaName = schemas.front()->name;
-    }
-
-    if (schemaName.empty())
-        return 0;
-
-    return getRowCount(schemaName, objectName, whereClause);
-}
-
 void PostgresDatabaseNode::startTableRefreshAsync(const std::string& tableName) {
     auto [schemaName, objectName] = splitQualifiedObjectName(tableName);
     if (schemaName.empty())
@@ -560,20 +506,15 @@ void PostgresDatabaseNode::checkTableRefreshStatusAsync(const std::string& table
 }
 
 std::vector<std::vector<std::string>>
-PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::string& tableName,
-                                   int limit, int offset, const std::string& whereClause,
+PostgresDatabaseNode::getTableData(const Table& table, int limit, int offset,
+                                   const std::string& whereClause,
                                    const std::string& orderByClause) {
     std::vector<std::vector<std::string>> result;
 
     try {
-        std::string query = std::format(R"(SELECT * FROM "{}"."{}")", schemaName, tableName);
-        if (!whereClause.empty()) {
-            query += " WHERE " + whereClause;
-        }
-        if (!orderByClause.empty()) {
-            query += " ORDER BY " + orderByClause;
-        }
-        query += std::format(" LIMIT {} OFFSET {}", limit, offset);
+        const auto builder = createSQLBuilder(DatabaseType::POSTGRESQL);
+        const std::string query =
+            builder->selectAll(table, whereClause, orderByClause, limit, offset);
 
         auto session = getSession();
         PGconn* conn = session.get();
@@ -616,19 +557,12 @@ PostgresDatabaseNode::getTableData(const std::string& schemaName, const std::str
     return result;
 }
 
-std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string& schemaName,
-                                                              const std::string& tableName) {
+std::vector<std::string> PostgresDatabaseNode::getColumnNames(const Table& table) {
     std::vector<std::string> result;
 
     try {
-        const std::string query =
-            std::format("SELECT a.attname FROM pg_catalog.pg_attribute a "
-                        "JOIN pg_catalog.pg_class c ON a.attrelid = c.oid "
-                        "JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
-                        "WHERE n.nspname = '{}' AND c.relname = '{}' "
-                        "AND a.attnum > 0 AND NOT a.attisdropped "
-                        "ORDER BY a.attnum",
-                        schemaName, tableName);
+        const auto builder = createSQLBuilder(DatabaseType::POSTGRESQL);
+        const std::string query = builder->columnNames(table);
 
         auto session = getSession();
         PGconn* conn = session.get();
@@ -646,13 +580,10 @@ std::vector<std::string> PostgresDatabaseNode::getColumnNames(const std::string&
     return result;
 }
 
-int PostgresDatabaseNode::getRowCount(const std::string& schemaName, const std::string& tableName,
-                                      const std::string& whereClause) {
+int PostgresDatabaseNode::getRowCount(const Table& table, const std::string& whereClause) {
     try {
-        std::string query = std::format(R"(SELECT COUNT(*) FROM "{}"."{}")", schemaName, tableName);
-        if (!whereClause.empty()) {
-            query += " WHERE " + whereClause;
-        }
+        const auto builder = createSQLBuilder(DatabaseType::POSTGRESQL);
+        const std::string query = builder->countRows(table, whereClause);
 
         auto session = getSession();
         PGconn* conn = session.get();

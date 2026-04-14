@@ -349,6 +349,7 @@ inline Table loadTableMetadata(DBPROCESS* dbproc, const std::string& schema,
                                const std::string& fullName) {
     Table table;
     table.name = displayName;
+    table.schema = schema;
     table.fullName = fullName;
     table.columns = loadColumns(dbproc, schema, tableName);
     loadPrimaryKeys(dbproc, schema, tableName, table.columns);

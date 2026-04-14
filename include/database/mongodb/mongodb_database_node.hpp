@@ -77,11 +77,11 @@ public:
         return views;
     }
 
-    std::vector<std::vector<std::string>> getTableData(const std::string& collectionName, int limit,
+    std::vector<std::vector<std::string>> getTableData(const Table& collection, int limit,
                                                        int offset, const std::string& filter = "",
                                                        const std::string& sort = "") override;
-    std::vector<std::string> getColumnNames(const std::string& collectionName) override;
-    int getRowCount(const std::string& collectionName, const std::string& filter = "") override;
+    std::vector<std::string> getColumnNames(const Table& collection) override;
+    int getRowCount(const Table& collection, const std::string& filter = "") override;
 
     [[nodiscard]] bool isTablesLoaded() const override {
         return collectionsLoaded;

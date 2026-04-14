@@ -66,11 +66,10 @@ public:
     [[nodiscard]] const std::vector<std::string>& getSequences() const override;
 
     std::vector<std::vector<std::string>>
-    getTableData(const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "",
+    getTableData(const Table& table, int limit, int offset, const std::string& whereClause = "",
                  const std::string& orderByClause = "") override;
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::vector<std::string> getColumnNames(const Table& table) override;
+    int getRowCount(const Table& table, const std::string& whereClause = "") override;
 
     [[nodiscard]] bool isTablesLoaded() const override;
     [[nodiscard]] bool isViewsLoaded() const override;
@@ -87,15 +86,6 @@ public:
     void startTableRefreshAsync(const std::string& tableName) override;
     [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
     void checkTableRefreshStatusAsync(const std::string& tableName) override;
-
-    // database operations (schema-aware)
-    std::vector<std::vector<std::string>>
-    getTableData(const std::string& schemaName, const std::string& tableName, int limit, int offset,
-                 const std::string& whereClause = "", const std::string& orderByClause = "");
-    std::vector<std::string> getColumnNames(const std::string& schemaName,
-                                            const std::string& tableName);
-    int getRowCount(const std::string& schemaName, const std::string& tableName,
-                    const std::string& whereClause = "");
 
 private:
     bool refreshChildrenAfterSchemasLoad = false;

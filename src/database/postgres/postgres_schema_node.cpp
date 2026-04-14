@@ -237,6 +237,7 @@ std::vector<Table> PostgresSchemaNode::getTablesAsync() {
 
             Table table;
             table.name = tableName;
+            table.schema = name;
             table.fullName = parentDbNode->name + "." + name + "." + tableName;
             table.columns = std::move(tableColumns[tableName]);
             table.foreignKeys = std::move(tableForeignKeys[tableName]);
@@ -386,6 +387,7 @@ std::vector<Table> PostgresSchemaNode::getViewsWithColumnsAsync() {
 
             Table view;
             view.name = viewName;
+            view.schema = name;
             view.fullName = parentDbNode->name + "." + name + "." + viewName;
             view.columns = std::move(viewColumns[viewName]);
 
@@ -529,6 +531,7 @@ std::vector<Table> PostgresSchemaNode::getMaterializedViewsWithColumnsAsync() {
 
             Table mv;
             mv.name = mvName;
+            mv.schema = name;
             mv.fullName = parentDbNode->name + "." + name + "." + mvName;
             mv.columns = std::move(matviewColumns[mvName]);
 
@@ -893,26 +896,26 @@ bool PostgresSchemaNode::isTableRefreshing(const std::string& tableName) const {
 }
 
 std::vector<std::vector<std::string>>
-PostgresSchemaNode::getTableData(const std::string& tableName, const int limit, const int offset,
+PostgresSchemaNode::getTableData(const Table& table, const int limit, const int offset,
                                  const std::string& whereClause, const std::string& orderByClause) {
     if (!parentDbNode) {
         return {};
     }
-    return parentDbNode->getTableData(name, tableName, limit, offset, whereClause, orderByClause);
+    return parentDbNode->getTableData(table, limit, offset, whereClause, orderByClause);
 }
 
-std::vector<std::string> PostgresSchemaNode::getColumnNames(const std::string& tableName) {
+std::vector<std::string> PostgresSchemaNode::getColumnNames(const Table& table) {
     if (!parentDbNode) {
         return {};
     }
-    return parentDbNode->getColumnNames(name, tableName);
+    return parentDbNode->getColumnNames(table);
 }
 
-int PostgresSchemaNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
+int PostgresSchemaNode::getRowCount(const Table& table, const std::string& whereClause) {
     if (!parentDbNode) {
         return 0;
     }
-    return parentDbNode->getRowCount(name, tableName, whereClause);
+    return parentDbNode->getRowCount(table, whereClause);
 }
 
 QueryResult PostgresSchemaNode::executeQuery(const std::string& query, int rowLimit) {

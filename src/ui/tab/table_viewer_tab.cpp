@@ -532,10 +532,10 @@ void TableViewerTab::loadDataAsync() {
 
     dataLoadOp.start([this, orderByClause]() -> bool {
         try {
-            totalRows = node_->getRowCount(table_.name, currentFilter);
+            totalRows = node_->getRowCount(table_, currentFilter);
             const int offset = currentPage * rowsPerPage;
             tableData =
-                node_->getTableData(table_.name, rowsPerPage, offset, currentFilter, orderByClause);
+                node_->getTableData(table_, rowsPerPage, offset, currentFilter, orderByClause);
 
             originalData = tableData;
             hasChanges = false;

@@ -187,6 +187,86 @@ std::string ISQLBuilder::createTable(const Table& table, const std::string& sche
     return sql;
 }
 
+std::string ISQLBuilder::qualifiedName(const Table& table) const {
+    if (table.schema.empty())
+        return quoteIdentifier(table.name);
+    return std::format("{}.{}", quoteIdentifier(table.schema), quoteIdentifier(table.name));
+}
+
+std::string ISQLBuilder::selectAll(const Table& table, const std::string& whereClause,
+                                   const std::string& orderByClause, int limit, int offset) const {
+    std::string sql = std::format("SELECT * FROM {}", qualifiedName(table));
+    if (!whereClause.empty())
+        sql += " WHERE " + whereClause;
+    if (!orderByClause.empty())
+        sql += " ORDER BY " + orderByClause;
+    sql += std::format(" LIMIT {} OFFSET {}", limit, offset);
+    return sql;
+}
+
+std::string ISQLBuilder::countRows(const Table& table, const std::string& whereClause) const {
+    std::string sql = std::format("SELECT COUNT(*) FROM {}", qualifiedName(table));
+    if (!whereClause.empty())
+        sql += " WHERE " + whereClause;
+    return sql;
+}
+
+std::string MSSQLBuilder::selectAll(const Table& table, const std::string& whereClause,
+                                    const std::string& orderByClause, int limit, int offset) const {
+    std::string sql = std::format("SELECT * FROM {}", qualifiedName(table));
+    if (!whereClause.empty())
+        sql += " WHERE " + whereClause;
+    // OFFSET/FETCH NEXT requires ORDER BY; synthesize a stable one if missing
+    sql += " ORDER BY " + (orderByClause.empty() ? std::string("(SELECT NULL)") : orderByClause);
+    sql += std::format(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", offset, limit);
+    return sql;
+}
+
+std::string OracleBuilder::selectAll(const Table& table, const std::string& whereClause,
+                                     const std::string& orderByClause, int limit,
+                                     int offset) const {
+    std::string sql = std::format("SELECT * FROM {}", qualifiedName(table));
+    if (!whereClause.empty())
+        sql += " WHERE " + whereClause;
+    sql += " ORDER BY " + (orderByClause.empty() ? std::string("1") : orderByClause);
+    sql += std::format(" OFFSET {} ROWS FETCH NEXT {} ROWS ONLY", offset, limit);
+    return sql;
+}
+
+std::string PostgreSQLBuilder::columnNames(const Table& table) const {
+    const std::string schema = table.schema.empty() ? "public" : table.schema;
+    return std::format("SELECT a.attname FROM pg_catalog.pg_attribute a "
+                       "JOIN pg_catalog.pg_class c ON a.attrelid = c.oid "
+                       "JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid "
+                       "WHERE n.nspname = '{}' AND c.relname = '{}' "
+                       "AND a.attnum > 0 AND NOT a.attisdropped "
+                       "ORDER BY a.attnum",
+                       schema, table.name);
+}
+
+std::string MySQLBuilder::columnNames(const Table& table) const {
+    // DESCRIBE returns name in column 0; schema set via connection's active database
+    return std::format("DESCRIBE `{}`", table.name);
+}
+
+std::string MSSQLBuilder::columnNames(const Table& table) const {
+    return std::format("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                       "WHERE TABLE_CATALOG = DB_NAME() AND TABLE_SCHEMA = '{}' "
+                       "AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
+                       table.schema, table.name);
+}
+
+std::string OracleBuilder::columnNames(const Table& table) const {
+    return std::format("SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS "
+                       "WHERE OWNER = '{}' AND TABLE_NAME = '{}' ORDER BY COLUMN_ID",
+                       table.schema, table.name);
+}
+
+std::string SQLiteBuilder::columnNames(const Table& table) const {
+    // pragma_table_info is a table-valued function; name is in result column 0
+    return std::format("SELECT name FROM pragma_table_info('{}')", table.name);
+}
+
 std::string PostgreSQLBuilder::addColumn(const std::string& table, const Column& column) const {
     std::string colType = column.isAutoIncrement ? serialTypeForColumn(column.type) : column.type;
     std::string sql = "ALTER TABLE " + quoteIdentifier(table);

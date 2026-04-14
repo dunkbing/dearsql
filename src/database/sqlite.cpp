@@ -135,16 +135,17 @@ SQLiteDatabase::executeQueryStructured(const std::string& query, const int rowLi
     return {columnNames, data};
 }
 
-std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& tableName) {
+std::vector<std::string> SQLiteDatabase::getColumnNames(const Table& table) {
     std::vector<std::string> columnNames;
     if (!connected || !db_) {
         return columnNames;
     }
 
     try {
-        const std::string sql = "PRAGMA table_info(" + tableName + ");";
+        const auto builder = createSQLBuilder(DatabaseType::SQLITE);
+        const std::string sql = builder->columnNames(table);
         queryRows(db_, sql,
-                  [&](sqlite3_stmt* stmt) { columnNames.emplace_back(columnText(stmt, 1)); });
+                  [&](sqlite3_stmt* stmt) { columnNames.emplace_back(columnText(stmt, 0)); });
     } catch (const std::exception& e) {
         std::cerr << "Error getting column names: " << e.what() << std::endl;
     }
@@ -154,7 +155,9 @@ std::vector<std::string> SQLiteDatabase::getColumnNames(const std::string& table
 // DatabaseInterface version (without whereClause) - delegates to ITableDataProvider version
 std::vector<std::vector<std::string>> SQLiteDatabase::getTableData(const std::string& tableName,
                                                                    int limit, int offset) {
-    return getTableData(tableName, limit, offset, "");
+    Table t;
+    t.name = tableName;
+    return getTableData(t, limit, offset, "");
 }
 
 std::vector<std::string> SQLiteDatabase::getTableNames() const {
@@ -379,7 +382,7 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
 
 // ITableDataProvider implementation
 std::vector<std::vector<std::string>>
-SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset,
+SQLiteDatabase::getTableData(const Table& table, int limit, int offset,
                              const std::string& whereClause, const std::string& orderByClause) {
     std::vector<std::vector<std::string>> data;
     if (!connected || !db_) {
@@ -387,14 +390,9 @@ SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset
     }
 
     try {
-        std::string sql = std::format("SELECT * FROM {}", tableName);
-        if (!whereClause.empty()) {
-            sql += std::format(" WHERE {}", whereClause);
-        }
-        if (!orderByClause.empty()) {
-            sql += std::format(" ORDER BY {}", orderByClause);
-        }
-        sql += std::format(" LIMIT {} OFFSET {}", limit, offset);
+        const auto builder = createSQLBuilder(DatabaseType::SQLITE);
+        const std::string sql =
+            builder->selectAll(table, whereClause, orderByClause, limit, offset);
 
         sqlite3_stmt* raw = nullptr;
         int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
@@ -419,19 +417,14 @@ SQLiteDatabase::getTableData(const std::string& tableName, int limit, int offset
     return data;
 }
 
-int SQLiteDatabase::getRowCount(const std::string& tableName, const std::string& whereClause) {
+int SQLiteDatabase::getRowCount(const Table& table, const std::string& whereClause) {
     if (!connected || !db_) {
         return 0;
     }
 
     try {
-        std::string sql;
-        if (whereClause.empty()) {
-            sql = "SELECT COUNT(*) FROM " + tableName;
-        } else {
-            sql = std::format("SELECT COUNT(*) FROM {} WHERE {}", tableName, whereClause);
-        }
-        return queryInt(db_, sql);
+        const auto builder = createSQLBuilder(DatabaseType::SQLITE);
+        return queryInt(db_, builder->countRows(table, whereClause));
     } catch (const std::exception& e) {
         std::cerr << "Error getting row count: " << e.what() << std::endl;
         return 0;

@@ -325,10 +325,11 @@ TEST_F(OracleDatabaseNodeTest, GetTableDataReturnsPaginatedRows) {
         ASSERT_TRUE(ri.success()) << ri.errorMessage();
     }
 
-    auto data = dbNode->getTableData(tableName, 3, 0);
+    const Table table{.name = tableName, .schema = schemaName};
+    auto data = dbNode->getTableData(table, 3, 0);
     EXPECT_EQ(data.size(), 3u);
 
-    auto dataOffset = dbNode->getTableData(tableName, 3, 2);
+    auto dataOffset = dbNode->getTableData(table, 3, 2);
     EXPECT_EQ(dataOffset.size(), 3u);
 }
 
@@ -337,7 +338,7 @@ TEST_F(OracleDatabaseNodeTest, GetColumnNamesReturnsColumns) {
         "CREATE TABLE \"{}\" (id NUMBER, name VARCHAR2(100), active NUMBER(1))", tableName));
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
-    auto columns = dbNode->getColumnNames(tableName);
+    auto columns = dbNode->getColumnNames(Table{.name = tableName, .schema = schemaName});
     ASSERT_EQ(columns.size(), 3u);
     EXPECT_EQ(columns[0], "ID");
     EXPECT_EQ(columns[1], "NAME");
@@ -349,15 +350,16 @@ TEST_F(OracleDatabaseNodeTest, GetRowCountReturnsCorrectCount) {
         dbNode->executeQuery(std::format("CREATE TABLE \"{}\" (id NUMBER PRIMARY KEY)", tableName));
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
-    EXPECT_EQ(dbNode->getRowCount(tableName), 0);
+    const Table table{.name = tableName, .schema = schemaName};
+    EXPECT_EQ(dbNode->getRowCount(table), 0);
 
     for (int i = 1; i <= 3; ++i) {
         dbNode->executeQuery(std::format("INSERT INTO \"{}\" (id) VALUES ({})", tableName, i));
     }
 
-    EXPECT_EQ(dbNode->getRowCount(tableName), 3);
+    EXPECT_EQ(dbNode->getRowCount(table), 3);
 
-    EXPECT_EQ(dbNode->getRowCount(tableName, "id > 1"), 2);
+    EXPECT_EQ(dbNode->getRowCount(table, "id > 1"), 2);
 }
 
 TEST_F(OracleDatabaseNodeTest, RenameTableRenamesSuccessfully) {

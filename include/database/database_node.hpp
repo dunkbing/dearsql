@@ -52,20 +52,20 @@ public:
      * @param orderBy Optional ORDER BY clause
      * @return Vector of rows (each row is vector of string values)
      */
-    virtual std::vector<std::vector<std::string>> getTableData(const std::string& tableName,
-                                                               int limit, int offset,
+    virtual std::vector<std::vector<std::string>> getTableData(const Table& table, int limit,
+                                                               int offset,
                                                                const std::string& whereClause = "",
                                                                const std::string& orderBy = "") = 0;
 
-    [[nodiscard]] virtual std::vector<std::string> getColumnNames(const std::string& tableName) = 0;
+    [[nodiscard]] virtual std::vector<std::string> getColumnNames(const Table& table) = 0;
 
     /**
      * @brief Get total row count for a table
-     * @param tableName Name of the table
+     * @param table Table to query
      * @param whereClause Optional WHERE clause filter
      * @return Total row count
      */
-    [[nodiscard]] virtual int getRowCount(const std::string& tableName,
+    [[nodiscard]] virtual int getRowCount(const Table& table,
                                           const std::string& whereClause = "") = 0;
 
     [[nodiscard]] virtual bool isTablesLoaded() const = 0;

@@ -325,25 +325,22 @@ void MSSQLDatabaseNode::checkTableRefreshStatusAsync(const std::string& tableNam
 }
 
 std::vector<std::vector<std::string>>
-MSSQLDatabaseNode::getTableData(const std::string& tableName, const int limit, const int offset,
+MSSQLDatabaseNode::getTableData(const Table& table, const int limit, const int offset,
                                 const std::string& whereClause, const std::string& orderByClause) {
-    auto [schema, tblName] = splitSchemaTable(tableName);
-    if (auto* s = findSchema(schema))
-        return s->getTableData(tblName, limit, offset, whereClause, orderByClause);
+    if (auto* s = findSchema(table.schema))
+        return s->getTableData(table, limit, offset, whereClause, orderByClause);
     return {};
 }
 
-std::vector<std::string> MSSQLDatabaseNode::getColumnNames(const std::string& tableName) {
-    auto [schema, tblName] = splitSchemaTable(tableName);
-    if (auto* s = findSchema(schema))
-        return s->getColumnNames(tblName);
+std::vector<std::string> MSSQLDatabaseNode::getColumnNames(const Table& table) {
+    if (auto* s = findSchema(table.schema))
+        return s->getColumnNames(table);
     return {};
 }
 
-int MSSQLDatabaseNode::getRowCount(const std::string& tableName, const std::string& whereClause) {
-    auto [schema, tblName] = splitSchemaTable(tableName);
-    if (auto* s = findSchema(schema))
-        return s->getRowCount(tblName, whereClause);
+int MSSQLDatabaseNode::getRowCount(const Table& table, const std::string& whereClause) {
+    if (auto* s = findSchema(table.schema))
+        return s->getRowCount(table, whereClause);
     return 0;
 }
 

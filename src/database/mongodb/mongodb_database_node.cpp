@@ -373,14 +373,14 @@ bool MongoDBDatabaseNode::isTableRefreshing(const std::string& collectionName) c
 }
 
 std::vector<std::vector<std::string>>
-MongoDBDatabaseNode::getTableData(const std::string& collectionName, const int limit,
-                                  const int offset, const std::string& filter,
-                                  const std::string& sort) {
+MongoDBDatabaseNode::getTableData(const Table& collection, const int limit, const int offset,
+                                  const std::string& filter, const std::string& sort) {
     std::vector<std::vector<std::string>> result;
+    const std::string& collectionName = collection.name;
 
     try {
         // Get column names to know which fields to extract
-        auto columnNames = getColumnNames(collectionName);
+        auto columnNames = getColumnNames(collection);
 
         auto client = parentDb->getClient();
         auto db = (*client)[name];
@@ -432,7 +432,8 @@ MongoDBDatabaseNode::getTableData(const std::string& collectionName, const int l
     return result;
 }
 
-std::vector<std::string> MongoDBDatabaseNode::getColumnNames(const std::string& collectionName) {
+std::vector<std::string> MongoDBDatabaseNode::getColumnNames(const Table& collection) {
+    const std::string& collectionName = collection.name;
     // Find the collection in our loaded collections to get inferred schema
     const auto it = std::ranges::find_if(
         collections, [&collectionName](const Table& t) { return t.name == collectionName; });
@@ -450,7 +451,8 @@ std::vector<std::string> MongoDBDatabaseNode::getColumnNames(const std::string& 
     return {"_id", "document"};
 }
 
-int MongoDBDatabaseNode::getRowCount(const std::string& collectionName, const std::string& filter) {
+int MongoDBDatabaseNode::getRowCount(const Table& collection, const std::string& filter) {
+    const std::string& collectionName = collection.name;
     try {
         auto client = parentDb->getClient();
         auto db = (*client)[name];

@@ -28,15 +28,14 @@ namespace {
         return escaped;
     }
 
-    bool exportCsv(ITableDataProvider* provider, const std::string& tableName,
-                   const std::string& path) {
+    bool exportCsv(ITableDataProvider* provider, const Table& table, const std::string& path) {
         std::ofstream file(path);
         if (!file.is_open()) {
             spdlog::error("Failed to open file for writing: {}", path);
             return false;
         }
 
-        auto columns = provider->getColumnNames(tableName);
+        auto columns = provider->getColumnNames(table);
         if (columns.empty()) {
             spdlog::error("Cannot export: table has no columns");
             return false;
@@ -51,9 +50,9 @@ namespace {
         file << '\n';
 
         // rows in batches
-        int totalRows = provider->getRowCount(tableName);
+        int totalRows = provider->getRowCount(table);
         for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
-            auto rows = provider->getTableData(tableName, BATCH_SIZE, offset);
+            auto rows = provider->getTableData(table, BATCH_SIZE, offset);
             for (const auto& row : rows) {
                 for (size_t i = 0; i < columns.size() && i < row.size(); ++i) {
                     if (i > 0)
@@ -73,25 +72,24 @@ namespace {
         return true;
     }
 
-    bool exportJson(ITableDataProvider* provider, const std::string& tableName,
-                    const std::string& path) {
+    bool exportJson(ITableDataProvider* provider, const Table& table, const std::string& path) {
         std::ofstream file(path);
         if (!file.is_open()) {
             spdlog::error("Failed to open file for writing: {}", path);
             return false;
         }
 
-        auto columns = provider->getColumnNames(tableName);
+        auto columns = provider->getColumnNames(table);
         if (columns.empty()) {
             spdlog::error("Cannot export: table has no columns");
             return false;
         }
-        int totalRows = provider->getRowCount(tableName);
+        int totalRows = provider->getRowCount(table);
 
         file << "[\n";
         bool firstRow = true;
         for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
-            auto rows = provider->getTableData(tableName, BATCH_SIZE, offset);
+            auto rows = provider->getTableData(table, BATCH_SIZE, offset);
             for (const auto& row : rows) {
                 if (!firstRow) {
                     file << ",\n";
@@ -127,7 +125,7 @@ namespace {
 
     void writeSqlTable(std::ofstream& file, ITableDataProvider* provider, const Table& table,
                        const ISQLBuilder& builder) {
-        auto columns = provider->getColumnNames(table.name);
+        auto columns = provider->getColumnNames(table);
         if (columns.empty()) {
             spdlog::error("Cannot export: table '{}' has no columns", table.name);
             return;
@@ -146,9 +144,9 @@ namespace {
             columnList += builder.quoteIdentifier(columns[i]);
         }
 
-        int totalRows = provider->getRowCount(table.name);
+        int totalRows = provider->getRowCount(table);
         for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
-            auto rows = provider->getTableData(table.name, BATCH_SIZE, offset);
+            auto rows = provider->getTableData(table, BATCH_SIZE, offset);
             for (const auto& row : rows) {
                 file << "INSERT INTO " << quotedName << " (" << columnList << ") VALUES (";
                 for (size_t i = 0; i < columns.size() && i < row.size(); ++i) {
@@ -289,9 +287,9 @@ namespace TableExporter {
             }
             switch (format) {
             case ExportFormat::CSV:
-                return exportCsv(provider, tables[0]->name, path);
+                return exportCsv(provider, *tables[0], path);
             case ExportFormat::JSON:
-                return exportJson(provider, tables[0]->name, path);
+                return exportJson(provider, *tables[0], path);
             case ExportFormat::SQL:
                 return exportSql(provider, *tables[0], path, dbType);
             }
@@ -317,10 +315,10 @@ namespace TableExporter {
             bool ok = false;
             switch (format) {
             case ExportFormat::CSV:
-                ok = exportCsv(provider, table->name, path);
+                ok = exportCsv(provider, *table, path);
                 break;
             case ExportFormat::JSON:
-                ok = exportJson(provider, table->name, path);
+                ok = exportJson(provider, *table, path);
                 break;
             }
             if (!ok) {

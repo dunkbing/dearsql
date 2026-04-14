@@ -48,12 +48,11 @@ public:
     std::vector<Table>& getViews() override;
     const std::vector<Table>& getViews() const override;
 
-    std::vector<std::vector<std::string>> getTableData(const std::string& tableName, int limit,
-                                                       int offset,
+    std::vector<std::vector<std::string>> getTableData(const Table& table, int limit, int offset,
                                                        const std::string& whereClause = "",
                                                        const std::string& orderBy = "") override;
-    std::vector<std::string> getColumnNames(const std::string& tableName) override;
-    int getRowCount(const std::string& tableName, const std::string& whereClause = "") override;
+    std::vector<std::string> getColumnNames(const Table& table) override;
+    int getRowCount(const Table& table, const std::string& whereClause = "") override;
 
     [[nodiscard]] bool isTablesLoaded() const override;
     [[nodiscard]] bool isViewsLoaded() const override;

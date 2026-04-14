@@ -72,12 +72,12 @@ TEST_F(SQLiteDatabaseFixture, RetrievesInsertedTableData) {
     EXPECT_EQ(rows[1][1], "World");
     EXPECT_EQ(rows[2][1], "Test");
 
-    const auto columnNames = database_->getColumnNames("messages");
+    const auto columnNames = database_->getColumnNames(Table{.name = "messages"});
     ASSERT_EQ(columnNames.size(), 2u);
     EXPECT_EQ(columnNames[0], "id");
     EXPECT_EQ(columnNames[1], "body");
 
-    EXPECT_EQ(database_->getRowCount("messages"), 3);
+    EXPECT_EQ(database_->getRowCount(Table{.name = "messages"}), 3);
 }
 
 TEST_F(SQLiteDatabaseFixture, ExecuteQueryWithResultReturnsData) {
@@ -168,7 +168,7 @@ TEST_F(SQLiteDatabaseFixture, DropColumnRemovesColumn) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    auto cols = database_->getColumnNames("col_test");
+    auto cols = database_->getColumnNames(Table{.name = "col_test"});
     EXPECT_EQ(cols.size(), 2u);
     EXPECT_EQ(cols[0], "id");
     EXPECT_EQ(cols[1], "keep_me");

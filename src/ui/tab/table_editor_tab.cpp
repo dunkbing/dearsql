@@ -146,6 +146,7 @@ void TableEditorTab::render() {
 void TableEditorTab::renderContent(bool& closeRequested) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
+    constexpr float saveButtonWidth = 120.0f;
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.surface1, 0.5f));
@@ -156,13 +157,16 @@ void TableEditorTab::renderContent(bool& closeRequested) {
     ImGui::Text("Table: ");
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - saveButtonWidth - Theme::Spacing::M);
     if (ImGui::InputText("##table_name_header", tableNameBuffer, sizeof(tableNameBuffer))) {
         editingTable.name = tableNameBuffer;
         markDirty();
     }
     ImGui::PopStyleColor(4);
     ImGui::PopStyleVar();
+
+    ImGui::SameLine(0, Theme::Spacing::M);
+    renderButtons(closeRequested);
     ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
 
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
@@ -188,7 +192,7 @@ void TableEditorTab::renderContent(bool& closeRequested) {
     constexpr float minLeftPanelWidth = 220.0f;
     constexpr float minRightPanelWidth = 320.0f;
     const ImVec2 panelRegion = ImGui::GetContentRegionAvail();
-    const float panelHeight = std::max(220.0f, panelRegion.y - 50.0f);
+    const float panelHeight = std::max(220.0f, panelRegion.y);
     const float maxLeftPanelWidth =
         std::max(minLeftPanelWidth, panelRegion.x - minRightPanelWidth - splitterWidth);
     leftPanelWidth = std::clamp(leftPanelWidth, minLeftPanelWidth, maxLeftPanelWidth);
@@ -241,17 +245,13 @@ void TableEditorTab::renderContent(bool& closeRequested) {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
 
-    ImGui::Spacing();
-    ImGui::Separator();
-
     if (!errorMessage.empty()) {
+        ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
         ImGui::TextWrapped("Error: %s", errorMessage.c_str());
         ImGui::PopStyleColor();
-        ImGui::Spacing();
     }
 
-    renderButtons(closeRequested);
     renderPreviewPopup(closeRequested);
 
     ImGui::PopStyleColor(6);
@@ -630,11 +630,16 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.blue, 0.55f));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_Button,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
+    ImGui::PushStyleColor(
+        ImGuiCol_ButtonActive,
+        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
 
     if (ImGui::Button("Execute", ImVec2(120, 0))) {
         if (dbNode) {
@@ -670,13 +675,13 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
         }
     }
 
-    ImGui::PopStyleColor(4);
+    ImGui::PopStyleColor(5);
     ImGui::SameLine();
 
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
     ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay1, 0.65f));
 
     if (ImGui::Button("Cancel", ImVec2(120, 0))) {
         ImGui::CloseCurrentPopup();
@@ -690,6 +695,8 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 void TableEditorTab::renderButtons(bool& closeRequested) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
     ImGui::PushStyleColor(ImGuiCol_Button,
                           ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
@@ -698,7 +705,6 @@ void TableEditorTab::renderButtons(bool& closeRequested) {
         ImGuiCol_ButtonActive,
         ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
     if (ImGui::Button(ICON_FA_FLOPPY_DISK " Save", ImVec2(120, 0))) {
         if (validateTableInput()) {
@@ -719,19 +725,7 @@ void TableEditorTab::renderButtons(bool& closeRequested) {
         }
     }
 
-    ImGui::PopStyleColor(4);
-    ImGui::SameLine();
-
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay1, 0.65f));
-
-    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-        closeRequested = true;
-    }
-
-    ImGui::PopStyleColor(4);
+    ImGui::PopStyleColor(5);
     ImGui::PopStyleVar();
 }
 

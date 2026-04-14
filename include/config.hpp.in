@@ -1,7 +1,7 @@
 #pragma once
 
 #define APP_NAME "@APP_NAME@"
-#define APP_VERSION "0.4.2"
+#define APP_VERSION "0.4.3"
 #define APP_IDENTIFIER "@APP_IDENTIFIER@"
 #define SENTRY_DSN "@SENTRY_DSN@"
 #define SENTRY_ENVIRONMENT "@SENTRY_ENVIRONMENT@"

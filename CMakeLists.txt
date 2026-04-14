@@ -111,6 +111,15 @@ foreach(_line IN LISTS _metadata_lines)
   endif()
 endforeach()
 
+# extract APP_VERSION from the current git tag
+execute_process(
+  COMMAND git describe --tags --abbrev=0
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE _git_tag
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET)
+string(REGEX REPLACE "^v" "" APP_VERSION "${_git_tag}")
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   set(SENTRY_ENVIRONMENT "production")
 else()

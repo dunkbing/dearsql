@@ -13,7 +13,11 @@ Get-Content "$RootDir\APP_METADATA" | ForEach-Object {
     }
 }
 $AppName = $metadata["APP_NAME"]
-$AppVersion = $metadata["APP_VERSION"]
+if ($env:GITHUB_REF_NAME -match '^v(.+)$') {
+    $AppVersion = $Matches[1]
+} else {
+    $AppVersion = (Select-String -Path "$RootDir\include\config.hpp.in" -Pattern 'APP_VERSION\s+"([^"]+)"').Matches.Groups[1].Value
+}
 
 Write-Host "=== Building $AppName $AppVersion MSI installer ==="
 

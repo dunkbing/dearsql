@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
@@ -67,7 +70,7 @@ jobs:
 
       - name: Set env vars
         run: |
-          VERSION=$(grep '^APP_VERSION=' APP_METADATA | cut -d= -f2)
+          VERSION=${GITHUB_REF_NAME#v}
           APP_NAME=$(grep '^APP_NAME=' APP_METADATA | cut -d= -f2)
           APPIMAGE_NAME="${APP_NAME}-x86_64.AppImage"
           VERSION_METADATA_NAME="version.json"

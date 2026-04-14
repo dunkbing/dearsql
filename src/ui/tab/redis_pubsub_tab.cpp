@@ -392,9 +392,9 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     ImGui::SameLine(0, Theme::Spacing::M);
 
     // subscribe / unsubscribe button
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
     if (subscribed) {
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
         ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
@@ -402,14 +402,19 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
             unsubscribe();
             subState_.store(SubState::Idle);
         }
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
     } else {
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
         ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f));
+                              ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
                               ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                              ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.6f));
+        ImGui::PushStyleColor(
+            ImGuiCol_ButtonActive,
+            ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
         bool busy = (state == SubState::Subscribing);
         if (busy)
             ImGui::BeginDisabled();
@@ -418,10 +423,9 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
         }
         if (busy)
             ImGui::EndDisabled();
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(5);
+        ImGui::PopStyleVar();
     }
-    ImGui::PopStyleColor(); // Border
-    ImGui::PopStyleVar();
 
     ImGui::SameLine(0, Theme::Spacing::S);
 
@@ -495,13 +499,13 @@ void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputTextWithHint("##pub_channel", "channel", publishChannelBuf_,
                              sizeof(publishChannelBuf_));
-    ImGui::SameLine(0, Theme::Spacing::L);
+    ImGui::SameLine(0, Theme::Spacing::XL * 1.5);
 
     ImGui::Text("Message");
     ImGui::SameLine(0, Theme::Spacing::M);
 
     const float buttonWidth = 80.0f;
-    const float remainingWidth = ImGui::GetContentRegionAvail().x - buttonWidth - Theme::Spacing::L;
+    const float remainingWidth = ImGui::GetContentRegionAvail().x - buttonWidth;
     if (refocusMessageInput_) {
         ImGui::SetKeyboardFocusHere();
         refocusMessageInput_ = false;
@@ -511,25 +515,29 @@ void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
         ImGui::InputTextWithHint("##pub_message", "Enter Message", publishMessageBuf_,
                                  sizeof(publishMessageBuf_), ImGuiInputTextFlags_EnterReturnsTrue);
 
-    ImGui::SameLine(0, Theme::Spacing::L);
+    ImGui::SameLine(0, 0);
 
     bool canPublish = publishChannelBuf_[0] != '\0' && publishMessageBuf_[0] != '\0';
     if (!canPublish)
         ImGui::BeginDisabled();
 
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
     ImGui::PushStyleColor(ImGuiCol_Button,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f));
+                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
                           ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.6f));
+    ImGui::PushStyleColor(
+        ImGuiCol_ButtonActive,
+        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
     if (ImGui::Button("Publish", ImVec2(buttonWidth, 0)) || (enterPressed && canPublish)) {
         publish(publishChannelBuf_, publishMessageBuf_);
         publishMessageBuf_[0] = '\0';
         refocusMessageInput_ = true;
     }
-    ImGui::PopStyleColor(4);
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar();
 
     if (!canPublish)
         ImGui::EndDisabled();

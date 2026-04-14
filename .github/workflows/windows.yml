@@ -67,7 +67,7 @@ jobs:
 
       - name: Set env vars
         run: |
-          $version = ((Select-String -Path APP_METADATA -Pattern '^APP_VERSION=').Line -split '=', 2)[1]
+          $version = "$env:GITHUB_REF_NAME" -replace '^v',''
           $appName = ((Select-String -Path APP_METADATA -Pattern '^APP_NAME=').Line -split '=', 2)[1]
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "MSI_NAME=$appName-x64.msi" | Out-File -FilePath $env:GITHUB_ENV -Append

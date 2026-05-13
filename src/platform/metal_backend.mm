@@ -6,6 +6,9 @@
 #import "imgui_impl_metal.h"
 #include "platform/graphics_backend.hpp"
 #include "ui/table_aurora_shader.hpp"
+#if DEARSQL_EXPERIMENTAL
+#include "ui/ripple_shader.hpp"
+#endif
 #import <GLFW/glfw3.h>
 #import <GLFW/glfw3native.h>
 
@@ -114,6 +117,12 @@ void MacOSMetalBackend::renderDrawData(ImDrawData* drawData) {
 
 #if DEARSQL_ENABLE_TABLE_AURORA
     TableAurora::setMetalRenderContext(
+        (__bridge void*)metalDevice_, (__bridge void*)currentRenderEncoder_,
+        static_cast<float>(display_w), static_cast<float>(display_h));
+#endif
+
+#if DEARSQL_EXPERIMENTAL
+    RippleShader::setMetalRenderContext(
         (__bridge void*)metalDevice_, (__bridge void*)currentRenderEncoder_,
         static_cast<float>(display_w), static_cast<float>(display_h));
 #endif

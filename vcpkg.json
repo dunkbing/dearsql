@@ -37,6 +37,7 @@
       "features": ["backend", "transport", "compression"]
     },
     "libiconv",
-    "spdlog"
+    "spdlog",
+    "box2d"
   ]
 }

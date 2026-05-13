@@ -5,10 +5,98 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include <algorithm>
+#include <box2d/box2d.h>
 #include <iostream>
 #include <ranges>
 #include <set>
 #include <utility>
+
+namespace {
+
+    inline ImVec2 rotateLocalToWorld(float lx, float ly, b2Vec2 center, b2Rot rot) {
+        return ImVec2(center.x + lx * rot.c - ly * rot.s, center.y + lx * rot.s + ly * rot.c);
+    }
+
+    inline void addLineRotated(ImDrawList* dl, float lx0, float ly0, float lx1, float ly1,
+                               b2Vec2 center, b2Rot rot, ImU32 color, float thickness) {
+        dl->AddLine(rotateLocalToWorld(lx0, ly0, center, rot),
+                    rotateLocalToWorld(lx1, ly1, center, rot), color, thickness);
+    }
+
+    // Decode a single UTF-8 codepoint. Returns bytes consumed; on a malformed
+    // lead byte, emits '?' and skips one byte so we never get stuck.
+    inline int decodeUtf8(unsigned int* out, const char* s) {
+        const unsigned char b0 = static_cast<unsigned char>(s[0]);
+        if (b0 < 0x80) {
+            *out = b0;
+            return 1;
+        }
+        if ((b0 & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+            *out = ((b0 & 0x1Fu) << 6) | (s[1] & 0x3Fu);
+            return 2;
+        }
+        if ((b0 & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+            *out = ((b0 & 0x0Fu) << 12) | ((s[1] & 0x3Fu) << 6) | (s[2] & 0x3Fu);
+            return 3;
+        }
+        if ((b0 & 0xF8) == 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 &&
+            (s[3] & 0xC0) == 0x80) {
+            *out = ((b0 & 0x07u) << 18) | ((s[1] & 0x3Fu) << 12) | ((s[2] & 0x3Fu) << 6) |
+                   (s[3] & 0x3Fu);
+            return 4;
+        }
+        *out = '?';
+        return 1;
+    }
+
+    // Renders text by emitting one rotated textured quad per glyph. ImDrawList::AddText
+    // can't rotate, so we drive the font atlas at the primitive level.
+    // Returns the advance-x width of the rendered string in body-local units.
+    // Glyph metrics are already in pixels at the bound size — no scaling needed.
+    float addTextRotated(ImDrawList* dl, const char* text, float lx, float ly, b2Vec2 center,
+                         b2Rot rot, ImU32 color) {
+        ImFontBaked* baked = ImGui::GetFontBaked();
+        if (!baked) {
+            return 0.0f;
+        }
+        dl->PushTexture(ImGui::GetFont()->OwnerAtlas->TexRef);
+
+        float cursorX = lx;
+        const char* s = text;
+        while (*s) {
+            unsigned int cp = 0;
+            const int len = decodeUtf8(&cp, s);
+            if (len <= 0) {
+                break;
+            }
+            s += len;
+
+            const ImFontGlyph* glyph = baked->FindGlyph(static_cast<ImWchar>(cp));
+            if (!glyph) {
+                continue;
+            }
+            if (glyph->Visible) {
+                const float gx0 = cursorX + glyph->X0;
+                const float gy0 = ly + glyph->Y0;
+                const float gx1 = cursorX + glyph->X1;
+                const float gy1 = ly + glyph->Y1;
+                const ImVec2 q0 = rotateLocalToWorld(gx0, gy0, center, rot);
+                const ImVec2 q1 = rotateLocalToWorld(gx1, gy0, center, rot);
+                const ImVec2 q2 = rotateLocalToWorld(gx1, gy1, center, rot);
+                const ImVec2 q3 = rotateLocalToWorld(gx0, gy1, center, rot);
+                dl->PrimReserve(6, 4);
+                dl->PrimQuadUV(q0, q1, q2, q3, ImVec2(glyph->U0, glyph->V0),
+                               ImVec2(glyph->U1, glyph->V0), ImVec2(glyph->U1, glyph->V1),
+                               ImVec2(glyph->U0, glyph->V1), color);
+            }
+            cursorX += glyph->AdvanceX;
+        }
+
+        dl->PopTexture();
+        return cursorX - lx;
+    }
+
+} // namespace
 
 // Draws a 3-segment orthogonal path: p0 → (midX, p0.y) → (midX, p1.y) → p1
 // with rounded corners of the given radius.
@@ -137,10 +225,8 @@ void DiagramTab::render() {
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
 
-    // Push a thicker, higher-contrast frame border for the controls below so
-    // the button and checkboxes have a visible outline against the dark bg.
+    // use a higher-contrast border against the diagram background
     const auto& themeColors = Application::getInstance().getCurrentColors();
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertFloat4ToU32(themeColors.overlay1));
 
     // Options + refresh button on a single row
@@ -150,13 +236,18 @@ void DiagramTab::render() {
     ImGui::SameLine(0.0f, Theme::Spacing::L);
     ImGui::Checkbox("Show Foreign Keys", &showForeignKeys);
     ImGui::SameLine(0.0f, Theme::Spacing::L);
+    if (ImGui::Checkbox("Enable Physics", &enablePhysics)) {
+        if (!enablePhysics) {
+            teardownPhysicsWorld();
+        }
+    }
+    ImGui::SameLine(0.0f, Theme::Spacing::L);
     if (ImGui::Button(ICON_FA_ARROWS_ROTATE " Refresh")) {
         schemaLoaded = false;
         loadDatabaseSchema();
     }
 
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
 
@@ -176,14 +267,47 @@ void DiagramTab::render() {
 
     const std::string editorId =
         "Database Diagram##" + std::to_string(reinterpret_cast<uintptr_t>(this));
+
+    // In physics mode the editor's hit test (axis-aligned) misses rotated nodes,
+    // so a drag on a tumbled box looks like a drag on empty canvas and the editor
+    // draws its blue marquee. Hide the marquee colors while physics is active.
+    const bool hidingSelection = enablePhysics;
+    if (hidingSelection) {
+        const ImVec4 transparent(0.0f, 0.0f, 0.0f, 0.0f);
+        ax::NodeEditor::PushStyleColor(ax::NodeEditor::StyleColor_NodeSelRect, transparent);
+        ax::NodeEditor::PushStyleColor(ax::NodeEditor::StyleColor_NodeSelRectBorder, transparent);
+        ax::NodeEditor::PushStyleColor(ax::NodeEditor::StyleColor_LinkSelRect, transparent);
+        ax::NodeEditor::PushStyleColor(ax::NodeEditor::StyleColor_LinkSelRectBorder, transparent);
+    }
+
     ax::NodeEditor::Begin(editorId.c_str(), canvasSize);
 
-    // Links drawn first so they land on the background draw channel (below nodes)
-    renderLinks();
-    renderNodes();
-    handleNodeInteraction();
+    ensurePhysicsBuilt();
+    stepAndApplyPhysics();
+
+    if (enablePhysics && physicsBuilt) {
+        // After Begin() the editor leaves us on UserChannel_Content (idx 1),
+        // rendered *before* the canvas Bg overlay on UserChannel_Grid (idx 2).
+        // Switch to UserChannel_Hints (idx 4) so fills/text land on top of the
+        // canvas Bg instead of being washed out under it.
+        auto* dl = ImGui::GetWindowDrawList();
+        dl->ChannelsSetCurrent(4);
+        renderGround();
+        renderPhysicsView();
+        dl->ChannelsSetCurrent(1);
+    } else {
+        renderGround();
+        renderLinks();
+        renderNodes();
+        handleNodeInteraction();
+    }
 
     ax::NodeEditor::End();
+
+    if (hidingSelection) {
+        ax::NodeEditor::PopStyleColor(4);
+    }
+
     ax::NodeEditor::SetCurrentEditor(nullptr);
 
     const ImVec2 canvasMax = {canvasMin.x + canvasSize.x, canvasMin.y + canvasSize.y};
@@ -222,6 +346,7 @@ void DiagramTab::handleZoomShortcuts() {
 }
 
 void DiagramTab::loadDatabaseSchema() {
+    teardownPhysicsWorld();
     nodes.clear();
     links.clear();
     tableToNodeIdMap.clear();
@@ -814,4 +939,321 @@ bool DiagramTab::isForeignKeyColumn(const std::string& tableName, const std::str
     }
 
     return false;
+}
+
+void DiagramTab::buildPhysicsWorld() {
+    b2WorldDef worldDef = b2DefaultWorldDef();
+    worldDef.gravity = b2Vec2{0.0f, 1200.0f}; // +Y is down in canvas space
+    physicsWorld = b2CreateWorld(&worldDef);
+
+    // Ground sits a comfortable distance below the lowest spawn position so all
+    // tables get a visible drop before piling up.
+    float maxBottom = 0.0f;
+    for (auto& node : nodes) {
+        const float h = node.size.y > 0.0f ? node.size.y : 200.0f;
+        maxBottom = std::max(maxBottom, node.position.y + h);
+    }
+    groundY = maxBottom + 500.0f;
+
+    {
+        b2BodyDef bd = b2DefaultBodyDef();
+        bd.type = b2_staticBody;
+        bd.position = b2Vec2{0.0f, groundY + 50.0f};
+        groundBody = b2CreateBody(physicsWorld, &bd);
+        b2Polygon groundBox = b2MakeBox(20000.0f, 50.0f);
+        b2ShapeDef sd = b2DefaultShapeDef();
+        sd.material.friction = 0.7f;
+        b2CreatePolygonShape(groundBody, &sd, &groundBox);
+    }
+
+    for (auto& node : nodes) {
+        const float w = node.size.x > 0.0f ? node.size.x : 200.0f;
+        const float h = node.size.y > 0.0f ? node.size.y : 200.0f;
+        const ImVec2 cur = ax::NodeEditor::GetNodePosition(node.id);
+
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.position = b2Vec2{cur.x + w * 0.5f, cur.y + h * 0.5f};
+        bodyDef.linearDamping = 0.05f;
+        bodyDef.angularDamping = 0.4f;
+        node.physicsBody = b2CreateBody(physicsWorld, &bodyDef);
+
+        b2Polygon box = b2MakeBox(w * 0.5f, h * 0.5f);
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 1.0f;
+        shapeDef.material.friction = 0.4f;
+        shapeDef.material.restitution = 0.25f;
+        b2CreatePolygonShape(node.physicsBody, &shapeDef, &box);
+    }
+
+    for (const auto& link : links) {
+        auto fromIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.fromTable; });
+        auto toIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.toTable; });
+        if (fromIt == nodes.end() || toIt == nodes.end())
+            continue;
+        if (!b2Body_IsValid(fromIt->physicsBody) || !b2Body_IsValid(toIt->physicsBody))
+            continue;
+
+        b2DistanceJointDef jointDef = b2DefaultDistanceJointDef();
+        jointDef.bodyIdA = fromIt->physicsBody;
+        jointDef.bodyIdB = toIt->physicsBody;
+        jointDef.localAnchorA = b2Vec2{0.0f, 0.0f};
+        jointDef.localAnchorB = b2Vec2{0.0f, 0.0f};
+        jointDef.length = 350.0f;
+        jointDef.minLength = 100.0f;
+        jointDef.maxLength = 1500.0f;
+        jointDef.enableSpring = true;
+        jointDef.hertz = 2.0f;
+        jointDef.dampingRatio = 0.4f;
+        jointDef.enableLimit = true;
+        b2CreateDistanceJoint(physicsWorld, &jointDef);
+    }
+
+    physicsBuilt = true;
+}
+
+void DiagramTab::teardownPhysicsWorld() {
+    if (b2World_IsValid(physicsWorld)) {
+        b2DestroyWorld(physicsWorld);
+    }
+    physicsWorld = b2WorldId{};
+    groundBody = b2BodyId{};
+    groundY = 0.0f;
+    physicsBuilt = false;
+    draggedNodeId = ax::NodeEditor::NodeId{};
+    for (auto& node : nodes) {
+        node.physicsBody = b2BodyId{};
+    }
+}
+
+void DiagramTab::ensurePhysicsBuilt() {
+    if (!enablePhysics || physicsBuilt || nodes.empty()) {
+        return;
+    }
+    // Need rendered sizes before we can build the rectangular bodies
+    for (const auto& node : nodes) {
+        if (node.size.x <= 0.0f || node.size.y <= 0.0f) {
+            return;
+        }
+    }
+    buildPhysicsWorld();
+}
+
+void DiagramTab::stepAndApplyPhysics() {
+    if (!enablePhysics || !physicsBuilt || !b2World_IsValid(physicsWorld)) {
+        return;
+    }
+
+    const bool mouseDown = ImGui::IsMouseDown(0);
+    const ImVec2 mouseCanvas = ImGui::GetMousePos();
+
+    // Click-time hit test against each rotated body so we can grab tumbled boxes
+    // (the editor's own hit testing is axis-aligned and would miss them).
+    if (ImGui::IsMouseClicked(0)) {
+        for (auto& node : nodes) {
+            if (!b2Body_IsValid(node.physicsBody))
+                continue;
+            const b2Vec2 c = b2Body_GetPosition(node.physicsBody);
+            const b2Rot rot = b2Body_GetRotation(node.physicsBody);
+            const float hw = node.size.x * 0.5f;
+            const float hh = node.size.y * 0.5f;
+            const float dx = mouseCanvas.x - c.x;
+            const float dy = mouseCanvas.y - c.y;
+            // R^-1 * (world - center) → body-local point
+            const float lx = dx * rot.c + dy * rot.s;
+            const float ly = -dx * rot.s + dy * rot.c;
+            if (std::abs(lx) <= hw && std::abs(ly) <= hh) {
+                draggedNodeId = node.id;
+                dragOffsetX = dx;
+                dragOffsetY = dy;
+                break;
+            }
+        }
+    }
+    if (!mouseDown) {
+        draggedNodeId = ax::NodeEditor::NodeId{};
+    }
+
+    const float frameDt = std::max(ImGui::GetIO().DeltaTime, 1.0f / 240.0f);
+    constexpr float kMaxThrowVel = 6000.0f;
+
+    for (auto& node : nodes) {
+        if (!b2Body_IsValid(node.physicsBody))
+            continue;
+        const bool dragged = mouseDown && node.id == draggedNodeId;
+        if (!dragged)
+            continue;
+        // Keep the click point pinned under the cursor so the box doesn't snap-center.
+        const b2Vec2 newCenter{mouseCanvas.x - dragOffsetX, mouseCanvas.y - dragOffsetY};
+        const b2Vec2 oldBodyPos = b2Body_GetPosition(node.physicsBody);
+        const b2Rot oldRot = b2Body_GetRotation(node.physicsBody);
+        b2Vec2 vel{(newCenter.x - oldBodyPos.x) / frameDt, (newCenter.y - oldBodyPos.y) / frameDt};
+        const float velMag = std::sqrt(vel.x * vel.x + vel.y * vel.y);
+        if (velMag > kMaxThrowVel) {
+            const float s = kMaxThrowVel / velMag;
+            vel.x *= s;
+            vel.y *= s;
+        }
+        b2Body_SetTransform(node.physicsBody, newCenter, oldRot);
+        b2Body_SetLinearVelocity(node.physicsBody, vel);
+        b2Body_SetAngularVelocity(node.physicsBody, 0.0f); // freeze spin while held
+        b2Body_SetAwake(node.physicsBody, true);
+    }
+
+    constexpr float dt = 1.0f / 60.0f;
+    b2World_Step(physicsWorld, dt, 4);
+
+    for (auto& node : nodes) {
+        if (!b2Body_IsValid(node.physicsBody))
+            continue;
+        const bool dragged = mouseDown && node.id == draggedNodeId;
+        if (dragged)
+            continue;
+        const b2Vec2 p = b2Body_GetPosition(node.physicsBody);
+        const ImVec2 newPos(p.x - node.size.x * 0.5f, p.y - node.size.y * 0.5f);
+        // Sync the editor's position so toggling physics off leaves nodes where
+        // they ended up (we ignore rotation here since the editor renders upright).
+        ax::NodeEditor::SetNodePosition(node.id, newPos);
+        node.position = newPos;
+    }
+}
+
+void DiagramTab::renderGround() {
+    if (!enablePhysics || !physicsBuilt) {
+        return;
+    }
+    auto* dl = ImGui::GetWindowDrawList();
+    const auto& colors = Application::getInstance().getCurrentColors();
+    const ImU32 fill = ImGui::ColorConvertFloat4ToU32(colors.surface1);
+    const ImU32 line = ImGui::ColorConvertFloat4ToU32(colors.overlay2);
+    const float left = -10000.0f;
+    const float right = 10000.0f;
+    const float top = groundY;
+    const float bottom = groundY + 100.0f;
+    dl->AddRectFilled(ImVec2(left, top), ImVec2(right, bottom), fill);
+    dl->AddLine(ImVec2(left, top), ImVec2(right, top), line, 3.0f);
+}
+
+void DiagramTab::renderPhysicsView() {
+    if (!enablePhysics || !physicsBuilt) {
+        return;
+    }
+    auto* dl = ImGui::GetWindowDrawList();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // The editor draws its NodeBg on a back draw channel that composites over the
+    // canvas Bg, so its 200/255 alpha visually reads as solid. Our physics quads
+    // hit a different point in the draw order and the same alpha reads as washed
+    // out, so we pre-blend NodeBg over Bg here and emit fully-opaque fill/border.
+    const auto& neStyle = ax::NodeEditor::GetStyle();
+    auto preBlend = [](ImVec4 fg, ImVec4 bg) {
+        const float a = fg.w;
+        return ImVec4(fg.x * a + bg.x * (1.0f - a), fg.y * a + bg.y * (1.0f - a),
+                      fg.z * a + bg.z * (1.0f - a), 1.0f);
+    };
+    const ImVec4 canvasBg = neStyle.Colors[ax::NodeEditor::StyleColor_Bg];
+    const ImVec4 nodeBg = neStyle.Colors[ax::NodeEditor::StyleColor_NodeBg];
+    const ImVec4 nodeBorder = neStyle.Colors[ax::NodeEditor::StyleColor_NodeBorder];
+    const ImU32 linkColor = ImGui::ColorConvertFloat4ToU32(colors.sky);
+    const ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(preBlend(nodeBg, canvasBg));
+    const ImU32 borderColor = ImGui::ColorConvertFloat4ToU32(preBlend(nodeBorder, canvasBg));
+    const ImU32 borderActiveColor = ImGui::ColorConvertFloat4ToU32(colors.peach);
+    const ImU32 separatorColor = ImGui::ColorConvertFloat4ToU32(colors.overlay0);
+    const ImU32 primaryColor = ImGui::ColorConvertFloat4ToU32(colors.yellow);
+    const ImU32 textColor = ImGui::ColorConvertFloat4ToU32(colors.text);
+    const ImU32 columnColor = ImGui::ColorConvertFloat4ToU32(colors.subtext1);
+    const ImU32 fkColor = ImGui::ColorConvertFloat4ToU32(colors.blue);
+    const ImU32 typeColor = ImGui::ColorConvertFloat4ToU32(colors.subtext0);
+    const ImU32 notNullColor = ImGui::ColorConvertFloat4ToU32(colors.red);
+
+    // FK springs — connect body centers with a straight line
+    for (const auto& link : links) {
+        auto fromIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.fromTable; });
+        auto toIt = std::ranges::find_if(
+            nodes, [&](const DiagramNode& n) { return n.tableName == link.toTable; });
+        if (fromIt == nodes.end() || toIt == nodes.end())
+            continue;
+        if (!b2Body_IsValid(fromIt->physicsBody) || !b2Body_IsValid(toIt->physicsBody))
+            continue;
+        const b2Vec2 a = b2Body_GetPosition(fromIt->physicsBody);
+        const b2Vec2 b = b2Body_GetPosition(toIt->physicsBody);
+        dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y), linkColor, 2.0f);
+    }
+
+    // FK source columns — for column tinting (matches the non-physics renderer)
+    std::set<std::pair<std::string, std::string>> fkColumns;
+    for (const auto& link : links) {
+        fkColumns.insert({link.fromTable, link.fromColumn});
+    }
+
+    const float lineH = ImGui::GetTextLineHeight();
+    constexpr float padX = 12.0f;
+    constexpr float padY = 8.0f;
+    constexpr float rowSpacing = 2.0f;
+
+    for (const auto& node : nodes) {
+        if (!b2Body_IsValid(node.physicsBody))
+            continue;
+        const b2Vec2 c = b2Body_GetPosition(node.physicsBody);
+        const b2Rot rot = b2Body_GetRotation(node.physicsBody);
+        const float hw = node.size.x * 0.5f;
+        const float hh = node.size.y * 0.5f;
+
+        const ImVec2 p0 = rotateLocalToWorld(-hw, -hh, c, rot);
+        const ImVec2 p1 = rotateLocalToWorld(hw, -hh, c, rot);
+        const ImVec2 p2 = rotateLocalToWorld(hw, hh, c, rot);
+        const ImVec2 p3 = rotateLocalToWorld(-hw, hh, c, rot);
+        const bool isDragged = node.id == draggedNodeId;
+        dl->AddQuadFilled(p0, p1, p2, p3, fillColor);
+        dl->AddQuad(p0, p1, p2, p3, isDragged ? borderActiveColor : borderColor, 2.0f);
+
+        // Lay out the table content in body-local space (y grows downward, origin
+        // at the box center). Every text/line call is rotated about the body center.
+        float cursorY = -hh + padY;
+
+        const std::string title = std::string(ICON_FA_TABLE " ") + node.tableName;
+        addTextRotated(dl, title.c_str(), -hw + padX, cursorY, c, rot,
+                       node.isPrimaryTable ? primaryColor : textColor);
+        cursorY += lineH + 4.0f;
+
+        addLineRotated(dl, -hw + padX, cursorY, hw - padX, cursorY, c, rot, separatorColor, 1.0f);
+        cursorY += 6.0f;
+
+        for (const auto& column : node.columns) {
+            if (column.name.empty())
+                continue;
+            if (cursorY + lineH > hh - padY)
+                break;
+
+            const bool isFK = fkColumns.contains({node.tableName, column.name});
+            std::string nameText;
+            ImU32 nameColor;
+            if (showPrimaryKeys && column.isPrimaryKey) {
+                nameText = std::string(ICON_FA_KEY " ") + column.name;
+                nameColor = primaryColor;
+            } else if (showForeignKeys && isFK) {
+                nameText = std::string(ICON_FA_LINK " ") + column.name;
+                nameColor = fkColor;
+            } else {
+                nameText = column.name;
+                nameColor = columnColor;
+            }
+
+            float xCursor = -hw + padX;
+            xCursor += addTextRotated(dl, nameText.c_str(), xCursor, cursorY, c, rot, nameColor);
+
+            if (showColumnTypes && !column.type.empty()) {
+                const std::string typeStr = " (" + column.type + ")";
+                xCursor += addTextRotated(dl, typeStr.c_str(), xCursor, cursorY, c, rot, typeColor);
+            }
+            if (column.isNotNull && !column.isPrimaryKey) {
+                addTextRotated(dl, " NOT NULL", xCursor, cursorY, c, rot, notNullColor);
+            }
+
+            cursorY += lineH + rowSpacing;
+        }
+    }
 }

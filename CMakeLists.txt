@@ -108,9 +108,14 @@ include(cmake/AppMetadata.cmake)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(SENTRY_ENVIRONMENT "production")
+    set(DEARSQL_EXPERIMENTAL_DEFAULT OFF)
 else()
     set(SENTRY_ENVIRONMENT "development")
+    set(DEARSQL_EXPERIMENTAL_DEFAULT ON)
 endif()
+
+# experimental features (ripple shader, future toys). off in release builds.
+option(DEARSQL_EXPERIMENTAL "Enable experimental features" ${DEARSQL_EXPERIMENTAL_DEFAULT})
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/include/config.hpp.in
@@ -133,6 +138,7 @@ find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(box2d CONFIG REQUIRED)
 include(cmake/FreeTDS.cmake)
 include(cmake/OracleOCI.cmake)
 include(cmake/CassandraDriver.cmake)
@@ -240,6 +246,9 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
     list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
     list(APPEND APP_SOURCES src/ui/table_aurora_shader.mm)
+    if(DEARSQL_EXPERIMENTAL)
+        list(APPEND APP_SOURCES src/ui/ripple_shader.mm)
+    endif()
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
@@ -300,6 +309,10 @@ target_include_directories(
         ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}/include
 )
+
+if(DEARSQL_EXPERIMENTAL)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DEARSQL_EXPERIMENTAL=1)
+endif()
 
 if(WIN32)
     target_compile_definitions(
@@ -364,6 +377,7 @@ target_link_libraries(
         tree-sitter-json-grammar
         spdlog::spdlog
         sql-parser
+        box2d::box2d
 )
 
 if(APPLE)

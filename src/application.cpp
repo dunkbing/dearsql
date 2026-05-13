@@ -37,6 +37,9 @@
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "embedded_fonts.hpp"
+#if defined(__APPLE__) && DEARSQL_EXPERIMENTAL
+#include "ui/ripple_shader.hpp"
+#endif
 
 namespace {
     volatile sig_atomic_t g_shutdownRequested = 0;
@@ -1025,6 +1028,20 @@ void Application::renderMainUI() {
     pollUpdater();
 
     ImGui::End();
+
+#if defined(__APPLE__) && DEARSQL_EXPERIMENTAL
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 p = io.MousePos;
+            if (p.x > -FLT_MAX) {
+                RippleShader::notifyClick(p.x, p.y, static_cast<float>(ImGui::GetTime()));
+            }
+        }
+        ImGui::GetForegroundDrawList()->AddCallback(&RippleShader::callback, nullptr);
+        ImGui::GetForegroundDrawList()->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+    }
+#endif
 }
 
 void Application::openFile(const std::string& rawPath) {

@@ -3,6 +3,7 @@
 #include "database/db.hpp"
 #include "imgui_node_editor.h"
 #include "ui/tab/tab.hpp"
+#include <box2d/id.h>
 #include <unordered_map>
 #include <vector>
 
@@ -19,6 +20,7 @@ struct DiagramNode {
     bool initialPositionSet = false;
     std::vector<ax::NodeEditor::PinId> columnPinIds;
     std::vector<float> columnPinCanvasY; // canvas-space Y center per column row
+    b2BodyId physicsBody{};              // zero-init == null id in Box2D v3
 };
 
 struct DiagramLink {
@@ -61,6 +63,15 @@ private:
     bool isForeignKeyColumn(const std::string& tableName, const std::string& columnName,
                             std::string& referencedTable, std::string& referencedColumn);
 
+    // Physics (Box2D) — fun experiment: tables fall under gravity, pile on a
+    // static ground, and FK relationships become distance-joint springs.
+    void buildPhysicsWorld();
+    void teardownPhysicsWorld();
+    void ensurePhysicsBuilt();
+    void stepAndApplyPhysics();
+    void renderGround();
+    void renderPhysicsView();
+
 private:
     IDatabaseNode* node_ = nullptr;
     ax::NodeEditor::EditorContext* editorContext = nullptr;
@@ -87,4 +98,13 @@ private:
     bool showColumnTypes = true;
     bool showPrimaryKeys = true;
     bool showForeignKeys = true;
+    bool enablePhysics = false;
+
+    b2WorldId physicsWorld{};
+    b2BodyId groundBody{};
+    float groundY = 0.0f;
+    bool physicsBuilt = false;
+    ax::NodeEditor::NodeId draggedNodeId{}; // latched on click, cleared on release
+    float dragOffsetX = 0.0f;               // world-space click offset from body center
+    float dragOffsetY = 0.0f;
 };

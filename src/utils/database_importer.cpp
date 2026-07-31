@@ -10,15 +10,10 @@
 #include <spdlog/spdlog.h>
 
 namespace {
-    // Statements are concatenated and sent in one round trip, which is the
-    // difference between ~700k round trips and a few thousand on a large dump.
-    // The connection sets CLIENT_MULTI_STATEMENTS, so the server splits them.
-    //
-    // Kept well under the usual 16MB client / 64MB server max_allowed_packet so
-    // batching never turns a valid dump into "packet too large". A single
-    // statement bigger than this is still sent on its own -- if the dump contains
-    // a statement above the server's limit, that is a server configuration
-    // problem no batching choice can avoid.
+    // Statements are concatenated and sent in one round trip; the connection
+    // sets CLIENT_MULTI_STATEMENTS, so the server splits them. Kept well under
+    // the usual max_allowed_packet so batching cannot make a valid dump
+    // unreadable.
     constexpr std::size_t kMaxBatchBytes = 1024 * 1024;
 } // namespace
 
@@ -96,8 +91,6 @@ namespace DatabaseImporter {
             batched = 0;
             progress.statementsApplied.store(applied, std::memory_order_relaxed);
 
-            // Cheap next to a round trip, and sampling less often leaves the bar
-            // short of the end when the dump finishes mid-interval.
             if (const auto pos = file.tellg(); pos >= 0) {
                 progress.bytesRead.store(static_cast<std::uint64_t>(pos),
                                          std::memory_order_relaxed);

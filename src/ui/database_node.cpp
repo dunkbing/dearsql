@@ -21,7 +21,6 @@
 
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
-#include "utils/database_importer.hpp"
 #include "utils/table_exporter.hpp"
 #include "utils/table_importer.hpp"
 #include <algorithm>
@@ -130,28 +129,12 @@ namespace {
         return result.message;
     }
 
-    // Integer MB truncates to "0 MB" for anything under a megabyte, which makes
-    // the readout useless on small dumps. Scale the unit to the value instead.
     std::string formatBytes(const std::uint64_t bytes) {
-        constexpr double kKB = 1024.0;
-        constexpr double kMB = kKB * 1024.0;
-        constexpr double kGB = kMB * 1024.0;
-        const auto value = static_cast<double>(bytes);
-
-        if (value >= kGB) {
-            return std::format("{:.1f} GB", value / kGB);
-        }
-        if (value >= kMB) {
-            return std::format("{:.1f} MB", value / kMB);
-        }
-        if (value >= kKB) {
-            return std::format("{:.0f} KB", value / kKB);
-        }
-        return std::format("{} B", bytes);
+        return formatByteSize(static_cast<int64_t>(bytes));
     }
 
     std::string formatDuration(const double seconds) {
-        if (seconds < 0.0 || seconds > 60.0 * 60.0 * 24.0) {
+        if (seconds > 60.0 * 60.0 * 24.0) {
             return "--";
         }
         const auto total = static_cast<int>(seconds);
@@ -170,7 +153,8 @@ namespace {
     // over the whole width instead -- twice, clipped to each side of the fill
     // boundary, because one colour is unreadable against the other half.
     void progressBarWithCentredLabel(const float fraction, const float width,
-                                     const std::string& label, const ImVec4& onFillColor) {
+                                     const std::string& label) {
+        const ImVec4& onFillColor = Application::getInstance().getCurrentColors().crust;
         const ImVec2 barPos = ImGui::GetCursorScreenPos();
         ImGui::ProgressBar(fraction, ImVec2(width, 0.0f), "");
 
@@ -199,6 +183,55 @@ namespace {
         draw->PushClipRect(ImVec2(fillX, barPos.y), ImVec2(barPos.x + barSize.x, barBottom), true);
         draw->AddText(labelPos, onTrack, label.c_str());
         draw->PopClipRect();
+    }
+
+    // Returns true when Cancel was pressed. widestStatus sizes the panel: the
+    // window auto-resizes to its content, so measuring the live status text would
+    // make it twitch whenever a digit or unit changed.
+    bool renderProgressPanel(const char* id, const char* title, const float fraction,
+                             const std::string& overlay, const std::string& status,
+                             const char* widestStatus, const bool cancelling) {
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(
+            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
+            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+        ImGui::SetNextWindowBgAlpha(0.92f);
+
+        constexpr ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+
+        constexpr float minBarWidth = 320.0f;
+        const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
+
+        bool cancelPressed = false;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(Theme::Spacing::L, Theme::Spacing::L));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+        if (ImGui::Begin(id, nullptr, flags)) {
+            ImGui::TextUnformatted(title);
+
+            // Cursor positions are window-relative, so the row's start has to be
+            // carried across to land the button flush with the bar's right edge.
+            const float contentStartX = ImGui::GetCursorPosX();
+            progressBarWithCentredLabel(fraction, contentWidth, overlay);
+            ImGui::TextUnformatted(status.c_str());
+
+            const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
+                                      ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
+            ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
+            ImGui::BeginDisabled(cancelling);
+            cancelPressed = ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f));
+            ImGui::EndDisabled();
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        return cancelPressed;
     }
 
     bool ensurePostgresToolsAvailable(const std::vector<std::string>& toolNames) {
@@ -1119,56 +1152,21 @@ void DatabaseHierarchy::renderExportProgress() {
         return;
     }
 
-    const auto& colors = Application::getInstance().getCurrentColors();
-
     const int done = exportProgress_->objectsDone.load(std::memory_order_relaxed);
     const int total = exportProgress_->objectsTotal.load(std::memory_order_relaxed);
     const auto rows = exportProgress_->rowsWritten.load(std::memory_order_relaxed);
     const auto bytes = exportProgress_->bytesWritten.load(std::memory_order_relaxed);
     const bool cancelling = exportProgress_->cancelRequested.load(std::memory_order_relaxed);
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
-                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.92f);
-
-    constexpr ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
-
     const float fraction = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
-    const std::string overlay = std::format("{} / {} objects", done, total);
-    const std::string statusText =
-        std::format("{} rows written  ·  {}", rows, formatBytes(bytes));
 
-    constexpr float minBarWidth = 320.0f;
-    constexpr const char* widestStatus = "999999999 rows written  ·  999.9 GB";
-    const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(Theme::Spacing::L, Theme::Spacing::L));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-
-    if (ImGui::Begin("##sql_export_progress", nullptr, flags)) {
-        ImGui::TextUnformatted(cancelling ? "Cancelling export..." : "Exporting SQL dump");
-
-        const float contentStartX = ImGui::GetCursorPosX();
-        progressBarWithCentredLabel(fraction, contentWidth, overlay, colors.crust);
-        ImGui::TextUnformatted(statusText.c_str());
-
-        const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
-                                  ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
-        ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
-        ImGui::BeginDisabled(cancelling);
-        if (ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f))) {
-            exportProgress_->cancelRequested.store(true, std::memory_order_relaxed);
-        }
-        ImGui::EndDisabled();
+    if (renderProgressPanel("##sql_export_progress",
+                            cancelling ? "Cancelling export..." : "Exporting SQL dump", fraction,
+                            std::format("{} / {} objects", done, total),
+                            std::format("{} rows written  ·  {}", rows, formatBytes(bytes)),
+                            "999999999 rows written  ·  999.99 GB", cancelling)) {
+        exportProgress_->cancelRequested.store(true, std::memory_order_relaxed);
     }
-    ImGui::End();
-    ImGui::PopStyleVar(2);
 }
 
 void DatabaseHierarchy::checkImportStatus() {
@@ -1210,30 +1208,12 @@ void DatabaseHierarchy::renderImportProgress() {
         return;
     }
 
-    const auto& colors = Application::getInstance().getCurrentColors();
-
     const auto total = importProgress_->totalBytes.load(std::memory_order_relaxed);
     const auto read = importProgress_->bytesRead.load(std::memory_order_relaxed);
     const int applied = importProgress_->statementsApplied.load(std::memory_order_relaxed);
     const bool cancelling = importProgress_->cancelRequested.load(std::memory_order_relaxed);
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
-                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.92f);
-
-    constexpr ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(Theme::Spacing::L, Theme::Spacing::L));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-
-    // file_size() can fail, in which case an indeterminate bar is the honest thing
-    // to show rather than a fraction of zero.
+    // file_size() can fail; an indeterminate bar is honest, a fraction of zero is not.
     const float fraction =
         total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
                   : -1.0f * static_cast<float>(ImGui::GetTime());
@@ -1241,9 +1221,6 @@ void DatabaseHierarchy::renderImportProgress() {
                                     ? std::format("{} / {}", formatBytes(read), formatBytes(total))
                                     : formatBytes(read);
 
-    // Throughput distinguishes a latency-bound import from a server-bound one: a
-    // statement rate that stays flat while bytes/s varies means round trips
-    // dominate, which is what statement batching would fix.
     const double elapsed = ImGui::GetTime() - importStartTime_;
     std::string statusText = std::format("{} statements applied", applied);
     if (elapsed > 0.5) {
@@ -1258,36 +1235,13 @@ void DatabaseHierarchy::renderImportProgress() {
         }
     }
 
-    // Width is measured from a fixed worst-case template, never from the live
-    // status text: the window auto-resizes to its content, so measuring the real
-    // string would make it twitch every time a digit or a unit changed.
-    constexpr float minBarWidth = 320.0f;
-    constexpr const char* widestStatus =
-        "999999 statements applied  ·  999.9 MB/s  ·  999999 stmt/s  ·  99h 59m left";
-    const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
-
-    if (ImGui::Begin("##sql_import_progress", nullptr, flags)) {
-        ImGui::TextUnformatted(cancelling ? "Cancelling import..." : "Importing SQL dump");
-
-        // SameLine() measures its offset from the window position rather than the
-        // content region, so the row's own start has to be carried across to land
-        // the button flush with the right edge.
-        const float contentStartX = ImGui::GetCursorPosX();
-
-        progressBarWithCentredLabel(fraction, contentWidth, overlay, colors.crust);
-        ImGui::TextUnformatted(statusText.c_str());
-
-        const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
-                                  ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
-        ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
-        ImGui::BeginDisabled(cancelling);
-        if (ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f))) {
-            importProgress_->cancelRequested.store(true, std::memory_order_relaxed);
-        }
-        ImGui::EndDisabled();
+    if (renderProgressPanel(
+            "##sql_import_progress", cancelling ? "Cancelling import..." : "Importing SQL dump",
+            fraction, overlay, statusText,
+            "999999 statements applied  ·  999.9 MB/s  ·  999999 stmt/s  ·  99h 59m left",
+            cancelling)) {
+        importProgress_->cancelRequested.store(true, std::memory_order_relaxed);
     }
-    ImGui::End();
-    ImGui::PopStyleVar(2);
 }
 
 void DatabaseHierarchy::checkPostgresToolStatus() {

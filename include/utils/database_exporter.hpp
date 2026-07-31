@@ -35,17 +35,8 @@ namespace DatabaseExporter {
 
     // Writes a mysqldump-compatible .sql dump of the whole database.
     //
-    // Schema comes from SHOW CREATE TABLE / SHOW CREATE VIEW rather than being
-    // rebuilt from the app's Table model, so indexes, foreign keys, defaults,
-    // generated columns, partitioning, the real engine and charset, and the
-    // AUTO_INCREMENT counter all survive. Rebuilding the DDL loses every one of
-    // those, which makes an export that cannot be imported back into an
-    // equivalent schema.
-    //
-    // The dump is wrapped in the same session preamble mysqldump emits, so it
-    // restores through this application's importer and through the mysql client
-    // alike -- most importantly FOREIGN_KEY_CHECKS=0, without which tables load
-    // in an order the constraints reject.
+    // Schema comes from SHOW CREATE TABLE/VIEW, so indexes, foreign keys,
+    // defaults, partitioning and AUTO_INCREMENT survive.
     //
     // Safe to call from a worker thread: it holds one pooled connection for the
     // whole run and never touches the UI.

@@ -721,7 +721,8 @@ QueryResult MySQLDatabaseNode::executeQueryOn(MYSQL* conn, const std::string& qu
             throw std::runtime_error("No MySQL connection");
         }
 
-        if (mysql_query(conn, query.c_str()) != 0) {
+        // real_query takes a length: query may be a megabyte-sized batch.
+        if (mysql_real_query(conn, query.c_str(), query.size()) != 0) {
             StatementResult r;
             r.success = false;
             r.errorMessage = mysql_error(conn);

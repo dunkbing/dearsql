@@ -1,6 +1,7 @@
 #include "utils/database_exporter.hpp"
 
 #include "database/mysql/mysql_internal.hpp"
+#include "database/sql_builder.hpp"
 
 #include <cstddef>
 #include <fstream>
@@ -14,14 +15,12 @@ namespace {
 
     using mysql_internal::MysqlResPtr;
 
-    // Rows are accumulated into extended INSERTs up to this size. Same reasoning
-    // as the importer's batch cap: comfortably under the usual max_allowed_packet
-    // so a dump this writes can always be read back.
+    // Extended INSERTs are capped here, under the usual max_allowed_packet, so a
+    // dump this writes can always be read back.
     constexpr std::size_t kMaxInsertBytes = 1024 * 1024;
 
     // What mysqldump emits. FOREIGN_KEY_CHECKS=0 is the load-bearing one: without
-    // it the tables restore in whatever order they were written and the
-    // constraints reject them.
+    // it the tables restore in the order written and the constraints reject them.
     constexpr const char* kPreamble =
         "/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;\n"
         "/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;\n"
@@ -44,31 +43,28 @@ namespace {
         "/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;\n"
         "/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;\n";
 
-    std::string quoteIdentifier(const std::string& name) {
-        std::string quoted = "`";
-        for (const char c : name) {
-            if (c == '`') {
-                quoted += '`'; // a backtick in an identifier is doubled
-            }
-            quoted += c;
-        }
-        quoted += '`';
-        return quoted;
-    }
-
     // Escaping goes through the server connection so it honours the connection
-    // charset and is binary safe. The string-based row representation used
-    // elsewhere cannot do this: it renders NULL as a sentinel value that a real
-    // column could legitimately contain.
-    std::string quoteValue(MYSQL* conn, const char* data, const unsigned long length) {
+    // charset and is binary safe. Appends in place: this runs once per field, so
+    // a temporary here costs two allocations per field over a whole table.
+    void appendQuotedValue(MYSQL* conn, std::string& out, const char* data,
+                           const unsigned long length) {
         if (!data) {
-            return "NULL";
+            out += "NULL";
+            return;
         }
-        std::string escaped(length * 2 + 1, '\0');
+        const size_t start = out.size();
+        out.resize(start + 2 + length * 2);
+        out[start] = '\'';
         const unsigned long written =
-            mysql_real_escape_string(conn, escaped.data(), data, length);
-        escaped.resize(written);
-        return "'" + escaped + "'";
+            mysql_real_escape_string(conn, out.data() + start + 1, data, length);
+        // Returns (unsigned long)-1 when the server has NO_BACKSLASH_ESCAPES set.
+        // Unchecked, start + 1 + written wraps back to start and silently writes a
+        // truncated, unparseable dump.
+        if (written == static_cast<unsigned long>(-1)) {
+            throw std::runtime_error(mysql_error(conn));
+        }
+        out.resize(start + 1 + written);
+        out += '\'';
     }
 
     void execute(MYSQL* conn, const std::string& sql) {
@@ -123,19 +119,17 @@ namespace {
                progress.cancelRequested.load(std::memory_order_relaxed);
     }
 
-    // Streams a table's rows into extended INSERT statements.
-    //
-    // Uses mysql_use_result rather than mysql_store_result: the latter buffers the
-    // entire table in client memory, which a multi-gigabyte table will not
-    // survive. The trade-off is that the connection cannot issue another query
-    // until the result is fully consumed, which is fine here because the export
-    // owns the session for its whole run.
-    std::uint64_t writeTableData(MYSQL* conn, std::ofstream& out, const std::string& tableName,
+    // mysql_use_result rather than mysql_store_result: the latter buffers the
+    // whole table in client memory. The trade-off is that no other query can run
+    // until the result is drained, which is fine -- the export owns the session.
+    std::uint64_t writeTableData(MYSQL* conn, const ISQLBuilder& builder, std::ofstream& out,
+                                 const std::string& tableName,
                                  DatabaseExporter::Progress& progress,
                                  const std::stop_token& stopToken, bool& stopped) {
-        const std::string quotedName = quoteIdentifier(tableName);
+        const std::string quotedName = builder.quoteIdentifier(tableName);
         execute(conn, "SELECT * FROM " + quotedName);
 
+        // ~MysqlResPtr drains any unread rows, which a cancelled run relies on.
         const MysqlResPtr res(mysql_use_result(conn));
         if (!res) {
             throw std::runtime_error(mysql_error(conn));
@@ -155,16 +149,21 @@ namespace {
             batch.clear();
         };
 
+        // Reused across rows so its capacity survives; a fresh string here would be
+        // an allocation per row.
+        std::string tuple;
+
         MYSQL_ROW row;
         while ((row = mysql_fetch_row(res.get())) != nullptr) {
             const unsigned long* lengths = mysql_fetch_lengths(res.get());
 
-            std::string tuple = "(";
+            tuple.clear();
+            tuple += '(';
             for (unsigned int i = 0; i < fieldCount; ++i) {
                 if (i > 0) {
                     tuple += ',';
                 }
-                tuple += quoteValue(conn, row[i], lengths ? lengths[i] : 0);
+                appendQuotedValue(conn, tuple, row[i], lengths ? lengths[i] : 0);
             }
             tuple += ')';
 
@@ -189,9 +188,6 @@ namespace {
             }
         }
         flush();
-
-        // A cancelled mysql_use_result must still be drained before the connection
-        // can be reused; ~MysqlResPtr does that via mysql_free_result.
         return rows;
     }
 
@@ -241,6 +237,8 @@ namespace DatabaseExporter {
             return result;
         }
 
+        const auto builder = createSQLBuilder(node->getDatabaseType());
+
         std::vector<std::string> tables;
         std::vector<std::string> views;
         bool stopped = false;
@@ -257,10 +255,12 @@ namespace DatabaseExporter {
                     break;
                 }
 
-                out << "DROP TABLE IF EXISTS " << quoteIdentifier(table) << ";\n";
-                out << showCreate(conn, "SHOW CREATE TABLE " + quoteIdentifier(table)) << ";\n\n";
+                out << "DROP TABLE IF EXISTS " << builder->quoteIdentifier(table) << ";\n";
+                out << showCreate(conn, "SHOW CREATE TABLE " + builder->quoteIdentifier(table))
+                    << ";\n\n";
 
-                result.rows += writeTableData(conn, out, table, progress, stopToken, stopped);
+                result.rows +=
+                    writeTableData(conn, *builder, out, table, progress, stopToken, stopped);
                 out << "\n";
 
                 ++result.objects;
@@ -282,8 +282,9 @@ namespace DatabaseExporter {
                         break;
                     }
 
-                    out << "DROP VIEW IF EXISTS " << quoteIdentifier(view) << ";\n";
-                    out << showCreate(conn, "SHOW CREATE VIEW " + quoteIdentifier(view)) << ";\n\n";
+                    out << "DROP VIEW IF EXISTS " << builder->quoteIdentifier(view) << ";\n";
+                    out << showCreate(conn, "SHOW CREATE VIEW " + builder->quoteIdentifier(view))
+                        << ";\n\n";
 
                     ++result.objects;
                     progress.objectsDone.store(result.objects, std::memory_order_relaxed);

@@ -98,7 +98,9 @@ bool SqlDumpSplitter::split(
 
             switch (state) {
             case State::Normal:
-                if (matchesAt(line, i, delimiter)) {
+                // Cheap first-character test before the compare: in Normal state
+                // this runs on every byte of the dump.
+                if (c == delimiter[0] && matchesAt(line, i, delimiter)) {
                     if (!emit()) {
                         return false;
                     }

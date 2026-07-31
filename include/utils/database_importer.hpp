@@ -37,19 +37,13 @@ namespace DatabaseImporter {
     // Runs a dump against the node. Safe to call from a worker thread: it holds
     // one pooled connection for the whole run and never touches the UI.
     //
-    // Holding a single connection is required, not an optimisation. mysqldump
-    // opens with session-scoped state -- FOREIGN_KEY_CHECKS=0, SQL_MODE,
-    // SET NAMES -- and closes by restoring it from @OLD_* variables. Taking a
-    // fresh connection per statement would let foreign key checks come back on
-    // mid-dump and leave the trailing restores reading NULL variables.
+    // The single connection is required, not an optimisation: mysqldump sets
+    // session state (FOREIGN_KEY_CHECKS, SQL_MODE, SET NAMES) up front and
+    // restores it from @OLD_* variables at the end.
     //
-    // Statements are concatenated and sent in batches to keep round trips down on
-    // large dumps, so `applied` counts statements in batches known to have
-    // succeeded; on failure the offending statement is somewhere in the batch
-    // after that, not necessarily the next one.
-    //
-    // Execution stops at the first failing batch -- continuing past a failed
-    // CREATE TABLE only produces cascading errors -- and also on cancellation.
+    // Statements are sent in batches, so `applied` counts only batches known to
+    // have succeeded -- on failure the offending statement is somewhere in the
+    // next batch. Execution stops there rather than cascading.
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken);
 

@@ -61,6 +61,21 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
+# Clang 19+ emits -Wnontrivial-memcall for md5.cpp's memset(this, 0, sizeof(Md5)),
+# and the driver builds with -Werror. -Wno-unknown-warning-option has to come
+# first: older Clang does not know the flag below, and -Werror would turn that
+# into an error too. Version-gating is unreliable, as Apple Clang version numbers
+# do not track upstream LLVM.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(
+        cassandra_static
+        PRIVATE
+            -Wno-unknown-warning-option
+            -Wno-error=nontrivial-memcall
+            -Wno-nontrivial-memcall
+    )
+endif()
+
 target_compile_definitions(cassandra_static INTERFACE CASS_STATIC)
 
 # The driver's CMakeLists builds CASS_INCLUDES privately; re-expose the public

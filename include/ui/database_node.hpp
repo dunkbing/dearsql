@@ -111,6 +111,7 @@ private:
     AsyncOperation<DatabaseImporter::Result> importOp_;
     std::shared_ptr<DatabaseImporter::Progress> importProgress_;
     std::string importDbName_;
+    double importStartTime_ = 0.0;
 
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,

@@ -689,6 +689,38 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
         mysql_ping(conn); // round trip ≈ network latency
         const auto tPing = Clock::now();
 
+        result = executeQueryOn(conn, query, rowLimit);
+
+        // Prepend the pool/network phases so the waterfall reads connect →
+        // network latency → execution → download → parse.
+        std::vector<std::pair<std::string, double>> prefix = {
+            {"connect", toMs(tConnect - startTime)},
+            {"network latency", toMs(tPing - tConnect)}};
+        result.phaseTimings.insert(result.phaseTimings.begin(), prefix.begin(), prefix.end());
+    } catch (const std::exception& e) {
+        StatementResult r;
+        r.success = false;
+        r.errorMessage = e.what();
+        result.statements.push_back(r);
+    }
+
+    const auto endTime = Clock::now();
+    result.executionTimeMs = toMs(endTime - startTime);
+    return result;
+}
+
+QueryResult MySQLDatabaseNode::executeQueryOn(MYSQL* conn, const std::string& query,
+                                              const int rowLimit) {
+    QueryResult result;
+    using Clock = std::chrono::high_resolution_clock;
+    const auto toMs = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    const auto startTime = Clock::now();
+
+    try {
+        if (!conn) {
+            throw std::runtime_error("No MySQL connection");
+        }
+
         if (mysql_query(conn, query.c_str()) != 0) {
             StatementResult r;
             r.success = false;
@@ -709,9 +741,7 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
 
         // ponytail: coarse client-side split; execution includes one-way latency,
         // rows arrive during mysql_store_result (data download)
-        result.phaseTimings = {{"connect", toMs(tConnect - startTime)},
-                               {"network latency", toMs(tPing - tConnect)},
-                               {"execution", toMs(tExec - tPing)},
+        result.phaseTimings = {{"execution", toMs(tExec - startTime)},
                                {"data download", downloadMs},
                                {"data parse", parseMs}};
     } catch (const std::exception& e) {
@@ -721,8 +751,8 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
         result.statements.push_back(r);
     }
 
-    const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    const auto endTime = Clock::now();
+    result.executionTimeMs = toMs(endTime - startTime);
     return result;
 }
 

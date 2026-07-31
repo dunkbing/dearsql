@@ -150,6 +150,20 @@ namespace {
         return std::format("{} B", bytes);
     }
 
+    std::string formatDuration(const double seconds) {
+        if (seconds < 0.0 || seconds > 60.0 * 60.0 * 24.0) {
+            return "--";
+        }
+        const auto total = static_cast<int>(seconds);
+        if (total >= 3600) {
+            return std::format("{}h {}m", total / 3600, total % 3600 / 60);
+        }
+        if (total >= 60) {
+            return std::format("{}m {}s", total / 60, total % 60);
+        }
+        return std::format("{}s", total);
+    }
+
     bool ensurePostgresToolsAvailable(const std::vector<std::string>& toolNames) {
         const PostgresToolResult result = PostgresBackupService::checkToolsAvailable(toolNames);
         if (result.success) {
@@ -1015,6 +1029,7 @@ void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
 
     importProgress_ = std::make_shared<DatabaseImporter::Progress>();
     importDbName_ = dbData->name;
+    importStartTime_ = ImGui::GetTime();
 
     importOp_.startCancellable(
         [dbData, path, progress = importProgress_](const std::stop_token& stopToken) {
@@ -1033,10 +1048,13 @@ void DatabaseHierarchy::checkImportStatus() {
                                     "not rolled back.",
                                     result.applied));
         } else {
+            // Statements are sent to the server in batches, so the exact failing
+            // statement is not known -- only that it followed the last batch that
+            // succeeded. Do not name a statement number that could be wrong.
             Alert::show("Import Failed",
-                        std::format("Statement {} failed:\n\n{}\n\n{} statement(s) were applied "
-                                    "before the failure and were not rolled back.",
-                                    result.applied + 1, result.error, result.applied));
+                        std::format("The import failed after {} statement(s):\n\n{}\n\nWhat had "
+                                    "already been applied was not rolled back.",
+                                    result.applied, result.error));
         }
 
         if (result.applied > 0) {
@@ -1058,6 +1076,8 @@ void DatabaseHierarchy::renderImportProgress() {
         return;
     }
 
+    const auto& colors = Application::getInstance().getCurrentColors();
+
     const auto total = importProgress_->totalBytes.load(std::memory_order_relaxed);
     const auto read = importProgress_->bytesRead.load(std::memory_order_relaxed);
     const int applied = importProgress_->statementsApplied.load(std::memory_order_relaxed);
@@ -1078,33 +1098,88 @@ void DatabaseHierarchy::renderImportProgress() {
                         ImVec2(Theme::Spacing::L, Theme::Spacing::L));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
 
+    // file_size() can fail, in which case an indeterminate bar is the honest thing
+    // to show rather than a fraction of zero.
+    const float fraction =
+        total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
+                  : -1.0f * static_cast<float>(ImGui::GetTime());
+    const std::string overlay = total > 0
+                                    ? std::format("{} / {}", formatBytes(read), formatBytes(total))
+                                    : formatBytes(read);
+
+    // Throughput distinguishes a latency-bound import from a server-bound one: a
+    // statement rate that stays flat while bytes/s varies means round trips
+    // dominate, which is what statement batching would fix.
+    const double elapsed = ImGui::GetTime() - importStartTime_;
+    std::string statusText = std::format("{} statements applied", applied);
+    if (elapsed > 0.5) {
+        const double bytesPerSecond = static_cast<double>(read) / elapsed;
+        statusText += std::format("  ·  {}/s  ·  {:.0f} stmt/s",
+                                  formatBytes(static_cast<std::uint64_t>(bytesPerSecond)),
+                                  static_cast<double>(applied) / elapsed);
+        if (total > read && bytesPerSecond > 0.0) {
+            statusText +=
+                std::format("  ·  {} left",
+                            formatDuration(static_cast<double>(total - read) / bytesPerSecond));
+        }
+    }
+
+    // Width is measured from a fixed worst-case template, never from the live
+    // status text: the window auto-resizes to its content, so measuring the real
+    // string would make it twitch every time a digit or a unit changed.
+    constexpr float minBarWidth = 320.0f;
+    constexpr const char* widestStatus =
+        "999999 statements applied  ·  999.9 MB/s  ·  999999 stmt/s  ·  99h 59m left";
+    const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
+
     if (ImGui::Begin("##sql_import_progress", nullptr, flags)) {
         ImGui::TextUnformatted(cancelling ? "Cancelling import..." : "Importing SQL dump");
 
-        // file_size() can fail, in which case an indeterminate bar is the honest
-        // thing to show rather than a fraction of zero.
-        constexpr float barWidth = 320.0f;
-        const float fraction =
-            total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
-                      : -1.0f * static_cast<float>(ImGui::GetTime());
-        const std::string overlay =
-            total > 0 ? std::format("{} / {}", formatBytes(read), formatBytes(total))
-                      : formatBytes(read);
-
         // SameLine() measures its offset from the window position rather than the
-        // content region, so the bar's own start has to be carried across to land
-        // the button flush with the bar's right edge.
-        const float barStartX = ImGui::GetCursorPosX();
-        ImGui::ProgressBar(fraction, ImVec2(barWidth, 0.0f), overlay.c_str());
+        // content region, so the row's own start has to be carried across to land
+        // the button flush with the right edge.
+        const float contentStartX = ImGui::GetCursorPosX();
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%d statements applied", applied);
+        // ImGui draws a ProgressBar overlay just past the fill and clamps it to
+        // the bar, so it slides along with the fill and ends up squashed against
+        // the right edge. Suppress it and centre the text over the whole bar.
+        const ImVec2 barPos = ImGui::GetCursorScreenPos();
+        ImGui::ProgressBar(fraction, ImVec2(contentWidth, 0.0f), "");
+        const ImVec2 barSize = ImGui::GetItemRectSize();
+        const ImVec2 overlaySize = ImGui::CalcTextSize(overlay.c_str());
+        const ImVec2 overlayPos(barPos.x + (barSize.x - overlaySize.x) * 0.5f,
+                                barPos.y + (barSize.y - overlaySize.y) * 0.5f);
 
-        // Right-align Cancel to the end of the bar so it does not run into the
-        // statement count, which grows as the import proceeds.
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImU32 onTrack = ImGui::GetColorU32(ImGuiCol_Text);
+
+        if (fraction < 0.0f) {
+            // Indeterminate: the fill sweeps, so there is no stable split to
+            // colour against.
+            draw->AddText(overlayPos, onTrack, overlay.c_str());
+        } else {
+            // Centred text spans both halves of the bar, and the default text
+            // colour is near-invisible against the blue fill. Draw it twice,
+            // clipped to each side, so each half gets a colour that reads.
+            const ImU32 onFill = ImGui::GetColorU32(colors.crust);
+            const float fillX = barPos.x + barSize.x * std::min(fraction, 1.0f);
+            const float barBottom = barPos.y + barSize.y;
+
+            draw->PushClipRect(barPos, ImVec2(fillX, barBottom), true);
+            draw->AddText(overlayPos, onFill, overlay.c_str());
+            draw->PopClipRect();
+
+            draw->PushClipRect(ImVec2(fillX, barPos.y), ImVec2(barPos.x + barSize.x, barBottom),
+                               true);
+            draw->AddText(overlayPos, onTrack, overlay.c_str());
+            draw->PopClipRect();
+        }
+
+        ImGui::TextUnformatted(statusText.c_str());
+
         const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
                                   ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
-        ImGui::SameLine(barStartX + barWidth - cancelWidth);
+        ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
         ImGui::BeginDisabled(cancelling);
         if (ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f))) {
             importProgress_->cancelRequested.store(true, std::memory_order_relaxed);

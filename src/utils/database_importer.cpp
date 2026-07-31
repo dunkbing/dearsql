@@ -2,10 +2,25 @@
 
 #include "utils/sql_dump_splitter.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <nfd.h>
+#include <optional>
 #include <spdlog/spdlog.h>
+
+namespace {
+    // Statements are concatenated and sent in one round trip, which is the
+    // difference between ~700k round trips and a few thousand on a large dump.
+    // The connection sets CLIENT_MULTI_STATEMENTS, so the server splits them.
+    //
+    // Kept well under the usual 16MB client / 64MB server max_allowed_packet so
+    // batching never turns a valid dump into "packet too large". A single
+    // statement bigger than this is still sent on its own -- if the dump contains
+    // a statement above the server's limit, that is a server configuration
+    // problem no batching choice can avoid.
+    constexpr std::size_t kMaxBatchBytes = 1024 * 1024;
+} // namespace
 
 namespace DatabaseImporter {
 
@@ -24,13 +39,23 @@ namespace DatabaseImporter {
         return path;
     }
 
-    Result runSqlDump(IDatabaseNode* node, const std::string& path, Progress& progress,
+    Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken) {
         Result result;
         result.path = path;
 
         if (!node) {
             result.error = "No database selected.";
+            return result;
+        }
+
+        // Held for the whole dump so session state set by its preamble survives.
+        // getSession() throws if the pool cannot hand one out.
+        std::optional<ConnectionPool<MYSQL*>::Session> session;
+        try {
+            session.emplace(node->getSession());
+        } catch (const std::exception& e) {
+            result.error = e.what();
             return result;
         }
 
@@ -50,30 +75,74 @@ namespace DatabaseImporter {
         std::string failure;
         bool cancelled = false;
 
-        SqlDumpSplitter::split(file, [&](const std::string& statement) {
-            if (stopToken.stop_requested() ||
-                progress.cancelRequested.load(std::memory_order_relaxed)) {
-                cancelled = true;
-                return false;
-            }
+        std::string batch;
+        int batched = 0;
 
-            const auto queryResult = node->executeQuery(statement);
+        // Sends the accumulated batch as a single query. Returns false to stop the
+        // scan. On failure `applied` is left at the last statement known to have
+        // succeeded, so the reported count never overstates what was written.
+        const auto flush = [&]() {
+            if (batch.empty()) {
+                return true;
+            }
+            const auto queryResult = node->executeQueryOn(session->get(), batch);
+            batch.clear();
             if (!queryResult.success()) {
                 failure = queryResult.errorMessage();
+                batched = 0;
                 return false;
             }
-
-            ++applied;
+            applied += batched;
+            batched = 0;
             progress.statementsApplied.store(applied, std::memory_order_relaxed);
 
-            // Cheap next to a per-statement round trip, and sampling less often
-            // leaves the bar short of the end when the dump finishes mid-interval.
+            // Cheap next to a round trip, and sampling less often leaves the bar
+            // short of the end when the dump finishes mid-interval.
             if (const auto pos = file.tellg(); pos >= 0) {
                 progress.bytesRead.store(static_cast<std::uint64_t>(pos),
                                          std::memory_order_relaxed);
             }
             return true;
+        };
+
+        SqlDumpSplitter::split(file, [&](const std::string& statement, const bool compound) {
+            if (stopToken.stop_requested() ||
+                progress.cancelRequested.load(std::memory_order_relaxed)) {
+                if (!flush()) {
+                    return false;
+                }
+                cancelled = true;
+                return false;
+            }
+
+            // A trigger or routine body carries internal semicolons, so it goes to
+            // the server alone rather than concatenated behind another statement.
+            if (compound) {
+                if (!flush()) {
+                    return false;
+                }
+                batch = statement;
+                batched = 1;
+                return flush();
+            }
+
+            if (!batch.empty() && batch.size() + statement.size() + 1 > kMaxBatchBytes) {
+                if (!flush()) {
+                    return false;
+                }
+            }
+
+            if (!batch.empty()) {
+                batch += ';';
+            }
+            batch += statement;
+            ++batched;
+            return true;
         });
+
+        if (failure.empty() && !cancelled) {
+            flush();
+        }
 
         result.applied = applied;
         result.cancelled = cancelled;

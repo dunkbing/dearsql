@@ -10,11 +10,21 @@ namespace {
     std::vector<std::string> splitAll(const std::string& dump) {
         std::istringstream in(dump);
         std::vector<std::string> statements;
-        SqlDumpSplitter::split(in, [&](const std::string& statement) {
+        SqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
             statements.push_back(statement);
             return true;
         });
         return statements;
+    }
+
+    std::vector<bool> compoundFlags(const std::string& dump) {
+        std::istringstream in(dump);
+        std::vector<bool> flags;
+        SqlDumpSplitter::split(in, [&](const std::string&, const bool compound) {
+            flags.push_back(compound);
+            return true;
+        });
+        return flags;
     }
 
 } // namespace
@@ -144,10 +154,22 @@ TEST(SqlDumpSplitter, StringSpanningLinesKeepsNewline) {
 TEST(SqlDumpSplitter, StopsWhenCallbackReturnsFalse) {
     std::istringstream in("SELECT 1; SELECT 2; SELECT 3;");
     std::vector<std::string> statements;
-    const bool completed = SqlDumpSplitter::split(in, [&](const std::string& statement) {
+    const bool completed = SqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
         statements.push_back(statement);
         return statements.size() < 2;
     });
     EXPECT_FALSE(completed);
     EXPECT_EQ(statements.size(), 2u);
+}
+
+TEST(SqlDumpSplitter, FlagsOnlyDelimiterBlockStatementsAsCompound) {
+    const auto flags = compoundFlags("SELECT 1;\n"
+                                     "DELIMITER $$\n"
+                                     "CREATE TRIGGER x BEGIN SET @a = 1; END$$\n"
+                                     "DELIMITER ;\n"
+                                     "SELECT 2;\n");
+    ASSERT_EQ(flags.size(), 3u);
+    EXPECT_FALSE(flags[0]);
+    EXPECT_TRUE(flags[1]);
+    EXPECT_FALSE(flags[2]);
 }

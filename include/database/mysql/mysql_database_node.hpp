@@ -72,6 +72,13 @@ public:
     [[nodiscard]] DatabaseType getDatabaseType() const override;
 
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
+
+    // Runs a statement on a connection the caller already holds, instead of
+    // taking one from the pool per call. Session-scoped state -- SQL_MODE,
+    // FOREIGN_KEY_CHECKS, the client character set -- only persists across
+    // statements that share a connection, so anything replaying a mysqldump has
+    // to hold one session for the whole run. Obtain one with getSession().
+    QueryResult executeQueryOn(MYSQL* conn, const std::string& sql, int limit = 1000);
     std::pair<bool, std::string> createTable(const Table& table) override;
 
     std::vector<Table>& getTables() override {

@@ -66,8 +66,9 @@ namespace {
 
 } // namespace
 
-bool SqlDumpSplitter::split(std::istream& in,
-                            const std::function<bool(const std::string&)>& onStatement) {
+bool SqlDumpSplitter::split(
+    std::istream& in,
+    const std::function<bool(const std::string& statement, bool compound)>& onStatement) {
     std::string delimiter = ";";
     std::string statement;
     State state = State::Normal;
@@ -76,7 +77,7 @@ bool SqlDumpSplitter::split(std::istream& in,
     const auto emit = [&]() {
         const std::string trimmed = trim(statement);
         statement.clear();
-        return trimmed.empty() ? true : onStatement(trimmed);
+        return trimmed.empty() ? true : onStatement(trimmed, delimiter != ";");
     };
 
     while (std::getline(in, line)) {

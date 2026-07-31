@@ -12,6 +12,7 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "utils/database_importer.hpp"
 #include <functional>
 #include <map>
 #include <memory>
@@ -107,6 +108,10 @@ private:
     // invalidate the iteration, so the request is deferred to the next frame.
     std::optional<std::string> pendingDropDatabase_;
 
+    AsyncOperation<DatabaseImporter::Result> importOp_;
+    std::shared_ptr<DatabaseImporter::Progress> importProgress_;
+    std::string importDbName_;
+
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,
                                  const ImVec2& nodeMin, const ImVec2& nodeMax,
@@ -116,6 +121,9 @@ private:
                                       std::function<void(const std::string&)> dropOne,
                                       DatabaseType dbType = DatabaseType::SQLITE);
     void checkPostgresToolStatus();
+    void checkImportStatus();
+    void renderImportProgress();
+    void startSqlDumpImport(MySQLDatabaseNode* dbData);
     void renderPostgresBackupRestoreMenus(PostgresDatabaseNode* dbData);
     void startPostgresBackup(PostgresDatabaseNode* dbData, PostgresBackupFormat format,
                              bool includeCreateDatabase, bool noOwner);

@@ -21,6 +21,7 @@
 
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
+#include "utils/database_importer.hpp"
 #include "utils/table_exporter.hpp"
 #include "utils/table_importer.hpp"
 #include <algorithm>
@@ -327,6 +328,8 @@ void DatabaseHierarchy::renderRootNode() {
     }
 
     checkPostgresToolStatus();
+    checkImportStatus();
+    renderImportProgress();
 
     prevVisibleTables_ = std::move(currVisibleTables_);
     currVisibleTables_.clear();
@@ -979,6 +982,101 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     db->refreshDatabaseNames();
 }
 
+void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
+    if (!dbData || importOp_.isRunning()) {
+        return;
+    }
+
+    const std::string path = DatabaseImporter::promptForSqlDump();
+    if (path.empty()) {
+        return;
+    }
+
+    importProgress_ = std::make_shared<DatabaseImporter::Progress>();
+    importDbName_ = dbData->name;
+
+    importOp_.startCancellable(
+        [dbData, path, progress = importProgress_](const std::stop_token& stopToken) {
+            return DatabaseImporter::runSqlDump(dbData, path, *progress, stopToken);
+        });
+}
+
+void DatabaseHierarchy::checkImportStatus() {
+    importOp_.check([this](const DatabaseImporter::Result result) {
+        if (result.success) {
+            Alert::show("Import Complete", std::format("Applied {} statement(s) from '{}'.",
+                                                       result.applied, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Import Cancelled",
+                        std::format("Stopped after {} statement(s). Changes already applied were "
+                                    "not rolled back.",
+                                    result.applied));
+        } else {
+            Alert::show("Import Failed",
+                        std::format("Statement {} failed:\n\n{}\n\n{} statement(s) were applied "
+                                    "before the failure and were not rolled back.",
+                                    result.applied + 1, result.error, result.applied));
+        }
+
+        if (result.applied > 0) {
+            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+                if (auto* dbData = mysqlDb->getDatabaseData(importDbName_)) {
+                    dbData->startTablesLoadAsync(true);
+                    dbData->startViewsLoadAsync(true);
+                }
+            }
+        }
+
+        importProgress_.reset();
+        importDbName_.clear();
+    });
+}
+
+void DatabaseHierarchy::renderImportProgress() {
+    if (!importOp_.isRunning() || !importProgress_) {
+        return;
+    }
+
+    const auto total = importProgress_->totalBytes.load(std::memory_order_relaxed);
+    const auto read = importProgress_->bytesRead.load(std::memory_order_relaxed);
+    const int applied = importProgress_->statementsApplied.load(std::memory_order_relaxed);
+    const bool cancelling = importProgress_->cancelRequested.load(std::memory_order_relaxed);
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+
+    if (ImGui::Begin("##sql_import_progress", nullptr, flags)) {
+        ImGui::TextUnformatted(cancelling ? "Cancelling import..." : "Importing SQL dump");
+
+        // file_size() can fail, in which case an indeterminate bar is the honest
+        // thing to show rather than a fraction of zero.
+        const float fraction =
+            total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
+                      : -1.0f * static_cast<float>(ImGui::GetTime());
+        const std::string overlay =
+            total > 0 ? std::format("{} MB / {} MB", read / (1024 * 1024), total / (1024 * 1024))
+                      : std::format("{} MB", read / (1024 * 1024));
+
+        ImGui::ProgressBar(fraction, ImVec2(320.0f, 0.0f), overlay.c_str());
+        ImGui::Text("%d statements applied", applied);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(cancelling);
+        if (ImGui::SmallButton("Cancel")) {
+            importProgress_->cancelRequested.store(true, std::memory_order_relaxed);
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::End();
+}
+
 void DatabaseHierarchy::checkPostgresToolStatus() {
     postgresToolOp_.check([this](const PostgresToolResult result) {
         const std::string title =
@@ -1501,6 +1599,15 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);
+        }
+        const bool importBusy = importOp_.isRunning();
+        if (ImGui::BeginMenu("Import", !importBusy)) {
+            if (ImGui::MenuItem("SQL Dump")) {
+                startSqlDumpImport(dbData);
+            }
+            ImGui::EndMenu();
+        } else if (importBusy && ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("An import is already running");
         }
         ImGui::Separator();
         if (ImGui::MenuItem(RENAME_LABEL)) {

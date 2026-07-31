@@ -57,11 +57,11 @@ namespace {
         out[start] = '\'';
         const unsigned long written =
             mysql_real_escape_string(conn, out.data() + start + 1, data, length);
-        // Returns (unsigned long)-1 when the server has NO_BACKSLASH_ESCAPES set.
-        // Unchecked, start + 1 + written wraps back to start and silently writes a
-        // truncated, unparseable dump.
+        // Escaping reports failure as (unsigned long)-1. Unchecked, the resize
+        // below wraps modulo 2^64 back to start and silently writes a truncated,
+        // unparseable dump.
         if (written == static_cast<unsigned long>(-1)) {
-            throw std::runtime_error(mysql_error(conn));
+            throw std::runtime_error("Failed to escape a value for export");
         }
         out.resize(start + 1 + written);
         out += '\'';
@@ -243,6 +243,15 @@ namespace DatabaseExporter {
         std::vector<std::string> views;
         bool stopped = false;
         try {
+            // mysql_real_escape_string escapes according to the *source* server's
+            // sql_mode, but kPreamble assigns SQL_MODE on the restoring session.
+            // If the source has NO_BACKSLASH_ESCAPES, backslashes are written
+            // through unescaped and then re-read as escapes on import, which
+            // corrupts the dump and lets table data break out of its string
+            // literal. mysqldump avoids this by pinning sql_mode on the dumping
+            // connection too; match it, and match what kPreamble declares.
+            execute(conn, "SET SESSION sql_mode = 'NO_AUTO_VALUE_ON_ZERO'");
+
             listObjects(conn, tables, views);
             progress.objectsTotal.store(static_cast<int>(tables.size() + views.size()),
                                         std::memory_order_relaxed);

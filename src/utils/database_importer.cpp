@@ -7,11 +7,6 @@
 #include <nfd.h>
 #include <spdlog/spdlog.h>
 
-namespace {
-    // tellg() per statement is wasted work on a dump with millions of them.
-    constexpr int kProgressSampleInterval = 256;
-} // namespace
-
 namespace DatabaseImporter {
 
     std::string promptForSqlDump() {
@@ -52,7 +47,6 @@ namespace DatabaseImporter {
         }
 
         int applied = 0;
-        int sinceSample = 0;
         std::string failure;
         bool cancelled = false;
 
@@ -72,12 +66,11 @@ namespace DatabaseImporter {
             ++applied;
             progress.statementsApplied.store(applied, std::memory_order_relaxed);
 
-            if (++sinceSample >= kProgressSampleInterval) {
-                sinceSample = 0;
-                if (const auto pos = file.tellg(); pos >= 0) {
-                    progress.bytesRead.store(static_cast<std::uint64_t>(pos),
-                                             std::memory_order_relaxed);
-                }
+            // Cheap next to a per-statement round trip, and sampling less often
+            // leaves the bar short of the end when the dump finishes mid-interval.
+            if (const auto pos = file.tellg(); pos >= 0) {
+                progress.bytesRead.store(static_cast<std::uint64_t>(pos),
+                                         std::memory_order_relaxed);
             }
             return true;
         });
@@ -86,6 +79,14 @@ namespace DatabaseImporter {
         result.cancelled = cancelled;
         result.error = failure;
         result.success = failure.empty() && !cancelled;
+
+        // tellg() returns -1 once the stream hits eof, so the last statements of a
+        // dump never move the counter. Settle it on the true total when the whole
+        // file was consumed, otherwise the bar reports short of where it stopped.
+        if (result.success) {
+            progress.bytesRead.store(progress.totalBytes.load(std::memory_order_relaxed),
+                                     std::memory_order_relaxed);
+        }
 
         if (cancelled) {
             spdlog::warn("SQL import cancelled after {} statements - {}", applied, path);

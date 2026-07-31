@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <format>
@@ -127,6 +128,26 @@ namespace {
             return result.output.substr(result.output.size() - maxLen);
         }
         return result.message;
+    }
+
+    // Integer MB truncates to "0 MB" for anything under a megabyte, which makes
+    // the readout useless on small dumps. Scale the unit to the value instead.
+    std::string formatBytes(const std::uint64_t bytes) {
+        constexpr double kKB = 1024.0;
+        constexpr double kMB = kKB * 1024.0;
+        constexpr double kGB = kMB * 1024.0;
+        const auto value = static_cast<double>(bytes);
+
+        if (value >= kGB) {
+            return std::format("{:.1f} GB", value / kGB);
+        }
+        if (value >= kMB) {
+            return std::format("{:.1f} MB", value / kMB);
+        }
+        if (value >= kKB) {
+            return std::format("{:.0f} KB", value / kKB);
+        }
+        return std::format("{} B", bytes);
     }
 
     bool ensurePostgresToolsAvailable(const std::vector<std::string>& toolNames) {
@@ -1053,28 +1074,45 @@ void DatabaseHierarchy::renderImportProgress() {
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(Theme::Spacing::L, Theme::Spacing::L));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
     if (ImGui::Begin("##sql_import_progress", nullptr, flags)) {
         ImGui::TextUnformatted(cancelling ? "Cancelling import..." : "Importing SQL dump");
 
         // file_size() can fail, in which case an indeterminate bar is the honest
         // thing to show rather than a fraction of zero.
+        constexpr float barWidth = 320.0f;
         const float fraction =
             total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
                       : -1.0f * static_cast<float>(ImGui::GetTime());
         const std::string overlay =
-            total > 0 ? std::format("{} MB / {} MB", read / (1024 * 1024), total / (1024 * 1024))
-                      : std::format("{} MB", read / (1024 * 1024));
+            total > 0 ? std::format("{} / {}", formatBytes(read), formatBytes(total))
+                      : formatBytes(read);
 
-        ImGui::ProgressBar(fraction, ImVec2(320.0f, 0.0f), overlay.c_str());
+        // SameLine() measures its offset from the window position rather than the
+        // content region, so the bar's own start has to be carried across to land
+        // the button flush with the bar's right edge.
+        const float barStartX = ImGui::GetCursorPosX();
+        ImGui::ProgressBar(fraction, ImVec2(barWidth, 0.0f), overlay.c_str());
+
+        ImGui::AlignTextToFramePadding();
         ImGui::Text("%d statements applied", applied);
-        ImGui::SameLine();
+
+        // Right-align Cancel to the end of the bar so it does not run into the
+        // statement count, which grows as the import proceeds.
+        const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
+                                  ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
+        ImGui::SameLine(barStartX + barWidth - cancelWidth);
         ImGui::BeginDisabled(cancelling);
-        if (ImGui::SmallButton("Cancel")) {
+        if (ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f))) {
             importProgress_->cancelRequested.store(true, std::memory_order_relaxed);
         }
         ImGui::EndDisabled();
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 void DatabaseHierarchy::checkPostgresToolStatus() {

@@ -158,6 +158,9 @@ bool SqlDumpSplitter::split(std::istream& in,
                 if (c == '*' && i + 1 < line.size() && line[i + 1] == '/') {
                     state = State::Normal;
                     ++i;
+                    // A comment separates tokens, so dropping it outright would
+                    // fuse them: SELECT 1/*c*/UNION must not become SELECT 1UNION.
+                    statement += ' ';
                 }
                 break;
 

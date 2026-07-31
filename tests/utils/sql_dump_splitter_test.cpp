@@ -86,6 +86,13 @@ TEST(SqlDumpSplitter, StripsBlockCommentsSpanningLines) {
     EXPECT_EQ(statements[0], "SELECT 1");
 }
 
+TEST(SqlDumpSplitter, BlockCommentSeparatesAdjacentTokens) {
+    // Dropping the comment outright would fuse these into "SELECT 1UNION".
+    const auto statements = splitAll("SELECT 1/*c*/UNION SELECT 2;");
+    ASSERT_EQ(statements.size(), 1u);
+    EXPECT_EQ(statements[0], "SELECT 1 UNION SELECT 2");
+}
+
 TEST(SqlDumpSplitter, KeepsConditionalComments) {
     const auto statements = splitAll("/*!40000 ALTER TABLE `t` DISABLE KEYS */;");
     ASSERT_EQ(statements.size(), 1u);

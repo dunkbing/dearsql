@@ -471,6 +471,10 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         return;
     }
 
+    if (auto* hierarchy = getHierarchy(db)) {
+        hierarchy->processPendingDatabaseDrop();
+    }
+
     auto const connectionInfo = db->getConnectionInfo();
     auto const type = connectionInfo.type;
     auto& app = Application::getInstance();

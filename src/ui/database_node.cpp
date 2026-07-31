@@ -921,19 +921,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                 std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
                             dbName),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [this, dbName]() {
-                      auto [success, error] = db->dropDatabase(dbName);
-                      if (success) {
-                          spdlog::debug("Database '{}' deleted successfully", dbName);
-                          if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                              pgDb->refreshDatabaseNames();
-                          }
-                      } else {
-                          spdlog::error("Failed to delete database: {}", error);
-                          Alert::show("Error", std::format("Failed to delete database: {}", error));
-                      }
-                  },
+                 {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
@@ -964,6 +952,29 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
 
         ImGui::TreePop();
     }
+}
+
+void DatabaseHierarchy::processPendingDatabaseDrop() {
+    if (!pendingDropDatabase_) {
+        return;
+    }
+
+    const std::string dbName = *pendingDropDatabase_;
+    pendingDropDatabase_.reset();
+
+    const char* noun =
+        db->getConnectionInfo().type == DatabaseType::CASSANDRA ? "keyspace" : "database";
+
+    auto [success, error] = db->dropDatabase(dbName);
+    if (!success) {
+        spdlog::error("Failed to drop {}: {}", noun, error);
+        Alert::show("Error", std::format("Failed to drop {}: {}", noun, error));
+        return;
+    }
+
+    spdlog::debug("Dropped {} '{}'", noun, dbName);
+    setDatabaseHidden(dbName, false);
+    db->refreshDatabaseNames();
 }
 
 void DatabaseHierarchy::checkPostgresToolStatus() {
@@ -1503,19 +1514,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
                             dbName),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [this, dbName]() {
-                      auto [success, error] = db->dropDatabase(dbName);
-                      if (success) {
-                          spdlog::debug("Database '{}' deleted successfully", dbName);
-                          if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                              mysqlDb->refreshDatabaseNames();
-                          }
-                      } else {
-                          spdlog::error("Failed to delete database: {}", error);
-                          Alert::show("Error", std::format("Failed to delete database: {}", error));
-                      }
-                  },
+                 {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
@@ -2382,19 +2381,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
                 std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
                             dbName),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [this, dbName]() {
-                      auto [success, error] = db->dropDatabase(dbName);
-                      if (success) {
-                          spdlog::debug("Database '{}' deleted successfully", dbName);
-                          if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {
-                              mssqlDb->refreshDatabaseNames();
-                          }
-                      } else {
-                          spdlog::error("Failed to delete database: {}", error);
-                          Alert::show("Error", std::format("Failed to delete database: {}", error));
-                      }
-                  },
+                 {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
@@ -2919,19 +2906,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                 std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
                             dbName),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [this, dbName]() {
-                      auto [success, error] = db->dropDatabase(dbName);
-                      if (success) {
-                          spdlog::debug("Database '{}' deleted successfully", dbName);
-                          if (auto* oracleDb = dynamic_cast<OracleDatabase*>(db.get())) {
-                              oracleDb->refreshDatabaseNames();
-                          }
-                      } else {
-                          spdlog::error("Failed to delete database: {}", error);
-                          Alert::show("Error", std::format("Failed to delete database: {}", error));
-                      }
-                  },
+                 {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
@@ -3395,19 +3370,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                 std::format("Permanently delete '{}' and ALL its data? This is irreversible.",
                             dbName),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [this, dbName]() {
-                      auto [success, error] = db->dropDatabase(dbName);
-                      if (success) {
-                          spdlog::debug("Database '{}' deleted successfully", dbName);
-                          if (auto* mongoDb = dynamic_cast<MongoDBDatabase*>(db.get())) {
-                              mongoDb->refreshDatabaseNames();
-                          }
-                      } else {
-                          spdlog::error("Failed to delete database: {}", error);
-                          Alert::show("Error", std::format("Failed to delete database: {}", error));
-                      }
-                  },
+                 {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
@@ -4128,17 +4091,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
             Alert::show("Drop Keyspace",
                         std::format("Permanently drop keyspace '{}' and ALL its data?", ksName),
                         {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                         {"Drop",
-                          [this, ksName]() {
-                              auto [ok, err] = db->dropDatabase(ksName);
-                              if (ok) {
-                                  if (auto* c = dynamic_cast<CassandraDatabase*>(db.get()))
-                                      c->refreshDatabaseNames();
-                              } else {
-                                  Alert::show("Error",
-                                              std::format("Failed to drop keyspace: {}", err));
-                              }
-                          },
+                         {"Drop", [this, ksName]() { pendingDropDatabase_ = ksName; },
                           AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();

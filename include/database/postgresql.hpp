@@ -32,7 +32,7 @@ public:
                                                 const std::string& newName) override;
     std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;
 
-    void refreshDatabaseNames();
+    void refreshDatabaseNames() override;
 
     // Connection status
     bool isConnecting() const override {

@@ -15,6 +15,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -44,6 +45,11 @@ public:
      * For MySQL/PostgreSQL with showAllDatabases=true: shows list of databases
      */
     void renderRootNode();
+
+    // Must run every frame, not only while the tree is expanded: a confirmed
+    // drop is queued from an Alert callback and would otherwise sit unexecuted
+    // until the user next expanded the connection.
+    void processPendingDatabaseDrop();
 
     [[nodiscard]] const std::unordered_set<const Table*>& getSelectedTables() const {
         return selectedTables_;
@@ -95,6 +101,11 @@ private:
     std::string postgresToolTitle_;
     std::string postgresToolRefreshDbName_;
     bool postgresToolRefreshDatabaseList_ = false;
+
+    // On macOS and Windows, Alert::show invokes its callbacks synchronously,
+    // mid-render. Dropping from one would free the node being rendered and
+    // invalidate the iteration, so the request is deferred to the next frame.
+    std::optional<std::string> pendingDropDatabase_;
 
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,

@@ -12,6 +12,7 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "utils/database_exporter.hpp"
 #include "utils/database_importer.hpp"
 #include <functional>
 #include <map>
@@ -113,6 +114,9 @@ private:
     std::string importDbName_;
     double importStartTime_ = 0.0;
 
+    AsyncOperation<DatabaseExporter::Result> exportOp_;
+    std::shared_ptr<DatabaseExporter::Progress> exportProgress_;
+
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,
                                  const ImVec2& nodeMin, const ImVec2& nodeMax,
@@ -125,6 +129,9 @@ private:
     void checkImportStatus();
     void renderImportProgress();
     void startSqlDumpImport(MySQLDatabaseNode* dbData);
+    void checkExportStatus();
+    void renderExportProgress();
+    void startSqlDumpExport(MySQLDatabaseNode* dbData);
     void renderPostgresBackupRestoreMenus(PostgresDatabaseNode* dbData);
     void startPostgresBackup(PostgresDatabaseNode* dbData, PostgresBackupFormat format,
                              bool includeCreateDatabase, bool noOwner);

@@ -223,6 +223,7 @@ set(APP_SOURCES
     src/ui/tab/mongo_editor_tab.cpp
     src/utils/file_dialog.cpp
     src/utils/process_runner.cpp
+    src/utils/database_exporter.cpp
     src/utils/database_importer.cpp
     src/utils/sql_dump_splitter.cpp
     src/utils/table_exporter.cpp

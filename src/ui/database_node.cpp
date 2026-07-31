@@ -164,6 +164,43 @@ namespace {
         return std::format("{}s", total);
     }
 
+    // ImGui positions a ProgressBar overlay just past the fill and clamps it to
+    // the bar, so the label slides along with the fill and ends up squashed
+    // against the right edge. Draw the bar with no overlay and centre the label
+    // over the whole width instead -- twice, clipped to each side of the fill
+    // boundary, because one colour is unreadable against the other half.
+    void progressBarWithCentredLabel(const float fraction, const float width,
+                                     const std::string& label, const ImVec4& onFillColor) {
+        const ImVec2 barPos = ImGui::GetCursorScreenPos();
+        ImGui::ProgressBar(fraction, ImVec2(width, 0.0f), "");
+
+        const ImVec2 barSize = ImGui::GetItemRectSize();
+        const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
+        const ImVec2 labelPos(barPos.x + (barSize.x - labelSize.x) * 0.5f,
+                              barPos.y + (barSize.y - labelSize.y) * 0.5f);
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImU32 onTrack = ImGui::GetColorU32(ImGuiCol_Text);
+
+        if (fraction < 0.0f) {
+            // Indeterminate: the fill sweeps, so there is no stable split.
+            draw->AddText(labelPos, onTrack, label.c_str());
+            return;
+        }
+
+        const ImU32 onFill = ImGui::GetColorU32(onFillColor);
+        const float fillX = barPos.x + barSize.x * std::min(fraction, 1.0f);
+        const float barBottom = barPos.y + barSize.y;
+
+        draw->PushClipRect(barPos, ImVec2(fillX, barBottom), true);
+        draw->AddText(labelPos, onFill, label.c_str());
+        draw->PopClipRect();
+
+        draw->PushClipRect(ImVec2(fillX, barPos.y), ImVec2(barPos.x + barSize.x, barBottom), true);
+        draw->AddText(labelPos, onTrack, label.c_str());
+        draw->PopClipRect();
+    }
+
     bool ensurePostgresToolsAvailable(const std::vector<std::string>& toolNames) {
         const PostgresToolResult result = PostgresBackupService::checkToolsAvailable(toolNames);
         if (result.success) {
@@ -365,6 +402,8 @@ void DatabaseHierarchy::renderRootNode() {
     checkPostgresToolStatus();
     checkImportStatus();
     renderImportProgress();
+    checkExportStatus();
+    renderExportProgress();
 
     prevVisibleTables_ = std::move(currVisibleTables_);
     currVisibleTables_.clear();
@@ -1037,6 +1076,101 @@ void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
         });
 }
 
+void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
+    if (!dbData || exportOp_.isRunning()) {
+        return;
+    }
+
+    const std::string path = DatabaseExporter::promptForSqlDumpDestination(
+        std::format("{}_{}.sql", sanitizeBackupFileName(dbData->name), timestampForFileName()));
+    if (path.empty()) {
+        return;
+    }
+
+    exportProgress_ = std::make_shared<DatabaseExporter::Progress>();
+
+    exportOp_.startCancellable(
+        [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
+            return DatabaseExporter::runSqlDump(dbData, path, *progress, stopToken);
+        });
+}
+
+void DatabaseHierarchy::checkExportStatus() {
+    exportOp_.check([this](const DatabaseExporter::Result result) {
+        if (result.success) {
+            Alert::show("Export Complete",
+                        std::format("Wrote {} object(s) and {} row(s) to '{}'.", result.objects,
+                                    result.rows, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Export Cancelled",
+                        std::format("Stopped after {} object(s). '{}' is incomplete.",
+                                    result.objects, result.path));
+        } else {
+            Alert::show("Export Failed",
+                        std::format("The export failed after {} object(s):\n\n{}", result.objects,
+                                    result.error));
+        }
+        exportProgress_.reset();
+    });
+}
+
+void DatabaseHierarchy::renderExportProgress() {
+    if (!exportOp_.isRunning() || !exportProgress_) {
+        return;
+    }
+
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    const int done = exportProgress_->objectsDone.load(std::memory_order_relaxed);
+    const int total = exportProgress_->objectsTotal.load(std::memory_order_relaxed);
+    const auto rows = exportProgress_->rowsWritten.load(std::memory_order_relaxed);
+    const auto bytes = exportProgress_->bytesWritten.load(std::memory_order_relaxed);
+    const bool cancelling = exportProgress_->cancelRequested.load(std::memory_order_relaxed);
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+
+    const float fraction = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
+    const std::string overlay = std::format("{} / {} objects", done, total);
+    const std::string statusText =
+        std::format("{} rows written  ·  {}", rows, formatBytes(bytes));
+
+    constexpr float minBarWidth = 320.0f;
+    constexpr const char* widestStatus = "999999999 rows written  ·  999.9 GB";
+    const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(Theme::Spacing::L, Theme::Spacing::L));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+    if (ImGui::Begin("##sql_export_progress", nullptr, flags)) {
+        ImGui::TextUnformatted(cancelling ? "Cancelling export..." : "Exporting SQL dump");
+
+        const float contentStartX = ImGui::GetCursorPosX();
+        progressBarWithCentredLabel(fraction, contentWidth, overlay, colors.crust);
+        ImGui::TextUnformatted(statusText.c_str());
+
+        const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
+                                  ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
+        ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
+        ImGui::BeginDisabled(cancelling);
+        if (ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f))) {
+            exportProgress_->cancelRequested.store(true, std::memory_order_relaxed);
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
 void DatabaseHierarchy::checkImportStatus() {
     importOp_.check([this](const DatabaseImporter::Result result) {
         if (result.success) {
@@ -1140,41 +1274,7 @@ void DatabaseHierarchy::renderImportProgress() {
         // the button flush with the right edge.
         const float contentStartX = ImGui::GetCursorPosX();
 
-        // ImGui draws a ProgressBar overlay just past the fill and clamps it to
-        // the bar, so it slides along with the fill and ends up squashed against
-        // the right edge. Suppress it and centre the text over the whole bar.
-        const ImVec2 barPos = ImGui::GetCursorScreenPos();
-        ImGui::ProgressBar(fraction, ImVec2(contentWidth, 0.0f), "");
-        const ImVec2 barSize = ImGui::GetItemRectSize();
-        const ImVec2 overlaySize = ImGui::CalcTextSize(overlay.c_str());
-        const ImVec2 overlayPos(barPos.x + (barSize.x - overlaySize.x) * 0.5f,
-                                barPos.y + (barSize.y - overlaySize.y) * 0.5f);
-
-        ImDrawList* draw = ImGui::GetWindowDrawList();
-        const ImU32 onTrack = ImGui::GetColorU32(ImGuiCol_Text);
-
-        if (fraction < 0.0f) {
-            // Indeterminate: the fill sweeps, so there is no stable split to
-            // colour against.
-            draw->AddText(overlayPos, onTrack, overlay.c_str());
-        } else {
-            // Centred text spans both halves of the bar, and the default text
-            // colour is near-invisible against the blue fill. Draw it twice,
-            // clipped to each side, so each half gets a colour that reads.
-            const ImU32 onFill = ImGui::GetColorU32(colors.crust);
-            const float fillX = barPos.x + barSize.x * std::min(fraction, 1.0f);
-            const float barBottom = barPos.y + barSize.y;
-
-            draw->PushClipRect(barPos, ImVec2(fillX, barBottom), true);
-            draw->AddText(overlayPos, onFill, overlay.c_str());
-            draw->PopClipRect();
-
-            draw->PushClipRect(ImVec2(fillX, barPos.y), ImVec2(barPos.x + barSize.x, barBottom),
-                               true);
-            draw->AddText(overlayPos, onTrack, overlay.c_str());
-            draw->PopClipRect();
-        }
-
+        progressBarWithCentredLabel(fraction, contentWidth, overlay, colors.crust);
         ImGui::TextUnformatted(statusText.c_str());
 
         const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
@@ -1721,6 +1821,15 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             ImGui::EndMenu();
         } else if (importBusy && ImGui::IsItemHovered()) {
             ImGui::SetTooltip("An import is already running");
+        }
+        const bool exportBusy = exportOp_.isRunning();
+        if (ImGui::BeginMenu("Export", !exportBusy)) {
+            if (ImGui::MenuItem("SQL Dump")) {
+                startSqlDumpExport(dbData);
+            }
+            ImGui::EndMenu();
+        } else if (exportBusy && ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("An export is already running");
         }
         ImGui::Separator();
         if (ImGui::MenuItem(RENAME_LABEL)) {

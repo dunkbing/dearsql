@@ -30,6 +30,7 @@
 #include <ctime>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <ranges>
 #include <spdlog/spdlog.h>
 
@@ -1086,6 +1087,7 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
 }
 
 void DatabaseHierarchy::processDumpOperations() {
+    renderImportPreview();
     checkImportStatus();
     renderImportProgress();
     checkExportStatus();
@@ -1102,14 +1104,175 @@ void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
         return;
     }
 
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        Alert::show("Import Failed", std::format("Could not open '{}'.", path));
+        return;
+    }
+
+    std::string buffer(static_cast<std::size_t>(IMPORT_PREVIEW_BYTES), '\0');
+    in.read(buffer.data(), IMPORT_PREVIEW_BYTES);
+    importPreviewTruncated_ = in.gcount() == IMPORT_PREVIEW_BYTES;
+    buffer.resize(static_cast<std::size_t>(in.gcount()));
+
+    // An extended INSERT puts a whole table on one line -- half a megabyte is
+    // ordinary. Shorten each line rather than letting one of them spend the
+    // budget: the structure is what identifies the dump, the row data is not.
+    std::string head;
+    importPreviewLines_ = 0;
+    importPreviewElided_ = false;
+
+    std::size_t pos = 0;
+    while (pos < buffer.size() && importPreviewLines_ < IMPORT_PREVIEW_LINES) {
+        const std::size_t eol = buffer.find('\n', pos);
+        const std::size_t end = eol == std::string::npos ? buffer.size() : eol;
+        const std::size_t length = end - pos;
+
+        if (length > IMPORT_PREVIEW_LINE_CHARS) {
+            head.append(buffer, pos, IMPORT_PREVIEW_LINE_CHARS);
+            head += std::format(" [... {} more characters]", length - IMPORT_PREVIEW_LINE_CHARS);
+            importPreviewElided_ = true;
+        } else {
+            head.append(buffer, pos, length);
+        }
+        head += '\n';
+        ++importPreviewLines_;
+
+        if (eol == std::string::npos) {
+            pos = buffer.size();
+            break;
+        }
+        pos = eol + 1;
+    }
+
+    if (pos < buffer.size()) {
+        importPreviewTruncated_ = true;
+    }
+
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    importPreviewSize_ = ec ? 0 : size;
+    importPreviewPath_ = path;
+    importPreviewDbName_ = dbData->name;
+
+    importPreviewEditor_.SetPalette(
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
+    // Not SQL: the vendored grammar cannot parse mysqldump's conditional comments
+    // (/*!40101 ... */), errors on line 2 of a real dump and colours the rest in
+    // patches. Uniformly plain reads better than unevenly wrong, and it skips the
+    // parse entirely.
+    importPreviewEditor_.SetLanguage(dearsql::TextEditor::Language::PlainText);
+    importPreviewEditor_.SetShowLineNumbers(true);
+    importPreviewEditor_.SetText(head);
+    importPreviewEditor_.SetReadOnly(true);
+    openImportPreview_ = true;
+}
+
+void DatabaseHierarchy::renderImportPreview() {
+    if (!db) {
+        return;
+    }
+
+    // The id carries the connection: each one has its own DatabaseHierarchy, and a
+    // bare string would let two of them drive the same popup.
+    const std::string popupId =
+        std::format("Import SQL Dump###import_preview_{}", db->getConnectionId());
+
+    if (openImportPreview_) {
+        ImGui::OpenPopup(popupId.c_str());
+        openImportPreview_ = false;
+    }
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
+
+    if (!ImGui::BeginPopupModal(popupId.c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        return;
+    }
+
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::TextUnformatted(std::format("Into '{}'", importPreviewDbName_).c_str());
+
+    const std::string fileLabel =
+        std::format("{}  ·  {}", std::filesystem::path(importPreviewPath_).filename().string(),
+                    formatBytes(importPreviewSize_));
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(fileLabel.c_str()).x);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::TextUnformatted(fileLabel.c_str());
+    std::string extent =
+        importPreviewTruncated_
+            ? std::format("First {} lines — head of the file only", importPreviewLines_)
+            : std::format("Whole file — {} lines", importPreviewLines_);
+    if (importPreviewElided_) {
+        extent += " · long rows shortened";
+    }
+    ImGui::TextUnformatted(extent.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    // The palette is applied once at load: SetPalette marks the whole buffer for
+    // rehighlighting, and doing that per frame over 100,000 characters is ruinous.
+    // Nothing can change the theme meanwhile -- this is a modal.
+    const float buttonsHeight =
+        ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M * 2.0f + Theme::Spacing::S;
+    importPreviewEditor_.Render("##import_preview_sql",
+                                ImVec2(0, ImGui::GetContentRegionAvail().y - buttonsHeight), true);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    constexpr float buttonWidth = 120.0f;
+    ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - buttonWidth * 2.0f - Theme::Spacing::M);
+    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f))) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine(0.0f, Theme::Spacing::M);
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.red.x, colors.red.y, colors.red.z, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors.red.x * 0.8f, colors.red.y * 0.8f,
+                                                        colors.red.z * 0.8f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
+    if (ImGui::Button("Import", ImVec2(buttonWidth, 0.0f))) {
+        beginSqlDumpImport();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::PopStyleColor(4);
+
+    ImGui::EndPopup();
+}
+
+void DatabaseHierarchy::beginSqlDumpImport() {
+    auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
+    if (!mysqlDb || importOp_.isRunning()) {
+        return;
+    }
+
+    // Re-resolve instead of carrying the node across the confirmation, and read
+    // through the const accessor so a missing entry cannot create a phantom one.
+    const MySQLDatabase& constDb = *mysqlDb;
+    const auto& cache = constDb.getDatabaseDataMap();
+    const auto it = cache.find(importPreviewDbName_);
+    if (it == cache.end() || !it->second) {
+        Alert::show("Import Failed",
+                    std::format("Database '{}' is no longer available.", importPreviewDbName_));
+        return;
+    }
+
+    MySQLDatabaseNode* dbData = it->second.get();
     importProgress_ = std::make_shared<DatabaseImporter::Progress>();
-    importDbName_ = dbData->name;
+    importDbName_ = importPreviewDbName_;
     importStartTime_ = ImGui::GetTime();
 
-    importOp_.startCancellable(
-        [dbData, path, progress = importProgress_](const std::stop_token& stopToken) {
-            return DatabaseImporter::runSqlDump(dbData, path, *progress, stopToken);
-        });
+    importOp_.startCancellable([dbData, path = importPreviewPath_,
+                                progress = importProgress_](const std::stop_token& stopToken) {
+        return DatabaseImporter::runSqlDump(dbData, path, *progress, stopToken);
+    });
 }
 
 void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
@@ -1135,17 +1298,15 @@ void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
 void DatabaseHierarchy::checkExportStatus() {
     exportOp_.check([this](const DatabaseExporter::Result result) {
         if (result.success) {
-            Alert::show("Export Complete",
-                        std::format("Wrote {} object(s) and {} row(s) to '{}'.", result.objects,
-                                    result.rows, result.path));
+            Alert::show("Export Complete", std::format("Wrote {} object(s) and {} row(s) to '{}'.",
+                                                       result.objects, result.rows, result.path));
         } else if (result.cancelled) {
             Alert::show("Export Cancelled",
                         std::format("Stopped after {} object(s). '{}' is incomplete.",
                                     result.objects, result.path));
         } else {
-            Alert::show("Export Failed",
-                        std::format("The export failed after {} object(s):\n\n{}", result.objects,
-                                    result.error));
+            Alert::show("Export Failed", std::format("The export failed after {} object(s):\n\n{}",
+                                                     result.objects, result.error));
         }
         exportProgress_.reset();
     });
@@ -1233,9 +1394,8 @@ void DatabaseHierarchy::renderImportProgress() {
                                   formatBytes(static_cast<std::uint64_t>(bytesPerSecond)),
                                   static_cast<double>(applied) / elapsed);
         if (total > read && bytesPerSecond > 0.0) {
-            statusText +=
-                std::format("  ·  {} left",
-                            formatDuration(static_cast<double>(total - read) / bytesPerSecond));
+            statusText += std::format(
+                "  ·  {} left", formatDuration(static_cast<double>(total - read) / bytesPerSecond));
         }
     }
 

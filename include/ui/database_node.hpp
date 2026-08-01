@@ -12,9 +12,12 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/text_editor.hpp"
 #include "utils/database_exporter.hpp"
 #include "utils/database_importer.hpp"
+#include <cstdint>
 #include <functional>
+#include <ios>
 #include <map>
 #include <memory>
 #include <optional>
@@ -131,6 +134,24 @@ private:
     std::string importDbName_;
     double importStartTime_ = 0.0;
 
+    // A dump drops and recreates tables, so it is shown before anything is applied.
+    // Only the head of the file is read: dumps run to gigabytes and the whole point
+    // is to answer "is this the file I meant" without waiting. Bounded by lines
+    // rather than bytes -- an extended INSERT packs thousands of rows onto one line,
+    // so a byte budget spends the whole preview on two statements. The byte ceiling
+    // is the backstop for exactly that case.
+    static constexpr std::size_t IMPORT_PREVIEW_LINES = 500;
+    static constexpr std::size_t IMPORT_PREVIEW_LINE_CHARS = 300;
+    static constexpr std::streamsize IMPORT_PREVIEW_BYTES = 16 * 1024 * 1024;
+    bool openImportPreview_ = false;
+    dearsql::TextEditor importPreviewEditor_;
+    std::string importPreviewPath_;
+    std::string importPreviewDbName_;
+    std::uintmax_t importPreviewSize_ = 0;
+    std::size_t importPreviewLines_ = 0;
+    bool importPreviewTruncated_ = false;
+    bool importPreviewElided_ = false;
+
     AsyncOperation<DatabaseExporter::Result> exportOp_;
     std::shared_ptr<DatabaseExporter::Progress> exportProgress_;
     std::string exportDbName_;
@@ -146,6 +167,8 @@ private:
     void checkPostgresToolStatus();
     void checkImportStatus();
     void renderImportProgress();
+    void renderImportPreview();
+    void beginSqlDumpImport();
     void startSqlDumpImport(MySQLDatabaseNode* dbData);
     void checkExportStatus();
     void renderExportProgress();

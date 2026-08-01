@@ -123,8 +123,7 @@ namespace {
     // whole table in client memory. The trade-off is that no other query can run
     // until the result is drained, which is fine -- the export owns the session.
     std::uint64_t writeTableData(MYSQL* conn, const ISQLBuilder& builder, std::ofstream& out,
-                                 const std::string& tableName,
-                                 DatabaseExporter::Progress& progress,
+                                 const std::string& tableName, DatabaseExporter::Progress& progress,
                                  const std::stop_token& stopToken, bool& stopped) {
         const std::string quotedName = builder.quoteIdentifier(tableName);
         execute(conn, "SELECT * FROM " + quotedName);
@@ -198,9 +197,8 @@ namespace DatabaseExporter {
     std::string promptForSqlDumpDestination(const std::string& defaultName) {
         constexpr nfdfilteritem_t filterItem[1] = {{"SQL Dump", "sql"}};
         nfdchar_t* outPath = nullptr;
-        const nfdresult_t dialog = NFD_SaveDialog(&outPath, filterItem, 1, nullptr,
-                                                  defaultName.empty() ? nullptr
-                                                                      : defaultName.c_str());
+        const nfdresult_t dialog = NFD_SaveDialog(
+            &outPath, filterItem, 1, nullptr, defaultName.empty() ? nullptr : defaultName.c_str());
         if (dialog != NFD_OKAY) {
             if (dialog == NFD_ERROR) {
                 spdlog::error("File dialog error: {}", NFD_GetError());

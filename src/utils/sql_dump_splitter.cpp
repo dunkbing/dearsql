@@ -136,7 +136,7 @@ bool SqlDumpSplitter::split(
             case State::SingleQuote:
             case State::DoubleQuote:
             case State::Backtick: {
-                const char quote = state == State::SingleQuote  ? '\''
+                const char quote = state == State::SingleQuote   ? '\''
                                    : state == State::DoubleQuote ? '"'
                                                                  : '`';
                 statement += c;

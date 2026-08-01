@@ -433,10 +433,6 @@ void DatabaseHierarchy::renderRootNode() {
     }
 
     checkPostgresToolStatus();
-    checkImportStatus();
-    renderImportProgress();
-    checkExportStatus();
-    renderExportProgress();
 
     prevVisibleTables_ = std::move(currVisibleTables_);
     currVisibleTables_.clear();
@@ -1087,6 +1083,13 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     spdlog::debug("Dropped {} '{}'", noun, dbName);
     setDatabaseHidden(dbName, false);
     db->refreshDatabaseNames();
+}
+
+void DatabaseHierarchy::processDumpOperations() {
+    checkImportStatus();
+    renderImportProgress();
+    checkExportStatus();
+    renderExportProgress();
 }
 
 void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {

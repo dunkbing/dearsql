@@ -53,6 +53,11 @@ public:
     // until the user next expanded the connection.
     void processPendingDatabaseDrop();
 
+    // Same reason: a dump outlives the tree being expanded, and renderRootNode
+    // stops running on collapse, which would take the progress panel and its
+    // only Cancel button with it.
+    void processDumpOperations();
+
     // A running SQL dump holds a raw MySQLDatabaseNode* and one pooled session for
     // the length of its run. Dropping the database, disconnecting or reconnecting
     // frees both under the worker, so those paths stay blocked while this is true.

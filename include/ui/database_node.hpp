@@ -53,6 +53,18 @@ public:
     // until the user next expanded the connection.
     void processPendingDatabaseDrop();
 
+    // A running SQL dump holds a raw MySQLDatabaseNode* and one pooled session for
+    // the length of its run. Dropping the database, disconnecting or reconnecting
+    // frees both under the worker, so those paths stay blocked while this is true.
+    [[nodiscard]] bool hasRunningSqlDump() const {
+        return importOp_.isRunning() || exportOp_.isRunning();
+    }
+
+    [[nodiscard]] bool hasRunningSqlDump(const std::string& dbName) const {
+        return (importOp_.isRunning() && importDbName_ == dbName) ||
+               (exportOp_.isRunning() && exportDbName_ == dbName);
+    }
+
     [[nodiscard]] const std::unordered_set<const Table*>& getSelectedTables() const {
         return selectedTables_;
     }
@@ -116,6 +128,7 @@ private:
 
     AsyncOperation<DatabaseExporter::Result> exportOp_;
     std::shared_ptr<DatabaseExporter::Progress> exportProgress_;
+    std::string exportDbName_;
 
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,

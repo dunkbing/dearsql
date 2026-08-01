@@ -1121,6 +1121,7 @@ void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
     }
 
     exportProgress_ = std::make_shared<DatabaseExporter::Progress>();
+    exportDbName_ = dbData->name;
 
     exportOp_.startCancellable(
         [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
@@ -1773,7 +1774,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 startSqlDumpImport(dbData);
             }
             ImGui::EndMenu();
-        } else if (importBusy && ImGui::IsItemHovered()) {
+        } else if (importBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip("An import is already running");
         }
         const bool exportBusy = exportOp_.isRunning();
@@ -1782,7 +1783,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 startSqlDumpExport(dbData);
             }
             ImGui::EndMenu();
-        } else if (exportBusy && ImGui::IsItemHovered()) {
+        } else if (exportBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             ImGui::SetTooltip("An export is already running");
         }
         ImGui::Separator();
@@ -1792,7 +1793,8 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                         "MySQL does not support direct database renaming. You need to "
                         "create a new database, copy all data, and drop the old one.");
         }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        const bool dumpBusy = hasRunningSqlDump(dbData->name);
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !dumpBusy)) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -1801,6 +1803,9 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                  {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
+        }
+        if (dumpBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Cannot delete while a SQL dump is running on this database");
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

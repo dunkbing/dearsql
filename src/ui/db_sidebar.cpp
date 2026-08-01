@@ -721,6 +721,15 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+        const auto* hierarchy = getHierarchy(db);
+        const bool dumpBusy = hierarchy && hierarchy->hasRunningSqlDump();
+        const auto dumpBusyTooltip = [dumpBusy]() {
+            if (dumpBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Unavailable while a SQL dump is running on this connection");
+            }
+        };
+
         if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
             if (sqliteDb) {
@@ -774,13 +783,14 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
 
         if (db->isConnected() && db->getConnectionInfo().type != DatabaseType::SQLITE) {
-            if (ImGui::MenuItem("Disconnect")) {
+            if (ImGui::MenuItem("Disconnect", nullptr, false, !dumpBusy)) {
                 db->disconnect();
             }
+            dumpBusyTooltip();
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Remove Database")) {
+        if (ImGui::MenuItem("Remove Database", nullptr, false, !dumpBusy)) {
             auto const connectionInfo = db->getConnectionInfo();
             Alert::show(
                 "Remove Database",
@@ -797,11 +807,13 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                   },
                   AlertButton::Style::Destructive}});
         }
+        dumpBusyTooltip();
         ImGui::Separator();
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem("Refresh", nullptr, false, !dumpBusy)) {
             spdlog::debug("Refreshing connection for database: {}", db->getConnectionInfo().name);
             db->refreshConnection();
         }
+        dumpBusyTooltip();
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }

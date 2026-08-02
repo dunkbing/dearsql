@@ -19,6 +19,17 @@ public:
     // Get or create a DatabaseHierarchy for a given database
     DatabaseHierarchy* getHierarchy(const std::shared_ptr<DatabaseInterface>& db);
 
+    // Polls every connection's dump operations and draws their progress. Driven
+    // from the frame rather than from render(), which the sidebar being hidden
+    // would otherwise stop: the panel carries the only Cancel button, and without
+    // the poll a finished dump never delivers its result and stays "running".
+    void processDumpOperations();
+
+    // True while any connection is running a dump. Tearing a pool down under one
+    // blocks the caller until the dump finishes, so paths that disconnect need to
+    // know.
+    [[nodiscard]] bool hasRunningSqlDump() const;
+
 private:
     void renderStructure();
     void renderHistory();

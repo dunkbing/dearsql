@@ -415,6 +415,14 @@ void Application::setFontScale(const float scale) {
 }
 
 bool Application::hasPendingAsyncWork() const {
+    // A dump lives on the DatabaseHierarchy rather than the DatabaseInterface, so
+    // the loop below cannot see it. Quitting mid-dump would then take the path that
+    // disconnects, and ~ConnectionPool waits for the session the dump still holds --
+    // hanging after the window has gone.
+    if (databaseSidebar && databaseSidebar->hasRunningSqlDump()) {
+        return true;
+    }
+
     return std::ranges::any_of(databases, [](const std::shared_ptr<DatabaseInterface>& db) {
         return db && db->hasPendingAsyncWork();
     });
@@ -1043,6 +1051,13 @@ void Application::renderMainUI() {
 
         ImGui::PopStyleVar(1);
         ImGui::PopStyleColor(4);
+    }
+
+    // Outside the block above on purpose. A dump outlives the sidebar being hidden,
+    // and its progress panel carries the only way to cancel it; skipping the poll
+    // would also leave a finished dump reporting itself as still running.
+    if (databaseSidebar) {
+        databaseSidebar->processDumpOperations();
     }
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);

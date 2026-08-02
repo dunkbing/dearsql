@@ -44,6 +44,20 @@ DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<Databa
     return inserted->second.get();
 }
 
+void DatabaseSidebarNew::processDumpOperations() {
+    for (const auto& hierarchy : hierarchyCache | std::views::values) {
+        if (hierarchy) {
+            hierarchy->processDumpOperations();
+        }
+    }
+}
+
+bool DatabaseSidebarNew::hasRunningSqlDump() const {
+    return std::ranges::any_of(hierarchyCache, [](const auto& entry) {
+        return entry.second && entry.second->hasRunningSqlDump();
+    });
+}
+
 void DatabaseSidebarNew::showConnectionDialog() {
     auto& app = Application::getInstance();
     if (!app.canAddConnection()) {
@@ -473,8 +487,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     if (auto* hierarchy = getHierarchy(db)) {
         hierarchy->processPendingDatabaseDrop();
-        hierarchy->processDumpOperations();
     }
+
 
     auto const connectionInfo = db->getConnectionInfo();
     auto const type = connectionInfo.type;
@@ -757,9 +771,13 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         }
 
-        if (ImGui::MenuItem("Edit connection")) {
+        // Saving an edit replaces the DatabaseInterface and disconnects the old one,
+        // and ~ConnectionPool waits for the session a dump still holds -- freezing
+        // the UI thread, Cancel included, until the dump finishes.
+        if (ImGui::MenuItem("Edit connection", nullptr, false, !dumpBusy)) {
             ConnectionDialog::instance().showEdit(&app, db);
         }
+        dumpBusyTooltip();
         if (ImGui::MenuItem("Rename")) {
             const std::string oldName = db->getConnectionInfo().name;
             InputDialog::show(

@@ -151,10 +151,10 @@ namespace {
 
     // ImGui positions a ProgressBar overlay just past the fill and clamps it to
     // the bar, so the label slides along with the fill and ends up squashed
-    // against the right edge. Draw the bar with no overlay and centre the label
+    // against the right edge. Draw the bar with no overlay and center the label
     // over the whole width instead -- twice, clipped to each side of the fill
-    // boundary, because one colour is unreadable against the other half.
-    void progressBarWithCentredLabel(const float fraction, const float width,
+    // boundary, because one color is unreadable against the other half.
+    void progressBarWithCenteredLabel(const float fraction, const float width,
                                      const std::string& label) {
         const ImVec4& onFillColor = Application::getInstance().getCurrentColors().crust;
         const ImVec2 barPos = ImGui::GetCursorScreenPos();
@@ -233,7 +233,7 @@ namespace {
             // Cursor positions are window-relative, so the row's start has to be
             // carried across to land the button flush with the bar's right edge.
             const float contentStartX = ImGui::GetCursorPosX();
-            progressBarWithCentredLabel(fraction, contentWidth, overlay);
+            progressBarWithCenteredLabel(fraction, contentWidth, overlay);
             ImGui::TextUnformatted(status.c_str());
 
             const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
@@ -1171,7 +1171,7 @@ void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
     importPreviewEditor_.SetPalette(
         dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
     // Not SQL: the vendored grammar cannot parse mysqldump's conditional comments
-    // (/*!40101 ... */), errors on line 2 of a real dump and colours the rest in
+    // (/*!40101 ... */), errors on line 2 of a real dump and colors the rest in
     // patches. Uniformly plain reads better than unevenly wrong, and it skips the
     // parse entirely.
     importPreviewEditor_.SetLanguage(dearsql::TextEditor::Language::PlainText);

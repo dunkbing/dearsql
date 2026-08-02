@@ -32,7 +32,7 @@ namespace {
     }
 
     // A DELIMITER directive is client-side and must never reach the server. It is
-    // only recognised at the start of a statement, which is where mysqldump emits it.
+    // only recognized at the start of a statement, which is where mysqldump emits it.
     bool parseDelimiterDirective(const std::string& line, std::string& delimiter) {
         static constexpr std::string_view keyword = "DELIMITER";
 

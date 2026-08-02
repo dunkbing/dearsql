@@ -173,6 +173,12 @@ public:
         return tabFont_;
     }
 
+    // The dock node holding the tabs, i.e. everything but the sidebar. Zero before
+    // the layout is built or while the sidebar is hidden.
+    [[nodiscard]] ImGuiID getCenterDockId() const {
+        return centerDockId;
+    }
+
 private:
     [[nodiscard]] bool hasPendingAsyncWork() const;
     static ImFont* tabFont_;

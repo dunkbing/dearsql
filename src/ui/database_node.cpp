@@ -13,6 +13,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -192,10 +193,22 @@ namespace {
     bool renderProgressPanel(const char* id, const char* title, const float fraction,
                              const std::string& overlay, const std::string& status,
                              const char* widestStatus, const bool cancelling) {
+        // Anchored to the docked tab area rather than the viewport. Centering on the
+        // whole window puts the panel a sidebar's width left of the content it
+        // reports on. Falls back to the viewport before the layout exists or when
+        // the sidebar is hidden, where the two are the same thing anyway.
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImVec2 areaPos = viewport->WorkPos;
+        ImVec2 areaSize = viewport->WorkSize;
+        if (const ImGuiID centerId = Application::getInstance().getCenterDockId(); centerId != 0) {
+            if (const ImGuiDockNode* node = ImGui::DockBuilderGetNode(centerId)) {
+                areaPos = node->Pos;
+                areaSize = node->Size;
+            }
+        }
+
         ImGui::SetNextWindowPos(
-            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                   viewport->WorkPos.y + viewport->WorkSize.y - Theme::Spacing::L),
+            ImVec2(areaPos.x + areaSize.x * 0.5f, areaPos.y + areaSize.y - Theme::Spacing::L),
             ImGuiCond_Always, ImVec2(0.5f, 1.0f));
         ImGui::SetNextWindowBgAlpha(0.92f);
 

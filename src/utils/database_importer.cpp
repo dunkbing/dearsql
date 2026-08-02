@@ -1,5 +1,6 @@
 #include "utils/database_importer.hpp"
 
+#include "utils/mysql_session_reset.hpp"
 #include "utils/sql_dump_splitter.hpp"
 
 #include <cstddef>
@@ -54,30 +55,9 @@ namespace DatabaseImporter {
             return result;
         }
 
-        // A dump's LOCK TABLES / UNLOCK TABLES pairs and its preamble
-        // (FOREIGN_KEY_CHECKS=0, SQL_MODE) apply to the session, not to a statement.
-        // Stopping between a lock and its unlock hands the pool a connection still
-        // holding a write lock, which blocks every later reader of that table
-        // indefinitely, and still skipping foreign key checks, which silently weakens
-        // whatever runs on it next. Declared after the session so it resets before
-        // the release.
-        const struct SessionReset {
-            MYSQL* conn;
-            std::string database;
-
-            ~SessionReset() {
-                if (mysql_reset_connection(conn) != 0) {
-                    spdlog::warn("Could not reset the import session: {}", mysql_error(conn));
-                    return;
-                }
-                // A reset keeps the default database in practice, but that is not
-                // documented and the pool hands these connections out per database.
-                if (mysql_select_db(conn, database.c_str()) != 0) {
-                    spdlog::warn("Could not reselect '{}' after the import: {}", database,
-                                 mysql_error(conn));
-                }
-            }
-        } sessionReset{session->get(), node->name};
+        // Restores the pooled connection on every path out, including the early
+        // return below when the file cannot be opened.
+        const MySQLSessionReset sessionReset(session->get(), node->name);
 
         std::error_code sizeError;
         const auto size = std::filesystem::file_size(path, sizeError);

@@ -2,6 +2,7 @@
 
 #include "database/mysql/mysql_internal.hpp"
 #include "database/sql_builder.hpp"
+#include "utils/mysql_session_reset.hpp"
 
 #include <cstddef>
 #include <fstream>
@@ -228,6 +229,11 @@ namespace DatabaseExporter {
             return result;
         }
         MYSQL* conn = session->get();
+
+        // The export pins sql_mode on this session below. Without this the
+        // connection went back to the pool without STRICT_TRANS_TABLES, and the next
+        // write drawn from it coerced bad values instead of rejecting them.
+        const MySQLSessionReset sessionReset(conn, node->name);
 
         std::ofstream out(path, std::ios::binary);
         if (!out.is_open()) {

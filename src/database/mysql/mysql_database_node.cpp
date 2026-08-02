@@ -733,12 +733,25 @@ QueryResult MySQLDatabaseNode::executeQueryOn(MYSQL* conn, const std::string& qu
 
         double downloadMs = 0.0;
         double parseMs = 0.0;
+        // mysql_next_result returns 0 for another result, -1 when there are no more,
+        // and >0 for an error. Only real_query's return reports a failure in the
+        // first statement of a batch; a failure in any later one arrives here, so
+        // stopping on >0 without recording it reports a partial batch as applied.
+        int next = 0;
         do {
             auto r = extractMysqlResult(conn, rowLimit, &downloadMs, &parseMs);
             if (r.success || !r.errorMessage.empty()) {
                 result.statements.push_back(std::move(r));
             }
-        } while (mysql_next_result(conn) == 0);
+            next = mysql_next_result(conn);
+        } while (next == 0);
+
+        if (next > 0) {
+            StatementResult r;
+            r.success = false;
+            r.errorMessage = mysql_error(conn);
+            result.statements.push_back(std::move(r));
+        }
 
         // ponytail: coarse client-side split; execution includes one-way latency,
         // rows arrive during mysql_store_result (data download)

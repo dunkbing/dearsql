@@ -62,8 +62,13 @@ namespace {
                                             ImGui::GetStyle().FrameRounding, 0, 2.0f);
     }
 
-    // tags already in use, deduplicated case-insensitively, keeping the first
-    // spelling seen — the same rule the sidebar groups by
+    // Tags already in use, deduplicated case-insensitively, keeping the first
+    // spelling seen — the same rule the sidebar groups by.
+    //
+    // Only ever called when the dialog opens. getSavedConnections derives a key
+    // and decrypts credentials for every row, which costs tens of milliseconds
+    // per connection; calling it from the render path would drag the dialog to a
+    // crawl and flood the log.
     std::vector<std::string> collectExistingTags() {
         std::vector<std::string> tags;
         const AppState* state = Application::getInstance().getAppState();
@@ -129,6 +134,7 @@ void ConnectionDialog::show(Application* app) {
     editingDb_.reset();
     editingConnectionId_ = -1;
     resetForm();
+    knownTags_ = collectExistingTags();
     open_ = true;
     pendingOpen_ = true;
 }
@@ -141,6 +147,7 @@ void ConnectionDialog::showEdit(Application* app, std::shared_ptr<DatabaseInterf
     editingConnectionId_ = db->getConnectionId();
     resetForm();
     populateForm(db->getConnectionInfo());
+    knownTags_ = collectExistingTags();
     open_ = true;
     pendingOpen_ = true;
 }
@@ -727,8 +734,7 @@ void ConnectionDialog::renderAppearanceRow() {
 
     // the tag groups the sidebar, so offer the tags already in use — typing a
     // near-miss would silently create a second group
-    const auto existingTags = collectExistingTags();
-    if (!existingTags.empty()) {
+    if (!knownTags_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::S);
         if (ImGui::Button(ICON_FA_CHEVRON_DOWN "##conn_env_tag_pick")) {
             ImGui::OpenPopup("##conn_env_tag_list");
@@ -736,7 +742,7 @@ void ConnectionDialog::renderAppearanceRow() {
         if (ImGui::BeginPopup("##conn_env_tag_list")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-            for (const auto& tag : existingTags) {
+            for (const auto& tag : knownTags_) {
                 if (ImGui::MenuItem(tag.c_str())) {
                     copyToBuf(envTagBuf_, sizeof(envTagBuf_), tag);
                 }

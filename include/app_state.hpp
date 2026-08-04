@@ -49,6 +49,14 @@ public:
     // Initialize the app state database
     bool initialize();
 
+    // Every method on this class talks to SQLite. None of them are field
+    // accessors, and the UI rebuilds every frame, so calling one from a render
+    // path turns it into a per-frame query. Read once and cache.
+    //
+    // getSavedConnections is the sharpest edge: it derives a key and decrypts
+    // credentials per row, costing tens of milliseconds for a handful of
+    // connections.
+
     // Connection history management
     int saveConnection(const SavedConnection& connection) const;
     bool updateConnection(const SavedConnection& connection) const;

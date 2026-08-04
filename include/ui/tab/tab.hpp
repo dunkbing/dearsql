@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+class IDatabaseNode;
+
 enum class TabType {
     SQL_EDITOR,
     TABLE_VIEWER,
@@ -48,6 +50,13 @@ public:
     }
     [[nodiscard]] virtual bool hasUnsavedChanges() const {
         return false;
+    }
+
+    // The connection this tab is looking at, for the status banner. Null for
+    // tabs with no database behind them (CSV editor) or a backend-specific node
+    // the banner does not describe.
+    [[nodiscard]] virtual IDatabaseNode* connectionNode() const {
+        return nullptr;
     }
 
     // Virtual method for rendering tab content

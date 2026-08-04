@@ -167,6 +167,7 @@ private:
 
 public:
     void renderMainUI();
+    void renderConnectionBanner();
     static ImFont* getTabFont() {
         return tabFont_;
     }

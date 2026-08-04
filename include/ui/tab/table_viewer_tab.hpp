@@ -39,6 +39,9 @@ public:
     [[nodiscard]] int getTotalRows() const {
         return totalRows;
     }
+    [[nodiscard]] IDatabaseNode* connectionNode() const override {
+        return node_;
+    }
     void loadDataAsync();
     void checkAsyncLoadStatus();
     void nextPage();

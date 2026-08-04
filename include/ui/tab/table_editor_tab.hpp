@@ -29,6 +29,10 @@ public:
         return dbNode;
     }
 
+    [[nodiscard]] IDatabaseNode* connectionNode() const override {
+        return dbNode;
+    }
+
 private:
     TableEditorMode editorMode = TableEditorMode::Create;
     ColumnEditMode columnEditMode = ColumnEditMode::None;

@@ -47,6 +47,10 @@ public:
         return node_;
     }
 
+    [[nodiscard]] IDatabaseNode* connectionNode() const override {
+        return node_;
+    }
+
     // Script file association
     void loadFromScript(const SqlScript& script);
     [[nodiscard]] const std::string& getFilePath() const {

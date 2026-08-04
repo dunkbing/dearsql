@@ -45,6 +45,9 @@ public:
         return tabs;
     }
 
+    // Tab whose window last held focus; null before anything is focused.
+    [[nodiscard]] std::shared_ptr<Tab> getActiveTab() const;
+
     // Tab creation helpers (unified interface)
     std::shared_ptr<Tab> createSQLEditorTab(const std::string& name, IDatabaseNode* node,
                                             const std::string& schemaName = "");

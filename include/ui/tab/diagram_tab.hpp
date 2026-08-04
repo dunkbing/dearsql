@@ -46,6 +46,10 @@ public:
         return node_;
     }
 
+    [[nodiscard]] IDatabaseNode* connectionNode() const override {
+        return node_;
+    }
+
 private:
     void initializeEditor();
     void loadDatabaseSchema();

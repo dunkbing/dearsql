@@ -5,6 +5,7 @@
 #include "database_node.hpp"
 #include "imgui.h"
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -34,6 +35,8 @@ public:
 
 private:
     void renderStructure();
+    void
+    renderGroupedDatabaseNodes(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
     void renderHistory();
     void renderEmpty();
     float getHistoryButtonHeight() const;
@@ -48,6 +51,9 @@ private:
 
     void renderDatabasesTab();
     void renderHistoryPanel();
+
+    // sidebar group open/closed state, read from AppState once per group
+    std::unordered_map<std::string, bool> groupOpenCache_;
 
     bool historyPanelOpen = false;
     bool texturesLoaded_ = false;

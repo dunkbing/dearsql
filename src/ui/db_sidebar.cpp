@@ -169,6 +169,97 @@ void DatabaseSidebarNew::syncHierarchyCache(
     });
 }
 
+namespace {
+    // Connections group by their env tag. Matching is case-insensitive so "prod"
+    // and "Prod" are one group; the first spelling encountered is the one shown.
+    std::string groupKey(const std::string& tag) {
+        std::string key = tag;
+        std::ranges::transform(key, key.begin(), [](unsigned char c) { return std::tolower(c); });
+        return key;
+    }
+} // namespace
+
+void DatabaseSidebarNew::renderGroupedDatabaseNodes(
+    const std::vector<std::shared_ptr<DatabaseInterface>>& databases) {
+    // group order follows first appearance, so the list does not reshuffle
+    // when a connection is renamed
+    std::vector<std::pair<std::string, std::vector<std::shared_ptr<DatabaseInterface>>>> groups;
+    std::vector<std::shared_ptr<DatabaseInterface>> ungrouped;
+
+    for (const auto& db : databases) {
+        if (!db) {
+            continue;
+        }
+        const std::string& tag = db->getConnectionInfo().envTag;
+        if (tag.empty()) {
+            ungrouped.push_back(db);
+            continue;
+        }
+        const std::string key = groupKey(tag);
+        auto it = std::ranges::find_if(groups, [&key](const auto& g) { return g.first == key; });
+        if (it == groups.end()) {
+            groups.emplace_back(key, std::vector{db});
+        } else {
+            it->second.push_back(db);
+        }
+    }
+
+    // nothing is tagged: render exactly as before, with no headers to explain
+    if (groups.empty()) {
+        for (const auto& db : ungrouped) {
+            renderDatabaseNode(db);
+        }
+        return;
+    }
+
+    // getSetting is a SQLite query, so the persisted state is read once per key
+    // and held in memory; only a toggle writes back
+    auto isOpen = [this](const std::string& key) {
+        if (const auto it = groupOpenCache_.find(key); it != groupOpenCache_.end()) {
+            return it->second;
+        }
+        const AppState* appState = Application::getInstance().getAppState();
+        const bool open =
+            !appState || appState->getSetting("sidebar_group_open_" + key, "1") != "0";
+        groupOpenCache_.emplace(key, open);
+        return open;
+    };
+
+    auto setOpen = [this](const std::string& key, bool open) {
+        groupOpenCache_[key] = open;
+        if (const AppState* appState = Application::getInstance().getAppState()) {
+            appState->setSetting("sidebar_group_open_" + key, open ? "1" : "0");
+        }
+    };
+
+    auto renderGroup = [&](const std::string& key, const std::string& label,
+                           const std::vector<std::shared_ptr<DatabaseInterface>>& members) {
+        const bool wasOpen = isOpen(key);
+        ImGui::SetNextItemOpen(wasOpen, ImGuiCond_Always);
+        const bool open = ImGui::CollapsingHeader(
+            std::format("{} ({})###group_{}", label, members.size(), key).c_str());
+        if (open != wasOpen) {
+            setOpen(key, open);
+        }
+        if (open) {
+            for (const auto& db : members) {
+                renderDatabaseNode(db);
+            }
+        }
+    };
+
+    for (const auto& [key, members] : groups) {
+        std::string label = members.front()->getConnectionInfo().envTag;
+        std::ranges::transform(label, label.begin(),
+                               [](unsigned char c) { return std::toupper(c); });
+        renderGroup(key, label, members);
+    }
+
+    if (!ungrouped.empty()) {
+        renderGroup("none", "UNGROUPED", ungrouped);
+    }
+}
+
 void DatabaseSidebarNew::renderStructure() {
     auto& app = Application::getInstance();
 
@@ -181,9 +272,7 @@ void DatabaseSidebarNew::renderStructure() {
     if (!databases.empty()) {
         // copy shared_ptrs so a removal during rendering doesn't invalidate the iterator
         const auto snapshot = databases;
-        for (const auto& db : snapshot) {
-            renderDatabaseNode(db);
-        }
+        renderGroupedDatabaseNodes(snapshot);
     } else {
         renderEmpty();
     }

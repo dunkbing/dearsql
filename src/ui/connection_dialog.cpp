@@ -1,4 +1,5 @@
 #include "ui/connection_dialog.hpp"
+#include "IconsFontAwesome6.h"
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/connection_url.hpp"
@@ -59,6 +60,31 @@ namespace {
         ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
                                             ImGui::GetColorU32(colors.text),
                                             ImGui::GetStyle().FrameRounding, 0, 2.0f);
+    }
+
+    // tags already in use, deduplicated case-insensitively, keeping the first
+    // spelling seen — the same rule the sidebar groups by
+    std::vector<std::string> collectExistingTags() {
+        std::vector<std::string> tags;
+        const AppState* state = Application::getInstance().getAppState();
+        if (!state) {
+            return tags;
+        }
+        for (const auto& conn : state->getSavedConnections()) {
+            const std::string& tag = conn.connectionInfo.envTag;
+            if (tag.empty()) {
+                continue;
+            }
+            const bool seen = std::ranges::any_of(tags, [&tag](const std::string& existing) {
+                return std::ranges::equal(existing, tag, [](unsigned char a, unsigned char b) {
+                    return std::tolower(a) == std::tolower(b);
+                });
+            });
+            if (!seen) {
+                tags.push_back(tag);
+            }
+        }
+        return tags;
     }
 
     bool shouldShowCACertField(DatabaseType type, SslMode mode) {
@@ -697,8 +723,28 @@ void ConnectionDialog::renderAppearanceRow() {
 
     fieldLabel("Tag");
     ImGui::SetNextItemWidth(180.0f);
-    ImGui::InputTextWithHint("##conn_env_tag", "production, staging, …", envTagBuf_,
-                             sizeof(envTagBuf_));
+    ImGui::InputTextWithHint("##conn_env_tag", "dev, prod, …", envTagBuf_, sizeof(envTagBuf_));
+
+    // the tag groups the sidebar, so offer the tags already in use — typing a
+    // near-miss would silently create a second group
+    const auto existingTags = collectExistingTags();
+    if (!existingTags.empty()) {
+        ImGui::SameLine(0, Theme::Spacing::S);
+        if (ImGui::Button(ICON_FA_CHEVRON_DOWN "##conn_env_tag_pick")) {
+            ImGui::OpenPopup("##conn_env_tag_list");
+        }
+        if (ImGui::BeginPopup("##conn_env_tag_list")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            for (const auto& tag : existingTags) {
+                if (ImGui::MenuItem(tag.c_str())) {
+                    copyToBuf(envTagBuf_, sizeof(envTagBuf_), tag);
+                }
+            }
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
+        }
+    }
 }
 
 void ConnectionDialog::renderTypeRow() {

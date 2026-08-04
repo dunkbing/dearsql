@@ -993,65 +993,6 @@ static void drawDockTabSeparators(ImGuiDockNode* node) {
     }
 }
 
-// Tinted pill naming the connection behind the focused tab. The row is always
-// reserved, so focusing a tab with no database (CSV editor) empties the pill
-// rather than shifting everything below it.
-void Application::renderConnectionBanner() {
-    const auto& colors = getCurrentColors();
-    const float rowHeight = ImGui::GetFrameHeight();
-    const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-    const float rowWidth = ImGui::GetContentRegionAvail().x;
-
-    ImGui::Dummy(ImVec2(rowWidth, rowHeight));
-
-    const auto tab = tabManager ? tabManager->getActiveTab() : nullptr;
-    IDatabaseNode* node = tab ? tab->connectionNode() : nullptr;
-    DatabaseInterface* owner = node ? node->ownerDatabase() : nullptr;
-    if (!owner) {
-        return;
-    }
-
-    const DatabaseConnectionInfo& info = owner->getConnectionInfo();
-
-    std::string label;
-    if (!info.envTag.empty()) {
-        std::string tag = info.envTag;
-        std::ranges::transform(tag, tag.begin(), [](unsigned char c) { return std::toupper(c); });
-        label += tag + "  |  ";
-    }
-    label += databaseTypeToString(info.type);
-    if (!info.name.empty()) {
-        label += " : " + info.name;
-    }
-    if (const std::string nodeName = node->getName(); !nodeName.empty() && nodeName != info.name) {
-        label += " : " + nodeName;
-    }
-    if (info.readOnly) {
-        label += "  \xc2\xb7 read only";
-    }
-
-    ImVec4 fill = colors.surface1;
-    const bool tinted = Theme::ConnectionPalette::resolve(info.color, colors, fill);
-
-    // dark text on a bright fill, light text on a dim one
-    const float luminance = 0.299f * fill.x + 0.587f * fill.y + 0.114f * fill.z;
-    const ImVec4 textColor = tinted && luminance > 0.5f ? colors.crust : colors.text;
-
-    const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-    const float pillWidth =
-        std::min(textSize.x + Theme::Spacing::L * 2.0f, std::max(rowWidth, 1.0f));
-    const ImVec2 pillMin(rowStart.x + (rowWidth - pillWidth) * 0.5f, rowStart.y);
-    const ImVec2 pillMax(pillMin.x + pillWidth, rowStart.y + rowHeight);
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    drawList->AddRectFilled(pillMin, pillMax, ImGui::GetColorU32(fill), rowHeight * 0.5f);
-    drawList->PushClipRect(pillMin, pillMax, true);
-    drawList->AddText(ImVec2(pillMin.x + (pillWidth - textSize.x) * 0.5f,
-                             pillMin.y + (rowHeight - textSize.y) * 0.5f),
-                      ImGui::GetColorU32(textColor), label.c_str());
-    drawList->PopClipRect();
-}
-
 void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
@@ -1097,8 +1038,6 @@ void Application::renderMainUI() {
         ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     }
-
-    renderConnectionBanner();
 
     const ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
 

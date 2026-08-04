@@ -14,6 +14,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
+#include "themes.hpp"
 #include "ui/ai_sidebar_panel.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
@@ -606,9 +607,36 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     const std::string dbLabel =
         std::format("   {}###db_{:p}", connectionInfo.name, static_cast<const void*>(db.get()));
+
+    // status colour fills the whole row. Drawn before the node so the label sits
+    // on top of it, and kept translucent so the text stays readable against any
+    // palette entry in either theme.
+    if (ImVec4 accent; Theme::ConnectionPalette::resolve(connectionInfo.color, colors, accent)) {
+        const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+        const float rowLeft = ImGui::GetWindowPos().x;
+        const float rowRight = rowLeft + ImGui::GetWindowContentRegionMax().x;
+        accent.w = 0.30f;
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(rowLeft, rowMin.y), ImVec2(rowRight, rowMin.y + ImGui::GetFrameHeight()),
+            ImGui::GetColorU32(accent));
+    }
+
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
     const ImVec2 nodeMin = ImGui::GetItemRectMin();
     const ImVec2 nodeMax = ImGui::GetItemRectMax();
+
+    // the descriptor the banner used to carry, at no cost in chrome
+    if (ImGui::IsItemHovered()) {
+        std::string descriptor;
+        if (!connectionInfo.envTag.empty()) {
+            std::string tag = connectionInfo.envTag;
+            std::ranges::transform(tag, tag.begin(),
+                                   [](unsigned char c) { return std::toupper(c); });
+            descriptor += tag + "  |  ";
+        }
+        descriptor += databaseTypeDisplayName(type) + " : " + connectionInfo.name;
+        ImGui::SetTooltip("%s", descriptor.c_str());
+    }
 
     const float iconSize = texMgr.getIconSize();
     const auto dbIconPos = ImVec2(nodeMin.x + ImGui::GetTreeNodeToLabelSpacing(),

@@ -125,10 +125,6 @@ void TabManager::preserveFocusedTabForLayoutRebuild() {
     pendingFocusTabId_ = findTabById(pendingFocusTabId_) ? pendingFocusTabId_ : activeTabId_;
 }
 
-std::shared_ptr<Tab> TabManager::getActiveTab() const {
-    return findTabById(activeTabId_);
-}
-
 std::shared_ptr<Tab> TabManager::findTabById(const std::uint64_t id) const {
     if (id == 0) {
         return nullptr;

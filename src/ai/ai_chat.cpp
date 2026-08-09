@@ -103,6 +103,9 @@ std::string AIChatState::dbTypeName() const {
         return "Oracle";
     case DatabaseType::REDSHIFT:
         return "Redshift";
+    case DatabaseType::CASSANDRA:
+        return "Cassandra";
+        break;
     }
     return "SQL";
 }

@@ -149,6 +149,13 @@ void SettingsDialog::render() {
     ImGui::TextDisabled("Shadertoy-style GLSL run over the whole UI (status: %s)",
                         shaderStatus_.c_str());
 
+    const std::string& shaderErr = CustomShader::lastError();
+    if (!shaderErr.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::TextWrapped("%s", shaderErr.c_str());
+        ImGui::PopStyleColor();
+    }
+
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("File");
     ImGui::SameLine();
@@ -195,8 +202,7 @@ void SettingsDialog::render() {
         out.close();
         app.getAppState()->setSetting("custom_shader_path", path);
         app.getAppState()->setSetting("custom_shader_enabled", "1");
-        shaderStatus_ =
-            CustomShader::loadFromFile(path) ? ("Active: " + path) : "Compile error — see logs";
+        shaderStatus_ = CustomShader::loadFromFile(path) ? ("Active: " + path) : "Compile error";
     }
     ImGui::SameLine();
     if (ImGui::Button("Disable")) {

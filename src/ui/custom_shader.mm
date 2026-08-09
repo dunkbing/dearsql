@@ -51,6 +51,7 @@ layout(binding = 1, std140) uniform Globals {
     vec3  iCursorText;
     vec3  iSelectionForegroundColor;
     vec3  iSelectionBackgroundColor;
+    float iEffectOpacity; // dearsql: blend shader output over the UI (0..1)
 };
 
 #define CURSORSTYLE_BLOCK        0
@@ -65,7 +66,13 @@ layout(location = 0) out vec4 _fragColor;
 #define texture2D texture
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord);
-void main() { mainImage(_fragColor, gl_FragCoord.xy); }
+void main() {
+    vec4 shaded;
+    mainImage(shaded, gl_FragCoord.xy);
+    // blend the effect over the untouched UI so it doesn't fully cover it
+    vec4 ui = texture(iChannel0, gl_FragCoord.xy / iResolution.xy);
+    _fragColor = mix(ui, shaded, clamp(iEffectOpacity, 0.0, 1.0));
+}
 
 )glsl";
 
@@ -88,8 +95,12 @@ void main() { mainImage(_fragColor, gl_FragCoord.xy); }
     std::string gMslSource;
     std::string gEntry; // cleansed MSL fragment entry name (e.g. "main0")
     std::string gPath;
+    std::string gLastError; // last load/compile error, surfaced to the UI
     std::unordered_map<std::string, uint32_t> gOffsets; // ubo member -> byte offset
     uint32_t gUboSize = 0;
+
+    // how strongly the shader covers the UI (0..1); fixed so the UI stays legible
+    constexpr float kEffectOpacity = 0.55f;
 
     // ---- Metal pipeline state (built lazily on first render) ----
     id<MTLDevice> gDevice = nil;
@@ -285,6 +296,8 @@ void main() { mainImage(_fragColor, gl_FragCoord.xy); }
         put("iSampleRate", &sampleRate, sizeof(sampleRate));
         put("iFocus", &focus, sizeof(focus));
         put("iCursorVisible", &cursorVisible, sizeof(cursorVisible));
+        const float opacity = kEffectOpacity;
+        put("iEffectOpacity", &opacity, sizeof(opacity));
     }
 
 } // namespace
@@ -298,33 +311,42 @@ namespace CustomShader {
     void unload() {
         gLoaded = false;
         gPath.clear();
+        gLastError.clear();
     }
 
     const std::string& loadedPath() {
         return gPath;
     }
 
+    const std::string& lastError() {
+        return gLastError;
+    }
+
     bool loadFromFile(const std::string& path) {
         std::ifstream f(path, std::ios::binary);
         if (!f) {
-            spdlog::error("[CustomShader] cannot open shader file: {}", path);
+            gLastError = "cannot open shader file: " + path;
+            spdlog::error("[CustomShader] {}", gLastError);
             return false;
         }
         std::ostringstream ss;
         ss << f.rdbuf();
         const std::string src = ss.str();
         if (src.empty()) {
-            spdlog::error("[CustomShader] shader file is empty: {}", path);
+            gLastError = "shader file is empty: " + path;
+            spdlog::error("[CustomShader] {}", gLastError);
             return false;
         }
 
         std::string err;
         if (!transpile(src, err)) {
+            gLastError = err;
             spdlog::error("[CustomShader] failed to compile '{}':\n{}", path, err);
             return false;
         }
 
         // stage the new shader; the pipeline rebuilds on next render
+        gLastError.clear();
         gLoaded = true;
         gPath = path;
         gPipeline = nil;

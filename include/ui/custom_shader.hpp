@@ -28,6 +28,9 @@ namespace CustomShader {
     // path of the currently loaded shader, or "" if none.
     const std::string& loadedPath();
 
+    // last load/compile error message ("" if the last load succeeded).
+    const std::string& lastError();
+
 #ifdef __APPLE__
     // fullscreen post-process pass: sample sceneTexture as iChannel0 and write
     // the shader output to the drawable. all void* args are id<MTLDevice> /

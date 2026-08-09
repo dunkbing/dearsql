@@ -45,7 +45,7 @@ SSH_PORT="${SSH_PORT:-52222}"
 
 # TLS cert directory
 CERT_DIR="$ROOT_DIR/.test-certs"
-TLS_SETUP_VERSION="6"
+TLS_SETUP_VERSION="7"
 
 # Test env vars
 export DEARSQL_TEST_PG_HOST="127.0.0.1"
@@ -261,6 +261,10 @@ EXTEOF
     # SSH test keys
     ssh-keygen -t ed25519 -f "$CERT_DIR/ssh_test_key" -N "" -q -y 2>/dev/null || \
         ssh-keygen -t ed25519 -f "$CERT_DIR/ssh_test_key" -N "" -q
+
+    # passphrase-protected key for the key-passphrase tunnel test
+    rm -f "$CERT_DIR/ssh_test_key_enc" "$CERT_DIR/ssh_test_key_enc.pub"
+    ssh-keygen -t ed25519 -f "$CERT_DIR/ssh_test_key_enc" -N "testphrase" -q
 
     echo "$TLS_SETUP_VERSION" > "$CERT_DIR/.version"
     echo "TLS certificates generated in $CERT_DIR"
@@ -478,8 +482,10 @@ RUN apk add --no-cache openssh-server && \
     sed -i 's/^AllowTcpForwarding .*/AllowTcpForwarding yes/' /etc/ssh/sshd_config && \
     sed -i 's/^GatewayPorts .*/GatewayPorts yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#PermitTunnel .*/PermitTunnel yes/' /etc/ssh/sshd_config
-COPY ssh_test_key.pub /home/testuser/.ssh/authorized_keys
-RUN chown -R testuser:testuser /home/testuser/.ssh && \
+COPY ssh_test_key.pub ssh_test_key_enc.pub /tmp/keys/
+RUN cat /tmp/keys/*.pub > /home/testuser/.ssh/authorized_keys && \
+    rm -rf /tmp/keys && \
+    chown -R testuser:testuser /home/testuser/.ssh && \
     chmod 600 /home/testuser/.ssh/authorized_keys
 EXPOSE 22
 CMD ["/usr/sbin/sshd", "-D", "-e"]
@@ -506,6 +512,10 @@ setup_tls_certs
 # export cert paths after generation
 if [[ -f "$CERT_DIR/ssh_test_key" ]]; then
     export DEARSQL_TEST_SSH_KEY="$CERT_DIR/ssh_test_key"
+fi
+if [[ -f "$CERT_DIR/ssh_test_key_enc" ]]; then
+    export DEARSQL_TEST_SSH_KEY_ENC="$CERT_DIR/ssh_test_key_enc"
+    export DEARSQL_TEST_SSH_KEY_PASSPHRASE="testphrase"
 fi
 if [[ -f "$CERT_DIR/ca.crt" ]]; then
     export DEARSQL_TEST_CA_CERT="$CERT_DIR/ca.crt"

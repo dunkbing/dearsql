@@ -14,6 +14,8 @@ namespace {
         std::string sshUser;
         std::string sshPassword;
         std::string sshKeyPath;
+        std::string sshKeyEncPath;
+        std::string sshKeyPassphrase;
         std::string pgRemoteHost; // container name reachable from SSH server
         int pgRemotePort = 5432;
         std::string pgDatabase;
@@ -42,6 +44,12 @@ namespace {
             cfg.sshPassword = sshPassword;
         if (sshKey && *sshKey != '\0')
             cfg.sshKeyPath = sshKey;
+        const char* sshKeyEnc = std::getenv("DEARSQL_TEST_SSH_KEY_ENC");
+        const char* sshKeyPassphrase = std::getenv("DEARSQL_TEST_SSH_KEY_PASSPHRASE");
+        if (sshKeyEnc && *sshKeyEnc != '\0')
+            cfg.sshKeyEncPath = sshKeyEnc;
+        if (sshKeyPassphrase)
+            cfg.sshKeyPassphrase = sshKeyPassphrase;
         if (pgRemoteHost && *pgRemoteHost != '\0')
             cfg.pgRemoteHost = pgRemoteHost;
         else
@@ -183,6 +191,53 @@ TEST_F(SSHTunnelTest, TunnelWithPasswordConnectsToPostgres) {
     EXPECT_EQ(result[0].tableData[0][0], "1");
 
     database->disconnect();
+}
+
+TEST_F(SSHTunnelTest, TunnelWithPassphraseProtectedKeyStartsAndStops) {
+    if (config.sshKeyEncPath.empty() || config.sshKeyPassphrase.empty())
+        GTEST_SKIP() << "Encrypted SSH key not available "
+                     << "(DEARSQL_TEST_SSH_KEY_ENC, DEARSQL_TEST_SSH_KEY_PASSPHRASE not set)";
+
+    SSHTunnel tunnel;
+
+    SSHConfig ssh;
+    ssh.enabled = true;
+    ssh.host = config.sshHost;
+    ssh.port = config.sshPort;
+    ssh.username = config.sshUser;
+    ssh.authMethod = SSHAuthMethod::PrivateKey;
+    ssh.privateKeyPath = config.sshKeyEncPath;
+    ssh.password = config.sshKeyPassphrase;
+
+    auto [ok, err] = tunnel.start(ssh, config.pgRemoteHost, config.pgRemotePort);
+    ASSERT_TRUE(ok) << "SSH tunnel with encrypted key failed: " << err;
+    EXPECT_TRUE(tunnel.isRunning());
+    EXPECT_GT(tunnel.localPort(), 0);
+
+    tunnel.stop();
+    EXPECT_FALSE(tunnel.isRunning());
+}
+
+TEST_F(SSHTunnelTest, PassphraseProtectedKeyWithoutPassphraseFailsWithDetail) {
+    if (config.sshKeyEncPath.empty())
+        GTEST_SKIP() << "Encrypted SSH key not available (DEARSQL_TEST_SSH_KEY_ENC not set)";
+
+    SSHTunnel tunnel;
+
+    SSHConfig ssh;
+    ssh.enabled = true;
+    ssh.host = config.sshHost;
+    ssh.port = config.sshPort;
+    ssh.username = config.sshUser;
+    ssh.authMethod = SSHAuthMethod::PrivateKey;
+    ssh.privateKeyPath = config.sshKeyEncPath;
+    // no passphrase: ssh has no tty and no askpass, so auth must fail
+
+    auto [ok, err] = tunnel.start(ssh, config.pgRemoteHost, config.pgRemotePort);
+    EXPECT_FALSE(ok);
+    EXPECT_FALSE(tunnel.isRunning());
+    // error should carry ssh's stderr, not just the generic fallback
+    EXPECT_NE(err.find("Permission denied"), std::string::npos) << "error was: " << err;
 }
 
 TEST_F(SSHTunnelTest, SSHTunnelClassStartsAndStops) {

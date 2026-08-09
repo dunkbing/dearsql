@@ -12,6 +12,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <fstream>
 #include <netinet/in.h>
 #include <signal.h>
 #include <spawn.h>
@@ -23,6 +24,24 @@
 #include <vector>
 
 extern char** environ;
+
+namespace {
+    // last chunk of the ssh stderr capture, trimmed, for error messages
+    std::string readStderrTail(const std::string& path, size_t maxBytes = 600) {
+        std::ifstream in(path);
+        if (!in)
+            return "";
+        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const auto first = content.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos)
+            return "";
+        const auto last = content.find_last_not_of(" \t\r\n");
+        content = content.substr(first, last - first + 1);
+        if (content.size() > maxBytes)
+            content = "..." + content.substr(content.size() - maxBytes);
+        return content;
+    }
+} // namespace
 
 SSHTunnel::~SSHTunnel() {
     stop();
@@ -114,7 +133,9 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     // Build environment: inherit current env, add SSH_ASKPASS if needed
     std::vector<std::string> envStrings;
     std::vector<const char*> envp;
-    bool needAskPass = (ssh.authMethod == SSHAuthMethod::Password && !ssh.password.empty());
+    // ssh consults SSH_ASKPASS for password prompts and key passphrases alike,
+    // so the same helper serves both auth methods.
+    bool needAskPass = !ssh.password.empty();
 
     if (needAskPass) {
         askPassPath_ = createAskPassScript(ssh.password);
@@ -137,12 +158,31 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
         envp.push_back(nullptr);
     }
 
+    // Capture stderr so a failure can report ssh's actual complaint.
+    char errTmpl[] = "/tmp/dearsql_ssh_err_XXXXXX";
+    std::string errPath = "/dev/null";
+    if (int errFd = mkstemp(errTmpl); errFd >= 0) {
+        close(errFd);
+        errPath = errTmpl;
+    }
+    // Reads the capture and removes the file; callable once.
+    auto takeStderr = [&errPath]() {
+        std::string tail;
+        if (errPath != "/dev/null") {
+            tail = readStderrTail(errPath);
+            unlink(errPath.c_str());
+            errPath = "/dev/null";
+        }
+        return tail;
+    };
+
     // Spawn ssh process
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
-    // Redirect stdout/stderr to /dev/null
+    // Redirect stdout to /dev/null, stderr to the capture file
     posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
-    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, errPath.c_str(),
+                                     O_WRONLY | O_APPEND, 0600);
     // Detach stdin so ssh doesn't try to read from terminal
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
 
@@ -158,6 +198,7 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     if (rc != 0) {
         sshPid_ = -1;
         cleanupAskPassScript();
+        takeStderr();
         return {false, "Failed to spawn ssh: " + std::string(std::strerror(rc))};
     }
 
@@ -173,18 +214,28 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
         if (result == sshPid_) {
             sshPid_ = -1;
             cleanupAskPassScript();
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 255)
-                return {false, "SSH connection failed (authentication, host key verification, or "
-                               "forwarding setup error)"};
-            return {false, "SSH process exited with code " +
-                               std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1)};
+            const std::string detail = takeStderr();
+            std::string msg =
+                WIFEXITED(status) && WEXITSTATUS(status) == 255
+                    ? "SSH connection failed"
+                    : "SSH process exited with code " +
+                          std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+            if (!detail.empty())
+                msg += ": " + detail;
+            else if (WIFEXITED(status) && WEXITSTATUS(status) == 255)
+                msg += " (authentication, host key verification, or forwarding setup error)";
+            return {false, msg};
         }
         // Process still running but port not reachable — kill it
         stop();
-        return {false, "SSH tunnel timed out waiting for port " + std::to_string(failedLocalPort)};
+        std::string msg = "SSH tunnel timed out waiting for port " + std::to_string(failedLocalPort);
+        if (const std::string detail = takeStderr(); !detail.empty())
+            msg += ": " + detail;
+        return {false, msg};
     }
 
     cleanupAskPassScript();
+    takeStderr();
     return {true, ""};
 }
 
@@ -267,8 +318,13 @@ bool SSHTunnel::waitForPortReady(int port, int timeoutMs) const {
         if (rc == 0)
             return true;
 
-        // Avoid reaping the child here; the caller inspects exit status on failure.
-        if (sshPid_ > 0 && kill(sshPid_, 0) != 0 && errno == ESRCH) {
+        // Peek without reaping so the caller can still inspect the exit status.
+        // kill(pid, 0) is not enough: it succeeds on zombies, so a fast auth
+        // failure would sit out the whole timeout before being reported.
+        if (siginfo_t info{}; sshPid_ > 0 &&
+                              waitid(P_PID, static_cast<id_t>(sshPid_), &info,
+                                     WEXITED | WNOHANG | WNOWAIT) == 0 &&
+                              info.si_pid == sshPid_) {
             return false;
         }
 

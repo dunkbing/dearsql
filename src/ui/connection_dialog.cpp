@@ -215,8 +215,9 @@ void ConnectionDialog::populateForm(const DatabaseConnectionInfo& info) {
             copyToBuf(sshKeyPathBuf_, sizeof(sshKeyPathBuf_), info.ssh.privateKeyPath);
         } else {
             sshAuthIdx_ = 0;
-            copyToBuf(sshPasswordBuf_, sizeof(sshPasswordBuf_), info.ssh.password);
         }
+        // password auth password or key passphrase, depending on method
+        copyToBuf(sshPasswordBuf_, sizeof(sshPasswordBuf_), info.ssh.password);
     }
 
     rebuildUrlFromForm();
@@ -250,9 +251,8 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
         info.ssh.username = sshUsernameBuf_;
         info.ssh.authMethod =
             (sshAuthIdx_ == 0) ? SSHAuthMethod::Password : SSHAuthMethod::PrivateKey;
-        if (info.ssh.authMethod == SSHAuthMethod::Password)
-            info.ssh.password = sshPasswordBuf_;
-        else
+        info.ssh.password = sshPasswordBuf_; // password or key passphrase
+        if (info.ssh.authMethod == SSHAuthMethod::PrivateKey)
             info.ssh.privateKeyPath = sshKeyPathBuf_;
     }
     return info;
@@ -815,6 +815,12 @@ void ConnectionDialog::renderSshFields(bool& formChanged) {
                 formChanged = true;
             }
         }
+
+        fieldLabel("Passphrase");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        formChanged |= ImGui::InputTextWithHint("##ssh_passphrase", "Key passphrase (optional)",
+                                                sshPasswordBuf_, sizeof(sshPasswordBuf_),
+                                                ImGuiInputTextFlags_Password);
     }
 }
 

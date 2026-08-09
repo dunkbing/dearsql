@@ -19,9 +19,8 @@ MySQLDatabase::MySQLDatabase(const DatabaseConnectionInfo& connInfo) {
     this->connectionInfo = connInfo;
     spdlog::debug("DEBUG: Creating MySQLDatabase with database = '{}', showAllDatabases = {}",
                   connectionInfo.database, connInfo.showAllDatabases);
-    if (connectionInfo.database.empty()) {
-        connectionInfo.database = "mysql";
-    }
+    // empty database is allowed: connect without a default schema so users
+    // lacking grants on the `mysql` system db can still connect (#19)
 }
 
 MySQLDatabase::~MySQLDatabase() {
@@ -74,8 +73,10 @@ std::pair<bool, std::string> MySQLDatabase::connect() {
         connected = true;
         setLastConnectionError("");
 
-        // Start loading databases immediately if showAllDatabases is enabled
-        if (connectionInfo.showAllDatabases && !databasesLoaded && !databasesLoader.isRunning()) {
+        // Start loading databases immediately if showAllDatabases is enabled.
+        // With no default database there is nothing else to show, so list too.
+        if ((connectionInfo.showAllDatabases || connectionInfo.database.empty()) &&
+            !databasesLoaded && !databasesLoader.isRunning()) {
             spdlog::debug("Starting async database loading after connection...");
             refreshDatabaseNames();
         }
@@ -153,7 +154,7 @@ void MySQLDatabase::refreshConnection() {
         }
 
         // Step 3: If showAllDatabases is enabled, load database names synchronously
-        if (connectionInfo.showAllDatabases) {
+        if (connectionInfo.showAllDatabases || connectionInfo.database.empty()) {
             spdlog::debug("Loading database names synchronously for refresh...");
             auto databases = getDatabaseNamesAsync();
 
@@ -320,8 +321,9 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
             return result;
         }
 
-        // If showAllDatabases is false, only return the current database
-        if (!connectionInfo.showAllDatabases) {
+        // If showAllDatabases is false, only return the current database.
+        // With no current database, fall through and list what grants allow.
+        if (!connectionInfo.showAllDatabases && !connectionInfo.database.empty()) {
             result.push_back(connectionInfo.database);
             return result;
         }
@@ -357,10 +359,7 @@ std::vector<std::string> MySQLDatabase::getDatabaseNamesAsync() const {
 }
 
 void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo& info) {
-    if (info.database.empty()) {
-        throw std::runtime_error("ensureConnectionPoolForDatabase: database name is required");
-    }
-
+    // empty database = server-level pool with no default schema
     {
         std::lock_guard lock(sessionMutex);
         auto* dbData = getDatabaseData(info.database);
@@ -494,23 +493,23 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
         const bool isDroppingConnectedDb = (dbName == originalDb);
 
         if (isDroppingConnectedDb) {
-            // Open a temporary connection to the 'mysql' system database first.
-            // Keep the current pool intact until this succeeds so failure paths
-            // do not leave the object disconnected.
-            auto tempInfo = connectionInfo;
-            tempInfo.database = "mysql";
+            // Open a temporary connection with no default schema first — the
+            // user may lack grants on the `mysql` system db (#19). Keep the
+            // current pool intact until this succeeds so failure paths do not
+            // leave the object disconnected.
             MYSQL* tempConn = mysql_init(nullptr);
             if (!tempConn) {
                 return {false, "mysql_init failed"};
             }
             constexpr unsigned int tcpProtocol = MYSQL_PROTOCOL_TCP;
             mysql_options(tempConn, MYSQL_OPT_PROTOCOL, &tcpProtocol);
-            if (!mysql_real_connect(tempConn, tempInfo.host.c_str(), tempInfo.username.c_str(),
-                                    tempInfo.password.c_str(), tempInfo.database.c_str(),
-                                    tempInfo.port, nullptr, CLIENT_MULTI_STATEMENTS)) {
+            if (!mysql_real_connect(tempConn, connectionInfo.host.c_str(),
+                                    connectionInfo.username.c_str(),
+                                    connectionInfo.password.c_str(), nullptr, connectionInfo.port,
+                                    nullptr, CLIENT_MULTI_STATEMENTS)) {
                 std::string err = mysql_error(tempConn);
                 mysql_close(tempConn);
-                return {false, std::format("Failed to connect to system database: {}", err)};
+                return {false, std::format("Failed to open maintenance connection: {}", err)};
             }
 
             // Destroy the connection pool for the target database so active
@@ -552,7 +551,7 @@ std::pair<bool, std::string> MySQLDatabase::dropDatabase(const std::string& dbNa
         databaseDataCache.erase(dbName);
 
         if (isDroppingConnectedDb) {
-            connectionInfo.database = "mysql";
+            connectionInfo.database = ""; // no default schema (#19)
             try {
                 ensureConnectionPoolForDatabase(connectionInfo);
                 connected = true;

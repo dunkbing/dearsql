@@ -163,7 +163,7 @@ TEST_F(MySQLDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows) {
     }
 }
 
-TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMysqlDatabase) {
+TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseReconnectsWithoutSchema) {
     ASSERT_NE(database, nullptr);
 
     const std::string tempDb = TestHelpers::makeUniqueIdentifier("dearsql_mysql_drop_active_");
@@ -188,12 +188,75 @@ TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMys
 
     const auto [dropped, dropErr] = activeDb->dropDatabase(tempDb);
     ASSERT_TRUE(dropped) << dropErr;
-    EXPECT_EQ(activeDb->getConnectionInfo().database, "mysql");
+    // after dropping the connected db, reconnects with no default schema (#19)
+    EXPECT_EQ(activeDb->getConnectionInfo().database, "");
+    auto postDrop = activeDb->executeQuery("SELECT 1");
+    EXPECT_TRUE(postDrop.success()) << postDrop.errorMessage();
 
     auto verifyResult = database->executeQuery(std::format("SHOW DATABASES LIKE '{}'", tempDb));
     ASSERT_TRUE(verifyResult.success()) << verifyResult.errorMessage();
     ASSERT_FALSE(verifyResult.empty());
     EXPECT_TRUE(verifyResult[0].tableData.empty());
+}
+
+TEST_F(MySQLDatabaseIntegrationTest, RestrictedUserConnectsWithoutDefaultDatabase) {
+    // repro for #19: a user with no grants on the `mysql` system db must still
+    // be able to connect when no database is specified
+    ASSERT_NE(database, nullptr);
+
+    const std::string grantDb = TestHelpers::makeUniqueIdentifier("dearsql_grant_");
+    const std::string user = TestHelpers::makeUniqueIdentifier("dsql_lim_");
+    const std::string pass = "dearsql_limited_pw";
+
+    auto createDb = database->executeQuery(std::format("CREATE DATABASE `{}`", grantDb));
+    if (!createDb.success() && createDb.errorMessage().find("denied") != std::string::npos) {
+        GTEST_SKIP() << "Skipping: CREATE DATABASE privilege required. Error: "
+                     << createDb.errorMessage();
+    }
+    ASSERT_TRUE(createDb.success()) << createDb.errorMessage();
+
+    auto createUser = database->executeQuery(
+        std::format("CREATE USER '{}'@'%' IDENTIFIED BY '{}'", user, pass));
+    if (!createUser.success()) {
+        database->executeQuery(std::format("DROP DATABASE `{}`", grantDb));
+        if (createUser.errorMessage().find("denied") != std::string::npos) {
+            GTEST_SKIP() << "Skipping: CREATE USER privilege required. Error: "
+                         << createUser.errorMessage();
+        }
+        FAIL() << createUser.errorMessage();
+    }
+
+    auto grant = database->executeQuery(
+        std::format("GRANT ALL ON `{}`.* TO '{}'@'%'", grantDb, user));
+    ASSERT_TRUE(grant.success()) << grant.errorMessage();
+
+    auto connInfo = database->getConnectionInfo();
+    connInfo.database = "";
+    connInfo.username = user;
+    connInfo.password = pass;
+    auto limited = std::make_shared<MySQLDatabase>(connInfo);
+
+    const auto [ok, err] = limited->connect();
+    EXPECT_TRUE(ok) << "Restricted user failed to connect without a database: " << err;
+    if (ok) {
+        auto r = limited->executeQuery("SELECT 1");
+        EXPECT_TRUE(r.success()) << r.errorMessage();
+
+        auto shown = limited->executeQuery("SHOW DATABASES");
+        ASSERT_TRUE(shown.success()) << shown.errorMessage();
+        ASSERT_FALSE(shown.empty());
+        bool sawGrantDb = false;
+        for (const auto& row : shown[0].tableData) {
+            if (!row.empty() && row[0] == grantDb) {
+                sawGrantDb = true;
+            }
+        }
+        EXPECT_TRUE(sawGrantDb) << "granted database not visible to restricted user";
+        limited->disconnect();
+    }
+
+    database->executeQuery(std::format("DROP USER '{}'@'%'", user));
+    database->executeQuery(std::format("DROP DATABASE `{}`", grantDb));
 }
 
 TEST_F(MySQLDatabaseIntegrationTest,

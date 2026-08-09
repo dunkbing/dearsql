@@ -80,9 +80,12 @@ namespace mysql_internal {
             }
 
             unsigned long flags = CLIENT_MULTI_STATEMENTS;
+            // nullptr db = no default schema; needed for users without grants
+            // on any particular database (#19)
             if (!mysql_real_connect(conn, info.host.c_str(), info.username.c_str(),
-                                    info.password.c_str(), info.database.c_str(), info.port,
-                                    nullptr, flags)) {
+                                    info.password.c_str(),
+                                    info.database.empty() ? nullptr : info.database.c_str(),
+                                    info.port, nullptr, flags)) {
                 std::string err = mysql_error(conn);
                 mysql_close(conn);
                 throw std::runtime_error("MySQL connection failed: " + err);

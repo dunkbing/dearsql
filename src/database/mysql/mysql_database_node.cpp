@@ -36,7 +36,8 @@ void MySQLDatabaseNode::checkTablesStatusAsync() {
 void MySQLDatabaseNode::startTablesLoadAsync(bool forceRefresh) {
     spdlog::debug("startTablesLoadAsync for db: {}{}", name,
                   (forceRefresh ? " (force refresh)" : ""));
-    if (!parentDb) {
+    // empty name = schema-less server pool node; it has no tables to load
+    if (!parentDb || name.empty()) {
         return;
     }
 
@@ -188,7 +189,8 @@ void MySQLDatabaseNode::checkViewsStatusAsync() {
 
 void MySQLDatabaseNode::startViewsLoadAsync(bool forceRefresh) {
     spdlog::debug("startViewsLoadAsync for database: {}", name);
-    if (!parentDb) {
+    // empty name = schema-less server pool node; it has no views to load
+    if (!parentDb || name.empty()) {
         return;
     }
 

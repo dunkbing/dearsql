@@ -397,7 +397,9 @@ void DatabaseHierarchy::renderRootNode() {
         } else if (mysqlDb->areDatabasesLoaded()) {
             const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
             for (const auto& dbDataPtr : databases) {
-                if (dbDataPtr && !hiddenDatabases_.contains(dbDataPtr->name)) {
+                // empty name = schema-less server pool node, not a database
+                if (dbDataPtr && !dbDataPtr->name.empty() &&
+                    !hiddenDatabases_.contains(dbDataPtr->name)) {
                     renderMySQLDatabaseNode(dbDataPtr.get());
                 }
             }
@@ -3946,9 +3948,13 @@ void DatabaseHierarchy::renderQueriesNode() {
                 }
             } else if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
                 if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
-                    const auto& m = mysqlDb->getDatabaseDataMap();
-                    if (!m.empty() && m.begin()->second)
-                        node = m.begin()->second.get();
+                    // prefer a real database over the schema-less server node
+                    for (const auto& entry : mysqlDb->getDatabaseDataMap()) {
+                        if (entry.second && !entry.first.empty()) {
+                            node = entry.second.get();
+                            break;
+                        }
+                    }
                 }
             } else if (dbType == DatabaseType::MSSQL) {
                 if (auto* mssqlDb = dynamic_cast<MSSQLDatabase*>(db.get())) {

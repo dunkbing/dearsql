@@ -297,7 +297,8 @@ public:
         }
         case DatabaseType::MYSQL:
         case DatabaseType::MARIADB: {
-            connectionInfo.database = "mysql";
+            // no default: MySQL/MariaDB connect fine without a schema and the
+            // user may lack grants on `mysql` (#19)
             break;
         }
         case DatabaseType::MSSQL: {

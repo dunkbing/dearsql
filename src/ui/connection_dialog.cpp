@@ -401,8 +401,7 @@ void ConnectionDialog::startServerConnect() {
         break;
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
-        if (info.database.empty())
-            info.database = "mysql";
+        // empty database is fine: connects without a default schema (#19)
         break;
     case DatabaseType::MSSQL:
         if (info.database.empty())

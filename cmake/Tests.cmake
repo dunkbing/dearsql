@@ -78,9 +78,9 @@ add_executable(
     sql_format_tests
     tests/ui/sql_format_test.cpp
     tests/ui/csv_parser_test.cpp
-    tests/utils/sql_dump_splitter_test.cpp
+    tests/utils/mysql_dump_splitter_test.cpp
     src/ui/text_editor_format.cpp
-    src/utils/sql_dump_splitter.cpp
+    src/utils/mysql_dump_splitter.cpp
 )
 
 target_include_directories(

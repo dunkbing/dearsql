@@ -1,4 +1,4 @@
-#include "utils/sql_dump_splitter.hpp"
+#include "utils/mysql_dump_splitter.hpp"
 
 #include <gtest/gtest.h>
 #include <sstream>
@@ -10,7 +10,7 @@ namespace {
     std::vector<std::string> splitAll(const std::string& dump) {
         std::istringstream in(dump);
         std::vector<std::string> statements;
-        SqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
+        MysqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
             statements.push_back(statement);
             return true;
         });
@@ -20,7 +20,7 @@ namespace {
     std::vector<bool> compoundFlags(const std::string& dump) {
         std::istringstream in(dump);
         std::vector<bool> flags;
-        SqlDumpSplitter::split(in, [&](const std::string&, const bool compound) {
+        MysqlDumpSplitter::split(in, [&](const std::string&, const bool compound) {
             flags.push_back(compound);
             return true;
         });
@@ -29,94 +29,94 @@ namespace {
 
 } // namespace
 
-TEST(SqlDumpSplitter, SplitsOnSemicolons) {
+TEST(MysqlDumpSplitter, SplitsOnSemicolons) {
     const auto statements = splitAll("SELECT 1; SELECT 2;");
     ASSERT_EQ(statements.size(), 2u);
     EXPECT_EQ(statements[0], "SELECT 1");
     EXPECT_EQ(statements[1], "SELECT 2");
 }
 
-TEST(SqlDumpSplitter, EmitsTrailingStatementWithoutDelimiter) {
+TEST(MysqlDumpSplitter, EmitsTrailingStatementWithoutDelimiter) {
     const auto statements = splitAll("SELECT 1");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT 1");
 }
 
-TEST(SqlDumpSplitter, SkipsEmptyStatements) {
+TEST(MysqlDumpSplitter, SkipsEmptyStatements) {
     EXPECT_TRUE(splitAll(";;\n;\n").empty());
 }
 
-TEST(SqlDumpSplitter, IgnoresSemicolonInsideSingleQuotedString) {
+TEST(MysqlDumpSplitter, IgnoresSemicolonInsideSingleQuotedString) {
     const auto statements = splitAll("INSERT INTO t VALUES ('a;b');");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "INSERT INTO t VALUES ('a;b')");
 }
 
-TEST(SqlDumpSplitter, HandlesBackslashEscapedQuote) {
+TEST(MysqlDumpSplitter, HandlesBackslashEscapedQuote) {
     const auto statements = splitAll("INSERT INTO t VALUES ('it\\'s; fine');");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "INSERT INTO t VALUES ('it\\'s; fine')");
 }
 
-TEST(SqlDumpSplitter, HandlesDoubledQuote) {
+TEST(MysqlDumpSplitter, HandlesDoubledQuote) {
     const auto statements = splitAll("INSERT INTO t VALUES ('it''s; fine');");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "INSERT INTO t VALUES ('it''s; fine')");
 }
 
-TEST(SqlDumpSplitter, TrailingBackslashDoesNotEscapeClosingQuote) {
+TEST(MysqlDumpSplitter, TrailingBackslashDoesNotEscapeClosingQuote) {
     // '...\\' ends with an escaped backslash, so the quote does close.
     const auto statements = splitAll("INSERT INTO t VALUES ('c:\\\\'); SELECT 2;");
     ASSERT_EQ(statements.size(), 2u);
     EXPECT_EQ(statements[1], "SELECT 2");
 }
 
-TEST(SqlDumpSplitter, IgnoresSemicolonInsideBacktickIdentifier) {
+TEST(MysqlDumpSplitter, IgnoresSemicolonInsideBacktickIdentifier) {
     const auto statements = splitAll("SELECT `we;ird` FROM t;");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT `we;ird` FROM t");
 }
 
-TEST(SqlDumpSplitter, StripsLineComments) {
+TEST(MysqlDumpSplitter, StripsLineComments) {
     const auto statements = splitAll("-- a comment; not a statement\nSELECT 1;\n# another;\n");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT 1");
 }
 
-TEST(SqlDumpSplitter, DoubleDashRequiresWhitespaceToStartComment) {
+TEST(MysqlDumpSplitter, DoubleDashRequiresWhitespaceToStartComment) {
     // "--" without trailing space is an operator, not a comment, in MySQL.
     const auto statements = splitAll("SELECT 1--2;");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT 1--2");
 }
 
-TEST(SqlDumpSplitter, StripsBlockCommentsSpanningLines) {
+TEST(MysqlDumpSplitter, StripsBlockCommentsSpanningLines) {
     const auto statements = splitAll("/* multi;\n   line; */\nSELECT 1;");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT 1");
 }
 
-TEST(SqlDumpSplitter, BlockCommentSeparatesAdjacentTokens) {
+TEST(MysqlDumpSplitter, BlockCommentSeparatesAdjacentTokens) {
     // Dropping the comment outright would fuse these into "SELECT 1UNION".
     const auto statements = splitAll("SELECT 1/*c*/UNION SELECT 2;");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "SELECT 1 UNION SELECT 2");
 }
 
-TEST(SqlDumpSplitter, KeepsConditionalComments) {
+TEST(MysqlDumpSplitter, KeepsConditionalComments) {
     const auto statements = splitAll("/*!40000 ALTER TABLE `t` DISABLE KEYS */;");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "/*!40000 ALTER TABLE `t` DISABLE KEYS */");
 }
 
-TEST(SqlDumpSplitter, SemicolonInsideConditionalCommentDoesNotSplit) {
+TEST(MysqlDumpSplitter, SemicolonInsideConditionalCommentDoesNotSplit) {
     const auto statements = splitAll("/*!50003 SET a=1; SET b=2 */;\nSELECT 9;");
     ASSERT_EQ(statements.size(), 2u);
     EXPECT_EQ(statements[0], "/*!50003 SET a=1; SET b=2 */");
     EXPECT_EQ(statements[1], "SELECT 9");
 }
 
-TEST(SqlDumpSplitter, HonoursDelimiterDirective) {
+TEST(MysqlDumpSplitter, HonoursDelimiterDirective) {
     const auto statements = splitAll("DELIMITER $$\n"
                                      "CREATE TRIGGER x BEGIN SET @a = 1; END$$\n"
                                      "DELIMITER ;\n"
@@ -126,35 +126,35 @@ TEST(SqlDumpSplitter, HonoursDelimiterDirective) {
     EXPECT_EQ(statements[1], "SELECT 1");
 }
 
-TEST(SqlDumpSplitter, DelimiterDirectiveIsNeverEmitted) {
+TEST(MysqlDumpSplitter, DelimiterDirectiveIsNeverEmitted) {
     for (const auto& statement : splitAll("DELIMITER ;;\nSELECT 1;;\nDELIMITER ;\n")) {
         EXPECT_EQ(statement.find("DELIMITER"), std::string::npos);
     }
 }
 
-TEST(SqlDumpSplitter, MultiCharacterDelimiter) {
+TEST(MysqlDumpSplitter, MultiCharacterDelimiter) {
     const auto statements = splitAll("DELIMITER ;;\nSELECT 1;;\nSELECT 2;;\n");
     ASSERT_EQ(statements.size(), 2u);
     EXPECT_EQ(statements[0], "SELECT 1");
     EXPECT_EQ(statements[1], "SELECT 2");
 }
 
-TEST(SqlDumpSplitter, PreservesMultiLineStatementBody) {
+TEST(MysqlDumpSplitter, PreservesMultiLineStatementBody) {
     const auto statements = splitAll("CREATE TABLE t (\n  a INT,\n  b INT\n);");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "CREATE TABLE t (\n  a INT,\n  b INT\n)");
 }
 
-TEST(SqlDumpSplitter, StringSpanningLinesKeepsNewline) {
+TEST(MysqlDumpSplitter, StringSpanningLinesKeepsNewline) {
     const auto statements = splitAll("INSERT INTO t VALUES ('line1\nline2');");
     ASSERT_EQ(statements.size(), 1u);
     EXPECT_EQ(statements[0], "INSERT INTO t VALUES ('line1\nline2')");
 }
 
-TEST(SqlDumpSplitter, StopsWhenCallbackReturnsFalse) {
+TEST(MysqlDumpSplitter, StopsWhenCallbackReturnsFalse) {
     std::istringstream in("SELECT 1; SELECT 2; SELECT 3;");
     std::vector<std::string> statements;
-    const bool completed = SqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
+    const bool completed = MysqlDumpSplitter::split(in, [&](const std::string& statement, bool) {
         statements.push_back(statement);
         return statements.size() < 2;
     });
@@ -162,7 +162,7 @@ TEST(SqlDumpSplitter, StopsWhenCallbackReturnsFalse) {
     EXPECT_EQ(statements.size(), 2u);
 }
 
-TEST(SqlDumpSplitter, FlagsOnlyDelimiterBlockStatementsAsCompound) {
+TEST(MysqlDumpSplitter, FlagsOnlyDelimiterBlockStatementsAsCompound) {
     const auto flags = compoundFlags("SELECT 1;\n"
                                      "DELIMITER $$\n"
                                      "CREATE TRIGGER x BEGIN SET @a = 1; END$$\n"

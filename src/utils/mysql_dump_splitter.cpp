@@ -1,4 +1,4 @@
-#include "utils/sql_dump_splitter.hpp"
+#include "utils/mysql_dump_splitter.hpp"
 
 #include <cctype>
 #include <istream>
@@ -66,7 +66,7 @@ namespace {
 
 } // namespace
 
-bool SqlDumpSplitter::split(
+bool MysqlDumpSplitter::split(
     std::istream& in,
     const std::function<bool(const std::string& statement, bool compound)>& onStatement) {
     std::string delimiter = ";";

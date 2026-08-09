@@ -13,8 +13,8 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "ui/text_editor.hpp"
-#include "utils/database_exporter.hpp"
-#include "utils/database_importer.hpp"
+#include "utils/mysql_dump_export.hpp"
+#include "utils/mysql_dump_import.hpp"
 #include <cstdint>
 #include <functional>
 #include <ios>
@@ -129,8 +129,8 @@ private:
     // invalidate the iteration, so the request is deferred to the next frame.
     std::optional<std::string> pendingDropDatabase_;
 
-    AsyncOperation<DatabaseImporter::Result> importOp_;
-    std::shared_ptr<DatabaseImporter::Progress> importProgress_;
+    AsyncOperation<MysqlDumpImport::Result> importOp_;
+    std::shared_ptr<MysqlDumpImport::Progress> importProgress_;
     std::string importDbName_;
     double importStartTime_ = 0.0;
 
@@ -152,8 +152,8 @@ private:
     bool importPreviewTruncated_ = false;
     bool importPreviewElided_ = false;
 
-    AsyncOperation<DatabaseExporter::Result> exportOp_;
-    std::shared_ptr<DatabaseExporter::Progress> exportProgress_;
+    AsyncOperation<MysqlDumpExport::Result> exportOp_;
+    std::shared_ptr<MysqlDumpExport::Progress> exportProgress_;
     std::string exportDbName_;
 
     void handleTableClick(const Table* table);

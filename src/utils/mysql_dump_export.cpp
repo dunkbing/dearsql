@@ -1,4 +1,4 @@
-#include "utils/database_exporter.hpp"
+#include "utils/mysql_dump_export.hpp"
 
 #include "database/mysql/mysql_internal.hpp"
 #include "database/sql_builder.hpp"
@@ -115,7 +115,7 @@ namespace {
         }
     }
 
-    bool cancelled(const DatabaseExporter::Progress& progress, const std::stop_token& stopToken) {
+    bool cancelled(const MysqlDumpExport::Progress& progress, const std::stop_token& stopToken) {
         return stopToken.stop_requested() ||
                progress.cancelRequested.load(std::memory_order_relaxed);
     }
@@ -124,7 +124,7 @@ namespace {
     // whole table in client memory. The trade-off is that no other query can run
     // until the result is drained, which is fine -- the export owns the session.
     std::uint64_t writeTableData(MYSQL* conn, const ISQLBuilder& builder, std::ofstream& out,
-                                 const std::string& tableName, DatabaseExporter::Progress& progress,
+                                 const std::string& tableName, MysqlDumpExport::Progress& progress,
                                  const std::stop_token& stopToken, bool& stopped) {
         const std::string quotedName = builder.quoteIdentifier(tableName);
         execute(conn, "SELECT * FROM " + quotedName);
@@ -193,7 +193,7 @@ namespace {
 
 } // namespace
 
-namespace DatabaseExporter {
+namespace MysqlDumpExport {
 
     std::string promptForSqlDumpDestination(const std::string& defaultName) {
         constexpr nfdfilteritem_t filterItem[1] = {{"SQL Dump", "sql"}};
@@ -333,4 +333,4 @@ namespace DatabaseExporter {
         return result;
     }
 
-} // namespace DatabaseExporter
+} // namespace MysqlDumpExport

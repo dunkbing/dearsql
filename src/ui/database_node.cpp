@@ -1112,7 +1112,7 @@ void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
         return;
     }
 
-    const std::string path = DatabaseImporter::promptForSqlDump();
+    const std::string path = MysqlDumpImport::promptForSqlDump();
     if (path.empty()) {
         return;
     }
@@ -1278,13 +1278,13 @@ void DatabaseHierarchy::beginSqlDumpImport() {
     }
 
     MySQLDatabaseNode* dbData = it->second.get();
-    importProgress_ = std::make_shared<DatabaseImporter::Progress>();
+    importProgress_ = std::make_shared<MysqlDumpImport::Progress>();
     importDbName_ = importPreviewDbName_;
     importStartTime_ = ImGui::GetTime();
 
     importOp_.startCancellable([dbData, path = importPreviewPath_,
                                 progress = importProgress_](const std::stop_token& stopToken) {
-        return DatabaseImporter::runSqlDump(dbData, path, *progress, stopToken);
+        return MysqlDumpImport::runSqlDump(dbData, path, *progress, stopToken);
     });
 }
 
@@ -1293,23 +1293,23 @@ void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
         return;
     }
 
-    const std::string path = DatabaseExporter::promptForSqlDumpDestination(
+    const std::string path = MysqlDumpExport::promptForSqlDumpDestination(
         std::format("{}_{}.sql", sanitizeBackupFileName(dbData->name), timestampForFileName()));
     if (path.empty()) {
         return;
     }
 
-    exportProgress_ = std::make_shared<DatabaseExporter::Progress>();
+    exportProgress_ = std::make_shared<MysqlDumpExport::Progress>();
     exportDbName_ = dbData->name;
 
     exportOp_.startCancellable(
         [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
-            return DatabaseExporter::runSqlDump(dbData, path, *progress, stopToken);
+            return MysqlDumpExport::runSqlDump(dbData, path, *progress, stopToken);
         });
 }
 
 void DatabaseHierarchy::checkExportStatus() {
-    exportOp_.check([this](const DatabaseExporter::Result result) {
+    exportOp_.check([this](const MysqlDumpExport::Result result) {
         if (result.success) {
             Alert::show("Export Complete", std::format("Wrote {} object(s) and {} row(s) to '{}'.",
                                                        result.objects, result.rows, result.path));
@@ -1348,7 +1348,7 @@ void DatabaseHierarchy::renderExportProgress() {
 }
 
 void DatabaseHierarchy::checkImportStatus() {
-    importOp_.check([this](const DatabaseImporter::Result result) {
+    importOp_.check([this](const MysqlDumpImport::Result result) {
         if (result.success) {
             Alert::show("Import Complete", std::format("Applied {} statement(s) from '{}'.",
                                                        result.applied, result.path));

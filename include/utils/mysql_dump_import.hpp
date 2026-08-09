@@ -7,7 +7,7 @@
 #include <stop_token>
 #include <string>
 
-namespace DatabaseImporter {
+namespace MysqlDumpImport {
 
     // Written by the import worker, read by the UI thread each frame.
     //
@@ -47,4 +47,4 @@ namespace DatabaseImporter {
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken);
 
-} // namespace DatabaseImporter
+} // namespace MysqlDumpImport

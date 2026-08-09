@@ -4,7 +4,7 @@
 #include <iosfwd>
 #include <string>
 
-namespace SqlDumpSplitter {
+namespace MysqlDumpSplitter {
 
     // Splits a MySQL dump into individually executable statements.
     //
@@ -23,4 +23,4 @@ namespace SqlDumpSplitter {
     bool split(std::istream& in,
                const std::function<bool(const std::string& statement, bool compound)>& onStatement);
 
-} // namespace SqlDumpSplitter
+} // namespace MysqlDumpSplitter

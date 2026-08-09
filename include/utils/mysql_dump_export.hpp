@@ -7,10 +7,10 @@
 #include <stop_token>
 #include <string>
 
-namespace DatabaseExporter {
+namespace MysqlDumpExport {
 
     // Written by the export worker, read by the UI thread each frame.
-    // cancelRequested goes the other way; see DatabaseImporter::Progress for why
+    // cancelRequested goes the other way; see MysqlDumpImport::Progress for why
     // AsyncOperation::cancel() is not used for that.
     struct Progress {
         std::atomic<int> objectsDone{0};
@@ -43,4 +43,4 @@ namespace DatabaseExporter {
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken);
 
-} // namespace DatabaseExporter
+} // namespace MysqlDumpExport

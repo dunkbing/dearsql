@@ -1,7 +1,7 @@
-#include "utils/database_importer.hpp"
+#include "utils/mysql_dump_import.hpp"
 
 #include "utils/mysql_session_reset.hpp"
-#include "utils/sql_dump_splitter.hpp"
+#include "utils/mysql_dump_splitter.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -18,7 +18,7 @@ namespace {
     constexpr std::size_t kMaxBatchBytes = 1024 * 1024;
 } // namespace
 
-namespace DatabaseImporter {
+namespace MysqlDumpImport {
 
     std::string promptForSqlDump() {
         constexpr nfdfilteritem_t filterItem[2] = {{"SQL Dump", "sql"}, {"All Files", "*"}};
@@ -103,7 +103,7 @@ namespace DatabaseImporter {
             return true;
         };
 
-        SqlDumpSplitter::split(file, [&](const std::string& statement, const bool compound) {
+        MysqlDumpSplitter::split(file, [&](const std::string& statement, const bool compound) {
             if (stopToken.stop_requested() ||
                 progress.cancelRequested.load(std::memory_order_relaxed)) {
                 if (!flush()) {
@@ -165,4 +165,4 @@ namespace DatabaseImporter {
         return result;
     }
 
-} // namespace DatabaseImporter
+} // namespace MysqlDumpImport

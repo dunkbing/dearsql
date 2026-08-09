@@ -10,6 +10,12 @@
 #include <spdlog/spdlog.h>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <sys/select.h>
+#endif
+
 namespace {
 
     struct PgResultDeleter {
@@ -19,6 +25,18 @@ namespace {
         }
     };
     using PgResultPtr = std::unique_ptr<PGresult, PgResultDeleter>;
+
+    // block until the server's first response byte is readable — marks the
+    // boundary between server execution and data download
+    void waitForFirstByte(PGconn* conn) {
+        const int sock = PQsocket(conn);
+        if (sock < 0)
+            return;
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(sock, &fds);
+        select(sock + 1, &fds, nullptr, nullptr, nullptr);
+    }
 
     std::string pgValue(PGresult* res, int row, int col) {
         if (PQgetisnull(res, row, col)) {
@@ -271,11 +289,20 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
 
 QueryResult PostgresDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
     QueryResult result;
-    const auto startTime = std::chrono::high_resolution_clock::now();
+    using Clock = std::chrono::high_resolution_clock;
+    const auto toMs = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    const auto startTime = Clock::now();
 
     try {
         auto session = getSession();
         PGconn* conn = session.get();
+        const auto tConnect = Clock::now(); // ~0 when a pooled connection is reused
+
+        // empty-query round trip ≈ network latency
+        if (PGresult* ping = PQexec(conn, "")) {
+            PQclear(ping);
+        }
+        const auto tPing = Clock::now();
 
         if (!PQsendQuery(conn, query.c_str())) {
             StatementResult r;
@@ -285,13 +312,34 @@ QueryResult PostgresDatabaseNode::executeQuery(const std::string& query, int row
             return result;
         }
 
-        while (PGresult* raw = PQgetResult(conn)) {
+        waitForFirstByte(conn);
+        const auto tExec = Clock::now();
+
+        double downloadMs = 0.0;
+        double parseMs = 0.0;
+        for (;;) {
+            const auto tDl = Clock::now();
+            PGresult* raw = PQgetResult(conn);
+            downloadMs += toMs(Clock::now() - tDl);
+            if (!raw) {
+                break;
+            }
             PgResultPtr res(raw);
+            const auto tParse = Clock::now();
             auto r = extractPgResult(res.get(), rowLimit);
+            parseMs += toMs(Clock::now() - tParse);
             if (r.success || !r.errorMessage.empty()) {
                 result.statements.push_back(std::move(r));
             }
         }
+
+        // ponytail: coarse client-side split; execution includes one-way latency,
+        // server planning/execution split needs EXPLAIN ANALYZE
+        result.phaseTimings = {{"connect", toMs(tConnect - startTime)},
+                               {"network latency", toMs(tPing - tConnect)},
+                               {"execution", toMs(tExec - tPing)},
+                               {"data download", downloadMs},
+                               {"data parse", parseMs}};
     } catch (const std::exception& e) {
         StatementResult r;
         r.success = false;

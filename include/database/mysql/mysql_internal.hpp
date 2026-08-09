@@ -20,6 +20,8 @@ namespace mysql_internal {
 
     std::function<MYSQL*()> makeMysqlFactory(const DatabaseConnectionInfo& info);
 
-    StatementResult extractMysqlResult(MYSQL* conn, int rowLimit);
+    // downloadMs/parseMs optionally accumulate result download and row parse time
+    StatementResult extractMysqlResult(MYSQL* conn, int rowLimit, double* downloadMs = nullptr,
+                                       double* parseMs = nullptr);
 
 } // namespace mysql_internal

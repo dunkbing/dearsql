@@ -1236,8 +1236,10 @@ void SQLEditorTab::renderQueryResults() const {
         return;
     }
 
+    const bool hasTimings = !queryResult.phaseTimings.empty();
+
     // Single result — render directly without tabs
-    if (queryResult.size() == 1) {
+    if (queryResult.size() == 1 && !hasTimings) {
         renderSingleResult(queryResult[0], 0);
         return;
     }
@@ -1261,8 +1263,61 @@ void SQLEditorTab::renderQueryResults() const {
                 ImGui::EndTabItem();
             }
         }
+        if (hasTimings && ImGui::BeginTabItem("Timing###TimingTab")) {
+            renderTimingWaterfall();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
+}
+
+void SQLEditorTab::renderTimingWaterfall() const {
+    const auto& phases = queryResult.phaseTimings;
+    double total = 0.0;
+    for (const auto& [name, ms] : phases) {
+        total += ms;
+    }
+    if (total <= 0.0) {
+        return;
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Total: %.2f ms", total);
+    ImGui::Spacing();
+
+    // right-aligned label column sized to the widest "NAME • 1.234ms"
+    float labelWidth = 0.0f;
+    std::vector<std::string> labels;
+    labels.reserve(phases.size());
+    for (const auto& [name, ms] : phases) {
+        labels.push_back(std::format("{} \xE2\x80\xA2 {:.3f}ms", name, ms));
+        labelWidth = std::max(labelWidth, ImGui::CalcTextSize(labels.back().c_str()).x);
+    }
+    labelWidth += Theme::Spacing::L;
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const float rowHeight = ImGui::GetTextLineHeightWithSpacing() + Theme::Spacing::S;
+    const float barHeight = ImGui::GetTextLineHeight();
+    const float chartWidth =
+        std::max(ImGui::GetContentRegionAvail().x - labelWidth - Theme::Spacing::L, 100.0f);
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImU32 barColor = ImGui::GetColorU32(ImVec4(0.42f, 0.40f, 0.75f, 1.0f));
+    const ImU32 labelColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+
+    double elapsed = 0.0;
+    for (size_t i = 0; i < phases.size(); ++i) {
+        const float y = origin.y + static_cast<float>(i) * rowHeight;
+        const float textW = ImGui::CalcTextSize(labels[i].c_str()).x;
+        drawList->AddText(ImVec2(origin.x + labelWidth - Theme::Spacing::L - textW,
+                                 y + (barHeight - ImGui::GetTextLineHeight()) * 0.5f),
+                          labelColor, labels[i].c_str());
+
+        const float x0 = origin.x + labelWidth + static_cast<float>(elapsed / total) * chartWidth;
+        const float w = std::max(static_cast<float>(phases[i].second / total) * chartWidth, 2.0f);
+        drawList->AddRectFilled(ImVec2(x0, y), ImVec2(x0 + w, y + barHeight), barColor);
+        elapsed += phases[i].second;
+    }
+    ImGui::Dummy(ImVec2(0.0f, static_cast<float>(phases.size()) * rowHeight));
 }
 
 void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) const {

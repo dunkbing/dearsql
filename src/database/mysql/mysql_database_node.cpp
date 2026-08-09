@@ -675,11 +675,17 @@ int MySQLDatabaseNode::getRowCount(const Table& table, const std::string& whereC
 
 QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLimit) {
     QueryResult result;
-    const auto startTime = std::chrono::high_resolution_clock::now();
+    using Clock = std::chrono::high_resolution_clock;
+    const auto toMs = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    const auto startTime = Clock::now();
 
     try {
         auto session = getSession();
         MYSQL* conn = session.get();
+        const auto tConnect = Clock::now(); // ~0 when a pooled connection is reused
+
+        mysql_ping(conn); // round trip ≈ network latency
+        const auto tPing = Clock::now();
 
         if (mysql_query(conn, query.c_str()) != 0) {
             StatementResult r;
@@ -688,13 +694,24 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
             result.statements.push_back(r);
             return result;
         }
+        const auto tExec = Clock::now();
 
+        double downloadMs = 0.0;
+        double parseMs = 0.0;
         do {
-            auto r = extractMysqlResult(conn, rowLimit);
+            auto r = extractMysqlResult(conn, rowLimit, &downloadMs, &parseMs);
             if (r.success || !r.errorMessage.empty()) {
                 result.statements.push_back(std::move(r));
             }
         } while (mysql_next_result(conn) == 0);
+
+        // ponytail: coarse client-side split; execution includes one-way latency,
+        // rows arrive during mysql_store_result (data download)
+        result.phaseTimings = {{"connect", toMs(tConnect - startTime)},
+                               {"network latency", toMs(tPing - tConnect)},
+                               {"execution", toMs(tExec - tPing)},
+                               {"data download", downloadMs},
+                               {"data parse", parseMs}};
     } catch (const std::exception& e) {
         StatementResult r;
         r.success = false;

@@ -147,6 +147,16 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
 
     // Verify we got data back
     EXPECT_FALSE(stmt.tableData.empty());
+
+    // node-level execution captures phase timings for the waterfall view
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+    auto timed = dbNode->executeQuery(std::format(R"(SELECT value FROM "{}")", tableName));
+    ASSERT_TRUE(timed.success()) << timed.errorMessage();
+    ASSERT_FALSE(timed.phaseTimings.empty());
+    for (const auto& [name, ms] : timed.phaseTimings) {
+        EXPECT_GE(ms, 0.0) << name;
+    }
 }
 
 TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToPostgresDatabase) {

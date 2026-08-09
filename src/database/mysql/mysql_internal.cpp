@@ -1,4 +1,5 @@
 #include "database/mysql/mysql_internal.hpp"
+#include <chrono>
 #include <format>
 #include <stdexcept>
 #include <string>
@@ -91,10 +92,20 @@ namespace mysql_internal {
         };
     }
 
-    StatementResult extractMysqlResult(MYSQL* conn, int rowLimit) {
+    StatementResult extractMysqlResult(MYSQL* conn, int rowLimit, double* downloadMs,
+                                       double* parseMs) {
         StatementResult result;
+        using Clock = std::chrono::high_resolution_clock;
+        const auto toMs = [](auto d) {
+            return std::chrono::duration<double, std::milli>(d).count();
+        };
 
+        const auto tDownload = Clock::now();
         MYSQL_RES* rawRes = mysql_store_result(conn);
+        const auto tParse = Clock::now();
+        if (downloadMs) {
+            *downloadMs += toMs(tParse - tDownload);
+        }
         if (rawRes) {
             MysqlResPtr res(rawRes);
             unsigned int nFields = mysql_num_fields(res.get());
@@ -146,6 +157,9 @@ namespace mysql_internal {
             }
         }
 
+        if (parseMs) {
+            *parseMs += toMs(Clock::now() - tParse);
+        }
         return result;
     }
 

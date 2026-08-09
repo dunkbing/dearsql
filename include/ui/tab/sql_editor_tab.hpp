@@ -103,6 +103,7 @@ private:
     void renderQueryResults() const;
     void renderServerMessages() const;
     void renderSingleResult(const StatementResult& r, size_t index) const;
+    void renderTimingWaterfall() const;
 
     // Switch the active database node (clears results, resets autocomplete)
     void switchNode(IDatabaseNode* newNode);

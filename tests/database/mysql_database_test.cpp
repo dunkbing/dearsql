@@ -151,6 +151,16 @@ TEST_F(MySQLDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows) {
     EXPECT_EQ(stmt.tableData[0][0], "delta");
     EXPECT_EQ(stmt.tableData[1][0], "epsilon");
     EXPECT_EQ(stmt.tableData[2][0], "zeta");
+
+    // node-level execution captures phase timings for the waterfall view
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+    auto timed = dbNode->executeQuery(std::format("SELECT value FROM `{}`", tableName));
+    ASSERT_TRUE(timed.success()) << timed.errorMessage();
+    ASSERT_FALSE(timed.phaseTimings.empty());
+    for (const auto& [name, ms] : timed.phaseTimings) {
+        EXPECT_GE(ms, 0.0) << name;
+    }
 }
 
 TEST_F(MySQLDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToMysqlDatabase) {

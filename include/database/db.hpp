@@ -147,6 +147,10 @@ struct QueryResult {
     // informational messages (e.g. SQL Server PRINT / RAISERROR <= 10 output)
     std::vector<std::string> messages;
 
+    // client-measured phase timings (label, ms), in waterfall order.
+    // populated only by backends that support it (postgres, mysql/mariadb)
+    std::vector<std::pair<std::string, double>> phaseTimings;
+
     [[nodiscard]] bool success() const {
         if (statements.empty())
             return false;

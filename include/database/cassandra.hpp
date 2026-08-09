@@ -30,7 +30,7 @@ public:
     QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     // Keyspace list
-    void refreshDatabaseNames();
+    void refreshDatabaseNames() override;
 
     bool isConnecting() const override {
         return connectionOp.isRunning() || refreshWorkflow.isRunning();

@@ -212,6 +212,8 @@ public:
         return {false, "Drop database not supported for this database type"};
     }
 
+    virtual void refreshDatabaseNames() {}
+
     // Connection status
     [[nodiscard]] virtual bool isConnected() const {
         return connected;

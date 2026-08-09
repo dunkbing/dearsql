@@ -34,7 +34,7 @@ public:
     QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
 
     // Database list methods
-    void refreshDatabaseNames();
+    void refreshDatabaseNames() override;
 
     // Connection status
     bool isConnecting() const override {

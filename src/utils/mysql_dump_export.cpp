@@ -88,6 +88,30 @@ namespace {
         return row[1];
     }
 
+    // Mirror the source db's declared defaults into the CREATE DATABASE we emit,
+    // so a restore recreates the schema with the same collation. DATABASE()
+    // rather than a parameter, since the export session is already USE'd into
+    // the db being dumped and the alternative is escaping node->name by hand.
+    struct SchemaDefaults {
+        std::string charset;
+        std::string collation;
+    };
+
+    SchemaDefaults readSchemaDefaults(MYSQL* conn) {
+        execute(conn,
+                "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
+                "FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()");
+        const MysqlResPtr res(mysql_store_result(conn));
+        if (!res) {
+            throw std::runtime_error(mysql_error(conn));
+        }
+        MYSQL_ROW row = mysql_fetch_row(res.get());
+        if (!row || !row[0] || !row[1]) {
+            throw std::runtime_error("Could not read schema defaults for the current database");
+        }
+        return {row[0], row[1]};
+    }
+
     // Ask the server what the database contains rather than reading the sidebar's
     // model. That model is populated lazily when a node is expanded, so exporting
     // a database the user never opened would otherwise produce a dump with a
@@ -261,6 +285,17 @@ namespace MysqlDumpExport {
                                         std::memory_order_relaxed);
 
             out << "-- DearSQL dump of database " << node->name << "\n\n" << kPreamble;
+
+            // Emit CREATE DATABASE + USE so the dump is self-contained; without
+            // this the tables land in whatever schema the restoring session had
+            // selected, and the import handler cannot show the user which db
+            // received the objects.
+            const auto defaults = readSchemaDefaults(conn);
+            const std::string quotedDb = builder->quoteIdentifier(node->name);
+            out << "CREATE DATABASE /*!32312 IF NOT EXISTS*/ " << quotedDb
+                << " /*!40100 DEFAULT CHARACTER SET " << defaults.charset << " COLLATE "
+                << defaults.collation << " */;\n"
+                << "USE " << quotedDb << ";\n\n";
 
             for (const auto& table : tables) {
                 if (cancelled(progress, stopToken)) {

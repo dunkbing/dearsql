@@ -1367,8 +1367,12 @@ void DatabaseHierarchy::checkImportStatus() {
                                     result.applied, result.error));
         }
 
-        if (result.applied > 0) {
-            if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+        if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+            // A dump normally opens with CREATE DATABASE ... USE ..., and a
+            // failed or cancelled batch can still have executed that prefix on
+            // the server before erroring, so refresh regardless of `applied`.
+            mysqlDb->refreshDatabaseNames();
+            if (result.applied > 0) {
                 if (auto* dbData = mysqlDb->getDatabaseData(importDbName_)) {
                     dbData->startTablesLoadAsync(true);
                     dbData->startViewsLoadAsync(true);

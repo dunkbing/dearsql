@@ -44,6 +44,20 @@ DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<Databa
     return inserted->second.get();
 }
 
+void DatabaseSidebarNew::processDumpOperations() {
+    for (const auto& hierarchy : hierarchyCache | std::views::values) {
+        if (hierarchy) {
+            hierarchy->processDumpOperations();
+        }
+    }
+}
+
+bool DatabaseSidebarNew::hasRunningSqlDump() const {
+    return std::ranges::any_of(hierarchyCache, [](const auto& entry) {
+        return entry.second && entry.second->hasRunningSqlDump();
+    });
+}
+
 void DatabaseSidebarNew::showConnectionDialog() {
     auto& app = Application::getInstance();
     if (!app.canAddConnection()) {
@@ -475,6 +489,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         hierarchy->processPendingDatabaseDrop();
     }
 
+
     auto const connectionInfo = db->getConnectionInfo();
     auto const type = connectionInfo.type;
     auto& app = Application::getInstance();
@@ -721,6 +736,15 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
     if (ImGui::BeginPopupContextItem(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+        const auto* hierarchy = getHierarchy(db);
+        const bool dumpBusy = hierarchy && hierarchy->hasRunningSqlDump();
+        const auto dumpBusyTooltip = [dumpBusy]() {
+            if (dumpBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Unavailable while a SQL dump is running on this connection");
+            }
+        };
+
         if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
             auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
             if (sqliteDb) {
@@ -747,9 +771,13 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         }
 
-        if (ImGui::MenuItem("Edit connection")) {
+        // Saving an edit replaces the DatabaseInterface and disconnects the old one,
+        // and ~ConnectionPool waits for the session a dump still holds -- freezing
+        // the UI thread, Cancel included, until the dump finishes.
+        if (ImGui::MenuItem("Edit connection", nullptr, false, !dumpBusy)) {
             ConnectionDialog::instance().showEdit(&app, db);
         }
+        dumpBusyTooltip();
         if (ImGui::MenuItem("Rename")) {
             const std::string oldName = db->getConnectionInfo().name;
             InputDialog::show(
@@ -774,13 +802,14 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
 
         if (db->isConnected() && db->getConnectionInfo().type != DatabaseType::SQLITE) {
-            if (ImGui::MenuItem("Disconnect")) {
+            if (ImGui::MenuItem("Disconnect", nullptr, false, !dumpBusy)) {
                 db->disconnect();
             }
+            dumpBusyTooltip();
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Remove Database")) {
+        if (ImGui::MenuItem("Remove Database", nullptr, false, !dumpBusy)) {
             auto const connectionInfo = db->getConnectionInfo();
             Alert::show(
                 "Remove Database",
@@ -797,11 +826,13 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                   },
                   AlertButton::Style::Destructive}});
         }
+        dumpBusyTooltip();
         ImGui::Separator();
-        if (ImGui::MenuItem("Refresh")) {
+        if (ImGui::MenuItem("Refresh", nullptr, false, !dumpBusy)) {
             spdlog::debug("Refreshing connection for database: {}", db->getConnectionInfo().name);
             db->refreshConnection();
         }
+        dumpBusyTooltip();
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }

@@ -13,6 +13,7 @@
 #include "database/redis.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -26,9 +27,11 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <ranges>
 #include <spdlog/spdlog.h>
 
@@ -126,6 +129,123 @@ namespace {
             return result.output.substr(result.output.size() - maxLen);
         }
         return result.message;
+    }
+
+    std::string formatBytes(const std::uint64_t bytes) {
+        return formatByteSize(static_cast<int64_t>(bytes));
+    }
+
+    std::string formatDuration(const double seconds) {
+        if (seconds > 60.0 * 60.0 * 24.0) {
+            return "--";
+        }
+        const auto total = static_cast<int>(seconds);
+        if (total >= 3600) {
+            return std::format("{}h {}m", total / 3600, total % 3600 / 60);
+        }
+        if (total >= 60) {
+            return std::format("{}m {}s", total / 60, total % 60);
+        }
+        return std::format("{}s", total);
+    }
+
+    // ImGui positions a ProgressBar overlay just past the fill and clamps it to
+    // the bar, so the label slides along with the fill and ends up squashed
+    // against the right edge. Draw the bar with no overlay and center the label
+    // over the whole width instead -- twice, clipped to each side of the fill
+    // boundary, because one color is unreadable against the other half.
+    void progressBarWithCenteredLabel(const float fraction, const float width,
+                                     const std::string& label) {
+        const ImVec4& onFillColor = Application::getInstance().getCurrentColors().crust;
+        const ImVec2 barPos = ImGui::GetCursorScreenPos();
+        ImGui::ProgressBar(fraction, ImVec2(width, 0.0f), "");
+
+        const ImVec2 barSize = ImGui::GetItemRectSize();
+        const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
+        const ImVec2 labelPos(barPos.x + (barSize.x - labelSize.x) * 0.5f,
+                              barPos.y + (barSize.y - labelSize.y) * 0.5f);
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImU32 onTrack = ImGui::GetColorU32(ImGuiCol_Text);
+
+        if (fraction < 0.0f) {
+            // Indeterminate: the fill sweeps, so there is no stable split.
+            draw->AddText(labelPos, onTrack, label.c_str());
+            return;
+        }
+
+        const ImU32 onFill = ImGui::GetColorU32(onFillColor);
+        const float fillX = barPos.x + barSize.x * std::min(fraction, 1.0f);
+        const float barBottom = barPos.y + barSize.y;
+
+        draw->PushClipRect(barPos, ImVec2(fillX, barBottom), true);
+        draw->AddText(labelPos, onFill, label.c_str());
+        draw->PopClipRect();
+
+        draw->PushClipRect(ImVec2(fillX, barPos.y), ImVec2(barPos.x + barSize.x, barBottom), true);
+        draw->AddText(labelPos, onTrack, label.c_str());
+        draw->PopClipRect();
+    }
+
+    // Returns true when Cancel was pressed. widestStatus sizes the panel: the
+    // window auto-resizes to its content, so measuring the live status text would
+    // make it twitch whenever a digit or unit changed.
+    bool renderProgressPanel(const char* id, const char* title, const float fraction,
+                             const std::string& overlay, const std::string& status,
+                             const char* widestStatus, const bool cancelling) {
+        // Anchored to the docked tab area rather than the viewport. Centering on the
+        // whole window puts the panel a sidebar's width left of the content it
+        // reports on. Falls back to the viewport before the layout exists or when
+        // the sidebar is hidden, where the two are the same thing anyway.
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImVec2 areaPos = viewport->WorkPos;
+        ImVec2 areaSize = viewport->WorkSize;
+        if (const ImGuiID centerId = Application::getInstance().getCenterDockId(); centerId != 0) {
+            if (const ImGuiDockNode* node = ImGui::DockBuilderGetNode(centerId)) {
+                areaPos = node->Pos;
+                areaSize = node->Size;
+            }
+        }
+
+        ImGui::SetNextWindowPos(
+            ImVec2(areaPos.x + areaSize.x * 0.5f, areaPos.y + areaSize.y - Theme::Spacing::L),
+            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+        ImGui::SetNextWindowBgAlpha(0.92f);
+
+        constexpr ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove;
+
+        constexpr float minBarWidth = 320.0f;
+        const float contentWidth = std::max(minBarWidth, ImGui::CalcTextSize(widestStatus).x);
+
+        bool cancelPressed = false;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(Theme::Spacing::L, Theme::Spacing::L));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+        if (ImGui::Begin(id, nullptr, flags)) {
+            ImGui::TextUnformatted(title);
+
+            // Cursor positions are window-relative, so the row's start has to be
+            // carried across to land the button flush with the bar's right edge.
+            const float contentStartX = ImGui::GetCursorPosX();
+            progressBarWithCenteredLabel(fraction, contentWidth, overlay);
+            ImGui::TextUnformatted(status.c_str());
+
+            const float cancelWidth = ImGui::CalcTextSize("Cancel").x +
+                                      ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
+            ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
+            ImGui::BeginDisabled(cancelling);
+            cancelPressed = ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f));
+            ImGui::EndDisabled();
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        return cancelPressed;
     }
 
     bool ensurePostgresToolsAvailable(const std::vector<std::string>& toolNames) {
@@ -979,6 +1099,332 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     db->refreshDatabaseNames();
 }
 
+void DatabaseHierarchy::processDumpOperations() {
+    renderImportPreview();
+    checkImportStatus();
+    renderImportProgress();
+    checkExportStatus();
+    renderExportProgress();
+}
+
+void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
+    if (!dbData || importOp_.isRunning()) {
+        return;
+    }
+
+    const std::string path = MysqlDumpImport::promptForSqlDump();
+    if (path.empty()) {
+        return;
+    }
+
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        Alert::show("Import Failed", std::format("Could not open '{}'.", path));
+        return;
+    }
+
+    std::string buffer(static_cast<std::size_t>(IMPORT_PREVIEW_BYTES), '\0');
+    in.read(buffer.data(), IMPORT_PREVIEW_BYTES);
+    importPreviewTruncated_ = in.gcount() == IMPORT_PREVIEW_BYTES;
+    buffer.resize(static_cast<std::size_t>(in.gcount()));
+
+    // An extended INSERT puts a whole table on one line -- half a megabyte is
+    // ordinary. Shorten each line rather than letting one of them spend the
+    // budget: the structure is what identifies the dump, the row data is not.
+    std::string head;
+    importPreviewLines_ = 0;
+    importPreviewElided_ = false;
+
+    std::size_t pos = 0;
+    while (pos < buffer.size() && importPreviewLines_ < IMPORT_PREVIEW_LINES) {
+        const std::size_t eol = buffer.find('\n', pos);
+        const std::size_t end = eol == std::string::npos ? buffer.size() : eol;
+        const std::size_t length = end - pos;
+
+        if (length > IMPORT_PREVIEW_LINE_CHARS) {
+            head.append(buffer, pos, IMPORT_PREVIEW_LINE_CHARS);
+            head += std::format(" [... {} more characters]", length - IMPORT_PREVIEW_LINE_CHARS);
+            importPreviewElided_ = true;
+        } else {
+            head.append(buffer, pos, length);
+        }
+        head += '\n';
+        ++importPreviewLines_;
+
+        if (eol == std::string::npos) {
+            pos = buffer.size();
+            break;
+        }
+        pos = eol + 1;
+    }
+
+    if (pos < buffer.size()) {
+        importPreviewTruncated_ = true;
+    }
+
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    importPreviewSize_ = ec ? 0 : size;
+    importPreviewPath_ = path;
+    importPreviewDbName_ = dbData->name;
+
+    importPreviewEditor_.SetPalette(
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
+    // Not SQL: the vendored grammar cannot parse mysqldump's conditional comments
+    // (/*!40101 ... */), errors on line 2 of a real dump and colors the rest in
+    // patches. Uniformly plain reads better than unevenly wrong, and it skips the
+    // parse entirely.
+    importPreviewEditor_.SetLanguage(dearsql::TextEditor::Language::PlainText);
+    importPreviewEditor_.SetShowLineNumbers(true);
+    importPreviewEditor_.SetText(head);
+    importPreviewEditor_.SetReadOnly(true);
+    openImportPreview_ = true;
+}
+
+void DatabaseHierarchy::renderImportPreview() {
+    if (!db) {
+        return;
+    }
+
+    // The id carries the connection: each one has its own DatabaseHierarchy, and a
+    // bare string would let two of them drive the same popup.
+    const std::string popupId =
+        std::format("Import SQL Dump###import_preview_{}", db->getConnectionId());
+
+    if (openImportPreview_) {
+        ImGui::OpenPopup(popupId.c_str());
+        openImportPreview_ = false;
+    }
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
+
+    if (!ImGui::BeginPopupModal(popupId.c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        return;
+    }
+
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    ImGui::TextUnformatted(std::format("Into '{}'", importPreviewDbName_).c_str());
+
+    const std::string fileLabel =
+        std::format("{}  ·  {}", std::filesystem::path(importPreviewPath_).filename().string(),
+                    formatBytes(importPreviewSize_));
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(fileLabel.c_str()).x);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::TextUnformatted(fileLabel.c_str());
+    std::string extent =
+        importPreviewTruncated_
+            ? std::format("First {} lines — head of the file only", importPreviewLines_)
+            : std::format("Whole file — {} lines", importPreviewLines_);
+    if (importPreviewElided_) {
+        extent += " · long rows shortened";
+    }
+    ImGui::TextUnformatted(extent.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    // The palette is applied once at load: SetPalette marks the whole buffer for
+    // rehighlighting, and doing that per frame over 100,000 characters is ruinous.
+    // Nothing can change the theme meanwhile -- this is a modal.
+    const float buttonsHeight =
+        ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M * 2.0f + Theme::Spacing::S;
+    importPreviewEditor_.Render("##import_preview_sql",
+                                ImVec2(0, ImGui::GetContentRegionAvail().y - buttonsHeight), true);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    constexpr float buttonWidth = 120.0f;
+    ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - buttonWidth * 2.0f - Theme::Spacing::M);
+    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f))) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine(0.0f, Theme::Spacing::M);
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(colors.red.x, colors.red.y, colors.red.z, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors.red.x * 0.8f, colors.red.y * 0.8f,
+                                                        colors.red.z * 0.8f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
+    if (ImGui::Button("Import", ImVec2(buttonWidth, 0.0f))) {
+        beginSqlDumpImport();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::PopStyleColor(4);
+
+    ImGui::EndPopup();
+}
+
+void DatabaseHierarchy::beginSqlDumpImport() {
+    auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
+    if (!mysqlDb || importOp_.isRunning()) {
+        return;
+    }
+
+    // Re-resolve instead of carrying the node across the confirmation, and read
+    // through the const accessor so a missing entry cannot create a phantom one.
+    const MySQLDatabase& constDb = *mysqlDb;
+    const auto& cache = constDb.getDatabaseDataMap();
+    const auto it = cache.find(importPreviewDbName_);
+    if (it == cache.end() || !it->second) {
+        Alert::show("Import Failed",
+                    std::format("Database '{}' is no longer available.", importPreviewDbName_));
+        return;
+    }
+
+    MySQLDatabaseNode* dbData = it->second.get();
+    importProgress_ = std::make_shared<MysqlDumpImport::Progress>();
+    importDbName_ = importPreviewDbName_;
+    importStartTime_ = ImGui::GetTime();
+
+    importOp_.startCancellable([dbData, path = importPreviewPath_,
+                                progress = importProgress_](const std::stop_token& stopToken) {
+        return MysqlDumpImport::runSqlDump(dbData, path, *progress, stopToken);
+    });
+}
+
+void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
+    if (!dbData || exportOp_.isRunning()) {
+        return;
+    }
+
+    const std::string path = MysqlDumpExport::promptForSqlDumpDestination(
+        std::format("{}_{}.sql", sanitizeBackupFileName(dbData->name), timestampForFileName()));
+    if (path.empty()) {
+        return;
+    }
+
+    exportProgress_ = std::make_shared<MysqlDumpExport::Progress>();
+    exportDbName_ = dbData->name;
+
+    exportOp_.startCancellable(
+        [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
+            return MysqlDumpExport::runSqlDump(dbData, path, *progress, stopToken);
+        });
+}
+
+void DatabaseHierarchy::checkExportStatus() {
+    exportOp_.check([this](const MysqlDumpExport::Result result) {
+        if (result.success) {
+            Alert::show("Export Complete", std::format("Wrote {} object(s) and {} row(s) to '{}'.",
+                                                       result.objects, result.rows, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Export Cancelled",
+                        std::format("Stopped after {} object(s). '{}' is incomplete.",
+                                    result.objects, result.path));
+        } else {
+            Alert::show("Export Failed", std::format("The export failed after {} object(s):\n\n{}",
+                                                     result.objects, result.error));
+        }
+        exportProgress_.reset();
+    });
+}
+
+void DatabaseHierarchy::renderExportProgress() {
+    if (!exportOp_.isRunning() || !exportProgress_) {
+        return;
+    }
+
+    const int done = exportProgress_->objectsDone.load(std::memory_order_relaxed);
+    const int total = exportProgress_->objectsTotal.load(std::memory_order_relaxed);
+    const auto rows = exportProgress_->rowsWritten.load(std::memory_order_relaxed);
+    const auto bytes = exportProgress_->bytesWritten.load(std::memory_order_relaxed);
+    const bool cancelling = exportProgress_->cancelRequested.load(std::memory_order_relaxed);
+
+    const float fraction = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
+
+    if (renderProgressPanel("##sql_export_progress",
+                            cancelling ? "Cancelling export..." : "Exporting SQL dump", fraction,
+                            std::format("{} / {} objects", done, total),
+                            std::format("{} rows written  ·  {}", rows, formatBytes(bytes)),
+                            "999999999 rows written  ·  999.99 GB", cancelling)) {
+        exportProgress_->cancelRequested.store(true, std::memory_order_relaxed);
+    }
+}
+
+void DatabaseHierarchy::checkImportStatus() {
+    importOp_.check([this](const MysqlDumpImport::Result result) {
+        if (result.success) {
+            Alert::show("Import Complete", std::format("Applied {} statement(s) from '{}'.",
+                                                       result.applied, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Import Cancelled",
+                        std::format("Stopped after {} statement(s). Changes already applied were "
+                                    "not rolled back.",
+                                    result.applied));
+        } else {
+            // Statements are sent to the server in batches, so the exact failing
+            // statement is not known -- only that it followed the last batch that
+            // succeeded. Do not name a statement number that could be wrong.
+            Alert::show("Import Failed",
+                        std::format("The import failed after {} statement(s):\n\n{}\n\nWhat had "
+                                    "already been applied was not rolled back.",
+                                    result.applied, result.error));
+        }
+
+        if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
+            // A dump normally opens with CREATE DATABASE ... USE ..., and a
+            // failed or cancelled batch can still have executed that prefix on
+            // the server before erroring, so refresh regardless of `applied`.
+            mysqlDb->refreshDatabaseNames();
+            if (result.applied > 0) {
+                if (auto* dbData = mysqlDb->getDatabaseData(importDbName_)) {
+                    dbData->startTablesLoadAsync(true);
+                    dbData->startViewsLoadAsync(true);
+                }
+            }
+        }
+
+        importProgress_.reset();
+        importDbName_.clear();
+    });
+}
+
+void DatabaseHierarchy::renderImportProgress() {
+    if (!importOp_.isRunning() || !importProgress_) {
+        return;
+    }
+
+    const auto total = importProgress_->totalBytes.load(std::memory_order_relaxed);
+    const auto read = importProgress_->bytesRead.load(std::memory_order_relaxed);
+    const int applied = importProgress_->statementsApplied.load(std::memory_order_relaxed);
+    const bool cancelling = importProgress_->cancelRequested.load(std::memory_order_relaxed);
+
+    // file_size() can fail; an indeterminate bar is honest, a fraction of zero is not.
+    const float fraction =
+        total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
+                  : -1.0f * static_cast<float>(ImGui::GetTime());
+    const std::string overlay = total > 0
+                                    ? std::format("{} / {}", formatBytes(read), formatBytes(total))
+                                    : formatBytes(read);
+
+    const double elapsed = ImGui::GetTime() - importStartTime_;
+    std::string statusText = std::format("{} statements applied", applied);
+    if (elapsed > 0.5) {
+        const double bytesPerSecond = static_cast<double>(read) / elapsed;
+        statusText += std::format("  ·  {}/s  ·  {:.0f} stmt/s",
+                                  formatBytes(static_cast<std::uint64_t>(bytesPerSecond)),
+                                  static_cast<double>(applied) / elapsed);
+        if (total > read && bytesPerSecond > 0.0) {
+            statusText += std::format(
+                "  ·  {} left", formatDuration(static_cast<double>(total - read) / bytesPerSecond));
+        }
+    }
+
+    if (renderProgressPanel(
+            "##sql_import_progress", cancelling ? "Cancelling import..." : "Importing SQL dump",
+            fraction, overlay, statusText,
+            "999999 statements applied  ·  999.9 MB/s  ·  999999 stmt/s  ·  99h 59m left",
+            cancelling)) {
+        importProgress_->cancelRequested.store(true, std::memory_order_relaxed);
+    }
+}
+
 void DatabaseHierarchy::checkPostgresToolStatus() {
     postgresToolOp_.check([this](const PostgresToolResult result) {
         const std::string title =
@@ -1502,6 +1948,24 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);
         }
+        const bool importBusy = importOp_.isRunning();
+        if (ImGui::BeginMenu("Import", !importBusy)) {
+            if (ImGui::MenuItem("SQL Dump")) {
+                startSqlDumpImport(dbData);
+            }
+            ImGui::EndMenu();
+        } else if (importBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("An import is already running");
+        }
+        const bool exportBusy = exportOp_.isRunning();
+        if (ImGui::BeginMenu("Export", !exportBusy)) {
+            if (ImGui::MenuItem("SQL Dump")) {
+                startSqlDumpExport(dbData);
+            }
+            ImGui::EndMenu();
+        } else if (exportBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("An export is already running");
+        }
         ImGui::Separator();
         if (ImGui::MenuItem(RENAME_LABEL)) {
             const std::string oldName = dbData->name;
@@ -1509,7 +1973,8 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                         "MySQL does not support direct database renaming. You need to "
                         "create a new database, copy all data, and drop the old one.");
         }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        const bool dumpBusy = hasRunningSqlDump(dbData->name);
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !dumpBusy)) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -1518,6 +1983,9 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                  {"Delete", [this, dbName]() { pendingDropDatabase_ = dbName; },
                   AlertButton::Style::Destructive}});
+        }
+        if (dumpBusy && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Cannot delete while a SQL dump is running on this database");
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

@@ -689,7 +689,40 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
         mysql_ping(conn); // round trip ≈ network latency
         const auto tPing = Clock::now();
 
-        if (mysql_query(conn, query.c_str()) != 0) {
+        result = executeQueryOn(conn, query, rowLimit);
+
+        // Prepend the pool/network phases so the waterfall reads connect →
+        // network latency → execution → download → parse.
+        std::vector<std::pair<std::string, double>> prefix = {
+            {"connect", toMs(tConnect - startTime)},
+            {"network latency", toMs(tPing - tConnect)}};
+        result.phaseTimings.insert(result.phaseTimings.begin(), prefix.begin(), prefix.end());
+    } catch (const std::exception& e) {
+        StatementResult r;
+        r.success = false;
+        r.errorMessage = e.what();
+        result.statements.push_back(r);
+    }
+
+    const auto endTime = Clock::now();
+    result.executionTimeMs = toMs(endTime - startTime);
+    return result;
+}
+
+QueryResult MySQLDatabaseNode::executeQueryOn(MYSQL* conn, const std::string& query,
+                                              const int rowLimit) {
+    QueryResult result;
+    using Clock = std::chrono::high_resolution_clock;
+    const auto toMs = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    const auto startTime = Clock::now();
+
+    try {
+        if (!conn) {
+            throw std::runtime_error("No MySQL connection");
+        }
+
+        // real_query takes a length: query may be a megabyte-sized batch.
+        if (mysql_real_query(conn, query.c_str(), query.size()) != 0) {
             StatementResult r;
             r.success = false;
             r.errorMessage = mysql_error(conn);
@@ -700,18 +733,29 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
 
         double downloadMs = 0.0;
         double parseMs = 0.0;
+        // mysql_next_result returns 0 for another result, -1 when there are no more,
+        // and >0 for an error. Only real_query's return reports a failure in the
+        // first statement of a batch; a failure in any later one arrives here, so
+        // stopping on >0 without recording it reports a partial batch as applied.
+        int next = 0;
         do {
             auto r = extractMysqlResult(conn, rowLimit, &downloadMs, &parseMs);
             if (r.success || !r.errorMessage.empty()) {
                 result.statements.push_back(std::move(r));
             }
-        } while (mysql_next_result(conn) == 0);
+            next = mysql_next_result(conn);
+        } while (next == 0);
+
+        if (next > 0) {
+            StatementResult r;
+            r.success = false;
+            r.errorMessage = mysql_error(conn);
+            result.statements.push_back(std::move(r));
+        }
 
         // ponytail: coarse client-side split; execution includes one-way latency,
         // rows arrive during mysql_store_result (data download)
-        result.phaseTimings = {{"connect", toMs(tConnect - startTime)},
-                               {"network latency", toMs(tPing - tConnect)},
-                               {"execution", toMs(tExec - tPing)},
+        result.phaseTimings = {{"execution", toMs(tExec - startTime)},
                                {"data download", downloadMs},
                                {"data parse", parseMs}};
     } catch (const std::exception& e) {
@@ -721,8 +765,8 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
         result.statements.push_back(r);
     }
 
-    const auto endTime = std::chrono::high_resolution_clock::now();
-    result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    const auto endTime = Clock::now();
+    result.executionTimeMs = toMs(endTime - startTime);
     return result;
 }
 

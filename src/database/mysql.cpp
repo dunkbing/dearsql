@@ -195,12 +195,22 @@ QueryResult MySQLDatabase::executeQuery(const std::string& query, int rowLimit) 
             return result;
         }
 
+        // See MySQLDatabaseNode::executeQueryOn: >0 is an error, not end of results.
+        int next = 0;
         do {
             auto r = extractMysqlResult(conn, rowLimit);
             if (r.success || !r.errorMessage.empty()) {
                 result.statements.push_back(std::move(r));
             }
-        } while (mysql_next_result(conn) == 0);
+            next = mysql_next_result(conn);
+        } while (next == 0);
+
+        if (next > 0) {
+            StatementResult r;
+            r.success = false;
+            r.errorMessage = mysql_error(conn);
+            result.statements.push_back(std::move(r));
+        }
     } catch (const std::exception& e) {
         StatementResult r;
         r.success = false;

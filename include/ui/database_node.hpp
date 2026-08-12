@@ -12,7 +12,12 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/sqlite.hpp"
 #include "imgui.h"
+#include "ui/text_editor.hpp"
+#include "utils/mysql_dump_export.hpp"
+#include "utils/mysql_dump_import.hpp"
+#include <cstdint>
 #include <functional>
+#include <ios>
 #include <map>
 #include <memory>
 #include <optional>
@@ -50,6 +55,23 @@ public:
     // drop is queued from an Alert callback and would otherwise sit unexecuted
     // until the user next expanded the connection.
     void processPendingDatabaseDrop();
+
+    // Same reason: a dump outlives the tree being expanded, and renderRootNode
+    // stops running on collapse, which would take the progress panel and its
+    // only Cancel button with it.
+    void processDumpOperations();
+
+    // A running SQL dump holds a raw MySQLDatabaseNode* and one pooled session for
+    // the length of its run. Dropping the database, disconnecting or reconnecting
+    // frees both under the worker, so those paths stay blocked while this is true.
+    [[nodiscard]] bool hasRunningSqlDump() const {
+        return importOp_.isRunning() || exportOp_.isRunning();
+    }
+
+    [[nodiscard]] bool hasRunningSqlDump(const std::string& dbName) const {
+        return (importOp_.isRunning() && importDbName_ == dbName) ||
+               (exportOp_.isRunning() && exportDbName_ == dbName);
+    }
 
     [[nodiscard]] const std::unordered_set<const Table*>& getSelectedTables() const {
         return selectedTables_;
@@ -107,6 +129,33 @@ private:
     // invalidate the iteration, so the request is deferred to the next frame.
     std::optional<std::string> pendingDropDatabase_;
 
+    AsyncOperation<MysqlDumpImport::Result> importOp_;
+    std::shared_ptr<MysqlDumpImport::Progress> importProgress_;
+    std::string importDbName_;
+    double importStartTime_ = 0.0;
+
+    // A dump drops and recreates tables, so it is shown before anything is applied.
+    // Only the head of the file is read: dumps run to gigabytes and the whole point
+    // is to answer "is this the file I meant" without waiting. Bounded by lines
+    // rather than bytes -- an extended INSERT packs thousands of rows onto one line,
+    // so a byte budget spends the whole preview on two statements. The byte ceiling
+    // is the backstop for exactly that case.
+    static constexpr std::size_t IMPORT_PREVIEW_LINES = 500;
+    static constexpr std::size_t IMPORT_PREVIEW_LINE_CHARS = 300;
+    static constexpr std::streamsize IMPORT_PREVIEW_BYTES = 16 * 1024 * 1024;
+    bool openImportPreview_ = false;
+    dearsql::TextEditor importPreviewEditor_;
+    std::string importPreviewPath_;
+    std::string importPreviewDbName_;
+    std::uintmax_t importPreviewSize_ = 0;
+    std::size_t importPreviewLines_ = 0;
+    bool importPreviewTruncated_ = false;
+    bool importPreviewElided_ = false;
+
+    AsyncOperation<MysqlDumpExport::Result> exportOp_;
+    std::shared_ptr<MysqlDumpExport::Progress> exportProgress_;
+    std::string exportDbName_;
+
     void handleTableClick(const Table* table);
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,
                                  const ImVec2& nodeMin, const ImVec2& nodeMax,
@@ -116,6 +165,14 @@ private:
                                       std::function<void(const std::string&)> dropOne,
                                       DatabaseType dbType = DatabaseType::SQLITE);
     void checkPostgresToolStatus();
+    void checkImportStatus();
+    void renderImportProgress();
+    void renderImportPreview();
+    void beginSqlDumpImport();
+    void startSqlDumpImport(MySQLDatabaseNode* dbData);
+    void checkExportStatus();
+    void renderExportProgress();
+    void startSqlDumpExport(MySQLDatabaseNode* dbData);
     void renderPostgresBackupRestoreMenus(PostgresDatabaseNode* dbData);
     void startPostgresBackup(PostgresDatabaseNode* dbData, PostgresBackupFormat format,
                              bool includeCreateDatabase, bool noOwner);

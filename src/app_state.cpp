@@ -1,6 +1,7 @@
 #include "app_state.hpp"
 #include "config.hpp"
 #include "utils/crypto.hpp"
+#include "utils/master_secret.hpp"
 #include <filesystem>
 #include <iostream>
 #include <spdlog/spdlog.h>
@@ -26,6 +27,25 @@ namespace {
         }
         const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col));
         return text ? std::string(text) : "NULL";
+    }
+
+    // base secret for a row's key derivation; key_version 0 = legacy shipped constant
+    std::string baseSecretForVersion(const int keyVersion) {
+        if (keyVersion == 1) {
+            if (const std::string& master = MasterSecret::get(); !master.empty()) {
+                return master;
+            }
+        }
+        return CREDS_SECRET;
+    }
+
+    // secret + key_version to use when writing rows
+    std::pair<std::string, int> writeSecret() {
+        const std::string& master = MasterSecret::get();
+        if (master.empty()) {
+            return {CREDS_SECRET, 0};
+        }
+        return {master, 1};
     }
 
     // Parse a row from the saved_connections query into a SavedConnection
@@ -81,13 +101,15 @@ namespace {
         if (saltStr == "NULL")
             saltStr = "";
 
+        const int keyVersion = sqlite3_column_int(stmt, 22);
+
         // Derive encryption key once for both DB and SSH credentials
         std::string encryptionKey;
         try {
             if (!saltStr.empty()) {
                 auto saltData = CryptoUtils::base64Decode(saltStr);
                 std::string salt(saltData.begin(), saltData.end());
-                encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
+                encryptionKey = CryptoUtils::deriveKey(baseSecretForVersion(keyVersion), salt);
 
                 if (!encryptedUsername.empty()) {
                     try {
@@ -240,7 +262,122 @@ bool AppState::initialize() {
     // limit page cache to ~1MB (state DB is tiny)
     sqlite3_exec(db_, "PRAGMA cache_size = -1000;", nullptr, nullptr, nullptr);
 
-    return createTables();
+    if (!createTables()) {
+        return false;
+    }
+    migrateCredentialKeys();
+    return true;
+}
+
+// one-time re-encryption of legacy rows (shipped-constant key or plaintext)
+// with the keystore-backed master secret. transactional: a failure rolls back
+// and the install stays fully functional on the legacy key, retried next launch.
+void AppState::migrateCredentialKeys() const {
+    const std::string& master = MasterSecret::get();
+    if (master.empty()) {
+        return; // keystore unavailable, stay on legacy key
+    }
+
+    struct Row {
+        int id;
+        std::string user, pass, sshUser, sshPass, salt;
+    };
+    std::vector<Row> rows;
+    {
+        const std::string sql = R"(
+            SELECT id, username, password, ssh_username, ssh_password, salt
+            FROM saved_connections
+            WHERE COALESCE(key_version, 0) = 0;
+        )";
+        sqlite3_stmt* raw = nullptr;
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+            return;
+        }
+        StmtPtr stmt(raw);
+        auto text = [&](int col) {
+            std::string v = columnText(stmt.get(), col);
+            return v == "NULL" ? "" : v;
+        };
+        while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+            rows.push_back(
+                {sqlite3_column_int(stmt.get(), 0), text(1), text(2), text(3), text(4), text(5)});
+        }
+    }
+    if (rows.empty()) {
+        return;
+    }
+
+    if (!executeSQL("BEGIN TRANSACTION;")) {
+        return;
+    }
+
+    bool ok = true;
+    try {
+        const std::string sql = R"(
+            UPDATE saved_connections
+            SET username = ?, password = ?, ssh_username = ?, ssh_password = ?,
+                salt = ?, key_version = 1
+            WHERE id = ?;
+        )";
+        for (const auto& row : rows) {
+            std::string user = row.user, pass = row.pass;
+            std::string sshUser = row.sshUser, sshPass = row.sshPass;
+            if (!row.salt.empty()) {
+                // encrypted with the legacy shipped key; undecryptable fields
+                // become empty, matching load behavior
+                auto saltData = CryptoUtils::base64Decode(row.salt);
+                std::string oldSalt(saltData.begin(), saltData.end());
+                std::string oldKey = CryptoUtils::deriveKey(CREDS_SECRET, oldSalt);
+                auto dec = [&](const std::string& v) {
+                    try {
+                        return v.empty() ? std::string() : CryptoUtils::decrypt(v, oldKey);
+                    } catch (...) {
+                        return std::string();
+                    }
+                };
+                user = dec(row.user);
+                pass = dec(row.pass);
+                sshUser = dec(row.sshUser);
+                sshPass = dec(row.sshPass);
+            }
+            // else: pre-encryption plaintext row, encrypt values as-is
+
+            std::string newSalt = CryptoUtils::generateSalt();
+            std::string newKey = CryptoUtils::deriveKey(master, newSalt);
+            auto enc = [&](const std::string& v) {
+                return v.empty() ? std::string() : CryptoUtils::encrypt(v, newKey);
+            };
+            std::string saltBase64 =
+                CryptoUtils::base64Encode(std::vector<uint8_t>(newSalt.begin(), newSalt.end()));
+
+            sqlite3_stmt* raw = nullptr;
+            if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+                ok = false;
+                break;
+            }
+            StmtPtr stmt(raw);
+            sqlite3_bind_text(stmt.get(), 1, enc(user).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 2, enc(pass).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 3, enc(sshUser).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 4, enc(sshPass).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 5, saltBase64.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt.get(), 6, row.id);
+            if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+                ok = false;
+                break;
+            }
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("credential key migration error: {}", e.what());
+        ok = false;
+    }
+
+    if (ok && executeSQL("COMMIT;")) {
+        spdlog::info("migrated {} saved connection(s) to keystore-backed encryption", rows.size());
+    } else {
+        executeSQL("ROLLBACK;");
+        spdlog::warn("credential key migration failed, keeping legacy key; will retry next launch");
+    }
 }
 
 bool AppState::createTables() {
@@ -259,7 +396,8 @@ bool AppState::createTables() {
             last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             workspace_id INTEGER DEFAULT 1,
-            show_all_databases INTEGER DEFAULT 0
+            show_all_databases INTEGER DEFAULT 0,
+            key_version INTEGER DEFAULT 0
         );
     )";
 
@@ -343,6 +481,9 @@ bool AppState::createTables() {
                        "ALTER TABLE saved_connections ADD COLUMN ssh_password TEXT;");
     ensureColumnExists("ssl_ca_cert_path",
                        "ALTER TABLE saved_connections ADD COLUMN ssl_ca_cert_path TEXT;");
+    // 0 = legacy shipped-constant key, 1 = keystore-backed master secret
+    ensureColumnExists("key_version",
+                       "ALTER TABLE saved_connections ADD COLUMN key_version INTEGER DEFAULT 0;");
 
     // Ensure default workspace exists
     if (success) {
@@ -369,13 +510,14 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
          show_all_databases, sslmode,
          ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_auth_method, ssh_private_key_path, ssh_password,
-         ssl_ca_cert_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+         ssl_ca_cert_path, key_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     )";
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
+    const auto [secret, keyVersion] = writeSecret();
+    std::string encryptionKey = CryptoUtils::deriveKey(secret, salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""
@@ -469,6 +611,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 21, keyVersion);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -487,13 +630,14 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             workspace_id = ?, show_all_databases = ?, sslmode = ?,
             ssh_enabled = ?, ssh_host = ?, ssh_port = ?, ssh_username = ?,
             ssh_auth_method = ?, ssh_private_key_path = ?, ssh_password = ?,
-            ssl_ca_cert_path = ?
+            ssl_ca_cert_path = ?, key_version = ?
         WHERE id = ?;
     )";
 
     // Encrypt sensitive data
     std::string salt = CryptoUtils::generateSalt();
-    std::string encryptionKey = CryptoUtils::deriveKey(CREDS_SECRET, salt);
+    const auto [secret, keyVersion] = writeSecret();
+    std::string encryptionKey = CryptoUtils::deriveKey(secret, salt);
     std::string encryptedUsername =
         connection.connectionInfo.username.empty()
             ? ""
@@ -587,7 +731,8 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 19, encryptedSshPassword.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 21, connection.id);
+    sqlite3_bind_int(stmt.get(), 21, keyVersion);
+    sqlite3_bind_int(stmt.get(), 22, connection.id);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -610,7 +755,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                ssh_host, COALESCE(ssh_port, 22) as ssh_port,
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
-               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
+               COALESCE(key_version, 0) as key_version
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -895,7 +1041,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                ssh_host, COALESCE(ssh_port, 22) as ssh_port,
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
-               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path
+               COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
+               COALESCE(key_version, 0) as key_version
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;

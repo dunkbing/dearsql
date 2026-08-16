@@ -75,4 +75,5 @@ private:
 
     bool createTables();
     bool executeSQL(const std::string& sql) const;
+    void migrateCredentialKeys() const;
 };

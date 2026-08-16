@@ -36,6 +36,10 @@ add_executable(
     src/database/db_utils.cpp
     src/database/sql_builder.cpp
     src/database/ssh_config_parser.cpp
+    tests/database/credential_migration_test.cpp
+    src/app_state.cpp
+    src/utils/crypto.cpp
+    src/utils/master_secret.cpp
 )
 
 if(WIN32)
@@ -44,7 +48,10 @@ else()
   target_sources(database_tests PRIVATE src/platform/posix_ssh_tunnel.cpp)
 endif()
 
-target_include_directories(database_tests PRIVATE include tests/database)
+target_include_directories(
+    database_tests
+    PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include
+)
 if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
   target_include_directories(
         database_tests
@@ -70,7 +77,21 @@ target_link_libraries(
         odpi
         cassandra_static
         spdlog::spdlog
+        OpenSSL::SSL
+        OpenSSL::Crypto
 )
+
+# master secret keystore backends
+if(APPLE)
+  target_link_libraries(database_tests PRIVATE ${SECURITY_LIBRARY})
+elseif(WIN32)
+  target_link_libraries(database_tests PRIVATE advapi32)
+elseif(LINUX AND LIBSECRET_FOUND)
+  target_compile_definitions(database_tests PRIVATE HAVE_LIBSECRET)
+  target_include_directories(database_tests PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+  target_link_libraries(database_tests PRIVATE ${LIBSECRET_LIBRARIES})
+  target_link_directories(database_tests PRIVATE ${LIBSECRET_LIBRARY_DIRS})
+endif()
 
 add_test(NAME database_tests COMMAND database_tests)
 

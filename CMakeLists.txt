@@ -150,6 +150,8 @@ if(LINUX)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
     pkg_check_modules(EPOXY REQUIRED epoxy)
+    # optional: master secret storage via secret service (file fallback otherwise)
+    pkg_check_modules(LIBSECRET libsecret-1)
     find_package(X11 REQUIRED)
 else()
     find_package(glfw3 CONFIG REQUIRED)
@@ -231,6 +233,7 @@ set(APP_SOURCES
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp
+    src/utils/master_secret.cpp
     src/utils/sentry_init.cpp
     src/utils/texture_manager.cpp
     src/ai/ai_client.cpp
@@ -387,6 +390,7 @@ if(APPLE)
             ${QUARTZCORE_LIBRARY}
             ${FOUNDATION_LIBRARY}
             ${APPKIT_LIBRARY}
+            ${SECURITY_LIBRARY}
     )
     target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
     target_link_libraries(
@@ -406,10 +410,16 @@ elseif(LINUX)
         ${PROJECT_NAME}
         PRIVATE ${GTK4_LIBRARY_DIRS} ${EPOXY_LIBRARY_DIRS}
     )
+    if(LIBSECRET_FOUND)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_LIBSECRET)
+        target_include_directories(${PROJECT_NAME} PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBSECRET_LIBRARIES})
+        target_link_directories(${PROJECT_NAME} PRIVATE ${LIBSECRET_LIBRARY_DIRS})
+    endif()
 elseif(WIN32)
     target_link_libraries(
         ${PROJECT_NAME}
-        PRIVATE glfw d3d11 dxgi dwmapi comctl32 uxtheme ws2_32 WinSparkle
+        PRIVATE glfw d3d11 dxgi dwmapi comctl32 uxtheme ws2_32 advapi32 WinSparkle
     )
     add_custom_command(
         TARGET ${PROJECT_NAME}

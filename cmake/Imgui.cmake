@@ -23,6 +23,7 @@ if(APPLE)
   find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
   find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
   find_library(APPKIT_LIBRARY AppKit REQUIRED)
+  find_library(SECURITY_LIBRARY Security REQUIRED)
 
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
 elseif(LINUX)

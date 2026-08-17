@@ -62,6 +62,11 @@ struct DatabaseConnectionInfo {
     bool readOnly = false;
     SSHConfig ssh;
 
+    // Palette key ("red", "peach", …) resolved against the active theme rather
+    // than a stored colour, so a choice stays legible in both light and dark.
+    std::string color;
+    std::string envTag; // short label shown first in the connection banner
+
     // Build database-specific connection string
     [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
         switch (type) {

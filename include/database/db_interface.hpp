@@ -401,7 +401,6 @@ protected:
 
 // Helper functions to convert between DatabaseType enum and strings
 std::string databaseTypeToString(DatabaseType type);
-std::string databaseTypeDisplayName(DatabaseType type);
 DatabaseType stringToDatabaseType(const std::string& typeStr);
 
 // Factory for creating database instances

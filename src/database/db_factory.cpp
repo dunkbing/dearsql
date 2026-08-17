@@ -10,34 +10,6 @@
 #include "database/sqlite.hpp"
 
 // Helper functions to convert between DatabaseType enum and strings
-// Cased for display. databaseTypeToString is the persistence spelling and is
-// not interchangeable with this.
-std::string databaseTypeDisplayName(const DatabaseType type) {
-    switch (type) {
-    case DatabaseType::SQLITE:
-        return "SQLite";
-    case DatabaseType::POSTGRESQL:
-        return "PostgreSQL";
-    case DatabaseType::MYSQL:
-        return "MySQL";
-    case DatabaseType::REDIS:
-        return "Redis";
-    case DatabaseType::MONGODB:
-        return "MongoDB";
-    case DatabaseType::MARIADB:
-        return "MariaDB";
-    case DatabaseType::MSSQL:
-        return "SQL Server";
-    case DatabaseType::ORACLE:
-        return "Oracle";
-    case DatabaseType::REDSHIFT:
-        return "Redshift";
-    case DatabaseType::CASSANDRA:
-        return "Cassandra";
-    }
-    return "Unknown";
-}
-
 std::string databaseTypeToString(const DatabaseType type) {
     switch (type) {
     case DatabaseType::SQLITE:

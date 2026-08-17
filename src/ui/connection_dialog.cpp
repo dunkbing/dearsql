@@ -6,6 +6,7 @@
 #include "database/ddl_utils.hpp"
 #include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
+#include "ui/env_tag.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
@@ -83,10 +84,7 @@ namespace {
             if (tag.empty()) {
                 continue;
             }
-            std::string key = ddl_utils::trim(tag);
-            std::ranges::transform(key, key.begin(),
-                                   [](unsigned char c) { return std::tolower(c); });
-            if (seen.insert(std::move(key)).second) {
+            if (seen.insert(env_tag::groupKey(tag)).second) {
                 tags.push_back(tag);
             }
         }

@@ -18,6 +18,7 @@
 #include "themes.hpp"
 #include "ui/ai_sidebar_panel.hpp"
 #include "ui/connection_dialog.hpp"
+#include "ui/env_tag.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
@@ -170,16 +171,7 @@ void DatabaseSidebarNew::syncHierarchyCache(
     });
 }
 
-namespace {
-    // Connections group by their env tag. Matching is case-insensitive and
-    // trims surrounding whitespace so "prod", "Prod", and "prod " are one
-    // group; the first spelling encountered is the one shown.
-    std::string groupKey(const std::string& tag) {
-        std::string key = ddl_utils::trim(tag);
-        std::ranges::transform(key, key.begin(), [](unsigned char c) { return std::tolower(c); });
-        return key;
-    }
-} // namespace
+using env_tag::groupKey;
 
 void DatabaseSidebarNew::applyEnvTag(int connectionId, const std::string& tag) {
     auto& app = Application::getInstance();
@@ -759,16 +751,6 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         ImGui::SetDragDropPayload("DEARSQL_CONNECTION", &connId, sizeof(int));
         ImGui::TextUnformatted(connectionInfo.name.c_str());
         ImGui::EndDragDropSource();
-    }
-
-    // the descriptor the banner used to carry, at no cost in chrome
-    if (ImGui::IsItemHovered()) {
-        std::string descriptor;
-        if (!connectionInfo.envTag.empty()) {
-            descriptor += ddl_utils::toUpper(connectionInfo.envTag) + "  |  ";
-        }
-        descriptor += databaseTypeDisplayName(type) + " : " + connectionInfo.name;
-        ImGui::SetTooltip("%s", descriptor.c_str());
     }
 
     const float iconSize = texMgr.getIconSize();

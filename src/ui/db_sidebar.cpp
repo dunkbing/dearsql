@@ -171,10 +171,11 @@ void DatabaseSidebarNew::syncHierarchyCache(
 }
 
 namespace {
-    // Connections group by their env tag. Matching is case-insensitive so "prod"
-    // and "Prod" are one group; the first spelling encountered is the one shown.
+    // Connections group by their env tag. Matching is case-insensitive and
+    // trims surrounding whitespace so "prod", "Prod", and "prod " are one
+    // group; the first spelling encountered is the one shown.
     std::string groupKey(const std::string& tag) {
-        std::string key = tag;
+        std::string key = ddl_utils::trim(tag);
         std::ranges::transform(key, key.begin(), [](unsigned char c) { return std::tolower(c); });
         return key;
     }
@@ -187,11 +188,16 @@ void DatabaseSidebarNew::applyEnvTag(int connectionId, const std::string& tag) {
             continue;
         }
         auto info = db->getConnectionInfo();
-        if (info.envTag == tag) {
-            return; // dropped onto its own group; no DB round-trip
+        // Same-group drops are a no-op. Compare with the same rule the sidebar
+        // groups by (case-insensitive), so dropping onto the group's own header
+        // does not silently normalise a case-variant tag to the group's first-
+        // seen spelling.
+        if (groupKey(info.envTag) == groupKey(tag)) {
+            return;
         }
         const AppState* state = app.getAppState();
         if (!state || !state->updateConnectionEnvTag(connectionId, tag)) {
+            spdlog::error("Failed to persist env_tag change for connection {}", connectionId);
             return;
         }
         info.envTag = tag;
@@ -285,7 +291,9 @@ void DatabaseSidebarNew::renderGroupedDatabaseNodes(
     }
 
     if (!ungrouped.empty()) {
-        renderGroup("none", "UNGROUPED", "", ungrouped);
+        // Distinct from any groupKey() output so a real tag "none" would not
+        // collide on the CollapsingHeader ID or the persisted open-state key.
+        renderGroup("__ungrouped__", "UNGROUPED", "", ungrouped);
     }
 }
 

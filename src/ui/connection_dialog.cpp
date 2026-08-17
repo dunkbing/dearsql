@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/connection_url.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
 #include "imgui.h"
@@ -15,6 +16,7 @@
 #include <cfloat>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_set>
 #include <format>
 #include <iterator>
 
@@ -71,6 +73,7 @@ namespace {
     // crawl and flood the log.
     std::vector<std::string> collectExistingTags() {
         std::vector<std::string> tags;
+        std::unordered_set<std::string> seen;
         const AppState* state = Application::getInstance().getAppState();
         if (!state) {
             return tags;
@@ -80,12 +83,10 @@ namespace {
             if (tag.empty()) {
                 continue;
             }
-            const bool seen = std::ranges::any_of(tags, [&tag](const std::string& existing) {
-                return std::ranges::equal(existing, tag, [](unsigned char a, unsigned char b) {
-                    return std::tolower(a) == std::tolower(b);
-                });
-            });
-            if (!seen) {
+            std::string key = ddl_utils::trim(tag);
+            std::ranges::transform(key, key.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+            if (seen.insert(std::move(key)).second) {
                 tags.push_back(tag);
             }
         }
@@ -290,7 +291,7 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
     info.name = nameBuf_;
     info.readOnly = readOnly_; // set before the file-database early return
     info.color = colorIdx_ >= 0 ? Theme::ConnectionPalette::ENTRIES[colorIdx_].key : "";
-    info.envTag = envTagBuf_;
+    info.envTag = ddl_utils::trim(envTagBuf_);
     if (isFileDatabase(info.type)) {
         info.path = sqlitePathBuf_;
         return info;

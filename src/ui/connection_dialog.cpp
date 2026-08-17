@@ -440,11 +440,7 @@ void ConnectionDialog::connectFileDatabase() {
         return;
     }
 
-    // snapshotForm() returns early for file databases with exactly these fields
-    // plus readOnly/color/envTag; building the info by hand here silently dropped
-    // those flags
     const DatabaseConnectionInfo info = snapshotForm();
-
     auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();
     if (success) {

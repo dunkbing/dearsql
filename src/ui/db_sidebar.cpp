@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/cassandra.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/db_interface.hpp"
 #include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
@@ -181,20 +182,21 @@ namespace {
 
 void DatabaseSidebarNew::applyEnvTag(int connectionId, const std::string& tag) {
     auto& app = Application::getInstance();
-    const AppState* state = app.getAppState();
-    if (!state || !state->updateConnectionEnvTag(connectionId, tag)) {
-        return;
-    }
     for (const auto& db : app.getDatabases()) {
-        if (db && db->getConnectionId() == connectionId) {
-            auto info = db->getConnectionInfo();
-            if (info.envTag == tag) {
-                return;
-            }
-            info.envTag = tag;
-            db->setConnectionInfo(info);
+        if (!db || db->getConnectionId() != connectionId) {
+            continue;
+        }
+        auto info = db->getConnectionInfo();
+        if (info.envTag == tag) {
+            return; // dropped onto its own group; no DB round-trip
+        }
+        const AppState* state = app.getAppState();
+        if (!state || !state->updateConnectionEnvTag(connectionId, tag)) {
             return;
         }
+        info.envTag = tag;
+        db->setConnectionInfo(info);
+        return;
     }
 }
 
@@ -278,11 +280,8 @@ void DatabaseSidebarNew::renderGroupedDatabaseNodes(
     };
 
     for (const auto& [key, members] : groups) {
-        const std::string originalTag = members.front()->getConnectionInfo().envTag;
-        std::string label = originalTag;
-        std::ranges::transform(label, label.begin(),
-                               [](unsigned char c) { return std::toupper(c); });
-        renderGroup(key, label, originalTag, members);
+        const std::string& originalTag = members.front()->getConnectionInfo().envTag;
+        renderGroup(key, ddl_utils::toUpper(originalTag), originalTag, members);
     }
 
     if (!ungrouped.empty()) {
@@ -758,10 +757,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     if (ImGui::IsItemHovered()) {
         std::string descriptor;
         if (!connectionInfo.envTag.empty()) {
-            std::string tag = connectionInfo.envTag;
-            std::ranges::transform(tag, tag.begin(),
-                                   [](unsigned char c) { return std::toupper(c); });
-            descriptor += tag + "  |  ";
+            descriptor += ddl_utils::toUpper(connectionInfo.envTag) + "  |  ";
         }
         descriptor += databaseTypeDisplayName(type) + " : " + connectionInfo.name;
         ImGui::SetTooltip("%s", descriptor.c_str());

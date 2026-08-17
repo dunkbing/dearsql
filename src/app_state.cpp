@@ -838,42 +838,31 @@ bool AppState::deleteConnection(const int connectionId) const {
     return true;
 }
 
-bool AppState::renameConnection(const int connectionId, const std::string& newName) const {
-    const std::string sql = "UPDATE saved_connections SET name = ? WHERE id = ?";
+bool AppState::updateSavedConnectionColumn(const char* column, const std::string& value,
+                                           const int connectionId) const {
+    const std::string sql =
+        std::string("UPDATE saved_connections SET ") + column + " = ? WHERE id = ?";
     sqlite3_stmt* raw = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
-    if (rc != SQLITE_OK) {
-        std::cerr << "Failed to rename connection: " << sqlite3_errmsg(db_) << std::endl;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to update " << column << ": " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
     StmtPtr stmt(raw);
-    sqlite3_bind_text(stmt.get(), 1, newName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 1, value.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 2, connectionId);
-    rc = sqlite3_step(stmt.get());
-    if (rc != SQLITE_DONE) {
-        std::cerr << "Failed to rename connection: " << sqlite3_errmsg(db_) << std::endl;
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        std::cerr << "Failed to update " << column << ": " << sqlite3_errmsg(db_) << std::endl;
         return false;
     }
     return true;
 }
 
+bool AppState::renameConnection(const int connectionId, const std::string& newName) const {
+    return updateSavedConnectionColumn("name", newName, connectionId);
+}
+
 bool AppState::updateConnectionEnvTag(const int connectionId, const std::string& envTag) const {
-    const std::string sql = "UPDATE saved_connections SET env_tag = ? WHERE id = ?";
-    sqlite3_stmt* raw = nullptr;
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
-    if (rc != SQLITE_OK) {
-        std::cerr << "Failed to update env_tag: " << sqlite3_errmsg(db_) << std::endl;
-        return false;
-    }
-    StmtPtr stmt(raw);
-    sqlite3_bind_text(stmt.get(), 1, envTag.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 2, connectionId);
-    rc = sqlite3_step(stmt.get());
-    if (rc != SQLITE_DONE) {
-        std::cerr << "Failed to update env_tag: " << sqlite3_errmsg(db_) << std::endl;
-        return false;
-    }
-    return true;
+    return updateSavedConnectionColumn("env_tag", envTag, connectionId);
 }
 
 bool AppState::updateLastUsed(const int connectionId) const {

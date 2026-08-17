@@ -103,4 +103,6 @@ private:
     bool createTables();
     bool executeSQL(const std::string& sql) const;
     void migrateCredentialKeys() const;
+    bool updateSavedConnectionColumn(const char* column, const std::string& value,
+                                     int connectionId) const;
 };

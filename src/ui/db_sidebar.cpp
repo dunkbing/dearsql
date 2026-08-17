@@ -179,6 +179,25 @@ namespace {
     }
 } // namespace
 
+void DatabaseSidebarNew::applyEnvTag(int connectionId, const std::string& tag) {
+    auto& app = Application::getInstance();
+    const AppState* state = app.getAppState();
+    if (!state || !state->updateConnectionEnvTag(connectionId, tag)) {
+        return;
+    }
+    for (const auto& db : app.getDatabases()) {
+        if (db && db->getConnectionId() == connectionId) {
+            auto info = db->getConnectionInfo();
+            if (info.envTag == tag) {
+                return;
+            }
+            info.envTag = tag;
+            db->setConnectionInfo(info);
+            return;
+        }
+    }
+}
+
 void DatabaseSidebarNew::renderGroupedDatabaseNodes(
     const std::vector<std::shared_ptr<DatabaseInterface>>& databases) {
     // group order follows first appearance, so the list does not reshuffle
@@ -233,11 +252,21 @@ void DatabaseSidebarNew::renderGroupedDatabaseNodes(
     };
 
     auto renderGroup = [&](const std::string& key, const std::string& label,
+                           const std::string& targetTag,
                            const std::vector<std::shared_ptr<DatabaseInterface>>& members) {
         const bool wasOpen = isOpen(key);
         ImGui::SetNextItemOpen(wasOpen, ImGuiCond_Always);
         const bool open = ImGui::CollapsingHeader(
             std::format("{} ({})###group_{}", label, members.size(), key).c_str());
+        // Accept a connection dropped onto the header row: reassigns its env_tag
+        // to the string this group persists under (empty for UNGROUPED).
+        if (ImGui::BeginDragDropTarget()) {
+            if (const auto* payload = ImGui::AcceptDragDropPayload("DEARSQL_CONNECTION")) {
+                const int connId = *static_cast<const int*>(payload->Data);
+                applyEnvTag(connId, targetTag);
+            }
+            ImGui::EndDragDropTarget();
+        }
         if (open != wasOpen) {
             setOpen(key, open);
         }
@@ -249,14 +278,15 @@ void DatabaseSidebarNew::renderGroupedDatabaseNodes(
     };
 
     for (const auto& [key, members] : groups) {
-        std::string label = members.front()->getConnectionInfo().envTag;
+        const std::string originalTag = members.front()->getConnectionInfo().envTag;
+        std::string label = originalTag;
         std::ranges::transform(label, label.begin(),
                                [](unsigned char c) { return std::toupper(c); });
-        renderGroup(key, label, members);
+        renderGroup(key, label, originalTag, members);
     }
 
     if (!ungrouped.empty()) {
-        renderGroup("none", "UNGROUPED", ungrouped);
+        renderGroup("none", "UNGROUPED", "", ungrouped);
     }
 }
 
@@ -713,6 +743,16 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
     const ImVec2 nodeMin = ImGui::GetItemRectMin();
     const ImVec2 nodeMax = ImGui::GetItemRectMax();
+
+    // Drag-source: dragging a connection onto a tag group in this sidebar
+    // reassigns its env_tag. The payload is the connection id since names are
+    // mutable, and the source's own group accepts the drop as a no-op.
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        const int connId = db->getConnectionId();
+        ImGui::SetDragDropPayload("DEARSQL_CONNECTION", &connId, sizeof(int));
+        ImGui::TextUnformatted(connectionInfo.name.c_str());
+        ImGui::EndDragDropSource();
+    }
 
     // the descriptor the banner used to carry, at no cost in chrome
     if (ImGui::IsItemHovered()) {

@@ -64,6 +64,7 @@ public:
     [[nodiscard]] int getConnectionCount() const;
     bool deleteConnection(int connectionId) const;
     bool renameConnection(int connectionId, const std::string& newName) const;
+    bool updateConnectionEnvTag(int connectionId, const std::string& envTag) const;
     bool updateLastUsed(int connectionId) const;
 
     // Settings management

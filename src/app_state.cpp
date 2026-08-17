@@ -857,6 +857,25 @@ bool AppState::renameConnection(const int connectionId, const std::string& newNa
     return true;
 }
 
+bool AppState::updateConnectionEnvTag(const int connectionId, const std::string& envTag) const {
+    const std::string sql = "UPDATE saved_connections SET env_tag = ? WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to update env_tag: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    StmtPtr stmt(raw);
+    sqlite3_bind_text(stmt.get(), 1, envTag.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 2, connectionId);
+    rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to update env_tag: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool AppState::updateLastUsed(const int connectionId) const {
     const std::string sql =
         "UPDATE saved_connections SET last_used = CURRENT_TIMESTAMP WHERE id = ?";

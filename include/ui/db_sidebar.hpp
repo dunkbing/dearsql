@@ -48,6 +48,7 @@ private:
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
     void syncHierarchyCache(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
+    void applyEnvTag(int connectionId, const std::string& tag);
 
     void renderDatabasesTab();
     void renderHistoryPanel();

@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 
@@ -61,11 +62,11 @@ void AIChatPanel::render() {
                      ImGui::CalcTextSize(LABEL_CLEAR_CHAT).x +
                      ImGui::GetStyle().FramePadding.x * 4 + ImGui::GetStyle().ItemSpacing.x;
     ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - btnWidth);
-    if (ImGui::SmallButton(LABEL_SETTINGS)) {
+    if (UIUtils::SmallButton(LABEL_SETTINGS)) {
         AISettingsDialog::instance().show();
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton(LABEL_CLEAR_CHAT)) {
+    if (UIUtils::SmallButton(LABEL_CLEAR_CHAT)) {
         chatState_->cancelAsyncPrompt();
         if (client_->isStreaming()) {
             client_->cancel();
@@ -203,7 +204,7 @@ void AIChatPanel::renderCodeBlock(const std::string& code, const std::string& la
 
     if (ImGui::BeginChild(childId.c_str(), ImVec2(-1, totalHeight), true)) {
         std::string copyId = std::format("{}##{}_{}_{}", LABEL_COPY, "cp", msgIdx, blockIdx);
-        if (ImGui::SmallButton(copyId.c_str())) {
+        if (UIUtils::SmallButton(copyId.c_str())) {
             ImGui::SetClipboardText(code.c_str());
         }
 
@@ -214,7 +215,7 @@ void AIChatPanel::renderCodeBlock(const std::string& code, const std::string& la
             ImGui::SameLine();
             std::string insertId =
                 std::format("{}##{}_{}_{}", LABEL_INSERT, "ins", msgIdx, blockIdx);
-            if (ImGui::SmallButton(insertId.c_str())) {
+            if (UIUtils::SmallButton(insertId.c_str())) {
                 insertCallback_(code);
             }
         }

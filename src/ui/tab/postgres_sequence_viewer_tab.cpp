@@ -6,6 +6,7 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <cstdio>
 #include <cstring>
@@ -261,13 +262,13 @@ void PostgresSequenceViewerTab::renderToolbar() {
 
     if (dirty) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (ImGui::Button(ICON_FA_FLOPPY_DISK " Save")) {
+        if (UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary)) {
             saveChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_FLOPPY_DISK " Save");
+        UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -277,13 +278,13 @@ void PostgresSequenceViewerTab::renderToolbar() {
     ImGui::SameLine(0, Theme::Spacing::M);
     if (dirty) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (ImGui::Button(ICON_FA_XMARK " Discard")) {
+        if (UIUtils::Button(ICON_FA_XMARK " Discard", UIUtils::ButtonVariant::Danger)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_XMARK " Discard");
+        UIUtils::Button(ICON_FA_XMARK " Discard", UIUtils::ButtonVariant::Danger);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -447,11 +448,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
 
         if (sqlExecutionOp_.isRunning()) {
             ImGui::BeginDisabled();
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.4f));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-            ImGui::Button(ICON_FA_PLAY " Execute");
-            ImGui::PopStyleColor(2);
+            UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary);
             ImGui::EndDisabled();
 
             ImGui::SameLine(0, Theme::Spacing::M);
@@ -461,15 +458,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
             ImGui::TextUnformatted("Executing...");
             ImGui::PopStyleColor();
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-            ImGui::PushStyleColor(
-                ImGuiCol_ButtonActive,
-                ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-            if (ImGui::Button(ICON_FA_PLAY " Execute")) {
+            if (UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
                 auto* schema = schema_;
                 sqlExecutionOp_.start([schema, editedSQL]() -> std::pair<bool, std::string> {
@@ -484,20 +473,15 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
                     return {true, {}};
                 });
             }
-            ImGui::PopStyleColor(4);
 
             ImGui::SameLine(0, Theme::Spacing::M);
 
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.surface1);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay0);
-            if (ImGui::Button(ICON_FA_XMARK " Cancel")) {
+            if (UIUtils::Button(ICON_FA_XMARK " Cancel")) {
                 showSaveDialog_ = false;
                 pendingUpdateSQL_.clear();
                 dialogOpened_ = false;
                 ImGui::CloseCurrentPopup();
             }
-            ImGui::PopStyleColor(3);
         }
 
         ImGui::PopStyleVar(3);

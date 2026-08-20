@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
+#include "utils/button.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -391,34 +392,26 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
 
     // subscribe / unsubscribe button
     if (subscribed) {
-        if (ImGui::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe")) {
+        if (UIUtils::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", UIUtils::ButtonVariant::Danger)) {
             unsubscribe();
             subState_.store(SubState::Idle);
         }
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                              ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-        ImGui::PushStyleColor(
-            ImGuiCol_ButtonActive,
-            ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
         bool busy = (state == SubState::Subscribing);
         if (busy)
             ImGui::BeginDisabled();
-        if (ImGui::Button(ICON_FA_TOWER_BROADCAST " Subscribe")) {
+        if (UIUtils::Button(ICON_FA_TOWER_BROADCAST " Subscribe",
+                            UIUtils::ButtonVariant::Primary)) {
             subscribe(patternBuf_);
         }
         if (busy)
             ImGui::EndDisabled();
-        ImGui::PopStyleColor(4);
     }
 
     ImGui::SameLine(0, Theme::Spacing::S);
 
     // clear button
-    if (ImGui::Button(ICON_FA_TRASH_CAN " Clear")) {
+    if (UIUtils::Button(ICON_FA_TRASH_CAN " Clear", UIUtils::ButtonVariant::Danger)) {
         displayMessages_.clear();
         totalMessageCount_.store(0);
     }
@@ -502,20 +495,12 @@ void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
     if (!canPublish)
         ImGui::BeginDisabled();
 
-    ImGui::PushStyleColor(ImGuiCol_Button,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-    ImGui::PushStyleColor(
-        ImGuiCol_ButtonActive,
-        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-    if (ImGui::Button("Publish", ImVec2(buttonWidth, 0)) || (enterPressed && canPublish)) {
+    if (UIUtils::Button("Publish", UIUtils::ButtonVariant::Primary, ImVec2(buttonWidth, 0)) ||
+        (enterPressed && canPublish)) {
         publish(publishChannelBuf_, publishMessageBuf_);
         publishMessageBuf_[0] = '\0';
         refocusMessageInput_ = true;
     }
-    ImGui::PopStyleColor(4);
 
     if (!canPublish)
         ImGui::EndDisabled();

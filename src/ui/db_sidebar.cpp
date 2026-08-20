@@ -18,6 +18,7 @@
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
+#include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
@@ -219,7 +220,7 @@ void DatabaseSidebarNew::renderHistory() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-        ImGui::SmallButton(typeLabel.c_str());
+        UIUtils::SmallButton(typeLabel.c_str());
         ImGui::PopStyleColor(4);
 
         ImGui::SameLine();

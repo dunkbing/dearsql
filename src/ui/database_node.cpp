@@ -20,6 +20,7 @@
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
 
+#include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
 #include "utils/table_exporter.hpp"
@@ -240,7 +241,8 @@ namespace {
                                       ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
             ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
             ImGui::BeginDisabled(cancelling);
-            cancelPressed = ImGui::Button("Cancel", ImVec2(cancelWidth, 0.0f));
+            cancelPressed = UIUtils::Button("Cancel", UIUtils::ButtonVariant::Secondary,
+                                            ImVec2(cancelWidth, 0.0f));
             ImGui::EndDisabled();
         }
         ImGui::End();
@@ -1241,22 +1243,15 @@ void DatabaseHierarchy::renderImportPreview() {
 
     constexpr float buttonWidth = 120.0f;
     ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - buttonWidth * 2.0f - Theme::Spacing::M);
-    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f))) {
+    if (UIUtils::Button("Cancel", UIUtils::ButtonVariant::Secondary, ImVec2(buttonWidth, 0.0f))) {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine(0.0f, Theme::Spacing::M);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.red.x, colors.red.y, colors.red.z, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors.red.x * 0.8f, colors.red.y * 0.8f,
-                                                        colors.red.z * 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-    if (ImGui::Button("Import", ImVec2(buttonWidth, 0.0f))) {
+    if (UIUtils::Button("Import", UIUtils::ButtonVariant::Danger, ImVec2(buttonWidth, 0.0f))) {
         beginSqlDumpImport();
         ImGui::CloseCurrentPopup();
     }
-    ImGui::PopStyleColor(4);
 
     ImGui::EndPopup();
 }

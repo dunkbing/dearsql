@@ -2,6 +2,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include <cfloat>
 #include <cstring>
 
@@ -114,7 +115,7 @@ void AISettingsDialog::render() {
 
         // Save / Cancel
         float buttonWidth = (ImGui::GetContentRegionAvail().x - Theme::Spacing::M) * 0.5f;
-        if (ImGui::Button("Save", ImVec2(buttonWidth, 0))) {
+        if (UIUtils::Button("Save", UIUtils::ButtonVariant::Primary, ImVec2(buttonWidth, 0))) {
             saveSettings();
             isDialogOpen_ = false;
             ImGui::CloseCurrentPopup();
@@ -122,7 +123,7 @@ void AISettingsDialog::render() {
 
         ImGui::SameLine();
 
-        if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
+        if (UIUtils::Button("Cancel", UIUtils::ButtonVariant::Secondary, ImVec2(buttonWidth, 0))) {
             isDialogOpen_ = false;
             ImGui::CloseCurrentPopup();
         }

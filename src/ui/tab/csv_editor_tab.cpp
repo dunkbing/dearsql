@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/csv_parser.hpp"
 #include "utils/spinner.hpp"
 #include <spdlog/spdlog.h>
@@ -228,7 +229,7 @@ void CsvEditorTab::renderToolbar() {
 
     if (tableActive)
         ImGui::PushStyleColor(ImGuiCol_Button, colors.surface2);
-    const bool tableClicked = ImGui::Button(ICON_FA_TABLE " Table");
+    const bool tableClicked = UIUtils::Button(ICON_FA_TABLE " Table");
     if (tableActive)
         ImGui::PopStyleColor();
     if (tableClicked) {
@@ -245,7 +246,7 @@ void CsvEditorTab::renderToolbar() {
 
     if (rawActive)
         ImGui::PushStyleColor(ImGuiCol_Button, colors.surface2);
-    const bool rawClicked = ImGui::Button(ICON_FA_CODE " Raw");
+    const bool rawClicked = UIUtils::Button(ICON_FA_CODE " Raw");
     if (rawActive)
         ImGui::PopStyleColor();
     if (rawClicked) {

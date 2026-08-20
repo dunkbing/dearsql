@@ -4,6 +4,7 @@
 #include "database/redis.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
 #include <algorithm>
@@ -552,15 +553,15 @@ void RedisEditorTab::renderHeader() const {
 void RedisEditorTab::renderToolbar() {
     if (queryOp_.isRunning()) {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_PLAY " Run");
+        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (ImGui::Button(ICON_FA_STOP " Cancel")) {
+        if (UIUtils::Button(ICON_FA_STOP " Cancel")) {
             queryOp_.cancel();
         }
     } else {
-        if (ImGui::Button(ICON_FA_PLAY " Run")) {
+        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
             command_ = editor_.GetText();
             startCommandExecutionAsync(command_);
         }
@@ -568,7 +569,7 @@ void RedisEditorTab::renderToolbar() {
 
     if (!resultHistory_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (ImGui::Button(ICON_FA_TRASH_CAN " Clear")) {
+        if (UIUtils::Button(ICON_FA_TRASH_CAN " Clear", UIUtils::ButtonVariant::Danger)) {
             resultHistory_.clear();
         }
     }

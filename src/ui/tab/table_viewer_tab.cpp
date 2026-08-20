@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/query_history.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <cctype>
@@ -101,6 +102,7 @@ void TableViewerTab::render() {
 
     // Refresh, Save, Reject buttons next to filter
     ImGui::SameLine(0, Theme::Spacing::M);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
     if (ImGui::Button(ICON_FA_ARROWS_ROTATE)) {
         refreshData();
@@ -180,6 +182,7 @@ void TableViewerTab::render() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("Delete selected rows");
     }
+    ImGui::PopStyleVar();
 
     if (hasChanges) {
         ImGui::SameLine(0, Theme::Spacing::L);
@@ -203,7 +206,7 @@ void TableViewerTab::render() {
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
-        if (ImGui::SmallButton("Copy")) {
+        if (UIUtils::SmallButton("Copy")) {
             const std::string errorText = "Error loading data: " + loadingError;
             ImGui::SetClipboardText(errorText.c_str());
         }
@@ -267,27 +270,33 @@ void TableViewerTab::render() {
 
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
-    if (ImGui::Button("<<") && currentPage > 0) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+    if (UIUtils::Button("<<") && currentPage > 0) {
         firstPage();
     }
     ImGui::SameLine();
 
-    if (ImGui::Button("<") && currentPage > 0) {
+    if (UIUtils::Button("<") && currentPage > 0) {
         previousPage();
     }
+    ImGui::PopStyleColor();
     ImGui::SameLine(0, Theme::Spacing::M);
 
     ImGui::Text("Page %d of %d (%d rows)", currentPage + 1, totalPages, totalRows);
     ImGui::SameLine(0, Theme::Spacing::M);
 
-    if (ImGui::Button(">") && currentPage < totalPages - 1) {
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+    if (UIUtils::Button(">") && currentPage < totalPages - 1) {
         nextPage();
     }
     ImGui::SameLine();
 
-    if (ImGui::Button(">>") && currentPage < totalPages - 1) {
+    if (UIUtils::Button(">>") && currentPage < totalPages - 1) {
         lastPage();
     }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 
     // Page size selector
     ImGui::SameLine();
@@ -851,11 +860,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
         if (sqlExecutionOp.isRunning()) {
             ImGui::BeginDisabled();
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.4f));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-            ImGui::Button(ICON_FA_PLAY " Execute");
-            ImGui::PopStyleColor(2);
+            UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary);
             ImGui::EndDisabled();
 
             ImGui::SameLine(0, Theme::Spacing::M);
@@ -865,15 +870,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
             ImGui::TextUnformatted("Executing...");
             ImGui::PopStyleColor();
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-            ImGui::PushStyleColor(
-                ImGuiCol_ButtonActive,
-                ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-            if (ImGui::Button(ICON_FA_PLAY " Execute")) {
+            if (UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
                 sqlExecutionOp.start([node = node_, editedSQL]() -> std::pair<bool, std::string> {
                     if (!node) {
@@ -888,19 +885,14 @@ void TableViewerTab::showSaveConfirmationDialog() {
                     return {true, {}};
                 });
             }
-            ImGui::PopStyleColor(4);
 
             ImGui::SameLine(0, Theme::Spacing::M);
 
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.surface1);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay0);
-            if (ImGui::Button(ICON_FA_XMARK " Cancel")) {
+            if (UIUtils::Button(ICON_FA_XMARK " Cancel")) {
                 showSaveDialog = false;
                 pendingUpdateSQL.clear();
                 dialogOpened = false;
             }
-            ImGui::PopStyleColor(3);
         }
 
         ImGui::PopStyleVar(3);
@@ -1290,12 +1282,7 @@ void TableViewerTab::renderValueTab() {
 
     // Apply / Revert buttons when buffer is dirty
     if (valuePanelBufferDirty) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.green.x * 0.3f, colors.green.y * 0.3f,
-                                                      colors.green.z * 0.3f, 1.0f));
-        ImGui::PushStyleColor(
-            ImGuiCol_ButtonHovered,
-            ImVec4(colors.green.x * 0.5f, colors.green.y * 0.5f, colors.green.z * 0.5f, 1.0f));
-        if (ImGui::Button("Apply")) {
+        if (UIUtils::Button("Apply", UIUtils::ButtonVariant::Primary)) {
             tableData[selectedRow][selectedCol] = std::string(valuePanelBuffer);
             if (selectedRow < static_cast<int>(editedCells.size()) &&
                 selectedCol < static_cast<int>(editedCells[selectedRow].size())) {
@@ -1304,16 +1291,10 @@ void TableViewerTab::renderValueTab() {
             hasChanges = true;
             valuePanelBufferDirty = false;
         }
-        ImGui::PopStyleColor(2);
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors.red.x * 0.3f, colors.red.y * 0.3f,
-                                                      colors.red.z * 0.3f, 1.0f));
-        ImGui::PushStyleColor(
-            ImGuiCol_ButtonHovered,
-            ImVec4(colors.red.x * 0.5f, colors.red.y * 0.5f, colors.red.z * 0.5f, 1.0f));
-        if (ImGui::Button("Revert")) {
+        if (UIUtils::Button("Revert", UIUtils::ButtonVariant::Danger)) {
             // Restore from current cell value
             const std::string& currentValue = tableData[selectedRow][selectedCol];
             if (isNullSentinel(currentValue)) {
@@ -1324,7 +1305,6 @@ void TableViewerTab::renderValueTab() {
             }
             valuePanelBufferDirty = false;
         }
-        ImGui::PopStyleColor(2);
     }
 }
 

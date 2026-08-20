@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "platform/updater.hpp"
 #include "themes.hpp"
+#include "utils/button.hpp"
 
 #include <cfloat>
 
@@ -132,14 +133,14 @@ void SettingsDialog::render() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Font Size");
     ImGui::SameLine();
-    if (ImGui::Button("A-")) {
+    if (UIUtils::Button("A-")) {
         app.setFontScale(scale - 0.1f);
     }
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::Text("%d%%", static_cast<int>(scale * 100));
     ImGui::SameLine();
-    if (ImGui::Button("A+")) {
+    if (UIUtils::Button("A+")) {
         app.setFontScale(scale + 0.1f);
     }
 
@@ -162,7 +163,7 @@ void SettingsDialog::render() {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 92.0f);
     ImGui::InputText("##shader_path", shaderPath_, sizeof(shaderPath_));
     ImGui::SameLine();
-    if (ImGui::Button("Browse...", ImVec2(-1, 0))) {
+    if (UIUtils::Button("Browse...", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
         std::string picked = FileDialog::openFile();
         if (!picked.empty()) {
             std::strncpy(shaderPath_, picked.c_str(), sizeof(shaderPath_) - 1);
@@ -180,12 +181,7 @@ void SettingsDialog::render() {
         shaderEditor_->Render("##shader_code", ImVec2(-1, 240), true);
     }
 
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.blue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.sky);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.sapphire);
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-    bool applyClicked = ImGui::Button("Apply");
-    ImGui::PopStyleColor(4);
+    bool applyClicked = UIUtils::Button("Apply", UIUtils::ButtonVariant::Primary);
     if (applyClicked) {
         std::string path = shaderPath_;
         if (path.empty()) {
@@ -205,7 +201,7 @@ void SettingsDialog::render() {
         shaderStatus_ = CustomShader::loadFromFile(path) ? ("Active: " + path) : "Compile error";
     }
     ImGui::SameLine();
-    if (ImGui::Button("Disable")) {
+    if (UIUtils::Button("Disable", UIUtils::ButtonVariant::Danger)) {
         CustomShader::unload();
         // keep custom_shader_path so the shader can be re-enabled later
         app.getAppState()->setSetting("custom_shader_enabled", "0");
@@ -215,20 +211,20 @@ void SettingsDialog::render() {
 
     // --- Actions ---
     ImGui::SeparatorText("About");
-    if (onManageLicense && ImGui::Button("Manage License...")) {
+    if (onManageLicense && UIUtils::Button("Manage License...")) {
         onManageLicense();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Check for Updates...")) {
+    if (UIUtils::Button("Check for Updates...")) {
         checkForUpdates();
     }
     ImGui::SameLine();
-    if (onReportBug && ImGui::Button("Report Bug...")) {
+    if (onReportBug && UIUtils::Button("Report Bug...")) {
         onReportBug();
     }
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
-    if (ImGui::Button("Close", ImVec2(-1, 0))) {
+    if (UIUtils::Button("Close", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
         open_ = false;
         ImGui::CloseCurrentPopup();
     }

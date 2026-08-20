@@ -5,6 +5,7 @@
 #include "database/db_interface.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 
@@ -103,7 +104,7 @@ void RoutineViewerTab::renderToolbar() {
     if (saving)
         ImGui::BeginDisabled();
 
-    if (ImGui::Button(ICON_FA_FLOPPY_DISK " Save")) {
+    if (UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary)) {
         saveDefinitionAsync();
     }
 

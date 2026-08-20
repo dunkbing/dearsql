@@ -6,6 +6,7 @@
 #include "database/ssl_config.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
@@ -660,7 +661,7 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
     formChanged |= ImGui::InputTextWithHint("##sqlite_path", "Database file path", sqlitePathBuf_,
                                             sizeof(sqlitePathBuf_));
     ImGui::SameLine();
-    if (ImGui::Button("Browse...##sqlite")) {
+    if (UIUtils::Button("Browse...##sqlite")) {
         auto db = FileDialog::openSQLiteFile();
         if (auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db)) {
             copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), sqliteDb->getPath());
@@ -722,7 +723,7 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
             "##conn_cacert", isOracleWallet ? "/path/to/wallet" : "/path/to/ca-cert.pem",
             sslCACertPathBuf_, sizeof(sslCACertPathBuf_));
         ImGui::SameLine();
-        if (ImGui::Button("Browse...##cacert")) {
+        if (UIUtils::Button("Browse...##cacert")) {
             // oracle wallets are directories; other backends take a cert file
             std::string path = isOracleWallet ? FileDialog::pickFolder() : FileDialog::openFile();
             if (!path.empty()) {
@@ -807,7 +808,7 @@ void ConnectionDialog::renderSshFields(bool& formChanged) {
         formChanged |= ImGui::InputTextWithHint("##ssh_key", "~/.ssh/id_rsa", sshKeyPathBuf_,
                                                 sizeof(sshKeyPathBuf_));
         ImGui::SameLine();
-        if (ImGui::Button("Browse...##sshkey")) {
+        if (UIUtils::Button("Browse...##sshkey")) {
             std::string path = FileDialog::openFile();
             if (!path.empty()) {
                 copyToBuf(sshKeyPathBuf_, sizeof(sshKeyPathBuf_), path);
@@ -847,7 +848,7 @@ bool ConnectionDialog::renderButtons() {
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(rightEdge - kButtonW * 2 - Theme::Spacing::M);
 
-    if (ImGui::Button("Cancel##conn", ImVec2(kButtonW, 0))) {
+    if (UIUtils::Button("Cancel##conn", UIUtils::ButtonVariant::Secondary, ImVec2(kButtonW, 0))) {
         finishClose(true);
         ImGui::CloseCurrentPopup();
         return false;
@@ -857,16 +858,9 @@ bool ConnectionDialog::renderButtons() {
 
     bool clicked = false;
     ImGui::BeginDisabled(isBusy());
-    const auto& colors = Application::getInstance().getCurrentColors();
-    const ImVec4 green = colors.green;
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(green.x, green.y, green.z, 0.80f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, green);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                          ImVec4(green.x * 0.85f, green.y * 0.85f, green.z * 0.85f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-    if (ImGui::Button(editing ? "Update##conn" : "Connect##conn", ImVec2(kButtonW, 0)))
+    if (UIUtils::Button(editing ? "Update##conn" : "Connect##conn", UIUtils::ButtonVariant::Primary,
+                        ImVec2(kButtonW, 0)))
         clicked = true;
-    ImGui::PopStyleColor(4);
     if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
         ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))
         clicked = true;

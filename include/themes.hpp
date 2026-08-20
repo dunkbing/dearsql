@@ -96,6 +96,13 @@ namespace Theme {
     constexpr Colors MOCHA = ONE_DARK;
     constexpr Colors LATTE = ONE_LIGHT;
 
+    namespace CornerRadius {
+        constexpr float XSMALL = 2.0f;
+        constexpr float SMALL = 4.0f;
+        constexpr float MEDIUM = 6.0f;
+        constexpr float LARGE = 8.0f;
+    } // namespace CornerRadius
+
     inline void ApplyNativeTheme(const Colors& colors) {
         ImGuiStyle& style = ImGui::GetStyle();
 
@@ -117,11 +124,11 @@ namespace Theme {
 
         style.WindowRounding = 0.0f;
         style.ChildRounding = 0.0f;
-        style.FrameRounding = 0.0f;
-        style.PopupRounding = 0.0f;
-        style.ScrollbarRounding = 0.0f;
-        style.GrabRounding = 0.0f;
-        style.TabRounding = 0.0f;
+        style.FrameRounding = CornerRadius::SMALL;
+        style.PopupRounding = CornerRadius::MEDIUM;
+        style.ScrollbarRounding = CornerRadius::SMALL;
+        style.GrabRounding = CornerRadius::SMALL;
+        style.TabRounding = CornerRadius::SMALL;
 
         style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
         style.WindowMenuButtonPosition = ImGuiDir_Left;

@@ -1,4 +1,5 @@
 #include "ui/text_editor.hpp"
+#include "utils/button.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -1387,7 +1388,7 @@ namespace dearsql {
             bool csChanged = false;
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findCaseSensitive_ ? palette_.selection : palette_.background);
-            if (ImGui::SmallButton("Aa")) {
+            if (UIUtils::SmallButton("Aa")) {
                 findCaseSensitive_ = !findCaseSensitive_;
                 csChanged = true;
             }
@@ -1400,7 +1401,7 @@ namespace dearsql {
             // Whole word toggle
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findWholeWord_ ? palette_.selection : palette_.background);
-            if (ImGui::SmallButton("W")) {
+            if (UIUtils::SmallButton("W")) {
                 findWholeWord_ = !findWholeWord_;
                 csChanged = true;
             }
@@ -1414,18 +1415,18 @@ namespace dearsql {
             ImGui::SameLine();
 
             // Prev / Next
-            if (ImGui::SmallButton("<"))
+            if (UIUtils::SmallButton("<"))
                 findPrev();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Previous Match (Shift+F3)");
             ImGui::SameLine();
-            if (ImGui::SmallButton(">"))
+            if (UIUtils::SmallButton(">"))
                 findNext();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Next Match (F3)");
 
             ImGui::SameLine();
-            if (ImGui::SmallButton("x"))
+            if (UIUtils::SmallButton("x"))
                 closeFind();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Close (Escape)");
@@ -1443,12 +1444,12 @@ namespace dearsql {
             bool noMatches = findMatches_.empty();
             if (noMatches)
                 ImGui::BeginDisabled();
-            if (ImGui::SmallButton("Replace"))
+            if (UIUtils::SmallButton("Replace"))
                 replaceOne();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Replace Next Match");
             ImGui::SameLine();
-            if (ImGui::SmallButton("All"))
+            if (UIUtils::SmallButton("All"))
                 replaceAll();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Replace All Matches");

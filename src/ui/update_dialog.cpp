@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 
 UpdateDialog& UpdateDialog::instance() {
     static UpdateDialog inst;
@@ -88,11 +89,12 @@ void UpdateDialog::render() {
             ImGui::Separator();
             ImGui::Spacing();
 
-            if (ImGui::Button("Download Update", ImVec2(200, 0))) {
+            if (UIUtils::Button("Download Update", UIUtils::ButtonVariant::Primary,
+                                ImVec2(200, 0))) {
                 wantsDownload_ = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Later", ImVec2(-1, 0))) {
+            if (UIUtils::Button("Later", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
                 isOpen_ = false;
             }
             break;
@@ -101,7 +103,7 @@ void UpdateDialog::render() {
         case State::UpToDate: {
             ImGui::Text("You're running the latest version (%s).", APP_VERSION);
             ImGui::Spacing();
-            if (ImGui::Button("Close", ImVec2(-1, 0))) {
+            if (UIUtils::Button("Close", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
                 isOpen_ = false;
             }
             break;
@@ -123,11 +125,11 @@ void UpdateDialog::render() {
             ImGui::Separator();
             ImGui::Spacing();
 
-            if (ImGui::Button("Restart Now", ImVec2(200, 0))) {
+            if (UIUtils::Button("Restart Now", UIUtils::ButtonVariant::Primary, ImVec2(200, 0))) {
                 wantsRestart_ = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Later", ImVec2(-1, 0))) {
+            if (UIUtils::Button("Later", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
                 isOpen_ = false;
             }
             break;
@@ -138,7 +140,7 @@ void UpdateDialog::render() {
             ImGui::TextWrapped("%s", errorMessage_.c_str());
             ImGui::PopStyleColor();
             ImGui::Spacing();
-            if (ImGui::Button("Close", ImVec2(-1, 0))) {
+            if (UIUtils::Button("Close", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
                 isOpen_ = false;
             }
             break;

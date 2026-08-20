@@ -5,6 +5,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/table_renderer.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <format>
@@ -351,7 +352,7 @@ void RedisKeyViewerTab::renderToolbar() {
     if (busy)
         ImGui::BeginDisabled();
 
-    if (ImGui::Button(ICON_FA_ROTATE_RIGHT " Refresh")) {
+    if (UIUtils::Button(ICON_FA_ROTATE_RIGHT " Refresh")) {
         currentPage_ = 0;
         hasChanges_ = false;
         loadDataAsync();
@@ -359,7 +360,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
     if (currentPage_ > 0) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        if (ImGui::Button(ICON_FA_ANGLE_LEFT " Prev")) {
+        if (UIUtils::Button(ICON_FA_ANGLE_LEFT " Prev")) {
             --currentPage_;
             loadDataAsync();
         }
@@ -368,7 +369,7 @@ void RedisKeyViewerTab::renderToolbar() {
     const bool hasMore = totalRows_ < 0 && static_cast<int>(tableData_.size()) >= rowsPerPage_;
     if (hasMore) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        if (ImGui::Button("Next " ICON_FA_ANGLE_RIGHT)) {
+        if (UIUtils::Button("Next " ICON_FA_ANGLE_RIGHT)) {
             ++currentPage_;
             loadDataAsync();
         }
@@ -376,7 +377,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
     // add key
     ImGui::SameLine(0, Theme::Spacing::S);
-    if (ImGui::Button(ICON_FA_PLUS " Add key")) {
+    if (UIUtils::Button(ICON_FA_PLUS " Add key", UIUtils::ButtonVariant::Primary)) {
         const int numCols = static_cast<int>(columnNames_.size());
         std::vector<std::string> newRow = {"", "string", "", "-1", "-"};
         newRow.resize(numCols);

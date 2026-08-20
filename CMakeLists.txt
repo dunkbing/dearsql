@@ -230,6 +230,7 @@ set(APP_SOURCES
     src/utils/mysql_dump_splitter.cpp
     src/utils/table_exporter.cpp
     src/utils/table_importer.cpp
+    src/utils/button.cpp
     src/utils/toggle_button.cpp
     src/utils/spinner.cpp
     src/utils/crypto.cpp

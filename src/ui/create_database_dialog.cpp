@@ -6,6 +6,7 @@
 #include "database/query_executor.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <cfloat>
 #include <cstring>
@@ -370,12 +371,13 @@ void CreateDatabaseDialog::render() {
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(rightEdge - kButtonW * 2 - Theme::Spacing::M);
 
-    bool cancelClicked = ImGui::Button("Cancel##createdb", ImVec2(kButtonW, 0));
+    bool cancelClicked =
+        UIUtils::Button("Cancel##createdb", UIUtils::ButtonVariant::Secondary, ImVec2(kButtonW, 0));
     ImGui::SameLine();
 
     bool createClicked = false;
     ImGui::BeginDisabled(busy);
-    if (ImGui::Button("Create##createdb", ImVec2(kButtonW, 0)))
+    if (UIUtils::Button("Create##createdb", UIUtils::ButtonVariant::Primary, ImVec2(kButtonW, 0)))
         createClicked = true;
     if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
         ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))

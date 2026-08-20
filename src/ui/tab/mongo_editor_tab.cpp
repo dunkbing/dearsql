@@ -8,6 +8,7 @@
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
+#include "utils/button.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
@@ -165,19 +166,19 @@ void MongoEditorTab::renderHeader() const {
 void MongoEditorTab::renderToolbar() {
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_PLAY " Run");
+        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (ImGui::Button(LABEL_CANCEL)) {
+        if (UIUtils::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
     } else {
-        if (ImGui::Button(ICON_FA_PLAY " Run")) {
+        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
             startQueryExecutionAsync(query_);
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (ImGui::Button(ICON_FA_ALIGN_LEFT " Format")) {
+        if (UIUtils::Button(ICON_FA_ALIGN_LEFT " Format")) {
             formatJSON();
         }
     }

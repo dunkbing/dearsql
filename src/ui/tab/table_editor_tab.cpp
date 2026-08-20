@@ -5,6 +5,7 @@
 #include "database/sql_builder.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "utils/button.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -613,16 +614,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Button,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-    ImGui::PushStyleColor(
-        ImGuiCol_ButtonActive,
-        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-
-    if (ImGui::Button("Execute", ImVec2(120, 0))) {
+    if (UIUtils::Button("Execute", UIUtils::ButtonVariant::Primary, ImVec2(120, 0))) {
         if (dbNode) {
             if (editorMode == TableEditorMode::Create) {
                 Table resultTable = buildResultTable();
@@ -656,34 +648,18 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
         }
     }
 
-    ImGui::PopStyleColor(4);
     ImGui::SameLine();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.overlay0);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.overlay1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay2);
-
-    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+    if (UIUtils::Button("Cancel", UIUtils::ButtonVariant::Secondary, ImVec2(120, 0))) {
         ImGui::CloseCurrentPopup();
     }
 
-    ImGui::PopStyleColor(3);
     ImGui::EndPopup();
 }
 
 void TableEditorTab::renderButtons(bool& closeRequested) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::PushStyleColor(ImGuiCol_Button,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                          ImVec4(colors.green.x, colors.green.y, colors.green.z, 1.0f));
-    ImGui::PushStyleColor(
-        ImGuiCol_ButtonActive,
-        ImVec4(colors.green.x * 0.8f, colors.green.y * 0.8f, colors.green.z * 0.8f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-
-    if (ImGui::Button(ICON_FA_FLOPPY_DISK " Save", ImVec2(120, 0))) {
+    if (UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary,
+                        ImVec2(120, 0))) {
         if (validateTableInput()) {
             errorMessage.clear();
             std::string sql;
@@ -701,8 +677,6 @@ void TableEditorTab::renderButtons(bool& closeRequested) {
             showPreviewPopup = true;
         }
     }
-
-    ImGui::PopStyleColor(4);
 }
 
 void TableEditorTab::startAddColumn() {

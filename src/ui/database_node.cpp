@@ -2156,8 +2156,13 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         const float yCenter =
             itemMin.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f;
         const ImVec2 textPos = ImVec2(rightEdge - textSize.x - Theme::Spacing::M, yCenter);
-        ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(colors.subtext0),
-                                            sizeText.c_str());
+        const std::string displayLabel = std::format("   {}", table.name);
+        const float labelRight = itemMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+                                 ImGui::CalcTextSize(displayLabel.c_str()).x;
+        if (labelRight + Theme::Spacing::S <= textPos.x) {
+            ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(colors.subtext0),
+                                                sizeText.c_str());
+        }
     }
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
@@ -4086,8 +4091,13 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
         const float yCenter =
             itemMin.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f;
         const ImVec2 textPos = ImVec2(rightEdge - textSize.x - Theme::Spacing::M, yCenter);
-        ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(colors.subtext0),
-                                            sizeText.c_str());
+        const std::string displayLabel = std::format("   {}", table.name);
+        const float labelRight = itemMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+                                 ImGui::CalcTextSize(displayLabel.c_str()).x;
+        if (labelRight + Theme::Spacing::S <= textPos.x) {
+            ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(colors.subtext0),
+                                                sizeText.c_str());
+        }
     }
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {

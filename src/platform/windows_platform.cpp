@@ -160,6 +160,12 @@ void WindowsPlatform::onSidebarToggleClicked() {
     }
 }
 
+void WindowsPlatform::applyTheme(bool isDark) {
+    if (titlebar_) {
+        titlebar_->applyTheme(isDark);
+    }
+}
+
 void WindowsPlatform::cleanup() {
     backend_.reset();
 }

@@ -114,6 +114,12 @@ void MacOSPlatform::updateWorkspaceDropdown() {
     }
 }
 
+void MacOSPlatform::applyTheme(bool isDark) {
+    if (titlebar_) {
+        titlebar_->applyTheme(isDark);
+    }
+}
+
 ImTextureID MacOSPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
     return backend_->createTextureFromRGBA(pixels, width, height);
 }

@@ -114,9 +114,9 @@ void LinuxPlatform::updateWorkspaceDropdown() {
         titlebar_->updateWorkspaceDropdown();
 }
 
-void LinuxPlatform::applyCurrentTheme() {
+void LinuxPlatform::applyTheme(bool isDark) {
     if (titlebar_)
-        titlebar_->applyTheme(app_ ? app_->isDarkTheme() : false);
+        titlebar_->applyTheme(isDark);
 }
 
 float LinuxPlatform::getTitlebarHeight() const {

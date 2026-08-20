@@ -23,6 +23,7 @@ public:
     virtual void renderFrame() = 0;
     virtual void shutdownImGui() = 0;
     virtual void updateWorkspaceDropdown() {}
+    virtual void applyTheme(bool isDark) = 0;
     // windows
     [[nodiscard]] virtual float getClientAreaTopInset() const {
         return 0.0f;

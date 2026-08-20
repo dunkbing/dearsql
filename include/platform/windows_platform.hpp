@@ -27,6 +27,7 @@ public:
     void renderFrame() override;
     void shutdownImGui() override;
     void updateWorkspaceDropdown() override {}
+    void applyTheme(bool isDark) override;
     [[nodiscard]] float getClientAreaTopInset() const override;
     ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
     [[nodiscard]] HWND getHWND() const;

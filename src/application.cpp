@@ -211,9 +211,7 @@ bool Application::initialize() {
     const std::string themeStr = appState->getSetting("theme", "dark");
     darkTheme = (themeStr != "light");
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
-#if defined(__linux__)
-    static_cast<LinuxPlatform*>(platform_.get())->applyCurrentTheme();
-#endif
+    platform_->applyTheme(darkTheme);
 
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
     try {
@@ -400,6 +398,9 @@ void Application::cleanup() {
 void Application::setDarkTheme(const bool dark) {
     darkTheme = dark;
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+    if (platform_) {
+        platform_->applyTheme(darkTheme);
+    }
     if (appState) {
         appState->setSetting("theme", darkTheme ? "dark" : "light");
     }

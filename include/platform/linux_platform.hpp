@@ -28,8 +28,8 @@ public:
     void renderFrame() override;
     void shutdownImGui() override;
     void updateWorkspaceDropdown() override;
+    void applyTheme(bool isDark) override;
     ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
-    void applyCurrentTheme();
 
     // GTK-specific methods
     bool initializeGTK(int* argc, char*** argv);

@@ -430,7 +430,8 @@ bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const s
                                                   ImGui::ColorConvertFloat4ToU32(hoverColor), 0);
     }
 
-    const bool isOpen = ImGui::TreeNodeEx(fullLabel.c_str(), flags);
+    const bool isOpen =
+        ImGui::TreeNodeEx(fullLabel.c_str(), flags | ImGuiTreeNodeFlags_SpanAvailWidth);
 
     const auto iconPos =
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),

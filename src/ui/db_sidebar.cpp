@@ -497,7 +497,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow |
                                  ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                 ImGuiTreeNodeFlags_FramePadding;
+                                 ImGuiTreeNodeFlags_FramePadding |
+                                 ImGuiTreeNodeFlags_SpanAvailWidth;
     if (const auto selected = app.getSelectedDatabase(); selected && selected == db) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }

@@ -106,7 +106,7 @@ namespace Theme {
         style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
         style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
         style.IndentSpacing = 20.0f;
-        style.ScrollbarSize = 16.0f;
+        style.ScrollbarSize = 14.0f;
         style.GrabMinSize = 12.0f;
 
         style.WindowBorderSize = 0.0f;

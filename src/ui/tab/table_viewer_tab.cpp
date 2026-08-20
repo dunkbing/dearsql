@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstring>
 #include <format>
+#include <functional>
 #include <iostream>
 #include <spdlog/spdlog.h>
 #include <string_view>
@@ -149,8 +150,8 @@ void TableViewerTab::render() {
         ImGui::SetTooltip("Add row");
     }
 
-    const bool hasRowSelected =
-        selectedRow >= 0 && selectedRow < static_cast<int>(tableData.size());
+    const std::vector<int> selectedRows = tableRenderer->getSelectedRows();
+    const bool hasRowSelected = !selectedRows.empty();
 
     ImGui::SameLine();
     if (!hasRowSelected)
@@ -171,13 +172,13 @@ void TableViewerTab::render() {
         ImGui::BeginDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
     if (ImGui::Button(ICON_FA_TRASH_CAN)) {
-        deleteRow(selectedRow);
+        deleteRows(selectedRows);
     }
     ImGui::PopStyleColor();
     if (!hasRowSelected)
         ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Delete row");
+        ImGui::SetTooltip("Delete selected rows");
     }
 
     if (hasChanges) {
@@ -230,6 +231,7 @@ void TableViewerTab::render() {
             tableRenderer->setColumns(table_.columns);
             tableRenderer->setData(tableData);
             tableRenderer->setCellEditedStatus(editedCells);
+            tableRenderer->setRowsPendingDelete(rowsPendingDelete);
             tableRenderer->setSelectedCell(selectedRow, selectedCol);
             tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
             tableRenderer->setSortColumn(sortColumn, sortDirection);
@@ -406,7 +408,7 @@ void TableViewerTab::refreshData() {
         selectedRow = -1;
         selectedCol = -1;
         hasChanges = false;
-        deletedRows.clear();
+        rowsPendingDelete.clear();
         hasLoadingError = false;
         loadingError.clear();
 
@@ -430,7 +432,7 @@ void TableViewerTab::saveChanges() {
     if (pendingUpdateSQL.empty()) {
         // No valid SQL generated, just clear changes
         hasChanges = false;
-        deletedRows.clear();
+        rowsPendingDelete.assign(tableData.size(), false);
         originalData = tableData;
         isNewRow.assign(tableData.size(), false);
         for (auto& row : editedCells) {
@@ -451,21 +453,13 @@ void TableViewerTab::cancelChanges() {
             originalData.erase(originalData.begin() + i);
             editedCells.erase(editedCells.begin() + i);
             isNewRow.erase(isNewRow.begin() + i);
+            rowsPendingDelete.erase(rowsPendingDelete.begin() + i);
         }
     }
 
-    std::ranges::sort(deletedRows, {}, &DeletedRow::index);
-    for (const auto& deleted : deletedRows) {
-        const int insertIdx = std::clamp(deleted.index, 0, static_cast<int>(originalData.size()));
-        originalData.insert(originalData.begin() + insertIdx, deleted.values);
-        editedCells.insert(editedCells.begin() + insertIdx,
-                           std::vector<bool>(table_.columns.size(), false));
-        isNewRow.insert(isNewRow.begin() + insertIdx, false);
-    }
-    deletedRows.clear();
-
     // Restore original data for remaining rows
     tableData = originalData;
+    rowsPendingDelete.assign(tableData.size(), false);
     hasChanges = false;
 
     // Clear edited cells tracking
@@ -478,35 +472,41 @@ void TableViewerTab::cancelChanges() {
     selectedCol = -1;
 }
 
-void TableViewerTab::deleteRow(int row) {
-    if (row < 0 || row >= static_cast<int>(tableData.size())) {
+void TableViewerTab::deleteRows(const std::vector<int>& rows) {
+    std::vector<int> sortedRows = rows;
+    std::ranges::sort(sortedRows, std::greater{});
+    const auto uniqueEnd = std::ranges::unique(sortedRows).begin();
+    sortedRows.erase(uniqueEnd, sortedRows.end());
+
+    int nextSelectedRow = -1;
+    for (const int row : sortedRows) {
+        if (row < 0 || row >= static_cast<int>(tableData.size())) {
+            continue;
+        }
+        nextSelectedRow = row;
+
+        if (row < static_cast<int>(isNewRow.size()) && isNewRow[row]) {
+            tableData.erase(tableData.begin() + row);
+            originalData.erase(originalData.begin() + row);
+            editedCells.erase(editedCells.begin() + row);
+            isNewRow.erase(isNewRow.begin() + row);
+            rowsPendingDelete.erase(rowsPendingDelete.begin() + row);
+        } else {
+            if (rowsPendingDelete.size() != tableData.size()) {
+                rowsPendingDelete.resize(tableData.size(), false);
+            }
+            rowsPendingDelete[row] = true;
+        }
+    }
+
+    if (nextSelectedRow < 0) {
         return;
     }
-
-    if (row < static_cast<int>(isNewRow.size()) && isNewRow[row]) {
-        tableData.erase(tableData.begin() + row);
-        originalData.erase(originalData.begin() + row);
-        editedCells.erase(editedCells.begin() + row);
-        isNewRow.erase(isNewRow.begin() + row);
-    } else {
-        int originalIndex = row;
-        for (const auto& deleted : deletedRows) {
-            if (deleted.index <= originalIndex)
-                originalIndex++;
-        }
-        deletedRows.push_back({originalIndex, originalData[row]});
-        tableData.erase(tableData.begin() + row);
-        originalData.erase(originalData.begin() + row);
-        editedCells.erase(editedCells.begin() + row);
-        isNewRow.erase(isNewRow.begin() + row);
-        totalRows = std::max(0, totalRows - 1);
-    }
-
     if (tableData.empty()) {
         selectedRow = -1;
         selectedCol = -1;
     } else {
-        selectedRow = std::min(row, static_cast<int>(tableData.size()) - 1);
+        selectedRow = std::min(nextSelectedRow, static_cast<int>(tableData.size()) - 1);
         selectedCol = table_.columns.empty()
                           ? -1
                           : std::clamp(selectedCol, 0, static_cast<int>(table_.columns.size()) - 1);
@@ -527,6 +527,7 @@ void TableViewerTab::duplicateRow(int row) {
     editedCells.insert(editedCells.begin() + insertIdx,
                        std::vector<bool>(table_.columns.size(), true));
     isNewRow.insert(isNewRow.begin() + insertIdx, true);
+    rowsPendingDelete.insert(rowsPendingDelete.begin() + insertIdx, false);
 
     hasChanges = true;
     selectedRow = insertIdx;
@@ -549,6 +550,7 @@ void TableViewerTab::addRow() {
     editedCells.insert(editedCells.begin() + insertIdx,
                        std::vector<bool>(table_.columns.size(), true));
     isNewRow.insert(isNewRow.begin() + insertIdx, true);
+    rowsPendingDelete.insert(rowsPendingDelete.begin() + insertIdx, false);
 
     hasChanges = true;
 
@@ -595,11 +597,11 @@ void TableViewerTab::loadDataAsync() {
 
             originalData = tableData;
             hasChanges = false;
-            deletedRows.clear();
 
             editedCells = std::vector<std::vector<bool>>(
                 tableData.size(), std::vector<bool>(table_.columns.size(), false));
             isNewRow = std::vector<bool>(tableData.size(), false);
+            rowsPendingDelete = std::vector<bool>(tableData.size(), false);
         } catch (const std::exception& e) {
             hasLoadingError = true;
             loadingError = e.what();
@@ -715,7 +717,7 @@ std::string TableViewerTab::buildRowWhere(const std::vector<std::string>& rowVal
 }
 
 bool TableViewerTab::hasPendingChanges() const {
-    if (!deletedRows.empty())
+    if (std::ranges::any_of(rowsPendingDelete, [](bool value) { return value; }))
         return true;
     if (std::ranges::any_of(isNewRow, [](bool value) { return value; }))
         return true;
@@ -739,8 +741,11 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
 
     const std::string tableRef = buildTableRef();
 
-    for (const auto& deleted : deletedRows) {
-        const std::string whereExpr = buildRowWhere(deleted.values);
+    for (int rowIdx = 0; rowIdx < static_cast<int>(rowsPendingDelete.size()); ++rowIdx) {
+        if (!rowsPendingDelete[rowIdx] || rowIdx >= static_cast<int>(originalData.size())) {
+            continue;
+        }
+        const std::string whereExpr = buildRowWhere(originalData[rowIdx]);
         if (!whereExpr.empty()) {
             sqlStatements.push_back(builder->deleteRow(tableRef, whereExpr) + ";");
         }
@@ -748,6 +753,9 @@ std::vector<std::string> TableViewerTab::generateUpdateSQL() {
 
     // Process each edited cell
     for (int rowIdx = 0; rowIdx < editedCells.size(); rowIdx++) {
+        if (rowIdx < static_cast<int>(rowsPendingDelete.size()) && rowsPendingDelete[rowIdx]) {
+            continue;
+        }
         // Generate INSERT for newly added rows
         if (rowIdx < static_cast<int>(isNewRow.size()) && isNewRow[rowIdx]) {
             std::vector<std::string> insertCols;
@@ -912,16 +920,10 @@ void TableViewerTab::checkSQLExecutionStatus() {
         auto [success, errorMessage] = result;
 
         if (success) {
-            hasChanges = false;
-            originalData = tableData;
-            deletedRows.clear();
-            isNewRow.assign(tableData.size(), false);
-            for (auto& row : editedCells) {
-                std::fill(row.begin(), row.end(), false);
-            }
             showSaveDialog = false;
             pendingUpdateSQL.clear();
             dialogOpened = false;
+            refreshData();
         } else {
             std::cerr << "Failed to execute SQL statements: " << errorMessage << std::endl;
         }
@@ -985,6 +987,10 @@ void TableViewerTab::initializeTableRenderer() {
     });
 
     tableRenderer->setOnCellSelect([this](int row, int col) { selectCell(row, col); });
+    tableRenderer->setCellEditableCallback([this](int row, int) {
+        return row < 0 || row >= static_cast<int>(rowsPendingDelete.size()) ||
+               !rowsPendingDelete[row];
+    });
 
     // Sort callback
     tableRenderer->setOnSortChanged(
@@ -1049,7 +1055,7 @@ void TableViewerTab::initializeTableRenderer() {
         applyFilter();
     });
 
-    tableRenderer->setOnDeleteRow([this](int row) { deleteRow(row); });
+    tableRenderer->setOnDeleteRow([this](int row) { deleteRows({row}); });
 }
 
 void TableViewerTab::initializeFilterAutoComplete() {

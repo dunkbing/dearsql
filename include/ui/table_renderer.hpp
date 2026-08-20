@@ -50,7 +50,9 @@ public:
     void setData(const std::vector<std::vector<std::string>>& tableData);
     void setData(std::vector<std::vector<std::string>>&& tableData);
     void setCellEditedStatus(const std::vector<std::vector<bool>>& editedCells);
+    void setRowsPendingDelete(const std::vector<bool>& rows);
     void setSelectedCell(int row, int col);
+    [[nodiscard]] std::vector<int> getSelectedRows() const;
     void setRowNumberOffset(int offset) {
         rowNumberOffset = offset;
     }
@@ -125,6 +127,7 @@ private:
     std::vector<Column> columns;
     std::vector<std::vector<std::string>> data;
     std::vector<std::vector<bool>> editedCells;
+    std::vector<bool> rowsPendingDelete;
 
     int selectedRow = -1;
     int selectedCol = -1;

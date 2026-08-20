@@ -119,6 +119,10 @@ void TableRenderer::setCellEditedStatus(const std::vector<std::vector<bool>>& ed
     editedCells = editedCellsStatus;
 }
 
+void TableRenderer::setRowsPendingDelete(const std::vector<bool>& rows) {
+    rowsPendingDelete = rows;
+}
+
 void TableRenderer::setSelectedCell(int row, int col) {
     const bool sameCell = (selectedRow == row && selectedCol == col);
     selectedRow = row;
@@ -136,6 +140,26 @@ void TableRenderer::setSelectedCell(int row, int col) {
         !sameCell) {
         collapseSelectionToCell(row, col);
     }
+}
+
+std::vector<int> TableRenderer::getSelectedRows() const {
+    if (rangeAnchorRow < 0 || rangeEndRow < 0) {
+        return {};
+    }
+
+    const int firstRow = std::max(0, std::min(rangeAnchorRow, rangeEndRow));
+    const int lastRow =
+        std::min(static_cast<int>(data.size()) - 1, std::max(rangeAnchorRow, rangeEndRow));
+    if (firstRow > lastRow) {
+        return {};
+    }
+
+    std::vector<int> rows;
+    rows.reserve(static_cast<size_t>(lastRow - firstRow + 1));
+    for (int row = firstRow; row <= lastRow; ++row) {
+        rows.push_back(row);
+    }
+    return rows;
 }
 
 void TableRenderer::collapseSelectionToCell(int row, int col) {
@@ -228,6 +252,18 @@ void TableRenderer::render(const char* tableId) {
         isDragging = false;
     }
     mouseWasDownLastFrame = mouseDownNow;
+
+    // Cmd/Ctrl+A → select every cell when the table already has a selection.
+    if (config.allowSelection && editingRow == -1 && selectedRow >= 0 && selectedCol >= 0 &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        !ImGui::GetIO().WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Shortcut | ImGuiKey_A)) {
+        const int lastRow = static_cast<int>(data.size()) - 1;
+        const int lastCol = static_cast<int>(columns.size()) - 1;
+        setSelectionRange(0, 0, lastRow, lastCol);
+        if (onCellSelect) {
+            onCellSelect(lastRow, lastCol);
+        }
+    }
 
     // Cmd/Ctrl+C → copy the selected range as CSV.
     // Gated on the window being focused and no text input active so it doesn't
@@ -511,13 +547,15 @@ void TableRenderer::render(const char* tableId) {
 
 void TableRenderer::renderCell(int row, int col) {
     const auto& colors = Application::getInstance().getCurrentColors();
+    const bool isPendingDelete =
+        row < static_cast<int>(rowsPendingDelete.size()) && rowsPendingDelete[row];
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
-        // Edit mode - blue tint to indicate editing
-        ImGui::TableSetBgColor(
-            ImGuiTableBgTarget_CellBg,
-            ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.15f)));
+        const ImVec4 tint = isPendingDelete
+                                ? ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.3f)
+                                : ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.15f);
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(tint));
 
         auto dropdownIt = config.columnDropdownOptions.find(col);
         if (dropdownIt != config.columnDropdownOptions.end()) {
@@ -688,7 +726,11 @@ void TableRenderer::renderCell(int row, int col) {
              col < static_cast<int>(editedCells[row].size()) && editedCells[row][col]);
 
         const bool inRange = isInSelectionRange(row, col);
-        if (isEdited && isSelected) {
+        if (isPendingDelete) {
+            ImGui::TableSetBgColor(
+                ImGuiTableBgTarget_CellBg,
+                ImGui::GetColorU32(ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.3f)));
+        } else if (isEdited && isSelected) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
                 ImGui::GetColorU32(ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.5f)));
@@ -753,7 +795,8 @@ void TableRenderer::renderCell(int row, int col) {
                 const ImRect cellRect = ImGui::TableGetCellBgRect(tbl, tableColIdx);
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 dl->PushClipRect(tbl->InnerClipRect.Min, tbl->InnerClipRect.Max, true);
-                dl->AddRect(cellRect.Min, cellRect.Max, ImGui::GetColorU32(colors.blue), 0.0f, 0,
+                dl->AddRect(cellRect.Min, cellRect.Max,
+                            ImGui::GetColorU32(isPendingDelete ? colors.red : colors.blue), 0.0f, 0,
                             2.0f);
                 dl->PopClipRect();
             }
@@ -986,7 +1029,8 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
     const bool canSetNull =
         config.allowEditing && onSetNull && columnNullableCb && columnNullableCb(col) && row >= 0 &&
         row < static_cast<int>(data.size()) && col >= 0 &&
-        col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col]);
+        col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col]) &&
+        (!cellEditableCb || cellEditableCb(row, col));
     if (canSetNull && paddedMenuItem("Set NULL")) {
         onSetNull(row, col);
     }

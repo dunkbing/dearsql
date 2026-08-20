@@ -39,7 +39,7 @@ public:
     void saveChanges();
     void cancelChanges();
     void addRow();
-    void deleteRow(int row);
+    void deleteRows(const std::vector<int>& rows);
     void duplicateRow(int row);
 
     // SQL generation and confirmation dialog
@@ -56,11 +56,7 @@ private:
     std::vector<std::vector<std::string>> originalData;
     std::vector<std::vector<bool>> editedCells;
     std::vector<bool> isNewRow;
-    struct DeletedRow {
-        int index = 0;
-        std::vector<std::string> values;
-    };
-    std::vector<DeletedRow> deletedRows;
+    std::vector<bool> rowsPendingDelete;
     bool initialSelectionDone = false;
     int currentPage = 0;
     int rowsPerPage = 100;

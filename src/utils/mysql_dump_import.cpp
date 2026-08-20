@@ -1,7 +1,7 @@
 #include "utils/mysql_dump_import.hpp"
 
-#include "utils/mysql_session_reset.hpp"
 #include "utils/mysql_dump_splitter.hpp"
+#include "utils/mysql_session_reset.hpp"
 
 #include <cstddef>
 #include <filesystem>

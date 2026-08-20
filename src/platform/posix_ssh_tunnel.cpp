@@ -181,8 +181,8 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     posix_spawn_file_actions_init(&actions);
     // Redirect stdout to /dev/null, stderr to the capture file
     posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
-    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, errPath.c_str(),
-                                     O_WRONLY | O_APPEND, 0600);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, errPath.c_str(), O_WRONLY | O_APPEND,
+                                     0600);
     // Detach stdin so ssh doesn't try to read from terminal
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
 
@@ -228,7 +228,8 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
         }
         // Process still running but port not reachable — kill it
         stop();
-        std::string msg = "SSH tunnel timed out waiting for port " + std::to_string(failedLocalPort);
+        std::string msg =
+            "SSH tunnel timed out waiting for port " + std::to_string(failedLocalPort);
         if (const std::string detail = takeStderr(); !detail.empty())
             msg += ": " + detail;
         return {false, msg};
@@ -321,10 +322,10 @@ bool SSHTunnel::waitForPortReady(int port, int timeoutMs) const {
         // Peek without reaping so the caller can still inspect the exit status.
         // kill(pid, 0) is not enough: it succeeds on zombies, so a fast auth
         // failure would sit out the whole timeout before being reported.
-        if (siginfo_t info{}; sshPid_ > 0 &&
-                              waitid(P_PID, static_cast<id_t>(sshPid_), &info,
-                                     WEXITED | WNOHANG | WNOWAIT) == 0 &&
-                              info.si_pid == sshPid_) {
+        if (siginfo_t info{};
+            sshPid_ > 0 &&
+            waitid(P_PID, static_cast<id_t>(sshPid_), &info, WEXITED | WNOHANG | WNOWAIT) == 0 &&
+            info.si_pid == sshPid_) {
             return false;
         }
 

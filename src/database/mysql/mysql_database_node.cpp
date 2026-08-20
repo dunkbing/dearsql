@@ -694,8 +694,7 @@ QueryResult MySQLDatabaseNode::executeQuery(const std::string& query, int rowLim
         // Prepend the pool/network phases so the waterfall reads connect →
         // network latency → execution → download → parse.
         std::vector<std::pair<std::string, double>> prefix = {
-            {"connect", toMs(tConnect - startTime)},
-            {"network latency", toMs(tPing - tConnect)}};
+            {"connect", toMs(tConnect - startTime)}, {"network latency", toMs(tPing - tConnect)}};
         result.phaseTimings.insert(result.phaseTimings.begin(), prefix.begin(), prefix.end());
     } catch (const std::exception& e) {
         StatementResult r;

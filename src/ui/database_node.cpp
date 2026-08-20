@@ -155,7 +155,7 @@ namespace {
     // over the whole width instead -- twice, clipped to each side of the fill
     // boundary, because one color is unreadable against the other half.
     void progressBarWithCenteredLabel(const float fraction, const float width,
-                                     const std::string& label) {
+                                      const std::string& label) {
         const ImVec4& onFillColor = Application::getInstance().getCurrentColors().crust;
         const ImVec2 barPos = ImGui::GetCursorScreenPos();
         ImGui::ProgressBar(fraction, ImVec2(width, 0.0f), "");

@@ -215,8 +215,8 @@ TEST_F(MySQLDatabaseIntegrationTest, RestrictedUserConnectsWithoutDefaultDatabas
     }
     ASSERT_TRUE(createDb.success()) << createDb.errorMessage();
 
-    auto createUser = database->executeQuery(
-        std::format("CREATE USER '{}'@'%' IDENTIFIED BY '{}'", user, pass));
+    auto createUser =
+        database->executeQuery(std::format("CREATE USER '{}'@'%' IDENTIFIED BY '{}'", user, pass));
     if (!createUser.success()) {
         database->executeQuery(std::format("DROP DATABASE `{}`", grantDb));
         if (createUser.errorMessage().find("denied") != std::string::npos) {
@@ -226,8 +226,8 @@ TEST_F(MySQLDatabaseIntegrationTest, RestrictedUserConnectsWithoutDefaultDatabas
         FAIL() << createUser.errorMessage();
     }
 
-    auto grant = database->executeQuery(
-        std::format("GRANT ALL ON `{}`.* TO '{}'@'%'", grantDb, user));
+    auto grant =
+        database->executeQuery(std::format("GRANT ALL ON `{}`.* TO '{}'@'%'", grantDb, user));
     ASSERT_TRUE(grant.success()) << grant.errorMessage();
 
     auto connInfo = database->getConnectionInfo();

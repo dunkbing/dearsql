@@ -489,16 +489,14 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         hierarchy->processPendingDatabaseDrop();
     }
 
-
     auto const connectionInfo = db->getConnectionInfo();
     auto const type = connectionInfo.type;
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                 ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                                 ImGuiTreeNodeFlags_FramePadding |
-                                 ImGuiTreeNodeFlags_SpanAvailWidth;
+    ImGuiTreeNodeFlags dbFlags =
+        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
+        ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_SpanAvailWidth;
     if (const auto selected = app.getSelectedDatabase(); selected && selected == db) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }

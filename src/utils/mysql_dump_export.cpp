@@ -98,9 +98,8 @@ namespace {
     };
 
     SchemaDefaults readSchemaDefaults(MYSQL* conn) {
-        execute(conn,
-                "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
-                "FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()");
+        execute(conn, "SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME "
+                      "FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()");
         const MysqlResPtr res(mysql_store_result(conn));
         if (!res) {
             throw std::runtime_error(mysql_error(conn));

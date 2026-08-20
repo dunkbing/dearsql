@@ -70,6 +70,10 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 void TableViewerTab::render() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+
     checkAsyncLoadStatus();
 
     // Cmd/Ctrl+S to save — only when no cell input is active
@@ -351,6 +355,8 @@ void TableViewerTab::render() {
 
     // Show save confirmation dialog if needed
     showSaveConfirmationDialog();
+
+    ImGui::PopStyleColor(3);
 }
 
 void TableViewerTab::nextPage() {

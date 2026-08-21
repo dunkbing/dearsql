@@ -151,6 +151,12 @@ public:
     // Called from WndProc for custom hit testing
     LRESULT hitTest(HWND hWnd, LPARAM lParam) const;
 
+    // maximize button lives in the non-client area (HTMAXBUTTON), so hover state
+    // comes from WM_NCMOUSEMOVE instead of ImGui
+    void setMaxButtonHovered(bool hovered) {
+        maxButtonHovered_ = hovered;
+    }
+
     // True when the theme changed this frame (platform should re-apply DWM colour)
     bool themeChanged() const {
         return themeChanged_;
@@ -173,6 +179,7 @@ private:
     bool lastAppliedDarkTheme_ = true;
     bool themeChanged_ = false;
     bool titlebarWidgetHovered_ = false;
+    bool maxButtonHovered_ = false;
 
     bool openWorkspacePopup_ = false;
     ImVec2 workspacePopupPos_ = {};

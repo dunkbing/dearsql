@@ -399,7 +399,7 @@ void RedisKeyViewerTab::renderToolbar() {
     ImGui::SameLine(0, Theme::Spacing::L);
     if (hasChanges_) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (ImGui::Button(ICON_FA_FLOPPY_DISK)) {
+        if (UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary)) {
             saveChanges();
         }
         ImGui::PopStyleColor();
@@ -408,7 +408,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (ImGui::Button(ICON_FA_XMARK)) {
+        if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
@@ -419,14 +419,14 @@ void RedisKeyViewerTab::renderToolbar() {
         ImGui::TextColored(colors.peach, "Unsaved changes");
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_FLOPPY_DISK);
+        UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Save");
 
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_XMARK);
+        UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Discard changes");

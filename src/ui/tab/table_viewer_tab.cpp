@@ -102,9 +102,8 @@ void TableViewerTab::render() {
 
     // Refresh, Save, Reject buttons next to filter
     ImGui::SameLine(0, Theme::Spacing::M);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (ImGui::Button(ICON_FA_ARROWS_ROTATE)) {
+    if (UIUtils::IconButton(ICON_FA_ARROWS_ROTATE)) {
         refreshData();
     }
     ImGui::PopStyleColor();
@@ -115,13 +114,13 @@ void TableViewerTab::render() {
     ImGui::SameLine();
     if (hasChanges) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (ImGui::Button(ICON_FA_FLOPPY_DISK)) {
+        if (UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary)) {
             saveChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_FLOPPY_DISK);
+        UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -131,13 +130,13 @@ void TableViewerTab::render() {
     ImGui::SameLine();
     if (hasChanges) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (ImGui::Button(ICON_FA_XMARK)) {
+        if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_XMARK);
+        UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -145,7 +144,7 @@ void TableViewerTab::render() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_PLUS)) {
+    if (UIUtils::IconButton(ICON_FA_PLUS)) {
         addRow();
     }
     if (ImGui::IsItemHovered()) {
@@ -159,7 +158,7 @@ void TableViewerTab::render() {
     if (!hasRowSelected)
         ImGui::BeginDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (ImGui::Button(ICON_FA_CLONE)) {
+    if (UIUtils::IconButton(ICON_FA_CLONE)) {
         duplicateRow(selectedRow);
     }
     ImGui::PopStyleColor();
@@ -173,7 +172,7 @@ void TableViewerTab::render() {
     if (!hasRowSelected)
         ImGui::BeginDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-    if (ImGui::Button(ICON_FA_TRASH_CAN)) {
+    if (UIUtils::IconButton(ICON_FA_TRASH_CAN, UIUtils::ButtonVariant::Danger)) {
         deleteRows(selectedRows);
     }
     ImGui::PopStyleColor();
@@ -182,7 +181,6 @@ void TableViewerTab::render() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("Delete selected rows");
     }
-    ImGui::PopStyleVar();
 
     if (hasChanges) {
         ImGui::SameLine(0, Theme::Spacing::L);
@@ -270,14 +268,13 @@ void TableViewerTab::render() {
 
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (UIUtils::Button("<<") && currentPage > 0) {
+    if (UIUtils::IconButton("<<") && currentPage > 0) {
         firstPage();
     }
     ImGui::SameLine();
 
-    if (UIUtils::Button("<") && currentPage > 0) {
+    if (UIUtils::IconButton("<") && currentPage > 0) {
         previousPage();
     }
     ImGui::PopStyleColor();
@@ -287,16 +284,15 @@ void TableViewerTab::render() {
     ImGui::SameLine(0, Theme::Spacing::M);
 
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (UIUtils::Button(">") && currentPage < totalPages - 1) {
+    if (UIUtils::IconButton(">") && currentPage < totalPages - 1) {
         nextPage();
     }
     ImGui::SameLine();
 
-    if (UIUtils::Button(">>") && currentPage < totalPages - 1) {
+    if (UIUtils::IconButton(">>") && currentPage < totalPages - 1) {
         lastPage();
     }
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
 
     // Page size selector
     ImGui::SameLine();
@@ -831,9 +827,11 @@ void TableViewerTab::showSaveConfirmationDialog() {
         dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.base);
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
 
     if (ImGui::BeginPopupModal("Confirm Save Changes", nullptr,
                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
@@ -903,8 +901,8 @@ void TableViewerTab::showSaveConfirmationDialog() {
         dialogOpened = false;
     }
 
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(3);
 }
 
 void TableViewerTab::checkSQLExecutionStatus() {

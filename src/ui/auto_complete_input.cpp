@@ -14,7 +14,7 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
 
     const bool hasEndIcon = !config.endIcon.empty();
     const float iconAreaW = hasEndIcon ? ImGui::GetFrameHeight() : 0.0f;
-    ImGui::SetNextItemWidth(config.width - iconAreaW);
+    ImGui::SetNextItemWidth(config.width);
 
     const bool shouldConsumeEnter =
         showAutoComplete &&
@@ -60,27 +60,22 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
         // Draw subtle visual emphasis for focused state
         const ImU32 focusColor =
             ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
-        const ImVec2 fullMax = hasEndIcon ? ImVec2(inputMax.x + iconAreaW, inputMax.y) : inputMax;
-        drawList->AddRect(inputMin, fullMax, focusColor, 3.0f, 0, 1.5f);
+        drawList->AddRect(inputMin, inputMax, focusColor, 3.0f, 0, 1.5f);
     }
 
-    // Draw icon area fused to the right edge of the input
+    // Draw icon inside the right edge of the input
     bool endIconClicked = false;
     if (hasEndIcon) {
-        const ImVec2 iconMin(inputMax.x, inputMin.y);
-        const ImVec2 iconMax(inputMax.x + iconAreaW, inputMax.y);
+        const ImVec2 iconMin(inputMax.x - iconAreaW, inputMin.y);
+        const ImVec2 iconMax = inputMax;
 
-        // background matching the input
+        // cover text beneath the icon while preserving the input outline
         const bool iconHovered = ImGui::IsMouseHoveringRect(iconMin, iconMax);
         const ImU32 bgColor =
             ImGui::GetColorU32(iconHovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
-        drawList->AddRectFilled(iconMin, iconMax, bgColor, 0.0f);
-
-        // right + top + bottom border segments to complete the outline
-        const ImU32 borderColor = ImGui::GetColorU32(ImGuiCol_Border);
-        drawList->AddLine(iconMin, ImVec2(iconMax.x, iconMin.y), borderColor); // top
-        drawList->AddLine(ImVec2(iconMax.x, iconMin.y), iconMax, borderColor); // right
-        drawList->AddLine(ImVec2(iconMin.x, iconMax.y), iconMax, borderColor); // bottom
+        drawList->AddRectFilled(ImVec2(iconMin.x, iconMin.y + 1.0f),
+                                ImVec2(iconMax.x - 1.0f, iconMax.y - 1.0f), bgColor,
+                                ImGui::GetStyle().FrameRounding, ImDrawFlags_RoundCornersRight);
 
         // icon text centered
         const ImVec2 textSize = ImGui::CalcTextSize(config.endIcon.c_str());
@@ -96,14 +91,14 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
             endIconClicked = true;
         }
         if (ImGui::IsItemHovered()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             ImGui::SetTooltip("Apply filters");
         }
     }
 
     // Anchor the popup to the input rect (not the end-icon rect, which
     // would otherwise be the "last item" by the time the popup renders).
-    const ImVec2 anchorMax = hasEndIcon ? ImVec2(inputMax.x + iconAreaW, inputMax.y) : inputMax;
-    renderAutoCompletePopup(inputMin, ImVec2(anchorMax.x - inputMin.x, inputMax.y - inputMin.y));
+    renderAutoCompletePopup(inputMin, ImVec2(inputMax.x - inputMin.x, inputMax.y - inputMin.y));
 
     // Only process Enter if not consumed by auto-complete and no pending completion
     const bool shouldProcessEnter =

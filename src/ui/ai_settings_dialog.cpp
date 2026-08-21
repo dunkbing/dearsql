@@ -3,6 +3,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/select.hpp"
 #include <cfloat>
 #include <cstring>
 
@@ -72,12 +73,14 @@ void AISettingsDialog::render() {
     ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Appearing);
     ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f), ImVec2(460.0f, FLT_MAX));
 
-    if (ImGui::BeginPopupModal(POPUP_ID, &isDialogOpen_)) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    if (ImGui::BeginPopupModal(POPUP_ID, &isDialogOpen_, ImGuiWindowFlags_NoResize)) {
         if (needsLoad_) {
             loadSettings();
         }
-
-        const auto& colors = Application::getInstance().getCurrentColors();
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                             ImVec2(Theme::Spacing::L, Theme::Spacing::L));
@@ -98,7 +101,7 @@ void AISettingsDialog::render() {
         ImGui::Text("Provider");
         ImGui::SetNextItemWidth(-1);
         int previousProviderIndex = providerIndex_;
-        if (ImGui::Combo("##ai_provider", &providerIndex_, PROVIDER_LABELS, PROVIDER_COUNT) &&
+        if (UIUtils::Select("##ai_provider", &providerIndex_, PROVIDER_LABELS, PROVIDER_COUNT) &&
             providerIndex_ != previousProviderIndex) {
             auto* appState = Application::getInstance().getAppState();
             std::string apiKey = appState->getSetting(getSelectedProviderSettingKey(), "");
@@ -133,4 +136,6 @@ void AISettingsDialog::render() {
 
         ImGui::EndPopup();
     }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }

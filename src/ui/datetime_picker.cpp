@@ -279,7 +279,9 @@ namespace DateTimePicker {
             }
 
             ImGui::PushID(d);
-            if (UIUtils::Button(std::to_string(d).c_str(), UIUtils::ButtonVariant::Secondary,
+            if (UIUtils::Button(std::to_string(d).c_str(),
+                                isSel ? UIUtils::ButtonVariant::Secondary
+                                      : UIUtils::ButtonVariant::Custom,
                                 ImVec2(CELL_W, rowH))) {
                 state.date.tm_mday = d;
                 result.changed = true;

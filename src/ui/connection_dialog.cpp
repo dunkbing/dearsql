@@ -8,6 +8,7 @@
 #include "themes.hpp"
 #include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/select.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
 #include <cfloat>
@@ -544,12 +545,14 @@ void ConnectionDialog::render() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(kDialogWidth, 0.0f), ImVec2(kDialogWidth, FLT_MAX));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().overlay1);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().surface2);
 
     bool stayOpen = true;
-    if (!ImGui::BeginPopupModal(title.c_str(), &stayOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (!ImGui::BeginPopupModal(title.c_str(), &stayOpen,
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize)) {
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
         // closed externally (e.g. escape)
         finishClose(true);
         return;
@@ -560,7 +563,7 @@ void ConnectionDialog::render() {
         ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
         return;
     }
 
@@ -612,7 +615,7 @@ void ConnectionDialog::render() {
 
     ImGui::EndPopup();
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void ConnectionDialog::renderTypeRow() {
@@ -620,7 +623,7 @@ void ConnectionDialog::renderTypeRow() {
 
     ImGui::BeginDisabled(editingConnectionId_ != -1);
     ImGui::SetNextItemWidth(180.0f);
-    if (ImGui::Combo("##conn_type", &typeIdx_, kTypeLabels, kTypeCount)) {
+    if (UIUtils::Select("##conn_type", &typeIdx_, kTypeLabels, kTypeCount)) {
         applyTypeDefaults(selectedType());
         rebuildUrlFromForm();
     }
@@ -712,7 +715,7 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
         sslModeIdx_ = sslCfg.defaultIdx;
     fieldLabel("SSL Mode");
     ImGui::SetNextItemWidth(180.0f);
-    formChanged |= ImGui::Combo("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
+    formChanged |= UIUtils::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
 
     if (shouldShowCACertField(type, sslCfg.values[sslModeIdx_])) {
         const bool isOracleWallet = (type == DatabaseType::ORACLE);

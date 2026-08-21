@@ -313,12 +313,15 @@ void AIChatPanel::renderInputArea() {
                         rowRightPadding);
 
         if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
-            if (ImGui::Button(ICON_FA_STOP, ImVec2(sendBtnWidth, 0))) {
+            if (UIUtils::IconButton(ICON_FA_STOP, UIUtils::ButtonVariant::Danger,
+                                    ImVec2(sendBtnWidth, 0))) {
                 chatState_->cancelAsyncPrompt();
                 client_->cancel();
             }
         } else {
-            if (ImGui::Button(ICON_FA_ARROW_UP, ImVec2(sendBtnWidth, 0)) || submitted) {
+            if (UIUtils::IconButton(ICON_FA_ARROW_UP, UIUtils::ButtonVariant::Primary,
+                                    ImVec2(sendBtnWidth, 0)) ||
+                submitted) {
                 sendMessage();
             }
         }

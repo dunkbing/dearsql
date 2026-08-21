@@ -645,13 +645,15 @@ void RedisEditorTab::renderResults() {
 
                 // re-run
                 ImGui::TableNextColumn();
-                if (ImGui::SmallButton(ICON_FA_PLAY)) {
+                if (UIUtils::IconButton(ICON_FA_PLAY, UIUtils::ButtonVariant::Secondary,
+                                        ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
                     rerunCmd = entry.command;
                 }
 
                 // delete
                 ImGui::TableNextColumn();
-                if (ImGui::SmallButton(ICON_FA_XMARK)) {
+                if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger,
+                                        ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
                     deleteIdx = idx;
                 }
 

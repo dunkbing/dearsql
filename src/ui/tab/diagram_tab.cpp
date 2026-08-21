@@ -101,8 +101,29 @@ void DiagramTab::initializeEditor() {
     }
 
     ax::NodeEditor::SetCurrentEditor(editorContext);
-    ax::NodeEditor::GetStyle().NodeRounding = 0.0f;
+    auto& style = ax::NodeEditor::GetStyle();
+    style.NodeRounding = Theme::CornerRadius::MEDIUM;
+    style.NodeBorderWidth = 1.0f;
+    style.HoveredNodeBorderWidth = 2.0f;
+    style.SelectedNodeBorderWidth = 2.0f;
+    style.NodePadding = ImVec4(0, 0, 0, Theme::Spacing::M);
     ax::NodeEditor::SetCurrentEditor(nullptr);
+}
+
+// node editor ships a hardcoded dark palette; re-sync it from the app theme every frame
+static void applyEditorTheme(const Theme::Colors& c) {
+    auto& s = ax::NodeEditor::GetStyle();
+    auto a = [](ImVec4 v, float alpha) { return ImVec4(v.x, v.y, v.z, alpha); };
+    s.Colors[ax::NodeEditor::StyleColor_Bg] = c.mantle;
+    s.Colors[ax::NodeEditor::StyleColor_Grid] = a(c.overlay0, 0.35f);
+    s.Colors[ax::NodeEditor::StyleColor_NodeBg] = c.surface0;
+    s.Colors[ax::NodeEditor::StyleColor_NodeBorder] = c.overlay0;
+    s.Colors[ax::NodeEditor::StyleColor_HovNodeBorder] = c.overlay2;
+    s.Colors[ax::NodeEditor::StyleColor_SelNodeBorder] = c.blue;
+    s.Colors[ax::NodeEditor::StyleColor_NodeSelRect] = a(c.blue, 0.15f);
+    s.Colors[ax::NodeEditor::StyleColor_NodeSelRectBorder] = a(c.blue, 0.6f);
+    s.Colors[ax::NodeEditor::StyleColor_PinRect] = ImVec4(0, 0, 0, 0);
+    s.Colors[ax::NodeEditor::StyleColor_PinRectBorder] = ImVec4(0, 0, 0, 0);
 }
 
 void DiagramTab::render() {
@@ -167,6 +188,7 @@ void DiagramTab::render() {
     }
 
     ax::NodeEditor::SetCurrentEditor(editorContext);
+    applyEditorTheme(themeColors);
 
     handleZoomShortcuts();
 
@@ -341,30 +363,40 @@ void DiagramTab::renderNodes() {
 
         ax::NodeEditor::BeginNode(node.id);
 
+        // header band: drawn behind the title, full node width (known from last frame)
+        constexpr float padX = 12.0f;
+        constexpr float padY = 8.0f;
+        const float headerH = ImGui::GetTextLineHeight() + padY * 2.0f;
+        const ImVec2 nodeMin = ImGui::GetCursorScreenPos();
+        if (node.size.x > 0.0f) {
+            const auto& neStyle = ax::NodeEditor::GetStyle();
+            ImVec4 headerBg = node.isPrimaryTable ? colors.yellow : colors.blue;
+            headerBg.w = 0.18f;
+            auto* dl = ImGui::GetWindowDrawList();
+            dl->AddRectFilled(nodeMin, ImVec2(nodeMin.x + node.size.x, nodeMin.y + headerH),
+                              ImGui::ColorConvertFloat4ToU32(headerBg), neStyle.NodeRounding,
+                              ImDrawFlags_RoundCornersTop);
+            dl->AddLine(ImVec2(nodeMin.x, nodeMin.y + headerH),
+                        ImVec2(nodeMin.x + node.size.x, nodeMin.y + headerH),
+                        ImGui::ColorConvertFloat4ToU32(colors.overlay0));
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(nodeMin.x + padX, nodeMin.y + padY));
         ImGui::PushStyleColor(ImGuiCol_Text,
                               node.isPrimaryTable ? primaryTableColor : normalTableColor);
-        ImGui::Text(ICON_FA_TABLE " %s", node.tableName.c_str());
+        ImGui::Text(ICON_FA_TABLE "  %s", node.tableName.c_str());
         ImGui::PopStyleColor();
-
-        // Custom separator constrained to the node's width — ImGui::Separator()
-        // would stretch across the canvas inside a node-editor node.
-        {
-            const auto& neStyle = ax::NodeEditor::GetStyle();
-            const float titleWidth = ImGui::GetItemRectSize().x;
-            const float innerWidth =
-                node.size.x > 0.0f ? node.size.x - neStyle.NodePadding.x - neStyle.NodePadding.z
-                                   : titleWidth;
-            const ImVec2 cursor = ImGui::GetCursorScreenPos();
-            const float y = cursor.y + ImGui::GetStyle().ItemSpacing.y * 0.5f;
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(cursor.x, y),
-                                                ImVec2(cursor.x + innerWidth, y),
-                                                ImGui::GetColorU32(ImGuiCol_Separator));
-            ImGui::Dummy(ImVec2(innerWidth, ImGui::GetStyle().ItemSpacing.y));
-        }
+        // right padding so the band extends past the title
+        ImGui::SameLine(0.0f, 0.0f);
+        ImGui::Dummy(ImVec2(padX, 0.0f));
+        // bottom header padding + gap before first column
+        ImGui::Dummy(ImVec2(
+            0.0f, std::max(0.0f, padY + Theme::Spacing::M - ImGui::GetStyle().ItemSpacing.y)));
 
         // Extra spacing between column rows without creating layout items
         const ImVec2 baseSpacing = ImGui::GetStyle().ItemSpacing;
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(baseSpacing.x, baseSpacing.y + 2.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(baseSpacing.x, baseSpacing.y + Theme::Spacing::M));
 
         for (size_t i = 0; i < node.columns.size(); ++i) {
             const auto& column = node.columns[i];
@@ -377,6 +409,7 @@ void DiagramTab::renderNodes() {
             const bool isSelectedEndpoint =
                 selectedEndpoints.contains({node.tableName, column.name});
 
+            ImGui::SetCursorScreenPos(ImVec2(nodeMin.x + padX, ImGui::GetCursorScreenPos().y));
             ImGui::BeginGroup();
 
             ax::NodeEditor::BeginPin(node.columnPinIds[i], ax::NodeEditor::PinKind::Input);
@@ -432,6 +465,8 @@ void DiagramTab::renderNodes() {
                 ImGui::PopStyleColor();
             }
 
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::Dummy(ImVec2(padX, 0.0f)); // right margin
             ImGui::EndGroup();
 
             // Translucent background tint behind a selected-endpoint row.

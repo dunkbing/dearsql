@@ -2205,7 +2205,8 @@ void SQLEditorTab::renderScriptHeader() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        if (ImGui::SmallButton(ICON_FA_PENCIL "##rename_script")) {
+        if (UIUtils::IconButton(ICON_FA_PENCIL "##rename_script", UIUtils::ButtonVariant::Secondary,
+                                ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
             std::strncpy(renameBuffer_, scriptName_.c_str(), sizeof(renameBuffer_) - 1);
             renamingScript_ = true;
             renamingFocusNeeded_ = true;

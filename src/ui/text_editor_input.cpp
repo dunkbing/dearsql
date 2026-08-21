@@ -1388,7 +1388,7 @@ namespace dearsql {
             bool csChanged = false;
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findCaseSensitive_ ? palette_.selection : palette_.background);
-            if (UIUtils::SmallButton("Aa")) {
+            if (UIUtils::SmallButton("Aa", UIUtils::ButtonVariant::Custom)) {
                 findCaseSensitive_ = !findCaseSensitive_;
                 csChanged = true;
             }
@@ -1401,7 +1401,7 @@ namespace dearsql {
             // Whole word toggle
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findWholeWord_ ? palette_.selection : palette_.background);
-            if (UIUtils::SmallButton("W")) {
+            if (UIUtils::SmallButton("W", UIUtils::ButtonVariant::Custom)) {
                 findWholeWord_ = !findWholeWord_;
                 csChanged = true;
             }

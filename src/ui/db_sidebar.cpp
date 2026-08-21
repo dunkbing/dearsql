@@ -220,7 +220,7 @@ void DatabaseSidebarNew::renderHistory() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-        UIUtils::SmallButton(typeLabel.c_str());
+        UIUtils::SmallButton(typeLabel.c_str(), UIUtils::ButtonVariant::Custom);
         ImGui::PopStyleColor(4);
 
         ImGui::SameLine();
@@ -431,7 +431,8 @@ void DatabaseSidebarNew::render() {
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                                 ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
-            if (ImGui::Button(ICON_FA_TRASH_CAN "##clear_history")) {
+            if (UIUtils::IconButton(ICON_FA_TRASH_CAN "##clear_history",
+                                    UIUtils::ButtonVariant::Danger)) {
                 history.clear();
             }
             ImGui::PopStyleVar();

@@ -1203,11 +1203,16 @@ void DatabaseHierarchy::renderImportPreview() {
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
 
-    if (!ImGui::BeginPopupModal(popupId.c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    if (!ImGui::BeginPopupModal(popupId.c_str(), nullptr,
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
         return;
     }
-
-    const auto& colors = Application::getInstance().getCurrentColors();
 
     ImGui::TextUnformatted(std::format("Into '{}'", importPreviewDbName_).c_str());
 
@@ -1254,6 +1259,8 @@ void DatabaseHierarchy::renderImportPreview() {
     }
 
     ImGui::EndPopup();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }
 
 void DatabaseHierarchy::beginSqlDumpImport() {

@@ -101,10 +101,12 @@ void SettingsDialog::render() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::L, Theme::Spacing::L));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
     ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
-    if (!ImGui::BeginPopupModal(POPUP_ID, &open_, ImGuiWindowFlags_NoSavedSettings)) {
+    if (!ImGui::BeginPopupModal(POPUP_ID, &open_,
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
         return;
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -233,5 +235,5 @@ void SettingsDialog::render() {
     ImGui::PopStyleVar(2);   // ItemSpacing, FramePadding
     ImGui::EndPopup();
     ImGui::PopStyleColor(); // Border
-    ImGui::PopStyleVar(2);  // WindowPadding, WindowBorderSize
+    ImGui::PopStyleVar(3);  // WindowPadding, WindowBorderSize, WindowRounding
 }

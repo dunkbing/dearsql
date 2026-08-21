@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/select.hpp"
 #include "utils/spinner.hpp"
 #include <cfloat>
 #include <cstring>
@@ -285,12 +286,14 @@ void CreateDatabaseDialog::render() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(kDialogWidth, 0.0f), ImVec2(kDialogWidth, FLT_MAX));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().overlay1);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().surface2);
 
     bool stayOpen = true;
-    if (!ImGui::BeginPopupModal(kPopupId, &stayOpen, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (!ImGui::BeginPopupModal(kPopupId, &stayOpen,
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize)) {
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
         // closed externally (e.g. escape)
         finishClose();
         return;
@@ -301,7 +304,7 @@ void CreateDatabaseDialog::render() {
         ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
         return;
     }
 
@@ -326,7 +329,7 @@ void CreateDatabaseDialog::render() {
 
         fieldLabel("Encoding");
         ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::Combo("##createdb_encoding", &encodingIdx_, kEncodings, kEncodingCount);
+        UIUtils::Select("##createdb_encoding", &encodingIdx_, kEncodings, kEncodingCount);
 
         ImGui::BeginDisabled(loadingOptions_);
         fieldLabel("Tablespace");
@@ -335,7 +338,7 @@ void CreateDatabaseDialog::render() {
     } else {
         fieldLabel("Charset");
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::Combo("##createdb_charset", &charsetIdx_, kCharsets, kCharsetCount))
+        if (UIUtils::Select("##createdb_charset", &charsetIdx_, kCharsets, kCharsetCount))
             rebuildCollations();
 
         if (!collations_.empty()) {
@@ -395,5 +398,5 @@ void CreateDatabaseDialog::render() {
 
     ImGui::EndPopup();
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }

@@ -594,8 +594,13 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(700, 460), ImGuiCond_Appearing);
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
     if (!ImGui::BeginPopupModal("SQL Preview###sql_preview_popup", nullptr,
                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
         return;
     }
 
@@ -655,6 +660,8 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     }
 
     ImGui::EndPopup();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }
 
 void TableEditorTab::renderButtons(bool& closeRequested) {

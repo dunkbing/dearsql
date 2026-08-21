@@ -56,10 +56,12 @@ void UpdateDialog::render() {
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(420, 0), ImVec2(FLT_MAX, FLT_MAX));
 
+    const auto& theme = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleColor(ImGuiCol_Border, theme.surface2);
     if (ImGui::BeginPopupModal("Update###UpdateDialog", &isOpen_,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
-        const auto& theme = Application::getInstance().getCurrentColors();
-
+                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize)) {
         switch (state_) {
         case State::Checking: {
             ImGui::Text("Checking for updates...");
@@ -152,6 +154,8 @@ void UpdateDialog::render() {
 
         ImGui::EndPopup();
     }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 
     if (!isOpen_) {
         state_ = State::Hidden;

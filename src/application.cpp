@@ -1031,7 +1031,11 @@ void Application::renderMainUI() {
     // setup layout before DockSpace so rebuilt nodes are ready this frame
     setupDockingLayout(dockSpaceId);
 
+    // dock tab bars space tabs by ItemInnerSpacing.x; zero it so tabs sit flush
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing,
+                        ImVec2(0.0f, ImGui::GetStyle().ItemInnerSpacing.y));
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
+    ImGui::PopStyleVar();
 
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
 

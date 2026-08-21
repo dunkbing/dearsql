@@ -422,9 +422,11 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
         dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.base);
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
 
     if (ImGui::BeginPopupModal("Confirm Update Sequence", nullptr,
                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
@@ -492,8 +494,8 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
         dialogOpened_ = false;
     }
 
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(3);
 }
 
 void PostgresSequenceViewerTab::checkSQLExecutionStatus() {

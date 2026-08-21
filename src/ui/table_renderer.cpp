@@ -6,6 +6,7 @@
 #include "imgui_internal.h"
 #include "themes.hpp"
 #include "ui/table_aurora_shader.hpp"
+#include "utils/button.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -1341,16 +1342,14 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
     if (isSorted) {
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
         const char* icon = sortDirection == SortDirection::Ascending
                                ? ICON_FA_ARROW_UP_SHORT_WIDE
                                : ICON_FA_ARROW_DOWN_WIDE_SHORT;
-        if (ImGui::SmallButton(icon)) {
+        if (UIUtils::IconButton(icon, UIUtils::ButtonVariant::Secondary, ImVec2(0.0f, 0.0f),
+                                UIUtils::ButtonSize::Small)) {
             sortColumn = -1;
             sortDirection = SortDirection::None;
             if (onSortChanged) {
@@ -1362,7 +1361,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         }
 
         ImGui::PopStyleVar();
-        ImGui::PopStyleColor(4);
+        ImGui::PopStyleColor();
     }
 
     ImGui::SameLine();
@@ -1375,17 +1374,11 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     }
 
     ImGui::PushID(colIdx);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
-    if (ImGui::SmallButton(ICON_FA_CHEVRON_DOWN)) {
+    if (UIUtils::IconButton(ICON_FA_CHEVRON_DOWN, UIUtils::ButtonVariant::Secondary,
+                            ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
         ImGui::OpenPopup(popupId.c_str());
     }
-
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(3);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));

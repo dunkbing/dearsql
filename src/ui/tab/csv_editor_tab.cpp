@@ -229,7 +229,9 @@ void CsvEditorTab::renderToolbar() {
 
     if (tableActive)
         ImGui::PushStyleColor(ImGuiCol_Button, colors.surface2);
-    const bool tableClicked = UIUtils::Button(ICON_FA_TABLE " Table");
+    const bool tableClicked =
+        UIUtils::Button(ICON_FA_TABLE " Table", tableActive ? UIUtils::ButtonVariant::Custom
+                                                            : UIUtils::ButtonVariant::Secondary);
     if (tableActive)
         ImGui::PopStyleColor();
     if (tableClicked) {
@@ -246,7 +248,9 @@ void CsvEditorTab::renderToolbar() {
 
     if (rawActive)
         ImGui::PushStyleColor(ImGuiCol_Button, colors.surface2);
-    const bool rawClicked = UIUtils::Button(ICON_FA_CODE " Raw");
+    const bool rawClicked =
+        UIUtils::Button(ICON_FA_CODE " Raw", rawActive ? UIUtils::ButtonVariant::Custom
+                                                       : UIUtils::ButtonVariant::Secondary);
     if (rawActive)
         ImGui::PopStyleColor();
     if (rawClicked) {
@@ -273,7 +277,7 @@ void CsvEditorTab::renderToolbar() {
     // save button
     if (canSave) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (ImGui::Button(ICON_FA_FLOPPY_DISK)) {
+        if (UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary)) {
             saveFile();
         }
         ImGui::PopStyleColor();
@@ -282,7 +286,7 @@ void CsvEditorTab::renderToolbar() {
 
         ImGui::SameLine(0, Theme::Spacing::XS);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (ImGui::Button(ICON_FA_XMARK)) {
+        if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger)) {
             if (tableRenderer_ && tableRenderer_->isEditing()) {
                 tableRenderer_->exitEditMode(false);
             }
@@ -298,7 +302,7 @@ void CsvEditorTab::renderToolbar() {
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        ImGui::Button(ICON_FA_FLOPPY_DISK);
+        UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Save");

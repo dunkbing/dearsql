@@ -126,9 +126,9 @@ namespace Theme {
         style.ChildRounding = 0.0f;
         style.FrameRounding = CornerRadius::SMALL;
         style.PopupRounding = CornerRadius::MEDIUM;
-        style.ScrollbarRounding = CornerRadius::SMALL;
+        style.ScrollbarRounding = 0.0f;
         style.GrabRounding = CornerRadius::SMALL;
-        style.TabRounding = CornerRadius::SMALL;
+        style.TabRounding = 0.0f;
 
         style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
         style.WindowMenuButtonPosition = ImGuiDir_Left;

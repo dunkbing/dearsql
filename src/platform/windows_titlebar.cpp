@@ -9,6 +9,7 @@
 #include "themes.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/settings_dialog.hpp"
+#include "utils/button.hpp"
 
 #include "IconsFontAwesome6.h"
 
@@ -472,12 +473,10 @@ void WindowsTitlebar::renderPopups() {
             // action buttons — only visible on hover
             if (rowHovered) {
                 const float actionY = rowMin.y + (rowHeight - actionBtnSize) * 0.5f;
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay0);
 
                 ImGui::SetCursorScreenPos({actionX, actionY});
-                if (ImGui::Button(ICON_FA_PENCIL "##edit", {actionBtnSize, actionBtnSize})) {
+                if (UIUtils::IconButton(ICON_FA_PENCIL "##edit", UIUtils::ButtonVariant::Secondary,
+                                        {actionBtnSize, actionBtnSize})) {
                     const int wsId = ws.id;
                     const std::string wsName = ws.name;
                     ImGui::CloseCurrentPopup();
@@ -492,13 +491,9 @@ void WindowsTitlebar::renderPopups() {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Rename");
 
-                ImGui::PopStyleColor(3);
-
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.77f, 0.17f, 0.11f, 0.6f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.67f, 0.14f, 0.09f, 0.8f));
                 ImGui::SetCursorScreenPos({actionX + actionBtnSize + actionGap, actionY});
-                if (ImGui::Button(ICON_FA_TRASH "##del", {actionBtnSize, actionBtnSize})) {
+                if (UIUtils::IconButton(ICON_FA_TRASH "##del", UIUtils::ButtonVariant::Danger,
+                                        {actionBtnSize, actionBtnSize})) {
                     const int wsId = ws.id;
                     ImGui::CloseCurrentPopup();
                     Alert::show(
@@ -511,8 +506,6 @@ void WindowsTitlebar::renderPopups() {
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Delete");
-
-                ImGui::PopStyleColor(3);
             }
 
             ImGui::SetCursorScreenPos(nextRowPos);

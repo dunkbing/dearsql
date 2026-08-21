@@ -58,6 +58,28 @@ LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wPar
         break;
     }
 
+    // HTMAXBUTTON zone: Windows routes mouse input here as non-client messages.
+    // track hover for the custom-drawn button and handle the click ourselves.
+    case WM_NCMOUSEMOVE:
+        if (instance_ && instance_->titlebar_)
+            instance_->titlebar_->setMaxButtonHovered(wParam == HTMAXBUTTON);
+        break;
+    case WM_NCMOUSELEAVE:
+    case WM_MOUSEMOVE:
+        if (instance_ && instance_->titlebar_)
+            instance_->titlebar_->setMaxButtonHovered(false);
+        break;
+    case WM_NCLBUTTONDOWN:
+        if (wParam == HTMAXBUTTON)
+            return 0; // swallow so DefWindowProc doesn't start a caption drag
+        break;
+    case WM_NCLBUTTONUP:
+        if (wParam == HTMAXBUTTON) {
+            ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE);
+            return 0;
+        }
+        break;
+
     case WM_GETMINMAXINFO: {
         // ensure maximized window fits in the work area (excludes taskbar)
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);

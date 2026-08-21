@@ -119,6 +119,9 @@ LRESULT WindowsTitlebar::hitTest(HWND hWnd, LPARAM lParam) const {
     if (pt.y < rc.top + titlebar) {
         // caption buttons zone (right side: 3 buttons * 46px)
         if (pt.x >= rc.right - 138) {
+            // middle button reports HTMAXBUTTON so Win11 shows the snap-layout flyout
+            if (pt.x >= rc.right - 92 && pt.x < rc.right - 46)
+                return HTMAXBUTTON;
             return HTCLIENT;
         }
         // left interactive zone (sidebar toggle, add button, etc.)
@@ -262,18 +265,17 @@ void WindowsTitlebar::render() {
         ShowWindow(hWnd, SW_MINIMIZE);
     rx += captionBtnW;
 
-    if (maximized) {
-        if (fgButton(
-                {rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight},
-                [&](ImDrawList* d, ImVec2 c, ImU32 col) {
-                    DrawRestoreIcon(d, c, col, ImGui::GetColorU32(colors.base));
-                },
-                hoverBg, activeBg, false))
-            ShowWindow(hWnd, SW_RESTORE);
-    } else {
-        if (fgButton({rx, origin.y}, {rx + captionBtnW, origin.y + tbHeight}, DrawMaximizeIcon,
-                     hoverBg, activeBg, false))
-            ShowWindow(hWnd, SW_MAXIMIZE);
+    // maximize/restore: non-client (HTMAXBUTTON) so clicks + hover arrive via WndProc
+    {
+        const ImVec2 bMin{rx, origin.y}, bMax{rx + captionBtnW, origin.y + tbHeight};
+        if (maxButtonHovered_)
+            fg->AddRectFilled(bMin, bMax, ImGui::GetColorU32(hoverBg));
+        const ImVec2 center{(bMin.x + bMax.x) * 0.5f, (bMin.y + bMax.y) * 0.5f};
+        const ImU32 iCol = ImGui::GetColorU32(colors.text);
+        if (maximized)
+            DrawRestoreIcon(fg, center, iCol, ImGui::GetColorU32(colors.base));
+        else
+            DrawMaximizeIcon(fg, center, iCol);
     }
     rx += captionBtnW;
 

@@ -280,7 +280,11 @@ void TabManager::renderTabs() {
         // Docked tabs copy tab item data into LastItemData on Begin(), so right-click on
         // the tab label can open a popup reliably from here.
         ImGui::PushStyleColor(ImGuiCol_Border, colors.surface0);
+        // tighter top gap between tab bar and content
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(ImGui::GetStyle().WindowPadding.x, Theme::Spacing::M));
         const bool beginOpen = ImGui::Begin(windowName.c_str(), &isOpen, windowFlags);
+        ImGui::PopStyleVar();
         ImGui::PopStyleColor();
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
             activeTabId_ = tabId;

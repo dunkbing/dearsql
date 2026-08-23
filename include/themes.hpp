@@ -120,7 +120,8 @@ namespace Theme {
         style.ChildBorderSize = 0.0f;
         style.PopupBorderSize = 1.0f;
         style.FrameBorderSize = 1.0f;
-        style.TabBorderSize = 1.0f;
+        style.TabBorderSize = 0.0f;
+        style.TabBarOverlineSize = 0.0f;
 
         style.WindowRounding = 0.0f;
         style.ChildRounding = 0.0f;

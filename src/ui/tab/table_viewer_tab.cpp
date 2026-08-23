@@ -85,16 +85,7 @@ void TableViewerTab::render() {
         saveChanges();
     }
 
-    ImGui::Text("Table: %s", table_.name.c_str());
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
-
     // Filter input with auto-completion
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text(ICON_FA_FILTER);
-    ImGui::SameLine(0, Theme::Spacing::M);
-
-    // Use the AutoCompleteInput component
     if (filterAutoComplete &&
         filterAutoComplete->render("##filter", filterBuffer, sizeof(filterBuffer))) {
         applyFilter();

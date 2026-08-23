@@ -975,6 +975,28 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
     dockingLayoutInitialized = true;
 }
 
+// vertical hairline at the right edge of every dock tab (TabBorderSize is all-or-nothing)
+static void drawDockTabSeparators(ImGuiDockNode* node) {
+    if (!node)
+        return;
+    if (!node->IsLeafNode()) {
+        drawDockTabSeparators(node->ChildNodes[0]);
+        drawDockTabSeparators(node->ChildNodes[1]);
+        return;
+    }
+    ImGuiTabBar* bar = node->TabBar;
+    if (!bar || !node->HostWindow || bar->CurrFrameVisible != ImGui::GetFrameCount())
+        return;
+    const ImU32 col = ImGui::GetColorU32(ImGuiCol_Border);
+    const ImRect& r = bar->BarRect;
+    for (const ImGuiTabItem& tab : bar->Tabs) {
+        const float x = r.Min.x + tab.Offset + tab.Width - bar->ScrollingAnim;
+        if (x <= r.Min.x || x > r.Max.x)
+            continue;
+        node->HostWindow->DrawList->AddLine({x, r.Min.y}, {x, r.Max.y}, col);
+    }
+}
+
 void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
@@ -1031,11 +1053,12 @@ void Application::renderMainUI() {
     // setup layout before DockSpace so rebuilt nodes are ready this frame
     setupDockingLayout(dockSpaceId);
 
-    // dock tab bars space tabs by ItemInnerSpacing.x; zero it so tabs sit flush
+    // dock tab bars space tabs by ItemInnerSpacing.x; 1px gap acts as a right hairline
     ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing,
-                        ImVec2(0.0f, ImGui::GetStyle().ItemInnerSpacing.y));
-    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f));
+                        ImVec2(1.0f, ImGui::GetStyle().ItemInnerSpacing.y));
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_NoCloseButton);
     ImGui::PopStyleVar();
+    drawDockTabSeparators(ImGui::DockBuilderGetNode(dockSpaceId));
 
     const bool shouldShowSidebar = sidebarWidth > 0.01f;
 

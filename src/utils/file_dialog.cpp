@@ -1,5 +1,5 @@
 #include "utils/file_dialog.hpp"
-#include "database/sqlite.hpp"
+#include "database/db_interface.hpp"
 #include <iostream>
 #include <nfd.h>
 
@@ -20,10 +20,12 @@ void FileDialog::cleanup() {
     }
 }
 
-std::shared_ptr<DatabaseInterface> FileDialog::openSQLiteFile() {
+std::shared_ptr<DatabaseInterface> FileDialog::openDatabaseFile(DatabaseType type) {
     nfdchar_t* outPath;
-    constexpr nfdfilteritem_t filterItem[2] = {{"SQLite Database", "db,sqlite,sqlite3"},
-                                               {"All Files", "*"}};
+    const nfdfilteritem_t filterItem[2] = {
+        type == DatabaseType::DUCKDB ? nfdfilteritem_t{"DuckDB Database", "duckdb,ddb,db"}
+                                     : nfdfilteritem_t{"SQLite Database", "db,sqlite,sqlite3"},
+        {"All Files", "*"}};
 
     const nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 2, nullptr);
     if (result == NFD_OKAY) {
@@ -32,11 +34,11 @@ std::shared_ptr<DatabaseInterface> FileDialog::openSQLiteFile() {
         std::string name = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
 
         DatabaseConnectionInfo info;
-        info.type = DatabaseType::SQLITE;
+        info.type = type;
         info.name = name;
         info.path = path;
 
-        auto db = std::make_shared<SQLiteDatabase>(info);
+        auto db = DatabaseFactory::createDatabase(info);
         NFD_FreePath(outPath);
         return db;
     }

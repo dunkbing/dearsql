@@ -119,6 +119,7 @@ configure_file(
 )
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(DuckDB CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -175,6 +176,7 @@ set(APP_SOURCES
     src/embedded_images.cpp
     src/embedded_fonts.cpp
     src/database/sqlite.cpp
+    src/database/duckdb.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
@@ -360,6 +362,7 @@ target_link_libraries(
     ${PROJECT_NAME}
     PRIVATE
         unofficial::sqlite3::sqlite3
+        $<IF:$<TARGET_EXISTS:duckdb>,duckdb,duckdb_static>
         nlohmann_json::nlohmann_json
         PostgreSQL::PostgreSQL
         unofficial::libmariadb

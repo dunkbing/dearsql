@@ -7,19 +7,25 @@
   "dependencies": [
     {
       "name": "sqlite3",
-      "features": ["dbstat"]
+      "features": [
+        "dbstat"
+      ]
     },
     "nlohmann-json",
     {
       "name": "libpq",
-      "features": ["openssl"],
+      "features": [
+        "openssl"
+      ],
       "default-features": false
     },
     "openssl",
     "libmariadb",
     {
       "name": "hiredis",
-      "features": ["ssl"]
+      "features": [
+        "ssl"
+      ]
     },
     "mongo-cxx-driver",
     "libuv",
@@ -34,7 +40,11 @@
     },
     {
       "name": "sentry-native",
-      "features": ["backend", "transport", "compression"]
+      "features": [
+        "backend",
+        "transport",
+        "compression"
+      ]
     },
     "libiconv",
     "spdlog",
@@ -45,6 +55,7 @@
     {
       "name": "spirv-cross",
       "platform": "osx"
-    }
+    },
+    "duckdb"
   ]
 }

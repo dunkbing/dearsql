@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -527,6 +528,8 @@ void Application::restorePreviousConnections() {
             db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
             db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
+        } else if (conn.connectionInfo.type == DatabaseType::DUCKDB) {
+            db = std::make_shared<DuckDBDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
@@ -1153,16 +1156,17 @@ void Application::openFile(const std::string& rawPath) {
         return;
     }
 
-    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3")
+    const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb");
+    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb)
         return;
 
     for (auto& db : databases) {
-        auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
-        if (sqliteDb && sqliteDb->getPath() == path) {
-            if (!sqliteDb->isConnected()) {
-                auto [ok, err] = sqliteDb->connect();
+        auto* fileDb = dynamic_cast<FileDatabase*>(db.get());
+        if (fileDb && fileDb->getPath() == path) {
+            if (!fileDb->isConnected()) {
+                auto [ok, err] = fileDb->connect();
                 if (!ok) {
-                    spdlog::error("Failed to reconnect SQLite file: {}", err);
+                    spdlog::error("Failed to reconnect database file: {}", err);
                     return;
                 }
             }
@@ -1177,11 +1181,11 @@ void Application::openFile(const std::string& rawPath) {
     }
 
     DatabaseConnectionInfo info;
-    info.type = DatabaseType::SQLITE;
+    info.type = isDuckDb ? DatabaseType::DUCKDB : DatabaseType::SQLITE;
     info.path = path;
     info.name = std::filesystem::path(path).filename().string();
 
-    auto db = std::make_shared<SQLiteDatabase>(info);
+    auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();
     if (!success) {
         spdlog::error("Failed to open file: {}", error);

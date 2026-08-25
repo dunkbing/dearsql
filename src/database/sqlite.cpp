@@ -116,10 +116,6 @@ void SQLiteDatabase::disconnect() {
     connected = false;
 }
 
-const std::string& SQLiteDatabase::getPath() const {
-    return connectionInfo.path;
-}
-
 std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
 SQLiteDatabase::executeQueryStructured(const std::string& query, const int rowLimit) {
     std::vector<std::string> columnNames;
@@ -253,24 +249,6 @@ std::vector<ForeignKey> SQLiteDatabase::getTableForeignKeys(const std::string& t
     return foreignKeys;
 }
 
-void SQLiteDatabase::startTablesLoadAsync(bool forceRefresh) {
-    spdlog::debug("startTablesLoadAsync for SQLite database{}",
-                  (forceRefresh ? " (force refresh)" : ""));
-
-    if (forceRefresh) {
-        tables.clear();
-        tablesLoaded = false;
-        lastTablesError.clear();
-    }
-
-    if (!forceRefresh && tablesLoaded) {
-        return;
-    }
-
-    tables.clear();
-    tablesLoader.start([this]() { return getTablesAsync(); });
-}
-
 std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     std::vector<Table> result;
 
@@ -342,24 +320,6 @@ std::vector<Table> SQLiteDatabase::getTablesAsync() const {
     return result;
 }
 
-void SQLiteDatabase::startViewsLoadAsync(bool forceRefresh) {
-    spdlog::debug("startViewsLoadAsync for SQLite database{}",
-                  (forceRefresh ? " (force refresh)" : ""));
-
-    if (forceRefresh) {
-        views.clear();
-        viewsLoaded = false;
-        lastViewsError.clear();
-    }
-
-    if (!forceRefresh && viewsLoaded) {
-        return;
-    }
-
-    views.clear();
-    viewsLoader.start([this]() { return getViewsAsync(); });
-}
-
 std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     std::vector<Table> result;
 
@@ -400,36 +360,6 @@ std::vector<Table> SQLiteDatabase::getViewsAsync() const {
     }
 
     return result;
-}
-
-void SQLiteDatabase::startSequencesLoadAsync(bool forceRefresh) {
-    spdlog::debug("startSequencesLoadAsync for SQLite database{}",
-                  (forceRefresh ? " (force refresh)" : ""));
-
-    if (sequencesLoader.isRunning()) {
-        return;
-    }
-
-    if (forceRefresh) {
-        sequences.clear();
-        sequencesLoaded = false;
-        lastSequencesError.clear();
-    }
-
-    if (!forceRefresh && sequencesLoaded) {
-        return;
-    }
-
-    sequences.clear();
-    sequencesLoader.start([this]() { return getSequencesAsync(); });
-}
-
-void SQLiteDatabase::checkSequencesStatusAsync() {
-    sequencesLoader.check([this](std::vector<std::string> result) {
-        sequences = std::move(result);
-        sequencesLoaded = true;
-        spdlog::debug("Sequence loading completed. Found {} sequences", sequences.size());
-    });
 }
 
 std::vector<std::string> SQLiteDatabase::getSequencesAsync() const {
@@ -619,50 +549,6 @@ sqlite3* SQLiteDatabase::getSession() const {
     return db_;
 }
 
-std::string SQLiteDatabase::getName() const {
-    const auto& path = connectionInfo.path;
-    auto pos = path.find_last_of("/\\");
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    return path;
-}
-
-std::string SQLiteDatabase::getFullPath() const {
-    return connectionInfo.path;
-}
-
-void SQLiteDatabase::checkLoadingStatus() {
-    tablesLoader.check([this](std::vector<Table> result) {
-        tables = std::move(result);
-        tablesLoaded = true;
-        spdlog::debug("Table loading completed. Found {} tables", tables.size());
-    });
-    viewsLoader.check([this](std::vector<Table> result) {
-        views = std::move(result);
-        viewsLoaded = true;
-        spdlog::debug("View loading completed. Found {} views", views.size());
-    });
-    checkSequencesStatusAsync();
-    for (auto it = tableRefreshLoaders.begin(); it != tableRefreshLoaders.end();) {
-        const auto& tableName = it->first;
-        it->second.check([this, &tableName](Table refreshedTable) {
-            auto tableIt = std::find_if(tables.begin(), tables.end(), [&tableName](const Table& t) {
-                return t.name == tableName;
-            });
-            if (tableIt != tables.end()) {
-                *tableIt = std::move(refreshedTable);
-                spdlog::debug("Table {} refreshed successfully", tableName);
-            }
-        });
-        if (!it->second.isRunning()) {
-            it = tableRefreshLoaders.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
 void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
     auto& loader = tableRefreshLoaders[tableName];
     loader.start([this, tableName]() {
@@ -694,43 +580,3 @@ void SQLiteDatabase::startTableRefreshAsync(const std::string& tableName) {
     });
 }
 
-bool SQLiteDatabase::isTableRefreshing(const std::string& tableName) const {
-    auto it = tableRefreshLoaders.find(tableName);
-    return it != tableRefreshLoaders.end() && it->second.isRunning();
-}
-
-void SQLiteDatabase::checkTableRefreshStatusAsync(const std::string& tableName) {
-    // handled by checkLoadingStatus
-}
-
-std::pair<bool, std::string> SQLiteDatabase::renameTable(const std::string& oldName,
-                                                         const std::string& newName) {
-    const auto builder = createSQLBuilder(DatabaseType::SQLITE);
-    auto r = executeQuery(builder->renameTable("", oldName, newName));
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
-}
-
-std::pair<bool, std::string> SQLiteDatabase::dropTable(const std::string& tableName) {
-    const auto builder = createSQLBuilder(DatabaseType::SQLITE);
-    auto r = executeQuery(builder->dropTable("", tableName));
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
-}
-
-std::pair<bool, std::string> SQLiteDatabase::dropColumn(const std::string& tableName,
-                                                        const std::string& columnName) {
-    const auto builder = createSQLBuilder(DatabaseType::SQLITE);
-    auto r = executeQuery(builder->dropColumn(builder->quoteIdentifier(tableName), columnName));
-    if (r.success()) {
-        startTablesLoadAsync(true);
-        return {true, ""};
-    }
-    return {false, r.errorMessage()};
-}

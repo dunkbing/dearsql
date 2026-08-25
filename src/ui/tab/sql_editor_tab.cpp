@@ -852,6 +852,7 @@ void SQLEditorTab::renderConnectionInfo() {
         renderConnectionInfoOracle();
         break;
     case DatabaseType::SQLITE:
+    case DatabaseType::DUCKDB:
         renderConnectionInfoSQLite();
         break;
     default:

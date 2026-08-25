@@ -459,7 +459,7 @@ void DatabaseHierarchy::renderRootNode() {
 
     const auto dbType = db->getConnectionInfo().type;
 
-    if (dbType == DatabaseType::SQLITE) {
+    if (isFileDatabase(dbType)) {
         renderSQLiteNode();
     } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
@@ -807,7 +807,7 @@ void DatabaseHierarchy::renderRootNode() {
 }
 
 void DatabaseHierarchy::renderSQLiteNode() {
-    auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
+    auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());
     if (!sqliteDb) {
         return;
     }
@@ -850,7 +850,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 ImGui::PopStyleColor();
             } else if (sqliteDb->tablesLoaded) {
                 auto& tables = const_cast<std::vector<Table>&>(
-                    const_cast<const SQLiteDatabase*>(sqliteDb)->getTables());
+                    const_cast<const FileDatabase*>(sqliteDb)->getTables());
                 if (tables.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                     ImGui::Text("  No tables");
@@ -897,7 +897,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 ImGui::PopStyleColor();
             } else {
                 auto& views = const_cast<std::vector<Table>&>(
-                    const_cast<const SQLiteDatabase*>(sqliteDb)->getViews());
+                    const_cast<const FileDatabase*>(sqliteDb)->getViews());
                 if (views.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                     ImGui::Text("  No views");
@@ -4070,7 +4070,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     }
 }
 
-void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb) {
+void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqliteDb) {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
@@ -4128,7 +4128,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, SQLiteDatabase* sqli
             if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
                 app.getTabManager()->createTableEditorTab(sqliteDb, table);
             }
-            TableExporter::renderExportMenu(sqliteDb, table);
+            TableExporter::renderExportMenu(sqliteDb, table, sqliteDb->getDatabaseType());
             TableImporter::renderImportMenu(sqliteDb, table.name);
             ImGui::Separator();
             if (ImGui::MenuItem(RENAME_LABEL)) {
@@ -4338,7 +4338,7 @@ IDatabaseNode* DatabaseHierarchy::resolveNodeForQuery(const SqlScript& query) co
     const auto dbType = db->getConnectionInfo().type;
 
     if (dbType == DatabaseType::SQLITE) {
-        return dynamic_cast<SQLiteDatabase*>(db.get());
+        return dynamic_cast<FileDatabase*>(db.get());
     }
     if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
@@ -4411,7 +4411,7 @@ void DatabaseHierarchy::renderQueriesNode() {
             // resolve the first available database node for this connection
             IDatabaseNode* node = nullptr;
             const auto dbType = db->getConnectionInfo().type;
-            if (auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get())) {
+            if (auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get())) {
                 node = sqliteDb;
             } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
                 if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
@@ -4511,7 +4511,7 @@ void DatabaseHierarchy::renderQueriesNode() {
     }
 }
 
-void DatabaseHierarchy::renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb) {
+void DatabaseHierarchy::renderSQLiteViewNode(Table& view, FileDatabase* sqliteDb) {
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 

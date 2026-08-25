@@ -65,6 +65,7 @@ namespace {
     std::optional<SchemeInfo> resolveScheme(std::string_view scheme) {
         static const std::unordered_map<std::string, SchemeInfo> kSchemes = {
             {"sqlite", {DatabaseType::SQLITE, 0, false}},
+            {"duckdb", {DatabaseType::DUCKDB, 0, false}},
             {"postgresql", {DatabaseType::POSTGRESQL, 5432, false}},
             {"postgres", {DatabaseType::POSTGRESQL, 5432, false}},
             {"redshift", {DatabaseType::REDSHIFT, 5439, false}},
@@ -143,11 +144,11 @@ namespace {
 } // namespace
 
 std::string buildConnectionUrl(const DatabaseConnectionInfo& info) {
-    if (info.type == DatabaseType::SQLITE) {
+    if (isFileDatabase(info.type)) {
         // sqlite:///<path> — keep '/' and ':' literal so the URL is human-
         // readable; only encode characters that would break URL parsing
         // (space, '?', '#', '%', etc.).
-        std::string out = "sqlite:///";
+        std::string out = (info.type == DatabaseType::DUCKDB) ? "duckdb:///" : "sqlite:///";
         for (unsigned char c : info.path) {
             if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
                 c == '-' || c == '_' || c == '.' || c == '~' || c == '/' || c == ':' || c == '\\') {
@@ -299,8 +300,8 @@ ConnectionUrlParseResult parseConnectionUrl(const std::string& url) {
 
     std::string_view rest = sv.substr(schemeEnd + 3);
 
-    // SQLite: everything after :// is the path (allow optional leading /).
-    if (schemeInfo->type == DatabaseType::SQLITE) {
+    // file backends: everything after :// is the path (allow optional leading /).
+    if (isFileDatabase(schemeInfo->type)) {
         std::string_view path = rest;
         if (!path.empty() && path.front() == '/' && path.size() > 1 && path[1] == '/') {
             // sqlite:////absolute → strip one slash

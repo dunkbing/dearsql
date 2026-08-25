@@ -18,8 +18,14 @@ enum class DatabaseType {
     MSSQL,
     ORACLE,
     REDSHIFT,
-    CASSANDRA
+    CASSANDRA,
+    DUCKDB
 };
+
+// single-file backends (connection + node in one class, no host/port/ssl/ssh)
+inline bool isFileDatabase(DatabaseType type) {
+    return type == DatabaseType::SQLITE || type == DatabaseType::DUCKDB;
+}
 
 enum class SSHAuthMethod { Password, PrivateKey };
 
@@ -57,6 +63,7 @@ struct DatabaseConnectionInfo {
     [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
         switch (type) {
         case DatabaseType::SQLITE:
+        case DatabaseType::DUCKDB:
             return path;
 
         case DatabaseType::REDSHIFT:

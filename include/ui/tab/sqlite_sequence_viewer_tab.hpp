@@ -5,15 +5,15 @@
 #include <cstdint>
 #include <string>
 
-class SQLiteDatabase;
+class FileDatabase;
 
 class SQLiteSequenceViewerTab final : public Tab {
 public:
-    SQLiteSequenceViewerTab(SQLiteDatabase* db, std::string sequenceName);
+    SQLiteSequenceViewerTab(FileDatabase* db, std::string sequenceName);
 
     void render() override;
 
-    [[nodiscard]] SQLiteDatabase* getDatabase() const {
+    [[nodiscard]] FileDatabase* getDatabase() const {
         return db_;
     }
     [[nodiscard]] const std::string& getSequenceName() const {
@@ -30,7 +30,7 @@ private:
     void fetchAsync();
     void checkFetchStatus();
 
-    SQLiteDatabase* db_ = nullptr;
+    FileDatabase* db_ = nullptr;
     std::string sequenceName_;
 
     bool loaded_ = false;

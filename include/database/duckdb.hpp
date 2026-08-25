@@ -1,19 +1,20 @@
 #pragma once
 
 #include "file_database.hpp"
-#include <sqlite3.h>
+#include <duckdb.h>
+#include <mutex>
 
-class SQLiteDatabase final : public FileDatabase {
+class DuckDBDatabase final : public FileDatabase {
 public:
-    SQLiteDatabase(const DatabaseConnectionInfo& connInfo);
-    ~SQLiteDatabase() override;
+    DuckDBDatabase(const DatabaseConnectionInfo& connInfo);
+    ~DuckDBDatabase() override;
 
     // Connection management
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
 
     [[nodiscard]] DatabaseType getDatabaseType() const override {
-        return DatabaseType::SQLITE;
+        return DatabaseType::DUCKDB;
     }
 
     QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
@@ -37,18 +38,22 @@ public:
     std::vector<Table> getViewsAsync() const override;
     std::vector<std::string> getSequencesAsync() const override;
 
-    // Session access
-    sqlite3* getSession() const;
-
-protected:
-    std::vector<std::string> getTableNames() const;
-    std::vector<Index> getTableIndexes(const std::string& tableName) const;
-    std::vector<ForeignKey> getTableForeignKeys(const std::string& tableName) const;
-
 private:
-    sqlite3* db_ = nullptr;
+    struct QueryOutput {
+        bool ok = false;
+        std::string error;
+        std::vector<std::string> columns;
+        std::vector<std::vector<std::string>> rows;
+        long long affectedRows = 0;
+    };
 
-    // Query execution
-    std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
-    executeQueryStructured(const std::string& query, int rowLimit = 1000);
+    // rowLimit < 0 means unlimited
+    QueryOutput runQuery(const std::string& sql, int rowLimit = -1) const;
+    Table loadTableMeta(const std::string& tableName) const;
+
+    duckdb_database db_ = nullptr;
+    duckdb_connection con_ = nullptr;
+    // ponytail: one shared connection guarded by a mutex; per-thread connections
+    // (duckdb_connect is cheap) if concurrent loaders ever contend
+    mutable std::mutex queryMutex_;
 };

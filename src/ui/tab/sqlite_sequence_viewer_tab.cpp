@@ -1,7 +1,7 @@
 #include "ui/tab/sqlite_sequence_viewer_tab.hpp"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
-#include "database/sqlite.hpp"
+#include "database/file_database.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/spinner.hpp"
@@ -33,7 +33,7 @@ namespace {
     }
 } // namespace
 
-SQLiteSequenceViewerTab::SQLiteSequenceViewerTab(SQLiteDatabase* db, std::string sequenceName)
+SQLiteSequenceViewerTab::SQLiteSequenceViewerTab(FileDatabase* db, std::string sequenceName)
     : Tab(makeTabName(sequenceName), TabType::SQLITE_SEQUENCE_VIEWER), db_(db),
       sequenceName_(std::move(sequenceName)) {}
 
@@ -141,7 +141,11 @@ void SQLiteSequenceViewerTab::fetchAsync() {
                 }
             }
             const std::string sql =
-                std::format("SELECT seq FROM sqlite_sequence WHERE name = '{}'", escaped);
+                db->getDatabaseType() == DatabaseType::DUCKDB
+                    ? std::format(
+                          "SELECT last_value FROM duckdb_sequences() WHERE sequence_name = '{}'",
+                          escaped)
+                    : std::format("SELECT seq FROM sqlite_sequence WHERE name = '{}'", escaped);
             const QueryResult result = db->executeQuery(sql);
             if (!result.success()) {
                 r.ok = false;

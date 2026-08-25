@@ -211,6 +211,19 @@ public:
                                           const Column& newColumn) const override;
 };
 
+class DuckDBBuilder : public ISQLBuilder {
+public:
+    [[nodiscard]] DatabaseType databaseType() const override {
+        return DatabaseType::DUCKDB;
+    }
+
+    [[nodiscard]] std::string addColumn(const std::string& table,
+                                        const Column& column) const override;
+    [[nodiscard]] std::string dropColumn(const std::string& table,
+                                         const std::string& columnName) const override;
+    [[nodiscard]] std::string columnNames(const Table& table) const override;
+};
+
 class CassandraBuilder : public ISQLBuilder {
 public:
     [[nodiscard]] DatabaseType databaseType() const override {

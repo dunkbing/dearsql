@@ -574,7 +574,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         break;
     }
 
-    if (db->isConnected() && type != DatabaseType::SQLITE) {
+    if (db->isConnected() && !isFileDatabase(type)) {
         std::vector<std::string> dbNames;
 
         auto collectNames = [&]<typename T>() {
@@ -746,8 +746,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         };
 
-        if (db->isConnected() && db->getConnectionInfo().type == DatabaseType::SQLITE) {
-            auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db.get());
+        if (db->isConnected() && isFileDatabase(db->getConnectionInfo().type)) {
+            auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());
             if (sqliteDb) {
                 if (ImGui::MenuItem("New SQL Editor")) {
                     Application::getInstance().getTabManager()->createSQLEditorTab("", sqliteDb);
@@ -802,7 +802,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 });
         }
 
-        if (db->isConnected() && db->getConnectionInfo().type != DatabaseType::SQLITE) {
+        if (db->isConnected() && !isFileDatabase(db->getConnectionInfo().type)) {
             if (ImGui::MenuItem("Disconnect", nullptr, false, !dumpBusy)) {
                 db->disconnect();
             }

@@ -2,7 +2,7 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/connection_url.hpp"
-#include "database/sqlite.hpp"
+#include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -27,7 +27,7 @@ namespace {
     // popup index == DatabaseType enum value
     constexpr const char* kTypeLabels[] = {"SQLite",   "PostgreSQL", "MySQL", "MariaDB",
                                            "Redis",    "MongoDB",    "MSSQL", "Oracle",
-                                           "Redshift", "Cassandra"};
+                                           "Redshift", "Cassandra",  "DuckDB"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
 
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
@@ -140,6 +140,7 @@ void ConnectionDialog::resetForm() {
 void ConnectionDialog::applyTypeDefaults(DatabaseType type) {
     switch (type) {
     case DatabaseType::SQLITE:
+    case DatabaseType::DUCKDB:
         break;
     case DatabaseType::POSTGRESQL:
         copyToBuf(portBuf_, sizeof(portBuf_), "5432");
@@ -183,7 +184,7 @@ void ConnectionDialog::populateForm(const DatabaseConnectionInfo& info) {
     typeIdx_ = static_cast<int>(info.type);
     copyToBuf(nameBuf_, sizeof(nameBuf_), info.name);
 
-    if (info.type == DatabaseType::SQLITE) {
+    if (isFileDatabase(info.type)) {
         copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), info.path);
         return;
     }
@@ -229,7 +230,7 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
     DatabaseConnectionInfo info;
     info.type = selectedType();
     info.name = nameBuf_;
-    if (info.type == DatabaseType::SQLITE) {
+    if (isFileDatabase(info.type)) {
         info.path = sqlitePathBuf_;
         return info;
     }
@@ -285,7 +286,7 @@ void ConnectionDialog::applyUrlToForm() {
     typeIdx_ = static_cast<int>(info.type);
     applyTypeDefaults(info.type);
 
-    if (info.type == DatabaseType::SQLITE) {
+    if (isFileDatabase(info.type)) {
         copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), info.path);
         return;
     }
@@ -333,8 +334,8 @@ void ConnectionDialog::startConnect() {
 
     DatabaseType type = selectedType();
 
-    if (type == DatabaseType::SQLITE) {
-        connectSQLite();
+    if (isFileDatabase(type)) {
+        connectFileDatabase();
         return;
     }
 
@@ -371,18 +372,18 @@ void ConnectionDialog::startConnect() {
     startServerConnect();
 }
 
-void ConnectionDialog::connectSQLite() {
+void ConnectionDialog::connectFileDatabase() {
     if (sqlitePathBuf_[0] == '\0') {
         setStatus("Please select a database file", true);
         return;
     }
 
     DatabaseConnectionInfo info;
-    info.type = DatabaseType::SQLITE;
+    info.type = selectedType();
     info.name = nameBuf_;
     info.path = sqlitePathBuf_;
 
-    auto db = std::make_shared<SQLiteDatabase>(info);
+    auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();
     if (success) {
         handleSuccess(db, info);
@@ -580,7 +581,7 @@ void ConnectionDialog::render() {
 
     renderTypeRow();
 
-    if (selectedType() != DatabaseType::SQLITE) {
+    if (!isFileDatabase(selectedType())) {
         fieldLabel("Connect by");
         ImGui::RadioButton("Host##connect_by", &connectByIdx_, 0);
         ImGui::SameLine();
@@ -591,7 +592,7 @@ void ConnectionDialog::render() {
 
     ImGui::Separator();
 
-    if (selectedType() == DatabaseType::SQLITE) {
+    if (isFileDatabase(selectedType())) {
         renderSqliteFields(formChanged);
     } else {
         renderServerFields(formChanged);
@@ -665,11 +666,11 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
                                             sizeof(sqlitePathBuf_));
     ImGui::SameLine();
     if (UIUtils::Button("Browse...##sqlite")) {
-        auto db = FileDialog::openSQLiteFile();
-        if (auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(db)) {
-            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), sqliteDb->getPath());
+        auto db = FileDialog::openDatabaseFile(selectedType());
+        if (auto fileDb = std::dynamic_pointer_cast<FileDatabase>(db)) {
+            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), fileDb->getPath());
             if (nameBuf_[0] == '\0' || std::strcmp(nameBuf_, "Untitled connection") == 0) {
-                copyToBuf(nameBuf_, sizeof(nameBuf_), sqliteDb->getConnectionInfo().name);
+                copyToBuf(nameBuf_, sizeof(nameBuf_), fileDb->getConnectionInfo().name);
             }
             formChanged = true;
         }

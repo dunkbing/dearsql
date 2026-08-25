@@ -1,5 +1,6 @@
 #include "database/cassandra.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -31,6 +32,8 @@ std::string databaseTypeToString(const DatabaseType type) {
         return "redshift";
     case DatabaseType::CASSANDRA:
         return "cassandra";
+    case DatabaseType::DUCKDB:
+        return "duckdb";
     }
     return "unknown";
 }
@@ -56,6 +59,8 @@ DatabaseType stringToDatabaseType(const std::string& typeStr) {
         return DatabaseType::REDSHIFT;
     if (typeStr == "cassandra")
         return DatabaseType::CASSANDRA;
+    if (typeStr == "duckdb")
+        return DatabaseType::DUCKDB;
     return DatabaseType::SQLITE; // default
 }
 
@@ -129,6 +134,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::CASSANDRA:
         return std::make_shared<CassandraDatabase>(info);
+
+    case DatabaseType::DUCKDB:
+        return std::make_shared<DuckDBDatabase>(info);
 
     default:
         return nullptr;

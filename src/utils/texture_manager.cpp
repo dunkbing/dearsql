@@ -29,6 +29,7 @@ void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
         {DatabaseType::MONGODB, "mongodb"},   {DatabaseType::REDIS, "redis"},
         {DatabaseType::MSSQL, "mssql"},       {DatabaseType::ORACLE, "oracle"},
         {DatabaseType::REDSHIFT, "redshift"}, {DatabaseType::CASSANDRA, "cassandra"},
+        {DatabaseType::DUCKDB, "duckdb"},
     };
 
     for (const auto& [type, name] : mappings) {

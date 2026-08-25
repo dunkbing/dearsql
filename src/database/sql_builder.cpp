@@ -60,6 +60,9 @@ namespace {
 } // namespace
 
 bool supportsAutoIncrement(DatabaseType dbType, const std::string& columnType) {
+    if (dbType == DatabaseType::DUCKDB) {
+        return false; // no auto-increment keyword; duckdb uses sequences
+    }
     if (dbType == DatabaseType::SQLITE) {
         const std::string lower = normalizeTypeName(columnType);
         return lower == "integer";
@@ -86,6 +89,8 @@ std::unique_ptr<ISQLBuilder> createSQLBuilder(DatabaseType type) {
         return std::make_unique<OracleBuilder>();
     case DatabaseType::CASSANDRA:
         return std::make_unique<CassandraBuilder>();
+    case DatabaseType::DUCKDB:
+        return std::make_unique<DuckDBBuilder>();
     case DatabaseType::SQLITE:
     default:
         return std::make_unique<SQLiteBuilder>();
@@ -435,6 +440,31 @@ std::string OracleBuilder::columnNames(const Table& table) const {
     return std::format("SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS "
                        "WHERE OWNER = '{}' AND TABLE_NAME = '{}' ORDER BY COLUMN_ID",
                        table.schema, table.name);
+}
+
+std::string DuckDBBuilder::addColumn(const std::string& qualifiedTable,
+                                     const Column& column) const {
+    std::string sql = std::format("ALTER TABLE {} ADD COLUMN {} {}", qualifiedTable,
+                                  quoteIdentifier(column.name), column.type);
+    if (!column.defaultValue.empty())
+        sql += " DEFAULT " + column.defaultValue;
+    if (column.isNotNull)
+        sql += " NOT NULL";
+    return sql;
+}
+
+std::string DuckDBBuilder::dropColumn(const std::string& qualifiedTable,
+                                      const std::string& columnName) const {
+    return std::format("ALTER TABLE {} DROP COLUMN {}", qualifiedTable,
+                       quoteIdentifier(columnName));
+}
+
+std::string DuckDBBuilder::columnNames(const Table& table) const {
+    return std::format("SELECT column_name FROM information_schema.columns "
+                       "WHERE table_name = '{}' AND table_schema = '{}' "
+                       "ORDER BY ordinal_position",
+                       ddl_utils::escapeSingleQuotes(table.name),
+                       table.schema.empty() ? "main" : ddl_utils::escapeSingleQuotes(table.schema));
 }
 
 std::string SQLiteBuilder::columnNames(const Table& table) const {

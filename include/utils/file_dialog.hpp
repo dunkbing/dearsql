@@ -15,7 +15,8 @@ public:
     static void cleanup();
 
     // File operations only
-    static std::shared_ptr<DatabaseInterface> openSQLiteFile();
+    static std::shared_ptr<DatabaseInterface>
+    openDatabaseFile(DatabaseType type = DatabaseType::SQLITE);
 
     // returns the selected file path, or empty string if cancelled
     static std::string openFile();

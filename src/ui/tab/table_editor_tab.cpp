@@ -854,6 +854,11 @@ std::vector<std::string> TableEditorTab::getCommonDataTypes() const {
         types = {"INTEGER", "REAL", "TEXT", "BLOB", "NUMERIC"};
         break;
 
+    case DatabaseType::DUCKDB:
+        types = {"INTEGER", "BIGINT", "SMALLINT",  "DOUBLE", "DECIMAL(18,3)", "VARCHAR", "BOOLEAN",
+                 "DATE",    "TIME",   "TIMESTAMP", "BLOB",   "UUID",          "JSON"};
+        break;
+
     case DatabaseType::CASSANDRA:
         types = {"text",     "ascii",     "varchar", "int",    "bigint",  "smallint", "tinyint",
                  "varint",   "decimal",   "float",   "double", "boolean", "blob",     "uuid",

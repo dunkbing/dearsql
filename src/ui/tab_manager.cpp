@@ -1,6 +1,7 @@
 #include "ui/tab_manager.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
+#include "database/file_database.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
 #include "ui/tab/csv_editor_tab.hpp"
@@ -54,7 +55,7 @@ void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
         return;
 
     auto* redisDb = dynamic_cast<RedisDatabase*>(db);
-    auto* sqliteDb = dynamic_cast<SQLiteDatabase*>(db);
+    auto* sqliteDb = dynamic_cast<FileDatabase*>(db);
 
     std::erase_if(tabs, [db, redisDb, sqliteDb](const std::shared_ptr<Tab>& tab) {
         IDatabaseNode* node = nullptr;
@@ -186,7 +187,7 @@ std::shared_ptr<Tab> TabManager::createSQLEditorTab(const std::string& name, IDa
         baseName += " - " + postgresDbNode->name;
     } else if (auto* mysqlDbNode = dynamic_cast<MySQLDatabaseNode*>(node)) {
         baseName += " - " + mysqlDbNode->name;
-    } else if (auto* sqliteDbNode = dynamic_cast<SQLiteDatabase*>(node)) {
+    } else if (auto* sqliteDbNode = dynamic_cast<FileDatabase*>(node)) {
         baseName += " - " + sqliteDbNode->getName();
     } else if (auto* mssqlDbNode = dynamic_cast<MSSQLDatabaseNode*>(node)) {
         baseName += " - " + mssqlDbNode->name;
@@ -563,7 +564,7 @@ std::shared_ptr<Tab> TabManager::createRoutineViewerTab(IDatabaseNode* node,
     return tab;
 }
 
-std::shared_ptr<Tab> TabManager::createSQLiteSequenceViewerTab(SQLiteDatabase* db,
+std::shared_ptr<Tab> TabManager::createSQLiteSequenceViewerTab(FileDatabase* db,
                                                                const std::string& sequenceName) {
     if (!db || sequenceName.empty()) {
         return nullptr;

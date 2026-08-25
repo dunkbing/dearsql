@@ -11,7 +11,7 @@ class IDatabaseNode;
 class MongoDBDatabaseNode;
 class PostgresSchemaNode;
 class RedisDatabase;
-class SQLiteDatabase;
+class FileDatabase;
 class DatabaseInterface;
 struct Table;
 struct Routine;
@@ -68,7 +68,7 @@ public:
 
     std::shared_ptr<Tab> createRoutineViewerTab(IDatabaseNode* node, const Routine& routine);
 
-    std::shared_ptr<Tab> createSQLiteSequenceViewerTab(SQLiteDatabase* db,
+    std::shared_ptr<Tab> createSQLiteSequenceViewerTab(FileDatabase* db,
                                                        const std::string& sequenceName);
 
     std::shared_ptr<Tab> createPostgresSequenceViewerTab(PostgresSchemaNode* schema,

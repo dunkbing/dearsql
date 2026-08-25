@@ -2,6 +2,7 @@ add_executable(
     database_tests
     tests/database/async_helper_test.cpp
     tests/database/sqlite_database_test.cpp
+    tests/database/duckdb_database_test.cpp
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
     tests/database/redis_database_test.cpp
@@ -16,6 +17,7 @@ add_executable(
     src/database/db_factory.cpp
     src/database/connection_url.cpp
     src/database/sqlite.cpp
+    src/database/duckdb.cpp
     src/database/postgresql.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_schema_node.cpp
@@ -66,6 +68,7 @@ target_link_libraries(
     PRIVATE
         GTest::gtest_main
         unofficial::sqlite3::sqlite3
+        $<IF:$<TARGET_EXISTS:duckdb>,duckdb,duckdb_static>
         PostgreSQL::PostgreSQL
         unofficial::libmariadb
         hiredis::hiredis

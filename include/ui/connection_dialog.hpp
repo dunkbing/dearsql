@@ -53,7 +53,7 @@ private:
     void setStatus(const std::string& text, bool isError);
 
     void startConnect();
-    void connectSQLite();
+    void connectFileDatabase();
     void startServerConnect();
     void pollConnect();
     void pollOracleInstall();

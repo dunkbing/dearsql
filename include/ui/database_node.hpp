@@ -204,8 +204,8 @@ private:
     void renderMongoDBCollectionNode(Table& collection, MongoDBDatabaseNode* dbData);
     void renderCassandraTableNode(Table& table, CassandraDatabaseNode* dbData);
     void renderCassandraViewNode(Table& view, CassandraDatabaseNode* dbData);
-    void renderSQLiteTableNode(Table& table, SQLiteDatabase* sqliteDb);
-    void renderSQLiteViewNode(Table& view, SQLiteDatabase* sqliteDb);
+    void renderSQLiteTableNode(Table& table, FileDatabase* sqliteDb);
+    void renderSQLiteViewNode(Table& view, FileDatabase* sqliteDb);
 
     // Scripts associated with this connection
     void renderQueriesNode();

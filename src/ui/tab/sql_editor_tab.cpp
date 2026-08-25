@@ -861,7 +861,6 @@ void SQLEditorTab::renderConnectionInfo() {
     }
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
-    ImGui::Separator();
 }
 
 void SQLEditorTab::renderConnectionInfoPostgres() {
@@ -2230,6 +2229,7 @@ void SQLEditorTab::renderScriptHeader() {
             ImGui::PopStyleColor();
         }
     }
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     ImGui::Separator();
 }
 

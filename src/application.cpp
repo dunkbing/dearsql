@@ -1151,12 +1151,8 @@ void Application::openFile(const std::string& rawPath) {
         return e;
     }();
 
-    if (ext == ".csv") {
-        tabManager->createCsvEditorTab(path);
-        return;
-    }
-
-    const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb");
+    // csv opens as a duckdb-backed connection so it shows in the sidebar and is queryable
+    const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb" || ext == ".csv");
     if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb)
         return;
 

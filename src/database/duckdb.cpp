@@ -1,6 +1,8 @@
 #include "database/duckdb.hpp"
 #include "database/sql_builder.hpp"
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <spdlog/spdlog.h>
 
@@ -48,13 +50,23 @@ DuckDBDatabase::~DuckDBDatabase() {
     DuckDBDatabase::disconnect();
 }
 
+bool DuckDBDatabase::isCsvPath(const std::string& path) {
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
+    return ext == ".csv";
+}
+
 std::pair<bool, std::string> DuckDBDatabase::connect() {
     if (connected && con_) {
         return {true, ""};
     }
 
+    // csv files are imported into an in-memory database so they can be queried with SQL
+    const bool csv = isCsvPath(connectionInfo.path);
+    const std::string openPath = csv ? ":memory:" : connectionInfo.path;
+
     char* errMsg = nullptr;
-    if (duckdb_open_ext(connectionInfo.path.c_str(), &db_, nullptr, &errMsg) == DuckDBError) {
+    if (duckdb_open_ext(openPath.c_str(), &db_, nullptr, &errMsg) == DuckDBError) {
         std::string error = errMsg ? errMsg : "Unable to open database";
         duckdb_free(errMsg);
         db_ = nullptr;
@@ -70,8 +82,25 @@ std::pair<bool, std::string> DuckDBDatabase::connect() {
         return {false, "Failed to create DuckDB connection"};
     }
 
-    spdlog::info("Successfully connected to DuckDB database: {}", connectionInfo.path);
     connected = true;
+
+    if (csv) {
+        // ponytail: materialized copy in memory; Refresh re-imports the file
+        std::string table = std::filesystem::path(connectionInfo.path).stem().string();
+        std::string quoted = "\"";
+        for (char c : table) {
+            quoted += (c == '"') ? "\"\"" : std::string(1, c);
+        }
+        quoted += "\"";
+        auto out = runQuery(std::format("CREATE TABLE {} AS SELECT * FROM read_csv('{}')", quoted,
+                                        escapeSqlLiteral(connectionInfo.path)));
+        if (!out.ok) {
+            disconnect();
+            return {false, "Failed to import CSV: " + out.error};
+        }
+    }
+
+    spdlog::info("Successfully connected to DuckDB database: {}", connectionInfo.path);
     return {true, ""};
 }
 

@@ -5,6 +5,7 @@
 #include "database/cassandra.hpp"
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -460,7 +461,18 @@ void DatabaseHierarchy::renderRootNode() {
     const auto dbType = db->getConnectionInfo().type;
 
     if (isFileDatabase(dbType)) {
-        renderSQLiteNode();
+        if (DuckDBDatabase::isCsvPath(db->getConnectionInfo().path)) {
+            // csv nodes show only saved queries; data opens via context menu / double-click.
+            // keep tables loading so View Data has column metadata.
+            if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get())) {
+                if (!fileDb->isTablesLoaded() && !fileDb->isLoadingTables()) {
+                    fileDb->startTablesLoadAsync();
+                }
+                fileDb->checkLoadingStatus();
+            }
+        } else {
+            renderSQLiteNode();
+        }
     } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
         if (!pgDb) {

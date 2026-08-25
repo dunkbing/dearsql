@@ -1,6 +1,8 @@
 #include "database/duckdb.hpp"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <thread>
 
@@ -138,6 +140,42 @@ TEST_F(DuckDBDatabaseFixture, DropColumnRemovesColumn) {
     auto cols = database_->getColumnNames(t);
     ASSERT_EQ(cols.size(), 1u);
     EXPECT_EQ(cols[0], "id");
+}
+
+TEST(DuckDBCsvTest, OpensCsvFileAsQueryableTable) {
+    const auto csvPath = std::filesystem::temp_directory_path() / "dearsql_duckdb_test.csv";
+    {
+        std::ofstream out(csvPath);
+        out << "id,name\n1,alice\n2,bob\n";
+    }
+
+    DatabaseConnectionInfo connInfo;
+    connInfo.name = "dearsql_duckdb_test.csv";
+    connInfo.type = DatabaseType::DUCKDB;
+    connInfo.path = csvPath.string();
+
+    DuckDBDatabase db(connInfo);
+    auto [success, error] = db.connect();
+    ASSERT_TRUE(success) << error;
+
+    auto tables = db.getTablesAsync();
+    ASSERT_EQ(tables.size(), 1u);
+    EXPECT_EQ(tables.front().name, "dearsql_duckdb_test");
+
+    auto r = db.executeQuery("SELECT name FROM \"dearsql_duckdb_test\" WHERE id = 2");
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+    ASSERT_EQ(r.statements[0].tableData.size(), 1u);
+    EXPECT_EQ(r.statements[0].tableData[0][0], "bob");
+
+    db.disconnect();
+    std::filesystem::remove(csvPath);
+}
+
+TEST(DuckDBCsvTest, IsCsvPathMatchesCaseInsensitively) {
+    EXPECT_TRUE(DuckDBDatabase::isCsvPath("/tmp/data.csv"));
+    EXPECT_TRUE(DuckDBDatabase::isCsvPath("C:\\data\\Report.CSV"));
+    EXPECT_FALSE(DuckDBDatabase::isCsvPath("/tmp/data.duckdb"));
+    EXPECT_FALSE(DuckDBDatabase::isCsvPath(":memory:"));
 }
 
 TEST_F(DuckDBDatabaseFixture, NullValuesUseSentinel) {

@@ -9,6 +9,9 @@ public:
     DuckDBDatabase(const DatabaseConnectionInfo& connInfo);
     ~DuckDBDatabase() override;
 
+    // csv files are opened as an in-memory duckdb with the file imported as a table
+    static bool isCsvPath(const std::string& path);
+
     // Connection management
     std::pair<bool, std::string> connect() override;
     void disconnect() override;

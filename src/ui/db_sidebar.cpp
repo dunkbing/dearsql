@@ -3,6 +3,7 @@
 #include "application.hpp"
 #include "database/cassandra.hpp"
 #include "database/db_interface.hpp"
+#include "database/duckdb.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -24,10 +25,29 @@
 #include "utils/texture_manager.hpp"
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <ranges>
 #include <spdlog/spdlog.h>
+
+namespace {
+    // opens the imported csv table in the table viewer
+    void openCsvData(FileDatabase* fileDb) {
+        if (!fileDb) {
+            return;
+        }
+        Table table;
+        if (!fileDb->getTables().empty()) {
+            table = fileDb->getTables().front();
+        } else {
+            // tables not loaded yet; the viewer only needs the name to fetch data
+            table.name = std::filesystem::path(fileDb->getPath()).stem().string();
+            table.fullName = fileDb->getConnectionInfo().name + "." + table.name;
+        }
+        Application::getInstance().getTabManager()->createTableViewerTab(fileDb, table);
+    }
+} // namespace
 
 DatabaseHierarchy* DatabaseSidebarNew::getHierarchy(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
@@ -93,7 +113,7 @@ void DatabaseSidebarNew::renderEmpty() {
         if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
             const std::string path = FileDialog::openCSVFile();
             if (!path.empty()) {
-                Application::getInstance().getTabManager()->createCsvEditorTab(path);
+                Application::getInstance().openFile(path);
             }
         }
         ImGui::PopStyleVar();
@@ -143,7 +163,7 @@ void DatabaseSidebarNew::renderStructure() {
         if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
             const std::string path = FileDialog::openCSVFile();
             if (!path.empty()) {
-                Application::getInstance().getTabManager()->createCsvEditorTab(path);
+                Application::getInstance().openFile(path);
             }
         }
         ImGui::PopStyleVar();
@@ -496,9 +516,14 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    ImGuiTreeNodeFlags dbFlags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
-        ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_SpanAvailWidth;
+    const bool isCsv = DuckDBDatabase::isCsvPath(connectionInfo.path);
+
+    // csv: double-click views data instead of toggling the node
+    ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding |
+                                 ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (!isCsv) {
+        dbFlags |= ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    }
     if (const auto selected = app.getSelectedDatabase(); selected && selected == db) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }
@@ -525,6 +550,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
         UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
                                 ImGui::GetColorU32(colors.peach));
+    } else if (DuckDBDatabase::isCsvPath(connectionInfo.path)) {
+        ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.green),
+                                            ICON_FA_FILE_CSV);
     } else {
         ImTextureID iconTex = texMgr.getIcon(type);
         const ImVec2 iconMax = ImVec2(dbIconPos.x + iconSize, dbIconPos.y + iconSize);
@@ -533,6 +561,11 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     if (ImGui::IsItemClicked()) {
         app.setSelectedDatabase(db);
+    }
+
+    if (isCsv && db->isConnected() && ImGui::IsItemHovered() &&
+        ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        openCsvData(dynamic_cast<FileDatabase*>(db.get()));
     }
 
     ImGui::PushID(db.get());
@@ -746,16 +779,23 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         };
 
+        const bool isCsv = DuckDBDatabase::isCsvPath(db->getConnectionInfo().path);
+
         if (db->isConnected() && isFileDatabase(db->getConnectionInfo().type)) {
             auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());
             if (sqliteDb) {
+                if (isCsv && ImGui::MenuItem("View Data")) {
+                    openCsvData(sqliteDb);
+                }
                 if (ImGui::MenuItem("New SQL Editor")) {
                     Application::getInstance().getTabManager()->createSQLEditorTab("", sqliteDb);
                 }
-                if (ImGui::MenuItem("Show Diagram")) {
+                if (!isCsv && ImGui::MenuItem("Show Diagram")) {
                     Application::getInstance().getTabManager()->createDiagramTab(sqliteDb);
                 }
-                ImGui::Separator();
+                if (!isCsv) {
+                    ImGui::Separator(); // csv: next section is empty, its separator follows
+                }
             }
         }
         auto& app = Application::getInstance();
@@ -775,11 +815,12 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         // Saving an edit replaces the DatabaseInterface and disconnects the old one,
         // and ~ConnectionPool waits for the session a dump still holds -- freezing
         // the UI thread, Cancel included, until the dump finishes.
-        if (ImGui::MenuItem("Edit connection", nullptr, false, !dumpBusy)) {
+        // csv nodes keep the menu minimal: no edit/rename
+        if (!isCsv && ImGui::MenuItem("Edit connection", nullptr, false, !dumpBusy)) {
             ConnectionDialog::instance().showEdit(&app, db);
         }
         dumpBusyTooltip();
-        if (ImGui::MenuItem("Rename")) {
+        if (!isCsv && ImGui::MenuItem("Rename")) {
             const std::string oldName = db->getConnectionInfo().name;
             InputDialog::show(
                 "Rename Connection", "New name:", oldName, "Rename",
@@ -810,7 +851,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Remove Database", nullptr, false, !dumpBusy)) {
+        if (ImGui::MenuItem(isCsv ? "Remove" : "Remove Database", nullptr, false, !dumpBusy)) {
             auto const connectionInfo = db->getConnectionInfo();
             Alert::show(
                 "Remove Database",

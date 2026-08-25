@@ -186,7 +186,7 @@ void TableViewerTab::render() {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%d rows)", totalRows);
     }
 
-    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
     // Show loading error if any
     if (hasLoadingError) {

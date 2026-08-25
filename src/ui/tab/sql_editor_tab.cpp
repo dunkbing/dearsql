@@ -730,9 +730,7 @@ void SQLEditorTab::render() {
                           (ImGui::GetIO().KeyMods & ImGuiMod_Shortcut) &&
                           ImGui::IsKeyPressed(ImGuiKey_S, false);
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
     renderConnectionInfo();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
     renderScriptHeader();
 
     // Render AI settings dialog (modal, always available)
@@ -861,6 +859,7 @@ void SQLEditorTab::renderConnectionInfo() {
         break;
     }
 
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
     ImGui::Separator();
 }
 

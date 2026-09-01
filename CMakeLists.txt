@@ -130,6 +130,7 @@ find_package(mongocxx CONFIG REQUIRED)
 find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
+find_package(md4c CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
@@ -242,8 +243,13 @@ set(APP_SOURCES
     src/utils/texture_manager.cpp
     src/ai/ai_client.cpp
     src/ai/ai_chat.cpp
+    src/acp/acp_client.cpp
+    src/acp/acp_agents.cpp
+    src/utils/db_mcp_server.cpp
     src/ui/ai_chat_panel.cpp
+    src/ui/ai_sidebar_panel.cpp
     src/ui/ai_settings_dialog.cpp
+    src/ui/markdown_text.cpp
     src/ui/connection_dialog.cpp
     src/ui/create_database_dialog.cpp
     src/ui/settings_dialog.cpp
@@ -379,6 +385,7 @@ target_link_libraries(
         odpi
         cassandra_static
         httplib::httplib
+        md4c::md4c
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
         tree-sitter-json-grammar

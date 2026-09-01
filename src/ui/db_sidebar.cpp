@@ -14,6 +14,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
+#include "ui/ai_sidebar_panel.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
@@ -346,6 +347,9 @@ void DatabaseSidebarNew::renderHistoryToggleButton(const ImVec2& btnMin, float b
     drawList->PopClipRect();
 }
 
+DatabaseSidebarNew::DatabaseSidebarNew() = default;
+DatabaseSidebarNew::~DatabaseSidebarNew() = default;
+
 void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -364,7 +368,29 @@ void DatabaseSidebarNew::render() {
                           ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
+    if (ImGui::BeginTabBar("##sidebar_tabs", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabItem("Databases")) {
+            renderDatabasesTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(ICON_FA_WAND_MAGIC_SPARKLES " AI")) {
+            if (!aiPanel_) {
+                aiPanel_ = std::make_unique<AISidebarPanel>();
+            }
+            aiPanel_->render();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::PopStyleColor(4);
+    ImGui::End();
+
+    ImGui::PopStyleVar(); // PopupRounding
+}
+
+void DatabaseSidebarNew::renderDatabasesTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     // extend past parent's right WindowPadding so scrollbar sits flush on the right
@@ -495,11 +521,6 @@ void DatabaseSidebarNew::render() {
         const ImVec2 btnMin(contentMin.x, contentMax.y - buttonH);
         renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
     }
-
-    ImGui::PopStyleColor(4);
-    ImGui::End();
-
-    ImGui::PopStyleVar(); // PopupRounding
 }
 
 void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db) {

@@ -8,10 +8,12 @@
 #include <unordered_map>
 #include <vector>
 
+class AISidebarPanel;
+
 class DatabaseSidebarNew {
 public:
-    DatabaseSidebarNew() = default;
-    ~DatabaseSidebarNew() = default;
+    DatabaseSidebarNew();
+    ~DatabaseSidebarNew();
 
     void render();
     void showConnectionDialog();
@@ -41,8 +43,12 @@ private:
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
     void syncHierarchyCache(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
 
+    void renderDatabasesTab();
+
     bool historyPanelOpen = false;
     bool texturesLoaded_ = false;
+
+    std::unique_ptr<AISidebarPanel> aiPanel_;
 
     OracleClientInstaller oracleClientInstaller_;
 

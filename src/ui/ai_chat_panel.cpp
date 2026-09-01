@@ -4,16 +4,14 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/markdown_text.hpp"
 #include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <format>
 
 namespace {
-    constexpr const char* LABEL_STOP = "Stop";
     constexpr const char* LABEL_CLEAR_CHAT = "Clear";
     constexpr const char* LABEL_SETTINGS = "Settings";
-    constexpr const char* LABEL_COPY = "Copy";
-    constexpr const char* LABEL_INSERT = "Insert";
     constexpr const char* LABEL_EMPTY_CHAT = "Ask a question about your database or request SQL.";
 
     struct ModelOption {
@@ -135,99 +133,17 @@ void AIChatPanel::renderMessage(const AIChatMessage& msg, size_t index) {
     ImGui::Indent(Theme::Spacing::M);
     ImGui::TextColored(colors.subtext0, "%s", isUser ? "You" : "Assistant");
 
-    float wrapWidth = ImGui::GetContentRegionAvail().x - Theme::Spacing::M;
-
-    auto blocks = parseCodeBlocks(msg.content);
-
-    if (blocks.empty()) {
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
+    if (isUser) {
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x -
+                               Theme::Spacing::M);
         ImGui::TextWrapped("%s", msg.content.c_str());
         ImGui::PopTextWrapPos();
     } else {
-        size_t lastEnd = 0;
-        size_t blockIdx = 0;
-        for (const auto& block : blocks) {
-            if (block.start > lastEnd) {
-                std::string textBefore = msg.content.substr(lastEnd, block.start - lastEnd);
-                while (!textBefore.empty() && textBefore.front() == '\n') {
-                    textBefore.erase(textBefore.begin());
-                }
-                while (!textBefore.empty() && textBefore.back() == '\n') {
-                    textBefore.pop_back();
-                }
-                if (!textBefore.empty()) {
-                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
-                    ImGui::TextWrapped("%s", textBefore.c_str());
-                    ImGui::PopTextWrapPos();
-                }
-            }
-
-            renderCodeBlock(block.code, block.lang, index, blockIdx);
-            lastEnd = block.end;
-            ++blockIdx;
-        }
-
-        if (lastEnd < msg.content.size()) {
-            std::string textAfter = msg.content.substr(lastEnd);
-            while (!textAfter.empty() && textAfter.front() == '\n') {
-                textAfter.erase(textAfter.begin());
-            }
-            if (!textAfter.empty()) {
-                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
-                ImGui::TextWrapped("%s", textAfter.c_str());
-                ImGui::PopTextWrapPos();
-            }
-        }
+        MarkdownText::render(msg.content, std::format("chat_{}", index), insertCallback_);
     }
 
     ImGui::Unindent(Theme::Spacing::M);
     ImGui::PopID();
-}
-
-void AIChatPanel::renderCodeBlock(const std::string& code, const std::string& lang, size_t msgIdx,
-                                  size_t blockIdx) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
-
-    std::string childId = std::format("##code_{}_{}", msgIdx, blockIdx);
-
-    float lineCount = 1.0f;
-    for (char c : code) {
-        if (c == '\n') {
-            lineCount += 1.0f;
-        }
-    }
-    float textHeight = lineCount * ImGui::GetTextLineHeightWithSpacing();
-    float totalHeight = textHeight + Theme::Spacing::M * 2 + ImGui::GetFrameHeightWithSpacing();
-
-    if (ImGui::BeginChild(childId.c_str(), ImVec2(-1, totalHeight), true)) {
-        std::string copyId = std::format("{}##{}_{}_{}", LABEL_COPY, "cp", msgIdx, blockIdx);
-        if (UIUtils::SmallButton(copyId.c_str())) {
-            ImGui::SetClipboardText(code.c_str());
-        }
-
-        bool isSql = (lang == "sql" || lang == "SQL" || lang == "sqlite" || lang == "postgresql" ||
-                      lang == "mysql" || lang.empty());
-
-        if (isSql && insertCallback_) {
-            ImGui::SameLine();
-            std::string insertId =
-                std::format("{}##{}_{}_{}", LABEL_INSERT, "ins", msgIdx, blockIdx);
-            if (UIUtils::SmallButton(insertId.c_str())) {
-                insertCallback_(code);
-            }
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        ImGui::TextWrapped("%s", code.c_str());
-        ImGui::PopStyleColor();
-    }
-    ImGui::EndChild();
-
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
 }
 
 void AIChatPanel::renderInputArea() {
@@ -427,51 +343,3 @@ void AIChatPanel::pollStreaming() {
     }
 }
 
-std::vector<AIChatPanel::CodeBlock> AIChatPanel::parseCodeBlocks(const std::string& content) {
-    std::vector<CodeBlock> blocks;
-    size_t pos = 0;
-
-    while (pos < content.size()) {
-        auto start = content.find("```", pos);
-        if (start == std::string::npos) {
-            break;
-        }
-
-        size_t langStart = start + 3;
-        size_t langEnd = content.find('\n', langStart);
-        if (langEnd == std::string::npos) {
-            break;
-        }
-
-        std::string lang = content.substr(langStart, langEnd - langStart);
-        while (!lang.empty() && (lang.back() == ' ' || lang.back() == '\r')) {
-            lang.pop_back();
-        }
-
-        size_t codeStart = langEnd + 1;
-        auto codeEnd = content.find("```", codeStart);
-        if (codeEnd == std::string::npos) {
-            std::string code = content.substr(codeStart);
-            while (!code.empty() && code.back() == '\n') {
-                code.pop_back();
-            }
-            blocks.push_back({lang, code, start, content.size()});
-            break;
-        }
-
-        std::string code = content.substr(codeStart, codeEnd - codeStart);
-        while (!code.empty() && code.back() == '\n') {
-            code.pop_back();
-        }
-
-        size_t blockEnd = codeEnd + 3;
-        if (blockEnd < content.size() && content[blockEnd] == '\n') {
-            ++blockEnd;
-        }
-
-        blocks.push_back({lang, code, start, blockEnd});
-        pos = blockEnd;
-    }
-
-    return blocks;
-}

@@ -33,17 +33,6 @@ private:
     void sendMessage();
     void renderMessages();
     void renderMessage(const AIChatMessage& msg, size_t index);
-    void renderCodeBlock(const std::string& code, const std::string& lang, size_t msgIdx,
-                         size_t blockIdx);
     void renderInputArea();
     void pollStreaming();
-
-    // Parse markdown-style code blocks from content
-    struct CodeBlock {
-        std::string lang;
-        std::string code;
-        size_t start; // position in original string
-        size_t end;
-    };
-    static std::vector<CodeBlock> parseCodeBlocks(const std::string& content);
 };

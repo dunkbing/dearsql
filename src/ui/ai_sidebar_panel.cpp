@@ -240,19 +240,7 @@ void AISidebarPanel::ensureSettingsLoaded() {
     }
     auto* appState = Application::getInstance().getAppState();
     agentDefs_ = AcpAgents::availableAgents();
-    const auto& cat = agentDefs_;
-    const std::string backend = appState->getSetting("ai_sidebar_backend", cat.front().id);
-    backendIndex_ = 0;
-    for (size_t i = 0; i < cat.size(); ++i) {
-        if (cat[i].id == backend) {
-            backendIndex_ = static_cast<int>(i);
-        }
-    }
-    if (backend == "custom") {
-        backendIndex_ = static_cast<int>(cat.size());
-    } else if (backend == "api") {
-        backendIndex_ = static_cast<int>(cat.size()) + 1;
-    }
+    selectBackend(appState->getSetting("ai_sidebar_backend", agentDefs_.front().id));
     const std::string custom = appState->getSetting("ai_custom_agent_cmd", "");
     std::strncpy(customCmdBuf_, custom.c_str(), sizeof(customCmdBuf_) - 1);
     mcpEnabled_ = appState->getSetting("ai_mcp_enabled", "1") == "1";
@@ -269,16 +257,28 @@ void AISidebarPanel::switchBackend(int newIndex) {
     agentMissing_ = false;
     agentMissingReason_.clear();
     sentSchemaContext_ = false;
+    Application::getInstance().getAppState()->setSetting("ai_sidebar_backend", backendId());
+}
 
-    auto* appState = Application::getInstance().getAppState();
-    const auto& cat = agentDefs_;
-    std::string id = "api";
-    if (backendIndex_ < static_cast<int>(cat.size())) {
-        id = cat[static_cast<size_t>(backendIndex_)].id;
-    } else if (backendIndex_ == static_cast<int>(cat.size())) {
-        id = "custom";
+std::string AISidebarPanel::backendId() const {
+    if (backendIndex_ >= 0 && backendIndex_ < static_cast<int>(agentDefs_.size())) {
+        return agentDefs_[static_cast<size_t>(backendIndex_)].id;
     }
-    appState->setSetting("ai_sidebar_backend", id);
+    return backendIndex_ == static_cast<int>(agentDefs_.size()) ? "custom" : "api";
+}
+
+void AISidebarPanel::selectBackend(const std::string& id) {
+    backendIndex_ = 0;
+    for (size_t i = 0; i < agentDefs_.size(); ++i) {
+        if (agentDefs_[i].id == id) {
+            backendIndex_ = static_cast<int>(i);
+        }
+    }
+    if (id == "custom") {
+        backendIndex_ = static_cast<int>(agentDefs_.size());
+    } else if (id == "api") {
+        backendIndex_ = static_cast<int>(agentDefs_.size()) + 1;
+    }
 }
 
 void AISidebarPanel::stopAgent() {
@@ -509,6 +509,7 @@ void AISidebarPanel::rebuildContextCandidates() {
         }
         if (loadBudget > 0 && !ref.node->isViewsLoaded() && !ref.node->isLoadingViews()) {
             ref.node->startViewsLoadAsync(false);
+            --loadBudget;
         }
 
         if (ref.node->isTablesLoaded()) {
@@ -609,6 +610,10 @@ void AISidebarPanel::sendMessage() {
     std::string text(inputBuf_);
     const auto start = text.find_first_not_of(" \t\n\r");
     if (start == std::string::npos) {
+        return;
+    }
+    // one prompt in flight; a second would overwrite the queued blocks
+    if (isAcpBackend() && acp_ && (acp_->isTurnActive() || !pendingPromptBlocks_.empty())) {
         return;
     }
     text = text.substr(start, text.find_last_not_of(" \t\n\r") - start + 1);
@@ -891,7 +896,7 @@ void AISidebarPanel::pollApi() {
     }
 }
 
-void AISidebarPanel::render() {
+void AISidebarPanel::tick() {
     ensureSettingsLoaded();
 
     const bool settingsOpen = AISettingsDialog::instance().isOpen();
@@ -905,16 +910,20 @@ void AISidebarPanel::render() {
     }
     settingsDialogWasOpen_ = settingsOpen;
 
-    if (!agentWarmupDone_ && isAcpBackend()) {
-        agentWarmupDone_ = true;
-        ensureAgentStarted();
-    }
-
     syncContext();
     if (isAcpBackend()) {
         pollAcp();
     } else {
         pollApi();
+    }
+}
+
+void AISidebarPanel::render() {
+    ensureSettingsLoaded(); // first render lands before the first tick
+    // warm up only once the tab has actually been shown
+    if (!agentWarmupDone_ && isAcpBackend()) {
+        agentWarmupDone_ = true;
+        ensureAgentStarted();
     }
 
     renderHeader();
@@ -1155,8 +1164,10 @@ void AISidebarPanel::renderRegistryAgents() {
         registry_.startFetch();
     }
     if (registry_.poll()) {
-        // an install may have added a new agent to pick from
+        // an install may have added an agent; re-resolve the index by id
+        const std::string current = backendId();
         agentDefs_ = AcpAgents::availableAgents();
+        selectBackend(current);
         if (!registry_.installedId().empty()) {
             items_.push_back({.kind = Item::Kind::Info,
                               .text = "Installed " + registry_.installedId() +
@@ -1439,6 +1450,9 @@ void AISidebarPanel::updateMentionState() {
     }
     pickerMode_ = mode;
 
+    if (at < 0) {
+        mentionDismissedStart_ = -1; // trigger char deleted
+    }
     if (at < 0 || at == mentionDismissedStart_) {
         mentionOpen_ = false;
         pickerMode_ = PickerMode::None;

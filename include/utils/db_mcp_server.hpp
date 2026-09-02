@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -61,6 +62,7 @@ private:
     std::string token_;
     std::thread thread_;
     int port_ = 0;
+    std::atomic<bool> stopping_ = false; // connect_database fails fast during stop()
 
     mutable std::mutex nodeMutex_;
     IDatabaseNode* node_ = nullptr;

@@ -106,6 +106,10 @@ void DatabaseSidebarNew::processDumpOperations() {
             hierarchy->processDumpOperations();
         }
     }
+    // agent keeps running while the tab is hidden
+    if (aiPanel_) {
+        aiPanel_->tick();
+    }
 }
 
 bool DatabaseSidebarNew::hasRunningSqlDump() const {
@@ -423,8 +427,9 @@ void DatabaseSidebarNew::render() {
     const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float historyButtonH = getHistoryButtonHeight();
 
+    // no WindowPadding push here: borderless children get zero padding anyway,
+    // and the push would leak into the context-menu popups opened inside
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     if (ImGui::BeginChild("SidebarTabStrip", ImVec2(tabStripWidth, availableHeight),
                           ImGuiChildFlags_None)) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -449,16 +454,11 @@ void DatabaseSidebarNew::render() {
         renderHistoryToggleButton(histMin, tabStripWidth, historyButtonH, false);
     }
     ImGui::EndChild();
-    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 
     ImGui::SameLine(0, Theme::Spacing::S);
 
-    // content column: active tab on top, history panel below when open.
-    // a child of its own so the tall strip's line height can't push content down.
     const float contentWidth = ImGui::GetContentRegionAvail().x + Theme::Spacing::M;
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    // the tab containers never scroll themselves; only the panels inside them do
     ImGui::BeginChild("SidebarTabContent", ImVec2(contentWidth, availableHeight),
                       ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -485,7 +485,6 @@ void DatabaseSidebarNew::render() {
         }
     }
     ImGui::EndChild();
-    ImGui::PopStyleVar();
 
     ImGui::PopStyleColor(4);
     ImGui::End();

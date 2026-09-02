@@ -13,7 +13,6 @@ REDIS_CONTAINER="dearsql-redis-test"
 MONGODB_CONTAINER="dearsql-mongodb-test"
 MSSQL_CONTAINER="dearsql-mssql-test"
 ORACLE_CONTAINER="dearsql-oracle-test"
-REDSHIFT_CONTAINER="dearsql-redshift-test"
 CASSANDRA_CONTAINER="dearsql-cassandra-test"
 SSH_CONTAINER="dearsql-ssh-test"
 
@@ -24,7 +23,6 @@ REDIS_IMAGE="redis:7-alpine"
 MONGODB_IMAGE="mongo:7.0"
 MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
 ORACLE_IMAGE="gvenzl/oracle-xe:21-slim-faststart"
-REDSHIFT_IMAGE="postgres:15-alpine"
 CASSANDRA_IMAGE="cassandra:5"
 SSH_IMAGE="dearsql-ssh-test-img"
 
@@ -39,7 +37,6 @@ REDIS_TLS_PORT="${REDIS_TLS_PORT:-56380}"
 MONGODB_PORT="${MONGODB_PORT:-57017}"
 MSSQL_PORT="${MSSQL_PORT:-51433}"
 ORACLE_PORT="${ORACLE_PORT:-51521}"
-REDSHIFT_PORT="${REDSHIFT_PORT:-55439}"
 CASSANDRA_PORT="${CASSANDRA_PORT:-59042}"
 SSH_PORT="${SSH_PORT:-52222}"
 
@@ -85,13 +82,6 @@ export DEARSQL_TEST_ORACLE_DB="XEPDB1"
 export DEARSQL_TEST_ORACLE_USER="system"
 export DEARSQL_TEST_ORACLE_PASSWORD="DearSQL_Test1"
 export DEARSQL_TEST_ORACLE_NAME="OracleDocker"
-
-export DEARSQL_TEST_REDSHIFT_HOST="127.0.0.1"
-export DEARSQL_TEST_REDSHIFT_PORT="$REDSHIFT_PORT"
-export DEARSQL_TEST_REDSHIFT_DB="dev"
-export DEARSQL_TEST_REDSHIFT_USER="postgres"
-export DEARSQL_TEST_REDSHIFT_PASSWORD="redshift"
-export DEARSQL_TEST_REDSHIFT_NAME="RedshiftDocker"
 
 export DEARSQL_TEST_CASSANDRA_HOST="127.0.0.1"
 export DEARSQL_TEST_CASSANDRA_PORT="$CASSANDRA_PORT"
@@ -304,7 +294,6 @@ all_ports_open() {
     port_open 127.0.0.1 "$MONGODB_PORT" &&
     port_open 127.0.0.1 "$MSSQL_PORT" &&
     port_open 127.0.0.1 "$ORACLE_PORT" &&
-    port_open 127.0.0.1 "$REDSHIFT_PORT" &&
     port_open 127.0.0.1 "$CASSANDRA_PORT" &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$REDIS_TLS_PORT"; } &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SSH_PORT"; } &&
@@ -437,15 +426,6 @@ setup_containers() {
     wait_for_command "Oracle" 120 docker_cmd exec "$ORACLE_CONTAINER" \
         healthcheck.sh
 
-    # ── Redshift (PostgreSQL-compatible) ──
-    start_or_create "$REDSHIFT_CONTAINER" \
-        -e POSTGRES_DB="$DEARSQL_TEST_REDSHIFT_DB" \
-        -e POSTGRES_PASSWORD="$DEARSQL_TEST_REDSHIFT_PASSWORD" \
-        -p "127.0.0.1:${REDSHIFT_PORT}:5432" \
-        "$REDSHIFT_IMAGE"
-    wait_for_port 127.0.0.1 "$REDSHIFT_PORT" "Redshift"
-    wait_for_command "Redshift" 60 docker_cmd exec "$REDSHIFT_CONTAINER" \
-        pg_isready -h localhost -U postgres
 
     # ── Cassandra ──
     # Cassandra binds 9042 early (port_open succeeds long before CQL is ready),
@@ -541,7 +521,6 @@ echo "Redis:       $DEARSQL_TEST_REDIS_HOST:$DEARSQL_TEST_REDIS_PORT (TLS: $REDI
 echo "MongoDB:     $DEARSQL_TEST_MONGODB_HOST:$DEARSQL_TEST_MONGODB_PORT"
 echo "MSSQL:       $DEARSQL_TEST_MSSQL_HOST:$DEARSQL_TEST_MSSQL_PORT"
 echo "Oracle:      $DEARSQL_TEST_ORACLE_HOST:$DEARSQL_TEST_ORACLE_PORT"
-echo "Redshift:    $DEARSQL_TEST_REDSHIFT_HOST:$DEARSQL_TEST_REDSHIFT_PORT ($DEARSQL_TEST_REDSHIFT_DB)"
 echo "Cassandra:   $DEARSQL_TEST_CASSANDRA_HOST:$DEARSQL_TEST_CASSANDRA_PORT"
 echo "SSH:         $DEARSQL_TEST_SSH_HOST:$DEARSQL_TEST_SSH_PORT"
 echo "CA cert:     ${DEARSQL_TEST_CA_CERT:-<not available>}"

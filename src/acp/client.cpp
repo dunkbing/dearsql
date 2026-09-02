@@ -116,8 +116,15 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
     mcpName_ = mcpName;
     mcpToken_ = mcpToken;
 
-    int inPipe[2], outPipe[2], errPipe[2];
+    signal(SIGPIPE, SIG_IGN); // dead agent stdin → EPIPE, not app exit
+
+    int inPipe[2] = {-1, -1}, outPipe[2] = {-1, -1}, errPipe[2] = {-1, -1};
     if (pipe(inPipe) != 0 || pipe(outPipe) != 0 || pipe(errPipe) != 0) {
+        for (int fd : {inPipe[0], inPipe[1], outPipe[0], outPipe[1], errPipe[0], errPipe[1]}) {
+            if (fd >= 0) {
+                close(fd);
+            }
+        }
         return {false, "Failed to create pipes"};
     }
 
@@ -231,15 +238,19 @@ void AcpClient::stop() {
         spdlog::info("ACP agent stopped (pid {})", pid_);
         pid_ = -1;
     }
-    if (stdinFd_ >= 0) {
-        close(stdinFd_);
-        stdinFd_ = -1;
-    }
+    // reader writes to stdin too; join before closing the fd
     if (reader_.joinable()) {
         reader_.join();
     }
     if (errReader_.joinable()) {
         errReader_.join();
+    }
+    {
+        std::lock_guard lock(writeMutex_);
+        if (stdinFd_ >= 0) {
+            close(stdinFd_);
+            stdinFd_ = -1;
+        }
     }
     if (stdoutFd_ >= 0) {
         close(stdoutFd_);
@@ -527,11 +538,11 @@ void AcpClient::handleSessionUpdate(const json& update) {
 }
 
 void AcpClient::sendMessage(const json& msg) {
+    const std::string line = msg.dump() + "\n";
+    std::lock_guard lock(writeMutex_);
     if (stdinFd_ < 0) {
         return;
     }
-    const std::string line = msg.dump() + "\n";
-    std::lock_guard lock(writeMutex_);
     size_t written = 0;
     while (written < line.size()) {
         const ssize_t n = write(stdinFd_, line.data() + written, line.size() - written);

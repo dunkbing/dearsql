@@ -11,12 +11,16 @@
 // test registration, one function per area
 void RegisterSidebarTests(ImGuiTestEngine* engine);
 void RegisterAiPanelTests(ImGuiTestEngine* engine);
+void RegisterDocsShots(ImGuiTestEngine* engine);
 
 int main(int argc, char** argv) {
     bool headless = false;
+    const char* filter = nullptr;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-nopause") == 0) {
             headless = true;
+        } else if (std::strcmp(argv[i], "-run") == 0 && i + 1 < argc) {
+            filter = argv[++i]; // e.g. -run "Docs/assistant-empty"
         }
     }
 
@@ -40,13 +44,25 @@ int main(int argc, char** argv) {
     testIo.ConfigRestoreFocusAfterTests = false;
     testIo.ConfigLogToTTY = true; // otherwise failures never reach stdout
 
+    // docs shots are captured with `screencapture -R`, which grabs whatever is on
+    // screen in that rectangle -- float the window so it stays on top unfocused.
+    // glfw window calls must happen on the main thread, not inside a test.
+    if (filter != nullptr) {
+        glfwSetWindowAttrib(app.getWindow(), GLFW_FLOATING, GLFW_TRUE);
+        glfwFocusWindow(app.getWindow());
+    }
+
     ImGuiTestEngine_Start(engine, ctx);
 
     RegisterSidebarTests(engine);
     RegisterAiPanelTests(engine);
+    RegisterDocsShots(engine);
 
     if (headless) {
-        ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests, nullptr);
+        // the filter is a substring match on name and category, not a path.
+        // Docs entries only hold a state for screenshots, so skip them by default.
+        ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests,
+                                   filter != nullptr ? filter : "all,-Docs");
     }
 
     // Drive the platform's own frame instead of hand-rolling one: on macOS the

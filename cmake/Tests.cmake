@@ -150,6 +150,7 @@ if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
         tests/ui/main_test.mm
         tests/ui/sidebar_tests.cpp
         tests/ui/ai_panel_tests.cpp
+        tests/ui/docs_shots.cpp
     )
 
     # the engine hooks into imgui through this define; both are compiled here

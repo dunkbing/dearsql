@@ -191,6 +191,12 @@ namespace AcpRegistry {
             error = agent.name + " has no prebuilt binary for " + platformKey();
             return false;
         }
+        // keep the chmod'd/launched file inside the install dir
+        if (agent.binaryCmd.empty() || agent.binaryCmd.front() == '/' ||
+            agent.binaryCmd.find("..") != std::string::npos) {
+            error = "refusing suspicious binary path in registry: " + agent.binaryCmd;
+            return false;
+        }
 
         const std::string archive = httpGet(agent.archiveUrl, error);
         if (archive.empty()) {

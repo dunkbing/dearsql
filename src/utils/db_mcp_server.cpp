@@ -91,6 +91,7 @@ bool DbMcpServer::start() {
     }
     server_ = std::make_unique<httplib::Server>();
     token_ = makeToken();
+    stopping_ = false;
 
     server_->Post("/mcp", [this](const httplib::Request& req, httplib::Response& res) {
         // set before the listener thread starts, so reading it here needs no lock
@@ -123,8 +124,8 @@ bool DbMcpServer::start() {
 }
 
 void DbMcpServer::stop() {
-    // a connect_database handler can be parked for up to a minute; release it first
-    // or joining the listener thread below waits for it
+    // release a parked connect_database handler, or the join below waits on it
+    stopping_ = true;
     finishConnectRequest(false, "DearSQL closed the database tools.");
 
     if (server_) {
@@ -255,6 +256,9 @@ json DbMcpServer::callTool(const std::string& name, const json& args) {
         }
 
         std::unique_lock lock(connectMutex_);
+        if (stopping_) {
+            return textResult("DearSQL closed the database tools.", true);
+        }
         if (connectBusy_) {
             return textResult("Another connection attempt is already in progress.", true);
         }
@@ -263,11 +267,12 @@ json DbMcpServer::callTool(const std::string& name, const json& args) {
         connectDone_ = false;
         connectRequest_ = target;
 
-        const bool finished =
-            connectCv_.wait_for(lock, std::chrono::seconds(60), [this] { return connectDone_; });
-        const bool ok = finished && connectOk_;
-        const std::string message =
-            finished ? connectMessage_ : "Timed out waiting for the connection to open.";
+        const bool finished = connectCv_.wait_for(lock, std::chrono::seconds(60),
+                                                  [this] { return connectDone_ || stopping_; });
+        const bool ok = connectDone_ && connectOk_;
+        const std::string message = connectDone_ ? connectMessage_
+                                    : finished   ? "DearSQL closed the database tools."
+                                                 : "Timed out waiting for the connection to open.";
         connectBusy_ = false;
         connectRequest_.clear();
         return textResult(message, !ok);
@@ -317,6 +322,7 @@ json DbMcpServer::callTool(const std::string& name, const json& args) {
                     "are allowed through this tool.",
                     true);
             }
+            // http thread; safe: sqlite is FULLMUTEX, duckdb has a mutex, servers pool
             const QueryResult result = node_->executeQuery(sql, MAX_ROWS + 1);
             return textResult(formatQueryResult(result), !result.success());
         }

@@ -22,6 +22,7 @@ public:
     AISidebarPanel();
     ~AISidebarPanel();
 
+    void tick(); // per frame, even when the tab is hidden
     void render();
 
     // height of the sidebar's History button; the input box matches it so the two
@@ -89,6 +90,9 @@ private:
     std::vector<std::string> currentInvocation(std::string& missingReason);
     void ensureSettingsLoaded();
     void switchBackend(int newIndex);
+    // agent id, "custom" or "api"; stable across agentDefs_ rebuilds unlike the index
+    [[nodiscard]] std::string backendId() const;
+    void selectBackend(const std::string& id);
     void stopAgent();
 
     // sending

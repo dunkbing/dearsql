@@ -5,7 +5,10 @@ TEST(SqlGuardTest, AllowsReadOnlyStatements) {
     EXPECT_TRUE(SqlGuard::isReadOnly("SELECT * FROM users"));
     EXPECT_TRUE(SqlGuard::isReadOnly("  select 1"));
     EXPECT_TRUE(SqlGuard::isReadOnly("WITH t AS (SELECT 1) SELECT * FROM t"));
-    EXPECT_TRUE(SqlGuard::isReadOnly("EXPLAIN ANALYZE SELECT 1"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("EXPLAIN SELECT 1"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("SHOW CREATE TABLE users"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("SELECT REPLACE(name, 'a', 'b') FROM users"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("SELECT updated_at, delete_reason FROM audit"));
     EXPECT_TRUE(SqlGuard::isReadOnly("SHOW TABLES"));
     EXPECT_TRUE(SqlGuard::isReadOnly("PRAGMA table_info(users)"));
     EXPECT_TRUE(SqlGuard::isReadOnly("SELECT 1; SELECT 2;"));
@@ -33,6 +36,16 @@ TEST(SqlGuardTest, SkipsLeadingComments) {
 
 TEST(SqlGuardTest, SemicolonInsideStringIsNotAStatementBreak) {
     EXPECT_TRUE(SqlGuard::isReadOnly("SELECT ';DROP TABLE users' AS x"));
+}
+
+TEST(SqlGuardTest, RejectsWritesHiddenInReadStatements) {
+    EXPECT_FALSE(SqlGuard::isReadOnly("EXPLAIN ANALYZE DELETE FROM users"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("EXPLAIN (ANALYZE, BUFFERS) DELETE FROM users"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("SELECT * INTO backup FROM users"));
+    // quote inside a comment must not swallow the separator
+    EXPECT_FALSE(SqlGuard::isReadOnly("SELECT 1 -- '\n; DELETE FROM t"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("SELECT 1 /* ' */; DELETE FROM t"));
 }
 
 TEST(SqlGuardTest, RejectsEmptyInput) {

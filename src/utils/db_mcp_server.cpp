@@ -2,7 +2,9 @@
 
 #include "database/database_node.hpp"
 #include "utils/sql_guard.hpp"
+#include <chrono>
 #include <format>
+#include <random>
 #include <spdlog/spdlog.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -11,6 +13,18 @@
 using json = nlohmann::json;
 
 namespace {
+    std::string makeToken() {
+        static constexpr char HEX[] = "0123456789abcdef";
+        std::random_device rd;
+        std::uniform_int_distribution<int> dist(0, 15);
+        std::string token;
+        token.reserve(32);
+        for (int i = 0; i < 32; ++i) {
+            token += HEX[dist(rd)];
+        }
+        return token;
+    }
+
     constexpr int MAX_ROWS = 200;
     constexpr size_t MAX_TEXT = 60 * 1024;
 
@@ -76,8 +90,14 @@ bool DbMcpServer::start() {
         return true;
     }
     server_ = std::make_unique<httplib::Server>();
+    token_ = makeToken();
 
     server_->Post("/mcp", [this](const httplib::Request& req, httplib::Response& res) {
+        // set before the listener thread starts, so reading it here needs no lock
+        if (token_.empty() || req.get_header_value("Authorization") != "Bearer " + token_) {
+            res.status = 401;
+            return;
+        }
         json rpc;
         try {
             rpc = json::parse(req.body);
@@ -103,6 +123,10 @@ bool DbMcpServer::start() {
 }
 
 void DbMcpServer::stop() {
+    // a connect_database handler can be parked for up to a minute; release it first
+    // or joining the listener thread below waits for it
+    finishConnectRequest(false, "DearSQL closed the database tools.");
+
     if (server_) {
         server_->stop();
         if (thread_.joinable()) {
@@ -110,6 +134,7 @@ void DbMcpServer::stop() {
         }
         server_.reset();
         port_ = 0;
+        token_.clear();
     }
 }
 
@@ -141,7 +166,22 @@ json DbMcpServer::handleRpc(const json& req) {
         response["result"] = {
             {"tools",
              json::array(
-                 {{{"name", "list_tables"},
+                 {{{"name", "list_databases"},
+                   {"description",
+                    "List the database connections saved in DearSQL and whether each one is "
+                    "currently open."},
+                   {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}},
+                  {{"name", "connect_database"},
+                   {"description",
+                    "Open one of DearSQL's saved database connections by name, so its schema "
+                    "can be inspected and queried. Use this when a database is listed as not "
+                    "connected."},
+                   {"inputSchema",
+                    {{"type", "object"},
+                     {"properties",
+                      {{"name", {{"type", "string"}, {"description", "Connection name to open"}}}}},
+                     {"required", json::array({"name"})}}}},
+                  {{"name", "list_tables"},
                    {"description",
                     "List tables and views (with columns) of the database currently selected "
                     "in DearSQL."},
@@ -165,10 +205,79 @@ json DbMcpServer::handleRpc(const json& req) {
     return response;
 }
 
+void DbMcpServer::setConnections(std::vector<McpConnectionInfo> connections) {
+    std::lock_guard lock(connectionsMutex_);
+    connections_ = std::move(connections);
+}
+
+std::optional<std::string> DbMcpServer::takeConnectRequest() {
+    std::lock_guard lock(connectMutex_);
+    if (connectRequest_.empty() || connectTaken_) {
+        return std::nullopt;
+    }
+    connectTaken_ = true;
+    return connectRequest_;
+}
+
+void DbMcpServer::finishConnectRequest(bool ok, const std::string& message) {
+    {
+        std::lock_guard lock(connectMutex_);
+        if (!connectBusy_) {
+            return;
+        }
+        connectOk_ = ok;
+        connectMessage_ = message;
+        connectDone_ = true;
+        connectRequest_.clear();
+    }
+    connectCv_.notify_all();
+}
+
 json DbMcpServer::callTool(const std::string& name, const json& args) {
+    if (name == "list_databases") {
+        std::lock_guard lock(connectionsMutex_);
+        if (connections_.empty()) {
+            return textResult("DearSQL has no saved database connections.");
+        }
+        std::string out = "Connections in DearSQL:\n";
+        for (const auto& conn : connections_) {
+            out += std::format("- {} ({}) - {}\n", conn.name, conn.type,
+                               conn.connected ? "connected" : "not connected");
+        }
+        out += "\nUse connect_database to open one that is not connected.";
+        return textResult(out);
+    }
+
+    if (name == "connect_database") {
+        const std::string target = args.value("name", "");
+        if (target.empty()) {
+            return textResult("Missing 'name' argument.", true);
+        }
+
+        std::unique_lock lock(connectMutex_);
+        if (connectBusy_) {
+            return textResult("Another connection attempt is already in progress.", true);
+        }
+        connectBusy_ = true;
+        connectTaken_ = false;
+        connectDone_ = false;
+        connectRequest_ = target;
+
+        const bool finished =
+            connectCv_.wait_for(lock, std::chrono::seconds(60), [this] { return connectDone_; });
+        const bool ok = finished && connectOk_;
+        const std::string message =
+            finished ? connectMessage_ : "Timed out waiting for the connection to open.";
+        connectBusy_ = false;
+        connectRequest_.clear();
+        return textResult(message, !ok);
+    }
+
     std::lock_guard lock(nodeMutex_);
     if (!node_) {
-        return textResult("No database is selected in DearSQL.", true);
+        return textResult("No database is open in DearSQL. Call list_databases to see the "
+                          "saved connections, then connect_database to open one.",
+                          true);
     }
 
     try {

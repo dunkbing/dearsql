@@ -3,7 +3,7 @@
   "name": "dearsql",
   "version": "0.1.7",
   "description": "Cross-platform SQL database client",
-  "builtin-baseline": "77df67cfff9c12ccfdb52284e07c87c75092f723",
+  "builtin-baseline": "30ef65cad98f08e7197c9a1656fbd871bcb72f2d",
   "dependencies": [
     {
       "name": "sqlite3",

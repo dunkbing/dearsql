@@ -17,15 +17,18 @@
 #include "database/postgres/postgres_schema_node.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "themes.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/markdown_text.hpp"
+#include "utils/app_paths.hpp"
 #include "utils/button.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <spdlog/spdlog.h>
 
@@ -45,6 +48,43 @@ namespace {
     };
     constexpr int API_MODEL_COUNT = sizeof(API_MODELS) / sizeof(API_MODELS[0]);
     constexpr int MENTION_MAX_VISIBLE = 8;
+    // schema loads the picker may kick off per rebuild. bounded because a server can
+    // hold dozens of databases and each load opens a connection to one of them --
+    // typing '@' must not fan out to all of them at once
+    constexpr int CONTEXT_AUTOLOAD_MAX_NODES = 8;
+    constexpr double CONTEXT_REBUILD_INTERVAL = 0.25; // seconds
+
+    struct SlashCommand {
+        const char* name;
+        const char* help;
+    };
+    constexpr SlashCommand CLIENT_COMMANDS[] = {
+        {"new", "Start a fresh agent session"},
+        {"clear", "Clear the conversation"},
+    };
+    constexpr int CLIENT_COMMAND_COUNT = sizeof(CLIENT_COMMANDS) / sizeof(CLIENT_COMMANDS[0]);
+
+    // input box metrics, shared by the height calc and the renderer.
+    // the container pads all four sides, the frame padding insets the text on top of
+    // that -- kept small at the bottom so the controls row sits close to the border
+    constexpr float INPUT_CONTAINER_PAD_X = Theme::Spacing::M;
+    constexpr float INPUT_CONTAINER_PAD_Y = Theme::Spacing::S;
+    constexpr float INPUT_FRAME_PAD_X = Theme::Spacing::M;
+    constexpr float INPUT_FRAME_PAD_Y = Theme::Spacing::M;
+    constexpr float INPUT_ROW_GAP = Theme::Spacing::S;
+    constexpr float INPUT_BOTTOM_MARGIN = Theme::Spacing::M;
+    constexpr float INPUT_TEXT_SLACK = 2.0f;
+    constexpr float INPUT_ROUNDING = 10.0f;
+    constexpr float INPUT_MAX_LINES = 8.0f;
+    constexpr const char* INPUT_HINT = "Ask about your database";
+
+    // height of the icon row under the text. deliberately independent of
+    // style.FramePadding: the renderer pushes its own padding, so GetFrameHeight() there
+    // disagrees with the value the height calc sees, leaving the text field a few pixels
+    // short -- which shows a scrollbar and makes the text drift while typing.
+    float inputControlsHeight() {
+        return ImGui::GetTextLineHeight() + Theme::Spacing::S * 2.0f;
+    }
 
     const char* dbTypeLabel(DatabaseType type) {
         switch (type) {
@@ -74,13 +114,33 @@ namespace {
         return "SQL";
     }
 
-    std::string homeDir() {
-        const char* home = std::getenv("HOME");
-        return home && *home ? home : ".";
+    // Working directory handed to the agent. Deliberately a scratch dir of our own:
+    // agents carry their own file and shell tools that do not go through ACP, so a
+    // cwd of $HOME would point them at everything and pull in stray project config.
+    std::string agentWorkingDir() {
+        const std::filesystem::path dir = AppPaths::ensureSubdir("agent");
+        if (dir.empty()) {
+            spdlog::warn("could not create the agent working directory");
+            return AppPaths::dataDir().string();
+        }
+        return dir.string();
     }
 
     bool isWordChar(char c) {
         return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '$';
+    }
+
+    constexpr float CHIP_PAD_X = Theme::Spacing::M;
+    constexpr float CHIP_PAD_Y = Theme::Spacing::S;
+
+    float chipHeight() {
+        return ImGui::GetTextLineHeight() + CHIP_PAD_Y * 2.0f;
+    }
+
+    float chipWidth(const std::string& label) {
+        // text, the close glyph, and padding on both ends
+        return ImGui::CalcTextSize(label.c_str()).x + CHIP_PAD_X * 2.0f +
+               ImGui::GetTextLineHeight() + Theme::Spacing::S;
     }
 
     std::string tableDdlText(const Table& table, bool isView) {
@@ -103,6 +163,20 @@ namespace {
     }
 } // namespace
 
+const char* AISidebarPanel::contextKindIcon(ContextItem::Kind kind) {
+    switch (kind) {
+    case ContextItem::Kind::Database:
+        return ICON_FA_DATABASE;
+    case ContextItem::Kind::View:
+        return ICON_FA_EYE;
+    case ContextItem::Kind::Sequence:
+        return ICON_FA_LIST_OL;
+    case ContextItem::Kind::Table:
+        break;
+    }
+    return ICON_FA_TABLE;
+}
+
 AISidebarPanel::AISidebarPanel()
     : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {}
 
@@ -111,11 +185,11 @@ AISidebarPanel::~AISidebarPanel() = default;
 // ---------------------------------------------------------------- backends
 
 bool AISidebarPanel::isAcpBackend() const {
-    return backendIndex_ <= static_cast<int>(AcpAgents::catalog().size());
+    return backendIndex_ <= static_cast<int>(agentDefs_.size());
 }
 
 const AcpAgentDef* AISidebarPanel::currentAgentDef() const {
-    const auto& cat = AcpAgents::catalog();
+    const auto& cat = agentDefs_;
     if (backendIndex_ >= 0 && backendIndex_ < static_cast<int>(cat.size())) {
         return &cat[static_cast<size_t>(backendIndex_)];
     }
@@ -127,8 +201,15 @@ std::vector<std::string> AISidebarPanel::currentInvocation(std::string& missingR
         if (auto inv = AcpAgents::resolveInvocation(*def)) {
             return *inv;
         }
-        missingReason = std::format("{} is not installed (looked for `{}` and `npx` on your PATH).",
-                                    def->name, def->runCmd.front());
+        std::string tried = def->runCmd.empty() ? "" : "`" + def->runCmd.front() + "`";
+        for (const auto& runner : AcpAgents::runners()) {
+            const bool usable = runner.python ? !def->pyPackage.empty() : !def->npmPackage.empty();
+            if (usable) {
+                tried += (tried.empty() ? "" : ", ") + ("`" + runner.tool + "`");
+            }
+        }
+        missingReason =
+            std::format("{} is not installed (looked for {} on your PATH).", def->name, tried);
         return {};
     }
     // custom command: split on spaces (quoted args unsupported)
@@ -158,7 +239,8 @@ void AISidebarPanel::ensureSettingsLoaded() {
         return;
     }
     auto* appState = Application::getInstance().getAppState();
-    const auto& cat = AcpAgents::catalog();
+    agentDefs_ = AcpAgents::availableAgents();
+    const auto& cat = agentDefs_;
     const std::string backend = appState->getSetting("ai_sidebar_backend", cat.front().id);
     backendIndex_ = 0;
     for (size_t i = 0; i < cat.size(); ++i) {
@@ -183,12 +265,13 @@ void AISidebarPanel::switchBackend(int newIndex) {
     }
     backendIndex_ = newIndex;
     stopAgent();
+    agentWarmupDone_ = false;
     agentMissing_ = false;
     agentMissingReason_.clear();
     sentSchemaContext_ = false;
 
     auto* appState = Application::getInstance().getAppState();
-    const auto& cat = AcpAgents::catalog();
+    const auto& cat = agentDefs_;
     std::string id = "api";
     if (backendIndex_ < static_cast<int>(cat.size())) {
         id = cat[static_cast<size_t>(backendIndex_)].id;
@@ -200,102 +283,177 @@ void AISidebarPanel::switchBackend(int newIndex) {
 
 void AISidebarPanel::stopAgent() {
     acp_.reset();
-    pendingPromptText_.clear();
+    agentCommands_.clear();
+    // nothing is left to serve, so close the port rather than leave it listening
+    mcp_.stop();
+    pendingPromptBlocks_ = json::array();
 }
 
 // ---------------------------------------------------------------- context
 
 std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
     std::vector<NodeRef> nodes;
-    auto db = Application::getInstance().getSelectedDatabase();
-    if (!db || !db->isConnected()) {
-        return nodes;
-    }
-    const auto type = db->getConnectionInfo().type;
 
-    if (isFileDatabase(type)) {
-        if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get())) {
-            nodes.push_back({db->getConnectionInfo().name, fileDb});
+    for (const auto& db : Application::getInstance().getDatabases()) {
+        if (!db || !db->isConnected()) {
+            continue;
         }
-        return nodes;
-    }
+        const auto type = db->getConnectionInfo().type;
+        const std::string conn = db->getConnectionInfo().name;
 
-    auto collect = [&nodes]<typename T>(T* server) {
-        if (!server) {
-            return;
-        }
-        for (auto& [name, node] : server->getDatabaseDataMap()) {
-            if constexpr (std::is_same_v<T, PostgresDatabase>) {
-                if (node->schemasLoaded && !node->schemas.empty()) {
-                    for (const auto& schema : node->schemas) {
-                        nodes.push_back({name + "." + schema->getName(), schema.get()});
-                    }
-                    continue;
-                }
+        if (isFileDatabase(type)) {
+            if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get())) {
+                nodes.push_back({conn, fileDb});
             }
-            nodes.push_back({name, node.get()});
+            continue;
         }
-    };
 
-    switch (type) {
-    case DatabaseType::POSTGRESQL:
-    case DatabaseType::REDSHIFT:
-        collect(dynamic_cast<PostgresDatabase*>(db.get()));
-        break;
-    case DatabaseType::MYSQL:
-    case DatabaseType::MARIADB:
-        collect(dynamic_cast<MySQLDatabase*>(db.get()));
-        break;
-    case DatabaseType::MONGODB:
-        collect(dynamic_cast<MongoDBDatabase*>(db.get()));
-        break;
-    case DatabaseType::MSSQL:
-        collect(dynamic_cast<MSSQLDatabase*>(db.get()));
-        break;
-    case DatabaseType::ORACLE:
-        collect(dynamic_cast<OracleDatabase*>(db.get()));
-        break;
-    case DatabaseType::CASSANDRA:
-        collect(dynamic_cast<CassandraDatabase*>(db.get()));
-        break;
-    default:
-        break; // redis: no schema nodes
+        auto collect = [&nodes, &conn]<typename T>(T* server) {
+            if (!server) {
+                return;
+            }
+            for (auto& [name, node] : server->getDatabaseDataMap()) {
+                if constexpr (std::is_same_v<T, PostgresDatabase>) {
+                    if (node->schemasLoaded && !node->schemas.empty()) {
+                        for (const auto& schema : node->schemas) {
+                            nodes.push_back(
+                                {conn + "." + name + "." + schema->getName(), schema.get()});
+                        }
+                        continue;
+                    }
+                }
+                nodes.push_back({conn + "." + name, node.get()});
+            }
+        };
+
+        switch (type) {
+        case DatabaseType::POSTGRESQL:
+        case DatabaseType::REDSHIFT:
+            collect(dynamic_cast<PostgresDatabase*>(db.get()));
+            break;
+        case DatabaseType::MYSQL:
+        case DatabaseType::MARIADB:
+            collect(dynamic_cast<MySQLDatabase*>(db.get()));
+            break;
+        case DatabaseType::MONGODB:
+            collect(dynamic_cast<MongoDBDatabase*>(db.get()));
+            break;
+        case DatabaseType::MSSQL:
+            collect(dynamic_cast<MSSQLDatabase*>(db.get()));
+            break;
+        case DatabaseType::ORACLE:
+            collect(dynamic_cast<OracleDatabase*>(db.get()));
+            break;
+        case DatabaseType::CASSANDRA:
+            collect(dynamic_cast<CassandraDatabase*>(db.get()));
+            break;
+        default:
+            break; // redis: no schema nodes
+        }
     }
+
     std::sort(nodes.begin(), nodes.end(),
               [](const NodeRef& a, const NodeRef& b) { return a.label < b.label; });
     return nodes;
 }
 
 IDatabaseNode* AISidebarPanel::contextNode() {
+    // whatever the user pinned wins; otherwise fall back to the first connected node
+    for (const auto& item : selectedContext_) {
+        if (item.node) {
+            return item.node;
+        }
+    }
     const auto nodes = collectNodes();
-    if (nodes.empty()) {
-        return nullptr;
-    }
-    if (contextNodeIndex_ >= static_cast<int>(nodes.size())) {
-        contextNodeIndex_ = 0;
-    }
-    return nodes[static_cast<size_t>(contextNodeIndex_)].node;
+    return nodes.empty() ? nullptr : nodes.front().node;
 }
 
 void AISidebarPanel::syncContext() {
-    auto db = Application::getInstance().getSelectedDatabase();
-    if (db.get() != lastDb_) {
+    if (auto db = Application::getInstance().getSelectedDatabase(); db.get() != lastDb_) {
         lastDb_ = db.get();
-        contextNodeIndex_ = 0;
         sentSchemaContext_ = false;
-        mentionIndex_.clear();
+        contextCandidates_.clear();
+    }
+    const auto nodes = collectNodes();
+    // the sidebar only polls these while the Databases tab is rendering, so an async
+    // schema load started for the picker would otherwise never complete here
+    for (const auto& ref : nodes) {
+        if (ref.node) {
+            ref.node->checkLoadingStatus();
+        }
+    }
+    // drop pinned context whose node went away with a disconnect
+    if (!selectedContext_.empty()) {
+        std::erase_if(selectedContext_, [&nodes](const ContextItem& item) {
+            // entries for closed connections carry no node; keep those
+            return item.node != nullptr &&
+                   std::none_of(nodes.begin(), nodes.end(),
+                                [&item](const NodeRef& ref) { return ref.node == item.node; });
+        });
     }
     // keep the mcp tool pointed at the current node
-    const auto nodes = collectNodes();
-    if (nodes.empty()) {
-        mcp_.setNode(nullptr, "");
-    } else {
-        if (contextNodeIndex_ >= static_cast<int>(nodes.size())) {
-            contextNodeIndex_ = 0;
+    IDatabaseNode* node = contextNode();
+    mcp_.setNode(node, node ? node->getName() : "");
+
+    // publish every saved connection so the agent can see, and open, closed ones
+    std::vector<McpConnectionInfo> connections;
+    for (const auto& db : Application::getInstance().getDatabases()) {
+        if (!db) {
+            continue;
         }
-        const auto& ref = nodes[static_cast<size_t>(contextNodeIndex_)];
-        mcp_.setNode(ref.node, ref.label);
+        const auto info = db->getConnectionInfo();
+        connections.push_back({info.name, dbTypeLabel(info.type), db->isConnected()});
     }
+    mcp_.setConnections(std::move(connections));
+
+    serviceAgentConnectRequests();
+}
+
+void AISidebarPanel::serviceAgentConnectRequests() {
+    // the tool handler blocks on the http thread; opening a connection has to happen
+    // here, on the ui thread, and report back when the async connect settles
+    if (pendingConnectDb_) {
+        pendingConnectDb_->checkConnectionStatusAsync();
+        const auto info = pendingConnectDb_->getConnectionInfo();
+        if (pendingConnectDb_->isConnected()) {
+            mcp_.finishConnectRequest(true, std::format("Connected to {}.", info.name));
+            pendingConnectDb_.reset();
+        } else if (!pendingConnectDb_->isConnecting() &&
+                   pendingConnectDb_->hasAttemptedConnection()) {
+            const std::string error = pendingConnectDb_->getLastConnectionError();
+            mcp_.finishConnectRequest(false, std::format("Could not connect to {}: {}", info.name,
+                                                         error.empty() ? "unknown error" : error));
+            pendingConnectDb_.reset();
+        }
+        return;
+    }
+
+    const auto request = mcp_.takeConnectRequest();
+    if (!request) {
+        return;
+    }
+
+    std::shared_ptr<DatabaseInterface> target;
+    for (const auto& db : Application::getInstance().getDatabases()) {
+        if (db && db->getConnectionInfo().name == *request) {
+            target = db;
+            break;
+        }
+    }
+    if (!target) {
+        mcp_.finishConnectRequest(false, std::format("No connection named '{}'.", *request));
+        return;
+    }
+    if (target->isConnected()) {
+        mcp_.finishConnectRequest(true, std::format("{} is already connected.", *request));
+        return;
+    }
+
+    target->startConnectionAsync();
+    pendingConnectDb_ = target;
+    items_.push_back(
+        {.kind = Item::Kind::Info, .text = std::format("Agent is connecting to {}...", *request)});
+    scrollToBottom_ = true;
 }
 
 std::string AISidebarPanel::schemaOverview(IDatabaseNode* node) const {
@@ -325,28 +483,79 @@ std::string AISidebarPanel::schemaOverview(IDatabaseNode* node) const {
     return out;
 }
 
-void AISidebarPanel::rebuildMentionIndex() {
-    mentionIndex_.clear();
+void AISidebarPanel::rebuildContextCandidates() {
+    contextCandidates_.clear();
+    int loadBudget = CONTEXT_AUTOLOAD_MAX_NODES;
+
+    // closed connections are offered too: the agent can open one with connect_database
+    for (const auto& db : Application::getInstance().getDatabases()) {
+        if (db && !db->isConnected()) {
+            contextCandidates_.push_back({ContextItem::Kind::Database, db->getConnectionInfo().name,
+                                          "not connected", nullptr});
+        }
+    }
+
     for (const auto& ref : collectNodes()) {
-        if (!ref.node || !ref.node->isTablesLoaded()) {
+        if (!ref.node) {
             continue;
         }
-        for (const auto& table : ref.node->getTables()) {
-            if (table.name.find(' ') != std::string::npos) {
-                continue; // ponytail: no quoting for names with spaces
+        contextCandidates_.push_back({ContextItem::Kind::Database, ref.label, "", ref.node});
+
+        // schema is loaded lazily on sidebar expand; the picker needs it too, so pull
+        // it in for nodes the user has not opened yet
+        if (loadBudget > 0 && !ref.node->isTablesLoaded() && !ref.node->isLoadingTables()) {
+            ref.node->startTablesLoadAsync(false);
+            --loadBudget;
+        }
+        if (loadBudget > 0 && !ref.node->isViewsLoaded() && !ref.node->isLoadingViews()) {
+            ref.node->startViewsLoadAsync(false);
+        }
+
+        if (ref.node->isTablesLoaded()) {
+            for (const auto& table : ref.node->getTables()) {
+                contextCandidates_.push_back(
+                    {ContextItem::Kind::Table, table.name, ref.label, ref.node});
             }
-            mentionIndex_.push_back({table.name, table.name + "  (" + ref.label + ")", ref.node});
         }
         if (ref.node->isViewsLoaded()) {
             for (const auto& view : ref.node->getViews()) {
-                if (view.name.find(' ') != std::string::npos) {
-                    continue;
-                }
-                mentionIndex_.push_back(
-                    {view.name, view.name + "  (" + ref.label + ", view)", ref.node});
+                contextCandidates_.push_back(
+                    {ContextItem::Kind::View, view.name, ref.label, ref.node});
             }
         }
+        for (const auto& seq : ref.node->getSequences()) {
+            contextCandidates_.push_back({ContextItem::Kind::Sequence, seq, ref.label, ref.node});
+        }
     }
+}
+
+std::string AISidebarPanel::contextItemText(const ContextItem& item) const {
+    if (!item.node) {
+        // a saved connection that is not open yet; point the agent at the tool for it
+        return std::format("Database \"{}\" is saved in DearSQL but not connected yet. "
+                           "Open it with the connect_database tool (name: \"{}\"), then "
+                           "inspect it with list_tables and run_query.\n",
+                           item.name, item.name);
+    }
+    switch (item.kind) {
+    case ContextItem::Kind::Database:
+        return std::format("Database {} ({})\n{}", item.name,
+                           dbTypeLabel(item.node->getDatabaseType()), schemaOverview(item.node));
+    case ContextItem::Kind::Table:
+    case ContextItem::Kind::View: {
+        const bool isView = item.kind == ContextItem::Kind::View;
+        const auto& list = isView ? item.node->getViews() : item.node->getTables();
+        for (const auto& table : list) {
+            if (table.name == item.name) {
+                return tableDdlText(table, isView);
+            }
+        }
+        return std::format("{} {}\n", isView ? "View" : "Table", item.name);
+    }
+    case ContextItem::Kind::Sequence:
+        return std::format("Sequence {} in {}\n", item.name, item.owner);
+    }
+    return "";
 }
 
 json AISidebarPanel::buildPromptBlocks(const std::string& text) {
@@ -358,13 +567,17 @@ json AISidebarPanel::buildPromptBlocks(const std::string& text) {
         if (node) {
             intro += std::string(dbTypeLabel(node->getDatabaseType())) + " database";
         } else {
-            intro += "database (none selected yet)";
+            intro += "database (none connected yet)";
         }
         intro += " inside DearSQL, a desktop SQL client. Prefer answering with SQL in "
-                 "```sql code blocks. Do not modify files; if a DearSQL MCP tool is "
-                 "available, you may use it to inspect schema and run read-only queries.";
+                 "```sql code blocks. Do not modify files. If the DearSQL MCP tools are "
+                 "available, use them: list_databases shows the saved connections, "
+                 "connect_database opens one that is not connected yet, and list_tables "
+                 "and run_query inspect the open database. Connect on your own when you "
+                 "need a database that is not open.";
         blocks.push_back({{"type", "text"}, {"text", intro}});
-        if (node) {
+        // only dump the whole schema when the user has not pinned anything specific
+        if (node && selectedContext_.empty()) {
             blocks.push_back({{"type", "resource"},
                               {"resource",
                                {{"uri", "dearsql://schema"},
@@ -376,49 +589,16 @@ json AISidebarPanel::buildPromptBlocks(const std::string& text) {
 
     blocks.push_back({{"type", "text"}, {"text", text}});
 
-    // resolve @mentions into embedded table definitions
-    rebuildMentionIndex();
-    size_t i = 0;
-    std::vector<std::string> seen;
-    while ((i = text.find('@', i)) != std::string::npos) {
-        size_t end = i + 1;
-        while (end < text.size() && isWordChar(text[end])) {
-            ++end;
-        }
-        const std::string name = text.substr(i + 1, end - i - 1);
-        i = end;
-        if (name.empty() || std::find(seen.begin(), seen.end(), name) != seen.end()) {
+    for (const auto& item : selectedContext_) {
+        const std::string body = contextItemText(item);
+        if (body.empty()) {
             continue;
         }
-        for (const auto& entry : mentionIndex_) {
-            if (entry.name != name || !entry.node) {
-                continue;
-            }
-            const Table* found = nullptr;
-            bool isView = false;
-            for (const auto& t : entry.node->getTables()) {
-                if (t.name == name) {
-                    found = &t;
-                }
-            }
-            if (!found && entry.node->isViewsLoaded()) {
-                for (const auto& v : entry.node->getViews()) {
-                    if (v.name == name) {
-                        found = &v;
-                        isView = true;
-                    }
-                }
-            }
-            if (found) {
-                blocks.push_back({{"type", "resource"},
-                                  {"resource",
-                                   {{"uri", "dearsql://table/" + name},
-                                    {"mimeType", "text/plain"},
-                                    {"text", tableDdlText(*found, isView)}}}});
-                seen.push_back(name);
-            }
-            break;
-        }
+        blocks.push_back({{"type", "resource"},
+                          {"resource",
+                           {{"uri", "dearsql://context/" + item.name},
+                            {"mimeType", "text/plain"},
+                            {"text", body}}}});
     }
     return blocks;
 }
@@ -433,7 +613,13 @@ void AISidebarPanel::sendMessage() {
     }
     text = text.substr(start, text.find_last_not_of(" \t\n\r") - start + 1);
 
-    items_.push_back({.kind = Item::Kind::User, .text = text});
+    std::string note;
+    for (const auto& item : selectedContext_) {
+        note += (note.empty() ? "" : ", ") + item.name;
+    }
+    items_.push_back({.kind = Item::Kind::User,
+                      .text = text,
+                      .contextNote = note.empty() ? "" : "context: " + note});
     inputBuf_[0] = '\0';
     cursorPos_ = 0;
     mentionOpen_ = false;
@@ -445,16 +631,21 @@ void AISidebarPanel::sendMessage() {
     } else {
         sendApi(text);
     }
+    // the context rode along with this message; start the next one clean
+    selectedContext_.clear();
 }
 
 void AISidebarPanel::sendAcp(const std::string& text) {
-    if (acp_ && acp_->isSessionReady()) {
-        acp_->prompt(buildPromptBlocks(text));
-        return;
-    }
+    // resolve the pinned context into blocks NOW. the chips are cleared as soon as the
+    // message is queued, so deferring this until the session is ready would send the
+    // message with its context already gone -- which is every first message, since the
+    // agent is still starting up then.
+    queueOrSendAcp(buildPromptBlocks(text));
+}
+
+bool AISidebarPanel::ensureAgentStarted() {
     if (acp_ && acp_->isRunning()) {
-        pendingPromptText_ = text; // session still being created
-        return;
+        return true;
     }
 
     std::string reason;
@@ -462,8 +653,7 @@ void AISidebarPanel::sendAcp(const std::string& text) {
     if (argv.empty()) {
         agentMissing_ = true;
         agentMissingReason_ = reason;
-        pendingPromptText_ = text;
-        return;
+        return false;
     }
     agentMissing_ = false;
 
@@ -476,13 +666,29 @@ void AISidebarPanel::sendAcp(const std::string& text) {
     }
 
     acp_ = std::make_unique<AcpClient>();
-    auto [ok, err] = acp_->start(argv, homeDir(), mcpUrl, "dearsql");
+    auto [ok, err] = acp_->start(argv, agentWorkingDir(), mcpUrl, "dearsql",
+                                 mcpUrl.empty() ? std::string{} : mcp_.token());
     if (!ok) {
         items_.push_back({.kind = Item::Kind::Error, .text = err});
         acp_.reset();
+        return false;
+    }
+    return true;
+}
+
+void AISidebarPanel::queueOrSendAcp(json blocks) {
+    if (acp_ && acp_->isSessionReady()) {
+        acp_->prompt(blocks);
         return;
     }
-    pendingPromptText_ = text;
+    if (acp_ && acp_->isRunning()) {
+        pendingPromptBlocks_ = std::move(blocks); // session still being created
+        return;
+    }
+    if (ensureAgentStarted() || agentMissing_) {
+        // hold the message until the session is ready, or until the agent is installed
+        pendingPromptBlocks_ = std::move(blocks);
+    }
 }
 
 void AISidebarPanel::sendApi(const std::string& text) {
@@ -510,9 +716,8 @@ void AISidebarPanel::sendApi(const std::string& text) {
         }
     }
 
-    // fold @mention definitions into the last user message. the legacy system
-    // prompt already carries the full schema, so skip the schema block here
-    rebuildMentionIndex();
+    // fold the pinned context into the last user message. the legacy system prompt
+    // already carries the full schema, so skip the schema block here
     sentSchemaContext_ = true;
     const json blocks = buildPromptBlocks(text);
     std::string mentionContext;
@@ -549,8 +754,8 @@ void AISidebarPanel::pollAcp() {
         if (res.success && res.exitCode == 0) {
             items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
             agentMissing_ = false;
-            if (!pendingPromptText_.empty()) {
-                sendAcp(std::exchange(pendingPromptText_, {}));
+            if (!pendingPromptBlocks_.empty()) {
+                queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
             }
         } else {
             std::string tail = res.output.empty() ? res.errorMessage : res.output;
@@ -570,8 +775,8 @@ void AISidebarPanel::pollAcp() {
     for (auto& ev : acp_->drainEvents()) {
         switch (ev.type) {
         case AcpEvent::Type::SessionReady:
-            if (!pendingPromptText_.empty()) {
-                acp_->prompt(buildPromptBlocks(std::exchange(pendingPromptText_, {})));
+            if (!pendingPromptBlocks_.empty()) {
+                acp_->prompt(std::exchange(pendingPromptBlocks_, json::array()));
             }
             break;
         case AcpEvent::Type::MessageDelta:
@@ -607,6 +812,9 @@ void AISidebarPanel::pollAcp() {
             scrollToBottom_ = true;
             break;
         }
+        case AcpEvent::Type::Commands:
+            agentCommands_ = std::move(ev.commands);
+            break;
         case AcpEvent::Type::Plan: {
             Item* planItem = nullptr;
             for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
@@ -683,10 +891,25 @@ void AISidebarPanel::pollApi() {
     }
 }
 
-// ---------------------------------------------------------------- rendering
-
 void AISidebarPanel::render() {
     ensureSettingsLoaded();
+
+    const bool settingsOpen = AISettingsDialog::instance().isOpen();
+    if (settingsDialogWasOpen_ && !settingsOpen) {
+        const bool enabled =
+            Application::getInstance().getAppState()->getSetting("ai_mcp_enabled", "1") == "1";
+        if (enabled != mcpEnabled_) {
+            mcpEnabled_ = enabled;
+            stopAgent();
+        }
+    }
+    settingsDialogWasOpen_ = settingsOpen;
+
+    if (!agentWarmupDone_ && isAcpBackend()) {
+        agentWarmupDone_ = true;
+        ensureAgentStarted();
+    }
+
     syncContext();
     if (isAcpBackend()) {
         pollAcp();
@@ -697,12 +920,22 @@ void AISidebarPanel::render() {
     renderHeader();
     ImGui::Separator();
 
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float inputRowHeight = ImGui::GetTextLineHeight() + Theme::Spacing::M * 2.0f;
-    const float controlsRowHeight = ImGui::GetFrameHeight();
-    const float inputAreaHeight = Theme::Spacing::M * 2.0f + inputRowHeight + style.ItemSpacing.y +
-                                  controlsRowHeight + Theme::Spacing::S;
-    const float availHeight = ImGui::GetContentRegionAvail().y - inputAreaHeight;
+    // the message list owns all the scrolling; never let it collapse to a negative
+    // size, which imgui would read as "fill minus n" and overflow the tab.
+    // the footer is the spacing imgui adds after the list, the input box itself, and a
+    // margin below it -- under-reserving here is what clipped the input's bottom edge.
+    // the input box and the History button in the tab strip are both anchored to the
+    // same bottom edge, so their top edges line up exactly when their heights match.
+    // the anchor is the History button's height; without one, fall back to a margin.
+    const float inputH = computeInputHeight();
+    const float bottomMargin = inputBottomAnchor_ > 0.0f
+                                   ? std::max(0.0f, inputBottomAnchor_ - inputH)
+                                   : INPUT_BOTTOM_MARGIN;
+    const float chipsHeight = contextChipsHeight(ImGui::GetContentRegionAvail().x);
+    const float footerHeight =
+        ImGui::GetStyle().ItemSpacing.y + chipsHeight + inputH + bottomMargin;
+    const float availHeight =
+        std::max(ImGui::GetContentRegionAvail().y - footerHeight, ImGui::GetTextLineHeight());
 
     const auto& colors = Application::getInstance().getCurrentColors();
     if (ImGui::BeginChild("##ai_side_messages", ImVec2(-1, availHeight), false)) {
@@ -710,13 +943,27 @@ void AISidebarPanel::render() {
             renderInstallCard();
         }
         if (items_.empty() && !agentMissing_) {
-            constexpr const char* hint = "Ask about your database, or type @ to reference a table.";
+            // the tab warms the agent up on open, so say so instead of showing a hint
+            // that invites input the session cannot accept yet
+            const std::string warming = agentStartingLabel();
+            const std::string text =
+                warming.empty() ? "Ask about your database, or type @ to reference a table."
+                                : warming;
             const float availW = ImGui::GetContentRegionAvail().x;
-            const ImVec2 textSize = ImGui::CalcTextSize(hint, nullptr, false, availW * 0.8f);
-            ImGui::SetCursorPos(ImVec2((availW - textSize.x) * 0.5f,
+            constexpr float spinnerRadius = 6.0f;
+            const float spinnerW =
+                warming.empty() ? 0.0f : spinnerRadius * 2.0f + Theme::Spacing::S;
+            const ImVec2 textSize =
+                ImGui::CalcTextSize(text.c_str(), nullptr, false, availW * 0.8f);
+            ImGui::SetCursorPos(ImVec2((availW - textSize.x - spinnerW) * 0.5f,
                                        (ImGui::GetContentRegionAvail().y - textSize.y) * 0.5f));
+            if (!warming.empty()) {
+                UIUtils::Spinner("##ai_warmup", spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+                ImGui::SameLine(0, Theme::Spacing::S);
+                ImGui::AlignTextToFramePadding();
+            }
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + availW * 0.8f);
-            ImGui::TextColored(colors.subtext0, "%s", hint);
+            ImGui::TextColored(colors.subtext0, "%s", text.c_str());
             ImGui::PopTextWrapPos();
         } else {
             renderMessages();
@@ -728,27 +975,65 @@ void AISidebarPanel::render() {
     }
     ImGui::EndChild();
 
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
+    // pinned context sits above the input box rather than inside its border
+    renderContextChips(ImGui::GetContentRegionAvail().x);
     renderInputArea();
 }
 
 void AISidebarPanel::renderHeader() {
     const auto& colors = Application::getInstance().getCurrentColors();
-    const auto& cat = AcpAgents::catalog();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const auto& cat = agentDefs_;
     const int customIndex = static_cast<int>(cat.size());
     const int apiIndex = customIndex + 1;
+    const bool isApi = backendIndex_ == apiIndex;
 
     const char* currentLabel = backendIndex_ == customIndex ? "Custom agent"
-                               : backendIndex_ == apiIndex
-                                   ? "API key"
-                                   : cat[static_cast<size_t>(backendIndex_)].name.c_str();
+                               : isApi ? "API key"
+                                       : cat[static_cast<size_t>(backendIndex_)].name.c_str();
+
+    // size a combo to its longest entry rather than a share of the sidebar
+    const auto comboWidth = [&style](const std::vector<std::string>& labels) {
+        float widest = 0.0f;
+        for (const auto& label : labels) {
+            widest = std::max(widest, ImGui::CalcTextSize(label.c_str()).x);
+        }
+        return widest + ImGui::GetFrameHeight() + style.FramePadding.x * 2.0f;
+    };
+
+    std::vector<std::string> backendLabels;
+    for (const auto& def : cat) {
+        backendLabels.push_back(def.name);
+    }
+    backendLabels.emplace_back("Custom agent");
+    backendLabels.emplace_back("API key");
+
+    std::vector<std::string> modelLabels;
+    for (const auto& model : API_MODELS) {
+        modelLabels.emplace_back(model.label);
+    }
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(colors.subtext0, ICON_FA_ROBOT);
     ImGui::SameLine(0, Theme::Spacing::S);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+
+    // the sidebar renders inside children with zero WindowPadding, and a combo popup
+    // inherits WindowPadding.y -- without this its rows sit flush against the edges
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
+
+    const float gearW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
+    const float rowAvail = ImGui::GetContentRegionAvail().x - gearW - style.ItemSpacing.x;
+    float backendW = comboWidth(backendLabels);
+    float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
+    if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
+        wanted > rowAvail && wanted > 0.0f) {
+        const float scale = rowAvail / wanted;
+        backendW *= scale;
+        modelW *= scale;
+    }
+
+    ImGui::SetNextItemWidth(backendW);
     if (ImGui::BeginCombo("##ai_backend", currentLabel)) {
         for (int i = 0; i < static_cast<int>(cat.size()); ++i) {
             if (ImGui::Selectable(cat[static_cast<size_t>(i)].name.c_str(), backendIndex_ == i)) {
@@ -764,39 +1049,10 @@ void AISidebarPanel::renderHeader() {
         ImGui::EndCombo();
     }
 
-    ImGui::SameLine();
-    const float rightW = ImGui::CalcTextSize(ICON_FA_ROTATE).x + ImGui::CalcTextSize("Clear").x +
-                         ImGui::GetStyle().FramePadding.x * 4 + ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - rightW);
-    if (UIUtils::SmallButton(ICON_FA_ROTATE "##ai_new_session")) {
-        stopAgent();
-        sentSchemaContext_ = false;
-        items_.push_back({.kind = Item::Kind::Info, .text = "New session."});
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Restart agent session");
-    }
-    ImGui::SameLine();
-    if (UIUtils::SmallButton("Clear##ai_clear")) {
-        apiChat_->cancelAsyncPrompt();
-        apiClient_->cancel();
-        items_.clear();
-    }
-
-    if (backendIndex_ == customIndex) {
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputTextWithHint("##ai_custom_cmd", "agent command (speaks ACP on stdio)",
-                                     customCmdBuf_, sizeof(customCmdBuf_))) {
-        }
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            Application::getInstance().getAppState()->setSetting("ai_custom_agent_cmd",
-                                                                 customCmdBuf_);
-            stopAgent();
-        }
-    }
-
-    if (backendIndex_ == apiIndex) {
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    // the model picker shares the row with the backend picker
+    if (isApi) {
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SetNextItemWidth(modelW);
         if (ImGui::BeginCombo("##ai_api_model", API_MODELS[apiModelIndex_].label)) {
             for (int i = 0; i < API_MODEL_COUNT; ++i) {
                 if (ImGui::Selectable(API_MODELS[i].label, apiModelIndex_ == i)) {
@@ -805,45 +1061,30 @@ void AISidebarPanel::renderHeader() {
             }
             ImGui::EndCombo();
         }
-        ImGui::SameLine();
-        if (UIUtils::SmallButton("Keys...##ai_keys")) {
-            AISettingsDialog::instance().show();
+    }
+    ImGui::PopStyleVar();
+
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - gearW);
+    // IconButton keeps the frame transparent and skips the drop shadow, matching the
+    // toolbar icons in the table viewer
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    if (UIUtils::IconButton(ICON_FA_GEAR "##ai_settings")) {
+        AISettingsDialog::instance().show();
+    }
+    ImGui::PopStyleColor();
+
+    if (backendIndex_ == customIndex) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##ai_custom_cmd", "agent command (speaks ACP on stdio)",
+                                 customCmdBuf_, sizeof(customCmdBuf_));
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            Application::getInstance().getAppState()->setSetting("ai_custom_agent_cmd",
+                                                                 customCmdBuf_);
+            stopAgent();
         }
     }
 
-    // context row: database node picker + db tools toggle
-    const auto nodes = collectNodes();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextColored(colors.subtext0, ICON_FA_DATABASE);
-    ImGui::SameLine(0, Theme::Spacing::S);
-    const std::string ctxLabel =
-        nodes.empty()
-            ? "no database selected"
-            : nodes[static_cast<size_t>(std::min(contextNodeIndex_, (int)nodes.size() - 1))].label;
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-    if (ImGui::BeginCombo("##ai_ctx_node", ctxLabel.c_str())) {
-        for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
-            if (ImGui::Selectable(nodes[static_cast<size_t>(i)].label.c_str(),
-                                  contextNodeIndex_ == i)) {
-                contextNodeIndex_ = i;
-                sentSchemaContext_ = false;
-                mentionIndex_.clear();
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (isAcpBackend()) {
-        ImGui::SameLine();
-        if (ImGui::Checkbox("Tools##ai_mcp", &mcpEnabled_)) {
-            Application::getInstance().getAppState()->setSetting("ai_mcp_enabled",
-                                                                 mcpEnabled_ ? "1" : "0");
-            stopAgent(); // takes effect on next session
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Let the agent inspect schema and run read-only queries\n"
-                              "against the selected database (via MCP)");
-        }
-    }
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
 }
 
@@ -866,20 +1107,102 @@ void AISidebarPanel::renderInstallCard() {
                 UIUtils::Spinner("##install_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::SameLine(0, Theme::Spacing::S);
                 ImGui::TextColored(colors.subtext0, "Installing...");
-            } else {
-                if (UIUtils::SmallButton(("Install " + def->name).c_str())) {
-                    installer_.start(def->installCmd);
+            } else if (const AcpInstallOption* install = AcpAgents::resolveInstall(*def)) {
+                if (UIUtils::SmallButton(
+                        std::format("Install with {}##ai_install", install->label).c_str())) {
+                    installer_.start(install->command);
                 }
                 ImGui::SameLine(0, Theme::Spacing::S);
-                ImGui::TextColored(colors.subtext0, "runs: %s", def->installCmd.c_str());
+                ImGui::TextColored(colors.subtext0, "runs: %s", install->command.c_str());
+            } else {
+                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+                ImGui::TextColored(colors.subtext0,
+                                   "This agent ships as an npm package and no JavaScript runtime "
+                                   "was found. Install Node, bun or pnpm - or download an agent "
+                                   "below that runs on its own.");
+                ImGui::PopTextWrapPos();
             }
         }
+
+        renderRegistryAgents();
         ImGui::Unindent(Theme::Spacing::M);
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
+}
+
+std::string AISidebarPanel::agentStartingLabel() const {
+    if (!acp_ || !acp_->isRunning() || acp_->isSessionReady()) {
+        return "";
+    }
+    const AcpAgentDef* def = currentAgentDef();
+    return std::format("Starting {}...", def ? def->name : std::string("agent"));
+}
+
+void AISidebarPanel::renderRegistryAgents() {
+#if defined(_WIN32)
+    // AcpClient cannot spawn an agent on Windows yet, so downloading one would
+    // leave the user with a binary nothing can launch
+    return;
+#else
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // fetched once, lazily: nothing hits the network unless an agent is missing
+    if (!registryFetchStarted_) {
+        registryFetchStarted_ = true;
+        registry_.startFetch();
+    }
+    if (registry_.poll()) {
+        // an install may have added a new agent to pick from
+        agentDefs_ = AcpAgents::availableAgents();
+        if (!registry_.installedId().empty()) {
+            items_.push_back({.kind = Item::Kind::Info,
+                              .text = "Installed " + registry_.installedId() +
+                                      ". Pick it from the agent list above."});
+            agentMissing_ = false;
+            scrollToBottom_ = true;
+        }
+    }
+
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
+    ImGui::TextColored(colors.subtext0, "Agents that run without Node");
+
+    if (registry_.isBusy()) {
+        UIUtils::Spinner("##registry_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::TextColored(colors.subtext0, "Working...");
+        return;
+    }
+    if (!registry_.error().empty()) {
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextColored(colors.red, "%s", registry_.error().c_str());
+        ImGui::PopTextWrapPos();
+    }
+
+    int shown = 0;
+    for (const auto& agent : registry_.agents()) {
+        if (!agent.hasBinary || AcpRegistry::installedCommand(agent.id)) {
+            continue;
+        }
+        ImGui::PushID(agent.id.c_str());
+        if (UIUtils::SmallButton("Download")) {
+            registry_.startInstall(agent);
+        }
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::TextColored(colors.text, "%s", agent.name.c_str());
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::TextColored(colors.subtext0, "%s", agent.version.c_str());
+        ImGui::PopID();
+        if (++shown >= 8) {
+            break;
+        }
+    }
+    if (shown == 0 && registry_.error().empty()) {
+        ImGui::TextColored(colors.subtext0, "None available for this platform.");
+    }
+#endif
 }
 
 void AISidebarPanel::renderMessages() {
@@ -893,10 +1216,10 @@ void AISidebarPanel::renderMessages() {
     if (busy) {
         ImGui::Spacing();
         UIUtils::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
-        if (acp_ && !acp_->isSessionReady()) {
+        if (const std::string warming = agentStartingLabel(); !warming.empty()) {
             ImGui::SameLine();
-            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0,
-                               "Starting agent...");
+            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "%s",
+                               warming.c_str());
         }
     }
 }
@@ -913,6 +1236,9 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     case Item::Kind::User:
         ImGui::TextColored(colors.subtext0, "You");
         ImGui::TextWrapped("%s", item.text.c_str());
+        if (!item.contextNote.empty()) {
+            ImGui::TextColored(colors.overlay1, "%s", item.contextNote.c_str());
+        }
         break;
 
     case Item::Kind::Assistant:
@@ -1034,18 +1360,33 @@ int aiSidebarInputCallback(void* dataPtr) {
         if (self->pendingReplaceStart_ >= 0 && self->pendingReplaceEnd_ <= data->BufTextLen) {
             data->DeleteChars(self->pendingReplaceStart_,
                               self->pendingReplaceEnd_ - self->pendingReplaceStart_);
-            data->InsertChars(self->pendingReplaceStart_, self->pendingInsertText_.c_str());
+            if (!self->pendingInsertText_.empty()) {
+                data->InsertChars(self->pendingReplaceStart_, self->pendingInsertText_.c_str());
+            }
             data->CursorPos =
                 self->pendingReplaceStart_ + static_cast<int>(self->pendingInsertText_.size());
             self->pendingReplaceStart_ = -1;
             self->pendingReplaceEnd_ = -1;
             self->pendingInsertText_.clear();
         }
-        self->cursorPos_ = data->CursorPos;
-    } else if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
-        if (self->mentionOpen_) {
-            self->mentionNavDelta_ += (data->EventKey == ImGuiKey_UpArrow) ? -1 : 1;
+        // up/down drive the context picker. imgui forbids CallbackHistory alongside
+        // Multiline (both bind the arrows), so the keys are read here and the caret
+        // move they caused is undone, leaving the field where it was.
+        if (self->mentionOpen_ && !self->mentionMatches_.empty()) {
+            int delta = 0;
+            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+                delta = -1;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+                delta = 1;
+            }
+            if (delta != 0) {
+                const int count = static_cast<int>(self->mentionMatches_.size());
+                self->mentionSel_ = ((self->mentionSel_ + delta) % count + count) % count;
+                data->CursorPos = self->cursorPos_;
+                data->SelectionStart = data->SelectionEnd = data->CursorPos;
+            }
         }
+        self->cursorPos_ = data->CursorPos;
     } else if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
         if (self->mentionOpen_) {
             self->mentionAcceptRequested_ = true;
@@ -1065,74 +1406,188 @@ void AISidebarPanel::updateMentionState() {
     const int cursor = std::min(cursorPos_, static_cast<int>(text.size()));
 
     int at = -1;
-    for (int i = cursor - 1; i >= 0; --i) {
-        const char c = text[static_cast<size_t>(i)];
-        if (c == '@') {
-            at = i;
-            break;
-        }
-        if (!isWordChar(c)) {
-            break;
+    PickerMode mode = PickerMode::None;
+
+    // '/' opens the command list, but only as the first thing in the message so it
+    // cannot fire inside ordinary text like "a/b"
+    if (!text.empty() && text[0] == '/') {
+        const auto space = text.find_first_of(" \t\n");
+        if (space == std::string::npos || cursor <= static_cast<int>(space)) {
+            at = 0;
+            mode = PickerMode::Command;
         }
     }
-    // '@' must start a word
-    if (at > 0 && isWordChar(text[static_cast<size_t>(at - 1)])) {
-        at = -1;
+
+    if (mode == PickerMode::None) {
+        for (int i = cursor - 1; i >= 0; --i) {
+            const char c = text[static_cast<size_t>(i)];
+            if (c == '@') {
+                at = i;
+                break;
+            }
+            if (!isWordChar(c)) {
+                break;
+            }
+        }
+        // '@' must start a word
+        if (at > 0 && isWordChar(text[static_cast<size_t>(at - 1)])) {
+            at = -1;
+        }
+        if (at >= 0) {
+            mode = PickerMode::Context;
+        }
     }
+    pickerMode_ = mode;
 
     if (at < 0 || at == mentionDismissedStart_) {
         mentionOpen_ = false;
+        pickerMode_ = PickerMode::None;
         return;
     }
     if (at != mentionStart_) {
         mentionSel_ = 0;
         mentionDismissedStart_ = -1;
-        if (mentionIndex_.empty()) {
-            rebuildMentionIndex();
+    }
+    if (pickerMode_ == PickerMode::Command && at != mentionStart_ && isAcpBackend()) {
+        // the agent only publishes its commands after session/new, so there is nothing
+        // but our own to show until one is running
+        ensureAgentStarted();
+    }
+
+    if (pickerMode_ == PickerMode::Context) {
+        // rebuild on open, then poll: schema arrives asynchronously, so entries have to
+        // be picked up after the fact. throttled so a large schema is not rebuilt every
+        // frame
+        const double now = ImGui::GetTime();
+        if (at != mentionStart_ || contextCandidates_.empty() ||
+            now - lastCandidateBuild_ > CONTEXT_REBUILD_INTERVAL) {
+            rebuildContextCandidates();
+            lastCandidateBuild_ = now;
         }
     }
     mentionStart_ = at;
     mentionFilter_ = text.substr(static_cast<size_t>(at) + 1, static_cast<size_t>(cursor - at - 1));
 
-    // case-insensitive substring filter
     std::string needle = mentionFilter_;
     std::transform(needle.begin(), needle.end(), needle.begin(),
                    [](unsigned char c) { return std::tolower(c); });
+
     mentionMatches_.clear();
-    for (int i = 0; i < static_cast<int>(mentionIndex_.size()); ++i) {
-        std::string hay = mentionIndex_[static_cast<size_t>(i)].name;
-        std::transform(hay.begin(), hay.end(), hay.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        if (needle.empty() || hay.find(needle) != std::string::npos) {
-            mentionMatches_.push_back(i);
+    if (pickerMode_ == PickerMode::Command) {
+        rebuildCommandEntries();
+        for (int i = 0; i < static_cast<int>(commandEntries_.size()); ++i) {
+            if (needle.empty() ||
+                commandEntries_[static_cast<size_t>(i)].name.find(needle) != std::string::npos) {
+                mentionMatches_.push_back(i);
+            }
+        }
+    } else {
+        for (int i = 0; i < static_cast<int>(contextCandidates_.size()); ++i) {
+            const auto& item = contextCandidates_[static_cast<size_t>(i)];
+            std::string hay = item.name + " " + item.owner;
+            std::transform(hay.begin(), hay.end(), hay.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (needle.empty() || hay.find(needle) != std::string::npos) {
+                mentionMatches_.push_back(i);
+            }
         }
     }
-    mentionOpen_ = !mentionMatches_.empty();
+    // open even with nothing to offer: an empty picker still tells the user why
+    mentionOpen_ = true;
     if (mentionSel_ >= static_cast<int>(mentionMatches_.size())) {
         mentionSel_ = 0;
     }
 }
 
-void AISidebarPanel::acceptMention(const MentionEntry& entry) {
+void AISidebarPanel::rebuildCommandEntries() {
+    commandEntries_.clear();
+    for (const auto& cmd : CLIENT_COMMANDS) {
+        commandEntries_.push_back({cmd.name, cmd.help, true});
+    }
+    for (const auto& cmd : agentCommands_) {
+        std::string help = cmd.description;
+        if (!cmd.hint.empty()) {
+            help += "  " + cmd.hint;
+        }
+        commandEntries_.push_back({cmd.name, help, false});
+    }
+    // stable, with client entries pushed first, so a name we define wins over an
+    // agent command of the same name rather than the order being unspecified
+    std::stable_sort(commandEntries_.begin(), commandEntries_.end(),
+                     [](const CommandEntry& a, const CommandEntry& b) { return a.name < b.name; });
+    commandEntries_.erase(
+        std::unique(commandEntries_.begin(), commandEntries_.end(),
+                    [](const CommandEntry& a, const CommandEntry& b) { return a.name == b.name; }),
+        commandEntries_.end());
+}
+
+void AISidebarPanel::acceptPicked(int matchIndex) {
+    if (matchIndex < 0 || matchIndex >= static_cast<int>(mentionMatches_.size())) {
+        return;
+    }
+    const int index = mentionMatches_[static_cast<size_t>(matchIndex)];
+
+    if (pickerMode_ == PickerMode::Command) {
+        if (index < 0 || index >= static_cast<int>(commandEntries_.size())) {
+            return;
+        }
+        const CommandEntry entry = commandEntries_[static_cast<size_t>(index)];
+
+        // rewrite the "/cmd" token through the input callback: editing inputBuf_
+        // directly would be ignored while imgui holds the field active
+        pendingReplaceStart_ = 0;
+        pendingReplaceEnd_ = static_cast<int>(std::strlen(inputBuf_));
+        // an agent command is just prompt text, so leave it in the box for arguments;
+        // ours runs here and the box is emptied
+        pendingInsertText_ = entry.client ? "" : "/" + entry.name + " ";
+        mentionOpen_ = false;
+        mentionDismissedStart_ = -1;
+        pickerMode_ = PickerMode::None;
+        focusInput_ = true;
+        if (entry.client) {
+            runCommand(entry.name);
+        }
+        return;
+    }
+    addContext(contextCandidates_[static_cast<size_t>(index)]);
+}
+
+void AISidebarPanel::runCommand(const std::string& name) {
+    if (name == "new") {
+        stopAgent();
+        agentWarmupDone_ = false; // bring the replacement session straight back up
+        sentSchemaContext_ = false;
+        items_.push_back({.kind = Item::Kind::Info, .text = "New session."});
+        scrollToBottom_ = true;
+    } else if (name == "clear") {
+        apiChat_->cancelAsyncPrompt();
+        apiClient_->cancel();
+        items_.clear();
+        selectedContext_.clear();
+    }
+}
+
+void AISidebarPanel::addContext(const ContextItem& item) {
+    const std::string key = item.key();
+    if (std::none_of(selectedContext_.begin(), selectedContext_.end(),
+                     [&key](const ContextItem& c) { return c.key() == key; })) {
+        selectedContext_.push_back(item);
+    }
+    // the picker consumed the "@filter" text; drop it from the buffer
     pendingReplaceStart_ = mentionStart_;
     pendingReplaceEnd_ = std::min(cursorPos_, static_cast<int>(std::strlen(inputBuf_)));
-    pendingInsertText_ = "@" + entry.name + " ";
+    pendingInsertText_.clear();
     mentionOpen_ = false;
     mentionDismissedStart_ = -1;
     focusInput_ = true;
 }
 
 void AISidebarPanel::renderMentionPopupAt(float x, float y, float width) {
-    if (!mentionOpen_ || mentionMatches_.empty()) {
+    if (!mentionOpen_) {
         return;
     }
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    if (mentionNavDelta_ != 0) {
-        const int count = static_cast<int>(mentionMatches_.size());
-        mentionSel_ = ((mentionSel_ + mentionNavDelta_) % count + count) % count;
-        mentionNavDelta_ = 0;
-    }
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         mentionOpen_ = false;
         mentionDismissedStart_ = mentionStart_;
@@ -1142,41 +1597,166 @@ void AISidebarPanel::renderMentionPopupAt(float x, float y, float width) {
     ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(width, 0));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, INPUT_ROUNDING);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::S, Theme::Spacing::S));
     if (ImGui::Begin("##ai_mention_popup", nullptr,
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
                          ImGuiWindowFlags_AlwaysAutoResize)) {
-        const int shown = std::min(static_cast<int>(mentionMatches_.size()), MENTION_MAX_VISIBLE);
-        for (int i = 0; i < shown; ++i) {
-            const auto& entry = mentionIndex_[static_cast<size_t>(mentionMatches_[i])];
-            if (ImGui::Selectable(entry.label.c_str(), i == mentionSel_)) {
-                acceptMention(entry);
+        // the sidebar takes focus as soon as the user types, which would sort this
+        // unfocused window behind it; force it in front without stealing focus away
+        // from the text field
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        if (mentionMatches_.empty()) {
+            const char* empty = "No match";
+            if (pickerMode_ == PickerMode::Context && contextCandidates_.empty()) {
+                empty = "No database connected";
+            } else if (pickerMode_ == PickerMode::Command) {
+                empty = "No such command";
             }
+            ImGui::TextColored(colors.subtext0, "%s", empty);
         }
-        if (static_cast<int>(mentionMatches_.size()) > shown) {
-            ImGui::TextColored(colors.subtext0, "  ... %d more",
-                               static_cast<int>(mentionMatches_.size()) - shown);
+        const int count = static_cast<int>(mentionMatches_.size());
+        const int shown = std::min(count, MENTION_MAX_VISIBLE);
+        // scroll the window of rows so the arrow-selected item stays on screen
+        const int first = count > shown ? std::clamp(mentionSel_ - shown / 2, 0, count - shown) : 0;
+
+        for (int i = first; i < first + shown; ++i) {
+            const int index = mentionMatches_[static_cast<size_t>(i)];
+            std::string row;
+            std::string trailing;
+            if (pickerMode_ == PickerMode::Command) {
+                const auto& cmd = commandEntries_[static_cast<size_t>(index)];
+                row = std::format("/{}##cmd{}", cmd.name, i);
+                trailing = cmd.help;
+            } else {
+                const auto& item = contextCandidates_[static_cast<size_t>(index)];
+                row = std::format("{}  {}##ctx{}", contextKindIcon(item.kind), item.name, i);
+                trailing = item.owner;
+            }
+            if (ImGui::Selectable(row.c_str(), i == mentionSel_)) {
+                acceptPicked(i);
+            }
+            if (!trailing.empty()) {
+                ImGui::SameLine();
+                ImGui::TextColored(colors.subtext0, "%s", trailing.c_str());
+            }
         }
         if (mentionAcceptRequested_) {
             mentionAcceptRequested_ = false;
-            acceptMention(mentionIndex_[static_cast<size_t>(mentionMatches_[mentionSel_])]);
+            acceptPicked(mentionSel_);
         }
     }
     ImGui::End();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(5);
+    ImGui::PopStyleColor(2);
+}
+
+float AISidebarPanel::contextChipsHeight(float availWidth) const {
+    if (selectedContext_.empty()) {
+        return 0.0f;
+    }
+    const float chipH = chipHeight();
+    float x = 0.0f;
+    int rows = 1;
+    for (const auto& item : selectedContext_) {
+        const float w = chipWidth(item.name);
+        if (x > 0.0f && x + w > availWidth) {
+            ++rows;
+            x = 0.0f;
+        }
+        x += w + Theme::Spacing::XS;
+    }
+    return static_cast<float>(rows) * chipH + static_cast<float>(rows - 1) * Theme::Spacing::XS +
+           Theme::Spacing::XS;
+}
+
+void AISidebarPanel::renderContextChips(float availWidth) {
+    if (selectedContext_.empty()) {
+        return;
+    }
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const float chipH = chipHeight();
+    const float closeW = ImGui::GetTextLineHeight();
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+
+    float x = 0.0f;
+    float y = 0.0f;
+    int removeIndex = -1;
+
+    for (size_t i = 0; i < selectedContext_.size(); ++i) {
+        const auto& item = selectedContext_[i];
+        const float w = chipWidth(item.name);
+        if (x > 0.0f && x + w > availWidth) {
+            x = 0.0f;
+            y += chipH + Theme::Spacing::XS;
+        }
+        const ImVec2 p(origin.x + x, origin.y + y);
+
+        drawList->AddRectFilled(p, ImVec2(p.x + w, p.y + chipH),
+                                ImGui::GetColorU32(colors.surface2), chipH * 0.5f);
+        drawList->AddText(ImVec2(p.x + CHIP_PAD_X, p.y + CHIP_PAD_Y),
+                          ImGui::GetColorU32(colors.text), item.name.c_str());
+
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::SetCursorScreenPos(ImVec2(p.x + w - closeW - CHIP_PAD_X, p.y));
+        ImGui::InvisibleButton("##ctx_close", ImVec2(closeW + CHIP_PAD_X, chipH));
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) {
+            removeIndex = static_cast<int>(i);
+        }
+        ImGui::PopID();
+
+        drawList->AddText(ImVec2(p.x + w - closeW - CHIP_PAD_X, p.y + CHIP_PAD_Y),
+                          ImGui::GetColorU32(hovered ? colors.red : colors.subtext0),
+                          ICON_FA_XMARK);
+        x += w + Theme::Spacing::XS;
+    }
+
+    if (removeIndex >= 0) {
+        selectedContext_.erase(selectedContext_.begin() + removeIndex);
+    }
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + y + chipH + Theme::Spacing::XS));
+}
+
+float AISidebarPanel::computeInputHeight() const {
+    const float lineH = ImGui::GetTextLineHeight();
+    const float wrapW =
+        ImGui::GetContentRegionAvail().x - INPUT_CONTAINER_PAD_X * 2.0f - INPUT_FRAME_PAD_X * 2.0f;
+
+    float textH = lineH;
+    if (inputBuf_[0] != '\0' && wrapW > 0.0f) {
+        textH = std::max(textH, ImGui::CalcTextSize(inputBuf_, nullptr, false, wrapW).y);
+        // CalcTextSize ignores a trailing newline; keep the caret's line visible
+        if (inputBuf_[std::strlen(inputBuf_) - 1] == '\n') {
+            textH += lineH;
+        }
+    }
+    // a hair of slack so rounding can never make the content outgrow the frame by a
+    // pixel, which would pop a scrollbar, narrow the wrap width and add another line
+    textH = std::min(textH, lineH * INPUT_MAX_LINES) + INPUT_TEXT_SLACK;
+
+    return INPUT_CONTAINER_PAD_Y * 2.0f + textH + INPUT_FRAME_PAD_Y * 2.0f + INPUT_ROW_GAP +
+           inputControlsHeight();
 }
 
 void AISidebarPanel::renderInputArea() {
     const auto& colors = Application::getInstance().getCurrentColors();
+    const float containerHeight = computeInputHeight();
+    const float controlsHeight = inputControlsHeight();
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::L, Theme::Spacing::M));
-
-    const float inputRowHeight = ImGui::GetTextLineHeight() + Theme::Spacing::M * 2.0f;
-    const float containerHeight = Theme::Spacing::M * 2.0f + inputRowHeight +
-                                  ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeight();
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, INPUT_ROUNDING);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(INPUT_CONTAINER_PAD_X, INPUT_CONTAINER_PAD_Y));
 
     ImVec2 inputRectMin{};
     float inputWidth = 0.0f;
@@ -1185,71 +1765,88 @@ void AISidebarPanel::renderInputArea() {
                           ImGuiChildFlags_Borders)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                            ImVec2(INPUT_FRAME_PAD_X, INPUT_FRAME_PAD_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(ImGui::GetStyle().ItemSpacing.x, INPUT_ROW_GAP));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
-        ImGui::PushItemWidth(-1);
 
         if (focusInput_) {
             ImGui::SetKeyboardFocusHere();
             focusInput_ = false;
         }
 
-        const bool submitted = ImGui::InputTextWithHint(
-            "##ai_side_text", "Ask about your database... (@ mentions a table)", inputBuf_,
-            sizeof(inputBuf_),
-            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackAlways |
-                ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_CallbackCompletion,
+        // Enter sends, Shift+Enter inserts a newline (CtrlEnterForNewLine flips Enter's
+        // role; imgui always treats Shift+Enter as a newline). CallbackHistory is not
+        // allowed alongside Multiline -- both bind up/down -- so mentions are picked with
+        // Tab or the mouse instead of the arrow keys.
+        const float inputH =
+            containerHeight - INPUT_CONTAINER_PAD_Y * 2.0f - INPUT_ROW_GAP - controlsHeight;
+        const bool submitted = ImGui::InputTextMultiline(
+            "##ai_side_text", inputBuf_, sizeof(inputBuf_), ImVec2(-1, inputH),
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CtrlEnterForNewLine |
+                ImGuiInputTextFlags_WordWrap | ImGuiInputTextFlags_CallbackAlways |
+                ImGuiInputTextFlags_CallbackCompletion,
             sidebarInputCallbackThunk, this);
         inputRectMin = ImGui::GetItemRectMin();
         inputWidth = ImGui::GetItemRectSize().x;
 
-        ImGui::PopItemWidth();
+        // InputTextMultiline has no hint variant, so draw the placeholder ourselves
+        if (inputBuf_[0] == '\0') {
+            ImGui::GetWindowDrawList()->AddText(
+                ImVec2(inputRectMin.x + INPUT_FRAME_PAD_X, inputRectMin.y + INPUT_FRAME_PAD_Y),
+                ImGui::GetColorU32(colors.overlay1), INPUT_HINT);
+        }
+
         ImGui::PopStyleColor(3);
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(2); // FrameBorderSize, FramePadding
 
         updateMentionState();
 
         if (submitted) {
             if (mentionOpen_ && !mentionMatches_.empty()) {
-                acceptMention(mentionIndex_[static_cast<size_t>(mentionMatches_[mentionSel_])]);
+                acceptPicked(mentionSel_);
                 focusInput_ = true;
             } else {
                 sendMessage();
             }
         }
 
-        // controls row
-        ImGui::AlignTextToFramePadding();
+        // controls row, placed by hand so it occupies exactly controlsHeight and the
+        // icon lines up with the text's inset above it
+        const float rowY = ImGui::GetCursorPosY();
+        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + INPUT_FRAME_PAD_X,
+                                   rowY + (controlsHeight - ImGui::GetTextLineHeight()) * 0.5f));
         ImGui::TextColored(colors.subtext0, ICON_FA_WAND_MAGIC_SPARKLES);
 
-        const float sendBtnWidth = ImGui::GetFrameHeight();
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - sendBtnWidth);
+        const float sendBtnWidth = controlsHeight;
+        ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - sendBtnWidth, rowY));
 
-        const bool acpBusy = acp_ && (acp_->isTurnActive() || !pendingPromptText_.empty());
+        const bool acpBusy = acp_ && (acp_->isTurnActive() || !pendingPromptBlocks_.empty());
         const bool apiBusy = apiClient_->isStreaming() || apiChat_->isBuildingPrompt();
         if (acpBusy || apiBusy) {
             if (UIUtils::IconButton(ICON_FA_STOP, UIUtils::ButtonVariant::Danger,
-                                    ImVec2(sendBtnWidth, 0))) {
+                                    ImVec2(sendBtnWidth, controlsHeight))) {
                 if (acp_) {
                     acp_->cancelTurn();
-                    pendingPromptText_.clear();
+                    pendingPromptBlocks_ = json::array();
                 }
                 apiChat_->cancelAsyncPrompt();
                 apiClient_->cancel();
             }
         } else {
             if (UIUtils::IconButton(ICON_FA_ARROW_UP, UIUtils::ButtonVariant::Primary,
-                                    ImVec2(sendBtnWidth, 0))) {
+                                    ImVec2(sendBtnWidth, controlsHeight))) {
                 sendMessage();
             }
         }
+        ImGui::PopStyleVar(); // ItemSpacing, held through the row gap
     }
     ImGui::EndChild();
 
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3); // ChildRounding, ChildBorderSize, WindowPadding
+    ImGui::PopStyleColor(2);
 
     renderMentionPopupAt(inputRectMin.x, inputRectMin.y - Theme::Spacing::S, inputWidth);
 }

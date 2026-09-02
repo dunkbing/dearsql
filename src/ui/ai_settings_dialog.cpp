@@ -45,6 +45,8 @@ void AISettingsDialog::loadSettings() {
     std::strncpy(apiKeyBuf_, apiKey.c_str(), sizeof(apiKeyBuf_) - 1);
     apiKeyBuf_[sizeof(apiKeyBuf_) - 1] = '\0';
 
+    mcpEnabled_ = appState->getSetting("ai_mcp_enabled", "1") == "1";
+
     needsLoad_ = false;
 }
 
@@ -52,6 +54,7 @@ void AISettingsDialog::saveSettings() {
     auto* appState = Application::getInstance().getAppState();
     appState->setSetting("ai_provider", PROVIDER_VALUES[providerIndex_]);
     appState->setSetting(getSelectedProviderSettingKey(), apiKeyBuf_);
+    appState->setSetting("ai_mcp_enabled", mcpEnabled_ ? "1" : "0");
 }
 
 const char* AISettingsDialog::getSelectedProviderSettingKey() const {
@@ -111,6 +114,22 @@ void AISettingsDialog::render() {
             std::strncpy(apiKeyBuf_, apiKey.c_str(), sizeof(apiKeyBuf_) - 1);
             apiKeyBuf_[sizeof(apiKeyBuf_) - 1] = '\0';
         }
+
+        ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
+
+        // Agent access to the database (MCP tools)
+        ImGui::Text("Agent access");
+        ImGui::Checkbox("Let the agent query my database", &mcpEnabled_);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextWrapped(
+            "Gives coding agents a read-only tool to list tables and run SELECT queries "
+            "against the connected database. Results are sent to the agent's model "
+            "provider. Applies to the next session.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
 
         ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
         ImGui::Separator();

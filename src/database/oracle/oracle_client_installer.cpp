@@ -1,4 +1,5 @@
 #include "database/oracle/oracle_client_installer.hpp"
+#include "utils/app_paths.hpp"
 #include <spdlog/spdlog.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -50,15 +51,7 @@ static constexpr const char* kExpectedDirName = "";
 #endif
 
 static fs::path getBaseDir() {
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else
-    const char* home = std::getenv("HOME");
-#endif
-    if (home) {
-        return fs::path(home) / ".dearsql" / "oracle-client";
-    }
-    return fs::path(".") / "oracle-client";
+    return AppPaths::dataDir() / "oracle-client";
 }
 
 // cached install dir — cleared by startInstall() so post-install picks up the new path

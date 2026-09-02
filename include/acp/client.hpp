@@ -38,6 +38,12 @@ struct AcpPermissionRequest {
     std::vector<AcpPermissionOption> options;
 };
 
+struct AcpCommand {
+    std::string name;
+    std::string description;
+    std::string hint; // shown when the command takes arguments
+};
+
 struct AcpEvent {
     enum class Type {
         SessionReady,
@@ -46,6 +52,7 @@ struct AcpEvent {
         ToolCall,
         ToolCallUpdate,
         Plan,
+        Commands, // agent published its slash commands
         Permission,
         TurnEnded, // text = stopReason
         Error,     // text = message
@@ -55,6 +62,7 @@ struct AcpEvent {
     std::string text;
     AcpToolCall tool;
     std::vector<AcpPlanEntry> plan;
+    std::vector<AcpCommand> commands;
     AcpPermissionRequest permission;
 };
 
@@ -66,7 +74,8 @@ public:
     // HTTP MCP server when the agent advertises support for it.
     // Returns false with error message if the process could not be spawned.
     std::pair<bool, std::string> start(const std::vector<std::string>& argv, const std::string& cwd,
-                                       const std::string& mcpUrl, const std::string& mcpName);
+                                       const std::string& mcpUrl, const std::string& mcpName,
+                                       const std::string& mcpToken);
     void stop();
 
     [[nodiscard]] bool isRunning() const;
@@ -107,7 +116,9 @@ private:
     std::string cwd_;
     std::string mcpUrl_;
     std::string mcpName_;
+    std::string mcpToken_;
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};
     std::atomic<bool> exited_{false};
+    std::atomic<bool> stopping_{false};
 };

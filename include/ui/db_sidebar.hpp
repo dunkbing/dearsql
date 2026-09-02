@@ -39,14 +39,19 @@ private:
     float getHistoryButtonHeight() const;
     void renderHistoryToggleButton(const ImVec2& btnMin, float buttonW, float buttonH,
                                    bool drawRightBorder);
+    // rotated tab label in the left strip; true when clicked
+    bool renderVerticalTabButton(const char* id, const char* label, const ImVec2& btnMin,
+                                 float buttonW, float buttonH, bool active);
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
     void syncHierarchyCache(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
 
     void renderDatabasesTab();
+    void renderHistoryPanel();
 
     bool historyPanelOpen = false;
     bool texturesLoaded_ = false;
+    int activeSidebarTab_ = 0; // 0 = Databases, 1 = AI
 
     std::unique_ptr<AISidebarPanel> aiPanel_;
 

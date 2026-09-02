@@ -23,6 +23,7 @@ private:
 
     char apiKeyBuf_[256] = {};
     int providerIndex_ = 0;
+    bool mcpEnabled_ = true;
 
     void loadSettings();
     void saveSettings();

@@ -243,8 +243,9 @@ set(APP_SOURCES
     src/utils/texture_manager.cpp
     src/ai/ai_client.cpp
     src/ai/ai_chat.cpp
-    src/acp/acp_client.cpp
-    src/acp/acp_agents.cpp
+    src/acp/client.cpp
+    src/acp/agents.cpp
+    src/acp/registry.cpp
     src/utils/db_mcp_server.cpp
     src/ui/ai_chat_panel.cpp
     src/ui/ai_sidebar_panel.cpp

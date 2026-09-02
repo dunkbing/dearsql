@@ -1,7 +1,8 @@
 #pragma once
 
-#include "acp/acp_agents.hpp"
-#include "acp/acp_client.hpp"
+#include "acp/agents.hpp"
+#include "acp/client.hpp"
+#include "acp/registry.hpp"
 #include "ai/ai_chat.hpp"
 #include "ai/ai_client.hpp"
 #include "utils/db_mcp_server.hpp"
@@ -23,12 +24,19 @@ public:
 
     void render();
 
+    // height of the sidebar's History button; the input box matches it so the two
+    // top edges line up. zero leaves the input on its default bottom margin.
+    void setInputBottomAnchor(float height) {
+        inputBottomAnchor_ = height;
+    }
+
 private:
     // one entry in the transcript
     struct Item {
         enum class Kind { User, Assistant, Thought, Tool, Plan, Permission, Info, Error };
         Kind kind{};
         std::string text;
+        std::string contextNote; // "context: a, b" shown under a user message
         // Tool
         std::string toolId;
         std::string toolTitle;
@@ -48,19 +56,32 @@ private:
         IDatabaseNode* node = nullptr;
     };
 
-    struct MentionEntry {
-        std::string name;  // inserted text
-        std::string label; // shown in popup (name + node)
+    // one @-picker candidate, and once chosen, one context pill above the input
+    struct ContextItem {
+        enum class Kind { Database, Table, View, Sequence };
+        Kind kind = Kind::Table;
+        std::string name;  // object name, or the node's label for Database
+        std::string owner; // owning database/schema, empty for Database
         IDatabaseNode* node = nullptr;
+
+        [[nodiscard]] std::string key() const {
+            return std::to_string(static_cast<int>(kind)) + ":" + owner + "." + name;
+        }
     };
 
     // rendering
     void renderHeader();
     void renderMessages();
+    [[nodiscard]] std::string agentStartingLabel() const; // empty unless warming up
     void renderItem(Item& item, size_t index);
     void renderTextWithCodeBlocks(const std::string& content, size_t index);
     void renderInstallCard();
+    void renderRegistryAgents();
     void renderInputArea();
+    [[nodiscard]] float computeInputHeight() const;
+    static const char* contextKindIcon(ContextItem::Kind kind);
+    void renderContextChips(float availWidth);
+    [[nodiscard]] float contextChipsHeight(float availWidth) const;
 
     // backends
     bool isAcpBackend() const;
@@ -73,6 +94,8 @@ private:
     // sending
     void sendMessage();
     void sendAcp(const std::string& text);
+    void queueOrSendAcp(nlohmann::json blocks);
+    bool ensureAgentStarted();
     void sendApi(const std::string& text);
     void pollAcp();
     void pollApi();
@@ -81,13 +104,19 @@ private:
     std::vector<NodeRef> collectNodes() const;
     IDatabaseNode* contextNode();
     void syncContext(); // track selection changes, update mcp node
+    void serviceAgentConnectRequests();
     std::string schemaOverview(IDatabaseNode* node) const;
-    void rebuildMentionIndex();
+    void rebuildContextCandidates();
+    [[nodiscard]] std::string contextItemText(const ContextItem& item) const;
     nlohmann::json buildPromptBlocks(const std::string& text);
 
-    // mention popup
+    // input picker: @ pins context, / runs a command
+    enum class PickerMode { None, Context, Command };
     void updateMentionState();
-    void acceptMention(const MentionEntry& entry);
+    void addContext(const ContextItem& item);
+    void acceptPicked(int matchIndex);
+    void runCommand(const std::string& name);
+    void rebuildCommandEntries();
     friend int aiSidebarInputCallback(void* dataPtr);
     void renderMentionPopupAt(float x, float y, float width);
 
@@ -101,12 +130,20 @@ private:
     char customCmdBuf_[512] = {};
     int apiModelIndex_ = 0;
     bool mcpEnabled_ = true;
+    bool settingsDialogWasOpen_ = false;
+    bool agentWarmupDone_ = false;
+
+    // built-in catalog plus registry agents already downloaded; the backend index
+    // addresses this list, so it is cached rather than rebuilt per frame
+    std::vector<AcpAgentDef> agentDefs_;
+    AcpRegistryClient registry_;
+    bool registryFetchStarted_ = false;
 
     std::unique_ptr<AcpClient> acp_;
     AcpAgentInstaller installer_;
     bool agentMissing_ = false;
     std::string agentMissingReason_;
-    std::string pendingPromptText_; // queued until session ready
+    nlohmann::json pendingPromptBlocks_ = nlohmann::json::array(); // queued until session ready
 
     std::unique_ptr<AIClient> apiClient_;
     std::unique_ptr<AIChatState> apiChat_; // legacy prompt builder / history
@@ -114,18 +151,35 @@ private:
     DbMcpServer mcp_;
 
     // context tracking
+    // connection the agent asked us to open via the mcp connect_database tool
+    std::shared_ptr<DatabaseInterface> pendingConnectDb_;
+
     DatabaseInterface* lastDb_ = nullptr;
-    int contextNodeIndex_ = 0;
     bool sentSchemaContext_ = false;
-    std::vector<MentionEntry> mentionIndex_;
+    // picker entries: dearsql's own commands plus whatever the agent published via
+    // available_commands_update. namespaced like toad's /toad: so ours cannot collide
+    // with an agent command such as /clear or /compact.
+    struct CommandEntry {
+        std::string name;
+        std::string help;
+        bool client = false; // run locally vs sent to the agent as prompt text
+    };
+    std::vector<CommandEntry> commandEntries_;
+    std::vector<AcpCommand> agentCommands_;
+
+    std::vector<ContextItem> contextCandidates_;
+    double lastCandidateBuild_ = 0.0;
+    std::vector<ContextItem> selectedContext_;
 
     // input
     char inputBuf_[4096] = {};
     bool focusInput_ = true;
     bool scrollToBottom_ = false;
+    float inputBottomAnchor_ = 0.0f;
     int cursorPos_ = 0;
     // mention popup state
     bool mentionOpen_ = false;
+    PickerMode pickerMode_ = PickerMode::None;
     int mentionSel_ = 0;
     int mentionStart_ = -1; // index of '@' in inputBuf_
     std::string mentionFilter_;
@@ -134,7 +188,6 @@ private:
     int pendingReplaceStart_ = -1;
     int pendingReplaceEnd_ = -1;
     std::string pendingInsertText_;
-    int mentionNavDelta_ = 0;
     bool mentionAcceptRequested_ = false;
     int mentionDismissedStart_ = -1;
 };

@@ -122,3 +122,57 @@ target_link_libraries(
 )
 
 add_test(NAME sql_format_tests COMMAND sql_format_tests)
+
+# ---------------------------------------------------------------------------
+# ui_tests: drives the real app through Dear ImGui's test engine.
+# Links the whole application (minus its main) so tests can click actual
+# widgets by id instead of poking at internals.
+# ---------------------------------------------------------------------------
+set(IMGUI_TE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui_test_engine/imgui_test_engine)
+
+if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
+    set(UI_TEST_APP_SOURCES ${APP_SOURCES})
+    list(REMOVE_ITEM UI_TEST_APP_SOURCES src/main.cpp)
+
+    add_executable(
+        ui_tests
+        ${UI_TEST_APP_SOURCES}
+        ${IMGUI_SOURCES}
+        ${IMGUI_NODE_EDITOR_SOURCES}
+        ${IMGUI_TE_DIR}/imgui_te_context.cpp
+        ${IMGUI_TE_DIR}/imgui_te_coroutine.cpp
+        ${IMGUI_TE_DIR}/imgui_te_engine.cpp
+        ${IMGUI_TE_DIR}/imgui_te_exporters.cpp
+        ${IMGUI_TE_DIR}/imgui_te_perftool.cpp
+        ${IMGUI_TE_DIR}/imgui_te_ui.cpp
+        ${IMGUI_TE_DIR}/imgui_te_utils.cpp
+        ${IMGUI_TE_DIR}/imgui_capture_tool.cpp
+        tests/ui/main_test.mm
+        tests/ui/sidebar_tests.cpp
+        tests/ui/ai_panel_tests.cpp
+    )
+
+    # the engine hooks into imgui through this define; both are compiled here
+    target_compile_definitions(
+        ui_tests
+        PRIVATE IMGUI_ENABLE_TEST_ENGINE IMGUI_TEST_ENGINE_ENABLE_COROUTINE_STDTHREAD_IMPL=1
+    )
+
+    # mirror the app target rather than restating its dependency list
+    get_target_property(_app_incs ${PROJECT_NAME} INCLUDE_DIRECTORIES)
+    get_target_property(_app_libs ${PROJECT_NAME} LINK_LIBRARIES)
+    get_target_property(_app_defs ${PROJECT_NAME} COMPILE_DEFINITIONS)
+    if(_app_incs)
+        target_include_directories(ui_tests PRIVATE ${_app_incs})
+    endif()
+    if(_app_libs)
+        target_link_libraries(ui_tests PRIVATE ${_app_libs})
+    endif()
+    if(_app_defs)
+        target_compile_definitions(ui_tests PRIVATE ${_app_defs})
+    endif()
+    # headers sit in the inner imgui_test_engine/ folder
+    target_include_directories(ui_tests PRIVATE ${IMGUI_TE_DIR})
+
+    add_test(NAME ui_tests COMMAND ui_tests -nopause)
+endif()

@@ -198,6 +198,12 @@ namespace {
             if (std::getenv("DEARSQL_MASTER_KEY_FILE")) {
                 return loadFromFile();
             }
+#ifndef NDEBUG
+            // debug builds are re-signed on every rebuild, so the OS keystore treats
+            // each one as a new app and prompts for access. use the file fallback.
+            spdlog::debug("debug build: keeping the master key in ~/.dearsql/master.key");
+            return loadFromFile();
+#endif
 #if defined(__APPLE__)
             return loadFromKeychain();
 #elif defined(_WIN32)

@@ -12,6 +12,7 @@
 #include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
+#include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/settings_dialog.hpp"
@@ -1126,6 +1127,7 @@ void Application::renderMainUI() {
     ConnectionDialog::instance().render();
     CreateDatabaseDialog::instance().render();
     SettingsDialog::instance().render();
+    AISettingsDialog::instance().render();
 
     pollUpdater();
 

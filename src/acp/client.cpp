@@ -1,5 +1,5 @@
-#include "acp/acp_client.hpp"
-#include "acp/acp_agents.hpp"
+#include "acp/client.hpp"
+#include "acp/agents.hpp"
 #include <spdlog/spdlog.h>
 
 using json = nlohmann::json;
@@ -9,7 +9,8 @@ using json = nlohmann::json;
 // ponytail: no Windows ACP yet (needs CreateProcess pipe plumbing, same split as ssh tunnel)
 AcpClient::~AcpClient() = default;
 std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>&, const std::string&,
-                                              const std::string&, const std::string&) {
+                                              const std::string&, const std::string&,
+                                              const std::string&) {
     return {false, "AI agents via ACP are not supported on Windows yet"};
 }
 void AcpClient::stop() {}
@@ -44,6 +45,7 @@ void AcpClient::pushEvent(AcpEvent) {}
 #include <cerrno>
 #include <csignal>
 #include <cstring>
+#include <poll.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -99,7 +101,8 @@ AcpClient::~AcpClient() {
 
 std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& argv,
                                               const std::string& cwd, const std::string& mcpUrl,
-                                              const std::string& mcpName) {
+                                              const std::string& mcpName,
+                                              const std::string& mcpToken) {
     if (pid_ > 0) {
         return {true, ""};
     }
@@ -107,9 +110,11 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
         return {false, "No agent command configured"};
     }
 
+    stopping_ = false;
     cwd_ = cwd;
     mcpUrl_ = mcpUrl;
     mcpName_ = mcpName;
+    mcpToken_ = mcpToken;
 
     int inPipe[2], outPipe[2], errPipe[2];
     if (pipe(inPipe) != 0 || pipe(outPipe) != 0 || pipe(errPipe) != 0) {
@@ -160,11 +165,19 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
         posix_spawn_file_actions_addchdir_np(&actions, cwd.c_str());
     }
 
+    // give the agent its own process group: `npx` spawns node as a grandchild, and
+    // signalling only the direct child leaves node alive holding the pipes open
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP);
+    posix_spawnattr_setpgroup(&attr, 0);
+
     pid_t pid = -1;
     const int rc =
-        posix_spawnp(&pid, cargv[0], &actions, nullptr, const_cast<char* const*>(cargv.data()),
+        posix_spawnp(&pid, cargv[0], &actions, &attr, const_cast<char* const*>(cargv.data()),
                      const_cast<char* const*>(envp.data()));
     posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
 
     close(inPipe[0]);
     close(outPipe[1]);
@@ -196,18 +209,24 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
 }
 
 void AcpClient::stop() {
+    stopping_ = true; // lets the reader threads fall out of poll()
+
     if (pid_ > 0) {
-        kill(static_cast<pid_t>(pid_), SIGTERM);
+        const auto pid = static_cast<pid_t>(pid_);
+        // negative pid signals the whole group, so the node grandchild goes too
+        kill(-pid, SIGTERM);
+        kill(pid, SIGTERM);
         int status = 0;
         for (int i = 0; i < 20; ++i) {
-            if (waitpid(static_cast<pid_t>(pid_), &status, WNOHANG) != 0) {
+            if (waitpid(pid, &status, WNOHANG) != 0) {
                 break;
             }
             usleep(50 * 1000);
         }
-        if (kill(static_cast<pid_t>(pid_), 0) == 0) {
-            kill(static_cast<pid_t>(pid_), SIGKILL);
-            waitpid(static_cast<pid_t>(pid_), &status, 0);
+        if (kill(pid, 0) == 0) {
+            kill(-pid, SIGKILL);
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
         }
         spdlog::info("ACP agent stopped (pid {})", pid_);
         pid_ = -1;
@@ -279,7 +298,20 @@ std::vector<AcpEvent> AcpClient::drainEvents() {
 void AcpClient::readerLoop() {
     std::string buffer;
     char chunk[8192];
-    while (true) {
+    while (!stopping_) {
+        // poll rather than block in read(): anything else that inherited the pipe
+        // would keep read() from ever returning, and stop() would hang on join()
+        pollfd pfd{stdoutFd_, POLLIN, 0};
+        const int ready = poll(&pfd, 1, 100);
+        if (ready == 0) {
+            continue;
+        }
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
         const ssize_t n = read(stdoutFd_, chunk, sizeof(chunk));
         if (n <= 0) {
             break;
@@ -308,13 +340,26 @@ void AcpClient::readerLoop() {
     exited_ = true;
     sessionReady_ = false;
     turnActive_ = false;
-    pushEvent({.type = AcpEvent::Type::Exited});
+    if (!stopping_) { // a stop we asked for is not an agent crash
+        pushEvent({.type = AcpEvent::Type::Exited});
+    }
 }
 
 void AcpClient::stderrLoop() {
     std::string buffer;
     char chunk[4096];
-    while (true) {
+    while (!stopping_) {
+        pollfd pfd{stderrFd_, POLLIN, 0};
+        const int ready = poll(&pfd, 1, 100);
+        if (ready == 0) {
+            continue;
+        }
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
         const ssize_t n = read(stderrFd_, chunk, sizeof(chunk));
         if (n <= 0) {
             break;
@@ -411,10 +456,13 @@ void AcpClient::handleResponse(const json& msg) {
                                  .value("http", false);
         json mcpServers = json::array();
         if (!mcpUrl_.empty() && httpMcp) {
-            mcpServers.push_back({{"type", "http"},
-                                  {"name", mcpName_},
-                                  {"url", mcpUrl_},
-                                  {"headers", json::array()}});
+            // ACP McpServerHttp: headers is an array of {name, value}
+            json headers = json::array();
+            if (!mcpToken_.empty()) {
+                headers.push_back({{"name", "Authorization"}, {"value", "Bearer " + mcpToken_}});
+            }
+            mcpServers.push_back(
+                {{"type", "http"}, {"name", mcpName_}, {"url", mcpUrl_}, {"headers", headers}});
         }
         sendRequest("session/new", {{"cwd", cwd_}, {"mcpServers", mcpServers}});
     } else if (method == "session/new") {
@@ -458,8 +506,24 @@ void AcpClient::handleSessionUpdate(const json& update) {
                 {e.value("content", ""), e.value("priority", ""), e.value("status", "")});
         }
         pushEvent(std::move(ev));
+    } else if (kind == "available_commands_update") {
+        AcpEvent ev;
+        ev.type = AcpEvent::Type::Commands;
+        for (const auto& cmd : update.value("availableCommands", json::array())) {
+            AcpCommand out;
+            out.name = cmd.value("name", "");
+            out.description = cmd.value("description", "");
+            // AvailableCommandInput is currently only the unstructured {hint} form
+            if (cmd.contains("input") && cmd["input"].is_object()) {
+                out.hint = cmd["input"].value("hint", "");
+            }
+            if (!out.name.empty()) {
+                ev.commands.push_back(std::move(out));
+            }
+        }
+        pushEvent(std::move(ev));
     }
-    // user_message_chunk / available_commands_update / current_mode_update: ignored
+    // user_message_chunk / current_mode_update: ignored
 }
 
 void AcpClient::sendMessage(const json& msg) {

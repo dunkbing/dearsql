@@ -1,5 +1,6 @@
 #include "app_state.hpp"
 #include "config.hpp"
+#include "utils/app_paths.hpp"
 #include "utils/crypto.hpp"
 #include "utils/master_secret.hpp"
 #include <filesystem>
@@ -220,20 +221,7 @@ namespace {
 } // namespace
 
 AppState::AppState() {
-    fs::path dbPath_;
-
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else // Assume Unix-like
-    const char* home = std::getenv("HOME");
-#endif
-
-    if (home) {
-        dbPath_ = fs::path(home) / ".dearsql" / "connections.db";
-    } else {
-        dbPath_ = fs::path("./connections.db");
-    }
-
+    const fs::path dbPath_ = AppPaths::dataDir() / "connections.db";
     dbPath = dbPath_.string();
     std::cout << dbPath << "\n";
 }

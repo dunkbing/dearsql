@@ -1,117 +1,78 @@
 #include "application.hpp"
 #include "imgui.h"
+#include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "imgui_te_ui.h"
+
 #include <GLFW/glfw3.h>
+#include <cstdio>
+#include <cstring>
 
-#include "imgui_impl_glfw.h"
-
-// forward declarations for test registration
+// test registration, one function per area
 void RegisterSidebarTests(ImGuiTestEngine* engine);
+void RegisterAiPanelTests(ImGuiTestEngine* engine);
 
 int main(int argc, char** argv) {
-    auto& app = Application::getInstance();
-
-    if (!app.initialize()) {
-        return -1;
-    }
-
-    // get ImGui context
-    ImGuiContext* ctx = ImGui::GetCurrentContext();
-    if (!ctx) {
-        return -1;
-    }
-
-    // create and configure test engine
-    ImGuiTestEngine* engine = ImGuiTestEngine_CreateContext();
-    ImGuiTestEngineIO& test_io = ImGuiTestEngine_GetIO(engine);
-
-    // configure test engine
-    test_io.ConfigVerboseLevel = ImGuiTestVerboseLevel_Info;
-    test_io.ConfigVerboseLevelOnError = ImGuiTestVerboseLevel_Debug;
-    test_io.ConfigRunSpeed = ImGuiTestRunSpeed_Fast;
-
-    // parse command line arguments
-    bool no_gui = false;
-    if (argc >= 2) {
-        if (strcmp(argv[1], "-nopause") == 0) {
-            no_gui = true;
+    bool headless = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "-nopause") == 0) {
+            headless = true;
         }
     }
 
-    // initialize test engine
+    auto& app = Application::getInstance();
+    if (!app.initialize()) {
+        std::fprintf(stderr, "ui_tests: app failed to initialize\n");
+        return 1;
+    }
+
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+    if (ctx == nullptr) {
+        std::fprintf(stderr, "ui_tests: no imgui context\n");
+        return 1;
+    }
+
+    ImGuiTestEngine* engine = ImGuiTestEngine_CreateContext();
+    ImGuiTestEngineIO& testIo = ImGuiTestEngine_GetIO(engine);
+    testIo.ConfigVerboseLevel = ImGuiTestVerboseLevel_Info;
+    testIo.ConfigVerboseLevelOnError = ImGuiTestVerboseLevel_Debug;
+    testIo.ConfigRunSpeed = headless ? ImGuiTestRunSpeed_Fast : ImGuiTestRunSpeed_Normal;
+    testIo.ConfigRestoreFocusAfterTests = false;
+    testIo.ConfigLogToTTY = true; // otherwise failures never reach stdout
+
     ImGuiTestEngine_Start(engine, ctx);
 
-    // register all tests
     RegisterSidebarTests(engine);
+    RegisterAiPanelTests(engine);
 
-    // queue all tests to run
-    if (no_gui) {
+    if (headless) {
         ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests, nullptr);
     }
 
-    // main loop
-    bool aborted = false;
-    while (!aborted) {
+    // Drive the platform's own frame instead of hand-rolling one: on macOS the
+    // frame is a Metal pass (drawable, encoder, backend NewFrame) that the app
+    // owns, and renderFrame() is what calls renderMainUI().
+    PlatformInterface* platform = app.getPlatform();
+    while (!glfwWindowShouldClose(app.getWindow())) {
         glfwPollEvents();
-
-        if (glfwWindowShouldClose(app.getWindow())) {
-            aborted = true;
-        }
-
-        if (aborted && ImGuiTestEngine_TryAbortEngine(engine)) {
-            break;
-        }
-
-        // start new ImGui frame
-        // call backend NewFrame functions to set up display size and other state
-#ifdef __APPLE__
-        // note: on macOS we can't actually render without a real Metal render pass descriptor
-        // but we can still call the ImGui frame functions for UI logic testing
-        ImGui_ImplGlfw_NewFrame();
-#else
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-#endif
-        ImGui::NewFrame();
-
-        // render main application UI
-        app.renderMainUI();
-
-        // render test engine UI
-        if (!no_gui) {
-            ImGuiTestEngine_ShowTestEngineWindows(engine, nullptr);
-        }
-
-        // end frame
-        ImGui::Render();
-
-        // post-swap for test engine (required for screen capture)
+        platform->renderFrame();
         ImGuiTestEngine_PostSwap(engine);
 
-        // check if tests are done (for headless mode)
-        if (no_gui && ImGuiTestEngine_IsTestQueueEmpty(engine)) {
-            // all tests are done, we can exit
+        if (headless && ImGuiTestEngine_IsTestQueueEmpty(engine)) {
             break;
         }
     }
 
-    // stop test engine
     ImGuiTestEngine_Stop(engine);
 
-    // get and print results
     ImGuiTestEngineResultSummary summary;
     ImGuiTestEngine_GetResultSummary(engine, &summary);
+    std::printf("\n=== ui_tests ===\ntested: %d\npassed: %d\nfailed: %d\n", summary.CountTested,
+                summary.CountSuccess, summary.CountTested - summary.CountSuccess);
 
-    printf("\n=== Test Results ===\n");
-    printf("Tested: %d\n", summary.CountTested);
-    printf("Success: %d\n", summary.CountSuccess);
-    printf("Failed: %d\n", summary.CountTested - summary.CountSuccess);
-    printf("In Queue: %d\n", summary.CountInQueue);
-
-    // cleanup
-    ImGuiTestEngine_DestroyContext(engine);
+    // cleanup() destroys the imgui context, which the engine requires to happen first
     app.cleanup();
+    ImGuiTestEngine_DestroyContext(engine);
 
-    return (summary.CountTested != summary.CountSuccess) ? 1 : 0;
+    return summary.CountTested != summary.CountSuccess ? 1 : 0;
 }

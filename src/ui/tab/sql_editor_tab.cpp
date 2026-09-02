@@ -14,6 +14,7 @@
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
+#include "utils/app_paths.hpp"
 #include "utils/button.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
@@ -732,9 +733,6 @@ void SQLEditorTab::render() {
 
     renderConnectionInfo();
     renderScriptHeader();
-
-    // Render AI settings dialog (modal, always available)
-    AISettingsDialog::instance().render();
 
     constexpr float toggleStripWidth = 28.0f;
     const float totalWidth = ImGui::GetContentRegionAvail().x;
@@ -2025,13 +2023,7 @@ void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) 
 // ── Script file management ────────────────────────────────────────────────────
 
 std::string SQLEditorTab::getDefaultScriptsDir() {
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else
-    const char* home = std::getenv("HOME");
-#endif
-    const std::filesystem::path dir = home ? std::filesystem::path(home) / ".dearsql" / "scripts"
-                                           : std::filesystem::path(".") / "scripts";
+    const std::filesystem::path dir = AppPaths::dataDir() / "scripts";
     std::filesystem::create_directories(dir);
     return dir.string();
 }

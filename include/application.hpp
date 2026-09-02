@@ -143,7 +143,7 @@ private:
     bool darkTheme = true;
     float fontScale_ = 1.0f;
     bool sidebarVisible = true;
-    float sidebarWidth = 0.25f;
+    float sidebarWidth = 0.3f;
     float targetSidebarWidth = 0.25f;
     float animationSpeed = 12.0f;
     ImGuiID leftDockId = 0;

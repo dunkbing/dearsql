@@ -1,6 +1,8 @@
 #include "ai/acp_client.hpp"
 #include "ai/acp_agents.hpp"
 
+#include <algorithm>
+#include <cstdlib>
 #include <spdlog/spdlog.h>
 
 using json = nlohmann::json;
@@ -9,11 +11,11 @@ AcpClient::~AcpClient() {
     stop();
 }
 
-std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& argv,
-                                              const std::string& cwd, const std::string& mcpUrl,
-                                              const std::string& mcpName,
-                                              const std::string& mcpToken,
-                                              const std::string& resumeSessionId) {
+std::pair<bool, std::string>
+AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
+                 const std::string& mcpUrl, const std::string& mcpName, const std::string& mcpToken,
+                 const std::string& resumeSessionId,
+                 const std::vector<std::pair<std::string, std::string>>& extraEnv) {
     if (conn_ && conn_->isRunning()) {
         return {true, ""};
     }
@@ -33,6 +35,15 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
     // claude refuses to start when it thinks it is nested in another session;
     // inherited when DearSQL itself was launched from one
     opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"};
+    // api keys saved in AI Settings; a key already in the environment wins
+    exportedApiKey_ = false;
+    for (const auto& [name, value] : extraEnv) {
+        if (!value.empty() && !std::getenv(name.c_str())) {
+            opts.env.emplace_back(name, value);
+            exportedApiKey_ = true;
+        }
+    }
+    authTried_ = false;
 
     auto [conn, err] = acp::Connection::spawn(*this, argv, opts);
     if (!conn) {
@@ -52,6 +63,7 @@ void AcpClient::onInitialized(const acp::Response& r) {
     }
     const auto init = acp::InitializeResult::fromJson(r.result);
     loadSession_ = init.agentCapabilities.loadSession;
+    authMethods_ = init.authMethods;
 
     mcpServers_ = json::array();
     if (!mcpUrl_.empty() && init.agentCapabilities.mcpHttp) {
@@ -63,7 +75,10 @@ void AcpClient::onInitialized(const acp::Response& r) {
         }
         mcpServers_.push_back(server.toJson());
     }
+    openSession();
+}
 
+void AcpClient::openSession() {
     if (!resumeSessionId_.empty() && loadSession_) {
         conn_->loadSession(resumeSessionId_, cwd_, mcpServers_,
                            [this](acp::Response res) { onSessionOpened("session/load", res); });
@@ -72,13 +87,47 @@ void AcpClient::onInitialized(const acp::Response& r) {
     if (!resumeSessionId_.empty()) {
         pushEvent({.type = AcpEvent::Type::Error,
                    .text = "This agent cannot resume sessions. Starting a new one."});
+        resumeSessionId_.clear();
     }
     conn_->newSession(cwd_, mcpServers_,
                       [this](acp::Response res) { onSessionOpened("session/new", res); });
 }
 
+// acp: session/new answers -32000 auth_required until authenticate() succeeds. api-key
+// methods read the key from the env; oauth ones open the browser from the agent side
+void AcpClient::authenticateAndRetry(const acp::RpcError& err) {
+    authTried_ = true;
+    const acp::AuthMethod* method = &authMethods_.front();
+    if (exportedApiKey_) {
+        for (const auto& m : authMethods_) {
+            if (m.id.find("api") != std::string::npos) {
+                method = &m;
+                break;
+            }
+        }
+    }
+    pushEvent({.type = AcpEvent::Type::Info, .text = "Signing in: " + method->name + "..."});
+    spdlog::info("ACP: authenticating with {} after: {}", method->id, err.describe());
+    conn_->authenticate(method->id, [this](acp::Response res) {
+        if (!res.ok()) {
+            pushEvent({.type = AcpEvent::Type::Error,
+                       .text = "Sign-in failed: " + res.error->describe()});
+            return;
+        }
+        openSession();
+    });
+}
+
 void AcpClient::onSessionOpened(const std::string& method, const acp::Response& r) {
     if (!r.ok()) {
+        std::string lower = r.error->message;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        const bool authRequired =
+            r.error->code == -32000 || lower.find("auth") != std::string::npos;
+        if (authRequired && !authTried_ && !authMethods_.empty()) {
+            authenticateAndRetry(*r.error);
+            return;
+        }
         if (method == "session/load") {
             // the agent pruned it (or never had it); fall back to a fresh session
             pushEvent({.type = AcpEvent::Type::Error,

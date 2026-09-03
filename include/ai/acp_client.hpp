@@ -37,6 +37,7 @@ struct AcpCommand {
 struct AcpEvent {
     enum class Type {
         SessionReady,
+        Info,             // text = progress note (signing in, ...)
         UserMessageDelta, // replayed by session/load
         MessageDelta,
         ThoughtDelta,
@@ -66,10 +67,11 @@ public:
     // asks for session/load instead when the agent supports it (history is replayed
     // as events); otherwise a new session is started.
     // Returns false with error message if the process could not be spawned.
-    std::pair<bool, std::string> start(const std::vector<std::string>& argv, const std::string& cwd,
-                                       const std::string& mcpUrl, const std::string& mcpName,
-                                       const std::string& mcpToken,
-                                       const std::string& resumeSessionId = "");
+    std::pair<bool, std::string>
+    start(const std::vector<std::string>& argv, const std::string& cwd, const std::string& mcpUrl,
+          const std::string& mcpName, const std::string& mcpToken,
+          const std::string& resumeSessionId = "",
+          const std::vector<std::pair<std::string, std::string>>& extraEnv = {});
     void stop();
 
     [[nodiscard]] bool isRunning() const;
@@ -95,6 +97,8 @@ private:
     void agentExited() override;
 
     void onInitialized(const acp::Response& r);
+    void openSession();
+    void authenticateAndRetry(const acp::RpcError& err);
     void onSessionOpened(const std::string& method, const acp::Response& r);
     void pushEvent(AcpEvent ev);
 
@@ -108,6 +112,9 @@ private:
     std::string mcpName_;
     std::string mcpToken_;
     nlohmann::json mcpServers_ = nlohmann::json::array();
+    std::vector<acp::AuthMethod> authMethods_;
+    bool exportedApiKey_ = false; // an api key went into the agent env, prefer that auth method
+    bool authTried_ = false;
     std::atomic<bool> loadSession_{false};
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};

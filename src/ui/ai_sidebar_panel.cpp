@@ -875,9 +875,16 @@ bool AISidebarPanel::ensureAgentStarted() {
     }
 
     acp_ = std::make_unique<AcpClient>();
+    // keys pasted into AI Settings double as agent credentials
+    auto* appState = Application::getInstance().getAppState();
+    const std::vector<std::pair<std::string, std::string>> keys = {
+        {"ANTHROPIC_API_KEY", appState->getSetting("ai_api_key_anthropic", "")},
+        {"OPENAI_API_KEY", appState->getSetting("ai_api_key_openai", "")},
+        {"GEMINI_API_KEY", appState->getSetting("ai_api_key_gemini", "")},
+    };
     auto [ok, err] = acp_->start(argv, agentWorkingDir(), mcpUrl, "dearsql",
                                  mcpUrl.empty() ? std::string{} : mcp_.token(),
-                                 std::exchange(resumeSessionId_, std::string{}));
+                                 std::exchange(resumeSessionId_, std::string{}), keys);
     if (!ok) {
         items_.push_back({.kind = Item::Kind::Error, .text = err});
         acp_.reset();
@@ -1061,6 +1068,10 @@ void AISidebarPanel::pollAcp() {
             } else if (ev.text == "max_tokens" || ev.text == "max_turn_requests") {
                 items_.push_back({.kind = Item::Kind::Info, .text = "Turn stopped: " + ev.text});
             }
+            break;
+        case AcpEvent::Type::Info:
+            items_.push_back({.kind = Item::Kind::Info, .text = ev.text});
+            scrollToBottom_ = true;
             break;
         case AcpEvent::Type::Error: {
             std::string text = ev.text;
@@ -1248,10 +1259,11 @@ void AISidebarPanel::renderHeader() {
     // inherits WindowPadding.y -- without this its rows sit flush against the edges
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
 
-    // sessions, new, settings
+    // right: sessions, new. the settings gear sits by the model picker (api key only)
     const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
-    const float iconsW = iconW * 3.0f + Theme::Spacing::S * 2.0f;
-    const float rowAvail = ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x;
+    const float iconsW = iconW * 2.0f + Theme::Spacing::S;
+    const float rowAvail = ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x -
+                           (isApi ? iconW + Theme::Spacing::S : 0.0f);
     float backendW = comboWidth(backendLabels);
     float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
     if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
@@ -1289,6 +1301,15 @@ void AISidebarPanel::renderHeader() {
             }
             ImGui::EndCombo();
         }
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
+            AISettingsDialog::instance().show();
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("API settings");
+        }
     }
     ImGui::PopStyleVar();
 
@@ -1311,10 +1332,6 @@ void AISidebarPanel::renderHeader() {
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("New session");
-    }
-    ImGui::SameLine(0, Theme::Spacing::S);
-    if (UIUtils::IconButton(ICON_FA_GEAR "##ai_settings")) {
-        AISettingsDialog::instance().show();
     }
     ImGui::PopStyleColor();
 

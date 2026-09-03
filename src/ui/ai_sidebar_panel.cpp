@@ -1319,11 +1319,11 @@ void AISidebarPanel::renderHeader() {
     // inherits WindowPadding.y -- without this its rows sit flush against the edges
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
 
-    // right: sessions, new. the settings gear sits by the model picker (api key only)
+    // right: sessions, new. the settings gear follows the pickers
     const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
     const float iconsW = iconW * 2.0f + Theme::Spacing::S;
-    const float rowAvail = ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x -
-                           (isApi ? iconW + Theme::Spacing::S : 0.0f);
+    const float rowAvail =
+        ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x - iconW - Theme::Spacing::S;
     float backendW = comboWidth(backendLabels);
     float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
     if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
@@ -1361,15 +1361,17 @@ void AISidebarPanel::renderHeader() {
             }
             ImGui::EndCombo();
         }
-        ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-        if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
-            AISettingsDialog::instance().show();
-        }
-        ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("API settings");
-        }
+    }
+    // api keys and the agent database toggle live in the same dialog, so every backend
+    // gets the gear
+    ImGui::SameLine(0, Theme::Spacing::S);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
+        AISettingsDialog::instance().show();
+    }
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("AI settings");
     }
     ImGui::PopStyleVar();
 

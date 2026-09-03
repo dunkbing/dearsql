@@ -383,7 +383,8 @@ void MySQLDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionInfo
         // closer
         [](MYSQL* conn) { mysql_close(conn); },
         // validator
-        [](MYSQL* conn) { return mysql_ping(conn) == 0; });
+        [](MYSQL* conn) { return mysql_ping(conn) == 0; },
+        mysql_internal::makeMysqlCanceller(info));
 
     std::lock_guard lock(sessionMutex);
     auto* dbData = getDatabaseData(info.database);

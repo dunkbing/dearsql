@@ -15,6 +15,9 @@
 // Forward declaration
 class PostgresDatabase;
 
+// pool canceller shared by every PGconn pool; PQcancel is safe from any thread
+void cancelPgQuery(PGconn* conn);
+
 /**
  * @brief Per-database data for PostgreSQL
  *

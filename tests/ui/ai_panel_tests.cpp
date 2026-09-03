@@ -41,6 +41,23 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
         IM_CHECK(ImGui::FindWindowByName("##ai_mention_popup") != nullptr);
     };
 
+    t = IM_REGISTER_TEST(engine, "Assistant", "Session picker opens");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        openAssistantTab(ctx);
+        ctx->ItemClick("**/###ai_sessions");
+        ctx->Yield(3);
+
+        // BeginPopup windows get internal names, so check the popup stack
+        IM_CHECK(ImGui::GetCurrentContext()->OpenPopupStack.Size > 0);
+        // any click outside closes it; the engine will not hover items under a popup,
+        // so aim at a raw position
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f));
+        ctx->MouseClick(ImGuiMouseButton_Left);
+        ctx->Yield(2);
+        IM_CHECK(ImGui::GetCurrentContext()->OpenPopupStack.Size == 0);
+    };
+
     t = IM_REGISTER_TEST(engine, "Assistant", "Slash opens command picker");
     t->TestFunc = [](ImGuiTestContext* ctx) {
         openAssistantTab(ctx);

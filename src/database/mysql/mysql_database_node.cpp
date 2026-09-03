@@ -555,7 +555,8 @@ void MySQLDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo& i
         // closer
         [](MYSQL* conn) { mysql_close(conn); },
         // validator
-        [](MYSQL* conn) { return mysql_ping(conn) == 0; });
+        [](MYSQL* conn) { return mysql_ping(conn) == 0; },
+        mysql_internal::makeMysqlCanceller(info));
 }
 
 std::vector<std::vector<std::string>>

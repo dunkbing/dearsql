@@ -28,9 +28,12 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <format>
+#include <iomanip>
 #include <spdlog/spdlog.h>
+#include <sstream>
 
 using json = nlohmann::json;
 
@@ -180,7 +183,9 @@ const char* AISidebarPanel::contextKindIcon(ContextItem::Kind kind) {
 AISidebarPanel::AISidebarPanel()
     : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {}
 
-AISidebarPanel::~AISidebarPanel() = default;
+AISidebarPanel::~AISidebarPanel() {
+    saveCurrentSession();
+}
 
 // ---------------------------------------------------------------- backends
 
@@ -251,6 +256,12 @@ void AISidebarPanel::switchBackend(int newIndex) {
     if (newIndex == backendIndex_) {
         return;
     }
+    // sessions are per backend
+    saveCurrentSession();
+    items_.clear();
+    selectedContext_.clear();
+    currentSessionId_ = 0;
+    resumeSessionId_.clear();
     backendIndex_ = newIndex;
     stopAgent();
     agentWarmupDone_ = false;
@@ -287,6 +298,171 @@ void AISidebarPanel::stopAgent() {
     // nothing is left to serve, so close the port rather than leave it listening
     mcp_.stop();
     pendingPromptBlocks_ = json::array();
+}
+
+bool AISidebarPanel::isBusy() const {
+    if (acp_ && (acp_->isTurnActive() || !pendingPromptBlocks_.empty())) {
+        return true;
+    }
+    return apiClient_->isStreaming() || apiChat_->isBuildingPrompt();
+}
+
+// ---------------------------------------------------------------- sessions
+
+namespace {
+    // "5m", "2h", "3d" from sqlite's utc CURRENT_TIMESTAMP
+    std::string relativeAge(const std::string& stamp) {
+        std::tm tm{};
+        std::istringstream in(stamp);
+        in >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (in.fail()) {
+            return "";
+        }
+#ifdef _WIN32
+        const std::time_t then = _mkgmtime(&tm);
+#else
+        const std::time_t then = timegm(&tm);
+#endif
+        const auto secs = static_cast<long>(std::time(nullptr) - then);
+        if (secs < 60) {
+            return "now";
+        }
+        if (secs < 3600) {
+            return std::to_string(secs / 60) + "m";
+        }
+        if (secs < 86400) {
+            return std::to_string(secs / 3600) + "h";
+        }
+        return std::to_string(secs / 86400) + "d";
+    }
+} // namespace
+
+void AISidebarPanel::saveCurrentSession() {
+    const auto first = std::find_if(items_.begin(), items_.end(),
+                                    [](const Item& item) { return item.kind == Item::Kind::User; });
+    if (first == items_.end()) {
+        return;
+    }
+    std::string title = first->text.substr(0, first->text.find('\n'));
+    if (title.size() > 80) {
+        title = title.substr(0, 80) + "…";
+    }
+
+    std::string acpSessionId;
+    std::string transcript;
+    if (isAcpBackend()) {
+        acpSessionId = acp_ ? acp_->sessionId() : "";
+        if (acpSessionId.empty()) {
+            return; // nothing to resume yet
+        }
+    } else {
+        // only text kinds occur on the api backend
+        json rows = json::array();
+        for (const auto& item : items_) {
+            rows.push_back({{"kind", static_cast<int>(item.kind)},
+                            {"text", item.text},
+                            {"note", item.contextNote}});
+        }
+        transcript = rows.dump();
+    }
+    auto* appState = Application::getInstance().getAppState();
+    const int id =
+        appState->saveAiSession(currentSessionId_, backendId(), acpSessionId, title, transcript);
+    if (id > 0) {
+        currentSessionId_ = id;
+    }
+}
+
+void AISidebarPanel::startNewSession() {
+    saveCurrentSession();
+    items_.clear();
+    selectedContext_.clear();
+    currentSessionId_ = 0;
+    resumeSessionId_.clear();
+    sentSchemaContext_ = false;
+    if (isAcpBackend()) {
+        stopAgent();
+        agentWarmupDone_ = false; // bring the replacement session straight back up
+    } else {
+        apiChat_->cancelAsyncPrompt();
+        apiClient_->cancel();
+    }
+    focusInput_ = true;
+}
+
+void AISidebarPanel::openSession(const AiSession& session) {
+    if (session.id == currentSessionId_) {
+        return;
+    }
+    saveCurrentSession();
+    items_.clear();
+    selectedContext_.clear();
+    currentSessionId_ = session.id;
+    if (isAcpBackend()) {
+        stopAgent();
+        resumeSessionId_ = session.acpSessionId;
+        agentWarmupDone_ = false;  // render() restarts the agent, which replays the history
+        sentSchemaContext_ = true; // the loaded session already had it
+    } else {
+        apiChat_->cancelAsyncPrompt();
+        apiClient_->cancel();
+        auto* appState = Application::getInstance().getAppState();
+        const json rows = json::parse(appState->getAiSessionTranscript(session.id), nullptr, false);
+        for (const auto& row : rows.is_array() ? rows : json::array()) {
+            items_.push_back({.kind = static_cast<Item::Kind>(row.value("kind", 0)),
+                              .text = row.value("text", ""),
+                              .contextNote = row.value("note", "")});
+        }
+    }
+    scrollToBottom_ = true;
+    focusInput_ = true;
+}
+
+void AISidebarPanel::renderSessionPopup() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
+    if (!ImGui::BeginPopup("##ai_session_popup")) { // padding comes from the theme
+        return;
+    }
+    if (sessionRows_.empty()) {
+        ImGui::TextDisabled("No earlier sessions");
+    }
+    int deleteId = 0;
+    for (const auto& row : sessionRows_) {
+        ImGui::PushID(row.id);
+        const std::string age = relativeAge(row.updatedAt);
+        const float ageW = ImGui::CalcTextSize(age.c_str()).x;
+        if (ImGui::Selectable("##row", row.id == currentSessionId_)) {
+            openSession(row);
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::BeginPopupContextItem("##ctx")) {
+            if (ImGui::MenuItem("Delete")) {
+                deleteId = row.id;
+            }
+            ImGui::EndPopup();
+        }
+        // title left, age right, painted over the selectable so the cursor never moves
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const float textY = min.y + (max.y - min.y - ImGui::GetTextLineHeight()) * 0.5f;
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        draw->PushClipRect(min, ImVec2(max.x - ageW - Theme::Spacing::L, max.y), true);
+        draw->AddText(ImVec2(min.x + Theme::Spacing::S, textY), ImGui::GetColorU32(ImGuiCol_Text),
+                      row.title.c_str());
+        draw->PopClipRect();
+        draw->AddText(ImVec2(max.x - ageW - Theme::Spacing::S, textY),
+                      ImGui::GetColorU32(colors.subtext0), age.c_str());
+        ImGui::PopID();
+    }
+    if (deleteId > 0) {
+        Application::getInstance().getAppState()->deleteAiSession(deleteId);
+        std::erase_if(sessionRows_, [deleteId](const AiSession& s) { return s.id == deleteId; });
+        if (deleteId == currentSessionId_) {
+            currentSessionId_ = 0; // the next save creates a fresh row
+        }
+    }
+    ImGui::EndPopup();
 }
 
 // ---------------------------------------------------------------- context
@@ -613,7 +789,7 @@ void AISidebarPanel::sendMessage() {
         return;
     }
     // one prompt in flight; a second would overwrite the queued blocks
-    if (isAcpBackend() && acp_ && (acp_->isTurnActive() || !pendingPromptBlocks_.empty())) {
+    if (isBusy()) {
         return;
     }
     text = text.substr(start, text.find_last_not_of(" \t\n\r") - start + 1);
@@ -672,7 +848,8 @@ bool AISidebarPanel::ensureAgentStarted() {
 
     acp_ = std::make_unique<AcpClient>();
     auto [ok, err] = acp_->start(argv, agentWorkingDir(), mcpUrl, "dearsql",
-                                 mcpUrl.empty() ? std::string{} : mcp_.token());
+                                 mcpUrl.empty() ? std::string{} : mcp_.token(),
+                                 std::exchange(resumeSessionId_, std::string{}));
     if (!ok) {
         items_.push_back({.kind = Item::Kind::Error, .text = err});
         acp_.reset();
@@ -787,6 +964,13 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::MessageDelta:
             if (items_.empty() || items_.back().kind != Item::Kind::Assistant) {
                 items_.push_back({.kind = Item::Kind::Assistant});
+            }
+            items_.back().text += ev.text;
+            scrollToBottom_ = true;
+            break;
+        case AcpEvent::Type::UserMessageDelta:
+            if (items_.empty() || items_.back().kind != Item::Kind::User) {
+                items_.push_back({.kind = Item::Kind::User});
             }
             items_.back().text += ev.text;
             scrollToBottom_ = true;
@@ -916,6 +1100,12 @@ void AISidebarPanel::tick() {
     } else {
         pollApi();
     }
+
+    const bool busy = isBusy();
+    if (wasBusy_ && !busy) {
+        saveCurrentSession(); // a turn just finished
+    }
+    wasBusy_ = busy;
 }
 
 void AISidebarPanel::render() {
@@ -1031,8 +1221,10 @@ void AISidebarPanel::renderHeader() {
     // inherits WindowPadding.y -- without this its rows sit flush against the edges
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
 
-    const float gearW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
-    const float rowAvail = ImGui::GetContentRegionAvail().x - gearW - style.ItemSpacing.x;
+    // sessions, new, settings
+    const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
+    const float iconsW = iconW * 3.0f + Theme::Spacing::S * 2.0f;
+    const float rowAvail = ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x;
     float backendW = comboWidth(backendLabels);
     float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
     if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
@@ -1074,10 +1266,26 @@ void AISidebarPanel::renderHeader() {
     ImGui::PopStyleVar();
 
     ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - gearW);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - iconsW);
     // IconButton keeps the frame transparent and skips the drop shadow, matching the
     // toolbar icons in the table viewer
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    if (UIUtils::IconButton(ICON_FA_CLOCK_ROTATE_LEFT "###ai_sessions")) {
+        sessionRows_ = Application::getInstance().getAppState()->getAiSessions(backendId());
+        ImGui::OpenPopup("##ai_session_popup");
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Sessions");
+    }
+    renderSessionPopup();
+    ImGui::SameLine(0, Theme::Spacing::S);
+    if (UIUtils::IconButton(ICON_FA_SQUARE_PLUS "###ai_new_session")) {
+        startNewSession();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("New session");
+    }
+    ImGui::SameLine(0, Theme::Spacing::S);
     if (UIUtils::IconButton(ICON_FA_GEAR "##ai_settings")) {
         AISettingsDialog::instance().show();
     }
@@ -1226,6 +1434,8 @@ void AISidebarPanel::renderMessages() {
                       (acp_ && acp_->isRunning() && !acp_->isSessionReady());
     if (busy) {
         ImGui::Spacing();
+        // the list has no left padding; the arc's stroke would clip at the edge
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::S);
         UIUtils::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (const std::string warming = agentStartingLabel(); !warming.empty()) {
             ImGui::SameLine();
@@ -1568,11 +1778,7 @@ void AISidebarPanel::acceptPicked(int matchIndex) {
 
 void AISidebarPanel::runCommand(const std::string& name) {
     if (name == "new") {
-        stopAgent();
-        agentWarmupDone_ = false; // bring the replacement session straight back up
-        sentSchemaContext_ = false;
-        items_.push_back({.kind = Item::Kind::Info, .text = "New session."});
-        scrollToBottom_ = true;
+        startNewSession();
     } else if (name == "clear") {
         apiChat_->cancelAsyncPrompt();
         apiClient_->cancel();
@@ -1837,9 +2043,7 @@ void AISidebarPanel::renderInputArea() {
         const float sendBtnWidth = controlsHeight;
         ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - sendBtnWidth, rowY));
 
-        const bool acpBusy = acp_ && (acp_->isTurnActive() || !pendingPromptBlocks_.empty());
-        const bool apiBusy = apiClient_->isStreaming() || apiChat_->isBuildingPrompt();
-        if (acpBusy || apiBusy) {
+        if (isBusy()) {
             if (UIUtils::IconButton(ICON_FA_STOP, UIUtils::ButtonVariant::Danger,
                                     ImVec2(sendBtnWidth, controlsHeight))) {
                 if (acp_) {

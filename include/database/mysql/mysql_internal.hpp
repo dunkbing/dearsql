@@ -19,6 +19,8 @@ namespace mysql_internal {
     bool shouldApplySslCA(const DatabaseConnectionInfo& info);
 
     std::function<MYSQL*()> makeMysqlFactory(const DatabaseConnectionInfo& info);
+    // pool canceller: KILL QUERY on the busy connection, issued from a fresh one
+    std::function<void(MYSQL*)> makeMysqlCanceller(const DatabaseConnectionInfo& info);
 
     // downloadMs/parseMs optionally accumulate result download and row parse time
     StatementResult extractMysqlResult(MYSQL* conn, int rowLimit, double* downloadMs = nullptr,

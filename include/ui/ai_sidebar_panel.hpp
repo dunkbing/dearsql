@@ -5,6 +5,7 @@
 #include "acp/registry.hpp"
 #include "ai/ai_chat.hpp"
 #include "ai/ai_client.hpp"
+#include "app_state.hpp"
 #include "utils/db_mcp_server.hpp"
 #include <memory>
 #include <string>
@@ -94,6 +95,13 @@ private:
     [[nodiscard]] std::string backendId() const;
     void selectBackend(const std::string& id);
     void stopAgent();
+    [[nodiscard]] bool isBusy() const; // a prompt is queued or being answered
+
+    // sessions: the api transcript is ours, acp agents replay theirs via session/load
+    void saveCurrentSession();
+    void startNewSession();
+    void openSession(const AiSession& session);
+    void renderSessionPopup();
 
     // sending
     void sendMessage();
@@ -145,6 +153,10 @@ private:
 
     std::unique_ptr<AcpClient> acp_;
     AcpAgentInstaller installer_;
+    int currentSessionId_ = 0;           // ai_sessions row, 0 until the first turn is saved
+    std::string resumeSessionId_;        // acp session to load on the next agent start
+    bool wasBusy_ = false;               // saves the session on the busy → idle edge
+    std::vector<AiSession> sessionRows_; // fetched when the picker opens
     bool agentMissing_ = false;
     std::string agentMissingReason_;
     nlohmann::json pendingPromptBlocks_ = nlohmann::json::array(); // queued until session ready

@@ -10,10 +10,13 @@ using json = nlohmann::json;
 AcpClient::~AcpClient() = default;
 std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>&, const std::string&,
                                               const std::string&, const std::string&,
-                                              const std::string&) {
+                                              const std::string&, const std::string&) {
     return {false, "AI agents via ACP are not supported on Windows yet"};
 }
 void AcpClient::stop() {}
+std::string AcpClient::sessionId() {
+    return "";
+}
 bool AcpClient::isRunning() const {
     return false;
 }
@@ -102,7 +105,8 @@ AcpClient::~AcpClient() {
 std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& argv,
                                               const std::string& cwd, const std::string& mcpUrl,
                                               const std::string& mcpName,
-                                              const std::string& mcpToken) {
+                                              const std::string& mcpToken,
+                                              const std::string& resumeSessionId) {
     if (pid_ > 0) {
         return {true, ""};
     }
@@ -115,6 +119,7 @@ std::pair<bool, std::string> AcpClient::start(const std::vector<std::string>& ar
     mcpUrl_ = mcpUrl;
     mcpName_ = mcpName;
     mcpToken_ = mcpToken;
+    resumeSessionId_ = resumeSessionId;
 
     signal(SIGPIPE, SIG_IGN); // dead agent stdin → EPIPE, not app exit
 
@@ -274,6 +279,11 @@ bool AcpClient::isSessionReady() const {
 
 bool AcpClient::isTurnActive() const {
     return turnActive_ && isRunning();
+}
+
+std::string AcpClient::sessionId() {
+    std::lock_guard lock(stateMutex_);
+    return sessionId_;
 }
 
 void AcpClient::prompt(const json& contentBlocks) {
@@ -456,15 +466,22 @@ void AcpClient::handleResponse(const json& msg) {
         if (method == "session/prompt") {
             turnActive_ = false;
         }
+        if (method == "session/load") {
+            // the agent pruned it (or never had it); fall back to a fresh session
+            pushEvent({.type = AcpEvent::Type::Error,
+                       .text = "Could not resume the session: " + text + ". Starting a new one."});
+            sendRequest("session/new", {{"cwd", cwd_}, {"mcpServers", mcpServers_}});
+            return;
+        }
         pushEvent({.type = AcpEvent::Type::Error, .text = text});
         return;
     }
 
     const json result = msg.value("result", json::object());
     if (method == "initialize") {
-        const bool httpMcp = result.value("agentCapabilities", json::object())
-                                 .value("mcpCapabilities", json::object())
-                                 .value("http", false);
+        const json caps = result.value("agentCapabilities", json::object());
+        loadSession_ = caps.value("loadSession", false);
+        const bool httpMcp = caps.value("mcpCapabilities", json::object()).value("http", false);
         json mcpServers = json::array();
         if (!mcpUrl_.empty() && httpMcp) {
             // ACP McpServerHttp: headers is an array of {name, value}
@@ -475,11 +492,23 @@ void AcpClient::handleResponse(const json& msg) {
             mcpServers.push_back(
                 {{"type", "http"}, {"name", mcpName_}, {"url", mcpUrl_}, {"headers", headers}});
         }
-        sendRequest("session/new", {{"cwd", cwd_}, {"mcpServers", mcpServers}});
-    } else if (method == "session/new") {
+        mcpServers_ = mcpServers;
+        if (!resumeSessionId_.empty() && loadSession_) {
+            sendRequest(
+                "session/load",
+                {{"sessionId", resumeSessionId_}, {"cwd", cwd_}, {"mcpServers", mcpServers}});
+        } else {
+            if (!resumeSessionId_.empty()) {
+                pushEvent({.type = AcpEvent::Type::Error,
+                           .text = "This agent cannot resume sessions. Starting a new one."});
+            }
+            sendRequest("session/new", {{"cwd", cwd_}, {"mcpServers", mcpServers}});
+        }
+    } else if (method == "session/new" || method == "session/load") {
         {
             std::lock_guard lock(stateMutex_);
-            sessionId_ = result.value("sessionId", "");
+            sessionId_ =
+                method == "session/load" ? resumeSessionId_ : result.value("sessionId", "");
         }
         sessionReady_ = true;
         pushEvent({.type = AcpEvent::Type::SessionReady});
@@ -492,10 +521,12 @@ void AcpClient::handleResponse(const json& msg) {
 void AcpClient::handleSessionUpdate(const json& update) {
     const std::string kind = update.value("sessionUpdate", "");
 
-    if (kind == "agent_message_chunk" || kind == "agent_thought_chunk") {
+    if (kind == "agent_message_chunk" || kind == "agent_thought_chunk" ||
+        kind == "user_message_chunk") {
         AcpEvent ev;
-        ev.type = kind == "agent_message_chunk" ? AcpEvent::Type::MessageDelta
-                                                : AcpEvent::Type::ThoughtDelta;
+        ev.type = kind == "agent_message_chunk"  ? AcpEvent::Type::MessageDelta
+                  : kind == "user_message_chunk" ? AcpEvent::Type::UserMessageDelta
+                                                 : AcpEvent::Type::ThoughtDelta;
         ev.text = contentBlockText(update.value("content", json::object()));
         if (!ev.text.empty()) {
             pushEvent(std::move(ev));
@@ -534,7 +565,7 @@ void AcpClient::handleSessionUpdate(const json& update) {
         }
         pushEvent(std::move(ev));
     }
-    // user_message_chunk / current_mode_update: ignored
+    // current_mode_update: ignored
 }
 
 void AcpClient::sendMessage(const json& msg) {

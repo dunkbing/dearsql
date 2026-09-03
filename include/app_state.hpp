@@ -5,6 +5,16 @@
 #include <string>
 #include <vector>
 
+// one AI sidebar conversation. transcript is stored only for the api-key backend;
+// acp agents keep their own history and are resumed through acp_session_id
+struct AiSession {
+    int id = 0;
+    std::string backend; // agent id, "custom" or "api"
+    std::string acpSessionId;
+    std::string title; // first user message
+    std::string updatedAt;
+};
+
 struct SqlScript {
     int id = 0;
     std::string name;         // display name / filename without extension
@@ -68,6 +78,14 @@ public:
     bool updateScript(const SqlScript& script) const;
     bool deleteScript(int scriptId) const;
     [[nodiscard]] std::vector<SqlScript> getScriptsForConnection(int connectionId) const;
+
+    // AI sessions. id 0 inserts; returns the row id (or -1)
+    int saveAiSession(int id, const std::string& backend, const std::string& acpSessionId,
+                      const std::string& title, const std::string& transcript) const;
+    [[nodiscard]] std::vector<AiSession> getAiSessions(const std::string& backend,
+                                                       int limit = 20) const;
+    [[nodiscard]] std::string getAiSessionTranscript(int id) const;
+    bool deleteAiSession(int id) const;
 
 private:
     sqlite3* db_ = nullptr;

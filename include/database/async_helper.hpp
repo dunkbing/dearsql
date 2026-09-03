@@ -209,6 +209,24 @@ public:
         reapZombies();
     }
 
+    // id of the running worker thread (default-constructed when idle)
+    [[nodiscard]] std::thread::id workerId() const {
+        return activeOperation.has_value() ? activeOperation->worker.get_id() : std::thread::id{};
+    }
+
+    /**
+     * Drop the operation without waiting: the worker keeps running to completion and
+     * its result is discarded. Only safe when the task does not touch the owner.
+     */
+    void detach() {
+        running = false;
+        releaseOperation(activeOperation);
+        for (auto& zombie : zombieOperations) {
+            releaseOperation(zombie);
+        }
+        zombieOperations.clear();
+    }
+
     /**
      * Wait for the operation to complete and return the result.
      */

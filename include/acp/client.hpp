@@ -47,6 +47,7 @@ struct AcpCommand {
 struct AcpEvent {
     enum class Type {
         SessionReady,
+        UserMessageDelta, // replayed by session/load
         MessageDelta,
         ThoughtDelta,
         ToolCall,
@@ -71,16 +72,23 @@ public:
     ~AcpClient();
 
     // spawn agent + initialize + session/new. mcpUrl (optional) is offered as an
-    // HTTP MCP server when the agent advertises support for it.
+    // HTTP MCP server when the agent advertises support for it. resumeSessionId
+    // asks for session/load instead when the agent supports it (history is replayed
+    // as events); otherwise a new session is started.
     // Returns false with error message if the process could not be spawned.
     std::pair<bool, std::string> start(const std::vector<std::string>& argv, const std::string& cwd,
                                        const std::string& mcpUrl, const std::string& mcpName,
-                                       const std::string& mcpToken);
+                                       const std::string& mcpToken,
+                                       const std::string& resumeSessionId = "");
     void stop();
 
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] bool isSessionReady() const;
     [[nodiscard]] bool isTurnActive() const;
+    [[nodiscard]] bool supportsLoadSession() const {
+        return loadSession_;
+    }
+    std::string sessionId();
 
     // send a user prompt (array of ACP content blocks). Requires isSessionReady().
     void prompt(const nlohmann::json& contentBlocks);
@@ -113,10 +121,13 @@ private:
     long long nextId_ = 1;
 
     std::string sessionId_;
+    std::string resumeSessionId_;
+    std::atomic<bool> loadSession_{false};
     std::string cwd_;
     std::string mcpUrl_;
     std::string mcpName_;
     std::string mcpToken_;
+    nlohmann::json mcpServers_; // as sent to session/new, reused for the load fallback
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};
     std::atomic<bool> exited_{false};

@@ -1,6 +1,7 @@
 #include "ui/tab/table_viewer_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
@@ -67,6 +68,17 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
     initializeTableRenderer();
     initializeFilterAutoComplete();
     loadDataAsync();
+}
+
+TableViewerTab::~TableViewerTab() {
+    // a slow view must not freeze the ui on close: cancel it server-side so the
+    // pooled connection comes back, then let the worker unwind on its own.
+    // ponytail: the worker still holds node_, which outlives the tab until the
+    // connection is closed (closing waits on the pool session anyway)
+    if (dataLoadOp.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(dataLoadOp.workerId());
+    }
+    dataLoadOp.detach();
 }
 
 void TableViewerTab::render() {
@@ -584,30 +596,36 @@ void TableViewerTab::loadDataAsync() {
                                     sortDirection == SortDirection::Ascending ? "ASC" : "DESC");
     }
 
-    dataLoadOp.start([this, orderByClause]() -> bool {
+    // everything the worker needs is copied; it must not touch `this`
+    dataLoadOp.start([node = node_, table = table_, filter = currentFilter, orderByClause,
+                      limit = rowsPerPage, offset = currentPage * rowsPerPage]() {
+        LoadResult result;
         try {
-            totalRows = node_->getRowCount(table_, currentFilter);
-            const int offset = currentPage * rowsPerPage;
-            tableData =
-                node_->getTableData(table_, rowsPerPage, offset, currentFilter, orderByClause);
-
-            originalData = tableData;
-            hasChanges = false;
-
-            editedCells = std::vector<std::vector<bool>>(
-                tableData.size(), std::vector<bool>(table_.columns.size(), false));
-            isNewRow = std::vector<bool>(tableData.size(), false);
-            rowsPendingDelete = std::vector<bool>(tableData.size(), false);
+            result.totalRows = node->getRowCount(table, filter);
+            result.rows = node->getTableData(table, limit, offset, filter, orderByClause);
         } catch (const std::exception& e) {
-            hasLoadingError = true;
-            loadingError = e.what();
+            result.error = e.what();
         }
-        return true;
+        return result;
     });
 }
 
 void TableViewerTab::checkAsyncLoadStatus() {
-    dataLoadOp.check([this](bool) {
+    dataLoadOp.check([this](LoadResult result) {
+        if (!result.error.empty()) {
+            hasLoadingError = true;
+            loadingError = std::move(result.error);
+        } else {
+            totalRows = result.totalRows;
+            tableData = std::move(result.rows);
+            originalData = tableData;
+            hasChanges = false;
+            editedCells = std::vector<std::vector<bool>>(
+                tableData.size(), std::vector<bool>(table_.columns.size(), false));
+            isNewRow = std::vector<bool>(tableData.size(), false);
+            rowsPendingDelete = std::vector<bool>(tableData.size(), false);
+        }
+
         // Auto-select first cell on initial load
         if (!initialSelectionDone && !tableData.empty() && !table_.columns.empty()) {
             selectedRow = 0;

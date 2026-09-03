@@ -284,7 +284,17 @@ void PostgresDatabaseNode::initializeConnectionPool(const DatabaseConnectionInfo
         // closer
         [](PGconn* conn) { PQfinish(conn); },
         // validator
-        [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
+        [](PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; }, cancelPgQuery);
+}
+
+void cancelPgQuery(PGconn* conn) {
+    if (PGcancel* cancel = PQgetCancel(conn)) {
+        char err[256];
+        if (!PQcancel(cancel, err, sizeof(err))) {
+            spdlog::warn("PQcancel failed: {}", err);
+        }
+        PQfreeCancel(cancel);
+    }
 }
 
 QueryResult PostgresDatabaseNode::executeQuery(const std::string& query, int rowLimit) {

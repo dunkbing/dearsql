@@ -24,6 +24,7 @@
 #include "utils/app_paths.hpp"
 #include "utils/button.hpp"
 #include "utils/spinner.hpp"
+#include <acp/log.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -181,7 +182,30 @@ const char* AISidebarPanel::contextKindIcon(ContextItem::Kind kind) {
 }
 
 AISidebarPanel::AISidebarPanel()
-    : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {}
+    : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {
+    // point acp-cpp at our data dir and log sink, once
+    static const bool configured = [] {
+        acp::registry::setInstallRoot(AppPaths::dataDir() / "agents");
+        acp::setLogger([](acp::LogLevel level, const std::string& msg) {
+            switch (level) {
+            case acp::LogLevel::Debug:
+                spdlog::debug("ACP: {}", msg);
+                break;
+            case acp::LogLevel::Info:
+                spdlog::info("ACP: {}", msg);
+                break;
+            case acp::LogLevel::Warn:
+                spdlog::warn("ACP: {}", msg);
+                break;
+            case acp::LogLevel::Error:
+                spdlog::error("ACP: {}", msg);
+                break;
+            }
+        });
+        return true;
+    }();
+    (void)configured;
+}
 
 AISidebarPanel::~AISidebarPanel() {
     saveCurrentSession();
@@ -933,14 +957,14 @@ void AISidebarPanel::pollAcp() {
     // installer finished?
     if (installer_.check()) {
         const auto& res = installer_.lastResult();
-        if (res.success && res.exitCode == 0) {
+        if (res.ok && res.exitCode == 0) {
             items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
             agentMissing_ = false;
             if (!pendingPromptBlocks_.empty()) {
                 queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
             }
         } else {
-            std::string tail = res.output.empty() ? res.errorMessage : res.output;
+            std::string tail = res.output.empty() ? res.error : res.output;
             if (tail.size() > 1200) {
                 tail = "..." + tail.substr(tail.size() - 1200);
             }

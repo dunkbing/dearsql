@@ -1,27 +1,30 @@
 #include "acp/agents.hpp"
+#include "acp/log.hpp"
 #include "acp/registry.hpp"
+
 #include <algorithm>
 #include <cstdlib>
-#include <spdlog/spdlog.h>
 
 #if !defined(_WIN32)
 #include <unistd.h>
 #endif
 
-namespace AcpAgents {
+namespace acp::agents {
 
-    // npm-style install commands for a package, in the order we prefer them
-    std::vector<AcpInstallOption> npmInstalls(const std::string& package) {
-        return {
-            {"npm", "npm", "npm install -g " + package},
-            {"bun", "bun", "bun add -g " + package},
-            {"pnpm", "pnpm", "pnpm add -g " + package},
-            {"yarn", "yarn", "yarn global add " + package},
-        };
-    }
+    namespace {
+        // npm-style install commands for a package, in preference order
+        std::vector<InstallOption> npmInstalls(const std::string& package) {
+            return {
+                {"npm", "npm", "npm install -g " + package},
+                {"bun", "bun", "bun add -g " + package},
+                {"pnpm", "pnpm", "pnpm add -g " + package},
+                {"yarn", "yarn", "yarn global add " + package},
+            };
+        }
+    } // namespace
 
-    const std::vector<AcpAgentDef>& catalog() {
-        static const std::vector<AcpAgentDef> defs = {
+    const std::vector<AgentDef>& catalog() {
+        static const std::vector<AgentDef> defs = {
             {
                 "claude-code",
                 "Claude Code",
@@ -56,10 +59,9 @@ namespace AcpAgents {
         return defs;
     }
 
-    const std::vector<AcpRunner>& runners() {
-        // npx first: it is the most widely present and what the packages target.
-        // bunx and pnpm dlx cover users who never installed npm.
-        static const std::vector<AcpRunner> list = {
+    const std::vector<Runner>& runners() {
+        // npx first: most widely present and what the packages target
+        static const std::vector<Runner> list = {
             {"npx", {"npx", "--yes"}, false}, {"bunx", {"bunx"}, false},
             {"pnpm", {"pnpm", "dlx"}, false}, {"yarn", {"yarn", "dlx"}, false},
             {"uvx", {"uvx"}, true},
@@ -67,16 +69,15 @@ namespace AcpAgents {
         return list;
     }
 
-    std::vector<AcpAgentDef> availableAgents() {
-        std::vector<AcpAgentDef> defs = catalog();
-        for (const auto& installed : AcpRegistry::installedAgents()) {
-            const bool known = std::any_of(defs.begin(), defs.end(), [&](const AcpAgentDef& d) {
-                return d.id == installed.id;
-            });
+    std::vector<AgentDef> availableAgents() {
+        std::vector<AgentDef> defs = catalog();
+        for (const auto& installed : registry::installedAgents()) {
+            const bool known = std::any_of(defs.begin(), defs.end(),
+                                           [&](const AgentDef& d) { return d.id == installed.id; });
             if (known) {
                 continue;
             }
-            AcpAgentDef def;
+            AgentDef def;
             def.id = installed.id;
             def.name = installed.name;
             def.authHint = "Check the agent's own documentation for how to sign in.";
@@ -85,7 +86,7 @@ namespace AcpAgents {
         return defs;
     }
 
-    const AcpAgentDef* find(const std::string& id) {
+    const AgentDef* find(const std::string& id) {
         for (const auto& def : catalog()) {
             if (def.id == id) {
                 return &def;
@@ -100,11 +101,10 @@ namespace AcpAgents {
             return std::string{};
 #else
             const char* shell = std::getenv("SHELL");
-            ProcessSpec spec;
-            spec.args = {shell && *shell ? shell : "/bin/sh", "-l", "-c", "printf %s \"$PATH\""};
-            const ProcessResult res = ProcessRunner::run(spec);
-            if (!res.success || res.output.empty()) {
-                spdlog::warn("ACP: could not read login shell PATH: {}", res.errorMessage);
+            const RunResult res =
+                run({shell && *shell ? shell : "/bin/sh", "-l", "-c", "printf %s \"$PATH\""});
+            if (!res.ok || res.output.empty()) {
+                log(LogLevel::Warn, "could not read login shell PATH: " + res.error);
                 const char* envPath = std::getenv("PATH");
                 return std::string(envPath ? envPath : "");
             }
@@ -146,16 +146,15 @@ namespace AcpAgents {
 #endif
     }
 
-    std::optional<std::vector<std::string>> resolveInvocation(const AcpAgentDef& def) {
-        // a binary we downloaded from the registry wins: it needs no runtime at all
-        if (auto managed = AcpRegistry::installedCommand(def.id)) {
+    std::optional<std::vector<std::string>> resolveInvocation(const AgentDef& def) {
+        // a registry binary wins: it needs no runtime at all
+        if (auto managed = registry::installedCommand(def.id)) {
             managed->insert(managed->end(), def.runArgs.begin(), def.runArgs.end());
             return managed;
         }
         if (!def.runCmd.empty() && executableExists(def.runCmd.front())) {
             return def.runCmd;
         }
-
         for (const auto& runner : runners()) {
             const std::string& package = runner.python ? def.pyPackage : def.npmPackage;
             if (package.empty() || !executableExists(runner.tool)) {
@@ -169,7 +168,7 @@ namespace AcpAgents {
         return std::nullopt;
     }
 
-    const AcpInstallOption* resolveInstall(const AcpAgentDef& def) {
+    const InstallOption* resolveInstall(const AgentDef& def) {
         for (const auto& option : def.installOptions) {
             if (executableExists(option.tool)) {
                 return &option;
@@ -178,24 +177,8 @@ namespace AcpAgents {
         return nullptr;
     }
 
-} // namespace AcpAgents
-
-void AcpAgentInstaller::start(const std::string& installCmd) {
-    if (op_.isRunning()) {
-        return;
+    RunResult runInstall(const std::string& command) {
+        return run({"/bin/sh", "-lc", command});
     }
-    result_ = {};
-    op_.start([installCmd] {
-        ProcessSpec spec;
-        spec.args = {"/bin/sh", "-lc", installCmd};
-        return ProcessRunner::run(spec);
-    });
-}
 
-bool AcpAgentInstaller::isRunning() const {
-    return op_.isRunning();
-}
-
-bool AcpAgentInstaller::check() {
-    return op_.check([this](ProcessResult res) { result_ = std::move(res); });
-}
+} // namespace acp::agents

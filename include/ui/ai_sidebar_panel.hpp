@@ -1,8 +1,8 @@
 #pragma once
 
-#include "acp/agents.hpp"
-#include "acp/client.hpp"
-#include "acp/registry.hpp"
+#include "ai/acp_agents.hpp"
+#include "ai/acp_client.hpp"
+#include "ai/acp_registry.hpp"
 #include "ai/ai_chat.hpp"
 #include "ai/ai_client.hpp"
 #include "app_state.hpp"

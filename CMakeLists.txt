@@ -243,9 +243,9 @@ set(APP_SOURCES
     src/utils/texture_manager.cpp
     src/ai/ai_client.cpp
     src/ai/ai_chat.cpp
-    src/acp/client.cpp
-    src/acp/agents.cpp
-    src/acp/registry.cpp
+    src/ai/acp_client.cpp
+    src/ai/acp_agents.cpp
+    src/ai/acp_registry.cpp
     src/utils/db_mcp_server.cpp
     src/ui/ai_chat_panel.cpp
     src/ui/ai_sidebar_panel.cpp
@@ -312,6 +312,9 @@ if(WIN32)
             $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>
     )
 endif()
+
+set(ACP_REGISTRY ON CACHE BOOL "" FORCE)
+add_subdirectory(external/acp-cpp)
 
 target_include_directories(
     ${PROJECT_NAME}
@@ -392,6 +395,7 @@ target_link_libraries(
         tree-sitter-json-grammar
         spdlog::spdlog
         sql-parser
+        acp::acp
 )
 
 if(APPLE)

@@ -1,83 +1,105 @@
 #include "acp/registry.hpp"
+#include "acp/log.hpp"
+#include "acp/process.hpp"
 
-#include "utils/app_paths.hpp"
-#include "utils/process_runner.hpp"
+#include <cstdlib>
+#include <fstream>
+#include <mutex>
+#include <nlohmann/json.hpp>
 
+#if defined(ACP_REGISTRY)
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <httplib.h>
-
-#include <fstream>
-#include <nlohmann/json.hpp>
 #include <openssl/evp.h>
-#include <spdlog/spdlog.h>
+#endif
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-namespace {
-    constexpr const char* REGISTRY_HOST = "https://cdn.agentclientprotocol.com";
-    constexpr const char* REGISTRY_PATH = "/registry/v1/latest/registry.json";
+namespace acp::registry {
 
-    std::string sha256Hex(const std::string& data) {
-        unsigned char digest[EVP_MAX_MD_SIZE];
-        unsigned int len = 0;
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        if (!ctx) {
-            return "";
+    namespace {
+        constexpr const char* REGISTRY_HOST = "https://cdn.agentclientprotocol.com";
+        constexpr const char* REGISTRY_PATH = "/registry/v1/latest/registry.json";
+
+        std::mutex& rootMutex() {
+            static std::mutex m;
+            return m;
         }
-        std::string out;
-        if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
-            EVP_DigestUpdate(ctx, data.data(), data.size()) == 1 &&
-            EVP_DigestFinal_ex(ctx, digest, &len) == 1) {
-            static constexpr char HEX[] = "0123456789abcdef";
-            out.reserve(len * 2);
-            for (unsigned int i = 0; i < len; ++i) {
-                out += HEX[digest[i] >> 4];
-                out += HEX[digest[i] & 0x0F];
+        fs::path& rootPath() {
+            static fs::path root;
+            return root;
+        }
+
+        fs::path defaultRoot() {
+#if defined(_WIN32)
+            const char* home = std::getenv("USERPROFILE");
+#else
+            const char* home = std::getenv("HOME");
+#endif
+            return home && *home ? fs::path(home) / ".acp" / "agents" : fs::path(".acp") / "agents";
+        }
+
+#if defined(ACP_REGISTRY)
+        std::string sha256Hex(const std::string& data) {
+            unsigned char digest[EVP_MAX_MD_SIZE];
+            unsigned int len = 0;
+            EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+            if (!ctx) {
+                return "";
             }
+            std::string out;
+            if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                EVP_DigestUpdate(ctx, data.data(), data.size()) == 1 &&
+                EVP_DigestFinal_ex(ctx, digest, &len) == 1) {
+                static constexpr char HEX[] = "0123456789abcdef";
+                out.reserve(len * 2);
+                for (unsigned int i = 0; i < len; ++i) {
+                    out += HEX[digest[i] >> 4];
+                    out += HEX[digest[i] & 0x0F];
+                }
+            }
+            EVP_MD_CTX_free(ctx);
+            return out;
         }
-        EVP_MD_CTX_free(ctx);
-        return out;
-    }
 
-    // split "https://host/a/b" into {"https://host", "/a/b"}
-    std::pair<std::string, std::string> splitUrl(const std::string& url) {
-        const auto schemeEnd = url.find("://");
-        if (schemeEnd == std::string::npos) {
-            return {"", url};
+        // split "https://host/a/b" into {"https://host", "/a/b"}
+        std::pair<std::string, std::string> splitUrl(const std::string& url) {
+            const auto schemeEnd = url.find("://");
+            if (schemeEnd == std::string::npos) {
+                return {"", url};
+            }
+            const auto pathStart = url.find('/', schemeEnd + 3);
+            if (pathStart == std::string::npos) {
+                return {url, "/"};
+            }
+            return {url.substr(0, pathStart), url.substr(pathStart)};
         }
-        const auto pathStart = url.find('/', schemeEnd + 3);
-        if (pathStart == std::string::npos) {
-            return {url, "/"};
-        }
-        return {url.substr(0, pathStart), url.substr(pathStart)};
-    }
 
-    std::string httpGet(const std::string& url, std::string& error) {
-        const auto [host, path] = splitUrl(url);
-        if (host.empty()) {
-            error = "bad url: " + url;
-            return "";
-        }
-        httplib::Client client(host);
-        client.set_follow_location(true); // release assets redirect to a CDN
-        client.set_connection_timeout(15);
-        client.set_read_timeout(120);
+        std::string httpGet(const std::string& url, std::string& error) {
+            const auto [host, path] = splitUrl(url);
+            if (host.empty()) {
+                error = "bad url: " + url;
+                return "";
+            }
+            httplib::Client client(host);
+            client.set_follow_location(true); // release assets redirect to a CDN
+            client.set_connection_timeout(15);
+            client.set_read_timeout(120);
 
-        auto res = client.Get(path);
-        if (!res) {
-            error = "download failed: " + url;
-            return "";
+            auto res = client.Get(path);
+            if (!res) {
+                error = "download failed: " + url;
+                return "";
+            }
+            if (res->status != 200) {
+                error = "http " + std::to_string(res->status) + " for " + url;
+                return "";
+            }
+            return res->body;
         }
-        if (res->status != 200) {
-            error = "http " + std::to_string(res->status) + " for " + url;
-            return "";
-        }
-        return res->body;
-    }
-} // namespace
-
-namespace AcpRegistry {
+#endif
+    } // namespace
 
     std::string platformKey() {
 #if defined(_WIN32)
@@ -97,8 +119,18 @@ namespace AcpRegistry {
 #endif
     }
 
+    void setInstallRoot(fs::path root) {
+        std::lock_guard lock(rootMutex());
+        rootPath() = std::move(root);
+    }
+
+    fs::path installRoot() {
+        std::lock_guard lock(rootMutex());
+        return rootPath().empty() ? defaultRoot() : rootPath();
+    }
+
     fs::path installDir(const std::string& agentId) {
-        return AppPaths::dataDir() / "agents" / agentId;
+        return installRoot() / agentId;
     }
 
     std::optional<std::vector<std::string>> installedCommand(const std::string& agentId) {
@@ -122,7 +154,7 @@ namespace AcpRegistry {
 
     std::vector<Installed> installedAgents() {
         std::vector<Installed> out;
-        const fs::path root = AppPaths::dataDir() / "agents";
+        const fs::path root = installRoot();
         std::error_code ec;
         if (!fs::exists(root, ec)) {
             return out;
@@ -145,8 +177,22 @@ namespace AcpRegistry {
         return out;
     }
 
-    std::vector<AcpRegistryAgent> fetch(std::string& error) {
-        std::vector<AcpRegistryAgent> out;
+#if !defined(ACP_REGISTRY)
+
+    std::vector<Agent> fetch(std::string& error) {
+        error = "acp-cpp was built without registry support (ACP_REGISTRY)";
+        return {};
+    }
+
+    bool installBinary(const Agent&, std::string& error) {
+        error = "acp-cpp was built without registry support (ACP_REGISTRY)";
+        return false;
+    }
+
+#else
+
+    std::vector<Agent> fetch(std::string& error) {
+        std::vector<Agent> out;
         const std::string body = httpGet(std::string(REGISTRY_HOST) + REGISTRY_PATH, error);
         if (body.empty()) {
             return out;
@@ -156,7 +202,7 @@ namespace AcpRegistry {
         try {
             const json root = json::parse(body);
             for (const auto& entry : root.value("agents", json::array())) {
-                AcpRegistryAgent agent;
+                Agent agent;
                 agent.id = entry.value("id", "");
                 agent.name = entry.value("name", agent.id);
                 agent.description = entry.value("description", "");
@@ -186,7 +232,7 @@ namespace AcpRegistry {
         return out;
     }
 
-    bool installBinary(const AcpRegistryAgent& agent, std::string& error) {
+    bool installBinary(const Agent& agent, std::string& error) {
         if (!agent.hasBinary || agent.archiveUrl.empty()) {
             error = agent.name + " has no prebuilt binary for " + platformKey();
             return false;
@@ -234,17 +280,13 @@ namespace AcpRegistry {
         }
 
         // tar and unzip ship with macOS and linux; no archive library needed
-        ProcessSpec spec;
-        spec.args =
-            isZip
-                ? std::vector<std::string>{"unzip", "-o",        "-q", archivePath.string(),
-                                           "-d",    dir.string()}
-                : std::vector<std::string>{"tar", "-xzf", archivePath.string(), "-C", dir.string()};
-        const ProcessResult unpack = ProcessRunner::run(spec);
+        const RunResult unpack =
+            isZip ? run({"unzip", "-o", "-q", archivePath.string(), "-d", dir.string()})
+                  : run({"tar", "-xzf", archivePath.string(), "-C", dir.string()});
         fs::remove(archivePath, ec);
-        if (!unpack.success || unpack.exitCode != 0) {
+        if (!unpack.ok || unpack.exitCode != 0) {
             error = "could not unpack the archive: " +
-                    (unpack.output.empty() ? unpack.errorMessage : unpack.output);
+                    (unpack.output.empty() ? unpack.error : unpack.output);
             return false;
         }
 
@@ -260,52 +302,11 @@ namespace AcpRegistry {
         std::ofstream marker(dir / ".cmd");
         marker << agent.binaryCmd << "\n" << agent.name << "\n" << agent.version << "\n";
 
-        spdlog::info("installed ACP agent {} {} to {}", agent.id, agent.version, dir.string());
+        log(LogLevel::Info,
+            "installed agent " + agent.id + " " + agent.version + " to " + dir.string());
         return true;
     }
 
-} // namespace AcpRegistry
+#endif
 
-void AcpRegistryClient::startFetch() {
-    if (fetchOp_.isRunning()) {
-        return;
-    }
-    error_.clear();
-    fetchOp_.start([] {
-        FetchResult result;
-        result.agents = AcpRegistry::fetch(result.error);
-        return result;
-    });
-}
-
-void AcpRegistryClient::startInstall(const AcpRegistryAgent& agent) {
-    if (installOp_.isRunning()) {
-        return;
-    }
-    error_.clear();
-    installedId_.clear();
-    installOp_.start([agent] {
-        InstallResult result;
-        if (AcpRegistry::installBinary(agent, result.error)) {
-            result.agentId = agent.id;
-        }
-        return result;
-    });
-}
-
-bool AcpRegistryClient::poll() {
-    bool finished = false;
-    finished |= fetchOp_.check([this](FetchResult result) {
-        agents_ = std::move(result.agents);
-        error_ = std::move(result.error);
-    });
-    finished |= installOp_.check([this](InstallResult result) {
-        installedId_ = std::move(result.agentId);
-        error_ = std::move(result.error);
-    });
-    return finished;
-}
-
-bool AcpRegistryClient::isBusy() const {
-    return fetchOp_.isRunning() || installOp_.isRunning();
-}
+} // namespace acp::registry

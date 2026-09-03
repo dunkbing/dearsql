@@ -1,16 +1,16 @@
 #pragma once
 
+#include <acp/connection.hpp>
 #include <atomic>
-#include <map>
+#include <memory>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <string>
-#include <thread>
 #include <vector>
 
-// Agent Client Protocol (https://agentclientprotocol.com) client.
-// Spawns an agent subprocess and speaks newline-delimited JSON-RPC 2.0 over its
-// stdio. UI polls drainEvents() each frame; all writes are thread-safe.
+// DearSQL's view of an ACP agent, built on external/acp-cpp. The library calls
+// back on its reader thread; this adapter turns those calls into AcpEvents that
+// the UI drains once per frame, and runs the initialize → session/new|load
+// handshake so the panel only has to wait for SessionReady.
 
 struct AcpToolCall {
     std::string id;
@@ -19,18 +19,8 @@ struct AcpToolCall {
     std::string status; // pending/in_progress/completed/failed
     std::string output; // extracted text content, best effort
 };
-
-struct AcpPlanEntry {
-    std::string content;
-    std::string priority;
-    std::string status;
-};
-
-struct AcpPermissionOption {
-    std::string optionId;
-    std::string name;
-    std::string kind; // allow_once/allow_always/reject_once/reject_always
-};
+using AcpPlanEntry = acp::PlanEntry;
+using AcpPermissionOption = acp::PermissionOption;
 
 struct AcpPermissionRequest {
     nlohmann::json rpcId; // JSON-RPC id to answer with
@@ -67,9 +57,9 @@ struct AcpEvent {
     AcpPermissionRequest permission;
 };
 
-class AcpClient {
+class AcpClient final : public acp::Client {
 public:
-    ~AcpClient();
+    ~AcpClient() override;
 
     // spawn agent + initialize + session/new. mcpUrl (optional) is offered as an
     // HTTP MCP server when the agent advertises support for it. resumeSessionId
@@ -98,38 +88,27 @@ public:
     std::vector<AcpEvent> drainEvents();
 
 private:
-    void readerLoop();
-    void stderrLoop();
-    void handleMessage(const nlohmann::json& msg);
-    void handleResponse(const nlohmann::json& msg);
-    void handleSessionUpdate(const nlohmann::json& update);
-    void sendMessage(const nlohmann::json& msg);
-    long long sendRequest(const std::string& method, const nlohmann::json& params);
+    // acp::Client
+    void sessionUpdate(const acp::SessionNotification& n) override;
+    void requestPermission(const acp::PermissionRequest& req) override;
+    void agentStderr(const std::string& line) override;
+    void agentExited() override;
+
+    void onInitialized(const acp::Response& r);
+    void onSessionOpened(const std::string& method, const acp::Response& r);
     void pushEvent(AcpEvent ev);
 
-    long long pid_ = -1;
-    int stdinFd_ = -1;
-    int stdoutFd_ = -1;
-    int stderrFd_ = -1;
-    std::thread reader_;
-    std::thread errReader_;
-
-    std::mutex writeMutex_;
-    std::mutex stateMutex_; // guards pending_, events_, sessionId_
+    std::unique_ptr<acp::Connection> conn_;
+    std::mutex stateMutex_; // guards events_, sessionId_
     std::vector<AcpEvent> events_;
-    std::map<long long, std::string> pending_; // request id -> method
-    long long nextId_ = 1;
-
     std::string sessionId_;
     std::string resumeSessionId_;
-    std::atomic<bool> loadSession_{false};
     std::string cwd_;
     std::string mcpUrl_;
     std::string mcpName_;
     std::string mcpToken_;
-    nlohmann::json mcpServers_; // as sent to session/new, reused for the load fallback
+    nlohmann::json mcpServers_ = nlohmann::json::array();
+    std::atomic<bool> loadSession_{false};
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};
-    std::atomic<bool> exited_{false};
-    std::atomic<bool> stopping_{false};
 };

@@ -21,16 +21,19 @@ namespace {
     };
 
     constexpr ModelOption MODEL_OPTIONS[] = {
-        {"claude-sonnet-4-6", "claude-sonnet-4-6", AIProvider::ANTHROPIC},
-        {"claude-haiku-4-5", "claude-haiku-4-5-20251001", AIProvider::ANTHROPIC},
-        {"gemini-2.5-flash", "gemini-2.5-flash", AIProvider::GEMINI},
-        {"gemini-2.5-pro", "gemini-2.5-pro", AIProvider::GEMINI},
-        {"gemini-2.0-flash", "gemini-2.0-flash", AIProvider::GEMINI},
+        {"claude-opus-5", "claude-opus-5", AIProvider::ANTHROPIC},
+        {"claude-sonnet-5", "claude-sonnet-5", AIProvider::ANTHROPIC},
+        {"claude-haiku-4-5", "claude-haiku-4-5", AIProvider::ANTHROPIC},
+        {"gpt-5.6", "gpt-5.6", AIProvider::OPENAI},
+        {"gpt-5.6-terra", "gpt-5.6-terra", AIProvider::OPENAI},
+        {"gpt-5.6-luna", "gpt-5.6-luna", AIProvider::OPENAI},
+        {"gemini-3.8-flash", "gemini-3.8-flash", AIProvider::GEMINI},
+        {"gemini-3.1-pro", "gemini-3.1-pro-preview", AIProvider::GEMINI},
     };
     constexpr int MODEL_COUNT = sizeof(MODEL_OPTIONS) / sizeof(MODEL_OPTIONS[0]);
 
     const char* getProviderApiKeySetting(AIProvider provider) {
-        return provider == AIProvider::GEMINI ? "ai_api_key_gemini" : "ai_api_key_anthropic";
+        return apiKeySettingFor(provider);
     }
 
     float getAIInputContainerHeight() {
@@ -300,9 +303,12 @@ void AIChatPanel::loadModelSettings() {
     auto* appState = Application::getInstance().getAppState();
     std::string provider = appState->getSetting("ai_provider", "anthropic");
 
-    if (provider == "gemini") {
+    const AIProvider wanted = provider == "gemini"   ? AIProvider::GEMINI
+                              : provider == "openai" ? AIProvider::OPENAI
+                                                     : AIProvider::ANTHROPIC;
+    if (wanted != AIProvider::ANTHROPIC) {
         for (int i = 0; i < MODEL_COUNT; ++i) {
-            if (MODEL_OPTIONS[i].provider == AIProvider::GEMINI) {
+            if (MODEL_OPTIONS[i].provider == wanted) {
                 modelIndex_ = i;
                 break;
             }

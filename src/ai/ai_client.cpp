@@ -31,6 +31,8 @@ void AIClient::sendStreaming(AIProvider provider, const std::string& apiKey,
         [this, provider, apiKey, model, systemPrompt, messages](std::stop_token stopToken) {
             if (provider == AIProvider::ANTHROPIC) {
                 streamAnthropic(apiKey, model, systemPrompt, stopToken, messages);
+            } else if (provider == AIProvider::OPENAI) {
+                streamOpenAI(apiKey, model, systemPrompt, stopToken, messages);
             } else {
                 streamGemini(apiKey, model, systemPrompt, stopToken, messages);
             }
@@ -289,6 +291,94 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
             finishWithError(std::format("Gemini API error ({}): {}", res->status, errMsg));
         } catch (...) {
             finishWithError(std::format("Gemini API error ({}): {}", res->status, res->body));
+        }
+    }
+}
+
+// responses api: server-sent events, text arrives as response.output_text.delta
+void AIClient::streamOpenAI(const std::string& apiKey, const std::string& model,
+                            const std::string& systemPrompt, std::stop_token stopToken,
+                            const std::vector<AIChatMessage>& messages) {
+    httplib::Client cli("https://api.openai.com");
+    cli.set_read_timeout(60);
+    cli.set_connection_timeout(10);
+
+    json body;
+    body["model"] = model;
+    body["stream"] = true;
+    if (!systemPrompt.empty()) {
+        body["instructions"] = systemPrompt;
+    }
+    json input = json::array();
+    for (const auto& m : messages) {
+        input.push_back({{"role", m.role}, {"content", m.content}});
+    }
+    body["input"] = input;
+
+    httplib::Headers headers = {
+        {"Authorization", "Bearer " + apiKey},
+        {"content-type", "application/json"},
+    };
+
+    std::string lineBuffer;
+    auto res =
+        cli.Post("/v1/responses", headers, body.dump(), "application/json",
+                 [&](const char* data, size_t len) -> bool {
+                     if (stopToken.stop_requested()) {
+                         return false;
+                     }
+                     lineBuffer.append(data, len);
+                     size_t pos = 0;
+                     while (true) {
+                         const auto nl = lineBuffer.find('\n', pos);
+                         if (nl == std::string::npos) {
+                             break;
+                         }
+                         std::string line = lineBuffer.substr(pos, nl - pos);
+                         pos = nl + 1;
+                         if (!line.empty() && line.back() == '\r') {
+                             line.pop_back();
+                         }
+                         if (!line.starts_with("data: ")) {
+                             continue;
+                         }
+                         const std::string jsonStr = line.substr(6);
+                         if (jsonStr == "[DONE]") {
+                             continue;
+                         }
+                         try {
+                             const auto event = json::parse(jsonStr);
+                             const std::string type = event.value("type", "");
+                             if (type == "response.output_text.delta") {
+                                 appendDelta(event.value("delta", ""));
+                             } else if (type == "error" || type == "response.failed") {
+                                 const json err = event.contains("error")
+                                                      ? event["error"]
+                                                      : event.value("response", json::object())
+                                                            .value("error", json::object());
+                                 finishWithError(err.value("message", "Unknown OpenAI error"));
+                                 return false;
+                             }
+                         } catch (...) {
+                             // skip malformed json
+                         }
+                     }
+                     lineBuffer = lineBuffer.substr(pos);
+                     return true;
+                 });
+
+    if (!res) {
+        if (!stopToken.stop_requested()) {
+            finishWithError("Connection to OpenAI API failed");
+        }
+    } else if (res->status != 200 && !stopToken.stop_requested()) {
+        try {
+            const auto errBody = json::parse(res->body);
+            const auto errObj = errBody.value("error", json::object());
+            finishWithError(std::format("OpenAI API error ({}): {}", res->status,
+                                        errObj.value("message", res->body)));
+        } catch (...) {
+            finishWithError(std::format("OpenAI API error ({}): {}", res->status, res->body));
         }
     }
 }

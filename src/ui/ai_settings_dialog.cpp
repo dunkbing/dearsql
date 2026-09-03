@@ -1,4 +1,5 @@
 #include "ui/ai_settings_dialog.hpp"
+#include "ai/ai_client.hpp"
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -9,8 +10,8 @@
 
 namespace {
     constexpr const char* POPUP_ID = "AI Settings";
-    constexpr const char* PROVIDER_LABELS[] = {"Anthropic", "Gemini"};
-    constexpr const char* PROVIDER_VALUES[] = {"anthropic", "gemini"};
+    constexpr const char* PROVIDER_LABELS[] = {"Anthropic", "OpenAI", "Gemini"};
+    constexpr const char* PROVIDER_VALUES[] = {"anthropic", "openai", "gemini"};
     constexpr int PROVIDER_COUNT = sizeof(PROVIDER_VALUES) / sizeof(PROVIDER_VALUES[0]);
 } // namespace
 
@@ -58,7 +59,7 @@ void AISettingsDialog::saveSettings() {
 }
 
 const char* AISettingsDialog::getSelectedProviderSettingKey() const {
-    return providerIndex_ == 1 ? "ai_api_key_gemini" : "ai_api_key_anthropic";
+    return apiKeySettingFor(static_cast<AIProvider>(providerIndex_)); // same order as the enum
 }
 
 void AISettingsDialog::render() {

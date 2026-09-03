@@ -45,10 +45,14 @@ namespace {
         AIProvider provider;
     };
     constexpr ApiModelOption API_MODELS[] = {
-        {"claude-sonnet-4-6", "claude-sonnet-4-6", AIProvider::ANTHROPIC},
-        {"claude-haiku-4-5", "claude-haiku-4-5-20251001", AIProvider::ANTHROPIC},
-        {"gemini-2.5-flash", "gemini-2.5-flash", AIProvider::GEMINI},
-        {"gemini-2.5-pro", "gemini-2.5-pro", AIProvider::GEMINI},
+        {"claude-opus-5", "claude-opus-5", AIProvider::ANTHROPIC},
+        {"claude-sonnet-5", "claude-sonnet-5", AIProvider::ANTHROPIC},
+        {"claude-haiku-4-5", "claude-haiku-4-5", AIProvider::ANTHROPIC},
+        {"gpt-5.6", "gpt-5.6", AIProvider::OPENAI},
+        {"gpt-5.6-terra", "gpt-5.6-terra", AIProvider::OPENAI},
+        {"gpt-5.6-luna", "gpt-5.6-luna", AIProvider::OPENAI},
+        {"gemini-3.8-flash", "gemini-3.8-flash", AIProvider::GEMINI},
+        {"gemini-3.1-pro", "gemini-3.1-pro-preview", AIProvider::GEMINI},
     };
     constexpr int API_MODEL_COUNT = sizeof(API_MODELS) / sizeof(API_MODELS[0]);
     constexpr int MENTION_MAX_VISIBLE = 8;
@@ -900,8 +904,7 @@ void AISidebarPanel::queueOrSendAcp(json blocks) {
 void AISidebarPanel::sendApi(const std::string& text) {
     auto* appState = Application::getInstance().getAppState();
     const AIProvider provider = API_MODELS[apiModelIndex_].provider;
-    std::string apiKey = appState->getSetting(
-        provider == AIProvider::GEMINI ? "ai_api_key_gemini" : "ai_api_key_anthropic", "");
+    std::string apiKey = appState->getSetting(apiKeySettingFor(provider), "");
     if (apiKey.empty()) {
         apiKey = appState->getSetting("ai_api_key", "");
     }

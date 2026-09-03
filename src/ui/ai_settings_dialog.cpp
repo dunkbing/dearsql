@@ -20,7 +20,8 @@ AISettingsDialog& AISettingsDialog::instance() {
     return dialog;
 }
 
-void AISettingsDialog::show() {
+void AISettingsDialog::show(const std::string& provider) {
+    preselectProvider_ = provider;
     needsLoad_ = true;
     isDialogOpen_ = true;
     pendingOpen_ = true;
@@ -29,7 +30,9 @@ void AISettingsDialog::show() {
 void AISettingsDialog::loadSettings() {
     auto* appState = Application::getInstance().getAppState();
 
-    std::string provider = appState->getSetting("ai_provider", "anthropic");
+    const std::string provider = preselectProvider_.empty()
+                                     ? appState->getSetting("ai_provider", "anthropic")
+                                     : preselectProvider_;
     providerIndex_ = 0;
     for (int i = 0; i < PROVIDER_COUNT; ++i) {
         if (provider == PROVIDER_VALUES[i]) {

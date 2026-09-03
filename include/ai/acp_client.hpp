@@ -88,8 +88,12 @@ public:
     // send a user prompt (array of ACP content blocks). Requires isSessionReady().
     void prompt(const nlohmann::json& contentBlocks);
     void cancelTurn();
-    // answer an AuthRequired event; opens the session (or resumes) once it succeeds
+    // answer an AuthRequired event. agents (gemini) only accept authenticate before
+    // session/new, so this restarts the process and signs in first when a session exists
     void authenticate(const std::string& methodId);
+    // ui thread, once per frame: performs restarts that callbacks could not (they run
+    // on the reader thread, which stop() joins)
+    void tick();
     void respondPermission(const nlohmann::json& rpcId, const std::string& optionId);
 
     std::vector<AcpEvent> drainEvents();
@@ -105,6 +109,18 @@ private:
     void openSession();
     void handleAuthError(const acp::RpcError& err);
     void authenticateWith(const std::string& methodId);
+    void beginAuth(const std::string& methodId);
+
+    struct StartParams {
+        std::vector<std::string> argv;
+        std::string cwd, mcpUrl, mcpName, mcpToken;
+        std::vector<std::pair<std::string, std::string>> extraEnv;
+    };
+    StartParams startParams_;
+    bool sessionRequested_ = false; // session/new or load has been sent on this process
+    bool authFirst_ = false;        // authenticate(preferredAuth_) before opening a session
+    std::mutex restartMutex_;
+    std::string pendingRestartAuth_; // method to restart with, consumed by tick()
     void onSessionOpened(const std::string& method, const acp::Response& r);
     void pushEvent(AcpEvent ev);
 

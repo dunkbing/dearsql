@@ -187,6 +187,16 @@ const char* AISidebarPanel::contextKindIcon(ContextItem::Kind kind) {
 }
 
 namespace {
+    // the api key the agent would read from its env, if the user saved one for that vendor
+    bool hasSavedApiKeyFor(const std::string& agentId) {
+        auto* appState = Application::getInstance().getAppState();
+        const char* key = agentId.find("gemini") != std::string::npos   ? "ai_api_key_gemini"
+                          : agentId.find("codex") != std::string::npos  ? "ai_api_key_openai"
+                          : agentId.find("claude") != std::string::npos ? "ai_api_key_anthropic"
+                                                                        : nullptr;
+        return key && !appState->getSetting(key, "").empty();
+    }
+
     // library warnings the user should see (bad message, write failed); drained by tick()
     std::mutex g_acpWarnMutex;
     std::vector<std::string> g_acpWarnings;
@@ -1000,6 +1010,7 @@ void AISidebarPanel::pollAcp() {
         return;
     }
 
+    acp_->tick(); // deferred restarts (sign-in) happen here, on the ui thread
     bool agentGone = false;
     for (auto& ev : acp_->drainEvents()) {
         switch (ev.type) {
@@ -1658,6 +1669,12 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                                                                          m.id);
                     item.permissionAnswered = true;
                     item.permissionChoice = m.name;
+                    if (m.id.find("api") != std::string::npos && !hasSavedApiKeyFor(backendId())) {
+                        items_.push_back({.kind = Item::Kind::Info,
+                                          .text =
+                                              "Tip: paste the key into AI Settings (API key "
+                                              "backend, gear icon); it is handed to the agent."});
+                    }
                 }
                 if (!m.description.empty() && ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("%s", m.description.c_str());

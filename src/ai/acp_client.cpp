@@ -46,6 +46,8 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     }
     authTried_ = false;
     preferredAuth_ = preferredAuthMethod;
+    sessionRequested_ = false;
+    startParams_ = {argv, cwd, mcpUrl, mcpName, mcpToken, extraEnv};
 
     auto [conn, err] = acp::Connection::spawn(*this, argv, opts);
     if (!conn) {
@@ -77,10 +79,17 @@ void AcpClient::onInitialized(const acp::Response& r) {
         }
         mcpServers_.push_back(server.toJson());
     }
+    if (authFirst_ && !preferredAuth_.empty()) {
+        authFirst_ = false;
+        authTried_ = true;
+        authenticateWith(preferredAuth_); // opens the session once it succeeds
+        return;
+    }
     openSession();
 }
 
 void AcpClient::openSession() {
+    sessionRequested_ = true;
     if (!resumeSessionId_.empty() && loadSession_) {
         conn_->loadSession(resumeSessionId_, cwd_, mcpServers_,
                            [this](acp::Response res) { onSessionOpened("session/load", res); });
@@ -133,7 +142,7 @@ void AcpClient::handleAuthError(const acp::RpcError& err) {
         }
         if (!pick.empty()) {
             authTried_ = true;
-            authenticateWith(pick);
+            beginAuth(pick);
             return;
         }
     }
@@ -163,12 +172,43 @@ void AcpClient::authenticateWith(const std::string& methodId) {
     });
 }
 
+// before any session: authenticate in place. after one: restart the process and
+// authenticate first, which is the only order gemini accepts
+void AcpClient::beginAuth(const std::string& methodId) {
+    preferredAuth_ = methodId;
+    if (!sessionRequested_) {
+        authenticateWith(methodId);
+        return;
+    }
+    std::lock_guard lock(restartMutex_);
+    pendingRestartAuth_ = methodId;
+}
+
 void AcpClient::authenticate(const std::string& methodId) {
     if (!conn_) {
         return;
     }
     authTried_ = true;
-    authenticateWith(methodId);
+    beginAuth(methodId);
+}
+
+void AcpClient::tick() {
+    std::string method;
+    {
+        std::lock_guard lock(restartMutex_);
+        method.swap(pendingRestartAuth_);
+    }
+    if (method.empty()) {
+        return;
+    }
+    pushEvent({.type = AcpEvent::Type::Info, .text = "Restarting the agent to sign in..."});
+    const StartParams p = startParams_;
+    stop();
+    authFirst_ = true;
+    auto [ok, err] = start(p.argv, p.cwd, p.mcpUrl, p.mcpName, p.mcpToken, "", p.extraEnv, method);
+    if (!ok) {
+        pushEvent({.type = AcpEvent::Type::Error, .text = err});
+    }
 }
 
 void AcpClient::onSessionOpened(const std::string& method, const acp::Response& r) {

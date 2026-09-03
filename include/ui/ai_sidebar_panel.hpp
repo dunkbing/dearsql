@@ -35,7 +35,7 @@ public:
 private:
     // one entry in the transcript
     struct Item {
-        enum class Kind { User, Assistant, Thought, Tool, Plan, Permission, Info, Error };
+        enum class Kind { User, Assistant, Thought, Tool, Plan, Permission, Auth, Info, Error };
         Kind kind{};
         std::string text;
         std::string contextNote; // "context: a, b" shown under a user message
@@ -51,6 +51,8 @@ private:
         AcpPermissionRequest permission;
         bool permissionAnswered = false;
         std::string permissionChoice;
+        // Auth (reuses permissionAnswered/permissionChoice)
+        std::vector<acp::AuthMethod> authMethods;
     };
 
     struct NodeRef {

@@ -15,7 +15,8 @@ std::pair<bool, std::string>
 AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
                  const std::string& mcpUrl, const std::string& mcpName, const std::string& mcpToken,
                  const std::string& resumeSessionId,
-                 const std::vector<std::pair<std::string, std::string>>& extraEnv) {
+                 const std::vector<std::pair<std::string, std::string>>& extraEnv,
+                 const std::string& preferredAuthMethod) {
     if (conn_ && conn_->isRunning()) {
         return {true, ""};
     }
@@ -44,6 +45,7 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
         }
     }
     authTried_ = false;
+    preferredAuth_ = preferredAuthMethod;
 
     auto [conn, err] = acp::Connection::spawn(*this, argv, opts);
     if (!conn) {
@@ -93,39 +95,81 @@ void AcpClient::openSession() {
                       [this](acp::Response res) { onSessionOpened("session/new", res); });
 }
 
-// acp: session/new answers -32000 auth_required until authenticate() succeeds. api-key
-// methods read the key from the env; oauth ones open the browser from the agent side
-void AcpClient::authenticateAndRetry(const acp::RpcError& err) {
-    authTried_ = true;
-    const acp::AuthMethod* method = &authMethods_.front();
-    if (exportedApiKey_) {
+namespace {
+    bool isAuthError(const acp::RpcError& err) {
+        std::string lower = err.message;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        return err.code == -32000 || lower.find("auth") != std::string::npos ||
+               lower.find("api key") != std::string::npos ||
+               lower.find("unauthorized") != std::string::npos ||
+               lower.find("login") != std::string::npos;
+    }
+} // namespace
+
+// acp: session/new answers auth_required until authenticate() succeeds. a remembered
+// method (or the api-key one when a key went into the env) is tried once on its own;
+// otherwise the user picks from the agent.s methods
+void AcpClient::handleAuthError(const acp::RpcError& err) {
+    spdlog::info("ACP: agent wants authentication: {}", err.describe());
+    if (!authTried_) {
+        std::string pick;
         for (const auto& m : authMethods_) {
-            if (m.id.find("api") != std::string::npos) {
-                method = &m;
-                break;
+            if (m.id == preferredAuth_) {
+                pick = m.id;
             }
         }
+        if (pick.empty() && exportedApiKey_) {
+            for (const auto& m : authMethods_) {
+                if (m.id.find("api") != std::string::npos) {
+                    pick = m.id;
+                    break;
+                }
+            }
+        }
+        if (!pick.empty()) {
+            authTried_ = true;
+            authenticateWith(pick);
+            return;
+        }
     }
-    pushEvent({.type = AcpEvent::Type::Info, .text = "Signing in: " + method->name + "..."});
-    spdlog::info("ACP: authenticating with {} after: {}", method->id, err.describe());
-    conn_->authenticate(method->id, [this](acp::Response res) {
+    pushEvent({.type = AcpEvent::Type::AuthRequired, .authMethods = authMethods_});
+}
+
+void AcpClient::authenticateWith(const std::string& methodId) {
+    std::string name = methodId;
+    for (const auto& m : authMethods_) {
+        if (m.id == methodId && !m.name.empty()) {
+            name = m.name;
+        }
+    }
+    pushEvent({.type = AcpEvent::Type::Info, .text = "Signing in: " + name + "..."});
+    conn_->authenticate(methodId, [this](acp::Response res) {
         if (!res.ok()) {
             pushEvent({.type = AcpEvent::Type::Error,
                        .text = "Sign-in failed: " + res.error->describe()});
+            pushEvent({.type = AcpEvent::Type::AuthRequired, .authMethods = authMethods_});
             return;
         }
-        openSession();
+        if (sessionReady_) {
+            pushEvent({.type = AcpEvent::Type::Info, .text = "Signed in."});
+        } else {
+            openSession();
+        }
     });
+}
+
+void AcpClient::authenticate(const std::string& methodId) {
+    if (!conn_) {
+        return;
+    }
+    authTried_ = true;
+    authenticateWith(methodId);
 }
 
 void AcpClient::onSessionOpened(const std::string& method, const acp::Response& r) {
     if (!r.ok()) {
-        std::string lower = r.error->message;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        const bool authRequired =
-            r.error->code == -32000 || lower.find("auth") != std::string::npos;
-        if (authRequired && !authTried_ && !authMethods_.empty()) {
-            authenticateAndRetry(*r.error);
+        if (isAuthError(*r.error) && !authMethods_.empty()) {
+            handleAuthError(*r.error);
             return;
         }
         if (method == "session/load") {
@@ -181,6 +225,11 @@ void AcpClient::prompt(const json& contentBlocks) {
     turnActive_ = true;
     conn_->prompt(sessionId(), contentBlocks, [this](acp::Response r) {
         turnActive_ = false;
+        if (!r.ok() && isAuthError(*r.error) && !authMethods_.empty()) {
+            authTried_ = false; // credentials expired mid-conversation: ask again
+            handleAuthError(*r.error);
+            return;
+        }
         if (!r.ok()) {
             pushEvent({.type = AcpEvent::Type::Error, .text = r.error->describe()});
             return;

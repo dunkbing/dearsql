@@ -46,9 +46,10 @@ struct AcpEvent {
         Plan,
         Commands, // agent published its slash commands
         Permission,
-        TurnEnded, // text = stopReason
-        Error,     // text = message
-        Exited,    // agent process died
+        AuthRequired, // authMethods = what the agent accepts; answer with authenticate()
+        TurnEnded,    // text = stopReason
+        Error,        // text = message
+        Exited,       // agent process died
     };
     Type type{};
     std::string text;
@@ -56,6 +57,7 @@ struct AcpEvent {
     std::vector<AcpPlanEntry> plan;
     std::vector<AcpCommand> commands;
     AcpPermissionRequest permission;
+    std::vector<acp::AuthMethod> authMethods;
 };
 
 class AcpClient final : public acp::Client {
@@ -71,7 +73,8 @@ public:
     start(const std::vector<std::string>& argv, const std::string& cwd, const std::string& mcpUrl,
           const std::string& mcpName, const std::string& mcpToken,
           const std::string& resumeSessionId = "",
-          const std::vector<std::pair<std::string, std::string>>& extraEnv = {});
+          const std::vector<std::pair<std::string, std::string>>& extraEnv = {},
+          const std::string& preferredAuthMethod = "");
     void stop();
 
     [[nodiscard]] bool isRunning() const;
@@ -85,6 +88,8 @@ public:
     // send a user prompt (array of ACP content blocks). Requires isSessionReady().
     void prompt(const nlohmann::json& contentBlocks);
     void cancelTurn();
+    // answer an AuthRequired event; opens the session (or resumes) once it succeeds
+    void authenticate(const std::string& methodId);
     void respondPermission(const nlohmann::json& rpcId, const std::string& optionId);
 
     std::vector<AcpEvent> drainEvents();
@@ -98,7 +103,8 @@ private:
 
     void onInitialized(const acp::Response& r);
     void openSession();
-    void authenticateAndRetry(const acp::RpcError& err);
+    void handleAuthError(const acp::RpcError& err);
+    void authenticateWith(const std::string& methodId);
     void onSessionOpened(const std::string& method, const acp::Response& r);
     void pushEvent(AcpEvent ev);
 
@@ -115,6 +121,7 @@ private:
     std::vector<acp::AuthMethod> authMethods_;
     bool exportedApiKey_ = false; // an api key went into the agent env, prefer that auth method
     bool authTried_ = false;
+    std::string preferredAuth_; // method id remembered from the last successful sign-in
     std::atomic<bool> loadSession_{false};
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};

@@ -894,7 +894,8 @@ bool AISidebarPanel::ensureAgentStarted() {
     };
     auto [ok, err] = acp_->start(argv, agentWorkingDir(), mcpUrl, "dearsql",
                                  mcpUrl.empty() ? std::string{} : mcp_.token(),
-                                 std::exchange(resumeSessionId_, std::string{}), keys);
+                                 std::exchange(resumeSessionId_, std::string{}), keys,
+                                 appState->getSetting("acp_auth_" + backendId(), ""));
     if (!ok) {
         items_.push_back({.kind = Item::Kind::Error, .text = err});
         acp_.reset();
@@ -1070,6 +1071,16 @@ void AISidebarPanel::pollAcp() {
             Item item;
             item.kind = Item::Kind::Permission;
             item.permission = std::move(ev.permission);
+            items_.push_back(std::move(item));
+            scrollToBottom_ = true;
+            break;
+        }
+        case AcpEvent::Type::AuthRequired: {
+            // whatever we remembered did not work (or nothing was remembered)
+            Application::getInstance().getAppState()->setSetting("acp_auth_" + backendId(), "");
+            Item item;
+            item.kind = Item::Kind::Auth;
+            item.authMethods = std::move(ev.authMethods);
             items_.push_back(std::move(item));
             scrollToBottom_ = true;
             break;
@@ -1626,6 +1637,34 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                     item.permissionChoice = opt.name;
                 }
             }
+        }
+        break;
+    }
+
+    case Item::Kind::Auth: {
+        ImGui::TextColored(colors.peach, ICON_FA_KEY " Sign in required");
+        if (item.permissionAnswered) {
+            ImGui::TextColored(colors.subtext0, "-> %s", item.permissionChoice.c_str());
+        } else if (acp_ && !item.authMethods.empty()) {
+            for (size_t i = 0; i < item.authMethods.size(); ++i) {
+                if (i > 0) {
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                }
+                const auto& m = item.authMethods[i];
+                if (UIUtils::SmallButton(std::format("{}##auth{}", m.name, i).c_str(),
+                                         UIUtils::ButtonVariant::Primary)) {
+                    acp_->authenticate(m.id);
+                    Application::getInstance().getAppState()->setSetting("acp_auth_" + backendId(),
+                                                                         m.id);
+                    item.permissionAnswered = true;
+                    item.permissionChoice = m.name;
+                }
+                if (!m.description.empty() && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", m.description.c_str());
+                }
+            }
+        } else if (const AcpAgentDef* def = currentAgentDef()) {
+            ImGui::TextWrapped("%s", def->authHint.c_str());
         }
         break;
     }

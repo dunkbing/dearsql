@@ -33,6 +33,7 @@
 #include <filesystem>
 #include <format>
 #include <iomanip>
+#include <mutex>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
@@ -185,6 +186,14 @@ const char* AISidebarPanel::contextKindIcon(ContextItem::Kind kind) {
     return ICON_FA_TABLE;
 }
 
+namespace {
+    // library warnings the user should see (bad message, write failed); drained by tick()
+    std::mutex g_acpWarnMutex;
+    std::vector<std::string> g_acpWarnings;
+
+    constexpr double AGENT_START_TIMEOUT_S = 30.0;
+} // namespace
+
 AISidebarPanel::AISidebarPanel()
     : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {
     // point acp-cpp at our data dir and log sink, once
@@ -199,11 +208,12 @@ AISidebarPanel::AISidebarPanel()
                 spdlog::info("ACP: {}", msg);
                 break;
             case acp::LogLevel::Warn:
+            case acp::LogLevel::Error: {
                 spdlog::warn("ACP: {}", msg);
+                std::lock_guard lock(g_acpWarnMutex);
+                g_acpWarnings.push_back(msg);
                 break;
-            case acp::LogLevel::Error:
-                spdlog::error("ACP: {}", msg);
-                break;
+            }
             }
         });
         return true;
@@ -890,6 +900,8 @@ bool AISidebarPanel::ensureAgentStarted() {
         acp_.reset();
         return false;
     }
+    agentStartedAt_ = ImGui::GetTime();
+    agentStartWarned_ = false;
     return true;
 }
 
@@ -1120,6 +1132,32 @@ void AISidebarPanel::pollApi() {
 
 void AISidebarPanel::tick() {
     ensureSettingsLoaded();
+
+    {
+        std::vector<std::string> warnings;
+        {
+            std::lock_guard lock(g_acpWarnMutex);
+            warnings.swap(g_acpWarnings);
+        }
+        for (const auto& w : warnings) {
+            items_.push_back({.kind = Item::Kind::Error, .text = "Agent protocol: " + w});
+            scrollToBottom_ = true;
+        }
+    }
+    // a spinner forever is the worst outcome; say what is going on
+    if (acp_ && acp_->isRunning() && !acp_->isSessionReady() && !agentStartWarned_ &&
+        ImGui::GetTime() - agentStartedAt_ > AGENT_START_TIMEOUT_S) {
+        agentStartWarned_ = true;
+        std::string text =
+            std::format("The agent has not opened a session after {:.0f}s. It may be waiting for a "
+                        "sign-in in another window, or failing to start.",
+                        AGENT_START_TIMEOUT_S);
+        if (const AcpAgentDef* def = currentAgentDef()) {
+            text += "\n" + def->authHint;
+        }
+        items_.push_back({.kind = Item::Kind::Error, .text = std::move(text)});
+        scrollToBottom_ = true;
+    }
 
     const bool settingsOpen = AISettingsDialog::instance().isOpen();
     if (settingsDialogWasOpen_ && !settingsOpen) {

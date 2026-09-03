@@ -144,6 +144,8 @@ private:
     bool mcpEnabled_ = true;
     bool settingsDialogWasOpen_ = false;
     bool agentWarmupDone_ = false;
+    double agentStartedAt_ = 0.0; // ImGui time; drives the "no session yet" warning
+    bool agentStartWarned_ = false;
 
     // built-in catalog plus registry agents already downloaded; the backend index
     // addresses this list, so it is cached rather than rebuilt per frame

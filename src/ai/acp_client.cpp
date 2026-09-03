@@ -96,13 +96,18 @@ void AcpClient::openSession() {
 }
 
 namespace {
+    // the useful part of an agent error is often nested in data (gemini wraps a
+    // google 403 as -32603 "Internal error"), so look at all of it
     bool isAuthError(const acp::RpcError& err) {
-        std::string lower = err.message;
+        std::string lower = err.describe() + " " + err.data.dump();
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        return err.code == -32000 || lower.find("auth") != std::string::npos ||
-               lower.find("api key") != std::string::npos ||
-               lower.find("unauthorized") != std::string::npos ||
-               lower.find("login") != std::string::npos;
+        for (const char* needle : {"auth", "api key", "unauthorized", "login", "permission_denied",
+                                   "forbidden", "\"code\":401", "\"code\":403"}) {
+            if (lower.find(needle) != std::string::npos) {
+                return true;
+            }
+        }
+        return err.code == -32000;
     }
 } // namespace
 

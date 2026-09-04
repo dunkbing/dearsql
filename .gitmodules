@@ -35,4 +35,4 @@
 	url = https://github.com/datastax/cpp-driver.git
 [submodule "external/acp-cpp"]
 	path = external/acp-cpp
-	url = https://github.com/dunkbing/acp-app.git
+	url = https://github.com/dunkbing/acp-cpp.git

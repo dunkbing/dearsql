@@ -71,10 +71,8 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     args.push_back("-o");
     args.push_back("ExitOnForwardFailure=yes");
     args.push_back("-o");
-    const char* strictHostKeyChecking = std::getenv("DEARSQL_SSH_STRICT_HOST_KEY_CHECKING");
-    args.push_back(
-        std::string("StrictHostKeyChecking=") +
-        ((strictHostKeyChecking && *strictHostKeyChecking) ? strictHostKeyChecking : "accept-new"));
+    args.push_back("StrictHostKeyChecking=accept-new");
+    // tests point this at /dev/null to keep the real known_hosts untouched
     if (const char* knownHostsFile = std::getenv("DEARSQL_SSH_KNOWN_HOSTS_FILE");
         knownHostsFile && *knownHostsFile) {
         args.push_back("-o");

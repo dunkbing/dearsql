@@ -1,4 +1,5 @@
 #include "ui/ai_settings_dialog.hpp"
+#include "ai/ai_client.hpp"
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -9,8 +10,8 @@
 
 namespace {
     constexpr const char* POPUP_ID = "AI Settings";
-    constexpr const char* PROVIDER_LABELS[] = {"Anthropic", "Gemini"};
-    constexpr const char* PROVIDER_VALUES[] = {"anthropic", "gemini"};
+    constexpr const char* PROVIDER_LABELS[] = {"Anthropic", "OpenAI", "Gemini"};
+    constexpr const char* PROVIDER_VALUES[] = {"anthropic", "openai", "gemini"};
     constexpr int PROVIDER_COUNT = sizeof(PROVIDER_VALUES) / sizeof(PROVIDER_VALUES[0]);
 } // namespace
 
@@ -19,7 +20,8 @@ AISettingsDialog& AISettingsDialog::instance() {
     return dialog;
 }
 
-void AISettingsDialog::show() {
+void AISettingsDialog::show(const std::string& provider) {
+    preselectProvider_ = provider;
     needsLoad_ = true;
     isDialogOpen_ = true;
     pendingOpen_ = true;
@@ -28,7 +30,9 @@ void AISettingsDialog::show() {
 void AISettingsDialog::loadSettings() {
     auto* appState = Application::getInstance().getAppState();
 
-    std::string provider = appState->getSetting("ai_provider", "anthropic");
+    const std::string provider = preselectProvider_.empty()
+                                     ? appState->getSetting("ai_provider", "anthropic")
+                                     : preselectProvider_;
     providerIndex_ = 0;
     for (int i = 0; i < PROVIDER_COUNT; ++i) {
         if (provider == PROVIDER_VALUES[i]) {
@@ -45,6 +49,8 @@ void AISettingsDialog::loadSettings() {
     std::strncpy(apiKeyBuf_, apiKey.c_str(), sizeof(apiKeyBuf_) - 1);
     apiKeyBuf_[sizeof(apiKeyBuf_) - 1] = '\0';
 
+    mcpEnabled_ = appState->getSetting("ai_mcp_enabled", "1") == "1";
+
     needsLoad_ = false;
 }
 
@@ -52,10 +58,11 @@ void AISettingsDialog::saveSettings() {
     auto* appState = Application::getInstance().getAppState();
     appState->setSetting("ai_provider", PROVIDER_VALUES[providerIndex_]);
     appState->setSetting(getSelectedProviderSettingKey(), apiKeyBuf_);
+    appState->setSetting("ai_mcp_enabled", mcpEnabled_ ? "1" : "0");
 }
 
 const char* AISettingsDialog::getSelectedProviderSettingKey() const {
-    return providerIndex_ == 1 ? "ai_api_key_gemini" : "ai_api_key_anthropic";
+    return apiKeySettingFor(static_cast<AIProvider>(providerIndex_)); // same order as the enum
 }
 
 void AISettingsDialog::render() {
@@ -111,6 +118,22 @@ void AISettingsDialog::render() {
             std::strncpy(apiKeyBuf_, apiKey.c_str(), sizeof(apiKeyBuf_) - 1);
             apiKeyBuf_[sizeof(apiKeyBuf_) - 1] = '\0';
         }
+
+        ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
+
+        // Agent access to the database (MCP tools)
+        ImGui::Text("Agent access");
+        ImGui::Checkbox("Let the agent query my database", &mcpEnabled_);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextWrapped(
+            "Gives coding agents a read-only tool to list tables and run SELECT queries "
+            "against the connected database. Results are sent to the agent's model "
+            "provider. Applies to the next session.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
 
         ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
         ImGui::Separator();

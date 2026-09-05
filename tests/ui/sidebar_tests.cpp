@@ -48,10 +48,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: sidebar shows database connections
     t = IM_REGISTER_TEST(engine, "Sidebar", "Show Database List");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -78,10 +74,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: database selection
     t = IM_REGISTER_TEST(engine, "Sidebar", "Select Database");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -114,10 +106,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: sidebar expands/collapses tree nodes
     t = IM_REGISTER_TEST(engine, "Sidebar", "Expand Tree Nodes");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -134,9 +122,9 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
             sqliteDb->executeQuery("CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)");
         }
 
-        // refresh tables (cast to SQLiteDatabase to access refreshAllTables)
+        // table loading is async now; kick it off and let the frames below pump it
         if (auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(testDb)) {
-            sqliteDb->refreshAllTables();
+            sqliteDb->startTablesLoadAsync(true);
         }
 
         // add database to application
@@ -156,10 +144,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: SQLite connection dialog flow
     t = IM_REGISTER_TEST(engine, "Sidebar", "SQLite Connection Dialog");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -184,10 +168,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: multiple databases in sidebar
     t = IM_REGISTER_TEST(engine, "Sidebar", "Multiple Databases");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -232,10 +212,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: workspace switching
     t = IM_REGISTER_TEST(engine, "Sidebar", "Workspace Switching");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 
@@ -266,10 +242,6 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
     // test: sidebar renders without crashing
     t = IM_REGISTER_TEST(engine, "Sidebar", "Basic Rendering");
-    t->GuiFunc = [](ImGuiTestContext* ctx) {
-        auto& app = Application::getInstance();
-        app.renderMainUI();
-    };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
 

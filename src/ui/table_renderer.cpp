@@ -196,7 +196,8 @@ void TableRenderer::updateDragFromItem(int row, int col) {
     const int tableColIdx = config.showRowNumbers ? col + 1 : col;
     const ImRect cellRect = ImGui::TableGetCellBgRect(table, tableColIdx);
 
-    if (!cellRect.Contains(ImGui::GetMousePos()))
+    // clipped to the column: cells that run under a scrollbar do not count
+    if (!ImGui::IsMouseHoveringRect(cellRect.Min, cellRect.Max))
         return;
 
     if (!isDragging) {
@@ -204,6 +205,9 @@ void TableRenderer::updateDragFromItem(int row, int col) {
         // prevents a mouse that was pressed outside the table from
         // initiating a selection the moment it enters a cell
         if (!leftPressedThisFrame)
+            return;
+        // the press went to something else (scrollbar, column resize border)
+        if (ImGui::IsAnyItemActive() && !ImGui::IsItemActive())
             return;
         collapseSelectionToCell(row, col);
         isDragging = true;

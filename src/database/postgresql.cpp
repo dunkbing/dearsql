@@ -484,7 +484,7 @@ void PostgresDatabase::ensureConnectionPoolForDatabase(const DatabaseConnectionI
         // closer
         [](PGconn* conn) { PQfinish(conn); },
         // validator
-        [](const PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; });
+        [](const PGconn* conn) { return PQstatus(conn) == CONNECTION_OK; }, cancelPgQuery);
 
     std::lock_guard lock(sessionMutex);
     auto* dbData = getDatabaseData(info.database);

@@ -16,6 +16,7 @@ class TableViewerTab final : public Tab {
 public:
     TableViewerTab(const std::string& name, std::string databasePath, Table table,
                    IDatabaseNode* node);
+    ~TableViewerTab() override;
 
     void render() override;
 
@@ -62,10 +63,16 @@ private:
     int rowsPerPage = 100;
     int totalRows = 0;
 
-    // Async loading state
+    // Async loading state. the worker returns everything by value and never touches
+    // the tab, so closing the tab mid-query can detach it instead of joining
+    struct LoadResult {
+        std::vector<std::vector<std::string>> rows;
+        int totalRows = 0;
+        std::string error;
+    };
     bool hasLoadingError = false;
     std::string loadingError;
-    AsyncOperation<bool> dataLoadOp;
+    AsyncOperation<LoadResult> dataLoadOp;
 
     // Edit state
     int selectedRow = -1;

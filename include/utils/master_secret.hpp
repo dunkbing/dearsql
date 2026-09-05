@@ -7,6 +7,6 @@ namespace MasterSecret {
     // empty string if the keystore is unavailable (caller falls back to legacy key).
     // backends: macOS Keychain, Windows Credential Manager, Linux libsecret
     // with a 0600 file fallback (~/.dearsql/master.key).
-    // DEARSQL_MASTER_KEY_FILE env var forces the file backend (tests, headless).
+    // debug builds always use the file (no keychain prompt per rebuild).
     const std::string& get();
 } // namespace MasterSecret

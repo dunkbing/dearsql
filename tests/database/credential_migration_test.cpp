@@ -40,7 +40,6 @@ TEST(CredentialMigration, LegacyRowsAreReencryptedWithMasterKey) {
     const std::string savedProfile = oldProfile ? oldProfile : "";
     setEnvVar("HOME", tmp.string());
     setEnvVar("USERPROFILE", tmp.string());
-    setEnvVar("DEARSQL_MASTER_KEY_FILE", (tmp / "master.key").string());
 
     // legacy db: pre-key_version schema, one row encrypted with the shipped
     // constant, one pre-encryption plaintext row (no salt)
@@ -97,7 +96,7 @@ TEST(CredentialMigration, LegacyRowsAreReencryptedWithMasterKey) {
     // rows are now on the master key, not the legacy key
     std::string masterSecret;
     {
-        std::ifstream in(tmp / "master.key");
+        std::ifstream in(tmp / ".dearsql" / "master.key");
         ASSERT_TRUE(bool(in));
         std::getline(in, masterSecret);
         ASSERT_FALSE(masterSecret.empty());

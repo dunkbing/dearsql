@@ -14,6 +14,7 @@
 #include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
+#include "ui/ai_sidebar_panel.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
@@ -32,6 +33,40 @@
 #include <spdlog/spdlog.h>
 
 namespace {
+    // draws text rotated 90° ccw about (cx, cy) by transforming the glyph vertices
+    void drawRotatedLabel(ImDrawList* drawList, const char* label, float cx, float cy, ImU32 col) {
+        const ImVec2 textSize = ImGui::CalcTextSize(label);
+
+        // the text is laid out horizontally and only then rotated, so it must be drawn
+        // somewhere fully on screen first: glyphs outside the clip rect are culled before
+        // the rotation can bring them back. centred on a narrow left-edge strip a long
+        // label starts at a negative x and loses its first character, so lay it out at a
+        // safe origin and rotate about that instead.
+        const ImVec2 origin(textSize.x, textSize.y);
+        const float ox = origin.x + textSize.x * 0.5f;
+        const float oy = origin.y + textSize.y * 0.5f;
+
+        drawList->PushClipRectFullScreen();
+        const int vtxBegin = drawList->VtxBuffer.Size;
+        drawList->AddText(origin, col, label);
+        const int vtxEnd = drawList->VtxBuffer.Size;
+
+        // rotate 90° ccw about the layout origin, then move onto (cx, cy)
+        for (int i = vtxBegin; i < vtxEnd; i++) {
+            ImDrawVert& v = drawList->VtxBuffer[i];
+            const float dx = v.pos.x - ox;
+            const float dy = v.pos.y - oy;
+            v.pos.x = cx + dy;
+            v.pos.y = cy - dx;
+        }
+        drawList->PopClipRect();
+    }
+
+    // vertical strip length a rotated label needs
+    float rotatedLabelExtent(const char* label) {
+        return ImGui::CalcTextSize(label).x + Theme::Spacing::M * 2.0f;
+    }
+
     // opens the imported csv table in the table viewer
     void openCsvData(FileDatabase* fileDb) {
         if (!fileDb) {
@@ -70,6 +105,10 @@ void DatabaseSidebarNew::processDumpOperations() {
         if (hierarchy) {
             hierarchy->processDumpOperations();
         }
+    }
+    // agent keeps running while the tab is hidden
+    if (aiPanel_) {
+        aiPanel_->tick();
     }
 }
 
@@ -323,28 +362,40 @@ void DatabaseSidebarNew::renderHistoryToggleButton(const ImVec2& btnMin, float b
                           1.0f);
     }
 
-    const char* label = "History";
-    const ImVec2 textSize = ImGui::CalcTextSize(label);
-    const float cx = btnMin.x + buttonW * 0.5f;
-    const float cy = btnMin.y + buttonH * 0.5f;
-    const float textX = cx - textSize.x * 0.5f;
-    const float textY = cy - textSize.y * 0.5f;
-
-    drawList->PushClipRectFullScreen();
-    const int vtxBegin = drawList->VtxBuffer.Size;
-    drawList->AddText(ImVec2(textX, textY),
-                      ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label);
-    const int vtxEnd = drawList->VtxBuffer.Size;
-
-    for (int i = vtxBegin; i < vtxEnd; i++) {
-        ImDrawVert& v = drawList->VtxBuffer[i];
-        const float dx = v.pos.x - cx;
-        const float dy = v.pos.y - cy;
-        v.pos.x = cx + dy;
-        v.pos.y = cy - dx;
-    }
-    drawList->PopClipRect();
+    drawRotatedLabel(drawList, "History", btnMin.x + buttonW * 0.5f, btnMin.y + buttonH * 0.5f,
+                     ImGui::GetColorU32(hovered ? colors.text : colors.subtext0));
 }
+
+bool DatabaseSidebarNew::renderVerticalTabButton(const char* id, const char* label,
+                                                 const ImVec2& btnMin, float buttonW, float buttonH,
+                                                 bool active) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImVec2 btnMax(btnMin.x + buttonW, btnMin.y + buttonH);
+
+    ImGui::SetCursorScreenPos(btnMin);
+    ImGui::InvisibleButton(id, ImVec2(buttonW, buttonH));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked();
+
+    if (active) {
+        drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        // accent bar marks the selected tab
+        drawList->AddRectFilled(btnMin, ImVec2(btnMin.x + 2.0f, btnMax.y),
+                                ImGui::GetColorU32(colors.blue));
+    } else if (hovered) {
+        drawList->AddRectFilled(btnMin, btnMax,
+                                ImGui::GetColorU32(ImVec4(colors.surface1.x, colors.surface1.y,
+                                                          colors.surface1.z, 0.5f)));
+    }
+
+    drawRotatedLabel(drawList, label, btnMin.x + buttonW * 0.5f, btnMin.y + buttonH * 0.5f,
+                     ImGui::GetColorU32(active || hovered ? colors.text : colors.subtext0));
+    return clicked;
+}
+
+DatabaseSidebarNew::DatabaseSidebarNew() = default;
+DatabaseSidebarNew::~DatabaseSidebarNew() = default;
 
 void DatabaseSidebarNew::render() {
     auto& app = Application::getInstance();
@@ -364,142 +415,159 @@ void DatabaseSidebarNew::render() {
                           ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
 
+    // claw back the window's leading gap so the strip sits close under the titlebar
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
-    const float availableHeight = ImGui::GetContentRegionAvail().y;
-    // extend past parent's right WindowPadding so scrollbar sits flush on the right
-    const float sidebarWidth = ImGui::GetContentRegionAvail().x + Theme::Spacing::M;
+    // tabs live in a vertical strip on the left, labels rotated like the History toggle,
+    // which now shares the strip and sits pinned at its bottom
+    static constexpr const char* TAB_LABELS[] = {"Databases", "Assistant"};
+    constexpr int tabCount = sizeof(TAB_LABELS) / sizeof(TAB_LABELS[0]);
+    constexpr float tabStripWidth = 22.0f;
     constexpr float historyHeight = 300.0f;
-    constexpr float stripWidth = 22.0f;
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
     const float historyButtonH = getHistoryButtonHeight();
 
-    const float structureSectionHeight =
-        historyPanelOpen ? availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y
-                         : availableHeight - historyButtonH;
+    // no WindowPadding push here: borderless children get zero padding anyway,
+    // and the push would leak into the context-menu popups opened inside
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    if (ImGui::BeginChild("SidebarTabStrip", ImVec2(tabStripWidth, availableHeight),
+                          ImGuiChildFlags_None)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
 
+        drawList->AddLine(ImVec2(stripPos.x + tabStripWidth, stripPos.y),
+                          ImVec2(stripPos.x + tabStripWidth, stripPos.y + availableHeight),
+                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+        float tabY = stripPos.y;
+        for (int i = 0; i < tabCount; ++i) {
+            const float tabH = rotatedLabelExtent(TAB_LABELS[i]);
+            const std::string id = std::format("##sidebar_tab_{}", i);
+            if (renderVerticalTabButton(id.c_str(), TAB_LABELS[i], ImVec2(stripPos.x, tabY),
+                                        tabStripWidth, tabH, activeSidebarTab_ == i)) {
+                activeSidebarTab_ = i;
+            }
+            tabY += tabH;
+        }
+
+        const ImVec2 histMin(stripPos.x, stripPos.y + availableHeight - historyButtonH);
+        renderHistoryToggleButton(histMin, tabStripWidth, historyButtonH, false);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(0, Theme::Spacing::S);
+
+    const float contentWidth = ImGui::GetContentRegionAvail().x + Theme::Spacing::M;
+    ImGui::BeginChild("SidebarTabContent", ImVec2(contentWidth, availableHeight),
+                      ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        const bool structureHovered = ImGui::IsMouseHoveringRect(
-            ImGui::GetCursorScreenPos(),
-            ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x,
-                   ImGui::GetCursorScreenPos().y + structureSectionHeight));
-        // gutter reserved only when scrollable; hide visuals when not hovered
-        if (!structureHovered) {
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
+        const float tabContentH =
+            historyPanelOpen ? availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y
+                             : availableHeight;
+
+        ImGui::BeginChild("TabContent", ImVec2(0, tabContentH), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        if (activeSidebarTab_ == 0) {
+            renderDatabasesTab();
+        } else {
+            if (!aiPanel_) {
+                aiPanel_ = std::make_unique<AISidebarPanel>();
+            }
+            aiPanel_->setInputBottomAnchor(historyButtonH);
+            aiPanel_->render();
         }
-        ImGui::BeginChild("StructureSection", ImVec2(sidebarWidth, structureSectionHeight), false,
-                          0);
-        renderStructure();
         ImGui::EndChild();
-        if (!structureHovered) {
-            ImGui::PopStyleColor(4);
+
+        if (historyPanelOpen) {
+            renderHistoryPanel();
         }
     }
-
-    if (historyPanelOpen) {
-        const float bottomHeight = ImGui::GetContentRegionAvail().y;
-
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        if (ImGui::BeginChild("HistoryToggleStrip", ImVec2(stripWidth, bottomHeight),
-                              ImGuiChildFlags_None)) {
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            const ImVec2 stripPos = ImGui::GetCursorScreenPos();
-
-            drawList->AddLine(ImVec2(stripPos.x + stripWidth, stripPos.y),
-                              ImVec2(stripPos.x + stripWidth, stripPos.y + bottomHeight),
-                              ImGui::GetColorU32(colors.overlay0), 1.0f);
-            drawList->AddLine(stripPos, ImVec2(stripPos.x + stripWidth, stripPos.y),
-                              ImGui::GetColorU32(colors.overlay0), 1.0f);
-
-            constexpr float buttonW = stripWidth;
-            const float buttonH = historyButtonH;
-            const float buttonY = stripPos.y + bottomHeight - buttonH;
-            const ImVec2 btnMin(stripPos.x, buttonY);
-            renderHistoryToggleButton(btnMin, buttonW, buttonH, false);
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine(0, 0);
-
-        const float contentWidth = sidebarWidth - stripWidth;
-        ImGui::BeginChild("HistoryContent", ImVec2(contentWidth, bottomHeight), false,
-                          ImGuiWindowFlags_NoScrollbar);
-        {
-            ImDrawList* historyDrawList = ImGui::GetWindowDrawList();
-            const ImVec2 historyPanelPos = ImGui::GetWindowPos();
-            const ImVec2 historyPanelSize = ImGui::GetWindowSize();
-            historyDrawList->AddLine(
-                historyPanelPos, ImVec2(historyPanelPos.x + historyPanelSize.x, historyPanelPos.y),
-                ImGui::GetColorU32(colors.overlay0), 1.0f);
-
-            auto& history = QueryHistory::instance();
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-            ImGui::TextUnformatted("HISTORY");
-            ImGui::PopStyleColor();
-
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(
-                ImGuiCol_ButtonHovered,
-                ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                                ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
-            if (UIUtils::IconButton(ICON_FA_TRASH_CAN "##clear_history",
-                                    UIUtils::ButtonVariant::Danger)) {
-                history.clear();
-            }
-            ImGui::PopStyleVar();
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Clear history");
-            }
-            ImGui::PopStyleColor(3);
-            ImGui::Spacing();
-
-            const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
-            const bool historyHovered = ImGui::IsMouseHoveringRect(
-                historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
-                                         historyCursorPos.y + ImGui::GetContentRegionAvail().y));
-            if (!historyHovered) {
-                ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
-            }
-            ImGui::BeginChild("HistoryList", ImVec2(0, 0), false, 0);
-            renderHistory();
-            ImGui::EndChild();
-            if (!historyHovered) {
-                ImGui::PopStyleColor(4);
-            }
-        }
-        ImGui::EndChild();
-    } else {
-        // When closed, draw the toggle button using absolute positioning at the bottom-left
-        // via the parent window's draw list (no child window needed)
-        const ImVec2 windowPos = ImGui::GetWindowPos();
-        const ImVec2 contentMin(windowPos.x + ImGui::GetWindowContentRegionMin().x,
-                                windowPos.y + ImGui::GetWindowContentRegionMin().y);
-        const ImVec2 contentMax(windowPos.x + ImGui::GetWindowContentRegionMax().x,
-                                windowPos.y + ImGui::GetWindowContentRegionMax().y);
-
-        constexpr float buttonW = stripWidth;
-        const float buttonH = historyButtonH;
-
-        const ImVec2 btnMin(contentMin.x, contentMax.y - buttonH);
-        renderHistoryToggleButton(btnMin, buttonW, buttonH, true);
-    }
+    ImGui::EndChild();
 
     ImGui::PopStyleColor(4);
     ImGui::End();
 
     ImGui::PopStyleVar(); // PopupRounding
+}
+
+void DatabaseSidebarNew::renderDatabasesTab() {
+    const float sectionWidth = ImGui::GetContentRegionAvail().x;
+    const float sectionHeight = ImGui::GetContentRegionAvail().y;
+
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const bool structureHovered = ImGui::IsMouseHoveringRect(
+        cursor, ImVec2(cursor.x + sectionWidth, cursor.y + sectionHeight));
+    // gutter reserved only when scrollable; hide visuals when not hovered
+    if (!structureHovered) {
+        ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
+    }
+    ImGui::BeginChild("StructureSection", ImVec2(sectionWidth, sectionHeight), false, 0);
+    renderStructure();
+    ImGui::EndChild();
+    if (!structureHovered) {
+        ImGui::PopStyleColor(4);
+    }
+}
+
+void DatabaseSidebarNew::renderHistoryPanel() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    auto& history = QueryHistory::instance();
+
+    ImGui::BeginChild("HistoryContent", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar);
+    {
+        ImDrawList* historyDrawList = ImGui::GetWindowDrawList();
+        const ImVec2 historyPanelPos = ImGui::GetWindowPos();
+        const ImVec2 historyPanelSize = ImGui::GetWindowSize();
+        historyDrawList->AddLine(historyPanelPos,
+                                 ImVec2(historyPanelPos.x + historyPanelSize.x, historyPanelPos.y),
+                                 ImGui::GetColorU32(colors.overlay0), 1.0f);
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::TextUnformatted("HISTORY");
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.surface1.x, colors.surface1.y,
+                                                             colors.surface1.z, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                            ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
+        if (UIUtils::IconButton(ICON_FA_TRASH_CAN "##clear_history",
+                                UIUtils::ButtonVariant::Danger)) {
+            history.clear();
+        }
+        ImGui::PopStyleVar();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Clear history");
+        }
+        ImGui::PopStyleColor(3);
+        ImGui::Spacing();
+
+        const ImVec2 historyCursorPos = ImGui::GetCursorScreenPos();
+        const bool historyHovered = ImGui::IsMouseHoveringRect(
+            historyCursorPos, ImVec2(historyCursorPos.x + ImGui::GetContentRegionAvail().x,
+                                     historyCursorPos.y + ImGui::GetContentRegionAvail().y));
+        if (!historyHovered) {
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
+        }
+        ImGui::BeginChild("HistoryList", ImVec2(0, 0), false, 0);
+        renderHistory();
+        ImGui::EndChild();
+        if (!historyHovered) {
+            ImGui::PopStyleColor(4);
+        }
+    }
+    ImGui::EndChild();
 }
 
 void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db) {

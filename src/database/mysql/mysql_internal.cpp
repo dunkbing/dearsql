@@ -1,6 +1,7 @@
 #include "database/mysql/mysql_internal.hpp"
 #include <chrono>
 #include <format>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -164,6 +165,22 @@ namespace mysql_internal {
             *parseMs += toMs(Clock::now() - tParse);
         }
         return result;
+    }
+
+    std::function<void(MYSQL*)> makeMysqlCanceller(const DatabaseConnectionInfo& info) {
+        // a busy MYSQL* cannot issue anything itself, so kill from a throwaway connection
+        return [factory = makeMysqlFactory(info)](MYSQL* conn) {
+            try {
+                MYSQL* killer = factory();
+                const std::string sql = std::format("KILL QUERY {}", mysql_thread_id(conn));
+                if (mysql_query(killer, sql.c_str()) != 0) {
+                    spdlog::warn("{} failed: {}", sql, mysql_error(killer));
+                }
+                mysql_close(killer);
+            } catch (const std::exception& e) {
+                spdlog::warn("could not open a connection to cancel the query: {}", e.what());
+            }
+        };
     }
 
 } // namespace mysql_internal

@@ -12,6 +12,7 @@
 #include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
+#include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/settings_dialog.hpp"
@@ -223,16 +224,10 @@ bool Application::initialize() {
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
 #if defined(__APPLE__)
-    // load a custom Shadertoy-style GLSL shader (like ghostty's custom-shader).
-    // env var wins, otherwise the persisted "custom_shader_path" setting.
-    {
-        std::string shaderPath;
-        if (const char* envShader = std::getenv("DEARSQL_CUSTOM_SHADER"))
-            shaderPath = envShader;
-        if (shaderPath.empty() && appState->getSetting("custom_shader_enabled", "1") != "0")
-            shaderPath = appState->getSetting("custom_shader_path", "");
-        if (!shaderPath.empty())
-            CustomShader::loadFromFile(shaderPath);
+    // load a custom Shadertoy-style GLSL shader (like ghostty's custom-shader)
+    if (appState->getSetting("custom_shader_enabled", "1") != "0") {
+        if (const std::string path = appState->getSetting("custom_shader_path", ""); !path.empty())
+            CustomShader::loadFromFile(path);
     }
 #endif
 
@@ -578,7 +573,7 @@ bool Application::initializeGLFW() {
 #else
     const auto title = "";
 #endif
-    window = glfwCreateWindow(1280, 720, title, nullptr, nullptr);
+    window = glfwCreateWindow(1600, 1000, title, nullptr, nullptr);
     if (!window) {
         spdlog::error("Failed to create GLFW window");
         glfwTerminate();
@@ -945,10 +940,8 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         }
     };
 
-    const bool shouldUseSidebar = targetSidebarWidth > 0.01f;
-
-    if (shouldUseSidebar) {
-        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, sidebarWidth, &leftDockId,
+    if (sidebarVisible) {
+        ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, kSidebarWidth, &leftDockId,
                                     &centerDockId);
 
         if (auto* leftNode = ImGui::DockBuilderGetNode(leftDockId)) {
@@ -1003,17 +996,12 @@ static void drawDockTabSeparators(ImGuiDockNode* node) {
 void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    sidebarWidth = targetSidebarWidth;
-
-    const bool shouldUseDocking = targetSidebarWidth > 0.01f;
-
-    const bool currentSidebarVisible = targetSidebarWidth > 0.01f;
-    if (lastSidebarVisible_ != currentSidebarVisible) {
+    if (sidebarVisibleLastFrame_ != sidebarVisible) {
         if (tabManager) {
             tabManager->preserveFocusedTabForLayoutRebuild();
         }
         dockingLayoutInitialized = false;
-        lastSidebarVisible_ = currentSidebarVisible;
+        sidebarVisibleLastFrame_ = sidebarVisible;
     }
     const float topInset = platform_ ? platform_->getClientAreaTopInset() : 0.0f;
     const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);
@@ -1041,12 +1029,12 @@ void Application::renderMainUI() {
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.mantle);
     ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.mantle);
 
-    if (shouldUseDocking) {
+    if (sidebarVisible) {
         ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
     } else {
-        // During animation, hide borders to prevent flashing
+        // no sidebar, so no border between it and the tabs
         ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     }
@@ -1063,9 +1051,7 @@ void Application::renderMainUI() {
     ImGui::PopStyleVar();
     drawDockTabSeparators(ImGui::DockBuilderGetNode(dockSpaceId));
 
-    const bool shouldShowSidebar = sidebarWidth > 0.01f;
-
-    if (shouldShowSidebar) {
+    if (sidebarVisible) {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.base);
         ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
         ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
@@ -1115,7 +1101,7 @@ void Application::renderMainUI() {
 
     ImGui::PopStyleColor(3); // TitleBg, TitleBgActive, TitleBgCollapsed
 
-    if (shouldUseDocking) {
+    if (sidebarVisible) {
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(1);
     } else {
@@ -1126,6 +1112,7 @@ void Application::renderMainUI() {
     ConnectionDialog::instance().render();
     CreateDatabaseDialog::instance().render();
     SettingsDialog::instance().render();
+    AISettingsDialog::instance().render();
 
     pollUpdater();
 

@@ -1,5 +1,6 @@
 #include "app_state.hpp"
 #include "config.hpp"
+#include "utils/app_paths.hpp"
 #include "utils/crypto.hpp"
 #include "utils/master_secret.hpp"
 #include <filesystem>
@@ -220,20 +221,7 @@ namespace {
 } // namespace
 
 AppState::AppState() {
-    fs::path dbPath_;
-
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else // Assume Unix-like
-    const char* home = std::getenv("HOME");
-#endif
-
-    if (home) {
-        dbPath_ = fs::path(home) / ".dearsql" / "connections.db";
-    } else {
-        dbPath_ = fs::path("./connections.db");
-    }
-
+    const fs::path dbPath_ = AppPaths::dataDir() / "connections.db";
     dbPath = dbPath_.string();
     std::cout << dbPath << "\n";
 }
@@ -434,8 +422,21 @@ bool AppState::createTables() {
         );
     )";
 
+    const std::string createAiSessionsTable = R"(
+        CREATE TABLE IF NOT EXISTS ai_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            backend TEXT NOT NULL,
+            acp_session_id TEXT DEFAULT '',
+            title TEXT NOT NULL,
+            transcript TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        DELETE FROM ai_sessions WHERE updated_at < datetime('now', '-90 days');
+    )";
+
     const bool success = executeSQL(createConnectionsTable) && executeSQL(createSettingsTable) &&
-                         executeSQL(createWorkspacesTable) && executeSQL(createScriptsTable);
+                         executeSQL(createWorkspacesTable) && executeSQL(createScriptsTable) &&
+                         executeSQL(createAiSessionsTable);
 
     auto ensureColumnExists = [this](const std::string& columnName, const std::string& alterSql) {
         try {
@@ -1236,4 +1237,86 @@ bool AppState::ensureDefaultWorkspace() const {
         return false;
     }
     return true;
+}
+
+int AppState::saveAiSession(const int id, const std::string& backend,
+                            const std::string& acpSessionId, const std::string& title,
+                            const std::string& transcript) const {
+    const std::string sql = R"(
+        INSERT INTO ai_sessions (id, backend, acp_session_id, title, transcript, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+            acp_session_id = excluded.acp_session_id,
+            title = excluded.title,
+            transcript = excluded.transcript,
+            updated_at = CURRENT_TIMESTAMP;
+    )";
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        std::cerr << "Failed to save ai session: " << sqlite3_errmsg(db_) << std::endl;
+        return -1;
+    }
+    StmtPtr stmt(raw);
+    if (id > 0) {
+        sqlite3_bind_int(stmt.get(), 1, id);
+    } else {
+        sqlite3_bind_null(stmt.get(), 1);
+    }
+    sqlite3_bind_text(stmt.get(), 2, backend.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, acpSessionId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 4, title.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 5, transcript.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        std::cerr << "Failed to save ai session: " << sqlite3_errmsg(db_) << std::endl;
+        return -1;
+    }
+    return id > 0 ? id : static_cast<int>(sqlite3_last_insert_rowid(db_));
+}
+
+std::vector<AiSession> AppState::getAiSessions(const std::string& backend, const int limit) const {
+    std::vector<AiSession> sessions;
+    const std::string sql =
+        "SELECT id, backend, acp_session_id, title, updated_at FROM ai_sessions "
+        "WHERE backend = ? ORDER BY updated_at DESC LIMIT ?";
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        return sessions;
+    }
+    StmtPtr stmt(raw);
+    sqlite3_bind_text(stmt.get(), 1, backend.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 2, limit);
+    auto col = [&](int i) {
+        const auto* t = sqlite3_column_text(stmt.get(), i);
+        return t ? std::string(reinterpret_cast<const char*>(t)) : std::string();
+    };
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        sessions.push_back({sqlite3_column_int(stmt.get(), 0), col(1), col(2), col(3), col(4)});
+    }
+    return sessions;
+}
+
+std::string AppState::getAiSessionTranscript(const int id) const {
+    const std::string sql = "SELECT transcript FROM ai_sessions WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        return "";
+    }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, id);
+    if (sqlite3_step(stmt.get()) != SQLITE_ROW) {
+        return "";
+    }
+    const auto* t = sqlite3_column_text(stmt.get(), 0);
+    return t ? std::string(reinterpret_cast<const char*>(t)) : std::string();
+}
+
+bool AppState::deleteAiSession(const int id) const {
+    const std::string sql = "DELETE FROM ai_sessions WHERE id = ?";
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    StmtPtr stmt(raw);
+    sqlite3_bind_int(stmt.get(), 1, id);
+    return sqlite3_step(stmt.get()) == SQLITE_DONE;
 }

@@ -28,9 +28,6 @@ namespace {
     }
 
     fs::path keyFilePath() {
-        if (const char* override_ = std::getenv("DEARSQL_MASTER_KEY_FILE")) {
-            return override_;
-        }
 #ifdef _WIN32
         const char* home = std::getenv("USERPROFILE");
 #else
@@ -195,9 +192,13 @@ namespace {
 
     std::string load() {
         try {
-            if (std::getenv("DEARSQL_MASTER_KEY_FILE")) {
-                return loadFromFile();
-            }
+#ifndef NDEBUG
+            // debug builds are re-signed on every rebuild, so the keychain prompts each
+            // time. also keeps tests off the real keystore (they redirect HOME).
+            // caveat: a release build sharing ~/.dearsql cannot read credentials
+            // saved or migrated by a debug build (different key)
+            return loadFromFile();
+#endif
 #if defined(__APPLE__)
             return loadFromKeychain();
 #elif defined(_WIN32)

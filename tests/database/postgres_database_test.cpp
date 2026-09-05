@@ -446,3 +446,23 @@ TEST_F(PostgresSchemaNodeDDLTest, RoutinesLoadAsyncFindsRoutines) {
     database->executeQuery(
         std::format(R"(DROP FUNCTION IF EXISTS public."{}"(integer, integer))", funcName));
 }
+
+// closing a tab mid-query cancels it server-side so the pooled connection comes back
+TEST_F(PostgresDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+
+    AsyncOperation<QueryResult> op;
+    op.start([dbNode] { return dbNode->executeQuery("SELECT pg_sleep(20)"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // let it reach the server
+
+    const auto start = std::chrono::steady_clock::now();
+    ConnectionPoolBase::cancelQueriesOn(op.workerId());
+    const QueryResult result = op.waitAndGet();
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_FALSE(result.success());
+    EXPECT_NE(result.errorMessage().find("canceling statement"), std::string::npos)
+        << result.errorMessage();
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+}

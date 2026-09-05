@@ -71,7 +71,7 @@ namespace {
             const float strength =
                 1.0f - static_cast<float>(layer) / static_cast<float>(layers + 1);
             const float alpha = baseAlpha * strength * 0.22f;
-            const ImVec2 min(cursorPos.x - spread, cursorPos.y + 2.0f - spread);
+            const ImVec2 min(cursorPos.x - spread, ImMax(cursorPos.y + 2.0f - spread, cursorPos.y));
             const ImVec2 max(cursorPos.x + buttonSize.x + spread,
                              cursorPos.y + buttonSize.y + 2.0f + spread);
 

@@ -97,11 +97,11 @@ public:
         return sidebarVisible;
     }
     void setSidebarVisible(const bool visible) {
-        if (sidebarVisible != visible) {
-            sidebarVisible = visible;
-            targetSidebarWidth = visible ? 0.25f : 0.0f;
-        }
+        sidebarVisible = visible;
     }
+
+    // fraction of the window the sidebar takes when visible
+    static constexpr float kSidebarWidth = 0.28f;
 
     // Workspace management
     [[nodiscard]] int getCurrentWorkspaceId() const {
@@ -143,15 +143,13 @@ private:
     bool darkTheme = true;
     float fontScale_ = 1.0f;
     bool sidebarVisible = true;
-    float sidebarWidth = 0.25f;
-    float targetSidebarWidth = 0.25f;
-    float animationSpeed = 12.0f;
+    // previous frame's value: a change means the dock layout has to be rebuilt
+    bool sidebarVisibleLastFrame_ = true;
     ImGuiID leftDockId = 0;
     ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;
     std::weak_ptr<DatabaseInterface> selectedDatabase;
     bool dockingLayoutInitialized = false;
-    bool lastSidebarVisible_ = true;
 
     // Data
     std::vector<std::shared_ptr<DatabaseInterface>> databases;

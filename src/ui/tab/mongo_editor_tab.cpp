@@ -59,8 +59,6 @@ void MongoEditorTab::render() {
     renderHeader();
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
 
-    AISettingsDialog::instance().render();
-
     constexpr float toggleStripWidth = 28.0f;
     const float totalWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight_ = ImGui::GetContentRegionAvail().y;

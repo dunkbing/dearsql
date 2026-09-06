@@ -1373,13 +1373,21 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     const bool isForeignKey =
         colIdx < static_cast<int>(fkTargets.size()) && !fkTargets[colIdx].empty();
     if (isForeignKey) {
+        // a marker, not a label: smaller than the header text and nudged down to
+        // sit on the same optical line
+        constexpr float kIconScale = 0.75f;
+        const float baseSize = ImGui::GetStyle().FontSizeBase;
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
+                             (ImGui::GetFontSize() - ImGui::GetFontSize() * kIconScale) * 0.5f);
+        ImGui::PushFont(nullptr, baseSize * kIconScale);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
         ImGui::TextUnformatted(ICON_FA_KEY);
         ImGui::PopStyleColor();
+        ImGui::PopFont();
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("References %s", fkTargets[colIdx].c_str());
         }
-        ImGui::SameLine(0, Theme::Spacing::XS);
+        ImGui::SameLine(0, Theme::Spacing::S);
     }
 
     ImGui::Text("%s", colName.c_str());

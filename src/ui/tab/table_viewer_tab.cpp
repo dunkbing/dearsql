@@ -4,6 +4,7 @@
 #include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/ddl_utils.hpp"
+#include "database/read_only.hpp"
 #include "database/sql_builder.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -147,15 +148,19 @@ void TableViewerTab::render() {
     }
 
     ImGui::SameLine();
+    if (readOnlyConnection_)
+        ImGui::BeginDisabled();
     if (UIUtils::IconButton(ICON_FA_PLUS)) {
         addRow();
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Add row");
+    if (readOnlyConnection_)
+        ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(readOnlyConnection_ ? "Connection is read-only" : "Add row");
     }
 
     const std::vector<int> selectedRows = tableRenderer->getSelectedRows();
-    const bool hasRowSelected = !selectedRows.empty();
+    const bool hasRowSelected = !selectedRows.empty() && !readOnlyConnection_;
 
     ImGui::SameLine();
     if (!hasRowSelected)
@@ -188,6 +193,11 @@ void TableViewerTab::render() {
     if (hasChanges) {
         ImGui::SameLine(0, Theme::Spacing::L);
         ImGui::TextColored(colors.peach, "Unsaved changes");
+    }
+
+    if (readOnlyConnection_) {
+        ImGui::SameLine(0, Theme::Spacing::L);
+        ImGui::TextColored(colors.subtext0, ICON_FA_LOCK " Read-only");
     }
 
     // Show current filter if active
@@ -929,6 +939,12 @@ void TableViewerTab::checkSQLExecutionStatus() {
     });
 }
 
+void TableViewerTab::setFilter(const std::string& expression) {
+    std::strncpy(filterBuffer, expression.c_str(), sizeof(filterBuffer) - 1);
+    filterBuffer[sizeof(filterBuffer) - 1] = '\0';
+    applyFilter();
+}
+
 void TableViewerTab::applyFilter() {
     std::string newFilter = std::string(filterBuffer);
 
@@ -962,7 +978,9 @@ void TableViewerTab::applyFilter() {
 void TableViewerTab::initializeTableRenderer() {
     // Initialize table renderer with editable configuration
     TableRenderer::Config config;
-    config.allowEditing = true;
+    // a read-only connection browses but never edits
+    readOnlyConnection_ = ReadOnly::isReadOnly(node_);
+    config.allowEditing = !readOnlyConnection_;
     config.showRowNumbers = true;
     config.minHeight = 200.0f;
 
@@ -1055,6 +1073,65 @@ void TableViewerTab::initializeTableRenderer() {
     });
 
     tableRenderer->setOnDeleteRow([this](int row) { deleteRows({row}); });
+
+    tableRenderer->setForeignKeyTargetCallback([this](int col) -> std::string {
+        const auto* fk = foreignKeyForColumn(col);
+        return fk ? fk->targetTable : std::string{};
+    });
+
+    tableRenderer->setOnFollowForeignKey([this](int row, int col) { followForeignKey(row, col); });
+}
+
+// scan foreignKeys rather than foreignKeysByColumn: only the file backends build
+// the lookup map, but every backend that has fks fills the vector
+const ForeignKey* TableViewerTab::foreignKeyForColumn(int col) const {
+    if (col < 0 || col >= static_cast<int>(table_.columns.size())) {
+        return nullptr;
+    }
+    const std::string& colName = table_.columns[col].name;
+    for (const auto& fk : table_.foreignKeys) {
+        if (fk.sourceColumn == colName) {
+            return &fk;
+        }
+    }
+    return nullptr;
+}
+
+void TableViewerTab::followForeignKey(int row, int col) {
+    const auto* fk = foreignKeyForColumn(col);
+    if (fk == nullptr || node_ == nullptr || row < 0 || row >= static_cast<int>(tableData.size()) ||
+        col < 0 || col >= static_cast<int>(tableData[row].size())) {
+        return;
+    }
+
+    const std::string& value = tableData[row][col];
+    if (isNullSentinel(value)) {
+        return;
+    }
+
+    // the target has to be loaded already; the sidebar loads tables on connect
+    const auto& tables = node_->getTables();
+    const auto it =
+        std::ranges::find_if(tables, [&](const Table& t) { return t.name == fk->targetTable; });
+    if (it == tables.end()) {
+        spdlog::warn("follow fk: target table '{}' not loaded", fk->targetTable);
+        return;
+    }
+
+    const auto builder = createSQLBuilder(node_->getDatabaseType());
+    const std::string quotedCol = builder->quoteIdentifier(fk->targetColumn);
+
+    // quote against the target's column type, not this table's
+    const auto targetCol = std::ranges::find_if(
+        it->columns, [&](const Column& c) { return c.name == fk->targetColumn; });
+    const std::string literal = targetCol != it->columns.end() ? formatSqlLiteral(*targetCol, value)
+                                                               : std::format("'{}'", value);
+
+    auto* tabManager = Application::getInstance().getTabManager();
+    const auto tab = tabManager->createTableViewerTab(node_, *it);
+    if (const auto viewer = std::dynamic_pointer_cast<TableViewerTab>(tab)) {
+        viewer->setFilter(std::format("{} = {}", quotedCol, literal));
+    }
 }
 
 void TableViewerTab::initializeFilterAutoComplete() {

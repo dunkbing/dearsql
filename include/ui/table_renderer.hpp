@@ -40,6 +40,9 @@ public:
     using OnSetNullCallback = std::function<void(int row, int col)>;
     using OnFilterByValueCallback = std::function<void(int row, int col, const std::string& value)>;
     using OnDeleteRowCallback = std::function<void(int row)>;
+    // target table a column's foreign key points at, empty when it has none
+    using ForeignKeyTargetCallback = std::function<std::string(int col)>;
+    using OnFollowForeignKeyCallback = std::function<void(int row, int col)>;
 
     TableRenderer();
     explicit TableRenderer(const Config& config);
@@ -87,6 +90,12 @@ public:
     }
     void setOnDeleteRow(OnDeleteRowCallback callback) {
         onDeleteRow = callback;
+    }
+    void setForeignKeyTargetCallback(ForeignKeyTargetCallback callback) {
+        foreignKeyTargetCb = callback;
+    }
+    void setOnFollowForeignKey(OnFollowForeignKeyCallback callback) {
+        onFollowForeignKey = callback;
     }
 
     // Sorting
@@ -184,6 +193,8 @@ private:
     ColumnNullableCallback columnNullableCb;
     OnSetNullCallback onSetNull;
     OnFilterByValueCallback onFilterByValue;
+    ForeignKeyTargetCallback foreignKeyTargetCb;
+    OnFollowForeignKeyCallback onFollowForeignKey;
     OnDeleteRowCallback onDeleteRow;
 
     // Sorting state

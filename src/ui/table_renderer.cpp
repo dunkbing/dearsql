@@ -1021,6 +1021,18 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
         onFilterByValue(row, col, data[row][col]);
     }
 
+    // follow a foreign key to the row it points at. no target means the column
+    // has no fk, and a null cell has nothing to look up
+    if (foreignKeyTargetCb && onFollowForeignKey && row >= 0 &&
+        row < static_cast<int>(data.size()) && col >= 0 &&
+        col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col])) {
+        if (const std::string target = foreignKeyTargetCb(col); !target.empty()) {
+            if (paddedMenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
+                onFollowForeignKey(row, col);
+            }
+        }
+    }
+
     ImGui::Separator();
 
     const bool canEdit = config.allowEditing && !config.nonEditableColumns.contains(col) &&

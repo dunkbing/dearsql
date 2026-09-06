@@ -393,6 +393,13 @@ void TableRenderer::render(const char* tableId) {
     bool tableRendered = false;
 #endif
 
+    fkTargets.assign(columns.size(), std::string{});
+    if (foreignKeyTargetCb) {
+        for (size_t i = 0; i < columns.size(); ++i) {
+            fkTargets[i] = foreignKeyTargetCb(static_cast<int>(i));
+        }
+    }
+
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         if (config.showRowNumbers) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
@@ -759,6 +766,14 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
                 hasColorOverride = true;
             }
+        }
+
+        // a foreign-key value is navigable, so colour it like a link. nulls keep
+        // their own styling -- there is nothing to follow
+        if (!hasColorOverride && col < static_cast<int>(fkTargets.size()) &&
+            !fkTargets[col].empty() && !isNullSentinel(cellValue)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+            hasColorOverride = true;
         }
 
         if (config.allowSelection) {
@@ -1353,6 +1368,19 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     const std::string popupId = std::format("##sort_popup_{}", colIdx);
 
     float columnWidth = ImGui::GetColumnWidth();
+
+    // mark foreign-key columns so the link is discoverable without right-clicking
+    const bool isForeignKey =
+        colIdx < static_cast<int>(fkTargets.size()) && !fkTargets[colIdx].empty();
+    if (isForeignKey) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        ImGui::TextUnformatted(ICON_FA_KEY);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("References %s", fkTargets[colIdx].c_str());
+        }
+        ImGui::SameLine(0, Theme::Spacing::XS);
+    }
 
     ImGui::Text("%s", colName.c_str());
 

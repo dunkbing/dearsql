@@ -195,6 +195,8 @@ private:
     OnFilterByValueCallback onFilterByValue;
     ForeignKeyTargetCallback foreignKeyTargetCb;
     OnFollowForeignKeyCallback onFollowForeignKey;
+    // fk target per column, resolved once per frame rather than per cell
+    std::vector<std::string> fkTargets;
     OnDeleteRowCallback onDeleteRow;
 
     // Sorting state

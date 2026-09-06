@@ -9,6 +9,7 @@
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
+#include "database/read_only.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
@@ -1367,6 +1368,11 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     lastQueryDuration = std::chrono::milliseconds{0};
 
     syncBoundNodePointer();
+
+    if (auto reason = ReadOnly::rejectReason(node_, query); !reason.empty()) {
+        queryError = std::move(reason);
+        return;
+    }
 
     IQueryExecutor* executor = nullptr;
     if (binding_.resolveExecutor) {

@@ -57,6 +57,9 @@ struct DatabaseConnectionInfo {
     bool showAllDatabases = false;
     SslMode sslmode = SslMode::Prefer; // SSL mode (all server backends)
     std::string sslCACertPath;         // CA certificate or Oracle wallet path
+    // refuse writes from the editor and the grid. a guard against slips, not a
+    // security boundary — the server is the only place that can truly enforce it
+    bool readOnly = false;
     SSHConfig ssh;
 
     // Build database-specific connection string

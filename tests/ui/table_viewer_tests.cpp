@@ -106,7 +106,15 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->SetRef(tab->getWindowName().c_str());
         ctx->MouseMove("**/7");
         ctx->Yield(3);
-        ctx->ItemClick("**/##fk_go");
+
+        // click the far right edge, not the centre: placing the button against
+        // the cell's *background* rect put half of it outside the content clip
+        // rect, where imgui will not hit-test it
+        const ImGuiTestItemInfo info = ctx->ItemInfo("**/##fk_go");
+        IM_CHECK_SILENT(info.ID != 0);
+        ctx->MouseMoveToPos(ImVec2(info.RectFull.Max.x - 1.0f, info.RectFull.GetCenter().y));
+        ctx->MouseClick(ImGuiMouseButton_Left);
+
         ctx->Yield(40);
         IM_CHECK(tabs->getTabCount() == before + 1);
 

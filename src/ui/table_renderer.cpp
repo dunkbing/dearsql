@@ -964,6 +964,12 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         }
     }
 
+    // the selectable spans the cell's content area, which is what the cell is
+    // clipped to -- the bg rect is wider and an item placed against it is only
+    // half hit-testable
+    const ImVec2 contentMin = ImGui::GetItemRectMin();
+    const ImVec2 contentMax = ImGui::GetItemRectMax();
+
     updateDragFromItem(row, col);
 
     if (isNull)
@@ -990,14 +996,9 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
     // so the table's own layout is untouched
     const bool isForeignKey = col < static_cast<int>(fkTargets.size()) && !fkTargets[col].empty();
     if (isForeignKey && !isNull && onFollowForeignKey && (cellHovered || isSelected)) {
-        ImGuiTable* table = ImGui::GetCurrentTable();
-        const int tableColIdx = config.showRowNumbers ? col + 1 : col;
-        const ImRect cellRect = table ? ImGui::TableGetCellBgRect(table, tableColIdx)
-                                      : ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-
         const ImVec2 iconSize = ImGui::CalcTextSize(ICON_FA_UP_RIGHT_FROM_SQUARE);
-        const ImVec2 pos(cellRect.Max.x - iconSize.x - Theme::Spacing::XS,
-                         cellRect.Min.y + (cellRect.GetHeight() - iconSize.y) * 0.5f);
+        const ImVec2 pos(contentMax.x - iconSize.x,
+                         contentMin.y + (contentMax.y - contentMin.y - iconSize.y) * 0.5f);
 
         const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
         ImGui::SetCursorScreenPos(pos);

@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "ui/tab/tab.hpp"
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -78,6 +79,12 @@ public:
     void renderTabs();
     static void renderEmptyState();
 
+    // run after the tab render loop finishes. anything that adds or removes a tab
+    // from inside a tab's own render must go through here: renderTabs() holds an
+    // iterator into `tabs` while it renders, and pushing to the vector there
+    // invalidates it
+    void deferAfterRender(std::function<void()> action);
+
 private:
     enum class CloseAction { None, CloseAll, CloseOthers, CloseLeft, CloseRight };
 
@@ -92,6 +99,7 @@ private:
     std::uint64_t pendingCloseTargetId_ = 0;
     std::uint64_t activeTabId_ = 0;
     std::uint64_t pendingFocusTabId_ = 0;
+    std::vector<std::function<void()>> deferredActions_;
 
     std::string generateSQLEditorName() const;
 };

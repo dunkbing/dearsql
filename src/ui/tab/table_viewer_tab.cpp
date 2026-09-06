@@ -1127,11 +1127,18 @@ void TableViewerTab::followForeignKey(int row, int col) {
     const std::string literal = targetCol != it->columns.end() ? formatSqlLiteral(*targetCol, value)
                                                                : std::format("'{}'", value);
 
-    auto* tabManager = Application::getInstance().getTabManager();
-    const auto tab = tabManager->createTableViewerTab(node_, *it);
-    if (const auto viewer = std::dynamic_pointer_cast<TableViewerTab>(tab)) {
-        viewer->setFilter(std::format("{} = {}", quotedCol, literal));
-    }
+    // this runs from the cell context menu, i.e. inside this tab's own render.
+    // opening the tab here would push onto TabManager::tabs while renderTabs()
+    // still holds an iterator into it, so defer to after the loop. captured by
+    // value: this tab may be gone by the time it runs
+    Application::getInstance().getTabManager()->deferAfterRender(
+        [node = node_, target = *it, filter = std::format("{} = {}", quotedCol, literal)] {
+            auto* tabManager = Application::getInstance().getTabManager();
+            const auto tab = tabManager->createTableViewerTab(node, target);
+            if (const auto viewer = std::dynamic_pointer_cast<TableViewerTab>(tab)) {
+                viewer->setFilter(filter);
+            }
+        });
 }
 
 void TableViewerTab::initializeFilterAutoComplete() {

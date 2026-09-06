@@ -1373,21 +1373,29 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     const bool isForeignKey =
         colIdx < static_cast<int>(fkTargets.size()) && !fkTargets[colIdx].empty();
     if (isForeignKey) {
-        // a marker, not a label: smaller than the header text and nudged down to
-        // sit on the same optical line
+        // a marker, not a label: smaller than the header text and centred against
+        // it. SameLine() would carry the icon's own offset onto the label, so the
+        // label's y is restored explicitly afterwards
         constexpr float kIconScale = 0.75f;
-        const float baseSize = ImGui::GetStyle().FontSizeBase;
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
-                             (ImGui::GetFontSize() - ImGui::GetFontSize() * kIconScale) * 0.5f);
-        ImGui::PushFont(nullptr, baseSize * kIconScale);
+        const float lineY = ImGui::GetCursorPosY();
+        const float lineH = ImGui::GetTextLineHeight();
+
+        // 0.75 of the height difference, not half: centring on the full line box
+        // leaves the glyph riding above lowercase column names, which have no
+        // ascenders to fill the top of the line
+        constexpr float kIconDrop = 0.75f;
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * kIconScale);
+        ImGui::SetCursorPosY(lineY + (lineH - ImGui::GetTextLineHeight()) * kIconDrop);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
         ImGui::TextUnformatted(ICON_FA_KEY);
         ImGui::PopStyleColor();
         ImGui::PopFont();
+
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("References %s", fkTargets[colIdx].c_str());
         }
         ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SetCursorPosY(lineY);
     }
 
     ImGui::Text("%s", colName.c_str());

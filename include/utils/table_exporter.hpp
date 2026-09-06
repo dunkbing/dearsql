@@ -4,7 +4,7 @@
 #include "database/table_data_provider.hpp"
 #include "imgui.h"
 
-enum class ExportFormat { CSV, JSON, SQL };
+enum class ExportFormat { CSV, JSON, SQL, MARKDOWN, HTML };
 
 namespace TableExporter {
     bool exportTables(ITableDataProvider* provider, const std::vector<const Table*>& tables,
@@ -21,6 +21,12 @@ namespace TableExporter {
             }
             if (ImGui::MenuItem("SQL")) {
                 exportTables(provider, {&table}, ExportFormat::SQL, dbType);
+            }
+            if (ImGui::MenuItem("Markdown")) {
+                exportTables(provider, {&table}, ExportFormat::MARKDOWN, dbType);
+            }
+            if (ImGui::MenuItem("HTML")) {
+                exportTables(provider, {&table}, ExportFormat::HTML, dbType);
             }
             ImGui::EndMenu();
         }

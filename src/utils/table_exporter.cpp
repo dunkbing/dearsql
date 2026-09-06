@@ -115,6 +115,134 @@ namespace {
         return true;
     }
 
+    // a pipe would end the cell and a newline the row, so both are escaped
+    std::string escapeMarkdownCell(const std::string& value) {
+        std::string out;
+        out.reserve(value.size());
+        for (const char c : value) {
+            if (c == '|')
+                out += "\\|";
+            else if (c == '\n')
+                out += "<br>";
+            else if (c != '\r')
+                out += c;
+        }
+        return out;
+    }
+
+    std::string escapeHtml(const std::string& value) {
+        std::string out;
+        out.reserve(value.size());
+        for (const char c : value) {
+            switch (c) {
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            case '"':
+                out += "&quot;";
+                break;
+            default:
+                out += c;
+            }
+        }
+        return out;
+    }
+
+    // cell text shared by the markdown and html writers; null reads as an empty
+    // cell in both, the way the grid shows it
+    std::string displayValue(const std::string& raw) {
+        if (isNullSentinel(raw))
+            return "";
+        if (isBoolSentinel(raw))
+            return boolSentinelValue(raw) ? "true" : "false";
+        return raw;
+    }
+
+    bool exportMarkdown(ITableDataProvider* provider, const Table& table, const std::string& path) {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            spdlog::error("Failed to open file for writing: {}", path);
+            return false;
+        }
+
+        auto columns = provider->getColumnNames(table);
+        if (columns.empty()) {
+            spdlog::error("Cannot export: table has no columns");
+            return false;
+        }
+
+        for (const auto& col : columns)
+            file << "| " << escapeMarkdownCell(col) << ' ';
+        file << "|\n";
+        for (size_t i = 0; i < columns.size(); ++i)
+            file << "| --- ";
+        file << "|\n";
+
+        const int totalRows = provider->getRowCount(table);
+        for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
+            auto rows = provider->getTableData(table, BATCH_SIZE, offset);
+            for (const auto& row : rows) {
+                for (size_t i = 0; i < columns.size(); ++i) {
+                    const std::string cell = i < row.size() ? displayValue(row[i]) : "";
+                    file << "| " << escapeMarkdownCell(cell) << ' ';
+                }
+                file << "|\n";
+            }
+        }
+
+        spdlog::info("Exported {} rows to Markdown: {}", totalRows, path);
+        return true;
+    }
+
+    bool exportHtml(ITableDataProvider* provider, const Table& table, const std::string& path) {
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            spdlog::error("Failed to open file for writing: {}", path);
+            return false;
+        }
+
+        auto columns = provider->getColumnNames(table);
+        if (columns.empty()) {
+            spdlog::error("Cannot export: table has no columns");
+            return false;
+        }
+
+        // a standalone document rather than a bare fragment, so it opens in a
+        // browser and still pastes into a document as a table
+        file << "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>"
+             << escapeHtml(table.name) << "</title>\n<style>\n"
+             << "body{font-family:system-ui,sans-serif;font-size:14px;margin:2rem}\n"
+             << "table{border-collapse:collapse}\n"
+             << "th,td{border:1px solid #ccc;padding:.35rem .6rem;text-align:left}\n"
+             << "th{background:#f4f4f4}\n</style>\n</head>\n<body>\n<table>\n<thead>\n<tr>";
+        for (const auto& col : columns)
+            file << "<th>" << escapeHtml(col) << "</th>";
+        file << "</tr>\n</thead>\n<tbody>\n";
+
+        const int totalRows = provider->getRowCount(table);
+        for (int offset = 0; offset < totalRows; offset += BATCH_SIZE) {
+            auto rows = provider->getTableData(table, BATCH_SIZE, offset);
+            for (const auto& row : rows) {
+                file << "<tr>";
+                for (size_t i = 0; i < columns.size(); ++i) {
+                    const std::string cell = i < row.size() ? displayValue(row[i]) : "";
+                    file << "<td>" << escapeHtml(cell) << "</td>";
+                }
+                file << "</tr>\n";
+            }
+        }
+        file << "</tbody>\n</table>\n</body>\n</html>\n";
+
+        spdlog::info("Exported {} rows to HTML: {}", totalRows, path);
+        return true;
+    }
+
     std::string quoteSqlValue(const std::string& value) {
         if (isNullSentinel(value))
             return "NULL";
@@ -222,6 +350,14 @@ namespace {
             ext = "sql";
             desc = "SQL Files";
             break;
+        case ExportFormat::MARKDOWN:
+            ext = "md";
+            desc = "Markdown Files";
+            break;
+        case ExportFormat::HTML:
+            ext = "html";
+            desc = "HTML Files";
+            break;
         }
         nfdfilteritem_t filter = {desc, ext};
 
@@ -261,6 +397,12 @@ namespace TableExporter {
         case ExportFormat::SQL:
             ext = "sql";
             break;
+        case ExportFormat::MARKDOWN:
+            ext = "md";
+            break;
+        case ExportFormat::HTML:
+            ext = "html";
+            break;
         }
 
         // SQL multi-table: single file
@@ -283,6 +425,10 @@ namespace TableExporter {
                 return exportJson(provider, *tables[0], path);
             case ExportFormat::SQL:
                 return exportSql(provider, *tables[0], path, dbType);
+            case ExportFormat::MARKDOWN:
+                return exportMarkdown(provider, *tables[0], path);
+            case ExportFormat::HTML:
+                return exportHtml(provider, *tables[0], path);
             }
             return false;
         }
@@ -310,6 +456,12 @@ namespace TableExporter {
                 break;
             case ExportFormat::JSON:
                 ok = exportJson(provider, *table, path);
+                break;
+            case ExportFormat::MARKDOWN:
+                ok = exportMarkdown(provider, *table, path);
+                break;
+            case ExportFormat::HTML:
+                ok = exportHtml(provider, *table, path);
                 break;
             default:
                 break;

@@ -938,7 +938,10 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 
     const int previousSelectedRow = selectedRow;
     const int previousSelectedCol = selectedCol;
-    if (ImGui::Selectable(displayText, isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
+    // AllowOverlap so the foreign-key jump button below can be hovered on top
+    if (ImGui::Selectable(displayText, isSelected,
+                          ImGuiSelectableFlags_AllowDoubleClick |
+                              ImGuiSelectableFlags_AllowOverlap)) {
         const bool shiftSelecting = canShiftSelect && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
         if (shiftSelecting) {
             setSelectionRange(previousSelectedRow, previousSelectedCol, row, col);
@@ -973,12 +976,43 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
     }
 
-    if (ImGui::IsItemHovered() && !isNull &&
+    const bool cellHovered = ImGui::IsItemHovered();
+
+    if (cellHovered && !isNull &&
         (cellValue.length() > 50 || cellValue.find('\n') != std::string::npos)) {
         ImGui::SetTooltip("%s", cellValue.c_str());
     }
 
     renderCellContextMenu(row, col);
+
+    // jump button on the hovered or selected foreign-key cell. submitted last so
+    // it never becomes the context menu's anchor item, and the cursor is restored
+    // so the table's own layout is untouched
+    const bool isForeignKey = col < static_cast<int>(fkTargets.size()) && !fkTargets[col].empty();
+    if (isForeignKey && !isNull && onFollowForeignKey && (cellHovered || isSelected)) {
+        ImGuiTable* table = ImGui::GetCurrentTable();
+        const int tableColIdx = config.showRowNumbers ? col + 1 : col;
+        const ImRect cellRect = table ? ImGui::TableGetCellBgRect(table, tableColIdx)
+                                      : ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+
+        const ImVec2 iconSize = ImGui::CalcTextSize(ICON_FA_UP_RIGHT_FROM_SQUARE);
+        const ImVec2 pos(cellRect.Max.x - iconSize.x - Theme::Spacing::XS,
+                         cellRect.Min.y + (cellRect.GetHeight() - iconSize.y) * 0.5f);
+
+        const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(pos);
+        if (ImGui::InvisibleButton("##fk_go", iconSize)) {
+            onFollowForeignKey(row, col);
+        }
+        const bool iconHovered = ImGui::IsItemHovered();
+        if (iconHovered) {
+            ImGui::SetTooltip("Go to %s", fkTargets[col].c_str());
+        }
+        ImGui::GetWindowDrawList()->AddText(
+            pos, ImGui::GetColorU32(iconHovered ? colors.blue : colors.overlay1),
+            ICON_FA_UP_RIGHT_FROM_SQUARE);
+        ImGui::SetCursorScreenPos(savedCursor);
+    }
 }
 
 void TableRenderer::copyCellToClipboard(int row, int col) const {

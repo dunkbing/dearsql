@@ -79,4 +79,39 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // the jump button that appears on a hovered or selected foreign-key cell
+    t = IM_REGISTER_TEST(engine, "TableViewer", "Foreign Key Jump Button");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const Table* child = findTable(db->getTables(), "child");
+        IM_CHECK_SILENT(child != nullptr);
+
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab = tabs->createTableViewerTab(db.get(), *child);
+        ctx->Yield(40);
+
+        const size_t before = tabs->getTabCount();
+
+        // hovering the fk cell reveals the button; clicking it navigates
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->MouseMove("**/7");
+        ctx->Yield(3);
+        ctx->ItemClick("**/##fk_go");
+        ctx->Yield(40);
+        IM_CHECK(tabs->getTabCount() == before + 1);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

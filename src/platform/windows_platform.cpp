@@ -15,8 +15,11 @@
 WNDPROC WindowsPlatform::originalWndProc_ = nullptr;
 WindowsPlatform* WindowsPlatform::instance_ = nullptr;
 
+namespace {
+constexpr int kTitlebarHeight = 32;
+}
+
 LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    // let DWM handle its messages first (shadow, etc.)
     LRESULT dwmResult = 0;
     if (DwmDefWindowProc(hWnd, msg, wParam, lParam, &dwmResult)) {
         return dwmResult;
@@ -24,8 +27,7 @@ LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wPar
 
     switch (msg) {
     case WM_ACTIVATE: {
-        // extend DWM frame by 1px at top for the window shadow effect
-        MARGINS margins = {0, 0, 1, 0};
+        MARGINS margins = {0, 0, kTitlebarHeight, 0};
         DwmExtendFrameIntoClientArea(hWnd, &margins);
         return 0;
     }
@@ -59,27 +61,17 @@ LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wPar
     }
 
     // HTMAXBUTTON zone: Windows routes mouse input here as non-client messages.
-    // track hover for the custom-drawn button and handle the click ourselves.
+    // Track hover for the custom-drawn button. The default window procedure
+    // receives these messages as well, which enables Snap Layouts.
     case WM_NCMOUSEMOVE:
         if (instance_ && instance_->titlebar_)
             instance_->titlebar_->setMaxButtonHovered(wParam == HTMAXBUTTON);
-        break;
+        return CallWindowProcW(originalWndProc_, hWnd, msg, wParam, lParam);
     case WM_NCMOUSELEAVE:
     case WM_MOUSEMOVE:
         if (instance_ && instance_->titlebar_)
             instance_->titlebar_->setMaxButtonHovered(false);
         break;
-    case WM_NCLBUTTONDOWN:
-        if (wParam == HTMAXBUTTON)
-            return 0; // swallow so DefWindowProc doesn't start a caption drag
-        break;
-    case WM_NCLBUTTONUP:
-        if (wParam == HTMAXBUTTON) {
-            ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE);
-            return 0;
-        }
-        break;
-
     case WM_GETMINMAXINFO: {
         // ensure maximized window fits in the work area (excludes taskbar)
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
@@ -102,7 +94,6 @@ LRESULT CALLBACK WindowsPlatform::customWndProc(HWND hWnd, UINT msg, WPARAM wPar
         break; // also let GLFW process this
     }
     }
-
     return CallWindowProcW(originalWndProc_, hWnd, msg, wParam, lParam);
 }
 
@@ -147,8 +138,7 @@ void WindowsPlatform::subclassWindow() {
     originalWndProc_ = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(customWndProc)));
 
-    // extend DWM frame (1px top for shadow)
-    MARGINS margins = {0, 0, 1, 0};
+    MARGINS margins = {0, 0, kTitlebarHeight, 0};
     DwmExtendFrameIntoClientArea(hWnd, &margins);
 
     // force a WM_NCCALCSIZE so the custom frame takes effect immediately

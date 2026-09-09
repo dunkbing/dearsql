@@ -336,13 +336,7 @@ if(WIN32)
         PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN
     )
     # Common Controls v6 manifest (needed for TaskDialogIndirect)
-    set_property(
-        TARGET ${PROJECT_NAME}
-        APPEND
-        PROPERTY
-            LINK_FLAGS
-                "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/assets/app.manifest"
-    )
+    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/assets/app.manifest)
 endif()
 
 if(LINUX)

@@ -51,7 +51,13 @@ namespace SqlGuard {
         bool sawStatement = false;
         auto checkStatement = [&](std::string_view stmt) {
             bool first = true;
+            bool isPragma = false;
             for (size_t i = 0; i < stmt.size();) {
+                // `PRAGMA x = y` writes; `PRAGMA table_info(t)` only reads. the
+                // assignment form is the only difference
+                if (isPragma && stmt[i] == '=') {
+                    return false;
+                }
                 if (!isWordChar(stmt[i])) {
                     ++i;
                     continue;
@@ -66,6 +72,7 @@ namespace SqlGuard {
                     if (!allowedFirst(word)) {
                         return false;
                     }
+                    isPragma = (word == "pragma");
                     first = false;
                 } else if (denied(word)) {
                     return false;

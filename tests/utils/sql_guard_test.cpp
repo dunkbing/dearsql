@@ -53,3 +53,14 @@ TEST(SqlGuardTest, RejectsEmptyInput) {
     EXPECT_FALSE(SqlGuard::isReadOnly("   \n  "));
     EXPECT_FALSE(SqlGuard::isReadOnly("-- only a comment"));
 }
+
+TEST(SqlGuardTest, PragmaReadsAllowedAssignmentsRejected) {
+    EXPECT_TRUE(SqlGuard::isReadOnly("PRAGMA table_info(users)"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("PRAGMA foreign_key_list(orders)"));
+    EXPECT_TRUE(SqlGuard::isReadOnly("pragma database_list"));
+
+    // the assignment form writes to the database file
+    EXPECT_FALSE(SqlGuard::isReadOnly("PRAGMA user_version = 1"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("pragma journal_mode=WAL"));
+    EXPECT_FALSE(SqlGuard::isReadOnly("SELECT 1; PRAGMA user_version = 2"));
+}

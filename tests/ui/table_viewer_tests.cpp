@@ -24,7 +24,8 @@ namespace {
         db->executeQuery("CREATE TABLE parent (id INTEGER PRIMARY KEY, label TEXT)");
         db->executeQuery("CREATE TABLE child (id INTEGER PRIMARY KEY, "
                          "parent_id INTEGER REFERENCES parent(id))");
-        db->executeQuery("INSERT INTO parent (id,label) VALUES (7,'seven')");
+        // three parent rows: a filtered load returns one, an unfiltered load three
+        db->executeQuery("INSERT INTO parent (id,label) VALUES (6,'six'),(7,'seven'),(8,'eight')");
         db->executeQuery("INSERT INTO child (id,parent_id) VALUES (1,7)");
         return db;
     }
@@ -75,6 +76,14 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield(40);
         IM_CHECK(tabs->getTabCount() == before + 1);
 
+        // the target tab must actually be filtered: its own first load is already
+        // in flight when setFilter runs, and an unfiltered result would show all
+        // three parent rows while claiming the fk filter is active
+        const auto opened = std::dynamic_pointer_cast<TableViewerTab>(tabs->getTabs().back());
+        IM_CHECK_SILENT(opened != nullptr);
+        IM_CHECK(!opened->getCurrentFilter().empty());
+        IM_CHECK(opened->getTotalRows() == 1);
+
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
         ctx->Yield();
@@ -117,6 +126,14 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
 
         ctx->Yield(40);
         IM_CHECK(tabs->getTabCount() == before + 1);
+
+        // the target tab must actually be filtered: its own first load is already
+        // in flight when setFilter runs, and an unfiltered result would show all
+        // three parent rows while claiming the fk filter is active
+        const auto opened = std::dynamic_pointer_cast<TableViewerTab>(tabs->getTabs().back());
+        IM_CHECK_SILENT(opened != nullptr);
+        IM_CHECK(!opened->getCurrentFilter().empty());
+        IM_CHECK(opened->getTotalRows() == 1);
 
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);

@@ -942,6 +942,14 @@ void TableViewerTab::checkSQLExecutionStatus() {
 void TableViewerTab::setFilter(const std::string& expression) {
     std::strncpy(filterBuffer, expression.c_str(), sizeof(filterBuffer) - 1);
     filterBuffer[sizeof(filterBuffer) - 1] = '\0';
+
+    // a tab opened by following a foreign key already has its unfiltered first
+    // load in flight, and AsyncOperation::start() refuses a second one. drop it
+    // so the filtered load is the one that lands, not the full table
+    if (dataLoadOp.isRunning()) {
+        dataLoadOp.cancel();
+    }
+
     applyFilter();
 }
 
@@ -1119,20 +1127,57 @@ void TableViewerTab::followForeignKey(int row, int col) {
     }
 
     const auto builder = createSQLBuilder(node_->getDatabaseType());
-    const std::string quotedCol = builder->quoteIdentifier(fk->targetColumn);
 
-    // quote against the target's column type, not this table's
-    const auto targetCol = std::ranges::find_if(
-        it->columns, [&](const Column& c) { return c.name == fk->targetColumn; });
-    const std::string literal = targetCol != it->columns.end() ? formatSqlLiteral(*targetCol, value)
-                                                               : std::format("'{}'", value);
+    // a composite key is stored as one entry per column sharing a constraint
+    // name, and the referenced columns are unique only as a group, so every pair
+    // has to go into the filter. backends that leave the name empty (sqlite
+    // synthesises a per-column one) fall back to this column alone
+    std::vector<const ForeignKey*> constraint{fk};
+    if (!fk->name.empty()) {
+        constraint.clear();
+        for (const auto& candidate : table_.foreignKeys) {
+            if (candidate.name == fk->name) {
+                constraint.push_back(&candidate);
+            }
+        }
+    }
+
+    std::string filter;
+    for (const ForeignKey* part : constraint) {
+        const auto sourceCol = std::ranges::find_if(
+            table_.columns, [&](const Column& c) { return c.name == part->sourceColumn; });
+        if (sourceCol == table_.columns.end()) {
+            continue;
+        }
+        const auto sourceIdx = std::distance(table_.columns.begin(), sourceCol);
+        if (sourceIdx >= static_cast<long>(tableData[row].size())) {
+            continue;
+        }
+        const std::string& partValue = tableData[row][sourceIdx];
+
+        // quote against the target's column type, not this table's
+        const auto targetCol = std::ranges::find_if(
+            it->columns, [&](const Column& c) { return c.name == part->targetColumn; });
+        const std::string literal = targetCol != it->columns.end()
+                                        ? formatSqlLiteral(*targetCol, partValue)
+                                        : std::format("'{}'", partValue);
+
+        if (!filter.empty()) {
+            filter += " AND ";
+        }
+        filter += std::format("{} = {}", builder->quoteIdentifier(part->targetColumn), literal);
+    }
+
+    if (filter.empty()) {
+        return;
+    }
 
     // this runs from the cell context menu, i.e. inside this tab's own render.
     // opening the tab here would push onto TabManager::tabs while renderTabs()
     // still holds an iterator into it, so defer to after the loop. captured by
     // value: this tab may be gone by the time it runs
     Application::getInstance().getTabManager()->deferAfterRender(
-        [node = node_, target = *it, filter = std::format("{} = {}", quotedCol, literal)] {
+        [node = node_, target = *it, filter] {
             auto* tabManager = Application::getInstance().getTabManager();
             const auto tab = tabManager->createTableViewerTab(node, target);
             if (const auto viewer = std::dynamic_pointer_cast<TableViewerTab>(tab)) {

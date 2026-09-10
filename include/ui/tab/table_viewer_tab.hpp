@@ -33,6 +33,12 @@ public:
     // replace the filter box contents and reload; used when arriving here by
     // following a foreign key
     void setFilter(const std::string& expression);
+    [[nodiscard]] const std::string& getCurrentFilter() const {
+        return currentFilter;
+    }
+    [[nodiscard]] int getTotalRows() const {
+        return totalRows;
+    }
     void loadDataAsync();
     void checkAsyncLoadStatus();
     void nextPage();

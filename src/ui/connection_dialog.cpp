@@ -382,10 +382,9 @@ void ConnectionDialog::connectFileDatabase() {
         return;
     }
 
-    DatabaseConnectionInfo info;
-    info.type = selectedType();
-    info.name = nameBuf_;
-    info.path = sqlitePathBuf_;
+    // snapshotForm() returns early for file databases with exactly these fields
+    // plus readOnly; building the info by hand here silently dropped that flag
+    const DatabaseConnectionInfo info = snapshotForm();
 
     auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();

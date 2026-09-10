@@ -30,6 +30,15 @@ public:
     [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
         return node_;
     }
+    // replace the filter box contents and reload; used when arriving here by
+    // following a foreign key
+    void setFilter(const std::string& expression);
+    [[nodiscard]] const std::string& getCurrentFilter() const {
+        return currentFilter;
+    }
+    [[nodiscard]] int getTotalRows() const {
+        return totalRows;
+    }
     void loadDataAsync();
     void checkAsyncLoadStatus();
     void nextPage();
@@ -50,6 +59,10 @@ public:
     void checkSQLExecutionStatus();
 
 private:
+    [[nodiscard]] const ForeignKey* foreignKeyForColumn(int col) const;
+    void followForeignKey(int row, int col);
+
+    bool readOnlyConnection_ = false;
     std::string databasePath;
     Table table_;
     IDatabaseNode* node_ = nullptr;

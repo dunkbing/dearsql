@@ -393,6 +393,13 @@ void TableRenderer::render(const char* tableId) {
     bool tableRendered = false;
 #endif
 
+    fkTargets.assign(columns.size(), std::string{});
+    if (foreignKeyTargetCb) {
+        for (size_t i = 0; i < columns.size(); ++i) {
+            fkTargets[i] = foreignKeyTargetCb(static_cast<int>(i));
+        }
+    }
+
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         if (config.showRowNumbers) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
@@ -761,6 +768,14 @@ void TableRenderer::renderCell(int row, int col) {
             }
         }
 
+        // a foreign-key value is navigable, so colour it like a link. nulls keep
+        // their own styling -- there is nothing to follow
+        if (!hasColorOverride && col < static_cast<int>(fkTargets.size()) &&
+            !fkTargets[col].empty() && !isNullSentinel(cellValue)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+            hasColorOverride = true;
+        }
+
         if (config.allowSelection) {
             handleCellInteraction(row, col, isSelected);
         } else {
@@ -923,7 +938,10 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 
     const int previousSelectedRow = selectedRow;
     const int previousSelectedCol = selectedCol;
-    if (ImGui::Selectable(displayText, isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
+    // AllowOverlap so the foreign-key jump button below can be hovered on top
+    if (ImGui::Selectable(displayText, isSelected,
+                          ImGuiSelectableFlags_AllowDoubleClick |
+                              ImGuiSelectableFlags_AllowOverlap)) {
         const bool shiftSelecting = canShiftSelect && ImGui::IsMouseReleased(ImGuiMouseButton_Left);
         if (shiftSelecting) {
             setSelectionRange(previousSelectedRow, previousSelectedCol, row, col);
@@ -946,6 +964,12 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         }
     }
 
+    // the selectable spans the cell's content area, which is what the cell is
+    // clipped to -- the bg rect is wider and an item placed against it is only
+    // half hit-testable
+    const ImVec2 contentMin = ImGui::GetItemRectMin();
+    const ImVec2 contentMax = ImGui::GetItemRectMax();
+
     updateDragFromItem(row, col);
 
     if (isNull)
@@ -958,12 +982,38 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
     }
 
-    if (ImGui::IsItemHovered() && !isNull &&
+    const bool cellHovered = ImGui::IsItemHovered();
+
+    if (cellHovered && !isNull &&
         (cellValue.length() > 50 || cellValue.find('\n') != std::string::npos)) {
         ImGui::SetTooltip("%s", cellValue.c_str());
     }
 
     renderCellContextMenu(row, col);
+
+    // jump button on the hovered or selected foreign-key cell. submitted last so
+    // it never becomes the context menu's anchor item, and the cursor is restored
+    // so the table's own layout is untouched
+    const bool isForeignKey = col < static_cast<int>(fkTargets.size()) && !fkTargets[col].empty();
+    if (isForeignKey && !isNull && onFollowForeignKey && (cellHovered || isSelected)) {
+        const ImVec2 iconSize = ImGui::CalcTextSize(ICON_FA_UP_RIGHT_FROM_SQUARE);
+        const ImVec2 pos(contentMax.x - iconSize.x,
+                         contentMin.y + (contentMax.y - contentMin.y - iconSize.y) * 0.5f);
+
+        const ImVec2 savedCursor = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(pos);
+        if (ImGui::InvisibleButton("##fk_go", iconSize)) {
+            onFollowForeignKey(row, col);
+        }
+        const bool iconHovered = ImGui::IsItemHovered();
+        if (iconHovered) {
+            ImGui::SetTooltip("Go to %s", fkTargets[col].c_str());
+        }
+        ImGui::GetWindowDrawList()->AddText(
+            pos, ImGui::GetColorU32(iconHovered ? colors.blue : colors.overlay1),
+            ICON_FA_UP_RIGHT_FROM_SQUARE);
+        ImGui::SetCursorScreenPos(savedCursor);
+    }
 }
 
 void TableRenderer::copyCellToClipboard(int row, int col) const {
@@ -1019,6 +1069,18 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
                            col >= 0 && col < static_cast<int>(data[row].size());
     if (paddedMenuItem(ICON_FA_FILTER " Filter by value", canFilter)) {
         onFilterByValue(row, col, data[row][col]);
+    }
+
+    // follow a foreign key to the row it points at. no target means the column
+    // has no fk, and a null cell has nothing to look up
+    if (foreignKeyTargetCb && onFollowForeignKey && row >= 0 &&
+        row < static_cast<int>(data.size()) && col >= 0 &&
+        col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col])) {
+        if (const std::string target = foreignKeyTargetCb(col); !target.empty()) {
+            if (paddedMenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
+                onFollowForeignKey(row, col);
+            }
+        }
     }
 
     ImGui::Separator();
@@ -1341,6 +1403,35 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     const std::string popupId = std::format("##sort_popup_{}", colIdx);
 
     float columnWidth = ImGui::GetColumnWidth();
+
+    // mark foreign-key columns so the link is discoverable without right-clicking
+    const bool isForeignKey =
+        colIdx < static_cast<int>(fkTargets.size()) && !fkTargets[colIdx].empty();
+    if (isForeignKey) {
+        // a marker, not a label: smaller than the header text and centred against
+        // it. SameLine() would carry the icon's own offset onto the label, so the
+        // label's y is restored explicitly afterwards
+        constexpr float kIconScale = 0.75f;
+        const float lineY = ImGui::GetCursorPosY();
+        const float lineH = ImGui::GetTextLineHeight();
+
+        // 0.75 of the height difference, not half: centring on the full line box
+        // leaves the glyph riding above lowercase column names, which have no
+        // ascenders to fill the top of the line
+        constexpr float kIconDrop = 0.75f;
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * kIconScale);
+        ImGui::SetCursorPosY(lineY + (lineH - ImGui::GetTextLineHeight()) * kIconDrop);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        ImGui::TextUnformatted(ICON_FA_KEY);
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("References %s", fkTargets[colIdx].c_str());
+        }
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SetCursorPosY(lineY);
+    }
 
     ImGui::Text("%s", colName.c_str());
 

@@ -95,6 +95,7 @@ private:
     char usernameBuf_[256] = {};
     char passwordBuf_[256] = {};
     bool showAllDbs_ = false;
+    bool readOnly_ = false;
 
     // ssh tunnel
     bool sshEnabled_ = false;

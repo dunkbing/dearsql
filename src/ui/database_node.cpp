@@ -384,6 +384,13 @@ void DatabaseHierarchy::renderMultiSelectMenuContent(
         if (ImGui::MenuItem("SQL")) {
             TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::SQL, dbType);
         }
+        if (ImGui::MenuItem("Markdown")) {
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::MARKDOWN,
+                                        dbType);
+        }
+        if (ImGui::MenuItem("HTML")) {
+            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::HTML, dbType);
+        }
         ImGui::EndMenu();
     }
     ImGui::Separator();

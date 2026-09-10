@@ -123,6 +123,7 @@ void ConnectionDialog::resetForm() {
     usernameBuf_[0] = '\0';
     passwordBuf_[0] = '\0';
     showAllDbs_ = false;
+    readOnly_ = false;
     sshEnabled_ = false;
     sshHostBuf_[0] = '\0';
     copyToBuf(sshPortBuf_, sizeof(sshPortBuf_), "22");
@@ -183,6 +184,7 @@ void ConnectionDialog::applyTypeDefaults(DatabaseType type) {
 void ConnectionDialog::populateForm(const DatabaseConnectionInfo& info) {
     typeIdx_ = static_cast<int>(info.type);
     copyToBuf(nameBuf_, sizeof(nameBuf_), info.name);
+    readOnly_ = info.readOnly; // applies to file databases too, so set it before the early return
 
     if (isFileDatabase(info.type)) {
         copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), info.path);
@@ -230,6 +232,7 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
     DatabaseConnectionInfo info;
     info.type = selectedType();
     info.name = nameBuf_;
+    info.readOnly = readOnly_; // set before the file-database early return
     if (isFileDatabase(info.type)) {
         info.path = sqlitePathBuf_;
         return info;
@@ -246,6 +249,7 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
         info.sslmode = cfg.values[sslModeIdx_];
     info.sslCACertPath = sslCACertPathBuf_;
     info.showAllDatabases = showAllDbs_;
+    info.readOnly = readOnly_;
 
     info.ssh.enabled = sshEnabled_;
     if (sshEnabled_) {
@@ -378,10 +382,9 @@ void ConnectionDialog::connectFileDatabase() {
         return;
     }
 
-    DatabaseConnectionInfo info;
-    info.type = selectedType();
-    info.name = nameBuf_;
-    info.path = sqlitePathBuf_;
+    // snapshotForm() returns early for file databases with exactly these fields
+    // plus readOnly; building the info by hand here silently dropped that flag
+    const DatabaseConnectionInfo info = snapshotForm();
 
     auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();
@@ -597,6 +600,14 @@ void ConnectionDialog::render() {
     } else {
         renderServerFields(formChanged);
         renderSshFields(formChanged);
+    }
+
+    ImGui::Separator();
+    ImGui::SetCursorPosX(kLabelColumnW);
+    ImGui::Checkbox("Read-only connection##conn", &readOnly_);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Blocks writes from the SQL editor and makes table data read-only.\n"
+                          "Guards against slips; it does not change server permissions.");
     }
 
     ImGui::EndDisabled();

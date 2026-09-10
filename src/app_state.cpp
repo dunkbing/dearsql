@@ -105,6 +105,7 @@ namespace {
             saltStr = "";
 
         const int keyVersion = sqlite3_column_int(stmt, 22);
+        conn.connectionInfo.readOnly = sqlite3_column_int(stmt, 23) != 0;
 
         // Derive encryption key once for both DB and SSH credentials
         std::string encryptionKey;
@@ -485,6 +486,8 @@ bool AppState::createTables() {
     ensureColumnExists("ssl_ca_cert_path",
                        "ALTER TABLE saved_connections ADD COLUMN ssl_ca_cert_path TEXT;");
     // 0 = legacy shipped-constant key, 1 = keystore-backed master secret
+    ensureColumnExists("read_only",
+                       "ALTER TABLE saved_connections ADD COLUMN read_only INTEGER DEFAULT 0;");
     ensureColumnExists("key_version",
                        "ALTER TABLE saved_connections ADD COLUMN key_version INTEGER DEFAULT 0;");
 
@@ -513,8 +516,8 @@ int AppState::saveConnection(const SavedConnection& connection) const {
         (name, type, host, port, database_name, username, password, path, salt, last_used, workspace_id,
          show_all_databases, sslmode,
          ssh_enabled, ssh_host, ssh_port, ssh_username, ssh_auth_method, ssh_private_key_path, ssh_password,
-         ssl_ca_cert_path, key_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+         ssl_ca_cert_path, key_version, read_only)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     )";
 
     // Encrypt sensitive data
@@ -618,6 +621,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 21, keyVersion);
+    sqlite3_bind_int(stmt.get(), 22, connection.connectionInfo.readOnly ? 1 : 0);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -636,7 +640,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             workspace_id = ?, show_all_databases = ?, sslmode = ?,
             ssh_enabled = ?, ssh_host = ?, ssh_port = ?, ssh_username = ?,
             ssh_auth_method = ?, ssh_private_key_path = ?, ssh_password = ?,
-            ssl_ca_cert_path = ?, key_version = ?
+            ssl_ca_cert_path = ?, key_version = ?, read_only = ?
         WHERE id = ?;
     )";
 
@@ -741,7 +745,8 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
     sqlite3_bind_text(stmt.get(), 20, connection.connectionInfo.sslCACertPath.c_str(), -1,
                       SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 21, keyVersion);
-    sqlite3_bind_int(stmt.get(), 22, connection.id);
+    sqlite3_bind_int(stmt.get(), 22, connection.connectionInfo.readOnly ? 1 : 0);
+    sqlite3_bind_int(stmt.get(), 23, connection.id);
 
     rc = sqlite3_step(stmt.get());
     if (rc != SQLITE_DONE) {
@@ -765,7 +770,8 @@ std::vector<SavedConnection> AppState::getSavedConnections() const {
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
                COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
-               COALESCE(key_version, 0) as key_version
+               COALESCE(key_version, 0) as key_version,
+               COALESCE(read_only, 0) as read_only
         FROM saved_connections
         ORDER BY last_used DESC;
     )";
@@ -1051,7 +1057,8 @@ std::vector<SavedConnection> AppState::getConnectionsForWorkspace(const int work
                ssh_username, COALESCE(ssh_auth_method, 'password') as ssh_auth_method,
                ssh_private_key_path, ssh_password,
                COALESCE(ssl_ca_cert_path, '') as ssl_ca_cert_path,
-               COALESCE(key_version, 0) as key_version
+               COALESCE(key_version, 0) as key_version,
+               COALESCE(read_only, 0) as read_only
         FROM saved_connections
         WHERE workspace_id = ?
         ORDER BY last_used DESC;

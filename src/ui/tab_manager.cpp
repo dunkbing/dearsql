@@ -387,8 +387,22 @@ void TabManager::renderTabs() {
         pendingCloseTargetId_ = 0;
     }
 
+    // opening a tab from inside another tab's render would push onto `tabs` while
+    // the loop above still holds an iterator into it
+    if (!deferredActions_.empty()) {
+        auto actions = std::move(deferredActions_);
+        deferredActions_.clear();
+        for (const auto& action : actions) {
+            action();
+        }
+    }
+
     ImGui::PopStyleColor(8);
     ImGui::PopStyleVar(3);
+}
+
+void TabManager::deferAfterRender(std::function<void()> action) {
+    deferredActions_.push_back(std::move(action));
 }
 
 void TabManager::renderEmptyState() {

@@ -186,6 +186,7 @@ private:
     };
     std::vector<CommandEntry> commandEntries_;
     std::vector<AcpCommand> agentCommands_;
+    std::vector<acp::ConfigOption> agentConfigOptions_;
 
     std::vector<ContextItem> contextCandidates_;
     double lastCandidateBuild_ = 0.0;

@@ -233,6 +233,8 @@ void AcpClient::onSessionOpened(const std::string& method, const acp::Response& 
         std::lock_guard lock(stateMutex_);
         sessionId_ = method == "session/load" ? resumeSessionId_ : r.result.value("sessionId", "");
     }
+    pushEvent({.type = AcpEvent::Type::ConfigOptions,
+               .configOptions = acp::configOptionsFromJson(r.result)});
     sessionReady_ = true;
     pushEvent({.type = AcpEvent::Type::SessionReady});
 }
@@ -289,6 +291,21 @@ void AcpClient::cancelTurn() {
     }
 }
 
+void AcpClient::setConfigOption(const std::string& configId, std::string value) {
+    if (!isSessionReady()) {
+        return;
+    }
+    conn_->setSessionConfigOption(sessionId(), configId, std::move(value), [this](acp::Response r) {
+        if (!r.ok()) {
+            pushEvent({.type = AcpEvent::Type::Error,
+                       .text = "Could not change agent setting: " + r.error->describe()});
+            return;
+        }
+        pushEvent({.type = AcpEvent::Type::ConfigOptions,
+                   .configOptions = acp::configOptionsFromJson(r.result)});
+    });
+}
+
 void AcpClient::respondPermission(const json& rpcId, const std::string& optionId) {
     if (conn_) {
         conn_->respondPermission(rpcId, optionId);
@@ -340,6 +357,10 @@ void AcpClient::sessionUpdate(const acp::SessionNotification& n) {
         for (const auto& c : u.commands) {
             ev.commands.push_back({c.name, c.description, c.inputHint});
         }
+        break;
+    case K::ConfigOptionsUpdate:
+        ev.type = AcpEvent::Type::ConfigOptions;
+        ev.configOptions = u.configOptions;
         break;
     default:
         return; // current_mode_update and unknown kinds

@@ -343,6 +343,7 @@ void AISidebarPanel::selectBackend(const std::string& id) {
 void AISidebarPanel::stopAgent() {
     acp_.reset();
     agentCommands_.clear();
+    agentConfigOptions_.clear();
     // nothing is left to serve, so close the port rather than leave it listening
     mcp_.stop();
     pendingPromptBlocks_ = json::array();
@@ -1062,6 +1063,9 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::Commands:
             agentCommands_ = std::move(ev.commands);
             break;
+        case AcpEvent::Type::ConfigOptions:
+            agentConfigOptions_ = std::move(ev.configOptions);
+            break;
         case AcpEvent::Type::Plan: {
             Item* planItem = nullptr;
             for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
@@ -1309,6 +1313,32 @@ void AISidebarPanel::renderHeader() {
     for (const auto& model : API_MODELS) {
         modelLabels.emplace_back(model.label);
     }
+    const acp::ConfigOption* agentModelOption = nullptr;
+    for (const auto& option : agentConfigOptions_) {
+        if (option.category == "model" && option.type == "select" && !option.options.empty()) {
+            agentModelOption = &option;
+            break;
+        }
+    }
+    std::vector<std::string> agentModelLabels;
+    std::string agentModelLabel;
+    if (agentModelOption) {
+        for (const auto& option : agentModelOption->options) {
+            agentModelLabels.push_back(option.name.empty() ? option.value : option.name);
+        }
+        const std::string current = agentModelOption->currentValue.is_string()
+                                        ? agentModelOption->currentValue.get<std::string>()
+                                        : std::string{};
+        for (const auto& option : agentModelOption->options) {
+            if (option.value == current) {
+                agentModelLabel = option.name.empty() ? option.value : option.name;
+                break;
+            }
+        }
+        if (agentModelLabel.empty()) {
+            agentModelLabel = agentModelOption->name.empty() ? "Model" : agentModelOption->name;
+        }
+    }
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
     ImGui::AlignTextToFramePadding();
@@ -1325,8 +1355,10 @@ void AISidebarPanel::renderHeader() {
     const float rowAvail =
         ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x - iconW - Theme::Spacing::S;
     float backendW = comboWidth(backendLabels);
-    float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
-    if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
+    float modelW = isApi ? comboWidth(modelLabels)
+                         : agentModelOption ? comboWidth(agentModelLabels) : 0.0f;
+    const bool hasModelPicker = isApi || agentModelOption;
+    if (const float wanted = backendW + modelW + (hasModelPicker ? style.ItemSpacing.x : 0.0f);
         wanted > rowAvail && wanted > 0.0f) {
         const float scale = rowAvail / wanted;
         backendW *= scale;
@@ -1357,6 +1389,25 @@ void AISidebarPanel::renderHeader() {
             for (int i = 0; i < API_MODEL_COUNT; ++i) {
                 if (ImGui::Selectable(API_MODELS[i].label, apiModelIndex_ == i)) {
                     apiModelIndex_ = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    } else if (agentModelOption) {
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SetNextItemWidth(modelW);
+        if (ImGui::BeginCombo("##acp_model", agentModelLabel.c_str())) {
+            const std::string current = agentModelOption->currentValue.is_string()
+                                            ? agentModelOption->currentValue.get<std::string>()
+                                            : std::string{};
+            for (const auto& option : agentModelOption->options) {
+                const std::string label = option.name.empty() ? option.value : option.name;
+                const bool selected = option.value == current;
+                if (ImGui::Selectable(label.c_str(), selected) && acp_) {
+                    acp_->setConfigOption(agentModelOption->id, option.value);
+                }
+                if (!option.description.empty() && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", option.description.c_str());
                 }
             }
             ImGui::EndCombo();
@@ -1473,11 +1524,6 @@ std::string AISidebarPanel::agentStartingLabel() const {
 }
 
 void AISidebarPanel::renderRegistryAgents() {
-#if defined(_WIN32)
-    // AcpClient cannot spawn an agent on Windows yet, so downloading one would
-    // leave the user with a binary nothing can launch
-    return;
-#else
     const auto& colors = Application::getInstance().getCurrentColors();
 
     // fetched once, lazily: nothing hits the network unless an agent is missing
@@ -1535,7 +1581,6 @@ void AISidebarPanel::renderRegistryAgents() {
     if (shown == 0 && registry_.error().empty()) {
         ImGui::TextColored(colors.subtext0, "None available for this platform.");
     }
-#endif
 }
 
 void AISidebarPanel::renderMessages() {

@@ -45,6 +45,7 @@ struct AcpEvent {
         ToolCallUpdate,
         Plan,
         Commands, // agent published its slash commands
+        ConfigOptions,
         Permission,
         AuthRequired, // authMethods = what the agent accepts; answer with authenticate()
         TurnEnded,    // text = stopReason
@@ -56,6 +57,7 @@ struct AcpEvent {
     AcpToolCall tool;
     std::vector<AcpPlanEntry> plan;
     std::vector<AcpCommand> commands;
+    std::vector<acp::ConfigOption> configOptions;
     AcpPermissionRequest permission;
     std::vector<acp::AuthMethod> authMethods;
 };
@@ -88,6 +90,7 @@ public:
     // send a user prompt (array of ACP content blocks). Requires isSessionReady().
     void prompt(const nlohmann::json& contentBlocks);
     void cancelTurn();
+    void setConfigOption(const std::string& configId, std::string value);
     // answer an AuthRequired event. agents (gemini) only accept authenticate before
     // session/new, so this restarts the process and signs in first when a session exists
     void authenticate(const std::string& methodId);

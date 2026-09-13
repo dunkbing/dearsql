@@ -154,6 +154,7 @@ private:
     std::vector<AcpAgentDef> agentDefs_;
     AcpRegistryClient registry_;
     bool registryFetchStarted_ = false;
+    bool bunDownloadStarted_ = false; // auto-download runs once; failures leave a retry button
 
     std::unique_ptr<AcpClient> acp_;
     AcpAgentInstaller installer_;

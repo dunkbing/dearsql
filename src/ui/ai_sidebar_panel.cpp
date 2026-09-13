@@ -206,9 +206,8 @@ namespace {
 
 AISidebarPanel::AISidebarPanel()
     : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {
-    // point acp-cpp at our data dir and log sink, once
+    // route acp-cpp logging into ours, once
     static const bool configured = [] {
-        acp::registry::setInstallRoot(AppPaths::dataDir() / "agents");
         acp::setLogger([](acp::LogLevel level, const std::string& msg) {
             switch (level) {
             case acp::LogLevel::Debug:
@@ -991,14 +990,14 @@ void AISidebarPanel::pollAcp() {
     // installer finished?
     if (installer_.check()) {
         const auto& res = installer_.lastResult();
-        if (res.ok && res.exitCode == 0) {
+        if (res.success) {
             items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
             agentMissing_ = false;
             if (!pendingPromptBlocks_.empty()) {
                 queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
             }
         } else {
-            std::string tail = res.output.empty() ? res.error : res.output;
+            std::string tail = res.output.empty() ? res.errorMessage : res.output;
             if (tail.size() > 1200) {
                 tail = "..." + tail.substr(tail.size() - 1200);
             }
@@ -1355,8 +1354,9 @@ void AISidebarPanel::renderHeader() {
     const float rowAvail =
         ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x - iconW - Theme::Spacing::S;
     float backendW = comboWidth(backendLabels);
-    float modelW = isApi ? comboWidth(modelLabels)
-                         : agentModelOption ? comboWidth(agentModelLabels) : 0.0f;
+    float modelW = isApi              ? comboWidth(modelLabels)
+                   : agentModelOption ? comboWidth(agentModelLabels)
+                                      : 0.0f;
     const bool hasModelPicker = isApi || agentModelOption;
     if (const float wanted = backendW + modelW + (hasModelPicker ? style.ItemSpacing.x : 0.0f);
         wanted > rowAvail && wanted > 0.0f) {
@@ -1497,11 +1497,26 @@ void AISidebarPanel::renderInstallCard() {
                 ImGui::SameLine(0, Theme::Spacing::S);
                 ImGui::TextColored(colors.subtext0, "runs: %s", install->command.c_str());
             } else {
+                // no runtime anywhere: fetch the managed bun without asking
+                if (!bunDownloadStarted_ && !registry_.isBusy()) {
+                    bunDownloadStarted_ = true;
+                    registry_.startInstallBun();
+                }
                 ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-                ImGui::TextColored(colors.subtext0,
-                                   "This agent ships as an npm package and no JavaScript runtime "
-                                   "was found. Install Node, bun or pnpm - or download an agent "
-                                   "below that runs on its own.");
+                if (registry_.isBusy()) {
+                    ImGui::TextColored(colors.subtext0,
+                                       "No JavaScript runtime was found, so DearSQL is downloading "
+                                       "Bun v%s (about 25 MB) into ~/.dearsql/agents to run this "
+                                       "agent.",
+                                       AcpRegistry::BUN_VERSION);
+                } else {
+                    ImGui::TextColored(colors.subtext0,
+                                       "This agent ships as an npm package and no JavaScript "
+                                       "runtime was found.");
+                    if (UIUtils::SmallButton("Retry Bun download##ai_install_bun")) {
+                        registry_.startInstallBun();
+                    }
+                }
                 ImGui::PopTextWrapPos();
             }
         }
@@ -1537,11 +1552,17 @@ void AISidebarPanel::renderRegistryAgents() {
         agentDefs_ = AcpAgents::availableAgents();
         selectBackend(current);
         if (!registry_.installedId().empty()) {
+            const bool runtime = registry_.installedId() == "Bun";
             items_.push_back({.kind = Item::Kind::Info,
-                              .text = "Installed " + registry_.installedId() +
-                                      ". Pick it from the agent list above."});
+                              .text = runtime ? "Downloaded Bun. The agent will run through it."
+                                              : "Installed " + registry_.installedId() +
+                                                    ". Pick it from the agent list above."});
             agentMissing_ = false;
             scrollToBottom_ = true;
+            // the message that hit the install card can go out now
+            if (runtime && !pendingPromptBlocks_.empty()) {
+                queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
+            }
         }
     }
 

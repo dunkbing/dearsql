@@ -1,5 +1,6 @@
 #include "ai/acp_client.hpp"
 #include "ai/acp_agents.hpp"
+#include "ai/acp_registry.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -30,12 +31,16 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     opts.cwd = cwd;
     // GUI apps on macOS get a minimal PATH; use the login shell's so agents
     // installed via npm/homebrew are found
-    if (const std::string& path = acp::agents::loginShellPath(); !path.empty()) {
+    if (const std::string& path = AcpAgents::loginShellPath(); !path.empty()) {
         opts.env.emplace_back("PATH", path);
     }
     // claude refuses to start when it thinks it is nested in another session;
     // inherited when DearSQL itself was launched from one
     opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"};
+    // the managed bun keeps its package cache next to itself, not in ~/.bun
+    for (const auto& kv : AcpRegistry::bunEnv()) {
+        opts.env.push_back(kv);
+    }
     // api keys saved in AI Settings; a key already in the environment wins
     exportedApiKey_ = false;
     for (const auto& [name, value] : extraEnv) {

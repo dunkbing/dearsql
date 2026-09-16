@@ -15,7 +15,7 @@ class DatabaseInterface;
 class IDatabaseNode;
 
 // App-level AI chat panel hosted in the sidebar's AI tab. Talks to coding
-// agents (Claude Code, Gemini CLI, Codex, custom) via ACP, or falls back to
+// agents (Claude Code, Gemini CLI, Codex, Cursor, Antigravity) via ACP, or falls back to
 // the direct API-key client. Supports @table mentions and hands agents a
 // read-only MCP query tool over the selected database.
 class AISidebarPanel {
@@ -80,7 +80,8 @@ private:
     void renderItem(Item& item, size_t index);
     void renderTextWithCodeBlocks(const std::string& content, size_t index);
     void renderInstallCard();
-    void renderRegistryAgents();
+    void pollRegistry();
+    void renderRegistryDownload(const AcpAgentDef& def);
     void renderInputArea();
     [[nodiscard]] float computeInputHeight() const;
     static const char* contextKindIcon(ContextItem::Kind kind);
@@ -89,11 +90,11 @@ private:
 
     // backends
     bool isAcpBackend() const;
-    const AcpAgentDef* currentAgentDef() const; // null for custom/api
+    const AcpAgentDef* currentAgentDef() const; // null for api
     std::vector<std::string> currentInvocation(std::string& missingReason);
     void ensureSettingsLoaded();
     void switchBackend(int newIndex);
-    // agent id, "custom" or "api"; stable across agentDefs_ rebuilds unlike the index
+    // agent id or "api"; stable across restarts unlike the index
     [[nodiscard]] std::string backendId() const;
     void selectBackend(const std::string& id);
     void stopAgent();
@@ -139,9 +140,8 @@ private:
     Item* findToolItem(const std::string& toolId);
 
     // backend state
-    int backendIndex_ = 0; // index into catalog; catalog.size()=custom; +1=api key
+    int backendIndex_ = 0; // index into the catalog; catalog.size() = api key
     bool settingsLoaded_ = false;
-    char customCmdBuf_[512] = {};
     int apiModelIndex_ = 0;
     bool mcpEnabled_ = true;
     bool settingsDialogWasOpen_ = false;
@@ -149,12 +149,13 @@ private:
     double agentStartedAt_ = 0.0; // ImGui time; drives the "no session yet" warning
     bool agentStartWarned_ = false;
 
-    // built-in catalog plus registry agents already downloaded; the backend index
-    // addresses this list, so it is cached rather than rebuilt per frame
-    std::vector<AcpAgentDef> agentDefs_;
+    std::vector<AcpAgentDef> agentDefs_; // the catalog; the backend index addresses it
+    // downloads happen by themselves the first time an agent needs one; a failure
+    // leaves a retry button rather than looping
     AcpRegistryClient registry_;
     bool registryFetchStarted_ = false;
-    bool bunDownloadStarted_ = false; // auto-download runs once; failures leave a retry button
+    bool bunDownloadStarted_ = false;
+    std::string registryDownloadFor_; // agent id whose binary download was kicked off
 
     std::unique_ptr<AcpClient> acp_;
     AcpAgentInstaller installer_;

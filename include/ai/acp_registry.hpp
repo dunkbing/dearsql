@@ -28,6 +28,7 @@ namespace AcpRegistry {
         std::string archiveUrl;
         std::string archiveSha256;
         std::string binaryCmd; // relative command inside the archive, e.g. "./amp-acp"
+        std::vector<std::string> binaryArgs;
     };
 
     // "darwin-aarch64", "linux-x86_64", ... as keyed by distribution.binary
@@ -38,12 +39,6 @@ namespace AcpRegistry {
 
     // resolved argv for an already-installed agent, or nullopt
     std::optional<std::vector<std::string>> installedCommand(const std::string& agentId);
-
-    struct Installed {
-        std::string id;
-        std::string name;
-    };
-    std::vector<Installed> installedAgents();
 
     // both report failure through the error string
     std::vector<Agent> fetch(std::string& error);
@@ -67,18 +62,23 @@ class AcpRegistryClient {
 public:
     void startFetch();
     void startInstall(const AcpRegistryAgent& agent);
-    void startInstallBun(); // managed runtime; installedId() reads "Bun" when done
+    void startInstallBun(); // managed runtime; installedName() reads "Bun" when done
     bool poll();            // true when an operation finished this call
 
     [[nodiscard]] bool isBusy() const;
+    [[nodiscard]] bool fetched() const {
+        return fetched_;
+    }
     [[nodiscard]] const std::vector<AcpRegistryAgent>& agents() const {
         return agents_;
     }
+    [[nodiscard]] const AcpRegistryAgent* find(const std::string& id) const;
     [[nodiscard]] const std::string& error() const {
         return error_;
     }
-    [[nodiscard]] const std::string& installedId() const {
-        return installedId_;
+    // display name of what the last install produced, empty when it failed
+    [[nodiscard]] const std::string& installedName() const {
+        return installedName_;
     }
 
 private:
@@ -87,13 +87,14 @@ private:
         std::string error;
     };
     struct InstallResult {
-        std::string agentId;
+        std::string name;
         std::string error;
     };
 
     AsyncOperation<FetchResult> fetchOp_;
     AsyncOperation<InstallResult> installOp_;
     std::vector<AcpRegistryAgent> agents_;
+    bool fetched_ = false;
     std::string error_;
-    std::string installedId_;
+    std::string installedName_;
 };

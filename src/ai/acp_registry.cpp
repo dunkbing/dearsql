@@ -6,6 +6,7 @@
 #include <httplib.h>
 
 #include <fstream>
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <openssl/evp.h>
 #include <spdlog/spdlog.h>
@@ -25,27 +26,39 @@ namespace AcpRegistry {
             return it != j.end() && it->is_string() ? it->get<std::string>() : std::string{};
         }
 
-        std::string sha256Hex(const std::string& data) {
-            unsigned char digest[EVP_MAX_MD_SIZE];
-            unsigned int len = 0;
-            EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-            if (!ctx) {
-                return "";
-            }
-            std::string out;
-            if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
-                EVP_DigestUpdate(ctx, data.data(), data.size()) == 1 &&
-                EVP_DigestFinal_ex(ctx, digest, &len) == 1) {
-                static constexpr char HEX[] = "0123456789abcdef";
-                out.reserve(len * 2);
-                for (unsigned int i = 0; i < len; ++i) {
-                    out += HEX[digest[i] >> 4];
-                    out += HEX[digest[i] & 0x0F];
+        // incremental sha-256, so archives are hashed as they stream to disk
+        class Sha256 {
+        public:
+            Sha256() : ctx_(EVP_MD_CTX_new()) {
+                if (ctx_) {
+                    EVP_DigestInit_ex(ctx_, EVP_sha256(), nullptr);
                 }
             }
-            EVP_MD_CTX_free(ctx);
-            return out;
-        }
+            ~Sha256() {
+                EVP_MD_CTX_free(ctx_);
+            }
+            void update(const char* data, size_t n) {
+                if (ctx_) {
+                    EVP_DigestUpdate(ctx_, data, n);
+                }
+            }
+            std::string hex() {
+                unsigned char digest[EVP_MAX_MD_SIZE];
+                unsigned int len = 0;
+                std::string out;
+                if (ctx_ && EVP_DigestFinal_ex(ctx_, digest, &len) == 1) {
+                    static constexpr char HEX[] = "0123456789abcdef";
+                    for (unsigned int i = 0; i < len; ++i) {
+                        out += HEX[digest[i] >> 4];
+                        out += HEX[digest[i] & 0x0F];
+                    }
+                }
+                return out;
+            }
+
+        private:
+            EVP_MD_CTX* ctx_;
+        };
 
         // split "https://host/a/b" into {"https://host", "/a/b"}
         std::pair<std::string, std::string> splitUrl(const std::string& url) {
@@ -60,47 +73,47 @@ namespace AcpRegistry {
             return {url.substr(0, pathStart), url.substr(pathStart)};
         }
 
-        std::string httpGet(const std::string& url, std::string& error) {
+        // streams the body to `sink`; agent archives run to hundreds of MB
+        bool httpDownload(const std::string& url,
+                          const std::function<void(const char*, size_t)>& sink,
+                          std::string& error) {
             const auto [host, path] = splitUrl(url);
             if (host.empty()) {
                 error = "bad url: " + url;
-                return "";
+                return false;
             }
             httplib::Client client(host);
             client.set_follow_location(true); // release assets redirect to a CDN
             client.set_connection_timeout(15);
             client.set_read_timeout(120);
 
-            auto res = client.Get(path);
+            auto res = client.Get(path, [&](const char* data, size_t n) {
+                sink(data, n);
+                return true;
+            });
             if (!res) {
-                error = "download failed: " + url;
-                return "";
+                error = "download failed: " + url + " (" + httplib::to_string(res.error()) + ")";
+                return false;
             }
             if (res->status != 200) {
                 error = "http " + std::to_string(res->status) + " for " + url;
+                return false;
+            }
+            return true;
+        }
+
+        std::string httpGet(const std::string& url, std::string& error) {
+            std::string body;
+            if (!httpDownload(
+                    url, [&](const char* data, size_t n) { body.append(data, n); }, error)) {
                 return "";
             }
-            return res->body;
+            return body;
         }
 
         // download an archive into dir (wiped first), verifying sha256 when given
         bool fetchAndUnpack(const std::string& url, const std::string& sha256, const fs::path& dir,
                             std::string& error) {
-            const std::string archive = httpGet(url, error);
-            if (archive.empty()) {
-                return false;
-            }
-
-            // never unpack an executable we did not verify
-            if (!sha256.empty()) {
-                const std::string actual = sha256Hex(archive);
-                if (actual != sha256) {
-                    error = "checksum mismatch for " + url + " (expected " + sha256 + ", got " +
-                            actual + ")";
-                    return false;
-                }
-            }
-
             std::error_code ec;
             fs::remove_all(dir, ec);
             fs::create_directories(dir, ec);
@@ -117,7 +130,29 @@ namespace AcpRegistry {
                     error = "could not write " + archivePath.string();
                     return false;
                 }
-                out.write(archive.data(), static_cast<std::streamsize>(archive.size()));
+                Sha256 hash;
+                const bool ok = httpDownload(
+                    url,
+                    [&](const char* data, size_t n) {
+                        out.write(data, static_cast<std::streamsize>(n));
+                        hash.update(data, n);
+                    },
+                    error);
+                out.close();
+                if (!ok || !out) {
+                    if (ok) {
+                        error = "could not write " + archivePath.string();
+                    }
+                    fs::remove_all(dir, ec);
+                    return false;
+                }
+                // never unpack an executable we did not verify
+                if (const std::string actual = hash.hex(); !sha256.empty() && actual != sha256) {
+                    error = "checksum mismatch for " + url + " (expected " + sha256 + ", got " +
+                            actual + ")";
+                    fs::remove_all(dir, ec);
+                    return false;
+                }
             }
 
             // Windows 10+ ships bsdtar; it handles both zip and compressed tar archives.
@@ -133,8 +168,13 @@ namespace AcpRegistry {
 #endif
             fs::remove(archivePath, ec);
             if (!unpack.success) {
-                error = "could not unpack the archive: " +
-                        (unpack.output.empty() ? unpack.errorMessage : unpack.output);
+                // tar lists every failed entry; the last lines carry the reason
+                std::string tail = unpack.output.empty() ? unpack.errorMessage : unpack.output;
+                if (tail.size() > 400) {
+                    tail = "..." + tail.substr(tail.size() - 400);
+                }
+                error = "could not unpack the archive: " + tail;
+                fs::remove_all(dir, ec);
                 return false;
             }
             return true;
@@ -192,48 +232,31 @@ namespace AcpRegistry {
         return installRoot() / agentId;
     }
 
+    // .cmd marker: {"cmd": "./x", "args": [...], "name": "...", "version": "..."}
     std::optional<std::vector<std::string>> installedCommand(const std::string& agentId) {
-        const fs::path marker = installDir(agentId) / ".cmd";
-        std::ifstream in(marker);
+        std::ifstream in(installDir(agentId) / ".cmd");
         if (!in) {
             return std::nullopt;
         }
-        std::string cmd;
-        std::getline(in, cmd);
-        if (cmd.empty()) {
-            return std::nullopt;
+        json marker;
+        try {
+            in >> marker;
+        } catch (const std::exception&) {
+            return std::nullopt; // older one-line marker: download again
         }
+        const std::string cmd = getString(marker, "cmd");
         const fs::path exe = installDir(agentId) / cmd;
         std::error_code ec;
-        if (!fs::exists(exe, ec)) {
+        if (cmd.empty() || !fs::exists(exe, ec)) {
             return std::nullopt;
         }
-        return std::vector<std::string>{exe.string()};
-    }
-
-    std::vector<Installed> installedAgents() {
-        std::vector<Installed> out;
-        const fs::path root = installRoot();
-        std::error_code ec;
-        if (!fs::exists(root, ec)) {
-            return out;
-        }
-        for (const auto& entry : fs::directory_iterator(root, ec)) {
-            if (!entry.is_directory()) {
-                continue;
+        std::vector<std::string> argv{exe.string()};
+        for (const auto& arg : marker.value("args", json::array())) {
+            if (arg.is_string()) {
+                argv.push_back(arg.get<std::string>());
             }
-            std::ifstream marker(entry.path() / ".cmd");
-            if (!marker) {
-                continue;
-            }
-            std::string cmd;
-            std::string name;
-            std::getline(marker, cmd);
-            std::getline(marker, name);
-            const std::string id = entry.path().filename().string();
-            out.push_back({id, name.empty() ? id : name});
         }
-        return out;
+        return argv;
     }
 
     std::vector<Agent> fetch(std::string& error) {
@@ -267,6 +290,11 @@ namespace AcpRegistry {
                     agent.archiveUrl = getString(b, "archive");
                     agent.archiveSha256 = getString(b, "sha256");
                     agent.binaryCmd = getString(b, "cmd");
+                    for (const auto& arg : b.value("args", json::array())) {
+                        if (arg.is_string()) {
+                            agent.binaryArgs.push_back(arg.get<std::string>());
+                        }
+                    }
                 }
                 out.push_back(std::move(agent));
             }
@@ -305,7 +333,12 @@ namespace AcpRegistry {
 
         // remember how to launch it, so a later run needs no registry lookup
         std::ofstream marker(dir / ".cmd");
-        marker << agent.binaryCmd << "\n" << agent.name << "\n" << agent.version << "\n";
+        marker << json{{"cmd", agent.binaryCmd},
+                       {"args", agent.binaryArgs},
+                       {"name", agent.name},
+                       {"version", agent.version}}
+                      .dump()
+               << "\n";
 
         spdlog::info("ACP: installed agent {} {} to {}", agent.id, agent.version, dir.string());
         return true;
@@ -390,11 +423,11 @@ void AcpRegistryClient::startInstall(const AcpRegistryAgent& agent) {
         return;
     }
     error_.clear();
-    installedId_.clear();
+    installedName_.clear();
     installOp_.start([agent] {
         InstallResult result;
         if (AcpRegistry::installBinary(agent, result.error)) {
-            result.agentId = agent.id;
+            result.name = agent.name;
         }
         return result;
     });
@@ -405,11 +438,11 @@ void AcpRegistryClient::startInstallBun() {
         return;
     }
     error_.clear();
-    installedId_.clear();
+    installedName_.clear();
     installOp_.start([] {
         InstallResult result;
         if (AcpRegistry::installBun(result.error)) {
-            result.agentId = "Bun";
+            result.name = "Bun";
         }
         return result;
     });
@@ -420,12 +453,22 @@ bool AcpRegistryClient::poll() {
     finished |= fetchOp_.check([this](FetchResult result) {
         agents_ = std::move(result.agents);
         error_ = std::move(result.error);
+        fetched_ = error_.empty();
     });
     finished |= installOp_.check([this](InstallResult result) {
-        installedId_ = std::move(result.agentId);
+        installedName_ = std::move(result.name);
         error_ = std::move(result.error);
     });
     return finished;
+}
+
+const AcpRegistryAgent* AcpRegistryClient::find(const std::string& id) const {
+    for (const auto& agent : agents_) {
+        if (agent.id == id) {
+            return &agent;
+        }
+    }
+    return nullptr;
 }
 
 bool AcpRegistryClient::isBusy() const {

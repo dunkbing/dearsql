@@ -1,7 +1,6 @@
 #include "ai/acp_agents.hpp"
 #include "ai/acp_registry.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <spdlog/spdlog.h>
@@ -112,6 +111,29 @@ namespace AcpAgents {
                 npmInstalls("@zed-industries/codex-acp"),
                 "Sign in with `codex login` or set OPENAI_API_KEY.",
             },
+            // binary-only: the registry archive already carries its args ("acp")
+            {
+                "cursor",
+                "Cursor",
+                {"cursor-agent", "acp"},
+                "",
+                "",
+                {},
+                {},
+                "Run `cursor-agent login` in a terminal.",
+                "cursor",
+            },
+            {
+                "antigravity-acp",
+                "Google Antigravity",
+                {},
+                "",
+                "",
+                {},
+                {},
+                "Sign in with your Google account when Antigravity asks.",
+                "antigravity-acp",
+            },
         };
         return defs;
     }
@@ -124,23 +146,6 @@ namespace AcpAgents {
             {"uvx", {"uvx"}, true},
         };
         return list;
-    }
-
-    std::vector<AgentDef> availableAgents() {
-        std::vector<AgentDef> defs = catalog();
-        for (const auto& installed : AcpRegistry::installedAgents()) {
-            const bool known = std::any_of(defs.begin(), defs.end(),
-                                           [&](const AgentDef& d) { return d.id == installed.id; });
-            if (known) {
-                continue;
-            }
-            AgentDef def;
-            def.id = installed.id;
-            def.name = installed.name;
-            def.authHint = "Check the agent's own documentation for how to sign in.";
-            defs.push_back(std::move(def)); // resolveInvocation finds the managed binary
-        }
-        return defs;
     }
 
     const AgentDef* find(const std::string& id) {

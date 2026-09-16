@@ -34,12 +34,10 @@ namespace AcpAgents {
         std::vector<std::string> runArgs;          // appended after the package
         std::vector<InstallOption> installOptions; // tried in order
         std::string authHint;                      // shown when the agent reports auth errors
+        std::string registryId; // prebuilt binary in the ACP registry, downloaded on demand
     };
 
     const std::vector<AgentDef>& catalog();
-
-    // catalog plus agents downloaded from the registry (see acp_registry.hpp)
-    std::vector<AgentDef> availableAgents();
     const AgentDef* find(const std::string& id);
 
     const std::vector<Runner>& runners();

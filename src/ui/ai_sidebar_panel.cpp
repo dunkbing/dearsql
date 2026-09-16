@@ -1321,9 +1321,9 @@ void AISidebarPanel::renderHeader() {
     ImGui::TextColored(colors.subtext0, ICON_FA_ROBOT);
     ImGui::SameLine(0, Theme::Spacing::S);
 
-    // the sidebar renders inside children with zero WindowPadding, and a combo popup
-    // inherits WindowPadding.y -- without this its rows sit flush against the edges
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
+    // the sidebar renders inside children with zero WindowPadding; combo popups and
+    // tooltips inherit it, so without this their contents sit flush against the edges
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
 
     // right: sessions, new. the settings gear follows the pickers
     const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
@@ -1394,8 +1394,10 @@ void AISidebarPanel::renderHeader() {
     if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
         // open on the vendor behind the selected backend
         const std::string id = backendId();
-        const AIProvider provider = isApi ? API_MODELS[apiModelIndex_].provider
-                                    : id.find("gemini") != std::string::npos ? AIProvider::GEMINI
+        const bool google =
+            id.find("gemini") != std::string::npos || id.find("antigravity") != std::string::npos;
+        const AIProvider provider = isApi    ? API_MODELS[apiModelIndex_].provider
+                                    : google ? AIProvider::GEMINI
                                     : id.find("codex") != std::string::npos ? AIProvider::OPENAI
                                                                             : AIProvider::ANTHROPIC;
         AISettingsDialog::instance().show(provider == AIProvider::GEMINI   ? "gemini"

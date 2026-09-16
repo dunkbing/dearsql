@@ -146,8 +146,14 @@ namespace AcpRegistry {
                     fs::remove_all(dir, ec);
                     return false;
                 }
-                // never unpack an executable we did not verify
-                if (const std::string actual = hash.hex(); !sha256.empty() && actual != sha256) {
+                // verified whenever the registry publishes a hash. Cursor and Antigravity
+                // do not, so for them the HTTPS registry entry is the trust anchor
+                const std::string actual = hash.hex();
+                if (sha256.empty()) {
+                    spdlog::warn(
+                        "ACP: no checksum published for {}, unpacking unverified (sha256 {})", url,
+                        actual);
+                } else if (actual != sha256) {
                     error = "checksum mismatch for " + url + " (expected " + sha256 + ", got " +
                             actual + ")";
                     fs::remove_all(dir, ec);

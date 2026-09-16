@@ -1,5 +1,6 @@
 #include "ai/acp_client.hpp"
 #include "ai/acp_agents.hpp"
+#include "ai/acp_registry.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -30,12 +31,16 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     opts.cwd = cwd;
     // GUI apps on macOS get a minimal PATH; use the login shell's so agents
     // installed via npm/homebrew are found
-    if (const std::string& path = acp::agents::loginShellPath(); !path.empty()) {
+    if (const std::string& path = AcpAgents::loginShellPath(); !path.empty()) {
         opts.env.emplace_back("PATH", path);
     }
     // claude refuses to start when it thinks it is nested in another session;
     // inherited when DearSQL itself was launched from one
     opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"};
+    // the managed bun keeps its package cache next to itself, not in ~/.bun
+    for (const auto& kv : AcpRegistry::bunEnv()) {
+        opts.env.push_back(kv);
+    }
     // api keys saved in AI Settings; a key already in the environment wins
     exportedApiKey_ = false;
     for (const auto& [name, value] : extraEnv) {
@@ -233,6 +238,8 @@ void AcpClient::onSessionOpened(const std::string& method, const acp::Response& 
         std::lock_guard lock(stateMutex_);
         sessionId_ = method == "session/load" ? resumeSessionId_ : r.result.value("sessionId", "");
     }
+    pushEvent({.type = AcpEvent::Type::ConfigOptions,
+               .configOptions = acp::configOptionsFromJson(r.result)});
     sessionReady_ = true;
     pushEvent({.type = AcpEvent::Type::SessionReady});
 }
@@ -289,6 +296,21 @@ void AcpClient::cancelTurn() {
     }
 }
 
+void AcpClient::setConfigOption(const std::string& configId, std::string value) {
+    if (!isSessionReady()) {
+        return;
+    }
+    conn_->setSessionConfigOption(sessionId(), configId, std::move(value), [this](acp::Response r) {
+        if (!r.ok()) {
+            pushEvent({.type = AcpEvent::Type::Error,
+                       .text = "Could not change agent setting: " + r.error->describe()});
+            return;
+        }
+        pushEvent({.type = AcpEvent::Type::ConfigOptions,
+                   .configOptions = acp::configOptionsFromJson(r.result)});
+    });
+}
+
 void AcpClient::respondPermission(const json& rpcId, const std::string& optionId) {
     if (conn_) {
         conn_->respondPermission(rpcId, optionId);
@@ -340,6 +362,10 @@ void AcpClient::sessionUpdate(const acp::SessionNotification& n) {
         for (const auto& c : u.commands) {
             ev.commands.push_back({c.name, c.description, c.inputHint});
         }
+        break;
+    case K::ConfigOptionsUpdate:
+        ev.type = AcpEvent::Type::ConfigOptions;
+        ev.configOptions = u.configOptions;
         break;
     default:
         return; // current_mode_update and unknown kinds

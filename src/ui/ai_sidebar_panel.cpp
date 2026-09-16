@@ -206,9 +206,8 @@ namespace {
 
 AISidebarPanel::AISidebarPanel()
     : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {
-    // point acp-cpp at our data dir and log sink, once
+    // route acp-cpp logging into ours, once
     static const bool configured = [] {
-        acp::registry::setInstallRoot(AppPaths::dataDir() / "agents");
         acp::setLogger([](acp::LogLevel level, const std::string& msg) {
             switch (level) {
             case acp::LogLevel::Debug:
@@ -238,7 +237,7 @@ AISidebarPanel::~AISidebarPanel() {
 // ---------------------------------------------------------------- backends
 
 bool AISidebarPanel::isAcpBackend() const {
-    return backendIndex_ <= static_cast<int>(agentDefs_.size());
+    return backendIndex_ < static_cast<int>(agentDefs_.size());
 }
 
 const AcpAgentDef* AISidebarPanel::currentAgentDef() const {
@@ -261,30 +260,14 @@ std::vector<std::string> AISidebarPanel::currentInvocation(std::string& missingR
                 tried += (tried.empty() ? "" : ", ") + ("`" + runner.tool + "`");
             }
         }
-        missingReason =
-            std::format("{} is not installed (looked for {} on your PATH).", def->name, tried);
+        missingReason = tried.empty()
+                            ? std::format("{} is not installed.", def->name)
+                            : std::format("{} is not installed (looked for {} on your PATH).",
+                                          def->name, tried);
         return {};
     }
-    // custom command: split on spaces (quoted args unsupported)
-    std::vector<std::string> argv;
-    std::string cur;
-    for (const char* p = customCmdBuf_; *p; ++p) {
-        if (*p == ' ') {
-            if (!cur.empty()) {
-                argv.push_back(std::move(cur));
-                cur.clear();
-            }
-        } else {
-            cur += *p;
-        }
-    }
-    if (!cur.empty()) {
-        argv.push_back(std::move(cur));
-    }
-    if (argv.empty()) {
-        missingReason = "Enter a custom agent command first.";
-    }
-    return argv;
+    missingReason = "No agent selected.";
+    return {};
 }
 
 void AISidebarPanel::ensureSettingsLoaded() {
@@ -292,10 +275,8 @@ void AISidebarPanel::ensureSettingsLoaded() {
         return;
     }
     auto* appState = Application::getInstance().getAppState();
-    agentDefs_ = AcpAgents::availableAgents();
+    agentDefs_ = AcpAgents::catalog();
     selectBackend(appState->getSetting("ai_sidebar_backend", agentDefs_.front().id));
-    const std::string custom = appState->getSetting("ai_custom_agent_cmd", "");
-    std::strncpy(customCmdBuf_, custom.c_str(), sizeof(customCmdBuf_) - 1);
     mcpEnabled_ = appState->getSetting("ai_mcp_enabled", "1") == "1";
     settingsLoaded_ = true;
 }
@@ -323,26 +304,25 @@ std::string AISidebarPanel::backendId() const {
     if (backendIndex_ >= 0 && backendIndex_ < static_cast<int>(agentDefs_.size())) {
         return agentDefs_[static_cast<size_t>(backendIndex_)].id;
     }
-    return backendIndex_ == static_cast<int>(agentDefs_.size()) ? "custom" : "api";
+    return "api";
 }
 
 void AISidebarPanel::selectBackend(const std::string& id) {
-    backendIndex_ = 0;
+    backendIndex_ = 0; // unknown ids (the retired "custom") fall back to the first agent
     for (size_t i = 0; i < agentDefs_.size(); ++i) {
         if (agentDefs_[i].id == id) {
             backendIndex_ = static_cast<int>(i);
         }
     }
-    if (id == "custom") {
+    if (id == "api") {
         backendIndex_ = static_cast<int>(agentDefs_.size());
-    } else if (id == "api") {
-        backendIndex_ = static_cast<int>(agentDefs_.size()) + 1;
     }
 }
 
 void AISidebarPanel::stopAgent() {
     acp_.reset();
     agentCommands_.clear();
+    agentConfigOptions_.clear();
     // nothing is left to serve, so close the port rather than leave it listening
     mcp_.stop();
     pendingPromptBlocks_ = json::array();
@@ -990,14 +970,14 @@ void AISidebarPanel::pollAcp() {
     // installer finished?
     if (installer_.check()) {
         const auto& res = installer_.lastResult();
-        if (res.ok && res.exitCode == 0) {
+        if (res.success) {
             items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
             agentMissing_ = false;
             if (!pendingPromptBlocks_.empty()) {
                 queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
             }
         } else {
-            std::string tail = res.output.empty() ? res.error : res.output;
+            std::string tail = res.output.empty() ? res.errorMessage : res.output;
             if (tail.size() > 1200) {
                 tail = "..." + tail.substr(tail.size() - 1200);
             }
@@ -1061,6 +1041,9 @@ void AISidebarPanel::pollAcp() {
         }
         case AcpEvent::Type::Commands:
             agentCommands_ = std::move(ev.commands);
+            break;
+        case AcpEvent::Type::ConfigOptions:
+            agentConfigOptions_ = std::move(ev.configOptions);
             break;
         case AcpEvent::Type::Plan: {
             Item* planItem = nullptr;
@@ -1281,13 +1264,11 @@ void AISidebarPanel::renderHeader() {
     const auto& colors = Application::getInstance().getCurrentColors();
     const ImGuiStyle& style = ImGui::GetStyle();
     const auto& cat = agentDefs_;
-    const int customIndex = static_cast<int>(cat.size());
-    const int apiIndex = customIndex + 1;
+    const int apiIndex = static_cast<int>(cat.size());
     const bool isApi = backendIndex_ == apiIndex;
 
-    const char* currentLabel = backendIndex_ == customIndex ? "Custom agent"
-                               : isApi ? "API key"
-                                       : cat[static_cast<size_t>(backendIndex_)].name.c_str();
+    const char* currentLabel =
+        isApi ? "API key" : cat[static_cast<size_t>(backendIndex_)].name.c_str();
 
     // size a combo to its longest entry rather than a share of the sidebar
     const auto comboWidth = [&style](const std::vector<std::string>& labels) {
@@ -1302,12 +1283,37 @@ void AISidebarPanel::renderHeader() {
     for (const auto& def : cat) {
         backendLabels.push_back(def.name);
     }
-    backendLabels.emplace_back("Custom agent");
     backendLabels.emplace_back("API key");
 
     std::vector<std::string> modelLabels;
     for (const auto& model : API_MODELS) {
         modelLabels.emplace_back(model.label);
+    }
+    const acp::ConfigOption* agentModelOption = nullptr;
+    for (const auto& option : agentConfigOptions_) {
+        if (option.category == "model" && option.type == "select" && !option.options.empty()) {
+            agentModelOption = &option;
+            break;
+        }
+    }
+    std::vector<std::string> agentModelLabels;
+    std::string agentModelLabel;
+    if (agentModelOption) {
+        for (const auto& option : agentModelOption->options) {
+            agentModelLabels.push_back(option.name.empty() ? option.value : option.name);
+        }
+        const std::string current = agentModelOption->currentValue.is_string()
+                                        ? agentModelOption->currentValue.get<std::string>()
+                                        : std::string{};
+        for (const auto& option : agentModelOption->options) {
+            if (option.value == current) {
+                agentModelLabel = option.name.empty() ? option.value : option.name;
+                break;
+            }
+        }
+        if (agentModelLabel.empty()) {
+            agentModelLabel = agentModelOption->name.empty() ? "Model" : agentModelOption->name;
+        }
     }
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
@@ -1315,9 +1321,9 @@ void AISidebarPanel::renderHeader() {
     ImGui::TextColored(colors.subtext0, ICON_FA_ROBOT);
     ImGui::SameLine(0, Theme::Spacing::S);
 
-    // the sidebar renders inside children with zero WindowPadding, and a combo popup
-    // inherits WindowPadding.y -- without this its rows sit flush against the edges
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, Theme::Spacing::S));
+    // the sidebar renders inside children with zero WindowPadding; combo popups and
+    // tooltips inherit it, so without this their contents sit flush against the edges
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
 
     // right: sessions, new. the settings gear follows the pickers
     const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
@@ -1325,8 +1331,11 @@ void AISidebarPanel::renderHeader() {
     const float rowAvail =
         ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x - iconW - Theme::Spacing::S;
     float backendW = comboWidth(backendLabels);
-    float modelW = isApi ? comboWidth(modelLabels) : 0.0f;
-    if (const float wanted = backendW + modelW + (isApi ? style.ItemSpacing.x : 0.0f);
+    float modelW = isApi              ? comboWidth(modelLabels)
+                   : agentModelOption ? comboWidth(agentModelLabels)
+                                      : 0.0f;
+    const bool hasModelPicker = isApi || agentModelOption;
+    if (const float wanted = backendW + modelW + (hasModelPicker ? style.ItemSpacing.x : 0.0f);
         wanted > rowAvail && wanted > 0.0f) {
         const float scale = rowAvail / wanted;
         backendW *= scale;
@@ -1339,9 +1348,6 @@ void AISidebarPanel::renderHeader() {
             if (ImGui::Selectable(cat[static_cast<size_t>(i)].name.c_str(), backendIndex_ == i)) {
                 switchBackend(i);
             }
-        }
-        if (ImGui::Selectable("Custom agent", backendIndex_ == customIndex)) {
-            switchBackend(customIndex);
         }
         if (ImGui::Selectable("API key", backendIndex_ == apiIndex)) {
             switchBackend(apiIndex);
@@ -1361,6 +1367,25 @@ void AISidebarPanel::renderHeader() {
             }
             ImGui::EndCombo();
         }
+    } else if (agentModelOption) {
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SetNextItemWidth(modelW);
+        if (ImGui::BeginCombo("##acp_model", agentModelLabel.c_str())) {
+            const std::string current = agentModelOption->currentValue.is_string()
+                                            ? agentModelOption->currentValue.get<std::string>()
+                                            : std::string{};
+            for (const auto& option : agentModelOption->options) {
+                const std::string label = option.name.empty() ? option.value : option.name;
+                const bool selected = option.value == current;
+                if (ImGui::Selectable(label.c_str(), selected) && acp_) {
+                    acp_->setConfigOption(agentModelOption->id, option.value);
+                }
+                if (!option.description.empty() && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", option.description.c_str());
+                }
+            }
+            ImGui::EndCombo();
+        }
     }
     // api keys and the agent database toggle live in the same dialog, so every backend
     // gets the gear
@@ -1369,8 +1394,10 @@ void AISidebarPanel::renderHeader() {
     if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
         // open on the vendor behind the selected backend
         const std::string id = backendId();
-        const AIProvider provider = isApi ? API_MODELS[apiModelIndex_].provider
-                                    : id.find("gemini") != std::string::npos ? AIProvider::GEMINI
+        const bool google =
+            id.find("gemini") != std::string::npos || id.find("antigravity") != std::string::npos;
+        const AIProvider provider = isApi    ? API_MODELS[apiModelIndex_].provider
+                                    : google ? AIProvider::GEMINI
                                     : id.find("codex") != std::string::npos ? AIProvider::OPENAI
                                                                             : AIProvider::ANTHROPIC;
         AISettingsDialog::instance().show(provider == AIProvider::GEMINI   ? "gemini"
@@ -1405,23 +1432,13 @@ void AISidebarPanel::renderHeader() {
     }
     ImGui::PopStyleColor();
 
-    if (backendIndex_ == customIndex) {
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputTextWithHint("##ai_custom_cmd", "agent command (speaks ACP on stdio)",
-                                 customCmdBuf_, sizeof(customCmdBuf_));
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            Application::getInstance().getAppState()->setSetting("ai_custom_agent_cmd",
-                                                                 customCmdBuf_);
-            stopAgent();
-        }
-    }
-
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
 }
 
 void AISidebarPanel::renderInstallCard() {
     const auto& colors = Application::getInstance().getCurrentColors();
     const AcpAgentDef* def = currentAgentDef();
+    pollRegistry();
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
@@ -1445,17 +1462,33 @@ void AISidebarPanel::renderInstallCard() {
                 }
                 ImGui::SameLine(0, Theme::Spacing::S);
                 ImGui::TextColored(colors.subtext0, "runs: %s", install->command.c_str());
+            } else if (!def->registryId.empty()) {
+                renderRegistryDownload(*def);
             } else {
+                // no runtime anywhere: fetch the managed bun without asking
+                if (!bunDownloadStarted_ && !registry_.isBusy()) {
+                    bunDownloadStarted_ = true;
+                    registry_.startInstallBun();
+                }
                 ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-                ImGui::TextColored(colors.subtext0,
-                                   "This agent ships as an npm package and no JavaScript runtime "
-                                   "was found. Install Node, bun or pnpm - or download an agent "
-                                   "below that runs on its own.");
+                if (registry_.isBusy()) {
+                    ImGui::TextColored(colors.subtext0,
+                                       "No JavaScript runtime was found, so DearSQL is downloading "
+                                       "Bun v%s (about 25 MB) into ~/.dearsql/agents to run this "
+                                       "agent.",
+                                       AcpRegistry::BUN_VERSION);
+                } else {
+                    ImGui::TextColored(colors.subtext0,
+                                       "This agent ships as an npm package and no JavaScript "
+                                       "runtime was found.");
+                    if (UIUtils::SmallButton("Retry Bun download##ai_install_bun")) {
+                        registry_.startInstallBun();
+                    }
+                }
                 ImGui::PopTextWrapPos();
             }
         }
 
-        renderRegistryAgents();
         ImGui::Unindent(Theme::Spacing::M);
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     }
@@ -1472,70 +1505,58 @@ std::string AISidebarPanel::agentStartingLabel() const {
     return std::format("Starting {}...", def ? def->name : std::string("agent"));
 }
 
-void AISidebarPanel::renderRegistryAgents() {
-#if defined(_WIN32)
-    // AcpClient cannot spawn an agent on Windows yet, so downloading one would
-    // leave the user with a binary nothing can launch
-    return;
-#else
+// a finished download (Bun or an agent binary) lets the held message go out
+void AISidebarPanel::pollRegistry() {
+    if (!registry_.poll() || registry_.installedName().empty()) {
+        return;
+    }
+    const bool runtime = registry_.installedName() == "Bun";
+    items_.push_back({.kind = Item::Kind::Info,
+                      .text = runtime ? "Downloaded Bun. The agent will run through it."
+                                      : "Downloaded " + registry_.installedName() + "."});
+    agentMissing_ = false;
+    scrollToBottom_ = true;
+    if (!pendingPromptBlocks_.empty()) {
+        queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
+    }
+}
+
+// binary-only agents (Cursor, Antigravity): look the agent up in the registry
+// and fetch its archive, without asking
+void AISidebarPanel::renderRegistryDownload(const AcpAgentDef& def) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    // fetched once, lazily: nothing hits the network unless an agent is missing
     if (!registryFetchStarted_) {
         registryFetchStarted_ = true;
         registry_.startFetch();
     }
-    if (registry_.poll()) {
-        // an install may have added an agent; re-resolve the index by id
-        const std::string current = backendId();
-        agentDefs_ = AcpAgents::availableAgents();
-        selectBackend(current);
-        if (!registry_.installedId().empty()) {
-            items_.push_back({.kind = Item::Kind::Info,
-                              .text = "Installed " + registry_.installedId() +
-                                      ". Pick it from the agent list above."});
-            agentMissing_ = false;
-            scrollToBottom_ = true;
-        }
+    const AcpRegistryAgent* entry = registry_.fetched() ? registry_.find(def.registryId) : nullptr;
+    if (entry && entry->hasBinary && !registry_.isBusy() && registryDownloadFor_ != def.id) {
+        registryDownloadFor_ = def.id;
+        registry_.startInstall(*entry);
     }
 
-    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
-    ImGui::TextColored(colors.subtext0, "Agents that run without Node");
-
+    ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
     if (registry_.isBusy()) {
-        UIUtils::Spinner("##registry_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
-        ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextColored(colors.subtext0, "Working...");
-        return;
-    }
-    if (!registry_.error().empty()) {
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(colors.red, "%s", registry_.error().c_str());
-        ImGui::PopTextWrapPos();
-    }
-
-    int shown = 0;
-    for (const auto& agent : registry_.agents()) {
-        if (!agent.hasBinary || AcpRegistry::installedCommand(agent.id)) {
-            continue;
+        ImGui::TextColored(colors.subtext0,
+                           "Downloading %s into ~/.dearsql/agents. It runs on its own, no "
+                           "Node needed.",
+                           def.name.c_str());
+    } else if (registry_.fetched() && (!entry || !entry->hasBinary)) {
+        ImGui::TextColored(colors.subtext0, "The ACP registry has no %s build for %s.",
+                           def.name.c_str(), AcpRegistry::platformKey().c_str());
+    } else {
+        if (!registry_.error().empty()) {
+            ImGui::TextColored(colors.red, "%s", registry_.error().c_str());
         }
-        ImGui::PushID(agent.id.c_str());
-        if (UIUtils::SmallButton("Download")) {
-            registry_.startInstall(agent);
-        }
-        ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextColored(colors.text, "%s", agent.name.c_str());
-        ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextColored(colors.subtext0, "%s", agent.version.c_str());
-        ImGui::PopID();
-        if (++shown >= 8) {
-            break;
+        if (UIUtils::SmallButton("Retry download##ai_registry_retry")) {
+            registryDownloadFor_.clear();
+            if (!registry_.fetched()) {
+                registry_.startFetch();
+            }
         }
     }
-    if (shown == 0 && registry_.error().empty()) {
-        ImGui::TextColored(colors.subtext0, "None available for this platform.");
-    }
-#endif
+    ImGui::PopTextWrapPos();
 }
 
 void AISidebarPanel::renderMessages() {

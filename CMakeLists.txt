@@ -313,7 +313,6 @@ if(WIN32)
     )
 endif()
 
-set(ACP_REGISTRY ON CACHE BOOL "" FORCE)
 add_subdirectory(external/acp-cpp)
 
 target_include_directories(

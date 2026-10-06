@@ -1076,6 +1076,9 @@ void Application::renderMainUI() {
     if (databaseSidebar) {
         databaseSidebar->processDumpOperations();
     }
+    if (tabManager) {
+        tabManager->tickChatTabs();
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);

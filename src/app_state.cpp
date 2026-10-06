@@ -3,10 +3,13 @@
 #include "utils/app_paths.hpp"
 #include "utils/crypto.hpp"
 #include "utils/master_secret.hpp"
+#include <ctime>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <spdlog/spdlog.h>
 #include <sqlite3.h>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -439,16 +442,17 @@ bool AppState::createTables() {
                          executeSQL(createWorkspacesTable) && executeSQL(createScriptsTable) &&
                          executeSQL(createAiSessionsTable);
 
-    auto ensureColumnExists = [this](const std::string& columnName, const std::string& alterSql) {
+    auto ensureColumnExists = [this](const std::string& columnName, const std::string& alterSql,
+                                     const std::string& table = "saved_connections") {
         try {
-            const std::string checkSql =
-                "SELECT COUNT(*) FROM pragma_table_info('saved_connections') WHERE name = ?";
+            const std::string checkSql = "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?";
             sqlite3_stmt* raw = nullptr;
             const int rc = sqlite3_prepare_v2(db_, checkSql.c_str(), -1, &raw, nullptr);
             if (rc != SQLITE_OK)
                 return;
             const StmtPtr stmt(raw);
-            sqlite3_bind_text(stmt.get(), 1, columnName.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 1, table.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 2, columnName.c_str(), -1, SQLITE_TRANSIENT);
             if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                 const int count = sqlite3_column_int(stmt.get(), 0);
                 if (count == 0) {
@@ -490,6 +494,10 @@ bool AppState::createTables() {
                        "ALTER TABLE saved_connections ADD COLUMN read_only INTEGER DEFAULT 0;");
     ensureColumnExists("key_version",
                        "ALTER TABLE saved_connections ADD COLUMN key_version INTEGER DEFAULT 0;");
+    // chats belong to a connection; 0 = from before chats moved under connections
+    ensureColumnExists("connection_id",
+                       "ALTER TABLE ai_sessions ADD COLUMN connection_id INTEGER DEFAULT 0;",
+                       "ai_sessions");
 
     // Ensure default workspace exists
     if (success) {
@@ -1246,12 +1254,13 @@ bool AppState::ensureDefaultWorkspace() const {
     return true;
 }
 
-int AppState::saveAiSession(const int id, const std::string& backend,
+int AppState::saveAiSession(const int id, const int connectionId, const std::string& backend,
                             const std::string& acpSessionId, const std::string& title,
                             const std::string& transcript) const {
     const std::string sql = R"(
-        INSERT INTO ai_sessions (id, backend, acp_session_id, title, transcript, updated_at)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO ai_sessions (id, connection_id, backend, acp_session_id, title, transcript,
+                                 updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             acp_session_id = excluded.acp_session_id,
             title = excluded.title,
@@ -1269,10 +1278,11 @@ int AppState::saveAiSession(const int id, const std::string& backend,
     } else {
         sqlite3_bind_null(stmt.get(), 1);
     }
-    sqlite3_bind_text(stmt.get(), 2, backend.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 3, acpSessionId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 4, title.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 5, transcript.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 2, connectionId);
+    sqlite3_bind_text(stmt.get(), 3, backend.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 4, acpSessionId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 5, title.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 6, transcript.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         std::cerr << "Failed to save ai session: " << sqlite3_errmsg(db_) << std::endl;
         return -1;
@@ -1280,18 +1290,21 @@ int AppState::saveAiSession(const int id, const std::string& backend,
     return id > 0 ? id : static_cast<int>(sqlite3_last_insert_rowid(db_));
 }
 
-std::vector<AiSession> AppState::getAiSessions(const std::string& backend, const int limit) const {
+std::vector<AiSession> AppState::getAiSessions(const int connectionId, const std::string& backend,
+                                               const int limit) const {
     std::vector<AiSession> sessions;
     const std::string sql =
         "SELECT id, backend, acp_session_id, title, updated_at FROM ai_sessions "
-        "WHERE backend = ? ORDER BY updated_at DESC LIMIT ?";
+        "WHERE connection_id = ? AND (? = '' OR backend = ?) ORDER BY updated_at DESC LIMIT ?";
     sqlite3_stmt* raw = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
         return sessions;
     }
     StmtPtr stmt(raw);
-    sqlite3_bind_text(stmt.get(), 1, backend.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 2, limit);
+    sqlite3_bind_int(stmt.get(), 1, connectionId);
+    sqlite3_bind_text(stmt.get(), 2, backend.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, backend.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 4, limit);
     auto col = [&](int i) {
         const auto* t = sqlite3_column_text(stmt.get(), i);
         return t ? std::string(reinterpret_cast<const char*>(t)) : std::string();
@@ -1326,4 +1339,29 @@ bool AppState::deleteAiSession(const int id) const {
     StmtPtr stmt(raw);
     sqlite3_bind_int(stmt.get(), 1, id);
     return sqlite3_step(stmt.get()) == SQLITE_DONE;
+}
+
+std::string relativeAge(const std::string& stamp) {
+    std::tm tm{};
+    std::istringstream in(stamp);
+    in >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+    if (in.fail()) {
+        return "";
+    }
+#ifdef _WIN32
+    const std::time_t then = _mkgmtime(&tm);
+#else
+    const std::time_t then = timegm(&tm);
+#endif
+    const auto secs = static_cast<long>(std::time(nullptr) - then);
+    if (secs < 60) {
+        return "now";
+    }
+    if (secs < 3600) {
+        return std::to_string(secs / 60) + "m";
+    }
+    if (secs < 86400) {
+        return std::to_string(secs / 3600) + "h";
+    }
+    return std::to_string(secs / 86400) + "d";
 }

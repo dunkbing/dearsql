@@ -5,6 +5,7 @@
 #include "platform/updater.hpp"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/cli_command.hpp"
 
 #include <cfloat>
 
@@ -34,6 +35,8 @@ SettingsDialog& SettingsDialog::instance() {
 void SettingsDialog::open() {
     open_ = true;
     pendingOpen_ = true;
+    cliInstalled_ = CliCommand::installed();
+    cliStatus_.clear();
 #if defined(__APPLE__)
     loadShaderState();
 #endif
@@ -209,6 +212,22 @@ void SettingsDialog::render() {
         shaderStatus_ = "Off";
     }
 #endif
+
+    if (CliCommand::supported()) {
+        ImGui::SeparatorText("Command Line");
+        if (cliInstalled_) {
+            ImGui::TextUnformatted(("dearsql is installed at " + CliCommand::linkPath()).c_str());
+        } else if (UIUtils::Button("Install 'dearsql' Command")) {
+            cliStatus_ = CliCommand::install();
+            cliInstalled_ = cliStatus_.empty();
+        }
+        if (!cliStatus_.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", cliStatus_.c_str());
+        }
+        ImGui::TextDisabled(
+            "dearsql --tui: terminal client   dearsql --mcp: tools for coding agents");
+    }
 
     // --- Actions ---
     ImGui::SeparatorText("About");

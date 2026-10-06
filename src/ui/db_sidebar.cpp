@@ -3,7 +3,7 @@
 #include "application.hpp"
 #include "database/cassandra.hpp"
 #include "database/db_interface.hpp"
-#include "database/duckdb.hpp"
+#include "database/file_database.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -11,7 +11,6 @@
 #include "database/oracle/oracle_client_installer.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "platform/alert.hpp"
 #include "ui/ai_sidebar_panel.hpp"
@@ -584,7 +583,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    const bool isCsv = DuckDBDatabase::isCsvPath(connectionInfo.path);
+    const bool isCsv = dearsql::isCsvPath(connectionInfo.path);
 
     // csv: double-click views data instead of toggling the node
     ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding |
@@ -618,7 +617,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
         UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
                                 ImGui::GetColorU32(colors.peach));
-    } else if (DuckDBDatabase::isCsvPath(connectionInfo.path)) {
+    } else if (dearsql::isCsvPath(connectionInfo.path)) {
         ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.green),
                                             ICON_FA_FILE_CSV);
     } else {
@@ -798,7 +797,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::PopStyleColor();
 
             if (connectionInfo.type == DatabaseType::ORACLE &&
-                OracleDatabase::needsClientInstall()) {
+                OracleClientInstaller::needsClientInstall()) {
                 oracleClientInstaller_.checkStatus();
 
                 if (oracleClientInstaller_.isRunning()) {
@@ -810,7 +809,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                     ImGui::PopStyleColor();
                 } else if (oracleClientInstaller_.getStatus() ==
                            OracleClientInstaller::Status::Done) {
-                    OracleDatabase::reinitContext();
+                    OracleClientInstaller::resetContext();
                     db->startConnectionAsync();
                 } else {
                     ImGui::Indent(Theme::Spacing::M);
@@ -847,7 +846,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         };
 
-        const bool isCsv = DuckDBDatabase::isCsvPath(db->getConnectionInfo().path);
+        const bool isCsv = dearsql::isCsvPath(db->getConnectionInfo().path);
 
         if (db->isConnected() && isFileDatabase(db->getConnectionInfo().type)) {
             auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());

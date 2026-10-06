@@ -29,6 +29,10 @@ private:
     bool open_ = false;
     bool pendingOpen_ = false;
 
+    // the `dearsql` shell command, checked when the dialog opens
+    bool cliInstalled_ = false;
+    std::string cliStatus_;
+
 #if defined(__APPLE__)
     char shaderPath_[1024] = {};
     std::string shaderStatus_;

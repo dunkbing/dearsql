@@ -3,7 +3,7 @@
 #include "IconsForkAwesome.h"
 #include "application.hpp"
 #include "database/database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
+#include "database/postgres/postgres_database_node.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"

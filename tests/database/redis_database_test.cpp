@@ -108,10 +108,10 @@ TEST_F(RedisDatabaseIntegrationTest, SetAndGetStringKey) {
     auto r = database->executeQuery("SET " + key + " \"hello world\"");
     ASSERT_TRUE(r.success()) << r.errorMessage();
 
-    std::string value = database->getKeyValue(key);
+    std::string value = database->connection()->getKeyValue(key);
     EXPECT_EQ(value, "hello world");
 
-    std::string keyType = database->getKeyType(key);
+    std::string keyType = database->connection()->getKeyType(key);
     EXPECT_EQ(keyType, "string");
 }
 
@@ -123,7 +123,7 @@ TEST_F(RedisDatabaseIntegrationTest, ListOperations) {
     auto r1 = database->executeQuery("RPUSH " + key + " one two three");
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
-    std::string keyType = database->getKeyType(key);
+    std::string keyType = database->connection()->getKeyType(key);
     EXPECT_EQ(keyType, "list");
 
     auto result = database->executeQuery("LRANGE " + key + " 0 -1");
@@ -141,7 +141,7 @@ TEST_F(RedisDatabaseIntegrationTest, HashOperations) {
     auto r1 = database->executeQuery("HSET " + key + " field1 value1 field2 value2");
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
-    std::string keyType = database->getKeyType(key);
+    std::string keyType = database->connection()->getKeyType(key);
     EXPECT_EQ(keyType, "hash");
 
     auto result = database->executeQuery("HGETALL " + key);
@@ -157,7 +157,7 @@ TEST_F(RedisDatabaseIntegrationTest, SetOperations) {
     auto r1 = database->executeQuery("SADD " + key + " member1 member2 member3");
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
-    std::string keyType = database->getKeyType(key);
+    std::string keyType = database->connection()->getKeyType(key);
     EXPECT_EQ(keyType, "set");
 
     auto result = database->executeQuery("SMEMBERS " + key);
@@ -174,14 +174,14 @@ TEST_F(RedisDatabaseIntegrationTest, KeyTTL) {
     ASSERT_TRUE(r1.success()) << r1.errorMessage();
 
     // Key without TTL should return -1
-    int64_t ttl = database->getKeyTTL(key);
+    int64_t ttl = database->connection()->getKeyTTL(key);
     EXPECT_EQ(ttl, -1);
 
     // Set TTL
     auto r2 = database->executeQuery("EXPIRE " + key + " 3600");
     ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
-    ttl = database->getKeyTTL(key);
+    ttl = database->connection()->getKeyTTL(key);
     EXPECT_GT(ttl, 0);
     EXPECT_LE(ttl, 3600);
 }
@@ -195,7 +195,7 @@ TEST_F(RedisDatabaseIntegrationTest, GetKeys) {
     database->executeQuery("SET " + key1 + " \"value1\"");
     database->executeQuery("RPUSH " + key2 + " item1");
 
-    auto keys = database->getKeys(testKeyPrefix + "*");
+    auto keys = database->connection()->getKeys(testKeyPrefix + "*");
     EXPECT_GE(keys.size(), 2u);
 
     bool foundString = false;

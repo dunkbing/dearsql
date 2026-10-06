@@ -1,5 +1,4 @@
-#include "database/duckdb.hpp"
-
+#include "database/file_database.hpp"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -14,7 +13,7 @@ protected:
         connInfo.type = DatabaseType::DUCKDB;
         connInfo.path = ":memory:";
 
-        database_ = std::make_unique<DuckDBDatabase>(connInfo);
+        database_ = std::make_unique<FileDatabase>(connInfo);
 
         const auto [success, error] = database_->connect();
         ASSERT_TRUE(success) << error;
@@ -34,7 +33,7 @@ protected:
         database_->checkLoadingStatus();
     }
 
-    std::unique_ptr<DuckDBDatabase> database_;
+    std::unique_ptr<FileDatabase> database_;
 };
 
 TEST_F(DuckDBDatabaseFixture, ConnectsToInMemoryDatabase) {
@@ -102,7 +101,7 @@ TEST_F(DuckDBDatabaseFixture, IDatabaseNodeInterface) {
 
 TEST_F(DuckDBDatabaseFixture, LoadsSequences) {
     ASSERT_TRUE(database_->executeQuery("CREATE SEQUENCE serial START 1").success());
-    auto sequences = database_->getSequencesAsync();
+    auto sequences = database_->getSequencesAsync().items;
     ASSERT_EQ(sequences.size(), 1u);
     EXPECT_EQ(sequences.front(), "serial");
 }
@@ -154,11 +153,11 @@ TEST(DuckDBCsvTest, OpensCsvFileAsQueryableTable) {
     connInfo.type = DatabaseType::DUCKDB;
     connInfo.path = csvPath.string();
 
-    DuckDBDatabase db(connInfo);
+    FileDatabase db(connInfo);
     auto [success, error] = db.connect();
     ASSERT_TRUE(success) << error;
 
-    auto tables = db.getTablesAsync();
+    auto tables = db.getTablesAsync().items;
     ASSERT_EQ(tables.size(), 1u);
     EXPECT_EQ(tables.front().name, "dearsql_duckdb_test");
 
@@ -172,10 +171,10 @@ TEST(DuckDBCsvTest, OpensCsvFileAsQueryableTable) {
 }
 
 TEST(DuckDBCsvTest, IsCsvPathMatchesCaseInsensitively) {
-    EXPECT_TRUE(DuckDBDatabase::isCsvPath("/tmp/data.csv"));
-    EXPECT_TRUE(DuckDBDatabase::isCsvPath("C:\\data\\Report.CSV"));
-    EXPECT_FALSE(DuckDBDatabase::isCsvPath("/tmp/data.duckdb"));
-    EXPECT_FALSE(DuckDBDatabase::isCsvPath(":memory:"));
+    EXPECT_TRUE(dearsql::isCsvPath("/tmp/data.csv"));
+    EXPECT_TRUE(dearsql::isCsvPath("C:\\data\\Report.CSV"));
+    EXPECT_FALSE(dearsql::isCsvPath("/tmp/data.duckdb"));
+    EXPECT_FALSE(dearsql::isCsvPath(":memory:"));
 }
 
 TEST_F(DuckDBDatabaseFixture, NullValuesUseSentinel) {

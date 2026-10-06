@@ -14,7 +14,6 @@
 #include "database/oracle.hpp"
 #include "database/oracle/oracle_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -595,9 +594,13 @@ void AISidebarPanel::syncContext() {
                                 [&item](const NodeRef& ref) { return ref.node == item.node; });
         });
     }
-    // keep the mcp tool pointed at the current node
-    IDatabaseNode* node = contextNode();
-    mcp_.setNode(node, node ? node->getName() : "");
+    // point the agent tools at what the user has selected
+    if (IDatabaseNode* node = contextNode(); node && node->ownerDatabase()) {
+        const auto& info = node->ownerDatabase()->getConnectionInfo();
+        mcp_.setFocus(info.name, isFileDatabase(info.type) ? "" : node->getFullPath());
+    } else {
+        mcp_.setFocus("", "");
+    }
 
     // publish every saved connection so the agent can see, and open, closed ones
     std::vector<McpConnectionInfo> connections;
@@ -606,7 +609,8 @@ void AISidebarPanel::syncContext() {
             continue;
         }
         const auto info = db->getConnectionInfo();
-        connections.push_back({info.name, dbTypeLabel(info.type), db->isConnected()});
+        connections.push_back({info.name, databaseTypeToString(info.type), db->isConnected(),
+                               db->isConnected() ? db->libConnection() : nullptr});
     }
     mcp_.setConnections(std::move(connections));
 
@@ -620,13 +624,12 @@ void AISidebarPanel::serviceAgentConnectRequests() {
         pendingConnectDb_->checkConnectionStatusAsync();
         const auto info = pendingConnectDb_->getConnectionInfo();
         if (pendingConnectDb_->isConnected()) {
-            mcp_.finishConnectRequest(true, std::format("Connected to {}.", info.name));
+            mcp_.finishConnectRequest(true, std::format("Connected to {}.", info.name), info.name);
             pendingConnectDb_.reset();
         } else if (!pendingConnectDb_->isConnecting() &&
                    pendingConnectDb_->hasAttemptedConnection()) {
             const std::string error = pendingConnectDb_->getLastConnectionError();
-            mcp_.finishConnectRequest(false, std::format("Could not connect to {}: {}", info.name,
-                                                         error.empty() ? "unknown error" : error));
+            mcp_.finishConnectRequest(false, error.empty() ? "unknown error" : error, info.name);
             pendingConnectDb_.reset();
         }
         return;
@@ -645,11 +648,12 @@ void AISidebarPanel::serviceAgentConnectRequests() {
         }
     }
     if (!target) {
-        mcp_.finishConnectRequest(false, std::format("No connection named '{}'.", *request));
+        mcp_.finishConnectRequest(false, "no saved connection by that name", *request);
         return;
     }
     if (target->isConnected()) {
-        mcp_.finishConnectRequest(true, std::format("{} is already connected.", *request));
+        mcp_.finishConnectRequest(true, std::format("{} is already connected.", *request),
+                                  *request);
         return;
     }
 

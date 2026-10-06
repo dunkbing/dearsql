@@ -78,6 +78,14 @@ set(VCPKG_OVERLAY_TRIPLETS
     FORCE
 )
 
+# duckdb 1.4.4 + clang 21: thrift TEnumIterator lacks operator==
+set(VCPKG_OVERLAY_PORTS
+    "${CMAKE_SOURCE_DIR}/cmake/ports"
+    CACHE STRING
+    ""
+    FORCE
+)
+
 project(dearsql)
 
 if(UNIX AND NOT APPLE)
@@ -135,6 +143,7 @@ find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(ftxui CONFIG REQUIRED)
 if(APPLE)
     # GLSL -> SPIR-V -> MSL transpilation for runtime-loadable custom shaders
     find_package(unofficial-shaderc CONFIG REQUIRED)
@@ -142,9 +151,8 @@ if(APPLE)
     find_package(spirv_cross_glsl CONFIG REQUIRED)
     find_package(spirv_cross_msl CONFIG REQUIRED)
 endif()
-include(cmake/FreeTDS.cmake)
-include(cmake/OracleOCI.cmake)
-include(cmake/CassandraDriver.cmake)
+# vendored drivers (freetds, odpi, cassandra) and the database layer
+add_subdirectory(external/libdearsql)
 
 enable_testing()
 
@@ -176,30 +184,21 @@ set(APP_SOURCES
     src/app_state.cpp
     src/embedded_images.cpp
     src/embedded_fonts.cpp
-    src/database/sqlite.cpp
-    src/database/duckdb.cpp
-    src/database/postgresql.cpp
+    src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
-    src/database/postgres/postgres_schema_node.cpp
     src/database/postgres/postgres_backup.cpp
-    src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
-    src/database/mysql/mysql_internal.cpp
     src/database/redis.cpp
-    src/database/mongodb.cpp
     src/database/mongodb/mongodb_database_node.cpp
-    src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
-    src/database/mssql/mssql_schema_node.cpp
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
-    src/database/cassandra.cpp
     src/database/cassandra/cassandra_database_node.cpp
     src/database/db_factory.cpp
     src/database/db_utils.cpp
+    src/database/lib_database_node.cpp
     src/database/connection_url.cpp
-    src/database/sql_builder.cpp
     src/database/ssh_config_parser.cpp
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
@@ -228,6 +227,7 @@ set(APP_SOURCES
     src/ui/tab/mongo_editor_tab.cpp
     src/utils/file_dialog.cpp
     src/utils/process_runner.cpp
+    src/utils/cli_command.cpp
     src/utils/mysql_dump_export.cpp
     src/utils/mysql_dump_import.cpp
     src/utils/mysql_dump_splitter.cpp
@@ -247,6 +247,10 @@ set(APP_SOURCES
     src/ai/acp_agents.cpp
     src/ai/acp_registry.cpp
     src/utils/db_mcp_server.cpp
+    src/mcp/db_tools.cpp
+    src/cli/cli.cpp
+    src/cli/connections.cpp
+    src/cli/tui.cpp
     src/ui/ai_chat_panel.cpp
     src/ui/ai_sidebar_panel.cpp
     src/ui/ai_settings_dialog.cpp
@@ -344,15 +348,6 @@ if(LINUX)
         PRIVATE ${GTK4_INCLUDE_DIRS} ${EPOXY_INCLUDE_DIRS}
     )
 endif()
-# SYSTEM to avoid shadowing vcpkg MySQL/OpenSSL headers
-if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
-    target_include_directories(
-        ${PROJECT_NAME}
-        SYSTEM
-        AFTER
-        PRIVATE ${SYBDB_INCLUDE_DIR}
-    )
-endif()
 
 if(APPLE)
     target_include_directories(
@@ -377,10 +372,7 @@ target_link_libraries(
         OpenSSL::SSL
         OpenSSL::Crypto
         sentry::sentry
-        ${SYBDB_LIBRARY}
-        ${SYBDB_DEPS}
-        odpi
-        cassandra_static
+        dearsql::dearsql
         httplib::httplib
         md4c::md4c
         unofficial::tree-sitter::tree-sitter
@@ -389,6 +381,9 @@ target_link_libraries(
         spdlog::spdlog
         sql-parser
         acp::acp
+        ftxui::screen
+        ftxui::dom
+        ftxui::component
 )
 
 if(APPLE)

@@ -224,7 +224,7 @@ namespace {
 AppState::AppState() {
     const fs::path dbPath_ = AppPaths::dataDir() / "connections.db";
     dbPath = dbPath_.string();
-    std::cout << dbPath << "\n";
+    spdlog::debug("app state: {}", dbPath);
 }
 
 AppState::~AppState() {

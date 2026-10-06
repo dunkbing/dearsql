@@ -7,6 +7,7 @@
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -212,6 +213,14 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         // hover, not click: clicking refocuses the parent popup, which then draws
         // over the submenu it just opened
         ctx->MouseMove("Export");
+        ctx->Yield(5);
+        holdForScreenshot(ctx);
+    };
+
+    // the settings dialog, with the command-line install row
+    t = IM_REGISTER_TEST(engine, "Docs", "app-settings");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
         ctx->Yield(5);
         holdForScreenshot(ctx);
     };

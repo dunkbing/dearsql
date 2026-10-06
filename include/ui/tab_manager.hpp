@@ -14,8 +14,12 @@ class PostgresSchemaNode;
 class RedisDatabase;
 class FileDatabase;
 class DatabaseInterface;
-struct Table;
-struct Routine;
+namespace dearsql {
+    struct Table;
+    struct Routine;
+} // namespace dearsql
+using dearsql::Routine;
+using dearsql::Table;
 
 class TabManager {
 public:

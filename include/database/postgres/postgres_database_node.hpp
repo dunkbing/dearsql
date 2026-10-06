@@ -1,107 +1,49 @@
 #pragma once
 
-#include "database/async_helper.hpp"
-#include "database/connection_pool.hpp"
-#include "database/database_node.hpp"
-#include "database/db.hpp"
-#include "database/db_interface.hpp"
-#include "postgres_schema_node.hpp"
-#include <libpq-fe.h>
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include "database/schema_database_node.hpp"
 
-// Forward declaration
 class PostgresDatabase;
+class PostgresDatabaseNode;
 
-// pool canceller shared by every PGconn pool; PQcancel is safe from any thread
-void cancelPgQuery(PGconn* conn);
-
-/**
- * @brief Per-database data for PostgreSQL
- *
- * PostgreSQL hierarchy: Server → Databases → (app_db, reporting_db, ...) → Schemas
- * Each PostgresDatabaseNode represents one database within the PostgreSQL server.
- */
-class PostgresDatabaseNode : public IDatabaseNode {
+// one schema; runs on its database node's pooled handles
+class PostgresSchemaNode final : public LibSchemaNode {
 public:
-    PostgresDatabase* parentDb = nullptr;
+    ~PostgresSchemaNode() override {
+        waitForLoaders();
+    }
 
-    std::string name;
-
-    // Connection pool (one per database)
-    std::unique_ptr<ConnectionPool<PGconn*>> connectionPool;
-
-    // PostgreSQL: Database → Schemas → Tables/Views/Sequences
-    std::vector<std::unique_ptr<PostgresSchemaNode>> schemas;
-    // deprecated
-    std::unordered_map<std::string, std::unique_ptr<PostgresSchemaNode>> schemaDataCache;
-    bool schemasLoaded = false;
-    AsyncOperation<std::vector<std::unique_ptr<PostgresSchemaNode>>> schemasLoader;
-    std::string lastSchemasError;
-
-    // UI expansion state
-    bool expanded = false;
-    bool tablesExpanded = false; // For backward compatibility
-    bool viewsExpanded = false;  // For backward compatibility
-
-    // Methods
-    void startSchemasLoadAsync(bool forceRefresh = false, bool refreshChildren = false);
-    void checkSchemasStatusAsync();
-    ConnectionPool<PGconn*>::Session getSession() const;
-    void initializeConnectionPool(const DatabaseConnectionInfo& info);
-
-    // query execution with comprehensive result
-    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
+    PostgresDatabaseNode* parentDbNode = nullptr;
 
     [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
-    [[nodiscard]] std::string getName() const override {
-        return name;
-    }
     [[nodiscard]] std::string getFullPath() const override;
     [[nodiscard]] DatabaseType getDatabaseType() const override;
 
-    std::vector<Table>& getTables() override;
-    [[nodiscard]] const std::vector<Table>& getTables() const override;
-    std::vector<Table>& getViews() override;
-    [[nodiscard]] const std::vector<Table>& getViews() const override;
-    [[nodiscard]] const std::vector<std::string>& getSequences() const override;
-
-    std::vector<std::vector<std::string>>
-    getTableData(const Table& table, int limit, int offset, const std::string& whereClause = "",
-                 const std::string& orderByClause = "") override;
-    std::vector<std::string> getColumnNames(const Table& table) override;
-    int getRowCount(const Table& table, const std::string& whereClause = "") override;
-
-    [[nodiscard]] bool isTablesLoaded() const override;
-    [[nodiscard]] bool isViewsLoaded() const override;
-    [[nodiscard]] bool isLoadingTables() const override;
-    [[nodiscard]] bool isLoadingViews() const override;
-
+    // a forced reload also refreshes loaded materialized views and sequences
     void startTablesLoadAsync(bool force = false) override;
-    void startViewsLoadAsync(bool force = false) override;
-    void checkLoadingStatus() override;
 
-    [[nodiscard]] const std::string& getLastTablesError() const override;
-    [[nodiscard]] const std::string& getLastViewsError() const override;
+    std::pair<bool, std::string> renameSchema(const std::string& newName);
+    std::pair<bool, std::string> dropSchema();
 
-    void startTableRefreshAsync(const std::string& tableName) override;
-    [[nodiscard]] bool isTableRefreshing(const std::string& tableName) const override;
-    void checkTableRefreshStatusAsync(const std::string& tableName) override;
+protected:
+    [[nodiscard]] LibDatabaseNode* databaseNode() const override;
+};
 
-private:
-    bool refreshChildrenAfterSchemasLoad = false;
-    mutable std::vector<Table> allTables;
-    mutable std::vector<Table> allViews;
-    mutable std::vector<std::string> allSequences;
+// one database of the server: pooled handles plus its schemas
+class PostgresDatabaseNode final : public SchemaDatabaseNode<PostgresSchemaNode> {
+public:
+    ~PostgresDatabaseNode() override {
+        waitForLoaders();
+    }
 
-    mutable bool aggregatedObjectsDirty = true;
-    mutable std::string aggregatedTablesError;
-    mutable std::string aggregatedViewsError;
+    PostgresDatabase* parentDb = nullptr;
 
-    // internal method to refresh all child schemas (tables, views, sequences)
-    void triggerChildSchemaRefresh();
-    void invalidateAggregatedObjects() const;
-    void rebuildAggregatedObjects() const;
+    [[nodiscard]] DatabaseInterface* ownerDatabase() const override;
+    [[nodiscard]] std::string getFullPath() const override {
+        return name;
+    }
+    [[nodiscard]] DatabaseType getDatabaseType() const override;
+
+protected:
+    dearsql::DatabasePtr openHandle() override;
+    std::unique_ptr<PostgresSchemaNode> makeSchema(const std::string& schemaName) override;
 };

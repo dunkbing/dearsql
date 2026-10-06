@@ -57,6 +57,7 @@
       "name": "spirv-cross",
       "platform": "osx"
     },
-    "duckdb"
+    "duckdb",
+    "ftxui"
   ]
 }

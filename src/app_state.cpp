@@ -1262,6 +1262,7 @@ int AppState::saveAiSession(const int id, const int connectionId, const std::str
                                  updated_at)
         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
+            connection_id = IIF(connection_id = 0, excluded.connection_id, connection_id),
             acp_session_id = excluded.acp_session_id,
             title = excluded.title,
             transcript = excluded.transcript,
@@ -1295,7 +1296,7 @@ std::vector<AiSession> AppState::getAiSessions(const int connectionId, const std
     std::vector<AiSession> sessions;
     const std::string sql =
         "SELECT id, backend, acp_session_id, title, updated_at FROM ai_sessions "
-        "WHERE connection_id = ? AND (? = '' OR backend = ?) ORDER BY updated_at DESC LIMIT ?";
+        "WHERE connection_id IN (?, 0) AND (? = '' OR backend = ?) ORDER BY updated_at DESC LIMIT ?";
     sqlite3_stmt* raw = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
         return sessions;

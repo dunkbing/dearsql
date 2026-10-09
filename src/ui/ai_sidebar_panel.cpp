@@ -548,7 +548,8 @@ std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
 }
 
 IDatabaseNode* AISidebarPanel::contextNode() {
-    // whatever the user pinned wins; then the chat's own connection, then any node
+    // whatever the user pinned wins; then the chat's own connection (never another
+    // one's), then any node for an unbound panel
     for (const auto& item : selectedContext_) {
         if (item.node) {
             return item.node;
@@ -560,7 +561,7 @@ IDatabaseNode* AISidebarPanel::contextNode() {
             return ref.node;
         }
     }
-    return nodes.empty() ? nullptr : nodes.front().node;
+    return db_ || nodes.empty() ? nullptr : nodes.front().node;
 }
 
 void AISidebarPanel::syncContext() {
@@ -585,6 +586,9 @@ void AISidebarPanel::syncContext() {
     if (IDatabaseNode* node = contextNode(); node && node->ownerDatabase()) {
         const auto& info = node->ownerDatabase()->getConnectionInfo();
         mcp_.setFocus(info.name, isFileDatabase(info.type) ? "" : node->getFullPath());
+    } else if (db_) {
+        // bound connection not loaded yet: still the default, at its default database
+        mcp_.setFocus(db_->getConnectionInfo().name, "");
     } else {
         mcp_.setFocus("", "");
     }

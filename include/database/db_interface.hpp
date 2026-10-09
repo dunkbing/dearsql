@@ -171,10 +171,6 @@ public:
             connectionInfo.database = "master";
             break;
         }
-        case DatabaseType::ORACLE: {
-            connectionInfo.database = "ORCL";
-            break;
-        }
         default:
             return;
         }

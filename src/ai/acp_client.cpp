@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <spdlog/spdlog.h>
+#include <utility>
 
 using json = nlohmann::json;
 
@@ -198,17 +199,29 @@ void AcpClient::authenticate(const std::string& methodId) {
 }
 
 void AcpClient::tick() {
-    std::string method;
-    {
-        std::lock_guard lock(restartMutex_);
-        method.swap(pendingRestartAuth_);
-    }
-    if (method.empty()) {
+    if (restartMethod_.empty()) {
+        {
+            std::lock_guard lock(restartMutex_);
+            restartMethod_.swap(pendingRestartAuth_);
+        }
+        if (restartMethod_.empty())
+            return;
+        pushEvent({.type = AcpEvent::Type::Info, .text = "Restarting the agent to sign in..."});
+        // stopping waits up to a second for the process and joins its reader: not
+        // here. ponytail: a late reply from the old process still reaches us
+        stopping_.start([old = std::shared_ptr<acp::Connection>(std::move(conn_))] {
+            if (old)
+                old->stop();
+            return true;
+        });
+        sessionReady_ = false;
+        turnActive_ = false;
         return;
     }
-    pushEvent({.type = AcpEvent::Type::Info, .text = "Restarting the agent to sign in..."});
+    if (stopping_.isRunning() && !stopping_.check())
+        return;
+    const std::string method = std::exchange(restartMethod_, {});
     const StartParams p = startParams_;
-    stop();
     authFirst_ = true;
     auto [ok, err] = start(p.argv, p.cwd, p.mcpUrl, p.mcpName, p.mcpToken, "", p.extraEnv, method);
     if (!ok) {

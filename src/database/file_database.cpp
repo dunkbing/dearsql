@@ -117,9 +117,10 @@ void FileDatabase::startTableRefreshAsync(const std::string& tableName) {
     });
 }
 
+// any thread (sidebar DDL runs on a worker): checkLoadingStatus starts the reload
 std::pair<bool, std::string> FileDatabase::afterDdl(const dearsql::Status& status) {
     if (status.first)
-        startTablesLoadAsync(true);
+        tablesReloadPending_ = true;
     return status;
 }
 

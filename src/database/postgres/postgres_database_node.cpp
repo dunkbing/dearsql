@@ -30,7 +30,7 @@ std::pair<bool, std::string> PostgresSchemaNode::renameSchema(const std::string&
     try {
         auto r = withHandle([&](dearsql::IDatabase& db) { return db.renameSchema(newName); });
         if (r.first && parentDbNode)
-            parentDbNode->startSchemasLoadAsync(true);
+            parentDbNode->requestSchemasReload(); // any thread
         return r;
     } catch (const std::exception& e) {
         return {false, e.what()};
@@ -41,7 +41,7 @@ std::pair<bool, std::string> PostgresSchemaNode::dropSchema() {
     try {
         auto r = withHandle([](dearsql::IDatabase& db) { return db.dropSchema(); });
         if (r.first && parentDbNode)
-            parentDbNode->startSchemasLoadAsync(true);
+            parentDbNode->requestSchemasReload(); // any thread
         return r;
     } catch (const std::exception& e) {
         return {false, e.what()};

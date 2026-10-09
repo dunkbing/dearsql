@@ -761,7 +761,7 @@ gboolean LinuxPlatform::onTickCallback(GtkWidget* widget, GdkFrameClock*, gpoint
     }
     platform->lastWindowFocused_ = windowFocused;
 
-    const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
+    const bool hasAsyncWork = AsyncOperationControl::wantsFrames();
     const bool asyncJustFinished = platform->lastHadAsyncWork_ && !hasAsyncWork;
     platform->lastHadAsyncWork_ = hasAsyncWork;
     const double timeSinceInteraction =
@@ -800,7 +800,7 @@ void LinuxPlatform::runMainLoop() {
         200,
         +[](gpointer data) -> gboolean {
             auto* platform = static_cast<LinuxPlatform*>(data);
-            if (platform->tickCallbackId_ == 0 && AsyncOperationControl::hasRunningTasks()) {
+            if (platform->tickCallbackId_ == 0 && AsyncOperationControl::wantsFrames()) {
                 platform->ensureTickCallback();
             }
             return G_SOURCE_CONTINUE;

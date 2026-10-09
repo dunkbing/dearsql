@@ -11,11 +11,55 @@
 #endif
 #include <windows.h>
 #else
+#include <csignal>
+#include <fcntl.h>
+#include <poll.h>
+#include <spawn.h>
+#include <string_view>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
+
+extern char** environ;
 #endif
 
 namespace {
+#if !defined(_WIN32)
+    // fds must not leak into children spawned on other threads (ssh tunnel, acp agent),
+    // or this pipe never reaches EOF while they live
+    bool makeCloexecPipe(int fds[2]) {
+#if defined(__linux__)
+        return pipe2(fds, O_CLOEXEC) == 0;
+#else
+        // ponytail: macOS has no pipe2; a fork on another thread between pipe() and
+        // fcntl() can still inherit these, POSIX_SPAWN_CLOEXEC_DEFAULT covers our spawns
+        if (pipe(fds) != 0) {
+            return false;
+        }
+        fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+        return true;
+#endif
+    }
+
+    // SIGTERM the child's group, SIGKILL after a 1s grace, then reap
+    void terminateGroup(const pid_t pid, int& status) {
+        kill(-pid, SIGTERM);
+        for (int i = 0; i < 50; ++i) {
+            siginfo_t info{};
+            // WNOWAIT keeps the zombie, so the group id cannot be reused before SIGKILL
+            if (waitid(P_PID, static_cast<id_t>(pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0 &&
+                info.si_pid == pid) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        kill(-pid, SIGKILL);
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+    }
+#endif
+
 #if defined(_WIN32)
     std::string quoteWindowsArg(const std::string& arg) {
         if (arg.empty() || arg.find_first_of(" \t\n\v\"") != std::string::npos) {
@@ -83,7 +127,7 @@ namespace {
 #endif
 } // namespace
 
-ProcessResult ProcessRunner::run(const ProcessSpec& spec) {
+ProcessResult ProcessRunner::run(const ProcessSpec& spec, std::stop_token stop) {
     ProcessResult result;
     if (spec.args.empty() || spec.args.front().empty()) {
         result.errorMessage = "No executable specified";
@@ -91,6 +135,8 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec) {
     }
 
 #if defined(_WIN32)
+    // ponytail: no cancel or timeout on windows yet, ReadFile blocks until exit
+    (void)stop;
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
@@ -147,63 +193,151 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec) {
     return result;
 #else
     int pipefd[2];
-    if (pipe(pipefd) != 0) {
+    if (!makeCloexecPipe(pipefd)) {
         result.errorMessage =
             std::format("Failed to create process pipe: {}", std::strerror(errno));
         return result;
     }
 
-    const pid_t pid = fork();
-    if (pid < 0) {
+    // inherited environment plus overrides, built before the spawn
+    std::vector<std::string> envStrings;
+    for (char** e = environ; e && *e; ++e) {
+        const std::string_view entry(*e);
+        const auto eq = entry.find('=');
+        if (!spec.environment.contains(std::string(entry.substr(0, eq)))) {
+            envStrings.emplace_back(entry);
+        }
+    }
+    for (const auto& [key, value] : spec.environment) {
+        envStrings.push_back(key + "=" + value);
+    }
+    std::vector<char*> envp;
+    envp.reserve(envStrings.size() + 1);
+    for (auto& entry : envStrings) {
+        envp.push_back(entry.data());
+    }
+    envp.push_back(nullptr);
+
+    std::vector<char*> argv;
+    argv.reserve(spec.args.size() + 1);
+    for (const auto& arg : spec.args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDERR_FILENO);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    // own process group so a cancel reaches the whole tree (sh -lc npm ...)
+    short flags = POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF;
+#if defined(__APPLE__)
+    // only the fds named above survive into the child
+    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;
+#endif
+    posix_spawnattr_setflags(&attr, flags);
+    posix_spawnattr_setpgroup(&attr, 0);
+    sigset_t noSignals;
+    sigemptyset(&noSignals);
+    posix_spawnattr_setsigmask(&attr, &noSignals);
+    sigset_t defaultSignals;
+    sigemptyset(&defaultSignals);
+    sigaddset(&defaultSignals, SIGPIPE);
+    posix_spawnattr_setsigdefault(&attr, &defaultSignals);
+
+    pid_t pid = -1;
+    const int rc = posix_spawnp(&pid, argv.front(), &actions, &attr, argv.data(), envp.data());
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+    close(pipefd[1]);
+
+    if (rc != 0) {
         close(pipefd[0]);
-        close(pipefd[1]);
-        result.errorMessage = std::format("Failed to fork process: {}", std::strerror(errno));
+        result.exitCode = rc == ENOENT ? 127 : 126;
+        result.errorMessage =
+            rc == ENOENT
+                ? std::format("'{}' was not found in PATH", spec.args.front())
+                : std::format("Failed to start '{}': {}", spec.args.front(), std::strerror(rc));
         return result;
     }
 
-    if (pid == 0) {
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        dup2(pipefd[1], STDERR_FILENO);
-        close(pipefd[1]);
+    const auto deadline = spec.timeout.count() > 0 ? std::chrono::steady_clock::now() + spec.timeout
+                                                   : std::chrono::steady_clock::time_point::max();
+    const auto shouldStop = [&] {
+        return stop.stop_requested() || std::chrono::steady_clock::now() >= deadline;
+    };
 
-        for (const auto& [key, value] : spec.environment) {
-            setenv(key.c_str(), value.c_str(), 1);
-        }
-
-        std::vector<char*> argv;
-        argv.reserve(spec.args.size() + 1);
-        for (const auto& arg : spec.args) {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
-        execvp(argv.front(), argv.data());
-        _exit(errno == ENOENT ? 127 : 126);
-    }
-
-    close(pipefd[1]);
+    fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL) | O_NONBLOCK);
+    bool stopped = false;
     char buffer[4096];
-    ssize_t n = 0;
-    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
-        result.output.append(buffer, static_cast<size_t>(n));
+    while (true) {
+        if (shouldStop()) {
+            stopped = true;
+            break;
+        }
+        pollfd pfd{pipefd[0], POLLIN, 0};
+        const int ready = poll(&pfd, 1, 100);
+        if (ready < 0 && errno != EINTR) {
+            break;
+        }
+        if (ready <= 0) {
+            continue;
+        }
+        const ssize_t n = read(pipefd[0], buffer, sizeof(buffer));
+        if (n > 0) {
+            result.output.append(buffer, static_cast<size_t>(n));
+        } else if (n == 0 || (errno != EAGAIN && errno != EINTR)) {
+            break;
+        }
     }
     close(pipefd[0]);
 
+    // the pipe can close before the child exits, so the wait honours the token too
     int status = 0;
-    waitpid(pid, &status, 0);
-    if (WIFEXITED(status)) {
+    bool reaped = false;
+    while (!stopped) {
+        const pid_t w = waitpid(pid, &status, WNOHANG);
+        if (w == pid || (w < 0 && errno != EINTR)) {
+            reaped = w == pid;
+            break;
+        }
+        if (shouldStop()) {
+            stopped = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (stopped) {
+        terminateGroup(pid, status);
+        reaped = true;
+    }
+
+    if (stopped) {
+        result.cancelled = true;
+        result.exitCode = WIFSIGNALED(status) ? 128 + WTERMSIG(status)
+                          : WIFEXITED(status) ? WEXITSTATUS(status)
+                                              : -1;
+        result.errorMessage = stop.stop_requested()
+                                  ? std::format("'{}' was cancelled", spec.args.front())
+                                  : std::format("'{}' timed out after {} ms", spec.args.front(),
+                                                spec.timeout.count());
+        return result;
+    }
+    if (reaped && WIFEXITED(status)) {
         result.exitCode = WEXITSTATUS(status);
         result.success = result.exitCode == 0;
-    } else if (WIFSIGNALED(status)) {
+    } else if (reaped && WIFSIGNALED(status)) {
         result.exitCode = 128 + WTERMSIG(status);
         result.success = false;
     }
 
     if (!result.success && result.output.empty()) {
         result.errorMessage =
-            result.exitCode == 127
-                ? std::format("'{}' was not found in PATH", spec.args.front())
-                : std::format("'{}' exited with code {}", spec.args.front(), result.exitCode);
+            std::format("'{}' exited with code {}", spec.args.front(), result.exitCode);
     }
     return result;
 #endif

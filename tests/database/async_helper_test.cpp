@@ -1,9 +1,11 @@
 #include "database/async_helper.hpp"
+#include "utils/reaper.hpp"
 
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
 #include <thread>
+#include <vector>
 
 class AsyncOperationTest : public ::testing::Test {
 protected:
@@ -118,4 +120,28 @@ TEST_F(AsyncOperationTest, SkipWaitOnDestroyReturnsQuicklyForPendingOperation) {
     EXPECT_LT(elapsed, std::chrono::milliseconds(100));
 
     releasePromise.set_value();
+}
+
+// teardown handed to the reaper runs off the caller's thread, in order, and
+// drain() waits for it (Application::cleanup relies on that before exiting)
+TEST(ReaperTest, DisposesOffThreadInOrderAndDrains) {
+    struct Slow {
+        std::vector<int>* log;
+        int id;
+        std::thread::id* where;
+        ~Slow() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            log->push_back(id);
+            *where = std::this_thread::get_id();
+        }
+    };
+    std::vector<int> log;
+    std::thread::id where;
+    const auto start = std::chrono::steady_clock::now();
+    Reaper::dispose(std::make_unique<Slow>(&log, 1, &where));
+    Reaper::dispose(std::make_unique<Slow>(&log, 2, &where));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(40));
+    EXPECT_TRUE(Reaper::drain(std::chrono::seconds(5)));
+    EXPECT_EQ(log, (std::vector<int>{1, 2}));
+    EXPECT_NE(where, std::this_thread::get_id());
 }

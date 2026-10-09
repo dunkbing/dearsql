@@ -48,6 +48,11 @@ namespace mcp {
 
         // exposed for tests
         nlohmann::json callTool(const std::string& name, const nlohmann::json& args);
+
+        // any thread: cancel the running tool's query server-side and refuse new
+        // calls until resume(), so a host shutting down never waits out a query
+        void interrupt();
+        void resume();
         static const char* instructions();
 
     private:
@@ -80,6 +85,9 @@ namespace mcp {
 
         Host& host_;
         std::mutex mutex_; // one tool call at a time; agents rarely run them in parallel
+        std::mutex activeMutex_;
+        dearsql::DatabasePtr active_; // the handle the running call works on
+        bool refusing_ = false;       // under activeMutex_
         std::map<std::string, Catalog> catalogs_;
         std::map<std::string, nlohmann::json> cursors_;
         std::deque<std::string> cursorOrder_;

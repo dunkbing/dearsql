@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -54,6 +55,14 @@ private:
     mutable std::mutex licenseMutex_;
     LicenseInfo currentLicense;
     std::atomic<bool> activating{false};
+    // owned workers rather than detached threads; callbacks still run on them
+    AsyncOperation<bool> activationOp_;
+    AsyncOperation<bool> validationOp_;
+    // nothing polls these, so collect a finished task before starting the next
+    template <typename F> bool startOn(AsyncOperation<bool>& op, F&& task) {
+        op.check();
+        return op.start(std::forward<F>(task));
+    }
 
     void storeLicense(const LicenseInfo& license);
     void clearStoredLicense();

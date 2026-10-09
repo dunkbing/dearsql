@@ -53,8 +53,8 @@ namespace AcpAgents {
     // first install option whose tool is present, or nullptr
     const InstallOption* resolveInstall(const AgentDef& def);
 
-    // run an install command through the login shell, blocking
-    ProcessResult runInstall(const std::string& command);
+    // run an install command through the login shell, blocking until done or stopped
+    ProcessResult runInstall(const std::string& command, std::stop_token stop = {});
 
 } // namespace AcpAgents
 

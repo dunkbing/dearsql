@@ -41,7 +41,11 @@ MongoEditorTab::MongoEditorTab(const std::string& name, MongoDBDatabaseNode* nod
 }
 
 MongoEditorTab::~MongoEditorTab() {
-    queryExecutionOp_.cancel();
+    // never join a query on close: the task holds only the query and the node,
+    // and a node being destroyed waits out calls still running on it
+    if (queryExecutionOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
+    queryExecutionOp_.detach();
 }
 
 void MongoEditorTab::render() {
@@ -273,15 +277,16 @@ void MongoEditorTab::startQueryExecutionAsync(const std::string& query) {
     }
 
     MongoDBDatabaseNode* nodePtr = node_;
-    queryExecutionOp_.startCancellable([query, nodePtr](const std::stop_token& stopToken) {
-        QueryResult result;
-        if (stopToken.stop_requested())
+    queryExecutionOp_.startCancellable(
+        [query, nodePtr, keep = keepOwnerAlive(nodePtr)](const std::stop_token& stopToken) {
+            QueryResult result;
+            if (stopToken.stop_requested())
+                return result;
+            result = nodePtr->executeQuery(query);
+            if (stopToken.stop_requested())
+                return QueryResult{};
             return result;
-        result = nodePtr->executeQuery(query);
-        if (stopToken.stop_requested())
-            return QueryResult{};
-        return result;
-    });
+        });
 
     // show placeholder while running
     StatementResult r;

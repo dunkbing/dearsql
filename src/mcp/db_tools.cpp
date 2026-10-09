@@ -288,9 +288,38 @@ namespace mcp {
         return res;
     }
 
+    void Server::interrupt() {
+        dearsql::DatabasePtr db;
+        {
+            std::lock_guard lock(activeMutex_);
+            refusing_ = true;
+            db = active_;
+        }
+        if (db)
+            db->cancel();
+    }
+
+    void Server::resume() {
+        std::lock_guard lock(activeMutex_);
+        refusing_ = false;
+    }
+
     json Server::callTool(const std::string& name, const json& rawArgs) {
         const json args = rawArgs.is_object() ? rawArgs : json::object();
         std::lock_guard lock(mutex_);
+        {
+            std::lock_guard active(activeMutex_);
+            if (refusing_)
+                return textResult("DearSQL closed the database tools.", true);
+        }
+        // the handle resolve() picked stays cancellable until the call returns
+        struct ClearActive {
+            Server& s;
+            ~ClearActive() {
+                std::lock_guard active(s.activeMutex_);
+                s.active_.reset();
+            }
+        } clearActive{*this};
         try {
             if (name == "list_connections")
                 return textResult(listConnections());
@@ -377,6 +406,12 @@ namespace mcp {
         auto handle = lib->database(db);
         if (!handle)
             throw ToolError("Could not open database '" + db + "' on " + entry->name + ".");
+        {
+            std::lock_guard active(activeMutex_);
+            active_ = handle;
+            if (refusing_)
+                throw ToolError("DearSQL closed the database tools.");
+        }
         if (!schema.empty()) {
             auto s = handle->schema(schema);
             if (!s)

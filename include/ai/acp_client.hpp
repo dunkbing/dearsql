@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include <acp/connection.hpp>
 #include <atomic>
 #include <memory>
@@ -144,4 +145,8 @@ private:
     std::atomic<bool> loadSession_{false};
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};
+    // a sign-in restart: the old process stops here, off the ui thread, and tick()
+    // starts the new one once it is gone. last member: joined before the rest go
+    std::string restartMethod_;
+    AsyncOperation<bool> stopping_;
 };

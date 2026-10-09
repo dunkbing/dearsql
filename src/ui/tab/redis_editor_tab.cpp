@@ -393,7 +393,8 @@ RedisEditorTab::RedisEditorTab(const std::string& name, RedisDatabase* db)
 }
 
 RedisEditorTab::~RedisEditorTab() {
-    queryOp_.cancel();
+    // never join a blocking command on close: the task keeps the connection alive
+    queryOp_.detach();
 }
 
 void RedisEditorTab::render() {
@@ -687,40 +688,40 @@ void RedisEditorTab::startCommandExecutionAsync(const std::string& cmd) {
     }
 
     RedisDatabase* db = db_;
-    queryOp_.startCancellable(
-        [commands = std::move(commands), db](const std::stop_token& stopToken) {
-            std::vector<RedisResultEntry> entries;
-            std::string ts = currentTimestamp();
+    queryOp_.startCancellable([commands = std::move(commands), db,
+                               keep = db->keepAlive()](const std::stop_token& stopToken) {
+        std::vector<RedisResultEntry> entries;
+        std::string ts = currentTimestamp();
 
-            for (const auto& command : commands) {
-                if (stopToken.stop_requested())
-                    break;
+        for (const auto& command : commands) {
+            if (stopToken.stop_requested())
+                break;
 
-                auto result = db->executeQuery(command);
+            auto result = db->executeQuery(command);
 
-                RedisResultEntry entry;
-                entry.command = command;
-                entry.durationMs = result.executionTimeMs;
-                entry.timestamp = ts;
+            RedisResultEntry entry;
+            entry.command = command;
+            entry.durationMs = result.executionTimeMs;
+            entry.timestamp = ts;
 
-                if (!result.empty() && result[0].success) {
-                    if (!result[0].tableData.empty() && !result[0].tableData[0].empty()) {
-                        entry.result = result[0].tableData[0][0];
-                    } else {
-                        entry.result = "OK";
-                    }
-                } else if (!result.empty()) {
-                    entry.success = false;
-                    entry.errorMessage = result[0].errorMessage;
+            if (!result.empty() && result[0].success) {
+                if (!result[0].tableData.empty() && !result[0].tableData[0].empty()) {
+                    entry.result = result[0].tableData[0][0];
                 } else {
-                    entry.success = false;
-                    entry.errorMessage = "No result";
+                    entry.result = "OK";
                 }
-
-                entries.push_back(std::move(entry));
+            } else if (!result.empty()) {
+                entry.success = false;
+                entry.errorMessage = result[0].errorMessage;
+            } else {
+                entry.success = false;
+                entry.errorMessage = "No result";
             }
-            return entries;
-        });
+
+            entries.push_back(std::move(entry));
+        }
+        return entries;
+    });
 }
 
 void RedisEditorTab::checkCommandExecutionStatus() {

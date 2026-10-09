@@ -3,6 +3,9 @@
 #include "db.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
+#include "utils/reaper.hpp"
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,6 +26,11 @@ public:
     virtual ~IDatabaseNode() = default;
 
     [[nodiscard]] virtual DatabaseInterface* ownerDatabase() const {
+        return nullptr;
+    }
+
+    // the node this one lives under (a schema's database); null at the top
+    [[nodiscard]] virtual IDatabaseNode* parentNode() const {
         return nullptr;
     }
 
@@ -107,3 +115,26 @@ public:
 
     virtual void checkTableRefreshStatusAsync(const std::string& tableName) = 0;
 };
+
+// UI thread only. a live owner hands over a node it is about to destroy (a
+// database dropped or renamed, a schema gone from a relist) so the app can close
+// the tabs pointing into it first. the node then dies on the reaper: its
+// destructor waits for workers still running on it
+inline std::function<void(std::unique_ptr<IDatabaseNode>)> retireNodeHook;
+
+inline void retireNode(std::unique_ptr<IDatabaseNode> node) {
+    if (!node)
+        return;
+    if (retireNodeHook)
+        retireNodeHook(std::move(node));
+    else
+        Reaper::dispose(std::move(node));
+}
+
+// an owning reference to the node's connection, for a tab worker that may outlive
+// its tab. a node retired from a live owner is covered by its own destructor,
+// which waits out calls still running on it
+inline std::shared_ptr<DatabaseInterface> keepOwnerAlive(const IDatabaseNode* node) {
+    auto* owner = node ? node->ownerDatabase() : nullptr;
+    return owner ? owner->keepAlive() : nullptr;
+}

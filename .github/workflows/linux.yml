@@ -47,11 +47,6 @@ jobs:
             autoconf automake autoconf-archive \
             freetds-dev libgnutls28-dev libkrb5-dev
 
-      # vcpkg ships no prebuilt cmake/ninja for arm64 linux
-      - name: Use system cmake/ninja on arm64
-        if: matrix.arch == 'aarch64'
-        run: echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
-
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:

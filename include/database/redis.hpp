@@ -3,123 +3,68 @@
 #include "async_helper.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
-#include <atomic>
-#include <hiredis/hiredis.h>
-#include <hiredis/hiredis_ssl.h>
+#include <dearsql/backends/redis_connection.hpp>
 #include <mutex>
 
-struct RedisKey {
-    std::string name;
-    std::string type;
-    std::string value;
-    int64_t ttl = -1;
-    int64_t size = -1;
-};
+using dearsql::RedisDbInfo;
+using dearsql::RedisKey;
 
-struct RedisDbInfo {
-    int index = 0;
-    int64_t keys = 0;
-    int64_t expires = 0;
-    int64_t avgTtl = 0;
-    bool hasKeys = false;
-};
-
+// redis server over libdearsql; logical dbs are addressed by index. adds the ssh
+// tunnel, async connect/refresh and the per-db stats the sidebar shows
 class RedisDatabase final : public DatabaseInterface, public IQueryExecutor {
 public:
-    RedisDatabase(const DatabaseConnectionInfo& connInfo);
+    explicit RedisDatabase(const DatabaseConnectionInfo& info) {
+        connectionInfo = info;
+    }
     ~RedisDatabase() override;
 
     std::pair<bool, std::string> connect() override;
     void disconnect() override;
     void refreshConnection() override;
     void checkRefreshWorkflowAsync();
-
-    bool isConnecting() const override {
+    [[nodiscard]] bool isConnecting() const override {
         return connectionOp.isRunning() || refreshWorkflow_.isRunning();
     }
 
-    void checkTablesStatusAsync();
-
-    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
-
-    std::vector<std::vector<std::string>> getTableData(const std::string& keyPattern, int limit,
-                                                       int offset);
-    std::vector<std::string> getColumnNames(const std::string& keyPattern);
-    int getRowCount(const std::string& keyPattern);
-
-    std::vector<RedisKey> getKeys(const std::string& pattern = "*", int limit = 1000) const;
-    std::string getKeyValue(const std::string& key, const std::string& knownType = "") const;
-    std::string getKeyType(const std::string& key) const;
-    int64_t getKeyTTL(const std::string& key) const;
-
-    bool selectDatabase(int dbIndex);
-
+    // commands run in the selected db
+    QueryResult executeQuery(const std::string& command, int rowLimit = 1000) override;
+    QueryResult executeQueryInDatabase(int dbIndex, const std::string& command,
+                                       int rowLimit = 1000);
+    // Key/Type/Value/TTL/Size rows for keys matching pattern in one db
     std::pair<std::vector<std::string>, std::vector<std::vector<std::string>>>
     getTableDataForDatabase(int dbIndex, const std::string& pattern, int limit, int offset);
-    QueryResult executeQueryInDatabase(int dbIndex, const std::string& query, int rowLimit = 1000);
 
-    int getSelectedDatabase() const {
-        return selectedDbIndex_;
-    }
-    int getDatabaseCount() const {
-        return numDatabases_;
-    }
+    [[nodiscard]] int getSelectedDatabase() const;
     const std::vector<RedisDbInfo>& getDatabaseInfoList() const {
         return dbInfoList_;
     }
     void startDbInfoLoadAsync(bool forceRefresh = false);
     void checkDbInfoStatusAsync();
-    bool isDbInfoLoaded() const {
+    [[nodiscard]] bool isDbInfoLoaded() const {
         return dbInfoLoaded_;
     }
-    bool isLoadingDbInfo() const {
-        return loadingDbInfo_.load();
-    }
-
-    void startKeysLoadAsync(bool forceRefresh = false);
-    void checkKeysStatusAsync();
-    std::vector<Table> getKeysAsync();
-
-    const std::vector<Table>& getKeyGroups() const {
-        return tables;
+    [[nodiscard]] bool isLoadingDbInfo() const {
+        return dbInfoLoadOp_.isRunning();
     }
 
     [[nodiscard]] bool hasPendingAsyncWork() const override {
-        return isConnecting() || loadingKeys.load() || loadingDbInfo_.load() ||
-               refreshWorkflow_.isRunning();
+        return isConnecting() || dbInfoLoadOp_.isRunning();
     }
 
-    std::atomic<bool> loadingKeys = false;
-    bool keysLoaded = false;
-    std::string lastKeysError;
-
-protected:
-    std::vector<std::string> getTableNames();
+    // the library connection (null when disconnected)
+    [[nodiscard]] std::shared_ptr<dearsql::RedisConnection> connection() const {
+        std::lock_guard lock(connMutex_);
+        return conn_;
+    }
+    [[nodiscard]] std::shared_ptr<dearsql::IConnection> libConnection() const override {
+        return connection();
+    }
 
 private:
-    mutable std::mutex contextMutex_;
-    redisContext* context = nullptr;
-    redisSSLContext* sslCtx_ = nullptr;
-
+    std::shared_ptr<dearsql::RedisConnection> conn_;
+    mutable std::mutex connMutex_;
     AsyncOperation<bool> refreshWorkflow_;
-
-    AsyncOperation<std::vector<Table>> keysLoadOp_;
-    std::vector<Table> tables;
-
-    int selectedDbIndex_ = 0;
-    int numDatabases_ = 1;
-    std::vector<RedisDbInfo> dbInfoList_;
-    std::atomic<bool> loadingDbInfo_ = false;
-    bool dbInfoLoaded_ = false;
     AsyncOperation<std::vector<RedisDbInfo>> dbInfoLoadOp_;
-    std::vector<RedisDbInfo> fetchDatabaseInfo();
-
-    mutable std::mutex operationMutex_;
-
-    redisReply* executeRedisCommandParsed(const std::vector<std::string>& commandParts) const;
-    bool beginDatabaseScopedOperation(int dbIndex, int& previousDbIndex);
-    void endDatabaseScopedOperation(int previousDbIndex, int activeDbIndex);
-    static std::string formatRedisReply(redisReply* reply);
-    static std::vector<std::string> parseRedisCommand(const std::string& command);
-    void groupKeysByPattern(std::vector<Table>& out) const;
+    std::vector<RedisDbInfo> dbInfoList_;
+    bool dbInfoLoaded_ = false;
 };

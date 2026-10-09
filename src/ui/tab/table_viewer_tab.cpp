@@ -200,14 +200,6 @@ void TableViewerTab::render() {
         ImGui::TextColored(colors.subtext0, ICON_FA_LOCK " Read-only");
     }
 
-    // Show current filter if active
-    if (!currentFilter.empty()) {
-        ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1.0f), "Active filter: %s",
-                           currentFilter.c_str());
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "(%d rows)", totalRows);
-    }
-
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
     // Show loading error if any

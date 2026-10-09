@@ -3,7 +3,7 @@
   "name": "dearsql",
   "version": "0.1.7",
   "description": "Cross-platform SQL database client",
-  "builtin-baseline": "30ef65cad98f08e7197c9a1656fbd871bcb72f2d",
+  "builtin-baseline": "db23990c5a6e2953bf1eb8c86e9a64c73d5b1fa7",
   "dependencies": [
     {
       "name": "sqlite3",
@@ -57,6 +57,7 @@
       "name": "spirv-cross",
       "platform": "osx"
     },
-    "duckdb"
+    "duckdb",
+    "ftxui"
   ]
 }

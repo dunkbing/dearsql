@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include <algorithm>
 #include <format>
 #include <md4c.h>
 #include <vector>
@@ -11,7 +12,7 @@
 namespace {
 
     struct Block {
-        enum class Type { Paragraph, Heading, Code, ListItem, Quote, Rule };
+        enum class Type { Paragraph, Heading, Code, ListItem, Quote, Rule, Table };
         Type type = Type::Paragraph;
         std::string text;
         std::string lang; // code fence info
@@ -19,6 +20,10 @@ namespace {
         int indent = 0;   // list nesting depth
         bool ordered = false;
         int number = 0; // ordered list item number
+        // Table: rows of cells, first `headerRows` are the head; align per column
+        std::vector<std::vector<std::string>> rows;
+        int headerRows = 0;
+        std::vector<MD_ALIGN> align;
     };
 
     struct ParseState {
@@ -27,6 +32,8 @@ namespace {
         int quoteDepth = 0;
         std::vector<int> orderedCounters; // -1 = unordered level
         bool inCode = false;
+        bool inTable = false;
+        bool inHead = false;
 
         Block& current() {
             if (blocks.empty()) {
@@ -83,6 +90,32 @@ namespace {
         case MD_BLOCK_HR:
             st.open(Block::Type::Rule);
             break;
+        case MD_BLOCK_TABLE:
+            st.open(Block::Type::Table);
+            st.inTable = true;
+            break;
+        case MD_BLOCK_THEAD:
+            st.inHead = true;
+            break;
+        case MD_BLOCK_TR:
+            st.current().rows.emplace_back();
+            if (st.inHead) {
+                st.current().headerRows++;
+            }
+            break;
+        case MD_BLOCK_TH:
+        case MD_BLOCK_TD: {
+            auto& table = st.current();
+            if (table.rows.empty()) {
+                table.rows.emplace_back();
+            }
+            table.rows.back().emplace_back();
+            const size_t col = table.rows.back().size() - 1;
+            if (table.align.size() <= col) {
+                table.align.push_back(static_cast<MD_BLOCK_TD_DETAIL*>(detail)->align);
+            }
+            break;
+        }
         case MD_BLOCK_P:
             // first paragraph of a list item flows into the item block
             if (st.blocks.empty() || st.blocks.back().type != Block::Type::ListItem ||
@@ -112,6 +145,12 @@ namespace {
         case MD_BLOCK_CODE:
             st.inCode = false;
             break;
+        case MD_BLOCK_TABLE:
+            st.inTable = false;
+            break;
+        case MD_BLOCK_THEAD:
+            st.inHead = false;
+            break;
         default:
             break;
         }
@@ -127,7 +166,13 @@ namespace {
             const auto* d = static_cast<MD_SPAN_A_DETAIL*>(detail);
             if (d->href.text != nullptr && d->href.size > 0) {
                 auto& st = *static_cast<ParseState*>(userdata);
-                st.current().text += " (" + std::string(d->href.text, d->href.size) + ")";
+                const std::string href = " (" + std::string(d->href.text, d->href.size) + ")";
+                auto& rows = st.current().rows;
+                if (st.inTable && !rows.empty() && !rows.back().empty()) {
+                    rows.back().back() += href;
+                } else {
+                    st.current().text += href;
+                }
             }
         }
         return 0;
@@ -135,6 +180,14 @@ namespace {
 
     int textCb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
         auto& st = *static_cast<ParseState*>(userdata);
+        if (st.inTable) {
+            auto& rows = st.current().rows;
+            if (!rows.empty() && !rows.back().empty() && type != MD_TEXT_NULLCHAR) {
+                const bool lineBreak = type == MD_TEXT_SOFTBR || type == MD_TEXT_BR;
+                rows.back().back() += lineBreak ? std::string(" ") : std::string(text, size);
+            }
+            return 0;
+        }
         switch (type) {
         case MD_TEXT_SOFTBR:
             st.current().text += st.inCode ? "\n" : " ";
@@ -155,7 +208,7 @@ namespace {
         ParseState state;
         MD_PARSER parser{};
         parser.abi_version = 0;
-        parser.flags = MD_FLAG_NOHTML | MD_FLAG_STRIKETHROUGH;
+        parser.flags = MD_FLAG_NOHTML | MD_FLAG_STRIKETHROUGH | MD_FLAG_TABLES;
         parser.enter_block = enterBlock;
         parser.leave_block = leaveBlock;
         parser.enter_span = enterSpan;
@@ -202,6 +255,70 @@ namespace {
         ImGui::Spacing();
     }
 
+    void renderTable(const Block& block, const std::string& idPrefix, size_t idx) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        size_t columns = block.align.size();
+        for (const auto& row : block.rows) {
+            columns = std::max(columns, row.size());
+        }
+        if (columns == 0 || block.rows.empty()) {
+            return;
+        }
+
+        // fixed-fit columns scroll sideways rather than squeezing into the chat width;
+        // tall tables scroll too, with the header frozen
+        constexpr int maxVisibleRows = 15;
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float rowH = ImGui::GetTextLineHeight() + style.CellPadding.y * 2.0f;
+        const int visibleRows = std::min(static_cast<int>(block.rows.size()), maxVisibleRows);
+        const float height = rowH * static_cast<float>(visibleRows) + style.ScrollbarSize +
+                             style.CellPadding.y * 2.0f;
+
+        ImGui::Spacing();
+        const std::string id = std::format("##md_table_{}_{}", idPrefix, idx);
+        constexpr ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                          ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX |
+                                          ImGuiTableFlags_ScrollY;
+        ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, colors.surface0);
+        if (ImGui::BeginTable(id.c_str(), static_cast<int>(columns), flags,
+                              ImVec2(-1.0f, height))) {
+            if (block.headerRows > 0) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+            }
+            for (size_t r = 0; r < block.rows.size(); ++r) {
+                const auto& row = block.rows[r];
+                const bool header = static_cast<int>(r) < block.headerRows;
+                ImGui::TableNextRow(header ? ImGuiTableRowFlags_Headers : ImGuiTableRowFlags_None);
+                for (size_t c = 0; c < columns; ++c) {
+                    ImGui::TableSetColumnIndex(static_cast<int>(c));
+                    if (header) {
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                               ImGui::GetColorU32(colors.surface0));
+                    }
+                    const std::string& cell = c < row.size() ? row[c] : std::string();
+                    const MD_ALIGN align =
+                        c < block.align.size() ? block.align[c] : MD_ALIGN_DEFAULT;
+                    if (align == MD_ALIGN_RIGHT || align == MD_ALIGN_CENTER) {
+                        const float slack =
+                            ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(cell.c_str()).x;
+                        if (slack > 0.0f) {
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                                                 (align == MD_ALIGN_RIGHT ? slack : slack * 0.5f));
+                        }
+                    }
+                    if (header) {
+                        ImGui::TextColored(colors.blue, "%s", cell.c_str());
+                    } else {
+                        ImGui::TextUnformatted(cell.c_str());
+                    }
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+    }
+
 } // namespace
 
 void MarkdownText::render(const std::string& markdown, const std::string& idPrefix,
@@ -212,7 +329,8 @@ void MarkdownText::render(const std::string& markdown, const std::string& idPref
 
     for (size_t i = 0; i < blocks.size(); ++i) {
         const Block& block = blocks[i];
-        if (block.text.empty() && block.type != Block::Type::Rule) {
+        if (block.text.empty() && block.type != Block::Type::Rule &&
+            block.type != Block::Type::Table) {
             continue;
         }
         switch (block.type) {
@@ -245,6 +363,9 @@ void MarkdownText::render(const std::string& markdown, const std::string& idPref
             ImGui::TextColored(colors.subtext0, "%s", block.text.c_str());
             ImGui::PopTextWrapPos();
             ImGui::Unindent(Theme::Spacing::M);
+            break;
+        case Block::Type::Table:
+            renderTable(block, idPrefix, i);
             break;
         case Block::Type::Rule:
             ImGui::Separator();

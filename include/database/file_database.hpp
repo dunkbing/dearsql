@@ -7,13 +7,38 @@
 #include "table_data_provider.hpp"
 #include <algorithm>
 #include <map>
+#include <mutex>
 
-// shared base for single-file backends (SQLite, DuckDB): connection + node in one
-// class. subclasses supply the engine specifics (connect/disconnect, query
-// execution, get*Async metadata fetchers); the async plumbing, schema caches and
-// builder-based schema modification live here.
-class FileDatabase : public IDatabaseNode, public DatabaseInterface, public ITableDataProvider {
+// single-file backends (SQLite, DuckDB, CSV via DuckDB): connection + node in one
+// class. libdearsql does the database work; this keeps the async loaders, the
+// schema caches the sidebar renders, and the read-only guard.
+class FileDatabase final : public IDatabaseNode,
+                           public DatabaseInterface,
+                           public ITableDataProvider {
 public:
+    explicit FileDatabase(const DatabaseConnectionInfo& info) {
+        connectionInfo = info;
+    }
+    ~FileDatabase() override {
+        FileDatabase::disconnect();
+    }
+
+    std::pair<bool, std::string> connect() override;
+    void disconnect() override;
+
+    [[nodiscard]] DatabaseType getDatabaseType() const override {
+        return connectionInfo.type;
+    }
+
+    QueryResult executeQuery(const std::string& sql, int limit = 1000) override;
+    std::pair<bool, std::string> createTable(const Table& table) override;
+    std::vector<std::vector<std::string>> getTableData(const Table& table, int limit, int offset,
+                                                       const std::string& whereClause,
+                                                       const std::string& orderBy = "") override;
+    std::vector<std::string> getColumnNames(const Table& table) override;
+    int getRowCount(const Table& table, const std::string& whereClause = "") override;
+    void startTableRefreshAsync(const std::string& tableName) override;
+
     const std::string& getPath() const {
         return connectionInfo.path;
     }
@@ -141,21 +166,24 @@ public:
     }
 
     void checkSequencesStatusAsync() {
-        sequencesLoader.check([this](std::vector<std::string> result) {
-            sequences = std::move(result);
+        sequencesLoader.check([this](LoadResult<std::string> result) {
+            sequences = std::move(result.items);
+            lastSequencesError = std::move(result.error);
             sequencesLoaded = true;
             spdlog::debug("Sequence loading completed. Found {} sequences", sequences.size());
         });
     }
 
     void checkLoadingStatus() override {
-        tablesLoader.check([this](std::vector<Table> result) {
-            tables = std::move(result);
+        tablesLoader.check([this](LoadResult<Table> result) {
+            tables = std::move(result.items);
+            lastTablesError = std::move(result.error);
             tablesLoaded = true;
             spdlog::debug("Table loading completed. Found {} tables", tables.size());
         });
-        viewsLoader.check([this](std::vector<Table> result) {
-            views = std::move(result);
+        viewsLoader.check([this](LoadResult<Table> result) {
+            views = std::move(result.items);
+            lastViewsError = std::move(result.error);
             viewsLoaded = true;
             spdlog::debug("View loading completed. Found {} views", views.size());
         });
@@ -188,45 +216,20 @@ public:
         // handled by checkLoadingStatus
     }
 
-    // ========== Schema Modification ==========
+    [[nodiscard]] std::shared_ptr<dearsql::IConnection> libConnection() const override {
+        std::lock_guard lock(handleMutex_);
+        return conn_;
+    }
 
     std::pair<bool, std::string> renameTable(const std::string& oldName,
-                                             const std::string& newName) {
-        const auto builder = createSQLBuilder(getDatabaseType());
-        auto r = executeQuery(builder->renameTable("", oldName, newName));
-        if (r.success()) {
-            startTablesLoadAsync(true);
-            return {true, ""};
-        }
-        return {false, r.errorMessage()};
-    }
-
-    std::pair<bool, std::string> dropTable(const std::string& tableName) {
-        const auto builder = createSQLBuilder(getDatabaseType());
-        auto r = executeQuery(builder->dropTable("", tableName));
-        if (r.success()) {
-            startTablesLoadAsync(true);
-            return {true, ""};
-        }
-        return {false, r.errorMessage()};
-    }
-
+                                             const std::string& newName);
+    std::pair<bool, std::string> dropTable(const std::string& tableName);
     std::pair<bool, std::string> dropColumn(const std::string& tableName,
-                                            const std::string& columnName) {
-        const auto builder = createSQLBuilder(getDatabaseType());
-        auto r = executeQuery(builder->dropColumn(builder->quoteIdentifier(tableName), columnName));
-        if (r.success()) {
-            startTablesLoadAsync(true);
-            return {true, ""};
-        }
-        return {false, r.errorMessage()};
-    }
+                                            const std::string& columnName);
 
-    // ========== Internal Methods ==========
-
-    virtual std::vector<Table> getTablesAsync() const = 0;
-    virtual std::vector<Table> getViewsAsync() const = 0;
-    virtual std::vector<std::string> getSequencesAsync() const = 0;
+    LoadResult<Table> getTablesAsync();
+    LoadResult<Table> getViewsAsync();
+    LoadResult<std::string> getSequencesAsync();
 
     // Async operation status
     [[nodiscard]] bool hasPendingAsyncWork() const override {
@@ -235,9 +238,9 @@ public:
     }
 
     // Async operations
-    AsyncOperation<std::vector<Table>> tablesLoader;
-    AsyncOperation<std::vector<Table>> viewsLoader;
-    AsyncOperation<std::vector<std::string>> sequencesLoader;
+    AsyncOperation<LoadResult<Table>> tablesLoader;
+    AsyncOperation<LoadResult<Table>> viewsLoader;
+    AsyncOperation<LoadResult<std::string>> sequencesLoader;
     std::map<std::string, AsyncOperation<Table>> tableRefreshLoaders;
 
     // Loading state
@@ -249,6 +252,18 @@ public:
     std::string lastTablesError;
     std::string lastViewsError;
     std::string lastSequencesError;
+
+private:
+    // the shared library handle; loaders copy the pointer so disconnect() mid-load is safe
+    [[nodiscard]] dearsql::DatabasePtr handle() const {
+        std::lock_guard lock(handleMutex_);
+        return db_;
+    }
+    std::pair<bool, std::string> afterDdl(const dearsql::Status& status);
+
+    std::shared_ptr<dearsql::IConnection> conn_;
+    dearsql::DatabasePtr db_;
+    mutable std::mutex handleMutex_;
 
 protected:
     std::vector<Table> tables;

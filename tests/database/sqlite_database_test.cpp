@@ -1,4 +1,4 @@
-#include "database/sqlite.hpp"
+#include "database/file_database.hpp"
 
 #include <chrono>
 #include <gtest/gtest.h>
@@ -12,7 +12,7 @@ protected:
         connInfo.type = DatabaseType::SQLITE;
         connInfo.path = ":memory:";
 
-        database_ = std::make_unique<SQLiteDatabase>(connInfo);
+        database_ = std::make_unique<FileDatabase>(connInfo);
 
         const auto [success, error] = database_->connect();
         ASSERT_TRUE(success) << error;
@@ -24,7 +24,7 @@ protected:
         }
     }
 
-    std::unique_ptr<SQLiteDatabase> database_;
+    std::unique_ptr<FileDatabase> database_;
 };
 
 TEST_F(SQLiteDatabaseFixture, ConnectsToInMemoryDatabase) {
@@ -66,7 +66,7 @@ TEST_F(SQLiteDatabaseFixture, RetrievesInsertedTableData) {
         "INSERT INTO messages(body) VALUES ('Hello'), ('World'), ('Test');");
     ASSERT_TRUE(r2.success()) << r2.errorMessage();
 
-    const auto rows = database_->getTableData("messages", 10, 0);
+    const auto rows = database_->getTableData(Table{.name = "messages"}, 10, 0, "");
     ASSERT_EQ(rows.size(), 3u);
     EXPECT_EQ(rows[0][1], "Hello");
     EXPECT_EQ(rows[1][1], "World");

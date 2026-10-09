@@ -16,18 +16,14 @@
 class ConnectionPoolBase {
 public:
     virtual ~ConnectionPoolBase() {
-        std::lock_guard lock(registryMutex());
-        std::erase(registry(), this);
+        unregisterPool();
     }
 
-    // cancel whatever `worker` is currently running, across all pools
+    // cancel whatever `worker` is currently running, across all pools. runs under
+    // the registry lock so no pool can be destroyed mid-call
     static void cancelQueriesOn(std::thread::id worker) {
-        std::vector<ConnectionPoolBase*> pools;
-        {
-            std::lock_guard lock(registryMutex());
-            pools = registry();
-        }
-        for (auto* pool : pools) {
+        std::lock_guard lock(registryMutex());
+        for (auto* pool : registry()) {
             pool->cancelInUseBy(worker);
         }
     }
@@ -36,6 +32,11 @@ protected:
     void registerPool() {
         std::lock_guard lock(registryMutex());
         registry().push_back(this);
+    }
+    // derived destructors call this first, before their members go away
+    void unregisterPool() {
+        std::lock_guard lock(registryMutex());
+        std::erase(registry(), this);
     }
     virtual void cancelInUseBy(std::thread::id worker) = 0;
 
@@ -76,11 +77,19 @@ public:
     }
 
     ~ConnectionPool() override {
+        unregisterPool();
         {
             std::unique_lock lock(mutex_);
             shutdown_ = true;
+            // don't sit out a long query: ask the server to stop the busy ones
+            if (canceller_) {
+                for (const auto& [conn, owner] : owners_)
+                    canceller_(conn);
+            }
             cv_.notify_all();
-            cv_.wait(lock, [this] { return inUse_ == 0; });
+            // sessions out, threads growing the pool or waiting for a free
+            // connection all still touch this object
+            cv_.wait(lock, [this] { return inUse_ == 0 && busy_ == 0; });
         }
 
         for (auto conn : all_) {
@@ -135,26 +144,39 @@ public:
         ConnHandle conn;
         {
             std::unique_lock lock(mutex_);
+            if (shutdown_)
+                throw std::runtime_error("ConnectionPool: pool is shutting down");
+            ++busy_; // the destructor waits for us from here on
+            struct BusyGuard {
+                ConnectionPool* p;
+                ~BusyGuard() {
+                    --p->busy_;
+                    p->cv_.notify_all();
+                }
+            } guard{this}; // runs with mutex_ held: every exit below holds the lock
 
-            if (available_.empty() && !shutdown_ && all_.size() < maxSize_) {
+            if (available_.empty() && all_.size() < maxSize_) {
                 // grow the pool on demand
                 lock.unlock();
-                ConnHandle newConn = factory_();
+                ConnHandle newConn;
+                try {
+                    newConn = factory_();
+                } catch (...) {
+                    lock.lock();
+                    throw;
+                }
                 lock.lock();
                 if (!shutdown_) {
                     all_.push_back(newConn);
                     available_.push(newConn);
-                } else {
-                    if (closer_)
-                        closer_(newConn);
+                } else if (closer_) {
+                    closer_(newConn);
                 }
             }
 
             constexpr auto timeout = std::chrono::seconds(30);
-            if (!cv_.wait_for(lock, timeout, [this] { return !available_.empty() || shutdown_; })) {
+            if (!cv_.wait_for(lock, timeout, [this] { return !available_.empty() || shutdown_; }))
                 throw std::runtime_error("ConnectionPool: acquire timeout (30s)");
-            }
-
             if (shutdown_)
                 throw std::runtime_error("ConnectionPool: pool is shutting down");
 
@@ -172,8 +194,8 @@ public:
                     std::lock_guard lock(mutex_);
                     --inUse_;
                     available_.push(conn);
+                    cv_.notify_all();
                 }
-                cv_.notify_all();
                 throw;
             }
         }
@@ -186,19 +208,16 @@ public:
     }
 
 private:
+    // under mutex_, so a connection released (and handed to another worker) in
+    // the meantime is never cancelled by mistake
     void cancelInUseBy(std::thread::id worker) override {
         if (!canceller_)
             return;
-        std::vector<ConnHandle> held;
-        {
-            std::lock_guard lock(mutex_);
-            for (const auto& [conn, owner] : owners_) {
-                if (owner == worker)
-                    held.push_back(conn);
-            }
+        std::lock_guard lock(mutex_);
+        for (const auto& [conn, owner] : owners_) {
+            if (owner == worker)
+                canceller_(conn);
         }
-        for (ConnHandle conn : held)
-            canceller_(conn);
     }
 
     ConnHandle reconnect_(ConnHandle oldConn) {
@@ -225,14 +244,13 @@ private:
     }
 
     void release(ConnHandle conn) {
-        {
-            std::lock_guard lock(mutex_);
-            if (inUse_ > 0)
-                --inUse_;
-            owners_.erase(conn);
-            if (!shutdown_)
-                available_.push(conn);
-        }
+        std::lock_guard lock(mutex_);
+        if (inUse_ > 0)
+            --inUse_;
+        owners_.erase(conn);
+        if (!shutdown_)
+            available_.push(conn);
+        // notify under the lock: the destructor may free cv_ as soon as it wakes
         cv_.notify_all();
     }
 
@@ -248,5 +266,6 @@ private:
     size_t maxSize_;
     int maxReconnectAttempts_;
     size_t inUse_ = 0;
+    size_t busy_ = 0; // threads inside acquire() before they hold a connection
     bool shutdown_ = false;
 };

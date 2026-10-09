@@ -1,7 +1,7 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/db_interface.hpp"
-#include "database/sqlite.hpp"
+#include "database/file_database.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "ui/tab/table_viewer_tab.hpp"
@@ -11,13 +11,13 @@
 
 namespace {
     // in-memory sqlite with a foreign key, so the test needs no fixture on disk
-    std::shared_ptr<SQLiteDatabase> makeFkDatabase() {
+    std::shared_ptr<FileDatabase> makeFkDatabase() {
         DatabaseConnectionInfo info;
         info.type = DatabaseType::SQLITE;
         info.name = "FkTestDB";
         info.path = ":memory:";
 
-        auto db = std::make_shared<SQLiteDatabase>(info);
+        auto db = std::make_shared<FileDatabase>(info);
         if (auto [ok, err] = db->connect(); !ok) {
             return nullptr;
         }

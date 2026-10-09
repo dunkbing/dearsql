@@ -85,7 +85,7 @@ TEST_F(OracleClientInstallerTest, InstallerStartsAndCanBePolled) {
 }
 
 TEST_F(OracleClientInstallerTest, NeedsClientInstallReflectsContext) {
-    [[maybe_unused]] bool needs = OracleDatabase::needsClientInstall();
+    [[maybe_unused]] bool needs = OracleClientInstaller::needsClientInstall();
 }
 
 TEST_F(OracleClientInstallerTest, DownloadAndInstallOracleClient) {
@@ -113,8 +113,8 @@ TEST_F(OracleClientInstallerTest, DownloadAndInstallOracleClient) {
     EXPECT_TRUE(OracleClientInstaller::isInstalled());
 
     // re-initialize ODPI-C context with newly installed client
-    OracleDatabase::reinitContext();
-    EXPECT_FALSE(OracleDatabase::needsClientInstall())
+    OracleClientInstaller::resetContext();
+    EXPECT_FALSE(OracleClientInstaller::needsClientInstall())
         << "Context should initialize after client install";
 }
 
@@ -124,7 +124,7 @@ class OracleDatabaseIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // skip immediately if Oracle Client is not available
-        if (OracleDatabase::needsClientInstall()) {
+        if (OracleClientInstaller::needsClientInstall()) {
             GTEST_SKIP() << "Oracle Instant Client not available, skipping integration test";
         }
 
@@ -454,7 +454,7 @@ TEST_F(OracleDatabaseNodeTest, TableRefreshAsyncReloadsTable) {
 
     dbNode->startTableRefreshAsync(tableName);
     for (int i = 0; i < 100 && dbNode->isTableRefreshing(tableName); ++i) {
-        dbNode->checkTableRefreshStatusAsync(tableName);
+        dbNode->checkLoadingStatus();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 

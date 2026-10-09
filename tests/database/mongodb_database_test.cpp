@@ -240,7 +240,7 @@ TEST_F(MongoDBDatabaseIntegrationTest, DropCollectionRemovesCollection) {
     auto* dbNode = database->getDatabaseData("test");
     ASSERT_NE(dbNode, nullptr);
 
-    auto [ok, err] = dbNode->dropCollection(collectionName);
+    auto [ok, err] = dbNode->dropTable(collectionName);
     ASSERT_TRUE(ok) << err;
 
     // Wait for async collections reload triggered by dropCollection

@@ -209,6 +209,14 @@ public:
         reapZombies();
     }
 
+    // block until the running (and any cancelled) task finishes; drops the result
+    void wait() {
+        running = false;
+        waitForOperation(activeOperation);
+        for (auto& zombie : zombieOperations)
+            waitForOperation(zombie);
+    }
+
     // id of the running worker thread (default-constructed when idle)
     [[nodiscard]] std::thread::id workerId() const {
         return activeOperation.has_value() ? activeOperation->worker.get_id() : std::thread::id{};

@@ -2,14 +2,13 @@
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
-#include "database/duckdb.hpp"
+#include "database/file_database.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
-#include "database/sqlite.hpp"
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
@@ -37,6 +36,7 @@
 #include <filesystem>
 #include <format>
 #include <imgui_internal.h>
+#include <iostream>
 #include <limits>
 #include <spdlog/spdlog.h>
 
@@ -522,9 +522,9 @@ void Application::restorePreviousConnections() {
                    conn.connectionInfo.type == DatabaseType::MARIADB) {
             db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
-            db = std::make_shared<SQLiteDatabase>(conn.connectionInfo);
+            db = std::make_shared<FileDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::DUCKDB) {
-            db = std::make_shared<DuckDBDatabase>(conn.connectionInfo);
+            db = std::make_shared<FileDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
             db = std::make_shared<RedisDatabase>(conn.connectionInfo);
         } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
@@ -1075,6 +1075,9 @@ void Application::renderMainUI() {
     // would also leave a finished dump reporting itself as still running.
     if (databaseSidebar) {
         databaseSidebar->processDumpOperations();
+    }
+    if (tabManager) {
+        tabManager->tickChatTabs();
     }
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);

@@ -30,6 +30,8 @@ namespace {
         case TabType::SQLITE_SEQUENCE_VIEWER:
         case TabType::POSTGRES_SEQUENCE_VIEWER:
             return ICON_FA_ARROW_UP_1_9;
+        case TabType::AI_CHAT:
+            return ICON_FA_COMMENTS;
         }
         return "";
     }

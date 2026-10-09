@@ -14,22 +14,31 @@
 class DatabaseInterface;
 class IDatabaseNode;
 
-// App-level AI chat panel hosted in the sidebar's AI tab. Talks to coding
+// AI chat for one connection, hosted in a chat tab. Talks to coding
 // agents (Claude Code, Gemini CLI, Codex, Cursor, Antigravity) via ACP, or falls back to
 // the direct API-key client. Supports @table mentions and hands agents a
-// read-only MCP query tool over the selected database.
+// read-only MCP query tool, focused on the bound connection.
 class AISidebarPanel {
 public:
-    AISidebarPanel();
+    explicit AISidebarPanel(std::shared_ptr<DatabaseInterface> db = nullptr);
     ~AISidebarPanel();
 
     void tick(); // per frame, even when the tab is hidden
     void render();
 
-    // height of the sidebar's History button; the input box matches it so the two
-    // top edges line up. zero leaves the input on its default bottom margin.
-    void setInputBottomAnchor(float height) {
-        inputBottomAnchor_ = height;
+    // switches to the session's backend first when it differs
+    void openSession(const AiSession& session);
+    [[nodiscard]] int currentSessionId() const {
+        return currentSessionId_;
+    }
+    // the row was deleted elsewhere; the next save makes a new one
+    void forgetSession(int id) {
+        if (id == currentSessionId_) {
+            currentSessionId_ = 0;
+        }
+    }
+    [[nodiscard]] DatabaseInterface* database() const {
+        return db_.get();
     }
 
 private:
@@ -96,14 +105,13 @@ private:
     void switchBackend(int newIndex);
     // agent id or "api"; stable across restarts unlike the index
     [[nodiscard]] std::string backendId() const;
-    void selectBackend(const std::string& id);
+    [[nodiscard]] int backendIndexFor(const std::string& id) const;
     void stopAgent();
     [[nodiscard]] bool isBusy() const; // a prompt is queued or being answered
 
     // sessions: the api transcript is ours, acp agents replay theirs via session/load
     void saveCurrentSession();
     void startNewSession();
-    void openSession(const AiSession& session);
     void renderSessionPopup();
 
     // sending
@@ -176,7 +184,7 @@ private:
     // connection the agent asked us to open via the mcp connect_database tool
     std::shared_ptr<DatabaseInterface> pendingConnectDb_;
 
-    DatabaseInterface* lastDb_ = nullptr;
+    std::shared_ptr<DatabaseInterface> db_; // the connection this chat belongs to
     bool sentSchemaContext_ = false;
     // picker entries: dearsql's own commands plus whatever the agent published via
     // available_commands_update. namespaced like toad's /toad: so ours cannot collide
@@ -198,7 +206,6 @@ private:
     char inputBuf_[4096] = {};
     bool focusInput_ = true;
     bool scrollToBottom_ = false;
-    float inputBottomAnchor_ = 0.0f;
     int cursorPos_ = 0;
     // mention popup state
     bool mentionOpen_ = false;

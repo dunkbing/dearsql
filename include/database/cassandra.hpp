@@ -1,82 +1,25 @@
 #pragma once
 
-#include "async_helper.hpp"
 #include "cassandra/cassandra_database_node.hpp"
-#include "db_interface.hpp"
-#include "query_executor.hpp"
-#include <cassandra.h>
-#include <mutex>
-#include <unordered_map>
-#include <vector>
+#include "server_database.hpp"
 
-class CassandraDatabase final : public DatabaseInterface, public IQueryExecutor {
-    friend class CassandraDatabaseNode;
-
+// keyspaces play the part of databases
+class CassandraDatabase final : public ServerDatabase<CassandraDatabaseNode> {
 public:
-    explicit CassandraDatabase(const DatabaseConnectionInfo& connInfo);
-    ~CassandraDatabase() override;
-
-    // Connection management
-    std::pair<bool, std::string> connect() override;
-    void disconnect() override;
-    void refreshConnection() override;
-
-    // Database operations (keyspace = database in Cassandra)
-    std::pair<bool, std::string> createDatabase(const std::string& dbName,
-                                                const std::string& comment = "") override;
-    std::pair<bool, std::string> dropDatabase(const std::string& dbName) override;
-
-    // IQueryExecutor implementation: runs CQL against the session.
-    QueryResult executeQuery(const std::string& query, int rowLimit = 1000) override;
-
-    // Keyspace list
-    void refreshDatabaseNames() override;
-
-    bool isConnecting() const override {
-        return connectionOp.isRunning() || refreshWorkflow.isRunning();
-    }
-
-    bool areDatabasesLoaded() const {
-        return databasesLoaded;
-    }
-    bool isLoadingDatabases() const;
-    void checkDatabasesStatusAsync();
-    void checkRefreshWorkflowAsync();
-
-    [[nodiscard]] bool hasPendingAsyncWork() const override;
-
-    // Helpers used by CassandraDatabaseNode
-    CassSession* session() const {
-        return session_;
-    }
-
-    CassandraDatabaseNode* getDatabaseData(const std::string& keyspace);
-
-    std::unordered_map<std::string, std::unique_ptr<CassandraDatabaseNode>>& getDatabaseDataMap();
-    const std::unordered_map<std::string, std::unique_ptr<CassandraDatabaseNode>>&
-    getDatabaseDataMap() const {
-        return databaseDataCache;
-    }
+    using ServerDatabase::ServerDatabase;
 
 protected:
-    std::vector<std::string> getDatabaseNamesAsync() const;
+    std::unique_ptr<CassandraDatabaseNode> makeNode(const std::string& name) override {
+        auto node = std::make_unique<CassandraDatabaseNode>();
+        node->name = name;
+        node->parentDb = this;
+        return node;
+    }
 
-private:
-    // libuv-backed driver state. Owned by this class; freed on destruction.
-    CassCluster* cluster_ = nullptr;
-    CassSession* session_ = nullptr;
-    CassSsl* ssl_ = nullptr;
-    mutable std::mutex sessionMutex_;
-
-    std::unordered_map<std::string, std::unique_ptr<CassandraDatabaseNode>> databaseDataCache;
-    bool databasesLoaded = false;
-    std::vector<std::string> pendingRefreshDatabaseNames;
-    mutable std::mutex refreshStateMutex;
-
-    AsyncOperation<std::vector<std::string>> databasesLoader;
-    AsyncOperation<bool> refreshWorkflow;
-
-    // Apply SSL options derived from connectionInfo.sslmode to cluster_.
-    std::pair<bool, std::string> applySslConfig();
-    void freeDriverState();
+    // system keyspaces stay hidden; they can still be queried
+    std::vector<std::string> listDatabaseNames() override {
+        auto names = ServerDatabase::listDatabaseNames();
+        std::erase_if(names, [](const std::string& ks) { return ks.starts_with("system"); });
+        return names;
+    }
 };

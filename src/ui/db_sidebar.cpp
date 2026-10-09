@@ -3,7 +3,7 @@
 #include "application.hpp"
 #include "database/cassandra.hpp"
 #include "database/db_interface.hpp"
-#include "database/duckdb.hpp"
+#include "database/file_database.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
@@ -11,10 +11,9 @@
 #include "database/oracle/oracle_client_installer.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "platform/alert.hpp"
-#include "ui/ai_sidebar_panel.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
@@ -33,40 +32,6 @@
 #include <spdlog/spdlog.h>
 
 namespace {
-    // draws text rotated 90° ccw about (cx, cy) by transforming the glyph vertices
-    void drawRotatedLabel(ImDrawList* drawList, const char* label, float cx, float cy, ImU32 col) {
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-
-        // the text is laid out horizontally and only then rotated, so it must be drawn
-        // somewhere fully on screen first: glyphs outside the clip rect are culled before
-        // the rotation can bring them back. centred on a narrow left-edge strip a long
-        // label starts at a negative x and loses its first character, so lay it out at a
-        // safe origin and rotate about that instead.
-        const ImVec2 origin(textSize.x, textSize.y);
-        const float ox = origin.x + textSize.x * 0.5f;
-        const float oy = origin.y + textSize.y * 0.5f;
-
-        drawList->PushClipRectFullScreen();
-        const int vtxBegin = drawList->VtxBuffer.Size;
-        drawList->AddText(origin, col, label);
-        const int vtxEnd = drawList->VtxBuffer.Size;
-
-        // rotate 90° ccw about the layout origin, then move onto (cx, cy)
-        for (int i = vtxBegin; i < vtxEnd; i++) {
-            ImDrawVert& v = drawList->VtxBuffer[i];
-            const float dx = v.pos.x - ox;
-            const float dy = v.pos.y - oy;
-            v.pos.x = cx + dy;
-            v.pos.y = cy - dx;
-        }
-        drawList->PopClipRect();
-    }
-
-    // vertical strip length a rotated label needs
-    float rotatedLabelExtent(const char* label) {
-        return ImGui::CalcTextSize(label).x + Theme::Spacing::M * 2.0f;
-    }
-
     // opens the imported csv table in the table viewer
     void openCsvData(FileDatabase* fileDb) {
         if (!fileDb) {
@@ -105,10 +70,6 @@ void DatabaseSidebarNew::processDumpOperations() {
         if (hierarchy) {
             hierarchy->processDumpOperations();
         }
-    }
-    // agent keeps running while the tab is hidden
-    if (aiPanel_) {
-        aiPanel_->tick();
     }
 }
 
@@ -331,67 +292,29 @@ void DatabaseSidebarNew::renderHistory() {
     ImGui::PopStyleVar(2);
 }
 
-float DatabaseSidebarNew::getHistoryButtonHeight() const {
-    constexpr float historyButtonPadding = 6.0f;
-    const ImVec2 historyLabelSize = ImGui::CalcTextSize("History");
-    return historyLabelSize.x + historyButtonPadding * 2.0f;
-}
-
-void DatabaseSidebarNew::renderHistoryToggleButton(const ImVec2& btnMin, float buttonW,
-                                                   float buttonH, bool drawRightBorder) {
-    auto& app = Application::getInstance();
-    const auto& colors = app.getCurrentColors();
+void DatabaseSidebarNew::renderHistoryToggleButton(float height) {
+    const auto& colors = Application::getInstance().getCurrentColors();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 btnMax(btnMin.x + buttonW, btnMin.y + buttonH);
+    const ImVec2 btnMin = ImGui::GetCursorScreenPos();
+    const float width = ImGui::GetContentRegionAvail().x;
+    const ImVec2 btnMax(btnMin.x + width, btnMin.y + height);
 
-    ImGui::SetCursorScreenPos(btnMin);
-    ImGui::InvisibleButton("##toggle_history", ImVec2(buttonW, buttonH));
+    ImGui::InvisibleButton("##toggle_history", ImVec2(width, height));
     const bool hovered = ImGui::IsItemHovered();
     if (ImGui::IsItemClicked()) {
         historyPanelOpen = !historyPanelOpen;
     }
-
     if (hovered) {
         drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
     }
-
     drawList->AddLine(btnMin, ImVec2(btnMax.x, btnMin.y), ImGui::GetColorU32(colors.overlay0),
                       1.0f);
-    if (drawRightBorder) {
-        drawList->AddLine(ImVec2(btnMax.x, btnMin.y), btnMax, ImGui::GetColorU32(colors.overlay0),
-                          1.0f);
-    }
 
-    drawRotatedLabel(drawList, "History", btnMin.x + buttonW * 0.5f, btnMin.y + buttonH * 0.5f,
-                     ImGui::GetColorU32(hovered ? colors.text : colors.subtext0));
-}
-
-bool DatabaseSidebarNew::renderVerticalTabButton(const char* id, const char* label,
-                                                 const ImVec2& btnMin, float buttonW, float buttonH,
-                                                 bool active) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 btnMax(btnMin.x + buttonW, btnMin.y + buttonH);
-
-    ImGui::SetCursorScreenPos(btnMin);
-    ImGui::InvisibleButton(id, ImVec2(buttonW, buttonH));
-    const bool hovered = ImGui::IsItemHovered();
-    const bool clicked = ImGui::IsItemClicked();
-
-    if (active) {
-        drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
-        // accent bar marks the selected tab
-        drawList->AddRectFilled(btnMin, ImVec2(btnMin.x + 2.0f, btnMax.y),
-                                ImGui::GetColorU32(colors.blue));
-    } else if (hovered) {
-        drawList->AddRectFilled(btnMin, btnMax,
-                                ImGui::GetColorU32(ImVec4(colors.surface1.x, colors.surface1.y,
-                                                          colors.surface1.z, 0.5f)));
-    }
-
-    drawRotatedLabel(drawList, label, btnMin.x + buttonW * 0.5f, btnMin.y + buttonH * 0.5f,
-                     ImGui::GetColorU32(active || hovered ? colors.text : colors.subtext0));
-    return clicked;
+    const std::string label =
+        std::format("{} History", historyPanelOpen ? ICON_FA_CHEVRON_DOWN : ICON_FA_CHEVRON_UP);
+    drawList->AddText(ImVec2(btnMin.x + Theme::Spacing::S,
+                             btnMin.y + (height - ImGui::GetTextLineHeight()) * 0.5f),
+                      ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label.c_str());
 }
 
 DatabaseSidebarNew::DatabaseSidebarNew() = default;
@@ -415,76 +338,31 @@ void DatabaseSidebarNew::render() {
                           ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
     ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
 
-    // claw back the window's leading gap so the strip sits close under the titlebar
+    // claw back the window's leading gap so the tree sits close under the titlebar
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
 
-    // tabs live in a vertical strip on the left, labels rotated like the History toggle,
-    // which now shares the strip and sits pinned at its bottom
-    static constexpr const char* TAB_LABELS[] = {"Databases", "Assistant"};
-    constexpr int tabCount = sizeof(TAB_LABELS) / sizeof(TAB_LABELS[0]);
-    constexpr float tabStripWidth = 22.0f;
+    // databases fill the sidebar; the History toggle is a bar pinned at its bottom,
+    // with the history list opening above it
     constexpr float historyHeight = 300.0f;
+    const float barH = ImGui::GetFrameHeight();
+    const float spacingY = ImGui::GetStyle().ItemSpacing.y;
     const float availableHeight = ImGui::GetContentRegionAvail().y;
-    const float historyButtonH = getHistoryButtonHeight();
+    const float contentH = std::max(0.0f, availableHeight - barH - spacingY -
+                                              (historyPanelOpen ? historyHeight + spacingY : 0.0f));
 
-    // no WindowPadding push here: borderless children get zero padding anyway,
-    // and the push would leak into the context-menu popups opened inside
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-    if (ImGui::BeginChild("SidebarTabStrip", ImVec2(tabStripWidth, availableHeight),
-                          ImGuiChildFlags_None)) {
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
-
-        drawList->AddLine(ImVec2(stripPos.x + tabStripWidth, stripPos.y),
-                          ImVec2(stripPos.x + tabStripWidth, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.overlay0), 1.0f);
-
-        float tabY = stripPos.y;
-        for (int i = 0; i < tabCount; ++i) {
-            const float tabH = rotatedLabelExtent(TAB_LABELS[i]);
-            const std::string id = std::format("##sidebar_tab_{}", i);
-            if (renderVerticalTabButton(id.c_str(), TAB_LABELS[i], ImVec2(stripPos.x, tabY),
-                                        tabStripWidth, tabH, activeSidebarTab_ == i)) {
-                activeSidebarTab_ = i;
-            }
-            tabY += tabH;
-        }
-
-        const ImVec2 histMin(stripPos.x, stripPos.y + availableHeight - historyButtonH);
-        renderHistoryToggleButton(histMin, tabStripWidth, historyButtonH, false);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    ImGui::SameLine(0, Theme::Spacing::S);
-
-    const float contentWidth = ImGui::GetContentRegionAvail().x + Theme::Spacing::M;
-    ImGui::BeginChild("SidebarTabContent", ImVec2(contentWidth, availableHeight),
-                      ImGuiChildFlags_None,
+    ImGui::BeginChild("TabContent", ImVec2(0, contentH), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    {
-        const float tabContentH =
-            historyPanelOpen ? availableHeight - historyHeight - ImGui::GetStyle().ItemSpacing.y
-                             : availableHeight;
-
-        ImGui::BeginChild("TabContent", ImVec2(0, tabContentH), ImGuiChildFlags_None,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        if (activeSidebarTab_ == 0) {
-            renderDatabasesTab();
-        } else {
-            if (!aiPanel_) {
-                aiPanel_ = std::make_unique<AISidebarPanel>();
-            }
-            aiPanel_->setInputBottomAnchor(historyButtonH);
-            aiPanel_->render();
-        }
-        ImGui::EndChild();
-
-        if (historyPanelOpen) {
-            renderHistoryPanel();
-        }
-    }
+    renderDatabasesTab();
     ImGui::EndChild();
+
+    if (historyPanelOpen) {
+        ImGui::BeginChild("HistoryArea", ImVec2(0, historyHeight), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        renderHistoryPanel();
+        ImGui::EndChild();
+    }
+
+    renderHistoryToggleButton(barH);
 
     ImGui::PopStyleColor(4);
     ImGui::End();
@@ -584,7 +462,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
 
-    const bool isCsv = DuckDBDatabase::isCsvPath(connectionInfo.path);
+    const bool isCsv = dearsql::isCsvPath(connectionInfo.path);
 
     // csv: double-click views data instead of toggling the node
     ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_FramePadding |
@@ -618,7 +496,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
         UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
                                 ImGui::GetColorU32(colors.peach));
-    } else if (DuckDBDatabase::isCsvPath(connectionInfo.path)) {
+    } else if (dearsql::isCsvPath(connectionInfo.path)) {
         ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.green),
                                             ICON_FA_FILE_CSV);
     } else {
@@ -798,7 +676,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::PopStyleColor();
 
             if (connectionInfo.type == DatabaseType::ORACLE &&
-                OracleDatabase::needsClientInstall()) {
+                OracleClientInstaller::needsClientInstall()) {
                 oracleClientInstaller_.checkStatus();
 
                 if (oracleClientInstaller_.isRunning()) {
@@ -810,7 +688,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                     ImGui::PopStyleColor();
                 } else if (oracleClientInstaller_.getStatus() ==
                            OracleClientInstaller::Status::Done) {
-                    OracleDatabase::reinitContext();
+                    OracleClientInstaller::resetContext();
                     db->startConnectionAsync();
                 } else {
                     ImGui::Indent(Theme::Spacing::M);
@@ -826,6 +704,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                 hierarchy->renderRootNode();
             }
         }
+        renderChatHistoryNode(db);
         ImGui::TreePop();
     }
 }
@@ -847,7 +726,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         };
 
-        const bool isCsv = DuckDBDatabase::isCsvPath(db->getConnectionInfo().path);
+        const bool isCsv = dearsql::isCsvPath(db->getConnectionInfo().path);
 
         if (db->isConnected() && isFileDatabase(db->getConnectionInfo().type)) {
             auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());
@@ -867,6 +746,15 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
             }
         }
         auto& app = Application::getInstance();
+
+        if (ImGui::MenuItem(ICON_FA_COMMENTS " Open Assistant")) {
+            app.getTabManager()->createAIChatTab(db);
+            // the agent's tools need the connection open
+            if (!db->isConnected() && !db->isConnecting()) {
+                db->startConnectionAsync();
+            }
+        }
+        ImGui::Separator();
 
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
@@ -946,4 +834,89 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
+}
+
+void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInterface>& db) {
+    auto& app = Application::getInstance();
+    const auto& colors = app.getCurrentColors();
+    const std::string label =
+        std::format("   Chat History###chat_history_{:p}", static_cast<const void*>(db.get()));
+    const bool open = ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_FramePadding |
+                                                           ImGuiTreeNodeFlags_SpanAvailWidth);
+    const ImVec2 min = ImGui::GetItemRectMin();
+    ImGui::GetWindowDrawList()->AddText(
+        ImVec2(min.x + ImGui::GetTreeNodeToLabelSpacing(),
+               min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f),
+        ImGui::GetColorU32(colors.purple), ICON_FA_COMMENTS);
+    if (!open) {
+        return;
+    }
+
+    // ponytail: re-reads sqlite every 2s while open to catch turns saved by chat tabs
+    auto& cache = chatHistory_[db->getConnectionId()];
+    if (cache.fetchedAt < 0.0 || ImGui::GetTime() - cache.fetchedAt > 2.0) {
+        cache.sessions = app.getAppState()->getAiSessions(db->getConnectionId());
+        cache.fetchedAt = ImGui::GetTime();
+    }
+
+    if (cache.sessions.empty()) {
+        ImGui::TextColored(colors.subtext0, "  No chats yet");
+    }
+    constexpr ImGuiTreeNodeFlags leafFlags = ImGuiTreeNodeFlags_Leaf |
+                                             ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                             ImGuiTreeNodeFlags_FramePadding |
+                                             // the label is drawn by hand, so the row needs
+                                             // its full width to stay clickable
+                                             ImGuiTreeNodeFlags_SpanAvailWidth;
+    int deleteId = 0;
+    for (const auto& session : cache.sessions) {
+        // label drawn by hand: the title is clipped with an ellipsis to leave room for the age
+        const std::string itemLabel = std::format("###chat_{}", session.id);
+        ImGui::TreeNodeEx(itemLabel.c_str(), leafFlags);
+        const ImVec2 itemMin = ImGui::GetItemRectMin();
+        const float textY =
+            itemMin.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f;
+        const float iconX = itemMin.x + ImGui::GetTreeNodeToLabelSpacing();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddText(ImVec2(iconX, textY), ImGui::GetColorU32(colors.subtext0),
+                          ICON_FA_COMMENT);
+
+        // dim age anchored to the right edge, like the table size badge
+        const std::string age = relativeAge(session.updatedAt);
+        const float rightEdge = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+        const float ageX = rightEdge - ImGui::CalcTextSize(age.c_str()).x - Theme::Spacing::M;
+        drawList->AddText(ImVec2(ageX, textY), ImGui::GetColorU32(colors.subtext0), age.c_str());
+
+        const float titleX = iconX + ImGui::CalcTextSize(ICON_FA_COMMENT).x + Theme::Spacing::S;
+        const float titleMaxX = ageX - Theme::Spacing::S;
+        if (titleMaxX > titleX) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
+            ImGui::RenderTextEllipsis(drawList, ImVec2(titleX, textY),
+                                      ImVec2(titleMaxX, textY + ImGui::GetTextLineHeight()),
+                                      titleMaxX, session.title.c_str(), nullptr, nullptr);
+            ImGui::PopStyleColor();
+        }
+
+        if (ImGui::IsItemClicked()) {
+            app.getTabManager()->createAIChatTab(db, &session);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", session.title.c_str());
+        }
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::MenuItem("Open")) {
+                app.getTabManager()->createAIChatTab(db, &session);
+            }
+            if (ImGui::MenuItem("Delete")) {
+                deleteId = session.id;
+            }
+            ImGui::EndPopup();
+        }
+    }
+    if (deleteId > 0) {
+        app.getAppState()->deleteAiSession(deleteId);
+        app.getTabManager()->forgetChatSession(deleteId);
+        cache.fetchedAt = -1.0;
+    }
+    ImGui::TreePop();
 }

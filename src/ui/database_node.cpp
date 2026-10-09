@@ -5,14 +5,13 @@
 #include "database/cassandra.hpp"
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
-#include "database/duckdb.hpp"
+#include "database/file_database.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
-#include "database/sqlite.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
@@ -468,7 +467,7 @@ void DatabaseHierarchy::renderRootNode() {
     const auto dbType = db->getConnectionInfo().type;
 
     if (isFileDatabase(dbType)) {
-        if (DuckDBDatabase::isCsvPath(db->getConnectionInfo().path)) {
+        if (dearsql::isCsvPath(db->getConnectionInfo().path)) {
             // csv nodes show only saved queries; data opens via context menu / double-click.
             // keep tables loading so View Data has column metadata.
             if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get())) {
@@ -3857,7 +3856,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
             app.getTabManager()->createMongoEditorTab(dbData);
         }
         if (ImGui::MenuItem(REFRESH_LABEL)) {
-            dbData->startCollectionsLoadAsync(true);
+            dbData->startTablesLoadAsync(true);
         }
         ImGui::Separator();
         if (ImGui::MenuItem(DELETE_LABEL)) {
@@ -3877,8 +3876,8 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
     if (isOpen) {
         // Render Collections section
         {
-            const std::string collectionsNodeId = std::format(
-                "collections_{}_{:p}", dbData->name, static_cast<void*>(&dbData->collections));
+            const std::string collectionsNodeId = std::format("collections_{}_{:p}", dbData->name,
+                                                              static_cast<void*>(&dbData->tables));
             const bool collectionsOpen = renderTreeNodeWithIcon(
                 "Collections", collectionsNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
@@ -3887,32 +3886,32 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
-                    dbData->startCollectionsLoadAsync(true);
+                    dbData->startTablesLoadAsync(true);
                 }
                 ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
 
             if (collectionsOpen) {
-                if (!dbData->collectionsLoaded && !dbData->collectionsLoader.isRunning()) {
-                    dbData->startCollectionsLoadAsync();
+                if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
+                    dbData->startTablesLoadAsync();
                 }
 
-                if (dbData->collectionsLoader.isRunning()) {
-                    dbData->checkCollectionsStatusAsync();
+                if (dbData->tablesLoader.isRunning()) {
+                    dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
                     UIUtils::Spinner("##loading_collections", 6.0f, 2,
                                      ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
-                } else if (dbData->collectionsLoaded) {
-                    if (dbData->collections.empty()) {
+                } else if (dbData->tablesLoaded) {
+                    if (dbData->tables.empty()) {
                         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
                         ImGui::Text("  No collections");
                         ImGui::PopStyleColor();
                     } else {
-                        for (auto& collection : dbData->collections) {
+                        for (auto& collection : dbData->tables) {
                             renderMongoDBCollectionNode(collection, dbData);
                         }
                     }
@@ -3978,7 +3977,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 dbData, dbData->getTables(),
-                [dbData](const std::string& n) { dbData->dropCollection(n); },
+                [dbData](const std::string& n) { dbData->dropTable(n); },
                 dbData->getDatabaseType());
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -3998,7 +3997,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
                       [dbData, collName]() {
-                          auto [success, error] = dbData->dropCollection(collName);
+                          auto [success, error] = dbData->dropTable(collName);
                           if (!success) {
                               Alert::show("Error",
                                           std::format("Failed to delete collection: {}", error));

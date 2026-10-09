@@ -3,24 +3,21 @@
 #include "async_helper.hpp"
 #include "db.hpp"
 #include "ssh_tunnel.hpp"
+#include <atomic>
+#include <dearsql/connection_info.hpp>
+#include <dearsql/database.hpp>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
 
-enum class DatabaseType {
-    SQLITE,
-    POSTGRESQL,
-    MYSQL,
-    MARIADB,
-    REDIS,
-    MONGODB,
-    MSSQL,
-    ORACLE,
-    REDSHIFT,
-    CASSANDRA,
-    DUCKDB
-};
+using dearsql::CreateDatabaseOptions;
+using dearsql::DatabaseType;
+using dearsql::databaseTypeToString;
+using dearsql::SslMode;
+using dearsql::sslModeToString;
+using dearsql::stringToDatabaseType;
+using dearsql::stringToSslMode;
 
 // single-file backends (connection + node in one class, no host/port/ssl/ssh)
 inline bool isFileDatabase(DatabaseType type) {
@@ -28,12 +25,6 @@ inline bool isFileDatabase(DatabaseType type) {
 }
 
 enum class SSHAuthMethod { Password, PrivateKey };
-
-enum class SslMode { Disable, Allow, Prefer, Require, VerifyCA, VerifyFull, VerifyIdentity };
-
-// Forward declarations (defined in db_factory.cpp)
-std::string sslModeToString(SslMode mode);
-SslMode stringToSslMode(const std::string& str);
 
 struct SSHConfig {
     bool enabled = false;
@@ -45,145 +36,10 @@ struct SSHConfig {
     std::string privateKeyPath; // when authMethod == PrivateKey
 };
 
-struct DatabaseConnectionInfo {
-    DatabaseType type = DatabaseType::SQLITE;
-    std::string name;
-    std::string path; // for SQLite file path
-    std::string host;
-    int port = 5432;
-    std::string database;
-    std::string username;
-    std::string password;
-    bool showAllDatabases = false;
-    SslMode sslmode = SslMode::Prefer; // SSL mode (all server backends)
-    std::string sslCACertPath;         // CA certificate or Oracle wallet path
-    // refuse writes from the editor and the grid. a guard against slips, not a
-    // security boundary — the server is the only place that can truly enforce it
-    bool readOnly = false;
+// the library's connection info plus the ssh tunnel, which only the app knows about.
+// readOnly (from the lib) is a guard against slips, not a security boundary
+struct DatabaseConnectionInfo : dearsql::ConnectionInfo {
     SSHConfig ssh;
-
-    // Build database-specific connection string
-    [[nodiscard]] std::string buildConnectionString(const std::string& dbName = "") const {
-        switch (type) {
-        case DatabaseType::SQLITE:
-        case DatabaseType::DUCKDB:
-            return path;
-
-        case DatabaseType::REDSHIFT:
-        case DatabaseType::POSTGRESQL: {
-            std::string connStr = "host=" + host + " port=" + std::to_string(port);
-            connStr += " connect_timeout=10";
-
-            if (!dbName.empty()) {
-                connStr += " dbname=" + dbName;
-            } else if (!database.empty()) {
-                connStr += " dbname=" + database;
-            } else {
-                connStr +=
-                    std::string(" dbname=") + (type == DatabaseType::REDSHIFT ? "dev" : "postgres");
-            }
-
-            if (!username.empty()) {
-                connStr += " user=" + username;
-            }
-
-            if (!password.empty()) {
-                connStr += " password=" + password;
-            }
-
-            connStr += " sslmode=" + sslModeToString(sslmode);
-            if ((sslmode == SslMode::VerifyCA || sslmode == SslMode::VerifyFull) &&
-                !sslCACertPath.empty()) {
-                connStr += " sslrootcert=" + sslCACertPath;
-            }
-
-            return connStr;
-        }
-
-        case DatabaseType::MYSQL:
-        case DatabaseType::MARIADB: {
-            const std::string targetDb = !dbName.empty() ? dbName : database;
-            std::string connStr =
-                "host=" + host + " port=" + std::to_string(port) + " dbname=" + targetDb;
-
-            if (!username.empty()) {
-                connStr += " user=" + username;
-            }
-
-            if (!password.empty()) {
-                connStr += " password=" + password;
-            }
-
-            return connStr;
-        }
-
-        case DatabaseType::REDIS:
-            return "redis://" + host + ":" + std::to_string(port);
-
-        case DatabaseType::MONGODB: {
-            // mongodb://[username:password@]host[:port][/database]
-            std::string connStr = "mongodb://";
-            if (!username.empty()) {
-                connStr += username;
-                if (!password.empty()) {
-                    connStr += ":" + password;
-                }
-                connStr += "@";
-            }
-            connStr += host + ":" + std::to_string(port);
-            if (!dbName.empty()) {
-                connStr += "/" + dbName;
-            } else if (!database.empty()) {
-                connStr += "/" + database;
-            }
-            // TLS via sslmode
-            if (sslmode == SslMode::Require || sslmode == SslMode::VerifyCA ||
-                sslmode == SslMode::VerifyFull) {
-                connStr += (connStr.find('?') != std::string::npos) ? "&" : "?";
-                connStr += "tls=true";
-                if (!sslCACertPath.empty()) {
-                    connStr += "&tlsCAFile=" + sslCACertPath;
-                } else if (sslmode == SslMode::Require) {
-                    // require = encrypt only, skip cert verification
-                    connStr += "&tlsAllowInvalidCertificates=true";
-                }
-            }
-            return connStr;
-        }
-
-        case DatabaseType::MSSQL: {
-            // FreeTDS uses host:port format for dbopen()
-            return host + ":" + std::to_string(port);
-        }
-
-        case DatabaseType::ORACLE: {
-            // OCI Easy Connect: //host:port/service_name
-            return "//" + host + ":" + std::to_string(port) + "/" + database;
-        }
-
-        case DatabaseType::CASSANDRA: {
-            // cpp-driver uses programmatic CassCluster setup; the string is
-            // diagnostic-only.
-            return host + ":" + std::to_string(port);
-        }
-
-        default:
-            return "";
-        }
-    }
-};
-
-struct CreateDatabaseOptions {
-    std::string name;
-    std::string comment;
-    // PostgreSQL
-    std::string owner;
-    std::string templateDb;
-    std::string encoding;
-    std::string tablespace;
-    // MySQL
-    std::string charset;
-    std::string collation;
 };
 
 /**
@@ -315,10 +171,6 @@ public:
             connectionInfo.database = "master";
             break;
         }
-        case DatabaseType::ORACLE: {
-            connectionInfo.database = "ORCL";
-            break;
-        }
         default:
             return;
         }
@@ -327,6 +179,11 @@ public:
     // Async operation status
     [[nodiscard]] virtual bool hasPendingAsyncWork() const {
         return false;
+    }
+
+    // the libdearsql connection behind this one, null when closed (agent tools use it)
+    [[nodiscard]] virtual std::shared_ptr<dearsql::IConnection> libConnection() const {
+        return nullptr;
     }
 
 protected:
@@ -383,7 +240,7 @@ protected:
     std::string lastConnectionError;
     // Persistent connection ID for app state
     int savedConnectionId = -1;
-    bool connected = false;
+    std::atomic<bool> connected = false; // written by connect workers, read by the UI
     DatabaseConnectionInfo connectionInfo;
     SSHTunnel sshTunnel_;
 
@@ -394,9 +251,25 @@ protected:
     AsyncOperation<std::vector<std::string>> sequencesOp;
 };
 
-// Helper functions to convert between DatabaseType enum and strings
-std::string databaseTypeToString(DatabaseType type);
-DatabaseType stringToDatabaseType(const std::string& typeStr);
+// a loader's result: the list, or the error that stopped it. loaders return it
+// and the UI thread applies it, so workers never write state the sidebar reads
+template <typename T> struct LoadResult {
+    std::vector<T> items;
+    std::string error;
+};
+
+// run a libdearsql catalog/data call on a loader thread: an error is logged and
+// stored in `error` (shown by the sidebar) instead of escaping into check()
+template <typename F> auto libCall(std::string& error, const char* what, F&& fn) -> decltype(fn()) {
+    try {
+        error.clear();
+        return fn();
+    } catch (const std::exception& e) {
+        spdlog::error("{}: {}", what, e.what());
+        error = e.what();
+        return {};
+    }
+}
 
 // Factory for creating database instances
 class DatabaseFactory {

@@ -1,9 +1,12 @@
 #include "application.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
+#include "ui/markdown_text.hpp"
+#include "ui/tab_manager.hpp"
 
-// Tests for the Assistant tab in the sidebar. These drive the real widgets by
+// Tests for the assistant chat tab. These drive the real widgets by
 // id, so they cover the things a build cannot: that the tab renders, that the
 // input exists, and that typing '@' opens the context picker.
 namespace {
@@ -11,11 +14,10 @@ namespace {
     void openAssistantTab(ImGuiTestContext* ctx) {
         auto& app = Application::getInstance();
         app.getAppState()->setSetting("ai_sidebar_backend", "api");
-        app.setSidebarVisible(true);
+        // a chat tab normally opens from a connection's context menu; unbound works too
+        const auto tab = app.getTabManager()->createAIChatTab(nullptr);
         ctx->Yield(2);
-
-        ctx->SetRef("Databases");
-        ctx->ItemClick("**/##sidebar_tab_1"); // rotated "Assistant" strip button, inside a child
+        ctx->SetRef(tab->getWindowName().c_str());
         ctx->Yield(2);
     }
 } // namespace
@@ -66,5 +68,23 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
         ctx->Yield(3);
 
         IM_CHECK(ImGui::FindWindowByName("##ai_mention_popup") != nullptr);
+    };
+}
+
+void RegisterMarkdownTests(ImGuiTestEngine* engine) {
+    ImGuiTest* t = IM_REGISTER_TEST(engine, "Assistant", "Markdown table renders as a table");
+    t->GuiFunc = [](ImGuiTestContext*) {
+        ImGui::Begin("md_test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        MarkdownText::render("| name | rows |\n|---|--:|\n| users | 42 |\n| orders | 7 |", "t");
+        ImGui::End();
+    };
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        ctx->Yield(2);
+        ImGuiWindow* window = ImGui::FindWindowByName("md_test");
+        IM_CHECK(window != nullptr);
+        // block 0 is the table, so its id is ##md_table_t_0
+        ImGuiTable* table = ImGui::TableFindByID(window->GetID("##md_table_t_0"));
+        IM_CHECK(table != nullptr);
+        IM_CHECK_EQ(table->ColumnsCount, 2);
     };
 }

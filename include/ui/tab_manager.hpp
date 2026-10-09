@@ -14,8 +14,12 @@ class PostgresSchemaNode;
 class RedisDatabase;
 class FileDatabase;
 class DatabaseInterface;
-struct Table;
-struct Routine;
+namespace dearsql {
+    struct Table;
+    struct Routine;
+} // namespace dearsql
+using dearsql::Routine;
+using dearsql::Table;
 
 class TabManager {
 public:
@@ -71,6 +75,13 @@ public:
 
     std::shared_ptr<Tab> createSQLiteSequenceViewerTab(FileDatabase* db,
                                                        const std::string& sequenceName);
+
+    // a fresh chat, or the tab already showing `session`
+    std::shared_ptr<Tab> createAIChatTab(const std::shared_ptr<DatabaseInterface>& db,
+                                         const AiSession* session = nullptr);
+    // agents stream while their tab is hidden
+    void tickChatTabs();
+    void forgetChatSession(int sessionId);
 
     std::shared_ptr<Tab> createPostgresSequenceViewerTab(PostgresSchemaNode* schema,
                                                          const std::string& sequenceName);

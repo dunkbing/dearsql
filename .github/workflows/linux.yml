@@ -14,7 +14,15 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
@@ -39,6 +47,11 @@ jobs:
             autoconf automake autoconf-archive \
             freetds-dev libgnutls28-dev libkrb5-dev
 
+      # vcpkg ships no prebuilt cmake/ninja for arm64 linux
+      - name: Use system cmake/ninja on arm64
+        if: matrix.arch == 'aarch64'
+        run: echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
@@ -48,9 +61,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build_release/vcpkg_installed
-          key: vcpkg-installed-linux-${{ hashFiles('vcpkg.json') }}-0a434205
+          key: vcpkg-installed-linux-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}-0a434205
           restore-keys: |
-            vcpkg-installed-linux-
+            vcpkg-installed-linux-${{ matrix.arch }}-
 
       - name: Inject secrets into APP_METADATA
         run: |
@@ -70,50 +83,63 @@ jobs:
 
       - name: Set env vars
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
           APP_NAME=$(grep '^APP_NAME=' APP_METADATA | cut -d= -f2)
-          APPIMAGE_NAME="${APP_NAME}-x86_64.AppImage"
-          VERSION_METADATA_NAME="version.json"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "APPIMAGE_NAME=${APPIMAGE_NAME}" >> "$GITHUB_ENV"
-          echo "VERSION_METADATA_NAME=${VERSION_METADATA_NAME}" >> "$GITHUB_ENV"
+          echo "APPIMAGE_NAME=${APP_NAME}-${{ matrix.arch }}.AppImage" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dearsql-linux-appimage-${{ matrix.arch }}
+          path: |
+            build_release/${{ env.APPIMAGE_NAME }}
+            build_release/${{ env.APPIMAGE_NAME }}.sha256
+
+  # one version.json listing every arch, then the release upload
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download AppImages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dearsql-linux-appimage-*
+          path: dist
+          merge-multiple: true
 
       - name: Create version metadata file
         run: |
-          SHA256=$(cut -d' ' -f1 "build_release/${APPIMAGE_NAME}.sha256")
-          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${APPIMAGE_NAME}"
-          METADATA_PATH="build_release/${VERSION_METADATA_NAME}"
-
-          cat > "$METADATA_PATH" <<EOF
-          {
-            "version": "${VERSION}",
-            "release_notes": "",
-            "downloads": {
-              "appimage-x86_64": {
-                "url": "${DOWNLOAD_URL}",
-                "sha256": "${SHA256}"
-              }
-            }
+          VERSION=${GITHUB_REF_NAME#v}
+          entry() {
+            local file sha
+            file=$(ls dist/*-"$1".AppImage)
+            sha=$(cut -d' ' -f1 "${file}.sha256")
+            printf '    "appimage-%s": {\n      "url": "https://github.com/%s/releases/download/v%s/%s",\n      "sha256": "%s"\n    }' \
+              "$1" "$GITHUB_REPOSITORY" "$VERSION" "$(basename "$file")" "$sha"
           }
-          EOF
 
-          echo "Created ${METADATA_PATH}"
+          {
+            printf '{\n  "version": "%s",\n  "release_notes": "",\n  "downloads": {\n' "$VERSION"
+            entry x86_64
+            printf ',\n'
+            entry aarch64
+            printf '\n  }\n}\n'
+          } > dist/version.json
+
+          rm dist/*.sha256
+          cat dist/version.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: dearsql-linux-appimage
-          path: |
-            build_release/${{ env.APPIMAGE_NAME }}
-            build_release/${{ env.VERSION_METADATA_NAME }}
+          path: dist/*
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: |
-            build_release/${{ env.APPIMAGE_NAME }}
-            build_release/${{ env.VERSION_METADATA_NAME }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

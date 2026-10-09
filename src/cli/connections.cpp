@@ -59,6 +59,7 @@ std::string CliConnections::add(const std::string& spec, std::string& error) {
     }
     auto e = std::make_unique<Entry>();
     e->info = std::move(info);
+    e->spec = spec;
     entries_.push_back(std::move(e));
     return entries_.back()->info.name;
 }
@@ -74,7 +75,7 @@ std::vector<CliConnections::Entry*> CliConnections::entries() {
 CliConnections::Entry* CliConnections::find(const std::string& name) {
     std::lock_guard lock(mutex_);
     for (auto& e : entries_) {
-        if (e->info.name == name)
+        if (e->info.name == name || (!e->spec.empty() && e->spec == name))
             return e.get();
     }
     return nullptr;

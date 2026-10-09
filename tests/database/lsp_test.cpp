@@ -209,6 +209,21 @@ TEST_F(LspTest, SqlsStyleCommandsSwitchTheTarget) {
     EXPECT_NE(conns["result"].get<std::string>().find(" *"), std::string::npos);
 }
 
+// a path from initializationOptions stays one entry across switchDatabase and
+// shows as active
+TEST_F(LspTest, PathTargetIsOneActiveEntry) {
+    start("", {{"connection", path_}});
+    open("SELECT  FROM orders");
+    EXPECT_NE(item(request("textDocument/completion", at(0, 7)), "total"), nullptr);
+    request("workspace/executeCommand", {{"command", "switchDatabase"}, {"arguments", {"main"}}});
+    EXPECT_NE(item(request("textDocument/completion", at(0, 7)), "total"), nullptr);
+    const auto list =
+        request("workspace/executeCommand", {{"command", "showConnections"}})["result"]
+            .get<std::string>();
+    const auto file = std::filesystem::path(path_).filename().string();
+    EXPECT_EQ(list, "1 sqlite " + file + " *\n");
+}
+
 TEST_F(LspTest, UnknownRequestsAndShutdown) {
     start();
     auto r = request("textDocument/definition", at(0, 0));

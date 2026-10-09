@@ -103,6 +103,7 @@ target_link_libraries(
     sql_format_tests
     PRIVATE
         GTest::gtest_main
+        dearsql::dearsql
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
 )

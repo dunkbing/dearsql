@@ -5,6 +5,7 @@
 #include "database/oracle/oracle_client_installer.hpp"
 #include <memory>
 #include <string>
+#include <vector>
 
 class Application;
 
@@ -61,6 +62,7 @@ private:
                        const DatabaseConnectionInfo& info);
     void finishClose(bool cancelled);
 
+    void renderAppearanceRow();
     void renderTypeRow();
     void renderUrlRow();
     void renderSqliteFields(bool& formChanged);
@@ -83,6 +85,10 @@ private:
     int typeIdx_ = 0;
     int connectByIdx_ = 0; // 0 = host, 1 = url
     char nameBuf_[256] = "Untitled connection";
+    int colorIdx_ = -1; // index into Theme::ConnectionPalette::ENTRIES, -1 = none
+    char envTagBuf_[64] = {};
+    // snapshot taken when the dialog opens; see collectExistingTags
+    std::vector<std::string> knownTags_;
     char urlBuf_[1024] = {};
     std::string urlError_;
     char sqlitePathBuf_[1024] = {};

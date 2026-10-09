@@ -87,6 +87,7 @@ add_executable(
     sql_format_tests
     tests/ui/sql_format_test.cpp
     tests/ui/csv_parser_test.cpp
+    tests/ui/env_tag_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
     src/ui/text_editor_format.cpp
@@ -102,6 +103,7 @@ target_link_libraries(
     sql_format_tests
     PRIVATE
         GTest::gtest_main
+        dearsql::dearsql
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
 )

@@ -21,6 +21,7 @@ public:
     [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
         return node_;
     }
+
     [[nodiscard]] const std::string& getRoutineName() const {
         return routine_.name;
     }

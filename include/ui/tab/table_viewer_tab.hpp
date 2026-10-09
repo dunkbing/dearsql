@@ -39,6 +39,7 @@ public:
     [[nodiscard]] int getTotalRows() const {
         return totalRows;
     }
+
     void loadDataAsync();
     void checkAsyncLoadStatus();
     void nextPage();

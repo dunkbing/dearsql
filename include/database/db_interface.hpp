@@ -40,6 +40,11 @@ struct SSHConfig {
 // readOnly (from the lib) is a guard against slips, not a security boundary
 struct DatabaseConnectionInfo : dearsql::ConnectionInfo {
     SSHConfig ssh;
+
+    // Palette key ("red", "peach", …) resolved against the active theme rather
+    // than a stored colour, so a choice stays legible in both light and dark.
+    std::string color;
+    std::string envTag; // short label shown first in the connection banner
 };
 
 /**

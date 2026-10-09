@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/cassandra.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
 #include "database/mongodb.hpp"
@@ -14,7 +15,9 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
+#include "themes.hpp"
 #include "ui/connection_dialog.hpp"
+#include "ui/env_tag.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
 #include "ui/input_dialog.hpp"
@@ -129,6 +132,124 @@ void DatabaseSidebarNew::syncHierarchyCache(
     });
 }
 
+using env_tag::groupKey;
+
+void DatabaseSidebarNew::applyEnvTag(int connectionId, const std::string& tag) {
+    auto& app = Application::getInstance();
+    for (const auto& db : app.getDatabases()) {
+        if (!db || db->getConnectionId() != connectionId) {
+            continue;
+        }
+        auto info = db->getConnectionInfo();
+        // Same-group drops are a no-op. Compare with the same rule the sidebar
+        // groups by (case-insensitive), so dropping onto the group's own header
+        // does not silently normalise a case-variant tag to the group's first-
+        // seen spelling.
+        if (groupKey(info.envTag) == groupKey(tag)) {
+            return;
+        }
+        const AppState* state = app.getAppState();
+        if (!state || !state->updateConnectionEnvTag(connectionId, tag)) {
+            spdlog::error("Failed to persist env_tag change for connection {}", connectionId);
+            return;
+        }
+        info.envTag = tag;
+        db->setConnectionInfo(info);
+        return;
+    }
+}
+
+void DatabaseSidebarNew::renderGroupedDatabaseNodes(
+    const std::vector<std::shared_ptr<DatabaseInterface>>& databases) {
+    // group order follows first appearance, so the list does not reshuffle
+    // when a connection is renamed
+    std::vector<std::pair<std::string, std::vector<std::shared_ptr<DatabaseInterface>>>> groups;
+    std::vector<std::shared_ptr<DatabaseInterface>> ungrouped;
+
+    for (const auto& db : databases) {
+        if (!db) {
+            continue;
+        }
+        const std::string& tag = db->getConnectionInfo().envTag;
+        if (tag.empty()) {
+            ungrouped.push_back(db);
+            continue;
+        }
+        const std::string key = groupKey(tag);
+        auto it = std::ranges::find_if(groups, [&key](const auto& g) { return g.first == key; });
+        if (it == groups.end()) {
+            groups.emplace_back(key, std::vector{db});
+        } else {
+            it->second.push_back(db);
+        }
+    }
+
+    // nothing is tagged: render exactly as before, with no headers to explain
+    if (groups.empty()) {
+        for (const auto& db : ungrouped) {
+            renderDatabaseNode(db);
+        }
+        return;
+    }
+
+    // getSetting is a SQLite query, so the persisted state is read once per key
+    // and held in memory; only a toggle writes back
+    auto isOpen = [this](const std::string& key) {
+        if (const auto it = groupOpenCache_.find(key); it != groupOpenCache_.end()) {
+            return it->second;
+        }
+        const AppState* appState = Application::getInstance().getAppState();
+        const bool open =
+            !appState || appState->getSetting("sidebar_group_open_" + key, "1") != "0";
+        groupOpenCache_.emplace(key, open);
+        return open;
+    };
+
+    auto setOpen = [this](const std::string& key, bool open) {
+        groupOpenCache_[key] = open;
+        if (const AppState* appState = Application::getInstance().getAppState()) {
+            appState->setSetting("sidebar_group_open_" + key, open ? "1" : "0");
+        }
+    };
+
+    auto renderGroup = [&](const std::string& key, const std::string& label,
+                           const std::string& targetTag,
+                           const std::vector<std::shared_ptr<DatabaseInterface>>& members) {
+        const bool wasOpen = isOpen(key);
+        ImGui::SetNextItemOpen(wasOpen, ImGuiCond_Always);
+        const bool open = ImGui::CollapsingHeader(
+            std::format("{} ({})###group_{}", label, members.size(), key).c_str());
+        // Accept a connection dropped onto the header row: reassigns its env_tag
+        // to the string this group persists under (empty for UNGROUPED).
+        if (ImGui::BeginDragDropTarget()) {
+            if (const auto* payload = ImGui::AcceptDragDropPayload("DEARSQL_CONNECTION")) {
+                const int connId = *static_cast<const int*>(payload->Data);
+                applyEnvTag(connId, targetTag);
+            }
+            ImGui::EndDragDropTarget();
+        }
+        if (open != wasOpen) {
+            setOpen(key, open);
+        }
+        if (open) {
+            for (const auto& db : members) {
+                renderDatabaseNode(db);
+            }
+        }
+    };
+
+    for (const auto& [key, members] : groups) {
+        const std::string& originalTag = members.front()->getConnectionInfo().envTag;
+        renderGroup(key, ddl_utils::toUpper(originalTag), originalTag, members);
+    }
+
+    if (!ungrouped.empty()) {
+        // Distinct from any groupKey() output so a real tag "none" would not
+        // collide on the CollapsingHeader ID or the persisted open-state key.
+        renderGroup("__ungrouped__", "UNGROUPED", "", ungrouped);
+    }
+}
+
 void DatabaseSidebarNew::renderStructure() {
     auto& app = Application::getInstance();
 
@@ -141,9 +262,7 @@ void DatabaseSidebarNew::renderStructure() {
     if (!databases.empty()) {
         // copy shared_ptrs so a removal during rendering doesn't invalidate the iterator
         const auto snapshot = databases;
-        for (const auto& db : snapshot) {
-            renderDatabaseNode(db);
-        }
+        renderGroupedDatabaseNodes(snapshot);
     } else {
         renderEmpty();
     }
@@ -484,9 +603,33 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     const std::string dbLabel =
         std::format("   {}###db_{:p}", connectionInfo.name, static_cast<const void*>(db.get()));
+
+    // status colour fills the whole row. Drawn before the node so the label sits
+    // on top of it, and kept translucent so the text stays readable against any
+    // palette entry in either theme.
+    if (ImVec4 accent; Theme::ConnectionPalette::resolve(connectionInfo.color, colors, accent)) {
+        const ImVec2 rowMin = ImGui::GetCursorScreenPos();
+        const float rowLeft = ImGui::GetWindowPos().x;
+        const float rowRight = rowLeft + ImGui::GetWindowContentRegionMax().x;
+        accent.w = 0.30f;
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(rowLeft, rowMin.y), ImVec2(rowRight, rowMin.y + ImGui::GetFrameHeight()),
+            ImGui::GetColorU32(accent));
+    }
+
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
     const ImVec2 nodeMin = ImGui::GetItemRectMin();
     const ImVec2 nodeMax = ImGui::GetItemRectMax();
+
+    // Drag-source: dragging a connection onto a tag group in this sidebar
+    // reassigns its env_tag. The payload is the connection id since names are
+    // mutable, and the source's own group accepts the drop as a no-op.
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        const int connId = db->getConnectionId();
+        ImGui::SetDragDropPayload("DEARSQL_CONNECTION", &connId, sizeof(int));
+        ImGui::TextUnformatted(connectionInfo.name.c_str());
+        ImGui::EndDragDropSource();
+    }
 
     const float iconSize = texMgr.getIconSize();
     const auto dbIconPos = ImVec2(nodeMin.x + ImGui::GetTreeNodeToLabelSpacing(),

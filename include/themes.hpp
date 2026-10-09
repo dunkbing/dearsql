@@ -1,5 +1,6 @@
 #pragma once
 #include "imgui.h"
+#include <string>
 
 namespace Theme {
     struct Colors {
@@ -211,6 +212,33 @@ namespace Theme {
     inline void ApplyTheme(const Colors& colors) {
         ApplyNativeTheme(colors);
     }
+
+    // Connections store a palette key rather than a colour, so a choice made in
+    // one theme stays legible in the other.
+    namespace ConnectionPalette {
+        struct Entry {
+            const char* key;
+            ImVec4 Colors::* member;
+        };
+
+        inline constexpr Entry ENTRIES[] = {
+            {"red", &Colors::red},     {"peach", &Colors::peach}, {"yellow", &Colors::yellow},
+            {"green", &Colors::green}, {"blue", &Colors::blue},   {"purple", &Colors::purple},
+        };
+
+        // Returns false when the key is empty or unknown, leaving `out` untouched.
+        inline bool resolve(const std::string& key, const Colors& colors, ImVec4& out) {
+            if (key.empty())
+                return false;
+            for (const auto& entry : ENTRIES) {
+                if (key == entry.key) {
+                    out = colors.*entry.member;
+                    return true;
+                }
+            }
+            return false;
+        }
+    } // namespace ConnectionPalette
 
     namespace Spacing {
         constexpr float XS = 2.0f;

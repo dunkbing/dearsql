@@ -1,9 +1,12 @@
 #include "ui/connection_dialog.hpp"
+#include "IconsFontAwesome6.h"
 #include "app_state.hpp"
 #include "application.hpp"
 #include "database/connection_url.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
+#include "ui/env_tag.hpp"
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
@@ -14,7 +17,9 @@
 #include <cfloat>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_set>
 #include <format>
+#include <iterator>
 
 namespace {
     constexpr const char* kPopupId = "###connection_dialog";
@@ -47,6 +52,43 @@ namespace {
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(colors.subtext0, "%s", text);
         ImGui::SameLine(kLabelColumnW);
+    }
+
+    // ring around the swatch just submitted, so the current choice is visible
+    // without moving the swatches around
+    void drawSwatchSelection(bool selected) {
+        if (!selected)
+            return;
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                            ImGui::GetColorU32(colors.text),
+                                            ImGui::GetStyle().FrameRounding, 0, 2.0f);
+    }
+
+    // Tags already in use, deduplicated case-insensitively, keeping the first
+    // spelling seen — the same rule the sidebar groups by.
+    //
+    // Only ever called when the dialog opens. getSavedConnections derives a key
+    // and decrypts credentials for every row, which costs tens of milliseconds
+    // per connection; calling it from the render path would drag the dialog to a
+    // crawl and flood the log.
+    std::vector<std::string> collectExistingTags() {
+        std::vector<std::string> tags;
+        std::unordered_set<std::string> seen;
+        const AppState* state = Application::getInstance().getAppState();
+        if (!state) {
+            return tags;
+        }
+        for (const auto& conn : state->getSavedConnections()) {
+            const std::string& tag = conn.connectionInfo.envTag;
+            if (tag.empty()) {
+                continue;
+            }
+            if (seen.insert(env_tag::groupKey(tag)).second) {
+                tags.push_back(tag);
+            }
+        }
+        return tags;
     }
 
     bool shouldShowCACertField(DatabaseType type, SslMode mode) {
@@ -91,6 +133,7 @@ void ConnectionDialog::show(Application* app) {
     editingDb_.reset();
     editingConnectionId_ = -1;
     resetForm();
+    knownTags_ = collectExistingTags();
     open_ = true;
     pendingOpen_ = true;
 }
@@ -103,6 +146,7 @@ void ConnectionDialog::showEdit(Application* app, std::shared_ptr<DatabaseInterf
     editingConnectionId_ = db->getConnectionId();
     resetForm();
     populateForm(db->getConnectionInfo());
+    knownTags_ = collectExistingTags();
     open_ = true;
     pendingOpen_ = true;
 }
@@ -111,6 +155,8 @@ void ConnectionDialog::resetForm() {
     typeIdx_ = 0;
     connectByIdx_ = 0;
     copyToBuf(nameBuf_, sizeof(nameBuf_), "Untitled connection");
+    colorIdx_ = -1;
+    envTagBuf_[0] = '\0';
     urlBuf_[0] = '\0';
     urlError_.clear();
     sqlitePathBuf_[0] = '\0';
@@ -186,6 +232,15 @@ void ConnectionDialog::populateForm(const DatabaseConnectionInfo& info) {
     copyToBuf(nameBuf_, sizeof(nameBuf_), info.name);
     readOnly_ = info.readOnly; // applies to file databases too, so set it before the early return
 
+    colorIdx_ = -1;
+    for (int i = 0; i < static_cast<int>(std::size(Theme::ConnectionPalette::ENTRIES)); ++i) {
+        if (info.color == Theme::ConnectionPalette::ENTRIES[i].key) {
+            colorIdx_ = i;
+            break;
+        }
+    }
+    copyToBuf(envTagBuf_, sizeof(envTagBuf_), info.envTag);
+
     if (isFileDatabase(info.type)) {
         copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), info.path);
         return;
@@ -233,6 +288,8 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
     info.type = selectedType();
     info.name = nameBuf_;
     info.readOnly = readOnly_; // set before the file-database early return
+    info.color = colorIdx_ >= 0 ? Theme::ConnectionPalette::ENTRIES[colorIdx_].key : "";
+    info.envTag = ddl_utils::trim(envTagBuf_);
     if (isFileDatabase(info.type)) {
         info.path = sqlitePathBuf_;
         return info;
@@ -382,10 +439,7 @@ void ConnectionDialog::connectFileDatabase() {
         return;
     }
 
-    // snapshotForm() returns early for file databases with exactly these fields
-    // plus readOnly; building the info by hand here silently dropped that flag
     const DatabaseConnectionInfo info = snapshotForm();
-
     auto db = DatabaseFactory::createDatabase(info);
     auto [success, error] = db->connect();
     if (success) {
@@ -582,6 +636,8 @@ void ConnectionDialog::render() {
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##conn_name", "Connection name", nameBuf_, sizeof(nameBuf_));
 
+    renderAppearanceRow();
+
     renderTypeRow();
 
     if (!isFileDatabase(selectedType())) {
@@ -628,6 +684,68 @@ void ConnectionDialog::render() {
     ImGui::EndPopup();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
+}
+
+void ConnectionDialog::renderAppearanceRow() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    fieldLabel("Status color");
+
+    constexpr float kSwatch = 22.0f;
+    const ImGuiStyle& style = ImGui::GetStyle();
+
+    // "none" first, then the palette, so clearing is as easy as choosing
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+    if (ImGui::Button("##conn_color_none", ImVec2(kSwatch, kSwatch))) {
+        colorIdx_ = -1;
+    }
+    ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("No colour");
+    drawSwatchSelection(colorIdx_ == -1);
+
+    for (int i = 0; i < static_cast<int>(std::size(Theme::ConnectionPalette::ENTRIES)); ++i) {
+        const auto& entry = Theme::ConnectionPalette::ENTRIES[i];
+        const ImVec4 swatchColor = colors.*entry.member;
+
+        ImGui::SameLine(0.0f, style.ItemSpacing.x * 0.5f);
+        ImGui::PushID(i);
+        ImGui::PushStyleColor(ImGuiCol_Button, swatchColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, swatchColor);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, swatchColor);
+        if (ImGui::Button("##conn_color", ImVec2(kSwatch, kSwatch))) {
+            colorIdx_ = i;
+        }
+        ImGui::PopStyleColor(3);
+        ImGui::PopID();
+        drawSwatchSelection(colorIdx_ == i);
+    }
+
+    fieldLabel("Tag");
+    ImGui::SetNextItemWidth(180.0f);
+    ImGui::InputTextWithHint("##conn_env_tag", "dev, prod, …", envTagBuf_, sizeof(envTagBuf_));
+
+    // the tag groups the sidebar, so offer the tags already in use — typing a
+    // near-miss would silently create a second group
+    if (!knownTags_.empty()) {
+        ImGui::SameLine(0, Theme::Spacing::S);
+        if (ImGui::Button(ICON_FA_CHEVRON_DOWN "##conn_env_tag_pick")) {
+            ImGui::OpenPopup("##conn_env_tag_list");
+        }
+        if (ImGui::BeginPopup("##conn_env_tag_list")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            for (const auto& tag : knownTags_) {
+                if (ImGui::MenuItem(tag.c_str())) {
+                    copyToBuf(envTagBuf_, sizeof(envTagBuf_), tag);
+                }
+            }
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
+        }
+    }
 }
 
 void ConnectionDialog::renderTypeRow() {

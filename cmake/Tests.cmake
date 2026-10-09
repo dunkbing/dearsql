@@ -14,29 +14,25 @@ add_executable(
     tests/database/ssh_tunnel_test.cpp
     tests/database/sql_builder_test.cpp
     tests/database/connection_url_test.cpp
+    tests/database/mcp_tools_test.cpp
+    tests/database/cli_command_test.cpp
+    src/utils/cli_command.cpp
+    src/utils/process_runner.cpp
+    src/mcp/db_tools.cpp
     src/database/db_factory.cpp
     src/database/connection_url.cpp
-    src/database/sqlite.cpp
-    src/database/duckdb.cpp
-    src/database/postgresql.cpp
+    src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
-    src/database/postgres/postgres_schema_node.cpp
-    src/database/mysql.cpp
     src/database/mysql/mysql_database_node.cpp
-    src/database/mysql/mysql_internal.cpp
     src/database/redis.cpp
-    src/database/mongodb.cpp
     src/database/mongodb/mongodb_database_node.cpp
-    src/database/mssql.cpp
     src/database/mssql/mssql_database_node.cpp
-    src/database/mssql/mssql_schema_node.cpp
     src/database/oracle.cpp
     src/database/oracle/oracle_database_node.cpp
     src/database/oracle/oracle_client_installer.cpp
-    src/database/cassandra.cpp
     src/database/cassandra/cassandra_database_node.cpp
     src/database/db_utils.cpp
-    src/database/sql_builder.cpp
+    src/database/lib_database_node.cpp
     src/database/ssh_config_parser.cpp
     tests/database/credential_migration_test.cpp
     src/app_state.cpp
@@ -54,14 +50,6 @@ target_include_directories(
     database_tests
     PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include
 )
-if(SYBDB_INCLUDE_DIR AND NOT SYBDB_INCLUDE_DIR STREQUAL "")
-  target_include_directories(
-        database_tests
-        SYSTEM
-        AFTER
-        PRIVATE ${SYBDB_INCLUDE_DIR}
-    )
-endif()
 
 target_link_libraries(
     database_tests
@@ -75,10 +63,7 @@ target_link_libraries(
         hiredis::hiredis_ssl
         $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
         $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
-        ${SYBDB_LIBRARY}
-        ${SYBDB_DEPS}
-        odpi
-        cassandra_static
+        dearsql::dearsql
         spdlog::spdlog
         OpenSSL::SSL
         OpenSSL::Crypto

@@ -44,7 +44,7 @@ TEST_F(SQLBuilderTest, PostgreSQLAddColumn) {
     col.type = "VARCHAR(20)";
     col.isNotNull = false;
 
-    std::string sql = postgresBuilder->addColumn("users", col);
+    std::string sql = postgresBuilder->addColumn(postgresBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE \"users\" ADD COLUMN \"phone\" VARCHAR(20)");
 }
 
@@ -54,7 +54,7 @@ TEST_F(SQLBuilderTest, PostgreSQLAddColumnNotNull) {
     col.type = "TEXT";
     col.isNotNull = true;
 
-    std::string sql = postgresBuilder->addColumn("users", col);
+    std::string sql = postgresBuilder->addColumn(postgresBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE \"users\" ADD COLUMN \"email\" TEXT NOT NULL");
 }
 
@@ -63,24 +63,25 @@ TEST_F(SQLBuilderTest, MySQLAddColumn) {
     col.name = "phone";
     col.type = "VARCHAR(20)";
 
-    std::string sql = mysqlBuilder->addColumn("users", col);
+    std::string sql = mysqlBuilder->addColumn(mysqlBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE `users` ADD COLUMN `phone` VARCHAR(20)");
 }
 
 // ========== DROP COLUMN Tests ==========
 
 TEST_F(SQLBuilderTest, PostgreSQLDropColumn) {
-    std::string sql = postgresBuilder->dropColumn("users", "phone");
+    std::string sql =
+        postgresBuilder->dropColumn(postgresBuilder->quoteIdentifier("users"), "phone");
     EXPECT_EQ(sql, "ALTER TABLE \"users\" DROP COLUMN \"phone\"");
 }
 
 TEST_F(SQLBuilderTest, MySQLDropColumn) {
-    std::string sql = mysqlBuilder->dropColumn("users", "phone");
+    std::string sql = mysqlBuilder->dropColumn(mysqlBuilder->quoteIdentifier("users"), "phone");
     EXPECT_EQ(sql, "ALTER TABLE `users` DROP COLUMN `phone`");
 }
 
 TEST_F(SQLBuilderTest, SQLiteDropColumn) {
-    std::string sql = sqliteBuilder->dropColumn("users", "phone");
+    std::string sql = sqliteBuilder->dropColumn(sqliteBuilder->quoteIdentifier("users"), "phone");
     EXPECT_EQ(sql, "ALTER TABLE \"users\" DROP COLUMN \"phone\"");
 }
 
@@ -118,7 +119,7 @@ TEST_F(SQLBuilderTest, MySQLAddColumnAutoIncrement) {
     col.isNotNull = true;
     col.isAutoIncrement = true;
 
-    std::string sql = mysqlBuilder->addColumn("users", col);
+    std::string sql = mysqlBuilder->addColumn(mysqlBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE `users` ADD COLUMN `id` INT NOT NULL AUTO_INCREMENT");
 }
 
@@ -129,7 +130,7 @@ TEST_F(SQLBuilderTest, MSSQLAddColumnIdentity) {
     col.isNotNull = true;
     col.isAutoIncrement = true;
 
-    std::string sql = mssqlBuilder->addColumn("users", col);
+    std::string sql = mssqlBuilder->addColumn(mssqlBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE [users] ADD [id] INT IDENTITY(1,1) NOT NULL");
 }
 
@@ -139,7 +140,7 @@ TEST_F(SQLBuilderTest, OracleAddColumnIdentity) {
     col.type = "NUMBER";
     col.isAutoIncrement = true;
 
-    std::string sql = oracleBuilder->addColumn("users", col);
+    std::string sql = oracleBuilder->addColumn(oracleBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE \"users\" ADD \"id\" NUMBER GENERATED ALWAYS AS IDENTITY");
 }
 
@@ -149,7 +150,7 @@ TEST_F(SQLBuilderTest, PostgreSQLAddColumnSerial) {
     col.type = "INTEGER";
     col.isAutoIncrement = true;
 
-    std::string sql = postgresBuilder->addColumn("users", col);
+    std::string sql = postgresBuilder->addColumn(postgresBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE \"users\" ADD COLUMN \"id\" SERIAL");
 }
 
@@ -159,7 +160,7 @@ TEST_F(SQLBuilderTest, PostgreSQLAddColumnBigserial) {
     col.type = "BIGINT";
     col.isAutoIncrement = true;
 
-    std::string sql = postgresBuilder->addColumn("users", col);
+    std::string sql = postgresBuilder->addColumn(postgresBuilder->quoteIdentifier("users"), col);
     EXPECT_EQ(sql, "ALTER TABLE \"users\" ADD COLUMN \"id\" BIGSERIAL");
 }
 

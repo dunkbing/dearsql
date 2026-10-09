@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-// one AI sidebar conversation. transcript is stored only for the api-key backend;
+// one assistant chat, under a connection. transcript is stored only for the api-key backend;
 // acp agents keep their own history and are resumed through acp_session_id
 struct AiSession {
     int id = 0;
@@ -14,6 +14,9 @@ struct AiSession {
     std::string title; // first user message
     std::string updatedAt;
 };
+
+// "5m", "2h", "3d" since an ai_sessions updated_at (sqlite utc CURRENT_TIMESTAMP)
+std::string relativeAge(const std::string& stamp);
 
 struct SqlScript {
     int id = 0;
@@ -89,10 +92,12 @@ public:
     [[nodiscard]] std::vector<SqlScript> getScriptsForConnection(int connectionId) const;
 
     // AI sessions. id 0 inserts; returns the row id (or -1)
-    int saveAiSession(int id, const std::string& backend, const std::string& acpSessionId,
-                      const std::string& title, const std::string& transcript) const;
-    [[nodiscard]] std::vector<AiSession> getAiSessions(const std::string& backend,
-                                                       int limit = 20) const;
+    int saveAiSession(int id, int connectionId, const std::string& backend,
+                      const std::string& acpSessionId, const std::string& title,
+                      const std::string& transcript) const;
+    // a connection's chats, newest first; empty backend = every backend
+    [[nodiscard]] std::vector<AiSession>
+    getAiSessions(int connectionId, const std::string& backend = "", int limit = 20) const;
     [[nodiscard]] std::string getAiSessionTranscript(int id) const;
     bool deleteAiSession(int id) const;
 

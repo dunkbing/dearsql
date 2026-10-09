@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app_state.hpp"
 #include "database/db_interface.hpp"
 #include "database/oracle/oracle_client_installer.hpp"
 #include "database_node.hpp"
@@ -8,8 +9,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-class AISidebarPanel;
 
 class DatabaseSidebarNew {
 public:
@@ -39,14 +38,10 @@ private:
     renderGroupedDatabaseNodes(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
     void renderHistory();
     void renderEmpty();
-    float getHistoryButtonHeight() const;
-    void renderHistoryToggleButton(const ImVec2& btnMin, float buttonW, float buttonH,
-                                   bool drawRightBorder);
-    // rotated tab label in the left strip; true when clicked
-    bool renderVerticalTabButton(const char* id, const char* label, const ImVec2& btnMin,
-                                 float buttonW, float buttonH, bool active);
+    void renderHistoryToggleButton(float height);
     void renderDatabaseNode(const std::shared_ptr<DatabaseInterface>& db);
     void handleDatabaseContextMenu(const std::shared_ptr<DatabaseInterface>& db);
+    void renderChatHistoryNode(const std::shared_ptr<DatabaseInterface>& db);
     void syncHierarchyCache(const std::vector<std::shared_ptr<DatabaseInterface>>& databases);
     void applyEnvTag(int connectionId, const std::string& tag);
 
@@ -58,11 +53,14 @@ private:
 
     bool historyPanelOpen = false;
     bool texturesLoaded_ = false;
-    int activeSidebarTab_ = 0; // 0 = Databases, 1 = AI
-
-    std::unique_ptr<AISidebarPanel> aiPanel_;
 
     OracleClientInstaller oracleClientInstaller_;
+
+    struct ChatHistoryCache {
+        double fetchedAt = -1.0;
+        std::vector<AiSession> sessions;
+    };
+    std::unordered_map<int, ChatHistoryCache> chatHistory_; // by connection id
 
     // Cache of DatabaseHierarchy instances (keyed by raw pointer)
     std::unordered_map<DatabaseInterface*, std::unique_ptr<DatabaseHierarchy>> hierarchyCache;

@@ -1412,8 +1412,13 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
     if (auto* dbNode = dynamic_cast<PostgresDatabaseNode*>(node); dbNode && dbNode->parentDb) {
         const std::string dbName = dbNode->name;
         binding_.resolveNode = [serverDb = dbNode->parentDb, dbName]() -> IDatabaseNode* {
-            if (auto* resolved = const_cast<PostgresDatabaseNode*>(
-                    static_cast<const PostgresDatabase*>(serverDb)->getDatabaseData(dbName))) {
+            // lookup only; a dropped database must not be recreated
+            auto find = [&]() -> IDatabaseNode* {
+                const auto& nodes = std::as_const(*serverDb).getDatabaseDataMap();
+                auto it = nodes.find(dbName);
+                return it != nodes.end() ? it->second.get() : nullptr;
+            };
+            if (auto* resolved = find()) {
                 return resolved;
             }
 
@@ -1421,8 +1426,7 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
                 serverDb->refreshDatabaseNames();
             }
             serverDb->checkDatabasesStatusAsync();
-            return const_cast<PostgresDatabaseNode*>(
-                static_cast<const PostgresDatabase*>(serverDb)->getDatabaseData(dbName));
+            return find();
         };
         binding_.resolveExecutor = [this]() -> IQueryExecutor* {
             return binding_.resolveNode ? binding_.resolveNode() : nullptr;

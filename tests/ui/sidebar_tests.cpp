@@ -1,6 +1,6 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
-#include "database/sqlite.hpp"
+#include "database/file_database.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 
@@ -11,7 +11,7 @@ static std::shared_ptr<DatabaseInterface> createTestDatabase(const std::string& 
     connInfo.name = name;
     connInfo.path = ":memory:";
 
-    auto db = std::make_shared<SQLiteDatabase>(connInfo);
+    auto db = std::make_shared<FileDatabase>(connInfo);
     if (db) {
         auto [success, error] = db->connect();
         if (!success) {
@@ -118,12 +118,12 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         IM_CHECK(testDb != nullptr);
 
         // connect and create a table
-        if (auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(testDb)) {
+        if (auto sqliteDb = std::dynamic_pointer_cast<FileDatabase>(testDb)) {
             sqliteDb->executeQuery("CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)");
         }
 
         // table loading is async now; kick it off and let the frames below pump it
-        if (auto sqliteDb = std::dynamic_pointer_cast<SQLiteDatabase>(testDb)) {
+        if (auto sqliteDb = std::dynamic_pointer_cast<FileDatabase>(testDb)) {
             sqliteDb->startTablesLoadAsync(true);
         }
 

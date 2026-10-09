@@ -8,6 +8,7 @@
 #include "imgui_te_engine.h"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
+#include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <chrono>
@@ -29,12 +30,14 @@ namespace {
         }
     }
 
+    // a chat tab on the first saved connection, as its context menu would open it
     void openAssistant(ImGuiTestContext* ctx) {
-        Application::getInstance().setSidebarVisible(true);
-        ctx->Yield(2);
-        ctx->SetRef("Databases");
-        ctx->ItemClick("**/##sidebar_tab_1");
+        auto& app = Application::getInstance();
+        app.setSidebarVisible(true);
+        const auto& dbs = app.getDatabases();
+        const auto tab = app.getTabManager()->createAIChatTab(dbs.empty() ? nullptr : dbs.front());
         ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
     }
 
     // the context picker has nothing to list until a connection is open, and
@@ -132,8 +135,6 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         Application::getInstance().setSidebarVisible(true);
         ctx->Yield(2);
         ctx->SetRef("Databases");
-        ctx->ItemClick("**/##sidebar_tab_0");
-        ctx->Yield(3);
         connectEverything(ctx);
         if (const auto db = firstDbWithTables(ctx)) {
             expandInSidebar(ctx, db);
@@ -212,6 +213,14 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         // hover, not click: clicking refocuses the parent popup, which then draws
         // over the submenu it just opened
         ctx->MouseMove("Export");
+        ctx->Yield(5);
+        holdForScreenshot(ctx);
+    };
+
+    // the settings dialog, with the command-line install row
+    t = IM_REGISTER_TEST(engine, "Docs", "app-settings");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
         ctx->Yield(5);
         holdForScreenshot(ctx);
     };

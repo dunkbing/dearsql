@@ -1,6 +1,5 @@
 #include "utils/mysql_dump_export.hpp"
 
-#include "database/mysql/mysql_internal.hpp"
 #include "database/sql_builder.hpp"
 #include "utils/mysql_session_reset.hpp"
 
@@ -13,8 +12,6 @@
 #include <vector>
 
 namespace {
-
-    using mysql_internal::MysqlResPtr;
 
     // Extended INSERTs are capped here, under the usual max_allowed_packet, so a
     // dump this writes can always be read back.
@@ -244,14 +241,15 @@ namespace MysqlDumpExport {
             return result;
         }
 
-        std::optional<ConnectionPool<MYSQL*>::Session> session;
+        std::optional<LibDatabaseNode::Session> session;
+        MYSQL* conn = nullptr;
         try {
-            session.emplace(node->getSession());
+            session.emplace(node->acquire());
+            conn = nativeMysql(*session);
         } catch (const std::exception& e) {
             result.error = e.what();
             return result;
         }
-        MYSQL* conn = session->get();
 
         // The export pins sql_mode on this session below. Without this the
         // connection went back to the pool without STRICT_TRANS_TABLES, and the next

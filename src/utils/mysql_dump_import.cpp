@@ -47,9 +47,11 @@ namespace MysqlDumpImport {
 
         // Held for the whole dump so session state set by its preamble survives.
         // getSession() throws if the pool cannot hand one out.
-        std::optional<ConnectionPool<MYSQL*>::Session> session;
+        std::optional<LibDatabaseNode::Session> session;
+        MYSQL* conn = nullptr;
         try {
-            session.emplace(node->getSession());
+            session.emplace(node->acquire());
+            conn = nativeMysql(*session);
         } catch (const std::exception& e) {
             result.error = e.what();
             return result;
@@ -57,7 +59,7 @@ namespace MysqlDumpImport {
 
         // Restores the pooled connection on every path out, including the early
         // return below when the file cannot be opened.
-        const MySQLSessionReset sessionReset(session->get(), node->name);
+        const MySQLSessionReset sessionReset(conn, node->name);
 
         std::error_code sizeError;
         const auto size = std::filesystem::file_size(path, sizeError);
@@ -85,7 +87,7 @@ namespace MysqlDumpImport {
             if (batch.empty()) {
                 return true;
             }
-            const auto queryResult = node->executeQueryOn(session->get(), batch);
+            const auto queryResult = session->get()->execute(batch, 1000);
             batch.clear();
             if (!queryResult.success()) {
                 failure = queryResult.errorMessage();

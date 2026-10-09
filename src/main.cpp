@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "cli/cli.hpp"
 #include "database/async_helper.hpp"
 #include "utils/sentry_init.hpp"
 #include <spdlog/spdlog.h>
@@ -28,6 +29,10 @@ namespace {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // `dearsql --tui` / `--mcp` run in the terminal and never start the GUI
+    if (auto rc = runCli(argc, argv))
+        return *rc;
+
 #ifdef NDEBUG
     spdlog::set_level(spdlog::level::info);
 #else

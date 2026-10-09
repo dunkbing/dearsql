@@ -1,9 +1,29 @@
 #pragma once
 
+#include "database/lib_database_node.hpp"
+#include <dearsql/backends/mysql_connection.hpp>
+#include <memory>
 #include <mysql.h>
 #include <spdlog/spdlog.h>
+#include <stdexcept>
 #include <string>
 #include <utility>
+
+struct MysqlResDeleter {
+    void operator()(MYSQL_RES* r) const {
+        if (r)
+            mysql_free_result(r);
+    }
+};
+using MysqlResPtr = std::unique_ptr<MYSQL_RES, MysqlResDeleter>;
+
+// the libmysql handle behind a pinned MySQL session, for the dump code
+inline MYSQL* nativeMysql(LibDatabaseNode::Session& session) {
+    auto& db = static_cast<dearsql::MySQLDatabase&>(*session.get());
+    if (auto [ok, err] = db.open(); !ok)
+        throw std::runtime_error(err);
+    return db.handle();
+}
 
 /**
  * @brief Returns a pooled MySQL connection to the state the pool handed it out in.

@@ -4,6 +4,7 @@
 #include "database/file_database.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
 #include "ui/tab/mongo_editor_tab.hpp"
@@ -71,6 +72,8 @@ void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
             node = t->getDatabaseNode();
         else if (auto* t = dynamic_cast<PostgresSequenceViewerTab*>(tab.get()))
             node = t->getDatabaseNode();
+        else if (auto* t = dynamic_cast<AIChatTab*>(tab.get()))
+            return t->panel().database() == db;
 
         if (node)
             return node->ownerDatabase() == db;
@@ -673,4 +676,48 @@ std::string TabManager::generateSQLEditorName() const {
     }
 
     return baseName + std::to_string(count);
+}
+
+std::shared_ptr<Tab> TabManager::createAIChatTab(const std::shared_ptr<DatabaseInterface>& db,
+                                                 const AiSession* session) {
+    if (session) {
+        for (const auto& tab : tabs) {
+            auto* chat = dynamic_cast<AIChatTab*>(tab.get());
+            if (chat && chat->panel().currentSessionId() == session->id) {
+                requestTabFocus(tab->getId());
+                return tab;
+            }
+        }
+    }
+
+    const std::string baseName = "Chat - " + (db ? db->getConnectionInfo().name : "Assistant");
+    std::string tabName = baseName;
+    int count = 1;
+    while (hasTabTitle(tabName)) {
+        ++count;
+        tabName = baseName + " (" + std::to_string(count) + ")";
+    }
+
+    auto tab = std::make_shared<AIChatTab>(tabName, db);
+    if (session) {
+        tab->panel().openSession(*session);
+    }
+    registerOpenedTab(tab);
+    return tab;
+}
+
+void TabManager::tickChatTabs() {
+    for (const auto& tab : tabs) {
+        if (auto* chat = dynamic_cast<AIChatTab*>(tab.get())) {
+            chat->tick();
+        }
+    }
+}
+
+void TabManager::forgetChatSession(const int sessionId) {
+    for (const auto& tab : tabs) {
+        if (auto* chat = dynamic_cast<AIChatTab*>(tab.get())) {
+            chat->panel().forgetSession(sessionId);
+        }
+    }
 }

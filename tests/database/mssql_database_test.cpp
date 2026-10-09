@@ -185,7 +185,6 @@ protected:
         ASSERT_NE(dbNode, nullptr);
 
         // load schemas and wait for completion
-        dbNode->ensureConnectionPool();
         dbNode->startSchemasLoadAsync();
         for (int i = 0; i < 100 && !dbNode->schemasLoaded; ++i) {
             dbNode->checkSchemasStatusAsync();

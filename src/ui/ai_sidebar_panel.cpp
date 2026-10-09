@@ -2,6 +2,7 @@
 
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
@@ -14,7 +15,6 @@
 #include "database/oracle.hpp"
 #include "database/oracle/oracle_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
-#include "database/postgres/postgres_schema_node.hpp"
 #include "database/postgresql.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -204,8 +204,9 @@ namespace {
     constexpr double AGENT_START_TIMEOUT_S = 30.0;
 } // namespace
 
-AISidebarPanel::AISidebarPanel()
-    : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)) {
+AISidebarPanel::AISidebarPanel(std::shared_ptr<DatabaseInterface> db)
+    : apiClient_(std::make_unique<AIClient>()), apiChat_(std::make_unique<AIChatState>(nullptr)),
+      db_(std::move(db)) {
     // route acp-cpp logging into ours, once
     static const bool configured = [] {
         acp::setLogger([](acp::LogLevel level, const std::string& msg) {
@@ -232,6 +233,7 @@ AISidebarPanel::AISidebarPanel()
 
 AISidebarPanel::~AISidebarPanel() {
     saveCurrentSession();
+    stopAgent();
 }
 
 // ---------------------------------------------------------------- backends
@@ -276,7 +278,8 @@ void AISidebarPanel::ensureSettingsLoaded() {
     }
     auto* appState = Application::getInstance().getAppState();
     agentDefs_ = AcpAgents::catalog();
-    selectBackend(appState->getSetting("ai_sidebar_backend", agentDefs_.front().id));
+    backendIndex_ =
+        backendIndexFor(appState->getSetting("ai_sidebar_backend", agentDefs_.front().id));
     mcpEnabled_ = appState->getSetting("ai_mcp_enabled", "1") == "1";
     settingsLoaded_ = true;
 }
@@ -307,20 +310,29 @@ std::string AISidebarPanel::backendId() const {
     return "api";
 }
 
-void AISidebarPanel::selectBackend(const std::string& id) {
-    backendIndex_ = 0; // unknown ids (the retired "custom") fall back to the first agent
+int AISidebarPanel::backendIndexFor(const std::string& id) const {
+    if (id == "api") {
+        return static_cast<int>(agentDefs_.size());
+    }
     for (size_t i = 0; i < agentDefs_.size(); ++i) {
         if (agentDefs_[i].id == id) {
-            backendIndex_ = static_cast<int>(i);
+            return static_cast<int>(i);
         }
     }
-    if (id == "api") {
-        backendIndex_ = static_cast<int>(agentDefs_.size());
-    }
+    return 0; // unknown ids (the retired "custom") fall back to the first agent
 }
 
 void AISidebarPanel::stopAgent() {
-    acp_.reset();
+    // stopping the agent waits up to a second for it to exit; keep that off the ui thread.
+    // the detached task still counts as running work, so the frame loop stays awake for it
+    if (acp_) {
+        AsyncOperation<bool> stopper;
+        stopper.start([client = std::shared_ptr<AcpClient>(std::move(acp_))]() mutable {
+            client.reset();
+            return true;
+        });
+        stopper.detach();
+    }
     agentCommands_.clear();
     agentConfigOptions_.clear();
     // nothing is left to serve, so close the port rather than leave it listening
@@ -336,34 +348,6 @@ bool AISidebarPanel::isBusy() const {
 }
 
 // ---------------------------------------------------------------- sessions
-
-namespace {
-    // "5m", "2h", "3d" from sqlite's utc CURRENT_TIMESTAMP
-    std::string relativeAge(const std::string& stamp) {
-        std::tm tm{};
-        std::istringstream in(stamp);
-        in >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-        if (in.fail()) {
-            return "";
-        }
-#ifdef _WIN32
-        const std::time_t then = _mkgmtime(&tm);
-#else
-        const std::time_t then = timegm(&tm);
-#endif
-        const auto secs = static_cast<long>(std::time(nullptr) - then);
-        if (secs < 60) {
-            return "now";
-        }
-        if (secs < 3600) {
-            return std::to_string(secs / 60) + "m";
-        }
-        if (secs < 86400) {
-            return std::to_string(secs / 3600) + "h";
-        }
-        return std::to_string(secs / 86400) + "d";
-    }
-} // namespace
 
 void AISidebarPanel::saveCurrentSession() {
     const auto first = std::find_if(items_.begin(), items_.end(),
@@ -394,8 +378,8 @@ void AISidebarPanel::saveCurrentSession() {
         transcript = rows.dump();
     }
     auto* appState = Application::getInstance().getAppState();
-    const int id =
-        appState->saveAiSession(currentSessionId_, backendId(), acpSessionId, title, transcript);
+    const int id = appState->saveAiSession(currentSessionId_, db_ ? db_->getConnectionId() : 0,
+                                           backendId(), acpSessionId, title, transcript);
     if (id > 0) {
         currentSessionId_ = id;
     }
@@ -422,6 +406,8 @@ void AISidebarPanel::openSession(const AiSession& session) {
     if (session.id == currentSessionId_) {
         return;
     }
+    ensureSettingsLoaded();
+    switchBackend(backendIndexFor(session.backend)); // no-op when already on it
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
@@ -562,22 +548,23 @@ std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
 }
 
 IDatabaseNode* AISidebarPanel::contextNode() {
-    // whatever the user pinned wins; otherwise fall back to the first connected node
+    // whatever the user pinned wins; then the chat's own connection (never another
+    // one's), then any node for an unbound panel
     for (const auto& item : selectedContext_) {
         if (item.node) {
             return item.node;
         }
     }
     const auto nodes = collectNodes();
-    return nodes.empty() ? nullptr : nodes.front().node;
+    for (const auto& ref : nodes) {
+        if (db_ && ref.node->ownerDatabase() == db_.get()) {
+            return ref.node;
+        }
+    }
+    return db_ || nodes.empty() ? nullptr : nodes.front().node;
 }
 
 void AISidebarPanel::syncContext() {
-    if (auto db = Application::getInstance().getSelectedDatabase(); db.get() != lastDb_) {
-        lastDb_ = db.get();
-        sentSchemaContext_ = false;
-        contextCandidates_.clear();
-    }
     const auto nodes = collectNodes();
     // the sidebar only polls these while the Databases tab is rendering, so an async
     // schema load started for the picker would otherwise never complete here
@@ -595,9 +582,16 @@ void AISidebarPanel::syncContext() {
                                 [&item](const NodeRef& ref) { return ref.node == item.node; });
         });
     }
-    // keep the mcp tool pointed at the current node
-    IDatabaseNode* node = contextNode();
-    mcp_.setNode(node, node ? node->getName() : "");
+    // point the agent tools at what the user has selected
+    if (IDatabaseNode* node = contextNode(); node && node->ownerDatabase()) {
+        const auto& info = node->ownerDatabase()->getConnectionInfo();
+        mcp_.setFocus(info.name, isFileDatabase(info.type) ? "" : node->getFullPath());
+    } else if (db_) {
+        // bound connection not loaded yet: still the default, at its default database
+        mcp_.setFocus(db_->getConnectionInfo().name, "");
+    } else {
+        mcp_.setFocus("", "");
+    }
 
     // publish every saved connection so the agent can see, and open, closed ones
     std::vector<McpConnectionInfo> connections;
@@ -606,7 +600,8 @@ void AISidebarPanel::syncContext() {
             continue;
         }
         const auto info = db->getConnectionInfo();
-        connections.push_back({info.name, dbTypeLabel(info.type), db->isConnected()});
+        connections.push_back({info.name, databaseTypeToString(info.type), db->isConnected(),
+                               db->isConnected() ? db->libConnection() : nullptr});
     }
     mcp_.setConnections(std::move(connections));
 
@@ -620,13 +615,12 @@ void AISidebarPanel::serviceAgentConnectRequests() {
         pendingConnectDb_->checkConnectionStatusAsync();
         const auto info = pendingConnectDb_->getConnectionInfo();
         if (pendingConnectDb_->isConnected()) {
-            mcp_.finishConnectRequest(true, std::format("Connected to {}.", info.name));
+            mcp_.finishConnectRequest(true, std::format("Connected to {}.", info.name), info.name);
             pendingConnectDb_.reset();
         } else if (!pendingConnectDb_->isConnecting() &&
                    pendingConnectDb_->hasAttemptedConnection()) {
             const std::string error = pendingConnectDb_->getLastConnectionError();
-            mcp_.finishConnectRequest(false, std::format("Could not connect to {}: {}", info.name,
-                                                         error.empty() ? "unknown error" : error));
+            mcp_.finishConnectRequest(false, error.empty() ? "unknown error" : error, info.name);
             pendingConnectDb_.reset();
         }
         return;
@@ -645,11 +639,12 @@ void AISidebarPanel::serviceAgentConnectRequests() {
         }
     }
     if (!target) {
-        mcp_.finishConnectRequest(false, std::format("No connection named '{}'.", *request));
+        mcp_.finishConnectRequest(false, "no saved connection by that name", *request);
         return;
     }
     if (target->isConnected()) {
-        mcp_.finishConnectRequest(true, std::format("{} is already connected.", *request));
+        mcp_.finishConnectRequest(true, std::format("{} is already connected.", *request),
+                                  *request);
         return;
     }
 
@@ -1204,16 +1199,10 @@ void AISidebarPanel::render() {
     // size, which imgui would read as "fill minus n" and overflow the tab.
     // the footer is the spacing imgui adds after the list, the input box itself, and a
     // margin below it -- under-reserving here is what clipped the input's bottom edge.
-    // the input box and the History button in the tab strip are both anchored to the
-    // same bottom edge, so their top edges line up exactly when their heights match.
-    // the anchor is the History button's height; without one, fall back to a margin.
     const float inputH = computeInputHeight();
-    const float bottomMargin = inputBottomAnchor_ > 0.0f
-                                   ? std::max(0.0f, inputBottomAnchor_ - inputH)
-                                   : INPUT_BOTTOM_MARGIN;
     const float chipsHeight = contextChipsHeight(ImGui::GetContentRegionAvail().x);
     const float footerHeight =
-        ImGui::GetStyle().ItemSpacing.y + chipsHeight + inputH + bottomMargin;
+        ImGui::GetStyle().ItemSpacing.y + chipsHeight + inputH + INPUT_BOTTOM_MARGIN;
     const float availHeight =
         std::max(ImGui::GetContentRegionAvail().y - footerHeight, ImGui::GetTextLineHeight());
 
@@ -1416,7 +1405,8 @@ void AISidebarPanel::renderHeader() {
     // toolbar icons in the table viewer
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
     if (UIUtils::IconButton(ICON_FA_CLOCK_ROTATE_LEFT "###ai_sessions")) {
-        sessionRows_ = Application::getInstance().getAppState()->getAiSessions(backendId());
+        sessionRows_ = Application::getInstance().getAppState()->getAiSessions(
+            db_ ? db_->getConnectionId() : 0, backendId());
         ImGui::OpenPopup("##ai_session_popup");
     }
     if (ImGui::IsItemHovered()) {

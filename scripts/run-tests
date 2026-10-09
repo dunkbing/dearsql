@@ -22,7 +22,14 @@ MYSQL_IMAGE="mysql:8.0"
 REDIS_IMAGE="redis:7-alpine"
 MONGODB_IMAGE="mongo:7.0"
 MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
-ORACLE_IMAGE="gvenzl/oracle-xe:21-slim-faststart"
+# xe 21 is x86-only and fails under emulation on arm64 (ORA-00442); 23ai free has arm64
+if [[ "$(uname -m)" == "arm64" || "$(uname -m)" == "aarch64" ]]; then
+    ORACLE_IMAGE="${ORACLE_IMAGE:-gvenzl/oracle-free:23-slim-faststart}"
+    ORACLE_PDB="${ORACLE_PDB:-FREEPDB1}"
+else
+    ORACLE_IMAGE="${ORACLE_IMAGE:-gvenzl/oracle-xe:21-slim-faststart}"
+    ORACLE_PDB="${ORACLE_PDB:-XEPDB1}"
+fi
 CASSANDRA_IMAGE="cassandra:5"
 SSH_IMAGE="dearsql-ssh-test-img"
 
@@ -78,7 +85,7 @@ export DEARSQL_TEST_MSSQL_NAME="MSSQLDocker"
 
 export DEARSQL_TEST_ORACLE_HOST="127.0.0.1"
 export DEARSQL_TEST_ORACLE_PORT="$ORACLE_PORT"
-export DEARSQL_TEST_ORACLE_DB="XEPDB1"
+export DEARSQL_TEST_ORACLE_DB="$ORACLE_PDB"
 export DEARSQL_TEST_ORACLE_USER="system"
 export DEARSQL_TEST_ORACLE_PASSWORD="DearSQL_Test1"
 export DEARSQL_TEST_ORACLE_NAME="OracleDocker"

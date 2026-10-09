@@ -862,6 +862,32 @@ namespace dearsql {
     // --- Autocomplete ---
 
     void TextEditor::updateAutoComplete() {
+        autocompleteReplaceStart_ = autocompleteReplaceEnd_ = -1;
+        if (completionProvider_) {
+            // open on a word char or a qualifier dot; the provider decides the rest
+            const char prev = cursorIndex_ > 0 ? content_[cursorIndex_ - 1] : '\0';
+            if (!autocompleteForced_ && !isWordChar(prev) && prev != '.') {
+                dismissAutoComplete();
+                return;
+            }
+            constexpr size_t kMaxProviderResults = 50;
+            auto response = completionProvider_(content_, cursorIndex_, autocompleteForced_);
+            if (response.items.size() > kMaxProviderResults)
+                response.items.resize(kMaxProviderResults);
+            filteredCompletions_ = std::move(response.items);
+            if (filteredCompletions_.empty()) {
+                dismissAutoComplete();
+                return;
+            }
+            autocompleteVisible_ = true;
+            autocompleteIndex_ = 0;
+            autocompleteScrollOffset_ = 0;
+            autocompleteReplaceStart_ = response.replaceStart;
+            autocompleteReplaceEnd_ = response.replaceEnd;
+            autocompleteWordStart_ = response.replaceStart;
+            return;
+        }
+
         // Build source items: use set items or fall back to default keywords
         const std::vector<CompletionItem>* items = &completionItems_;
         std::vector<CompletionItem> defaultItems;
@@ -1082,6 +1108,14 @@ namespace dearsql {
                 icon = "F";
                 iconColor = palette_.type;
                 break;
+            case CompletionKind::Schema:
+                icon = "N";
+                iconColor = palette_.keyword;
+                break;
+            case CompletionKind::Alias:
+                icon = "A";
+                iconColor = palette_.function;
+                break;
             }
 
             float iconX = pos.x + popupPadding;
@@ -1122,20 +1156,27 @@ namespace dearsql {
         const std::string completion = selectedCompletion.insertText.empty()
                                            ? selectedCompletion.text
                                            : selectedCompletion.insertText;
-        std::string word = getCurrentWord();
+        const int contentSize = static_cast<int>(content_.size());
+        int replaceStart = 0;
+        int replaceEnd = cursorIndex_;
+        if (autocompleteReplaceStart_ >= 0) {
+            replaceStart = std::clamp(autocompleteReplaceStart_, 0, contentSize);
+            replaceEnd = std::clamp(autocompleteReplaceEnd_, replaceStart, contentSize);
+        } else {
+            std::string word = getCurrentWord();
+            int wordStart = cursorIndex_ - static_cast<int>(word.size());
+            int qualifierStart = wordStart;
+            while (qualifierStart > 0 && (isWordChar(content_[qualifierStart - 1]) ||
+                                          content_[qualifierStart - 1] == '.'))
+                --qualifierStart;
 
-        int wordStart = cursorIndex_ - static_cast<int>(word.size());
-        int qualifierStart = wordStart;
-        while (qualifierStart > 0 &&
-               (isWordChar(content_[qualifierStart - 1]) || content_[qualifierStart - 1] == '.'))
-            --qualifierStart;
-
-        int replaceStart = wordStart;
-        if (!selectedCompletion.qualifiers.empty())
-            replaceStart = qualifierStart;
+            replaceStart = wordStart;
+            if (!selectedCompletion.qualifiers.empty())
+                replaceStart = qualifierStart;
+        }
 
         // Replace the current word with the completion
-        const int replaceLength = cursorIndex_ - replaceStart;
+        const int replaceLength = replaceEnd - replaceStart;
         content_.erase(replaceStart, replaceLength);
         if (replaceStart < static_cast<int>(colors_.size()))
             colors_.erase(colors_.begin() + replaceStart,

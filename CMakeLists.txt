@@ -241,7 +241,9 @@ set(APP_SOURCES
     src/utils/db_mcp_server.cpp
     src/mcp/db_tools.cpp
     src/cli/cli.cpp
+    src/cli/completion_catalog.cpp
     src/cli/connections.cpp
+    src/cli/lsp.cpp
     src/cli/tui.cpp
     src/ui/ai_chat_panel.cpp
     src/ui/ai_sidebar_panel.cpp

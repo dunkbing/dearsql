@@ -48,6 +48,13 @@ static GtkWidget* sProgressWindow = nullptr;
 static GtkWidget* sProgressBar = nullptr;
 static guint sProgressTimerId = 0;
 
+// version.json download key for this build's arch
+#if defined(__aarch64__)
+static constexpr const char* kAppImageKey = "appimage-aarch64";
+#else
+static constexpr const char* kAppImageKey = "appimage-x86_64";
+#endif
+
 struct DownloadSnapshot {
     std::string appImagePath;
     std::string downloadUrl;
@@ -187,18 +194,18 @@ static bool checkForUpdate(std::stop_token stopToken) {
         std::string version = data.value("version", "");
         std::string releaseNotes = data.value("release_notes", "");
 
-        // Find AppImage download URL
+        // find this arch's AppImage; no fallback, another arch's binary won't run
         std::string downloadUrl;
         std::string downloadSha256;
-        if (data.contains("downloads") && data["downloads"].contains("appimage-x86_64")) {
-            downloadUrl = data["downloads"]["appimage-x86_64"].value("url", "");
-            downloadSha256 = data["downloads"]["appimage-x86_64"].value("sha256", "");
+        if (data.contains("downloads") && data["downloads"].contains(kAppImageKey)) {
+            downloadUrl = data["downloads"][kAppImageKey].value("url", "");
+            downloadSha256 = data["downloads"][kAppImageKey].value("sha256", "");
         }
 
         downloadSha256 = normalizeSha256(downloadSha256);
 
         if (version.empty() || downloadUrl.empty()) {
-            spdlog::error("Update info missing required AppImage fields");
+            spdlog::error("Update info missing required AppImage fields ({})", kAppImageKey);
             return false;
         }
         if (!isValidSha256Hex(downloadSha256)) {
@@ -232,7 +239,7 @@ static bool downloadUpdate(std::stop_token stopToken) {
         return false;
 
     // Parse URL into host + path
-    // e.g., "https://pub-xxx.r2.dev/DearSQL-0.2.0-x86_64.AppImage"
+    // e.g., "https://pub-xxx.r2.dev/DearSQL-0.2.0-<arch>.AppImage"
     std::string url = snapshot.downloadUrl;
     std::string host;
     std::string path;

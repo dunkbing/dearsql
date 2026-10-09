@@ -78,14 +78,6 @@ set(VCPKG_OVERLAY_TRIPLETS
     FORCE
 )
 
-# duckdb 1.4.4 + clang 21: thrift TEnumIterator lacks operator==
-set(VCPKG_OVERLAY_PORTS
-    "${CMAKE_SOURCE_DIR}/cmake/ports"
-    CACHE STRING
-    ""
-    FORCE
-)
-
 project(dearsql)
 
 if(UNIX AND NOT APPLE)

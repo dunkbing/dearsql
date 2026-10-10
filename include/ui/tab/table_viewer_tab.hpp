@@ -120,19 +120,12 @@ private:
     // Right panel state
     bool rightPanelOpen = false;
     float rightPanelWidth = 300.0f;
-    int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata, 2 = DDL
+    int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata
     char valuePanelBuffer[4096] = {0};
     bool valuePanelBufferDirty = false;
     int lastSyncedRow = -1;
     int lastSyncedCol = -1;
     std::string metadataFilter;
-    // DDL tab: read once on first show, again on Refresh
-    AsyncOperation<std::pair<bool, std::string>> ddlOp_;
-    dearsql::TextEditor ddlEditor_;
-    std::string ddlError_;
-    bool ddlRequested_ = false;
-    [[nodiscard]] bool hasDdl() const;
-    void startDdlLoad();
 
     // Helper methods
     void initializeTableRenderer();
@@ -148,6 +141,5 @@ private:
     void renderRightPanel(float panelWidth, float availableHeight);
     void renderValueTab();
     void renderMetadataTab();
-    void renderDdlTab();
     void syncValuePanelBuffer();
 };

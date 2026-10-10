@@ -151,3 +151,21 @@ TEST_F(TableTransferTest, DdlExportWritesStructureOnly) {
 
     EXPECT_FALSE(db_->getTableDdl(Table{.name = "missing"}).first);
 }
+
+TEST_F(TableTransferTest, DdlExportPutsReferencedTablesFirst) {
+    ASSERT_TRUE(
+        db_->executeQuery("CREATE TABLE child (id INTEGER, p INTEGER REFERENCES parent(id));"
+                          "CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+            .success());
+    TableExporter::Request request;
+    request.format = ExportFormat::DDL;
+    request.tables = {Table{.name = "child", .foreignKeys = {ForeignKey{.targetTable = "parent"}}},
+                      Table{.name = "parent"}};
+    request.path = (dir_ / "fk.sql").string();
+    TableExporter::Progress progress;
+    ASSERT_TRUE(TableExporter::run(db_.get(), request, progress).success);
+
+    std::ifstream file(request.path);
+    const std::string sql{std::istreambuf_iterator<char>(file), {}};
+    EXPECT_LT(sql.find("CREATE TABLE parent"), sql.find("CREATE TABLE child")) << sql;
+}

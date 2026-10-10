@@ -2,6 +2,7 @@
 #include "database/db.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <nfd.h>
@@ -315,6 +316,39 @@ namespace {
         TableExporter::Progress& progress_;
     };
 
+    // tables a foreign key points at go before the tables pointing at them, so a
+    // replayed dump creates (and fills) parents first.
+    // ponytail: cycles keep their original order and still fail on replay; split
+    // foreign keys into trailing ALTER TABLEs if that shows up
+    std::vector<Table> referencedFirst(const std::vector<Table>& tables) {
+        std::vector<Table> ordered;
+        std::vector<bool> placed(tables.size(), false);
+        auto ready = [&](const Table& t) {
+            return std::ranges::all_of(t.foreignKeys, [&](const ForeignKey& fk) {
+                for (size_t j = 0; j < tables.size(); ++j)
+                    if (!placed[j] && tables[j].name == fk.targetTable && fk.targetTable != t.name)
+                        return false;
+                return true;
+            });
+        };
+        while (ordered.size() < tables.size()) {
+            bool progressed = false;
+            for (size_t i = 0; i < tables.size(); ++i) {
+                if (!placed[i] && ready(tables[i])) {
+                    placed[i] = progressed = true;
+                    ordered.push_back(tables[i]);
+                }
+            }
+            if (!progressed) {
+                for (size_t i = 0; i < tables.size(); ++i)
+                    if (!placed[i])
+                        ordered.push_back(tables[i]);
+                break;
+            }
+        }
+        return ordered;
+    }
+
 } // namespace
 
 namespace TableExporter {
@@ -378,7 +412,7 @@ namespace TableExporter {
         bool ok = true;
         if (request.tables.size() == 1 || request.format == ExportFormat::SQL ||
             request.format == ExportFormat::DDL) {
-            ok = writeFile(request.path, request.tables);
+            ok = writeFile(request.path, referencedFirst(request.tables));
         } else {
             std::error_code ec;
             std::filesystem::create_directories(request.path, ec);

@@ -283,6 +283,7 @@ DatabaseHierarchy::~DatabaseHierarchy() {
     ddlOp_.detach();
     tableExportOp_.detach();
     csvImportOp_.detach();
+    copyDdlOp_.detach();
 }
 
 bool DatabaseHierarchy::startDdl(std::string busyKey, std::string errorPrefix,

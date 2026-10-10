@@ -83,6 +83,10 @@ TableViewerTab::~TableViewerTab() {
         ConnectionPoolBase::cancelQueriesOn(sqlExecutionOp.workerId());
     }
     sqlExecutionOp.detach();
+    if (ddlOp_.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(ddlOp_.workerId());
+    }
+    ddlOp_.detach();
 }
 
 void TableViewerTab::render() {
@@ -1468,15 +1472,16 @@ void TableViewerTab::renderValueTab() {
     }
 }
 
-// tables only: views, MongoDB collections and Redis keys have no CREATE TABLE
+// tables only: views, materialized views, MongoDB collections and Redis keys have
+// no CREATE TABLE
 bool TableViewerTab::hasDdl() const {
     if (!node_ || !dynamic_cast<ITableDataProvider*>(node_))
         return false;
     const auto type = node_->getDatabaseType();
     if (type == DatabaseType::MONGODB || type == DatabaseType::REDIS)
         return false;
-    return std::ranges::none_of(node_->getViews(),
-                                [&](const Table& v) { return v.name == table_.name; });
+    return std::ranges::any_of(node_->getTables(),
+                               [&](const Table& t) { return t.name == table_.name; });
 }
 
 void TableViewerTab::startDdlLoad() {

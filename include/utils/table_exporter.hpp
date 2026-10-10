@@ -9,7 +9,8 @@
 #include <string>
 #include <vector>
 
-enum class ExportFormat { CSV, JSON, SQL, MARKDOWN, HTML };
+// DDL: CREATE TABLE and indexes only, no rows
+enum class ExportFormat { CSV, JSON, SQL, DDL, MARKDOWN, HTML };
 
 // table export (csv, json, sql, markdown, html). the destination is picked on
 // the UI thread; the rows are paged out on a worker by run()
@@ -56,6 +57,8 @@ namespace TableExporter {
                 onPick(ExportFormat::JSON);
             if (ImGui::MenuItem("SQL"))
                 onPick(ExportFormat::SQL);
+            if (ImGui::MenuItem("DDL (structure only)"))
+                onPick(ExportFormat::DDL);
             if (ImGui::MenuItem("Markdown"))
                 onPick(ExportFormat::MARKDOWN);
             if (ImGui::MenuItem("HTML"))

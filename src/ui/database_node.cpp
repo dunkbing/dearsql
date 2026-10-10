@@ -283,6 +283,7 @@ DatabaseHierarchy::~DatabaseHierarchy() {
     ddlOp_.detach();
     tableExportOp_.detach();
     csvImportOp_.detach();
+    copyDdlOp_.detach();
 }
 
 bool DatabaseHierarchy::startDdl(std::string busyKey, std::string errorPrefix,
@@ -360,6 +361,8 @@ void DatabaseHierarchy::renderDdlSpinner(const std::string& key, const std::stri
 
 void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, const Table& table,
                                               DatabaseType dbType) {
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy DDL", nullptr, false, !copyDdlOp_.isRunning()))
+        startCopyDdl(provider, table);
     TableExporter::renderExportMenu(
         [&](ExportFormat format) { startTableExport(provider, {&table}, format, dbType); },
         !tableExportOp_.isRunning());
@@ -390,6 +393,14 @@ void DatabaseHierarchy::startTableExport(ITableDataProvider* provider,
     });
 }
 
+void DatabaseHierarchy::startCopyDdl(ITableDataProvider* provider, const Table& table) {
+    if (!provider || copyDdlOp_.isRunning())
+        return;
+    auto* node = dynamic_cast<IDatabaseNode*>(provider);
+    copyDdlOp_.start(
+        [provider, table, keep = keepOwnerAlive(node)] { return provider->getTableDdl(table); });
+}
+
 void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName) {
     if (!node || csvImportOp_.isRunning())
         return;
@@ -408,6 +419,12 @@ void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& t
 }
 
 void DatabaseHierarchy::checkTableTransfers() {
+    copyDdlOp_.check([](const std::pair<bool, std::string>& result) {
+        if (result.first)
+            ImGui::SetClipboardText(result.second.c_str());
+        else
+            Alert::show("Copy DDL Failed", result.second);
+    });
     tableExportOp_.check([this](const TableExporter::Result& result) {
         if (result.success) {
             Alert::show("Export Complete", std::format("Wrote {} table(s) and {} row(s) to '{}'.",

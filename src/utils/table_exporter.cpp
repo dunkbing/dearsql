@@ -2,6 +2,7 @@
 #include "database/db.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <nfd.h>
@@ -119,6 +120,7 @@ namespace {
             desc = "JSON Files";
             break;
         case ExportFormat::SQL:
+        case ExportFormat::DDL:
             ext = "sql";
             desc = "SQL Files";
             break;
@@ -155,6 +157,7 @@ namespace {
         case ExportFormat::JSON:
             return "json";
         case ExportFormat::SQL:
+        case ExportFormat::DDL:
             return "sql";
         case ExportFormat::MARKDOWN:
             return "md";
@@ -173,6 +176,15 @@ namespace {
         // false with error set when the table cannot be read; cancelled is separate
         bool write(std::ofstream& file, const Table& table, ExportFormat format,
                    const ISQLBuilder* builder, std::string& error) {
+            if (format == ExportFormat::DDL) {
+                auto [ok, ddl] = provider_->getTableDdl(table);
+                if (!ok) {
+                    error = std::format("DDL of '{}': {}", table.name, ddl);
+                    return false;
+                }
+                file << ddl << '\n';
+                return true;
+            }
             const auto columns = provider_->getColumnNames(table);
             if (columns.empty()) {
                 error = std::format("Table '{}' has no columns (or could not be read)", table.name);
@@ -253,8 +265,13 @@ namespace {
                 });
                 file << "</tbody>\n</table>\n</body>\n</html>\n";
                 break;
+            case ExportFormat::DDL:
+                break; // handled above
             case ExportFormat::SQL: {
-                if (!table.columns.empty())
+                // the server's DDL; the builder's bare CREATE TABLE when it has none
+                if (auto [ok, ddl] = provider_->getTableDdl(table); ok)
+                    file << ddl << "\n\n";
+                else if (!table.columns.empty())
                     file << builder->createTable(table) << ";\n\n";
                 const auto quotedName = builder->quoteIdentifier(table.name);
                 forEachRow(table, [&](const std::vector<std::string>& row) {
@@ -299,6 +316,39 @@ namespace {
         TableExporter::Progress& progress_;
     };
 
+    // tables a foreign key points at go before the tables pointing at them, so a
+    // replayed dump creates (and fills) parents first.
+    // ponytail: cycles keep their original order and still fail on replay; split
+    // foreign keys into trailing ALTER TABLEs if that shows up
+    std::vector<Table> referencedFirst(const std::vector<Table>& tables) {
+        std::vector<Table> ordered;
+        std::vector<bool> placed(tables.size(), false);
+        auto ready = [&](const Table& t) {
+            return std::ranges::all_of(t.foreignKeys, [&](const ForeignKey& fk) {
+                for (size_t j = 0; j < tables.size(); ++j)
+                    if (!placed[j] && tables[j].name == fk.targetTable && fk.targetTable != t.name)
+                        return false;
+                return true;
+            });
+        };
+        while (ordered.size() < tables.size()) {
+            bool progressed = false;
+            for (size_t i = 0; i < tables.size(); ++i) {
+                if (!placed[i] && ready(tables[i])) {
+                    placed[i] = progressed = true;
+                    ordered.push_back(tables[i]);
+                }
+            }
+            if (!progressed) {
+                for (size_t i = 0; i < tables.size(); ++i)
+                    if (!placed[i])
+                        ordered.push_back(tables[i]);
+                break;
+            }
+        }
+        return ordered;
+    }
+
 } // namespace
 
 namespace TableExporter {
@@ -313,7 +363,7 @@ namespace TableExporter {
         for (const Table* t : tables)
             request.tables.push_back(*t);
         // several tables: one sql file, or a folder of one file per table
-        if (tables.size() == 1 || format == ExportFormat::SQL)
+        if (tables.size() == 1 || format == ExportFormat::SQL || format == ExportFormat::DDL)
             request.path = showSaveDialog(format, tables.size() == 1 ? tables[0]->name : "export");
         else
             request.path = showFolderDialog();
@@ -360,8 +410,9 @@ namespace TableExporter {
         };
 
         bool ok = true;
-        if (request.tables.size() == 1 || request.format == ExportFormat::SQL) {
-            ok = writeFile(request.path, request.tables);
+        if (request.tables.size() == 1 || request.format == ExportFormat::SQL ||
+            request.format == ExportFormat::DDL) {
+            ok = writeFile(request.path, referencedFirst(request.tables));
         } else {
             std::error_code ec;
             std::filesystem::create_directories(request.path, ec);

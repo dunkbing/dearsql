@@ -83,6 +83,10 @@ TableViewerTab::~TableViewerTab() {
         ConnectionPoolBase::cancelQueriesOn(sqlExecutionOp.workerId());
     }
     sqlExecutionOp.detach();
+    if (ddlOp_.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(ddlOp_.workerId());
+    }
+    ddlOp_.detach();
 }
 
 void TableViewerTab::render() {
@@ -1335,6 +1339,11 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
                 renderMetadataTab();
                 ImGui::EndTabItem();
             }
+            if (hasDdl() && ImGui::BeginTabItem("DDL")) {
+                activeRightPanelTab = 2;
+                renderDdlTab();
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
     }
@@ -1461,6 +1470,63 @@ void TableViewerTab::renderValueTab() {
             valuePanelBufferDirty = false;
         }
     }
+}
+
+// tables only: views, materialized views, MongoDB collections and Redis keys have
+// no CREATE TABLE
+bool TableViewerTab::hasDdl() const {
+    if (!node_ || !dynamic_cast<ITableDataProvider*>(node_))
+        return false;
+    const auto type = node_->getDatabaseType();
+    if (type == DatabaseType::MONGODB || type == DatabaseType::REDIS)
+        return false;
+    return std::ranges::any_of(node_->getTables(),
+                               [&](const Table& t) { return t.name == table_.name; });
+}
+
+void TableViewerTab::startDdlLoad() {
+    auto* provider = dynamic_cast<ITableDataProvider*>(node_);
+    if (!provider || ddlOp_.isRunning())
+        return;
+    ddlRequested_ = true;
+    ddlOp_.start([provider, table = table_, keep = keepOwnerAlive(node_)] {
+        return provider->getTableDdl(table);
+    });
+}
+
+void TableViewerTab::renderDdlTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    if (!ddlRequested_) {
+        ddlEditor_.SetLanguage(dearsql::TextEditor::Language::SQL);
+        ddlEditor_.SetShowLineNumbers(false);
+        ddlEditor_.SetReadOnly(true);
+        startDdlLoad();
+    }
+    ddlOp_.check([this](std::pair<bool, std::string> result) {
+        ddlError_ = result.first ? "" : std::move(result.second);
+        ddlEditor_.SetText(result.first ? result.second : "");
+    });
+
+    if (ddlOp_.isRunning()) {
+        UIUtils::Spinner("##ddl_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        ImGui::SameLine();
+        ImGui::TextColored(colors.subtext0, "Reading DDL...");
+        return;
+    }
+    if (ImGui::SmallButton(ICON_FA_COPY " Copy"))
+        ImGui::SetClipboardText(ddlEditor_.GetText().c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_ROTATE " Refresh"))
+        startDdlLoad();
+    if (!ddlError_.empty()) {
+        ImGui::PushTextWrapPos();
+        ImGui::TextColored(colors.red, "%s", ddlError_.c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
+        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+    ddlEditor_.Render("##ddl_editor", ImVec2(-1, -1), false);
 }
 
 void TableViewerTab::renderMetadataTab() {

@@ -692,7 +692,7 @@ void ConnectionDialog::render() {
 void ConnectionDialog::renderAppearanceRow() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    fieldLabel("Status");
+    ImGui::SetCursorPosX(kLabelColumnW);
 
     constexpr float kSwatch = 22.0f;
     const ImGuiStyle& style = ImGui::GetStyle();

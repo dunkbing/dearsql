@@ -158,6 +158,14 @@ int LibDatabaseNode::getRowCount(const Table& table, const std::string& whereCla
     });
 }
 
+std::pair<bool, std::string> LibDatabaseNode::getTableDdl(const Table& table) {
+    std::string err;
+    auto ddl = libCall(err, "table ddl", [&] {
+        return withHandle([&](dearsql::IDatabase& db) { return db.tableDdl(table.name); });
+    });
+    return err.empty() ? std::pair{true, std::move(ddl)} : std::pair{false, std::move(err)};
+}
+
 // one stamp per change across every node: a parent comparing the max over its
 // children can't be fooled by one going away while another moves on
 uint64_t LibDatabaseNode::nextGeneration() {

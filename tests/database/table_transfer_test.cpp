@@ -7,6 +7,7 @@
 #include <format>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <string>
 #include <thread>
 
@@ -123,4 +124,30 @@ TEST_F(TableTransferTest, ExportCancelledBeforeStartWritesNothing) {
     EXPECT_TRUE(result.cancelled);
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.rows, 0);
+}
+
+// structure only: every table's CREATE TABLE and indexes in one file, no rows
+TEST_F(TableTransferTest, DdlExportWritesStructureOnly) {
+    ASSERT_TRUE(db_->executeQuery("CREATE INDEX items_name ON items (name);"
+                                  "CREATE TABLE tags (id INTEGER PRIMARY KEY);"
+                                  "INSERT INTO items VALUES (1, 'a')")
+                    .success());
+    TableExporter::Request request;
+    request.format = ExportFormat::DDL;
+    request.tables = {Table{.name = "items"}, Table{.name = "tags"}};
+    request.path = (dir_ / "schema.sql").string();
+    TableExporter::Progress progress;
+    const auto result = TableExporter::run(db_.get(), request, progress);
+    ASSERT_TRUE(result.success) << result.error;
+    EXPECT_EQ(result.tables, 2);
+    EXPECT_EQ(result.rows, 0);
+
+    std::ifstream file(request.path);
+    const std::string sql{std::istreambuf_iterator<char>(file), {}};
+    EXPECT_NE(sql.find("CREATE TABLE items"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("CREATE INDEX items_name"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("CREATE TABLE tags"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("INSERT"), std::string::npos) << sql;
+
+    EXPECT_FALSE(db_->getTableDdl(Table{.name = "missing"}).first);
 }

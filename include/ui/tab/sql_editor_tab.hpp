@@ -6,6 +6,7 @@
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
 #include <chrono>
+#include <dearsql/completion.hpp>
 #include <functional>
 #include <memory>
 #include <string>
@@ -115,8 +116,14 @@ private:
     void scheduleSyntaxCheck();
     void updateSyntaxDiagnostics();
 
-    // Autocomplete
-    void updateCompletionKeywords();
+    // Autocomplete: dearsql::complete over a catalog snapshot of the loaded nodes
+    void updateCompletionCatalog();
+    [[nodiscard]] dearsql::TextEditor::CompletionResponse
+    provideCompletions(std::string_view content, int cursor) const;
+    dearsql::CompletionCatalog completionCatalog_;
+    dearsql::DatabaseType completionType_ = dearsql::DatabaseType::SQLITE;
+    size_t completionSignature_ = 0;
+    double lastCatalogCheck_ = 0.0;
     bool completionKeywordsSet_ = false;
     int pendingEditorFocusFrames_ = 3;
 

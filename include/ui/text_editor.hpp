@@ -37,7 +37,16 @@ namespace dearsql {
         void SetFocus();
 
         // Autocomplete
-        enum class CompletionKind : uint8_t { Keyword, Table, Column, View, Sequence, Function };
+        enum class CompletionKind : uint8_t {
+            Keyword,
+            Table,
+            Column,
+            View,
+            Sequence,
+            Function,
+            Schema,
+            Alias
+        };
         struct CompletionItem {
             std::string text;
             std::string insertText;
@@ -58,10 +67,20 @@ namespace dearsql {
         };
         using CompletionFilter = std::function<std::vector<CompletionItem>(
             const CompletionRequest&, const std::vector<CompletionItem>&)>;
+        // a provider computes the items and the range they replace itself (byte offsets);
+        // it takes over from the item list + filter when set
+        struct CompletionResponse {
+            std::vector<CompletionItem> items;
+            int replaceStart = 0;
+            int replaceEnd = 0;
+        };
+        using CompletionProvider = std::function<CompletionResponse(std::string_view content,
+                                                                    int cursorIndex, bool forced)>;
         void SetCompletionItems(const std::vector<CompletionItem>& items);
         void SetCompletionItems(std::vector<CompletionItem>&& items);
         void SetCompletionKeywords(const std::vector<std::string>& keywords);
         void SetCompletionFilter(CompletionFilter filter);
+        void SetCompletionProvider(CompletionProvider provider);
         [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
 
         // Theme
@@ -168,6 +187,9 @@ namespace dearsql {
         // --- Autocomplete ---
         std::vector<CompletionItem> completionItems_;
         CompletionFilter completionFilter_;
+        CompletionProvider completionProvider_;
+        int autocompleteReplaceStart_ = -1; // provider range, -1 when unset
+        int autocompleteReplaceEnd_ = -1;
         std::vector<CompletionItem> filteredCompletions_;
         bool autocompleteVisible_ = false;
         bool autocompleteForced_ = false; // Ctrl+Space: show all items even with empty word

@@ -1,11 +1,14 @@
 #include "cli/tui.hpp"
 
+#include "cli/completion_catalog.hpp"
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/table.hpp>
+#include <map>
 
 using namespace ftxui;
 
@@ -98,6 +101,12 @@ namespace {
         return true;
     }
 
+    const char* kindName(dearsql::CompletionKind kind) {
+        constexpr const char* names[] = {"keyword", "function", "table",    "view",
+                                         "column",  "schema",   "sequence", "alias"};
+        return names[static_cast<int>(kind)];
+    }
+
     Element section(const std::string& title) {
         return text(title) | bold | color(Color::Cyan);
     }
@@ -106,17 +115,18 @@ namespace {
         if (t.name.empty())
             return text("open a table to see its structure") | dim | center;
         Elements out;
-        out.push_back(hbox({text((t.schema.empty() ? "" : t.schema + ".") + t.name) | bold,
-                            text(t.sizeBytes >= 0 ? "  " + dearsql::formatByteSize(t.sizeBytes)
-                                                  : "") |
-                                dim}));
+        out.push_back(hbox(
+            {text((t.schema.empty() ? "" : t.schema + ".") + t.name) | bold,
+             text(t.sizeBytes >= 0 ? "  " + dearsql::formatByteSize(t.sizeBytes) : "") | dim}));
         out.push_back(text(""));
 
-        std::vector<Elements> cols = {{text("column") | dim, text("type") | dim,
-                                       text("null") | dim, text("default") | dim}};
+        std::vector<Elements> cols = {
+            {text("column") | dim, text("type") | dim, text("null") | dim, text("default") | dim}};
         for (const auto& c : t.columns) {
             auto name = text(c.name + " ");
-            cols.push_back({c.isPrimaryKey ? hbox({name | bold, text("PK ") | color(Color::Magenta) | bold}) : name,
+            cols.push_back({c.isPrimaryKey
+                                ? hbox({name | bold, text("PK ") | color(Color::Magenta) | bold})
+                                : name,
                             text(c.type + " ") | color(Color::Yellow),
                             text(c.isNotNull || c.isPrimaryKey ? "no " : "yes ") | dim,
                             text(clip(c.defaultValue)) | dim});
@@ -158,7 +168,10 @@ namespace {
 int runTui(CliConnections& connections, const std::string& initial) {
     auto screen = ScreenInteractive::Fullscreen();
     std::string status = "Pick a connection";
-    const std::string hints = "↵ open  ←→ fold  ⇥ pane  F2 data  F3 structure  F4 sql  F5 run  q quit";
+    const std::string hints =
+        "↵ open  ←→ fold  ⇥ pane  F2 data  F3 structure  F4 sql  F5 run  q quit";
+    const std::string editorHints = "^space complete  ⇥ pane  F2 data  F3 structure  F5 run";
+    const std::string completionHints = "↑↓ select  ⇥/↵ accept  esc close";
 
     std::vector<TreeNode> roots;
     for (auto* e : connections.entries()) {
@@ -352,7 +365,11 @@ int runTui(CliConnections& connections, const std::string& initial) {
             break;
         }
         auto line = hbox({text(std::string(n.depth * 2, ' ')),
-                          text(leaf ? "  " : n.expanded ? "▾ " : "▸ ") | dim, label, filler()});
+                          text(leaf         ? "  "
+                               : n.expanded ? "▾ "
+                                            : "▸ ") |
+                              dim,
+                          label, filler()});
         if (s.active && s.focused)
             return line | bgcolor(Color::Blue) | color(Color::White);
         if (s.active)
@@ -382,22 +399,94 @@ int runTui(CliConnections& connections, const std::string& initial) {
         return false;
     });
 
-    auto dataView =
-        Renderer([&](bool) {
-            return vbox({hbox({text(current ? " " + current->table.name : "") | bold, filler(),
-                               text(gridPosition(data) + " ") | dim}),
-                         renderGrid(data, std::max(5, screen.dimy() - 9),
-                                    "open a table from the tree (↵)") |
-                             flex});
-        }) |
-        CatchEvent([&](Event e) { return gridKeys(data, e); });
+    auto dataView = Renderer([&](bool) {
+                        return vbox({hbox({text(current ? " " + current->table.name : "") | bold,
+                                           filler(), text(gridPosition(data) + " ") | dim}),
+                                     renderGrid(data, std::max(5, screen.dimy() - 9),
+                                                "open a table from the tree (↵)") |
+                                         flex});
+                    }) |
+                    CatchEvent([&](Event e) { return gridKeys(data, e); });
 
-    auto structView = Renderer([&](bool) {
-        return renderStructure(structure) | vscroll_indicator | frame;
-    });
+    auto structView =
+        Renderer([&](bool) { return renderStructure(structure) | vscroll_indicator | frame; });
+
+    // sql completion: dearsql::complete over the target's catalog, cached two minutes
+    struct CachedCatalog {
+        std::chrono::steady_clock::time_point loaded;
+        dearsql::CompletionCatalog catalog;
+    };
+    std::map<const dearsql::IDatabase*, CachedCatalog> catalogs;
+    dearsql::CompletionResult completion;
+    bool completing = false;
+    int completionSel = 0;
+    int sqlCursor = 0;
+
+    auto catalogFor = [&](const dearsql::DatabasePtr& db) -> const dearsql::CompletionCatalog& {
+        static const dearsql::CompletionCatalog none;
+        if (!db)
+            return none;
+        const auto now = std::chrono::steady_clock::now();
+        auto it = catalogs.find(db.get());
+        if (it != catalogs.end() && now - it->second.loaded < std::chrono::minutes(2))
+            return it->second.catalog;
+        CachedCatalog c{now, {}};
+        try {
+            c.catalog = loadCompletionCatalog(db);
+        } catch (const std::exception& e) {
+            status = "completion: " + std::string(e.what());
+        }
+        return (catalogs[db.get()] = std::move(c)).catalog;
+    };
+    // keywords only until a table or database is opened
+    auto refreshCompletion = [&] {
+        const size_t cursor = std::clamp<size_t>(sqlCursor, 0, sql.size());
+        completion = dearsql::complete(sql, cursor, catalogFor(target),
+                                       target ? target->type() : dearsql::DatabaseType::POSTGRESQL);
+        completing = !completion.items.empty();
+        completionSel = 0;
+    };
+    auto acceptCompletion = [&] {
+        if (completionSel < 0 || completionSel >= (int)completion.items.size())
+            return;
+        const auto& insert = completion.items[completionSel].insertText;
+        sql.replace(completion.replaceStart, completion.replaceEnd - completion.replaceStart,
+                    insert);
+        sqlCursor = static_cast<int>(completion.replaceStart + insert.size());
+        completing = false;
+    };
+    auto renderCompletion = [&]() -> Element {
+        if (!completing)
+            return emptyElement();
+        constexpr int ROWS = 8;
+        const int n = static_cast<int>(completion.items.size());
+        const int first = std::clamp(completionSel - ROWS / 2, 0, std::max(0, n - ROWS));
+        Elements rows;
+        for (int i = first; i < n && i < first + ROWS; ++i) {
+            const auto& item = completion.items[i];
+            std::string detail =
+                item.detail.empty() ? std::string(kindName(item.kind)) : item.detail;
+            if (!item.owner.empty())
+                detail += " · " + item.owner;
+            auto row = hbox(
+                {text(" " + item.label + " "), filler(), text(" " + clip(detail) + " ") | dim});
+            rows.push_back(i == completionSel ? row | bgcolor(Color::Blue) | color(Color::White)
+                                              : row);
+        }
+        return window(text(std::format(" {} of {} ", completionSel + 1, n)) | dim,
+                      vbox(std::move(rows))) |
+               size(WIDTH, LESS_THAN, 70);
+    };
 
     InputOption inputOpt;
     inputOpt.multiline = true;
+    inputOpt.cursor_position = &sqlCursor;
+    // follow typing while the list is open; open it after a `.`
+    inputOpt.on_change = [&] {
+        if (completing ||
+            (sqlCursor > 0 && sqlCursor <= (int)sql.size() && sql[sqlCursor - 1] == '.'))
+            refreshCompletion();
+    };
     auto editor = Input(&sql, "SQL — F5 runs it", inputOpt);
     auto resultView =
         Renderer([&](bool) {
@@ -411,7 +500,7 @@ int runTui(CliConnections& connections, const std::string& initial) {
     auto sqlView = Container::Vertical({editor, resultView});
     auto sqlPane = Renderer(sqlView, [&] {
         return vbox({window(text(" Query ") | dim, editor->Render() | size(HEIGHT, LESS_THAN, 10)),
-                     resultView->Render() | flex});
+                     renderCompletion(), resultView->Render() | flex});
     });
 
     auto right = Container::Tab({dataView, structView, sqlPane}, &tab);
@@ -441,11 +530,47 @@ int runTui(CliConnections& connections, const std::string& initial) {
                          right->Render()) |
                       flex}) |
                 flex,
-            hbox({text(" " + status), filler(), text(hints + " ") | dim}),
+            hbox({text(" " + status), filler(),
+                  text((completing                      ? completionHints
+                        : tab == 2 && editor->Focused() ? editorHints
+                                                        : hints) +
+                       " ") |
+                      dim}),
         });
     });
 
     root |= CatchEvent([&](Event e) {
+        const bool inEditor = tab == 2 && editor->Focused();
+        if (completing && inEditor) {
+            const int n = static_cast<int>(completion.items.size());
+            if (e == Event::ArrowDown) {
+                completionSel = (completionSel + 1) % n;
+                return true;
+            }
+            if (e == Event::ArrowUp) {
+                completionSel = (completionSel + n - 1) % n;
+                return true;
+            }
+            if (e == Event::Tab || e == Event::Return) {
+                acceptCompletion();
+                return true;
+            }
+            if (e == Event::Escape) {
+                completing = false;
+                return true;
+            }
+            // moving away closes the list; the editor still gets the key
+            if (e == Event::ArrowLeft || e == Event::ArrowRight || e == Event::Home ||
+                e == Event::End || e.is_mouse())
+                completing = false;
+        }
+        // ctrl-space arrives as a nul byte
+        if (inEditor && e.input() == std::string(1, '\0')) {
+            refreshCompletion();
+            if (!completing)
+                status = "no completions here";
+            return true;
+        }
         if (e == Event::F2) {
             tab = 0;
             return true;

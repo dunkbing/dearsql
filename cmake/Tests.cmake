@@ -16,6 +16,10 @@ add_executable(
     tests/database/connection_url_test.cpp
     tests/database/mcp_tools_test.cpp
     tests/database/cli_command_test.cpp
+    tests/database/lsp_test.cpp
+    src/cli/completion_catalog.cpp
+    src/cli/connections.cpp
+    src/cli/lsp.cpp
     src/utils/cli_command.cpp
     src/utils/process_runner.cpp
     src/mcp/db_tools.cpp
@@ -90,6 +94,7 @@ add_executable(
     tests/ui/env_tag_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
+    external/libdearsql/tests/completion_tests.cpp
     src/ui/text_editor_format.cpp
     src/utils/mysql_dump_splitter.cpp
 )

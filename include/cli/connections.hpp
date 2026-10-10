@@ -14,6 +14,7 @@ class CliConnections {
 public:
     struct Entry {
         DatabaseConnectionInfo info;
+        std::string spec; // the URL or path it was added from, so a repeat finds it
         std::shared_ptr<dearsql::IConnection> conn; // null until opened
         std::unique_ptr<SSHTunnel> tunnel;
     };
@@ -27,6 +28,7 @@ public:
     std::string add(const std::string& spec, std::string& error);
 
     std::vector<Entry*> entries();
+    // by name, or by the URL/path it was added from
     Entry* find(const std::string& name);
     // "" on success, else the error
     std::string open(const std::string& name);

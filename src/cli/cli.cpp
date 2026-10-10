@@ -1,15 +1,17 @@
 // the app's terminal modes: `dearsql --tui` (a terminal client over libdearsql)
-// and `dearsql --mcp` (a stdio MCP server with the GUI's agent database tools)
+// `dearsql --mcp` (a stdio MCP server with the GUI's agent database tools) and
+// `dearsql --lsp` (a stdio language server for editors)
 #include "cli/cli.hpp"
 #ifdef _WIN32
-#include <windows.h>
 #include <io.h>
+#include <windows.h>
 #define isatty _isatty
 #define fileno _fileno
 #else
 #include <unistd.h>
 #endif
 #include "cli/connections.hpp"
+#include "cli/lsp.hpp"
 #include "cli/tui.hpp"
 #include "mcp/db_tools.hpp"
 #include <iostream>
@@ -22,6 +24,7 @@ namespace {
   dearsql [file]                    open the app (and the file, if given)
   dearsql --tui [connection]        browse and query in the terminal
   dearsql --mcp [connection...]     MCP server on stdin/stdout for coding agents
+  dearsql --lsp [connection]        SQL language server (completion, hover) for editors
 
 connection: a saved DearSQL connection name, a URL (postgres://user:pass@host/db,
 mysql://..., mongodb://..., redis://..., mssql://..., oracle://...), or a
@@ -102,7 +105,8 @@ std::optional<int> runCli(int argc, char** argv) {
         return 0;
     }
     const bool mcpMode = mode == "--mcp";
-    if (!mcpMode && mode != "--tui")
+    const bool lspMode = mode == "--lsp";
+    if (!mcpMode && !lspMode && mode != "--tui")
         return std::nullopt; // the GUI, maybe with a file to open
     std::vector<std::string> args(argv + 2, argv + argc);
 #ifdef _WIN32
@@ -115,10 +119,14 @@ std::optional<int> runCli(int argc, char** argv) {
         freopen("CONIN$", "r", stdin);
     }
 #endif
-    // stdout belongs to the tui screen / the mcp stream: warnings go to stderr in
-    // mcp mode, nowhere in the tui
+    // stdout belongs to the tui screen / the protocol stream: warnings go to stderr
+    // in mcp and lsp mode, nowhere in the tui
     spdlog::set_default_logger(spdlog::stderr_color_mt("dearsql"));
-    spdlog::set_level(mcpMode ? spdlog::level::warn : spdlog::level::off);
+    spdlog::set_level(mcpMode || lspMode ? spdlog::level::warn : spdlog::level::off);
+    if (lspMode && args.size() > 1) {
+        std::cerr << "dearsql: --lsp takes one connection\n";
+        return 2;
+    }
 
     CliConnections conns;
     std::string error;
@@ -139,6 +147,8 @@ std::optional<int> runCli(int argc, char** argv) {
 
     if (mcpMode)
         return serveMcp(conns, focus);
+    if (lspMode)
+        return runLsp(conns, focus);
     if (conns.entries().empty()) {
         std::cerr << USAGE;
         return 2;

@@ -27,7 +27,8 @@ namespace dearsql {
           redoStack_(std::move(other.redoStack_)),
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
           completionItems_(std::move(other.completionItems_)),
-          completionFilter_(std::move(other.completionFilter_)), language_(other.language_),
+          completionFilter_(std::move(other.completionFilter_)),
+          completionProvider_(std::move(other.completionProvider_)), language_(other.language_),
           tsParser_(other.tsParser_), tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
           tsPreviousContent_(std::move(other.tsPreviousContent_)),
           highlightDirty_(other.highlightDirty_) {
@@ -49,6 +50,7 @@ namespace dearsql {
             redoStack_ = std::move(other.redoStack_);
             completionItems_ = std::move(other.completionItems_);
             completionFilter_ = std::move(other.completionFilter_);
+            completionProvider_ = std::move(other.completionProvider_);
             language_ = other.language_;
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
@@ -130,6 +132,10 @@ namespace dearsql {
 
     void TextEditor::SetCompletionFilter(CompletionFilter filter) {
         completionFilter_ = std::move(filter);
+    }
+
+    void TextEditor::SetCompletionProvider(CompletionProvider provider) {
+        completionProvider_ = std::move(provider);
     }
 
     const std::vector<std::string>& TextEditor::GetDefaultCompletionKeywords() {

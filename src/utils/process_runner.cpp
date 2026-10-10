@@ -134,9 +134,18 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec, std::stop_token stop) 
         return result;
     }
 
+    const auto deadline = spec.timeout.count() > 0 ? std::chrono::steady_clock::now() + spec.timeout
+                                                   : std::chrono::steady_clock::time_point::max();
+    const auto shouldStop = [&] {
+        return stop.stop_requested() || std::chrono::steady_clock::now() >= deadline;
+    };
+    const auto stoppedMessage = [&] {
+        return stop.stop_requested() ? std::format("'{}' was cancelled", spec.args.front())
+                                     : std::format("'{}' timed out after {} ms", spec.args.front(),
+                                                   spec.timeout.count());
+    };
+
 #if defined(_WIN32)
-    // ponytail: no cancel or timeout on windows yet, ReadFile blocks until exit
-    (void)stop;
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
@@ -160,31 +169,67 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec, std::stop_token stop) 
     std::string commandLine = buildCommandLine(spec.args);
     auto environmentBlock = buildEnvironmentBlock(spec.environment);
 
-    const BOOL created =
-        CreateProcessA(nullptr, commandLine.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                       environmentBlock.data(), nullptr, &si, &pi);
+    // started suspended inside a job so a stop kills the whole tree
+    HANDLE job = CreateJobObjectA(nullptr, nullptr);
+    const BOOL created = CreateProcessA(nullptr, commandLine.data(), nullptr, nullptr, TRUE,
+                                        CREATE_NO_WINDOW | CREATE_SUSPENDED,
+                                        environmentBlock.data(), nullptr, &si, &pi);
     CloseHandle(writePipe);
 
     if (!created) {
         CloseHandle(readPipe);
+        if (job)
+            CloseHandle(job);
         result.errorMessage = std::format("Failed to start '{}'", spec.args.front());
         return result;
     }
+    if (job)
+        AssignProcessToJobObject(job, pi.hProcess);
+    ResumeThread(pi.hThread);
 
+    // non-blocking reads (PeekNamedPipe) so the stop token and deadline are honoured
     char buffer[4096];
-    DWORD bytesRead = 0;
-    while (ReadFile(readPipe, buffer, sizeof(buffer), &bytesRead, nullptr) && bytesRead > 0) {
-        result.output.append(buffer, bytesRead);
+    const auto drain = [&] {
+        DWORD avail = 0;
+        while (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &avail, nullptr) && avail > 0) {
+            DWORD bytesRead = 0;
+            if (!ReadFile(readPipe, buffer, std::min<DWORD>(avail, sizeof(buffer)), &bytesRead,
+                          nullptr) ||
+                bytesRead == 0)
+                break;
+            result.output.append(buffer, bytesRead);
+        }
+    };
+    bool stopped = false;
+    while (true) {
+        drain();
+        if (WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0) {
+            drain();
+            break;
+        }
+        if (shouldStop()) {
+            stopped = true;
+            if (!job || !TerminateJobObject(job, 1))
+                TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+            break;
+        }
     }
     CloseHandle(readPipe);
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exitCode = 1;
     GetExitCodeProcess(pi.hProcess, &exitCode);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    if (job)
+        CloseHandle(job);
 
     result.exitCode = static_cast<int>(exitCode);
+    if (stopped) {
+        result.cancelled = true;
+        result.errorMessage = stoppedMessage();
+        return result;
+    }
     result.success = exitCode == 0;
     if (!result.success && result.output.empty()) {
         result.errorMessage =
@@ -265,12 +310,6 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec, std::stop_token stop) 
         return result;
     }
 
-    const auto deadline = spec.timeout.count() > 0 ? std::chrono::steady_clock::now() + spec.timeout
-                                                   : std::chrono::steady_clock::time_point::max();
-    const auto shouldStop = [&] {
-        return stop.stop_requested() || std::chrono::steady_clock::now() >= deadline;
-    };
-
     fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL) | O_NONBLOCK);
     bool stopped = false;
     char buffer[4096];
@@ -321,10 +360,7 @@ ProcessResult ProcessRunner::run(const ProcessSpec& spec, std::stop_token stop) 
         result.exitCode = WIFSIGNALED(status) ? 128 + WTERMSIG(status)
                           : WIFEXITED(status) ? WEXITSTATUS(status)
                                               : -1;
-        result.errorMessage = stop.stop_requested()
-                                  ? std::format("'{}' was cancelled", spec.args.front())
-                                  : std::format("'{}' timed out after {} ms", spec.args.front(),
-                                                spec.timeout.count());
+        result.errorMessage = stoppedMessage();
         return result;
     }
     if (reaped && WIFEXITED(status)) {

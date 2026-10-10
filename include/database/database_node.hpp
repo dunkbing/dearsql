@@ -34,6 +34,12 @@ public:
         return nullptr;
     }
 
+    // keeps the node from finishing destruction while held; null where teardown
+    // never waits on workers
+    [[nodiscard]] virtual std::shared_ptr<void> pin() {
+        return nullptr;
+    }
+
     [[nodiscard]] virtual std::string getName() const = 0;
 
     [[nodiscard]] virtual std::string getFullPath() const = 0;
@@ -131,10 +137,22 @@ inline void retireNode(std::unique_ptr<IDatabaseNode> node) {
         Reaper::dispose(std::move(node));
 }
 
-// an owning reference to the node's connection, for a tab worker that may outlive
-// its tab. a node retired from a live owner is covered by its own destructor,
-// which waits out calls still running on it
-inline std::shared_ptr<DatabaseInterface> keepOwnerAlive(const IDatabaseNode* node) {
-    auto* owner = node ? node->ownerDatabase() : nullptr;
-    return owner ? owner->keepAlive() : nullptr;
+// for a tab worker that may outlive its tab: owns the node's connection and pins
+// the node and its parents, so a node retired meanwhile (dropped, renamed, gone
+// from a relist) waits for the worker. take it on the UI thread, where the node
+// is still alive
+inline std::shared_ptr<void> keepOwnerAlive(IDatabaseNode* node) {
+    if (!node)
+        return nullptr;
+    auto* owner = node->ownerDatabase();
+    std::shared_ptr<void> conn = owner ? owner->keepAlive() : nullptr;
+    std::vector<std::shared_ptr<void>> pins; // the node first, then its parents
+    for (auto* n = node; n; n = n->parentNode())
+        pins.push_back(n->pin());
+    // released child first, the connection last
+    return {nullptr, [conn = std::move(conn), pins = std::move(pins)](void*) mutable {
+                for (auto& p : pins)
+                    p.reset();
+                conn.reset();
+            }};
 }

@@ -203,7 +203,7 @@ public:
     void setSuspended(bool suspended);
     // keeps the node from finishing destruction while held: taken on the UI thread
     // for a worker that uses the node after the UI may have retired it
-    [[nodiscard]] std::shared_ptr<void> pin();
+    [[nodiscard]] std::shared_ptr<void> pin() override;
 
 protected:
     // handles kept per node; 0 = one shared handle for backends that are already

@@ -833,20 +833,22 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     }
 
     if (executor) {
-        queryExecutionOp_.startCancellable([query, executor](const std::stop_token& stopToken) {
-            QueryResult result;
+        auto keep = keepOwnerAlive(dynamic_cast<IDatabaseNode*>(executor));
+        queryExecutionOp_.startCancellable(
+            [query, executor, keep = std::move(keep)](const std::stop_token& stopToken) {
+                QueryResult result;
 
-            if (stopToken.stop_requested()) {
+                if (stopToken.stop_requested()) {
+                    return result;
+                }
+
+                result = executor->executeQuery(query);
+
+                if (stopToken.stop_requested()) {
+                    return QueryResult{};
+                }
                 return result;
-            }
-
-            result = executor->executeQuery(query);
-
-            if (stopToken.stop_requested()) {
-                return QueryResult{};
-            }
-            return result;
-        });
+            });
         return;
     }
     StatementResult r;

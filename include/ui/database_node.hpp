@@ -171,9 +171,6 @@ private:
     void renderTableImportMenu(IDatabaseNode* node, const std::string& tableName);
     void checkTableTransfers();
     void renderTableTransferProgress();
-    // Copy DDL: the statement is read on a worker and put on the clipboard on return
-    AsyncOperation<std::pair<bool, std::string>> copyDdlOp_;
-    void startCopyDdl(ITableDataProvider* provider, const Table& table);
 
     AsyncOperation<MysqlDumpImport::Result> importOp_;
     std::shared_ptr<MysqlDumpImport::Progress> importProgress_;

@@ -91,15 +91,6 @@ int FileDatabase::getRowCount(const Table& table, const std::string& whereClause
               : 0;
 }
 
-std::pair<bool, std::string> FileDatabase::getTableDdl(const Table& table) {
-    std::string err;
-    auto db = handle();
-    if (!db)
-        return {false, "The database is not open"};
-    auto ddl = libCall(err, "table ddl", [&] { return db->tableDdl(table.name); });
-    return err.empty() ? std::pair{true, std::move(ddl)} : std::pair{false, std::move(err)};
-}
-
 LoadResult<Table> FileDatabase::getTablesAsync() {
     auto r = load<Table>(handle(), "load tables", [](auto& db) { return db.tables(); });
     stampFullNames(r.items, connectionInfo.name);

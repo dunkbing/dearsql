@@ -81,7 +81,6 @@ public:
                                                        const std::string& orderBy = "") override;
     std::vector<std::string> getColumnNames(const Table& table) override;
     int getRowCount(const Table& table, const std::string& whereClause = "") override;
-    std::pair<bool, std::string> getTableDdl(const Table& table) override;
 
     [[nodiscard]] bool isTablesLoaded() const override {
         return tablesLoaded;

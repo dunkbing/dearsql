@@ -2,7 +2,6 @@
 
 #include "database/db.hpp"
 #include <string>
-#include <utility>
 #include <vector>
 
 /**
@@ -42,12 +41,6 @@ public:
      * @return Total number of rows
      */
     virtual int getRowCount(const Table& table, const std::string& whereClause = "") = 0;
-
-    // the table's CREATE TABLE and indexes: {true, ddl} or {false, error}. worker thread
-    virtual std::pair<bool, std::string> getTableDdl(const Table& table) {
-        (void)table;
-        return {false, "DDL is not available for this database"};
-    }
 
     /**
      * @brief Get access to tables for metadata (e.g., primary keys)

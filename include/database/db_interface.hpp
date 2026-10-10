@@ -7,6 +7,7 @@
 #include <dearsql/connection_info.hpp>
 #include <dearsql/database.hpp>
 #include <memory>
+#include <mutex>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -55,9 +56,15 @@ struct DatabaseConnectionInfo : dearsql::ConnectionInfo {
  * - Basic getters/setters
  * - Schema loading patterns (tables, views, sequences)
  */
-class DatabaseInterface {
+class DatabaseInterface : public std::enable_shared_from_this<DatabaseInterface> {
 public:
     virtual ~DatabaseInterface() = default;
+
+    // an owning reference for a worker that must outlive a closed tab (null when
+    // not held by a shared_ptr)
+    [[nodiscard]] std::shared_ptr<DatabaseInterface> keepAlive() {
+        return weak_from_this().lock();
+    }
 
     // Connection management
     virtual std::pair<bool, std::string> connect() = 0;
@@ -81,6 +88,29 @@ public:
 
     virtual std::pair<bool, std::string> dropDatabase(const std::string& dbName) {
         return {false, "Drop database not supported for this database type"};
+    }
+
+    // drop/rename split for the UI: begin* runs on the UI thread and stops work on
+    // the database; `work` is the server round trip for a worker (it holds what it
+    // needs); `finish` applies the result on the UI thread (null when nothing to do)
+    struct DatabaseDdl {
+        std::function<std::pair<bool, std::string>()> work;
+        std::function<void(bool ok)> finish;
+    };
+    virtual DatabaseDdl beginDropDatabase(const std::string& dbName) {
+        return {[] {
+                    return std::pair<bool, std::string>{
+                        false, "Drop database not supported for this database type"};
+                },
+                nullptr};
+    }
+    virtual DatabaseDdl beginRenameDatabase(const std::string& oldName,
+                                            const std::string& newName) {
+        return {[] {
+                    return std::pair<bool, std::string>{
+                        false, "Rename database not supported for this database type"};
+                },
+                nullptr};
     }
 
     virtual void refreshDatabaseNames() {}
@@ -139,11 +169,14 @@ public:
         attemptedConnection = attempted;
     }
 
-    [[nodiscard]] virtual const std::string& getLastConnectionError() const {
+    // connect workers write it while the UI reads it: a copy under the lock
+    [[nodiscard]] std::string getLastConnectionError() const {
+        std::lock_guard lock(lastConnectionErrorMutex_);
         return lastConnectionError;
     }
 
-    virtual void setLastConnectionError(const std::string& error) {
+    void setLastConnectionError(const std::string& error) {
+        std::lock_guard lock(lastConnectionErrorMutex_);
         lastConnectionError = error;
     }
 
@@ -241,8 +274,9 @@ protected:
     }
 
     // Common state
-    bool attemptedConnection = false;
-    std::string lastConnectionError;
+    std::atomic<bool> attemptedConnection = false;
+    std::string lastConnectionError; // guarded by lastConnectionErrorMutex_
+    mutable std::mutex lastConnectionErrorMutex_;
     // Persistent connection ID for app state
     int savedConnectionId = -1;
     std::atomic<bool> connected = false; // written by connect workers, read by the UI

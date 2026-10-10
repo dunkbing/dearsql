@@ -3,6 +3,7 @@
 #include "database/async_helper.hpp"
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -42,22 +43,28 @@ public:
     [[nodiscard]] std::string getError() const;
 
 private:
+    // what a stream writes; shared with the worker so the client can go (and the
+    // worker be detached) while a request still sits in a connect or read timeout
+    struct Sink {
+        std::mutex mutex;
+        std::string deltas;
+        std::string error;
+        void append(const std::string& text);
+        void fail(const std::string& err);
+    };
+
     AsyncOperation<bool> streamOperation_;
     std::atomic<bool> done_{false};
-    mutable std::mutex mutex_;
-    std::string deltaBuffer_;
-    std::string error_;
+    std::shared_ptr<Sink> sink_ = std::make_shared<Sink>();
 
-    void streamAnthropic(const std::string& apiKey, const std::string& model,
-                         const std::string& systemPrompt, std::stop_token stopToken,
-                         const std::vector<AIChatMessage>& messages);
-    void streamGemini(const std::string& apiKey, const std::string& model,
-                      const std::string& systemPrompt, std::stop_token stopToken,
-                      const std::vector<AIChatMessage>& messages);
-    void streamOpenAI(const std::string& apiKey, const std::string& model,
-                      const std::string& systemPrompt, std::stop_token stopToken,
-                      const std::vector<AIChatMessage>& messages);
-    void appendDelta(const std::string& text);
-    void finishWithError(const std::string& err);
+    static void streamAnthropic(Sink& sink, const std::string& apiKey, const std::string& model,
+                                const std::string& systemPrompt, std::stop_token stopToken,
+                                const std::vector<AIChatMessage>& messages);
+    static void streamGemini(Sink& sink, const std::string& apiKey, const std::string& model,
+                             const std::string& systemPrompt, std::stop_token stopToken,
+                             const std::vector<AIChatMessage>& messages);
+    static void streamOpenAI(Sink& sink, const std::string& apiKey, const std::string& model,
+                             const std::string& systemPrompt, std::stop_token stopToken,
+                             const std::vector<AIChatMessage>& messages);
     void updateCompletionState();
 };

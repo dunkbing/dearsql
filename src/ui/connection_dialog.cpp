@@ -544,6 +544,9 @@ void ConnectionDialog::handleSuccess(const std::shared_ptr<DatabaseInterface>& d
         auto& dbs = app_->getDatabases();
         for (size_t i = 0; i < dbs.size(); i++) {
             if (dbs[i] == editingDb_) {
+                // tabs hold raw pointers into the old connection, which dies here
+                if (auto* tabs = app_->getTabManager())
+                    tabs->closeTabsForDatabase(dbs[i].get());
                 dbs[i]->disconnect();
                 dbs[i] = db;
                 break;
@@ -689,7 +692,7 @@ void ConnectionDialog::render() {
 void ConnectionDialog::renderAppearanceRow() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    fieldLabel("Status color");
+    fieldLabel("Status");
 
     constexpr float kSwatch = 22.0f;
     const ImGuiStyle& style = ImGui::GetStyle();

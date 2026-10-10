@@ -50,10 +50,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/vcpkg_installed
-          key: vcpkg-installed-linux-test-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-installed-linux-test-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-installed-linux-test-
-            vcpkg-installed-linux-
+            vcpkg-installed-linux-test-${{ runner.arch }}-
+            vcpkg-installed-linux-x86_64-
 
       - name: Inject secrets into APP_METADATA
         run: |

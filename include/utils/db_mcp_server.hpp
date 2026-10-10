@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "mcp/db_tools.hpp"
 #include <atomic>
 #include <condition_variable>
@@ -63,7 +64,7 @@ private:
     mcp::Server tools_{*this};
     std::unique_ptr<httplib::Server> server_;
     std::string token_;
-    std::thread thread_;
+    AsyncOperation<bool> listenOp_;
     int port_ = 0;
     std::atomic<bool> stopping_ = false; // connect fails fast during stop()
 

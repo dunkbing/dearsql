@@ -86,7 +86,7 @@ PostgresToolResult
 PostgresBackupService::checkToolsAvailable(const std::vector<std::string>& toolNames) {
     std::ostringstream versions;
     for (const auto& toolName : toolNames) {
-        ProcessSpec spec{{toolName, "--version"}, {}};
+        ProcessSpec spec{{toolName, "--version"}, {}, std::chrono::seconds(5)};
         ProcessResult process = ProcessRunner::run(spec);
         if (!process.success) {
             PostgresToolResult result;
@@ -111,7 +111,8 @@ PostgresBackupService::checkToolsAvailable(const std::vector<std::string>& toolN
     return result;
 }
 
-PostgresToolResult PostgresBackupService::backupDatabase(const PostgresBackupOptions& options) {
+PostgresToolResult PostgresBackupService::backupDatabase(const PostgresBackupOptions& options,
+                                                         std::stop_token stop) {
     std::vector<std::string> args{"pg_dump"};
     appendConnectionArgs(args, options.connectionInfo, options.databaseName);
 
@@ -129,11 +130,12 @@ PostgresToolResult PostgresBackupService::backupDatabase(const PostgresBackupOpt
     args.emplace_back("--verbose");
 
     ProcessSpec spec{std::move(args), postgresEnvironment(options.connectionInfo)};
-    return fromProcessResult(ProcessRunner::run(spec),
+    return fromProcessResult(ProcessRunner::run(spec, stop),
                              std::format("Backup completed: {}", options.outputPath.string()));
 }
 
-PostgresToolResult PostgresBackupService::restoreDatabase(const PostgresRestoreOptions& options) {
+PostgresToolResult PostgresBackupService::restoreDatabase(const PostgresRestoreOptions& options,
+                                                          std::stop_token stop) {
     const bool plainSql = hasSqlExtension(options.inputPath);
     const std::string targetDatabase =
         options.createDatabase
@@ -165,6 +167,6 @@ PostgresToolResult PostgresBackupService::restoreDatabase(const PostgresRestoreO
     }
 
     ProcessSpec spec{std::move(args), postgresEnvironment(options.connectionInfo)};
-    return fromProcessResult(ProcessRunner::run(spec),
+    return fromProcessResult(ProcessRunner::run(spec, stop),
                              std::format("Restore completed from: {}", options.inputPath.string()));
 }

@@ -37,6 +37,14 @@
 #include <spdlog/spdlog.h>
 
 namespace {
+    // the node a sidebar DDL pins for its worker; file databases are held by the connection
+    LibDatabaseNode* pinOf(LibDatabaseNode* node) {
+        return node;
+    }
+    LibDatabaseNode* pinOf(const void*) {
+        return nullptr;
+    }
+
     constexpr const char* CREATE_TABLE_LABEL = "Create Table";
     constexpr const char* REFRESH_LABEL = "Refresh";
     constexpr const char* DELETE_LABEL = "Delete";
@@ -268,6 +276,213 @@ namespace {
 DatabaseHierarchy::DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface)
     : db(std::move(dbInterface)) {}
 
+DatabaseHierarchy::~DatabaseHierarchy() {
+    // the work holds its own connection and pinned node: let it finish unwatched.
+    // ponytail: a drop/rename database finishing after this never retires its node
+    // (it stays suspended until the connection is refreshed)
+    ddlOp_.detach();
+    tableExportOp_.detach();
+    csvImportOp_.detach();
+}
+
+bool DatabaseHierarchy::startDdl(std::string busyKey, std::string errorPrefix,
+                                 LibDatabaseNode* pinNode, std::function<DdlResult()> work,
+                                 std::function<void(bool)> done) {
+    if (ddlOp_.isRunning()) {
+        Alert::show("Busy", "Wait for the running operation on this connection to finish.");
+        return false;
+    }
+    ddlBusyKey_ = std::move(busyKey);
+    ddlErrorPrefix_ = std::move(errorPrefix);
+    ddlDone_ = std::move(done);
+    ddlOp_.start([work = std::move(work), pin = pinNode ? pinNode->pin() : nullptr,
+                  keepAlive = db]() mutable -> DdlResult {
+        DdlResult result;
+        try {
+            result = work();
+        } catch (const std::exception& e) {
+            result = {false, e.what()};
+        }
+        // drop the work (and the node pin) before the connection reference
+        work = nullptr;
+        pin.reset();
+        return result;
+    });
+    return true;
+}
+
+void DatabaseHierarchy::startDatabaseDdl(
+    const std::string& busyKey, std::string errorPrefix,
+    const std::function<DatabaseInterface::DatabaseDdl()>& begin, std::function<void(bool)> done) {
+    // checked before begin(): it suspends the node, which only finish undoes
+    if (ddlOp_.isRunning()) {
+        Alert::show("Busy", "Wait for the running operation on this connection to finish.");
+        return;
+    }
+    auto ddl = begin();
+    // finish first, then ours: both on the UI thread
+    startDdl(busyKey, std::move(errorPrefix), nullptr, std::move(ddl.work),
+             [finish = std::move(ddl.finish), done = std::move(done)](bool ok) {
+                 if (finish)
+                     finish(ok);
+                 if (done)
+                     done(ok);
+             });
+}
+
+void DatabaseHierarchy::checkDdlStatus() {
+    ddlOp_.check([this](const DdlResult& result) {
+        auto done = std::move(ddlDone_);
+        ddlDone_ = nullptr;
+        ddlBusyKey_.clear();
+        if (!result.first) {
+            spdlog::error("{}: {}", ddlErrorPrefix_, result.second);
+            Alert::show("Error", std::format("{}: {}", ddlErrorPrefix_, result.second));
+        }
+        if (done)
+            done(result.first);
+    });
+}
+
+void DatabaseHierarchy::renderDdlSpinner(const std::string& key, const std::string& label) const {
+    if (!ddlOp_.isRunning() || ddlBusyKey_ != key)
+        return;
+    constexpr float radius = 6.0f;
+    const ImVec2 itemMin = ImGui::GetItemRectMin();
+    const float labelRight = itemMin.x + ImGui::GetTreeNodeToLabelSpacing() +
+                             ImGui::CalcTextSize(std::format("   {}", label).c_str()).x;
+    const ImVec2 centre(labelRight + Theme::Spacing::M + radius,
+                        itemMin.y + ImGui::GetItemRectSize().y * 0.5f);
+    UIUtils::SpinnerOverlay(
+        ImGui::GetWindowDrawList(), centre, radius, 2,
+        ImGui::GetColorU32(Application::getInstance().getCurrentColors().peach));
+}
+
+void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, const Table& table,
+                                              DatabaseType dbType) {
+    TableExporter::renderExportMenu(
+        [&](ExportFormat format) { startTableExport(provider, {&table}, format, dbType); },
+        !tableExportOp_.isRunning());
+}
+
+void DatabaseHierarchy::renderTableImportMenu(IDatabaseNode* node, const std::string& tableName) {
+    TableImporter::renderImportMenu([&] { startCsvImport(node, tableName); },
+                                    !csvImportOp_.isRunning());
+}
+
+void DatabaseHierarchy::startTableExport(ITableDataProvider* provider,
+                                         const std::vector<const Table*>& tables,
+                                         ExportFormat format, DatabaseType dbType) {
+    if (!provider || tableExportOp_.isRunning())
+        return;
+    auto request = TableExporter::chooseDestination(tables, format, dbType);
+    if (!request)
+        return;
+    auto* node = dynamic_cast<IDatabaseNode*>(provider);
+    auto* libNode = dynamic_cast<LibDatabaseNode*>(provider);
+    tableExportProgress_ = std::make_shared<TableExporter::Progress>();
+    tableExportOp_.start([provider, request = std::move(*request), progress = tableExportProgress_,
+                          pin = libNode ? libNode->pin() : nullptr,
+                          keep = keepOwnerAlive(node)]() mutable {
+        auto result = TableExporter::run(provider, request, *progress);
+        pin.reset(); // before the connection reference goes
+        return result;
+    });
+}
+
+void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName) {
+    if (!node || csvImportOp_.isRunning())
+        return;
+    auto path = TableImporter::chooseCsvFile();
+    if (!path)
+        return;
+    auto* libNode = dynamic_cast<LibDatabaseNode*>(node);
+    csvImportProgress_ = std::make_shared<TableImporter::Progress>();
+    csvImportOp_.start([node, tableName, path = std::move(*path), progress = csvImportProgress_,
+                        pin = libNode ? libNode->pin() : nullptr,
+                        keep = keepOwnerAlive(node)]() mutable {
+        auto result = TableImporter::importCsv(node, tableName, path, *progress);
+        pin.reset();
+        return result;
+    });
+}
+
+void DatabaseHierarchy::checkTableTransfers() {
+    tableExportOp_.check([this](const TableExporter::Result& result) {
+        if (result.success) {
+            Alert::show("Export Complete", std::format("Wrote {} table(s) and {} row(s) to '{}'.",
+                                                       result.tables, result.rows, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Export Cancelled",
+                        std::format("Stopped after {} row(s). '{}' is incomplete.", result.rows,
+                                    result.path));
+        } else {
+            Alert::show("Export Failed", result.error);
+        }
+        tableExportProgress_.reset();
+    });
+    csvImportOp_.check([this](const TableImporter::Result& result) {
+        if (result.success) {
+            Alert::show("Import Complete",
+                        std::format("Inserted {} row(s) from '{}'.", result.inserted, result.path));
+        } else if (result.cancelled) {
+            Alert::show("Import Cancelled",
+                        std::format("Stopped after {} row(s). Rows already inserted were kept.",
+                                    result.inserted));
+        } else if (result.inserted > 0 || result.failed > 0) {
+            Alert::show("Import Finished With Errors",
+                        std::format("Inserted {} row(s); {} row(s) failed. First error:\n\n{}",
+                                    result.inserted, result.failed, result.error));
+        } else {
+            Alert::show("Import Failed", result.error);
+        }
+        csvImportProgress_.reset();
+    });
+}
+
+void DatabaseHierarchy::renderTableTransferProgress() {
+    if (tableExportOp_.isRunning() && tableExportProgress_) {
+        auto& p = *tableExportProgress_;
+        const int done = p.tablesDone.load(std::memory_order_relaxed);
+        const int total = std::max(1, p.tablesTotal.load(std::memory_order_relaxed));
+        const auto tableRows = p.tableRowsWritten.load(std::memory_order_relaxed);
+        const auto tableTotal = p.rowsTotal.load(std::memory_order_relaxed);
+        const bool cancelling = p.cancelRequested.load(std::memory_order_relaxed);
+        const double inTable = tableTotal > 0 ? static_cast<double>(tableRows) / tableTotal : 0.0;
+        const float fraction =
+            static_cast<float>(std::min(1.0, (done + std::min(inTable, 1.0)) / total));
+        if (renderProgressPanel(
+                "##table_export_progress", cancelling ? "Cancelling export..." : "Exporting",
+                fraction, std::format("{} / {} tables", done, total),
+                std::format("{} rows written", p.rowsWritten.load(std::memory_order_relaxed)),
+                "999999999 rows written", cancelling)) {
+            p.cancelRequested = true;
+            // a page query still running stops server-side
+            ConnectionPoolBase::cancelQueriesOn(tableExportOp_.workerId());
+        }
+    }
+    if (csvImportOp_.isRunning() && csvImportProgress_) {
+        auto& p = *csvImportProgress_;
+        const auto total = p.totalBytes.load(std::memory_order_relaxed);
+        const auto read = p.bytesRead.load(std::memory_order_relaxed);
+        const bool cancelling = p.cancelRequested.load(std::memory_order_relaxed);
+        const float fraction =
+            total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
+                      : -1.0f * static_cast<float>(ImGui::GetTime());
+        if (renderProgressPanel(
+                "##csv_import_progress", cancelling ? "Cancelling import..." : "Importing CSV",
+                fraction,
+                total > 0 ? std::format("{} / {}", formatBytes(read), formatBytes(total)) : "",
+                std::format("{} rows inserted  ·  {} failed",
+                            p.inserted.load(std::memory_order_relaxed),
+                            p.failed.load(std::memory_order_relaxed)),
+                "999999999 rows inserted  ·  999999999 failed", cancelling)) {
+            p.cancelRequested = true;
+            ConnectionPoolBase::cancelQueriesOn(csvImportOp_.workerId());
+        }
+    }
+}
+
 void DatabaseHierarchy::handleTableClick(const Table* table) {
     const ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl) {
@@ -363,7 +578,8 @@ void DatabaseHierarchy::renderSchemaFilterBadge(const std::string& dbName,
 
 void DatabaseHierarchy::renderMultiSelectMenuContent(
     ITableDataProvider* provider, const std::vector<Table>& nodeTables,
-    std::function<void(const std::string&)> dropOne, DatabaseType dbType) {
+    std::function<DdlResult(const std::string&)> dropOne, DatabaseType dbType,
+    LibDatabaseNode* pinNode) {
     std::vector<const Table*> selectedNodeTables;
     std::vector<std::string> selectedNames;
     for (const auto& t : nodeTables) {
@@ -373,27 +589,13 @@ void DatabaseHierarchy::renderMultiSelectMenuContent(
         }
     }
 
-    if (ImGui::BeginMenu("Export")) {
-        if (ImGui::MenuItem("CSV")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::CSV, dbType);
-        }
-        if (ImGui::MenuItem("JSON")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::JSON, dbType);
-        }
-        if (ImGui::MenuItem("SQL")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::SQL, dbType);
-        }
-        if (ImGui::MenuItem("Markdown")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::MARKDOWN,
-                                        dbType);
-        }
-        if (ImGui::MenuItem("HTML")) {
-            TableExporter::exportTables(provider, selectedNodeTables, ExportFormat::HTML, dbType);
-        }
-        ImGui::EndMenu();
-    }
+    TableExporter::renderExportMenu(
+        [&](ExportFormat format) {
+            startTableExport(provider, selectedNodeTables, format, dbType);
+        },
+        !tableExportOp_.isRunning());
     ImGui::Separator();
-    if (ImGui::MenuItem(DELETE_LABEL)) {
+    if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
         const std::vector<std::string> names = std::move(selectedNames);
         const size_t count = names.size();
         Alert::show("Delete Tables",
@@ -401,10 +603,20 @@ void DatabaseHierarchy::renderMultiSelectMenuContent(
                                 count == 1 ? "" : "s"),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [names, dropOne]() {
-                          for (const auto& n : names) {
-                              dropOne(n);
-                          }
+                      [this, names, dropOne, pinNode, provider]() {
+                          if (names.empty())
+                              return;
+                          // one worker drops them in turn and reports every failure
+                          startDdl(ddlKey(provider, names.front()), "Failed to delete tables",
+                                   pinNode, [names, dropOne]() -> DdlResult {
+                                       std::string errors;
+                                       for (const auto& n : names) {
+                                           auto [ok, err] = dropOne(n);
+                                           if (!ok)
+                                               errors += std::format("\n{}: {}", n, err);
+                                       }
+                                       return {errors.empty(), errors};
+                                   });
                       },
                       AlertButton::Style::Destructive}});
     }
@@ -455,8 +667,6 @@ void DatabaseHierarchy::renderRootNode() {
     if (!db) {
         return;
     }
-
-    checkPostgresToolStatus();
 
     prevVisibleTables_ = std::move(currVisibleTables_);
     currVisibleTables_.clear();
@@ -1005,6 +1215,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.blue));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
     const ImVec2 pgNodeMin = ImGui::GetItemRectMin();
     const ImVec2 pgNodeMax = ImGui::GetItemRectMax();
     if (dbData->schemasLoaded && !dbData->schemas.empty()) {
@@ -1036,19 +1247,16 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
         }
         renderPostgresBackupRestoreMenus(dbData);
         ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
+        if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
             const std::string oldName = dbData->name;
             InputDialog::show(
                 "Rename Database", "New name:", oldName, "Rename",
                 [this, oldName](const std::string& newName) -> std::string {
-                    auto [success, error] = db->renameDatabase(oldName, newName);
-                    if (success) {
-                        if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
-                            pgDb->refreshDatabaseNames();
-                        }
-                        return "";
-                    }
-                    return error;
+                    // on a worker; the database list reloads when it lands
+                    startDatabaseDdl(
+                        ddlKey(db.get(), oldName), "Failed to rename database",
+                        [&] { return db->beginRenameDatabase(oldName, newName); }, nullptr);
+                    return "";
                 },
                 nullptr,
                 [oldName](const std::string& newName) -> std::string {
@@ -1057,7 +1265,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
                     return "";
                 });
         }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -1073,11 +1281,11 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
 
     if (isOpen) {
         // PostgreSQL: render schemas
-        if (!dbData->schemasLoaded && !dbData->schemasLoader.isRunning()) {
+        if (!dbData->schemasLoaded && !dbData->isLoadingSchemas()) {
             dbData->startSchemasLoadAsync();
         }
 
-        if (dbData->schemasLoader.isRunning()) {
+        if (dbData->isLoadingSchemas()) {
             dbData->checkSchemasStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
@@ -1108,19 +1316,24 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     const char* noun =
         db->getConnectionInfo().type == DatabaseType::CASSANDRA ? "keyspace" : "database";
 
-    auto [success, error] = db->dropDatabase(dbName);
-    if (!success) {
-        spdlog::error("Failed to drop {}: {}", noun, error);
-        Alert::show("Error", std::format("Failed to drop {}: {}", noun, error));
-        return;
-    }
-
-    spdlog::debug("Dropped {} '{}'", noun, dbName);
-    setDatabaseHidden(dbName, false);
-    db->refreshDatabaseNames();
+    // the server round trip runs on a worker; the node leaves the tree when it lands
+    startDatabaseDdl(
+        ddlKey(db.get(), dbName), std::format("Failed to drop {}", noun),
+        [&] { return db->beginDropDatabase(dbName); },
+        [this, dbName](bool ok) {
+            if (!ok)
+                return;
+            spdlog::debug("Dropped '{}'", dbName);
+            setDatabaseHidden(dbName, false);
+        });
 }
 
 void DatabaseHierarchy::processDumpOperations() {
+    // here rather than in renderRootNode, which stops running on collapse
+    checkPostgresToolStatus();
+    checkDdlStatus();
+    checkTableTransfers();
+    renderTableTransferProgress();
     renderImportPreview();
     checkImportStatus();
     renderImportProgress();
@@ -1548,8 +1761,8 @@ void DatabaseHierarchy::startPostgresBackup(PostgresDatabaseNode* dbData,
     postgresToolTitle_ = "Backup Database";
     postgresToolRefreshDbName_.clear();
     postgresToolRefreshDatabaseList_ = false;
-    postgresToolOp_.start([options = std::move(options)]() {
-        return PostgresBackupService::backupDatabase(options);
+    postgresToolOp_.startCancellable([options = std::move(options)](std::stop_token stop) {
+        return PostgresBackupService::backupDatabase(options, stop);
     });
 }
 
@@ -1607,9 +1820,10 @@ void DatabaseHierarchy::startPostgresRestore(PostgresDatabaseNode* dbData,
               postgresToolTitle_ = "Restore Database";
               postgresToolRefreshDbName_ = createDatabase ? "" : dbName;
               postgresToolRefreshDatabaseList_ = createDatabase;
-              postgresToolOp_.start([options = std::move(options)]() {
-                  return PostgresBackupService::restoreDatabase(options);
-              });
+              postgresToolOp_.startCancellable(
+                  [options = std::move(options)](std::stop_token stop) {
+                      return PostgresBackupService::restoreDatabase(options, stop);
+                  });
           },
           AlertButton::Style::Destructive}});
 }
@@ -1627,6 +1841,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
         std::format("schema_{}_{:p}", schemaData->name, static_cast<void*>(schemaData));
     const bool isOpen = renderTreeNodeWithIcon(schemaData->name, nodeId, ICON_FK_FOLDER,
                                                ImGui::GetColorU32(colors.yellow));
+    renderDdlSpinner(ddlKey(schemaData, ""), schemaData->name);
 
     // Context menu for schema
     if (ImGui::BeginPopupContextItem(nullptr)) {
@@ -1646,13 +1861,14 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             schemaData->startSequencesLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(RENAME_LABEL)) {
+        if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
             const std::string oldName = schemaData->name;
             InputDialog::show(
                 "Rename Schema", "New name:", oldName, "Rename",
-                [schemaData](const std::string& newName) -> std::string {
-                    auto [success, error] = schemaData->renameSchema(newName);
-                    return success ? "" : error;
+                [this, schemaData](const std::string& newName) -> std::string {
+                    startDdl(ddlKey(schemaData, ""), "Failed to rename schema", schemaData,
+                             [schemaData, newName] { return schemaData->renameSchema(newName); });
+                    return "";
                 },
                 nullptr,
                 [oldName](const std::string& newName) -> std::string {
@@ -1661,18 +1877,16 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     return "";
                 });
         }
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             Alert::show(
                 "Delete Schema",
                 std::format("Permanently delete '{}' and ALL its contents? This is irreversible.",
                             schemaData->name),
                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                  {"Delete",
-                  [schemaData]() {
-                      auto [success, error] = schemaData->dropSchema();
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete schema: {}", error));
-                      }
+                  [this, schemaData]() {
+                      startDdl(ddlKey(schemaData, ""), "Failed to delete schema", schemaData,
+                               [schemaData] { return schemaData->dropSchema(); });
                   },
                   AlertButton::Style::Destructive}});
         }
@@ -1703,11 +1917,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             }
 
             if (tablesOpen) {
-                if (!schemaData->tablesLoaded && !schemaData->tablesLoader.isRunning()) {
+                if (!schemaData->tablesLoaded && !schemaData->isLoadingTables()) {
                     schemaData->startTablesLoadAsync();
                 }
 
-                if (schemaData->tablesLoader.isRunning()) {
+                if (schemaData->isLoadingTables()) {
                     schemaData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -1748,11 +1962,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             }
 
             if (viewsOpen) {
-                if (!schemaData->viewsLoaded && !schemaData->viewsLoader.isRunning()) {
+                if (!schemaData->viewsLoaded && !schemaData->isLoadingViews()) {
                     schemaData->startViewsLoadAsync();
                 }
 
-                if (schemaData->viewsLoader.isRunning()) {
+                if (schemaData->isLoadingViews()) {
                     schemaData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -1796,11 +2010,11 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
 
             if (matViewsOpen) {
                 if (!schemaData->materializedViewsLoaded &&
-                    !schemaData->materializedViewsLoader.isRunning()) {
+                    !schemaData->isLoadingMaterializedViews()) {
                     schemaData->startMaterializedViewsLoadAsync();
                 }
 
-                if (schemaData->materializedViewsLoader.isRunning()) {
+                if (schemaData->isLoadingMaterializedViews()) {
                     schemaData->checkMaterializedViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -1949,6 +2163,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.blue));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
 
     // Handle expand/collapse
     if (ImGui::IsItemToggledOpen()) {
@@ -1995,7 +2210,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                         "create a new database, copy all data, and drop the old one.");
         }
         const bool dumpBusy = hasRunningSqlDump(dbData->name);
-        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !dumpBusy)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !dumpBusy && !ddlBusy())) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -2035,11 +2250,11 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             }
 
             if (tablesOpen) {
-                if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
+                if (!dbData->tablesLoaded && !dbData->isLoadingTables()) {
                     dbData->startTablesLoadAsync();
                 }
 
-                if (dbData->tablesLoader.isRunning()) {
+                if (dbData->isLoadingTables()) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -2080,11 +2295,11 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             }
 
             if (viewsOpen) {
-                if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning()) {
+                if (!dbData->viewsLoaded && !dbData->isLoadingViews()) {
                     dbData->startViewsLoadAsync();
                 }
 
-                if (dbData->viewsLoader.isRunning()) {
+                if (dbData->isLoadingViews()) {
                     dbData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -2167,6 +2382,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         std::format("pg_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+    renderDdlSpinner(ddlKey(schemaNode, table.name), table.name);
 
     // dim size badge anchored to the right edge of the sidebar
     if (table.sizeBytes >= 0) {
@@ -2222,8 +2438,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 schemaNode, schemaNode->getTables(),
-                [schemaNode](const std::string& n) { schemaNode->dropTable(n); },
-                schemaNode->getDatabaseType());
+                [schemaNode](const std::string& n) { return schemaNode->dropTable(n); },
+                schemaNode->getDatabaseType(), pinOf(schemaNode));
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(schemaNode, table);
@@ -2234,16 +2450,19 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 schemaNode->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(schemaNode, table, schemaNode->getDatabaseType());
-            TableImporter::renderImportMenu(schemaNode, table.name);
+            renderTableExportMenu(schemaNode, table, schemaNode->getDatabaseType());
+            renderTableImportMenu(schemaNode, table.name);
             ImGui::Separator();
-            if (ImGui::MenuItem(RENAME_LABEL)) {
+            if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string oldName = table.name;
                 InputDialog::show(
                     "Rename Table", "New name:", oldName, "Rename",
-                    [schemaNode, oldName](const std::string& newName) -> std::string {
-                        auto [success, error] = schemaNode->renameTable(oldName, newName);
-                        return success ? "" : error;
+                    [this, schemaNode, oldName](const std::string& newName) -> std::string {
+                        startDdl(ddlKey(schemaNode, oldName), "Failed to rename table",
+                                 pinOf(schemaNode), [schemaNode, oldName, newName] {
+                                     return schemaNode->renameTable(oldName, newName);
+                                 });
+                        return "";
                     },
                     nullptr,
                     [oldName](const std::string& newName) -> std::string {
@@ -2252,36 +2471,34 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                         return "";
                     });
             }
-            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+            if (ImGui::MenuItem(TRUNCATE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show("Truncate Table",
                             std::format("Remove all rows from '{}.{}'? This is irreversible.",
                                         schemaNode->name, tableName),
                             {{"Cancel", nullptr, AlertButton::Style::Cancel},
                              {"Truncate",
-                              [schemaNode, tableName]() {
-                                  auto [success, error] = schemaNode->truncateTable(tableName);
-                                  if (!success) {
-                                      Alert::show(
-                                          "Error",
-                                          std::format("Failed to truncate table: {}", error));
-                                  }
+                              [this, schemaNode, tableName]() {
+                                  startDdl(ddlKey(schemaNode, tableName),
+                                           "Failed to truncate table", pinOf(schemaNode),
+                                           [schemaNode, tableName] {
+                                               return schemaNode->truncateTable(tableName);
+                                           });
                               },
                               AlertButton::Style::Destructive}});
             }
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show("Delete Table",
                             std::format("Permanently delete '{}.{}'? This is irreversible.",
                                         schemaNode->name, tableName),
                             {{"Cancel", nullptr, AlertButton::Style::Cancel},
                              {"Delete",
-                              [schemaNode, tableName]() {
-                                  auto [success, error] = schemaNode->dropTable(tableName);
-                                  if (!success) {
-                                      Alert::show("Error",
-                                                  std::format("Failed to delete table: {}", error));
-                                  }
+                              [this, schemaNode, tableName]() {
+                                  startDdl(ddlKey(schemaNode, tableName), "Failed to delete table",
+                                           pinOf(schemaNode), [schemaNode, tableName] {
+                                               return schemaNode->dropTable(tableName);
+                                           });
                               },
                               AlertButton::Style::Destructive}});
             }
@@ -2323,7 +2540,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             Alert::show(
@@ -2332,14 +2549,11 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                                             tblName, colName),
                                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                                  {"Drop",
-                                  [schemaNode, tblName, colName]() {
-                                      auto [success, error] =
-                                          schemaNode->dropColumn(tblName, colName);
-                                      if (!success) {
-                                          Alert::show(
-                                              "Error",
-                                              std::format("Failed to drop column: {}", error));
-                                      }
+                                  [this, schemaNode, tblName, colName]() {
+                                      startDdl(ddlKey(schemaNode, tblName), "Failed to drop column",
+                                               pinOf(schemaNode), [schemaNode, tblName, colName] {
+                                                   return schemaNode->dropColumn(tblName, colName);
+                                               });
                                   },
                                   AlertButton::Style::Destructive}});
                         }
@@ -2467,6 +2681,7 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
+    renderDdlSpinner(ddlKey(schemaData, view.name), view.name);
 
     // Draw icon
     const auto iconPos =
@@ -2488,22 +2703,22 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
             app.getTabManager()->createTableViewerTab(schemaData, view);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string viewName = view.name;
             const std::string typeLabel = isMaterializedView ? "Materialized View" : "View";
-            Alert::show(
-                std::format("Delete {}", typeLabel),
-                std::format("Permanently delete {} '{}.{}'? This is irreversible.", typeLabel,
-                            schemaData->name, viewName),
-                {{"Cancel", nullptr, AlertButton::Style::Cancel},
-                 {"Delete",
-                  [schemaData, viewName, isMaterializedView]() {
-                      auto [success, error] = schemaData->dropView(viewName, isMaterializedView);
-                      if (!success) {
-                          Alert::show("Error", std::format("Failed to delete view: {}", error));
-                      }
-                  },
-                  AlertButton::Style::Destructive}});
+            Alert::show(std::format("Delete {}", typeLabel),
+                        std::format("Permanently delete {} '{}.{}'? This is irreversible.",
+                                    typeLabel, schemaData->name, viewName),
+                        {{"Cancel", nullptr, AlertButton::Style::Cancel},
+                         {"Delete",
+                          [this, schemaData, viewName, isMaterializedView]() {
+                              startDdl(ddlKey(schemaData, viewName), "Failed to delete view",
+                                       schemaData, [schemaData, viewName, isMaterializedView] {
+                                           return schemaData->dropView(viewName,
+                                                                       isMaterializedView);
+                                       });
+                          },
+                          AlertButton::Style::Destructive}});
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -2524,6 +2739,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         std::format("mysql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+    renderDdlSpinner(ddlKey(dbData, table.name), table.name);
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
         handleTableClick(&table);
@@ -2561,8 +2777,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 dbData, dbData->getTables(),
-                [dbData](const std::string& n) { dbData->dropTable(n); },
-                dbData->getDatabaseType());
+                [dbData](const std::string& n) { return dbData->dropTable(n); },
+                dbData->getDatabaseType(), pinOf(dbData));
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, table);
@@ -2573,16 +2789,19 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 dbData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(dbData, table, dbData->getDatabaseType());
-            TableImporter::renderImportMenu(dbData, table.name);
+            renderTableExportMenu(dbData, table, dbData->getDatabaseType());
+            renderTableImportMenu(dbData, table.name);
             ImGui::Separator();
-            if (ImGui::MenuItem(RENAME_LABEL)) {
+            if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string oldName = table.name;
                 InputDialog::show(
                     "Rename Table", "New name:", oldName, "Rename",
-                    [dbData, oldName](const std::string& newName) -> std::string {
-                        auto [success, error] = dbData->renameTable(oldName, newName);
-                        return success ? "" : error;
+                    [this, dbData, oldName](const std::string& newName) -> std::string {
+                        startDdl(ddlKey(dbData, oldName), "Failed to rename table", pinOf(dbData),
+                                 [dbData, oldName, newName] {
+                                     return dbData->renameTable(oldName, newName);
+                                 });
+                        return "";
                     },
                     nullptr,
                     [oldName](const std::string& newName) -> std::string {
@@ -2591,23 +2810,21 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                         return "";
                     });
             }
-            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+            if (ImGui::MenuItem(TRUNCATE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Truncate Table",
                     std::format("Remove all rows from '{}'? This is irreversible.", tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Truncate",
-                      [dbData, tableName]() {
-                          auto [success, error] = dbData->truncateTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to truncate table: {}", error));
-                          }
+                      [this, dbData, tableName]() {
+                          startDdl(
+                              ddlKey(dbData, tableName), "Failed to truncate table", pinOf(dbData),
+                              [dbData, tableName] { return dbData->truncateTable(tableName); });
                       },
                       AlertButton::Style::Destructive}});
             }
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Delete Table",
@@ -2615,12 +2832,10 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                 tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [dbData, tableName]() {
-                          auto [success, error] = dbData->dropTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to delete table: {}", error));
-                          }
+                      [this, dbData, tableName]() {
+                          startDdl(ddlKey(dbData, tableName), "Failed to delete table",
+                                   pinOf(dbData),
+                                   [dbData, tableName] { return dbData->dropTable(tableName); });
                       },
                       AlertButton::Style::Destructive}});
             }
@@ -2662,7 +2877,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             Alert::show(
@@ -2670,13 +2885,11 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                                 std::format("Permanently drop column '{}.{}'?", tblName, colName),
                                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                                  {"Drop",
-                                  [dbData, tblName, colName]() {
-                                      auto [success, error] = dbData->dropColumn(tblName, colName);
-                                      if (!success) {
-                                          Alert::show(
-                                              "Error",
-                                              std::format("Failed to drop column: {}", error));
-                                      }
+                                  [this, dbData, tblName, colName]() {
+                                      startDdl(ddlKey(dbData, tblName), "Failed to drop column",
+                                               pinOf(dbData), [dbData, tblName, colName] {
+                                                   return dbData->dropColumn(tblName, colName);
+                                               });
                                   },
                                   AlertButton::Style::Destructive}});
                         }
@@ -2839,6 +3052,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.purple));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
     const ImVec2 msNodeMin = ImGui::GetItemRectMin();
     const ImVec2 msNodeMax = ImGui::GetItemRectMax();
     if (dbData->schemasLoaded && !dbData->schemas.empty()) {
@@ -2870,7 +3084,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
             dbData->startViewsLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -2886,11 +3100,11 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
 
     if (isOpen) {
         // load schemas if not loaded
-        if (!dbData->schemasLoaded && !dbData->schemasLoader.isRunning()) {
+        if (!dbData->schemasLoaded && !dbData->isLoadingSchemas()) {
             dbData->startSchemasLoadAsync();
         }
 
-        if (dbData->schemasLoader.isRunning()) {
+        if (dbData->isLoadingSchemas()) {
             dbData->checkSchemasStatusAsync();
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
@@ -2962,11 +3176,11 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
             }
 
             if (tablesOpen) {
-                if (!schemaData->tablesLoaded && !schemaData->tablesLoader.isRunning()) {
+                if (!schemaData->tablesLoaded && !schemaData->isLoadingTables()) {
                     schemaData->startTablesLoadAsync();
                 }
 
-                if (schemaData->tablesLoader.isRunning()) {
+                if (schemaData->isLoadingTables()) {
                     schemaData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -3006,11 +3220,11 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
             }
 
             if (viewsOpen) {
-                if (!schemaData->viewsLoaded && !schemaData->viewsLoader.isRunning()) {
+                if (!schemaData->viewsLoaded && !schemaData->isLoadingViews()) {
                     schemaData->startViewsLoadAsync();
                 }
 
-                if (schemaData->viewsLoader.isRunning()) {
+                if (schemaData->isLoadingViews()) {
                     schemaData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -3093,6 +3307,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
         std::format("mssql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+    renderDdlSpinner(ddlKey(schemaData, table.name), table.name);
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
         handleTableClick(&table);
@@ -3125,8 +3340,8 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 schemaData, schemaData->getTables(),
-                [schemaData](const std::string& n) { schemaData->dropTable(n); },
-                schemaData->getDatabaseType());
+                [schemaData](const std::string& n) { return schemaData->dropTable(n); },
+                schemaData->getDatabaseType(), pinOf(schemaData));
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(schemaData, table);
@@ -3137,16 +3352,19 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 schemaData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(schemaData, table, schemaData->getDatabaseType());
-            TableImporter::renderImportMenu(schemaData, table.name);
+            renderTableExportMenu(schemaData, table, schemaData->getDatabaseType());
+            renderTableImportMenu(schemaData, table.name);
             ImGui::Separator();
-            if (ImGui::MenuItem(RENAME_LABEL)) {
+            if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string oldName = table.name;
                 InputDialog::show(
                     "Rename Table", "New name:", oldName, "Rename",
-                    [schemaData, oldName](const std::string& newName) -> std::string {
-                        auto [success, error] = schemaData->renameTable(oldName, newName);
-                        return success ? "" : error;
+                    [this, schemaData, oldName](const std::string& newName) -> std::string {
+                        startDdl(ddlKey(schemaData, oldName), "Failed to rename table",
+                                 pinOf(schemaData), [schemaData, oldName, newName] {
+                                     return schemaData->renameTable(oldName, newName);
+                                 });
+                        return "";
                     },
                     nullptr,
                     [oldName](const std::string& newName) -> std::string {
@@ -3155,23 +3373,22 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
                         return "";
                     });
             }
-            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+            if (ImGui::MenuItem(TRUNCATE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Truncate Table",
                     std::format("Remove all rows from '{}'? This is irreversible.", tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Truncate",
-                      [schemaData, tableName]() {
-                          auto [success, error] = schemaData->truncateTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to truncate table: {}", error));
-                          }
+                      [this, schemaData, tableName]() {
+                          startDdl(ddlKey(schemaData, tableName), "Failed to truncate table",
+                                   pinOf(schemaData), [schemaData, tableName] {
+                                       return schemaData->truncateTable(tableName);
+                                   });
                       },
                       AlertButton::Style::Destructive}});
             }
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Delete Table",
@@ -3179,12 +3396,11 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
                                 tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [schemaData, tableName]() {
-                          auto [success, error] = schemaData->dropTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to delete table: {}", error));
-                          }
+                      [this, schemaData, tableName]() {
+                          startDdl(ddlKey(schemaData, tableName), "Failed to delete table",
+                                   pinOf(schemaData), [schemaData, tableName] {
+                                       return schemaData->dropTable(tableName);
+                                   });
                       },
                       AlertButton::Style::Destructive}});
             }
@@ -3223,7 +3439,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             Alert::show(
@@ -3231,14 +3447,11 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
                                 std::format("Permanently drop column '{}.{}'?", tblName, colName),
                                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                                  {"Drop",
-                                  [schemaData, tblName, colName]() {
-                                      auto [success, error] =
-                                          schemaData->dropColumn(tblName, colName);
-                                      if (!success) {
-                                          Alert::show(
-                                              "Error",
-                                              std::format("Failed to drop column: {}", error));
-                                      }
+                                  [this, schemaData, tblName, colName]() {
+                                      startDdl(ddlKey(schemaData, tblName), "Failed to drop column",
+                                               pinOf(schemaData), [schemaData, tblName, colName] {
+                                                   return schemaData->dropColumn(tblName, colName);
+                                               });
                                   },
                                   AlertButton::Style::Destructive}});
                         }
@@ -3375,6 +3588,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.purple));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
 
     if (ImGui::IsItemToggledOpen()) {
         dbData->expanded = isOpen;
@@ -3395,7 +3609,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             dbData->startViewsLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -3431,11 +3645,11 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             }
 
             if (tablesOpen) {
-                if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
+                if (!dbData->tablesLoaded && !dbData->isLoadingTables()) {
                     dbData->startTablesLoadAsync();
                 }
 
-                if (dbData->tablesLoader.isRunning()) {
+                if (dbData->isLoadingTables()) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -3475,11 +3689,11 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             }
 
             if (viewsOpen) {
-                if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning()) {
+                if (!dbData->viewsLoaded && !dbData->isLoadingViews()) {
                     dbData->startViewsLoadAsync();
                 }
 
-                if (dbData->viewsLoader.isRunning()) {
+                if (dbData->isLoadingViews()) {
                     dbData->checkViewsStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -3562,6 +3776,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
         std::format("oracle_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+    renderDdlSpinner(ddlKey(dbData, table.name), table.name);
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
         handleTableClick(&table);
@@ -3594,8 +3809,8 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 dbData, dbData->getTables(),
-                [dbData](const std::string& n) { dbData->dropTable(n); },
-                dbData->getDatabaseType());
+                [dbData](const std::string& n) { return dbData->dropTable(n); },
+                dbData->getDatabaseType(), pinOf(dbData));
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, table);
@@ -3606,16 +3821,19 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
             if (ImGui::MenuItem(REFRESH_LABEL)) {
                 dbData->startTableRefreshAsync(table.name);
             }
-            TableExporter::renderExportMenu(dbData, table, dbData->getDatabaseType());
-            TableImporter::renderImportMenu(dbData, table.name);
+            renderTableExportMenu(dbData, table, dbData->getDatabaseType());
+            renderTableImportMenu(dbData, table.name);
             ImGui::Separator();
-            if (ImGui::MenuItem(RENAME_LABEL)) {
+            if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string oldName = table.name;
                 InputDialog::show(
                     "Rename Table", "New name:", oldName, "Rename",
-                    [dbData, oldName](const std::string& newName) -> std::string {
-                        auto [success, error] = dbData->renameTable(oldName, newName);
-                        return success ? "" : error;
+                    [this, dbData, oldName](const std::string& newName) -> std::string {
+                        startDdl(ddlKey(dbData, oldName), "Failed to rename table", pinOf(dbData),
+                                 [dbData, oldName, newName] {
+                                     return dbData->renameTable(oldName, newName);
+                                 });
+                        return "";
                     },
                     nullptr,
                     [oldName](const std::string& newName) -> std::string {
@@ -3624,23 +3842,21 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                         return "";
                     });
             }
-            if (ImGui::MenuItem(TRUNCATE_LABEL)) {
+            if (ImGui::MenuItem(TRUNCATE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Truncate Table",
                     std::format("Remove all rows from '{}'? This is irreversible.", tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Truncate",
-                      [dbData, tableName]() {
-                          auto [success, error] = dbData->truncateTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to truncate table: {}", error));
-                          }
+                      [this, dbData, tableName]() {
+                          startDdl(
+                              ddlKey(dbData, tableName), "Failed to truncate table", pinOf(dbData),
+                              [dbData, tableName] { return dbData->truncateTable(tableName); });
                       },
                       AlertButton::Style::Destructive}});
             }
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Delete Table",
@@ -3648,12 +3864,10 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                                 tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [dbData, tableName]() {
-                          auto [success, error] = dbData->dropTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to delete table: {}", error));
-                          }
+                      [this, dbData, tableName]() {
+                          startDdl(ddlKey(dbData, tableName), "Failed to delete table",
+                                   pinOf(dbData),
+                                   [dbData, tableName] { return dbData->dropTable(tableName); });
                       },
                       AlertButton::Style::Destructive}});
             }
@@ -3692,7 +3906,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             Alert::show(
@@ -3700,13 +3914,11 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                                 std::format("Permanently drop column '{}.{}'?", tblName, colName),
                                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                                  {"Drop",
-                                  [dbData, tblName, colName]() {
-                                      auto [success, error] = dbData->dropColumn(tblName, colName);
-                                      if (!success) {
-                                          Alert::show(
-                                              "Error",
-                                              std::format("Failed to drop column: {}", error));
-                                      }
+                                  [this, dbData, tblName, colName]() {
+                                      startDdl(ddlKey(dbData, tblName), "Failed to drop column",
+                                               pinOf(dbData), [dbData, tblName, colName] {
+                                                   return dbData->dropColumn(tblName, colName);
+                                               });
                                   },
                                   AlertButton::Style::Destructive}});
                         }
@@ -3843,6 +4055,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
     const std::string nodeId = std::format("db_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.green));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
 
     if (ImGui::IsItemToggledOpen()) {
         dbData->expanded = isOpen;
@@ -3859,7 +4072,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
             dbData->startTablesLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string dbName = dbData->name;
             Alert::show(
                 "Delete Database",
@@ -3893,11 +4106,11 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
             }
 
             if (collectionsOpen) {
-                if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning()) {
+                if (!dbData->tablesLoaded && !dbData->isLoadingTables()) {
                     dbData->startTablesLoadAsync();
                 }
 
-                if (dbData->tablesLoader.isRunning()) {
+                if (dbData->isLoadingTables()) {
                     dbData->checkTablesStatusAsync();
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
@@ -3940,6 +4153,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     const bool collectionOpen =
         renderTreeNodeWithIcon(collection.name, collectionNodeId, ICON_FK_TABLE,
                                ImGui::GetColorU32(colors.green), collectionFlags);
+    renderDdlSpinner(ddlKey(dbData, collection.name), collection.name);
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen()) {
         handleTableClick(&collection);
@@ -3977,8 +4191,8 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 dbData, dbData->getTables(),
-                [dbData](const std::string& n) { dbData->dropTable(n); },
-                dbData->getDatabaseType());
+                [dbData](const std::string& n) { return dbData->dropTable(n); },
+                dbData->getDatabaseType(), pinOf(dbData));
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(dbData, collection);
@@ -3987,7 +4201,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                 dbData->startTableRefreshAsync(collection.name);
             }
             ImGui::Separator();
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string collName = collection.name;
                 Alert::show(
                     "Delete Collection",
@@ -3996,12 +4210,10 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
                         collName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [dbData, collName]() {
-                          auto [success, error] = dbData->dropTable(collName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to delete collection: {}", error));
-                          }
+                      [this, dbData, collName]() {
+                          startDdl(ddlKey(dbData, collName), "Failed to delete collection",
+                                   pinOf(dbData),
+                                   [dbData, collName] { return dbData->dropTable(collName); });
                       },
                       AlertButton::Style::Destructive}});
             }
@@ -4102,6 +4314,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
         std::format("sqlite_table_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
+    renderDdlSpinner(ddlKey(sqliteDb, table.name), table.name);
 
     // dim size badge anchored to the right edge of the sidebar
     if (table.sizeBytes >= 0) {
@@ -4138,7 +4351,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
         if (isMultiSelect) {
             renderMultiSelectMenuContent(
                 sqliteDb, sqliteDb->getTables(),
-                [sqliteDb](const std::string& n) { sqliteDb->dropTable(n); });
+                [sqliteDb](const std::string& n) { return sqliteDb->dropTable(n); });
         } else {
             if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
                 app.getTabManager()->createTableViewerTab(sqliteDb, table);
@@ -4146,16 +4359,19 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
             if (ImGui::MenuItem(EDIT_TABLE_LABEL)) {
                 app.getTabManager()->createTableEditorTab(sqliteDb, table);
             }
-            TableExporter::renderExportMenu(sqliteDb, table, sqliteDb->getDatabaseType());
-            TableImporter::renderImportMenu(sqliteDb, table.name);
+            renderTableExportMenu(sqliteDb, table, sqliteDb->getDatabaseType());
+            renderTableImportMenu(sqliteDb, table.name);
             ImGui::Separator();
-            if (ImGui::MenuItem(RENAME_LABEL)) {
+            if (ImGui::MenuItem(RENAME_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string oldName = table.name;
                 InputDialog::show(
                     "Rename Table", "New name:", oldName, "Rename",
-                    [sqliteDb, oldName](const std::string& newName) -> std::string {
-                        auto [success, error] = sqliteDb->renameTable(oldName, newName);
-                        return success ? "" : error;
+                    [this, sqliteDb, oldName](const std::string& newName) -> std::string {
+                        startDdl(ddlKey(sqliteDb, oldName), "Failed to rename table",
+                                 pinOf(sqliteDb), [sqliteDb, oldName, newName] {
+                                     return sqliteDb->renameTable(oldName, newName);
+                                 });
+                        return "";
                     },
                     nullptr,
                     [oldName](const std::string& newName) -> std::string {
@@ -4164,7 +4380,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
                         return "";
                     });
             }
-            if (ImGui::MenuItem(DELETE_LABEL)) {
+            if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                 const std::string tableName = table.name;
                 Alert::show(
                     "Delete Table",
@@ -4172,12 +4388,11 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
                                 tableName),
                     {{"Cancel", nullptr, AlertButton::Style::Cancel},
                      {"Delete",
-                      [sqliteDb, tableName]() {
-                          auto [success, error] = sqliteDb->dropTable(tableName);
-                          if (!success) {
-                              Alert::show("Error",
-                                          std::format("Failed to delete table: {}", error));
-                          }
+                      [this, sqliteDb, tableName]() {
+                          startDdl(ddlKey(sqliteDb, tableName), "Failed to delete table",
+                                   pinOf(sqliteDb), [sqliteDb, tableName] {
+                                       return sqliteDb->dropTable(tableName);
+                                   });
                       },
                       AlertButton::Style::Destructive}});
             }
@@ -4219,7 +4434,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
                     if (ImGui::BeginPopupContextItem(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-                        if (ImGui::MenuItem(DELETE_LABEL)) {
+                        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
                             const std::string colName = column.name;
                             const std::string tblName = table.name;
                             Alert::show(
@@ -4227,14 +4442,11 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
                                 std::format("Permanently drop column '{}.{}'?", tblName, colName),
                                 {{"Cancel", nullptr, AlertButton::Style::Cancel},
                                  {"Drop",
-                                  [sqliteDb, tblName, colName]() {
-                                      auto [success, error] =
-                                          sqliteDb->dropColumn(tblName, colName);
-                                      if (!success) {
-                                          Alert::show(
-                                              "Error",
-                                              std::format("Failed to drop column: {}", error));
-                                      }
+                                  [this, sqliteDb, tblName, colName]() {
+                                      startDdl(ddlKey(sqliteDb, tblName), "Failed to drop column",
+                                               pinOf(sqliteDb), [sqliteDb, tblName, colName] {
+                                                   return sqliteDb->dropColumn(tblName, colName);
+                                               });
                                   },
                                   AlertButton::Style::Destructive}});
                         }
@@ -4576,6 +4788,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
     const std::string nodeId = std::format("ks_{}_{:p}", dbData->name, static_cast<void*>(dbData));
     const bool isOpen = renderTreeNodeWithIcon(dbData->name, nodeId, ICON_FK_DATABASE,
                                                ImGui::GetColorU32(colors.blue));
+    renderDdlSpinner(ddlKey(db.get(), dbData->name), dbData->name);
 
     if (ImGui::IsItemToggledOpen())
         dbData->expanded = isOpen;
@@ -4591,7 +4804,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
             dbData->startViewsLoadAsync(true);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string ksName = dbData->name;
             Alert::show("Drop Keyspace",
                         std::format("Permanently drop keyspace '{}' and ALL its data?", ksName),
@@ -4625,10 +4838,10 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
         }
 
         if (tablesOpen) {
-            if (!dbData->tablesLoaded && !dbData->tablesLoader.isRunning())
+            if (!dbData->tablesLoaded && !dbData->isLoadingTables())
                 dbData->startTablesLoadAsync();
 
-            if (dbData->tablesLoader.isRunning()) {
+            if (dbData->isLoadingTables()) {
                 dbData->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
@@ -4667,10 +4880,10 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
         }
 
         if (viewsOpen) {
-            if (!dbData->viewsLoaded && !dbData->viewsLoader.isRunning())
+            if (!dbData->viewsLoaded && !dbData->isLoadingViews())
                 dbData->startViewsLoadAsync();
 
-            if (dbData->viewsLoader.isRunning()) {
+            if (dbData->isLoadingViews()) {
                 dbData->checkLoadingStatus();
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
@@ -4708,6 +4921,7 @@ void DatabaseHierarchy::renderCassandraTableNode(Table& table, CassandraDatabase
         std::format("cass_tbl_{}_{:p}", table.name, static_cast<const void*>(&table));
     const bool isOpen = renderTreeNodeWithIcon(table.name, nodeId, ICON_FK_TABLE,
                                                ImGui::GetColorU32(colors.green), flags);
+    renderDdlSpinner(ddlKey(dbData, table.name), table.name);
 
     if (ImGui::IsItemClicked(0) && !ImGui::IsItemToggledOpen())
         handleTableClick(&table);
@@ -4723,16 +4937,14 @@ void DatabaseHierarchy::renderCassandraTableNode(Table& table, CassandraDatabase
         if (ImGui::MenuItem(REFRESH_LABEL))
             dbData->startTableRefreshAsync(table.name);
         ImGui::Separator();
-        if (ImGui::MenuItem(DELETE_LABEL)) {
+        if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
             const std::string tName = table.name;
             Alert::show("Drop Table", std::format("Permanently drop table '{}'?", tName),
                         {{"Cancel", nullptr, AlertButton::Style::Cancel},
                          {"Drop",
-                          [dbData, tName]() {
-                              auto [ok, err] = dbData->dropTable(tName);
-                              if (!ok)
-                                  Alert::show("Error",
-                                              std::format("Failed to drop table: {}", err));
+                          [this, dbData, tName]() {
+                              startDdl(ddlKey(dbData, tName), "Failed to drop table", dbData,
+                                       [dbData, tName] { return dbData->dropTable(tName); });
                           },
                           AlertButton::Style::Destructive}});
         }

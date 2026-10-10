@@ -2,13 +2,16 @@
 #include "database/db_interface.hpp"
 #include <iostream>
 #include <nfd.h>
+#include <spdlog/spdlog.h>
 
 bool FileDialog::isInitialized = false;
 
 bool FileDialog::initialize() {
+    // fails without a dbus session bus on linux; NFD_Quit then aborts in dbus
     if (!isInitialized) {
-        NFD_Init();
-        isInitialized = true;
+        isInitialized = NFD_Init() == NFD_OKAY;
+        if (!isInitialized)
+            spdlog::warn("file dialogs unavailable: {}", NFD_GetError());
     }
     return true;
 }

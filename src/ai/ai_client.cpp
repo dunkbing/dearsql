@@ -6,11 +6,15 @@
 
 #include <format>
 #include <nlohmann/json.hpp>
+#include <utility>
 
 using json = nlohmann::json;
 
+// a request may sit in its 10s connect / 60s read timeout, and the stop token is
+// only seen between chunks: never join it, the worker owns what it writes to
 AIClient::~AIClient() {
     cancel();
+    streamOperation_.detach();
 }
 
 void AIClient::sendStreaming(AIProvider provider, const std::string& apiKey,
@@ -20,21 +24,18 @@ void AIClient::sendStreaming(AIProvider provider, const std::string& apiKey,
         return;
     }
 
-    {
-        std::lock_guard lock(mutex_);
-        deltaBuffer_.clear();
-        error_.clear();
-    }
+    // a fresh sink: a cancelled stream still unwinding writes only to its own
+    sink_ = std::make_shared<Sink>();
     done_ = false;
 
     streamOperation_.startCancellable(
-        [this, provider, apiKey, model, systemPrompt, messages](std::stop_token stopToken) {
+        [sink = sink_, provider, apiKey, model, systemPrompt, messages](std::stop_token stopToken) {
             if (provider == AIProvider::ANTHROPIC) {
-                streamAnthropic(apiKey, model, systemPrompt, stopToken, messages);
+                streamAnthropic(*sink, apiKey, model, systemPrompt, stopToken, messages);
             } else if (provider == AIProvider::OPENAI) {
-                streamOpenAI(apiKey, model, systemPrompt, stopToken, messages);
+                streamOpenAI(*sink, apiKey, model, systemPrompt, stopToken, messages);
             } else {
-                streamGemini(apiKey, model, systemPrompt, stopToken, messages);
+                streamGemini(*sink, apiKey, model, systemPrompt, stopToken, messages);
             }
             return true;
         });
@@ -54,10 +55,8 @@ bool AIClient::isStreaming() const {
 std::string AIClient::drainDeltas() {
     updateCompletionState();
 
-    std::lock_guard lock(mutex_);
-    std::string result = std::move(deltaBuffer_);
-    deltaBuffer_.clear();
-    return result;
+    std::lock_guard lock(sink_->mutex);
+    return std::exchange(sink_->deltas, {});
 }
 
 bool AIClient::isDone() const {
@@ -73,18 +72,18 @@ bool AIClient::consumeDone() {
 std::string AIClient::getError() const {
     const_cast<AIClient*>(this)->updateCompletionState();
 
-    std::lock_guard lock(mutex_);
-    return error_;
+    std::lock_guard lock(sink_->mutex);
+    return sink_->error;
 }
 
-void AIClient::appendDelta(const std::string& text) {
-    std::lock_guard lock(mutex_);
-    deltaBuffer_ += text;
+void AIClient::Sink::append(const std::string& text) {
+    std::lock_guard lock(mutex);
+    deltas += text;
 }
 
-void AIClient::finishWithError(const std::string& err) {
-    std::lock_guard lock(mutex_);
-    error_ = err;
+void AIClient::Sink::fail(const std::string& err) {
+    std::lock_guard lock(mutex);
+    error = err;
     spdlog::error("AIClient: {}", err);
 }
 
@@ -95,7 +94,7 @@ void AIClient::updateCompletionState() {
     }
 }
 
-void AIClient::streamAnthropic(const std::string& apiKey, const std::string& model,
+void AIClient::streamAnthropic(Sink& sink, const std::string& apiKey, const std::string& model,
                                const std::string& systemPrompt, std::stop_token stopToken,
                                const std::vector<AIChatMessage>& messages) {
     httplib::Client cli("https://api.anthropic.com");
@@ -125,73 +124,73 @@ void AIClient::streamAnthropic(const std::string& apiKey, const std::string& mod
 
     std::string lineBuffer;
 
-    auto res = cli.Post("/v1/messages", headers, body.dump(), "application/json",
-                        [&](const char* data, size_t len) -> bool {
-                            if (stopToken.stop_requested()) {
-                                return false;
-                            }
+    auto res =
+        cli.Post("/v1/messages", headers, body.dump(), "application/json",
+                 [&](const char* data, size_t len) -> bool {
+                     if (stopToken.stop_requested()) {
+                         return false;
+                     }
 
-                            lineBuffer.append(data, len);
+                     lineBuffer.append(data, len);
 
-                            size_t pos = 0;
-                            while (true) {
-                                auto nl = lineBuffer.find('\n', pos);
-                                if (nl == std::string::npos) {
-                                    break;
-                                }
+                     size_t pos = 0;
+                     while (true) {
+                         auto nl = lineBuffer.find('\n', pos);
+                         if (nl == std::string::npos) {
+                             break;
+                         }
 
-                                std::string line = lineBuffer.substr(pos, nl - pos);
-                                pos = nl + 1;
+                         std::string line = lineBuffer.substr(pos, nl - pos);
+                         pos = nl + 1;
 
-                                if (!line.empty() && line.back() == '\r') {
-                                    line.pop_back();
-                                }
+                         if (!line.empty() && line.back() == '\r') {
+                             line.pop_back();
+                         }
 
-                                if (line.starts_with("data: ")) {
-                                    std::string jsonStr = line.substr(6);
-                                    if (jsonStr == "[DONE]") {
-                                        continue;
-                                    }
-                                    try {
-                                        auto event = json::parse(jsonStr);
-                                        if (event.value("type", "") == "content_block_delta") {
-                                            auto delta = event.value("delta", json::object());
-                                            if (delta.value("type", "") == "text_delta") {
-                                                appendDelta(delta.value("text", ""));
-                                            }
-                                        } else if (event.value("type", "") == "error") {
-                                            auto errObj = event.value("error", json::object());
-                                            finishWithError(
-                                                errObj.value("message", "Unknown Anthropic error"));
-                                            return false;
-                                        }
-                                    } catch (...) {
-                                        // Skip malformed JSON
-                                    }
-                                }
-                            }
+                         if (line.starts_with("data: ")) {
+                             std::string jsonStr = line.substr(6);
+                             if (jsonStr == "[DONE]") {
+                                 continue;
+                             }
+                             try {
+                                 auto event = json::parse(jsonStr);
+                                 if (event.value("type", "") == "content_block_delta") {
+                                     auto delta = event.value("delta", json::object());
+                                     if (delta.value("type", "") == "text_delta") {
+                                         sink.append(delta.value("text", ""));
+                                     }
+                                 } else if (event.value("type", "") == "error") {
+                                     auto errObj = event.value("error", json::object());
+                                     sink.fail(errObj.value("message", "Unknown Anthropic error"));
+                                     return false;
+                                 }
+                             } catch (...) {
+                                 // Skip malformed JSON
+                             }
+                         }
+                     }
 
-                            lineBuffer = lineBuffer.substr(pos);
-                            return true;
-                        });
+                     lineBuffer = lineBuffer.substr(pos);
+                     return true;
+                 });
 
     if (!res) {
         if (!stopToken.stop_requested()) {
-            finishWithError("Connection to Anthropic API failed");
+            sink.fail("Connection to Anthropic API failed");
         }
     } else if (res->status != 200 && !stopToken.stop_requested()) {
         try {
             auto errBody = json::parse(res->body);
             auto errObj = errBody.value("error", json::object());
-            finishWithError(std::format("Anthropic API error ({}): {}", res->status,
-                                        errObj.value("message", res->body)));
+            sink.fail(std::format("Anthropic API error ({}): {}", res->status,
+                                  errObj.value("message", res->body)));
         } catch (...) {
-            finishWithError(std::format("Anthropic API error ({}): {}", res->status, res->body));
+            sink.fail(std::format("Anthropic API error ({}): {}", res->status, res->body));
         }
     }
 }
 
-void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
+void AIClient::streamGemini(Sink& sink, const std::string& apiKey, const std::string& model,
                             const std::string& systemPrompt, std::stop_token stopToken,
                             const std::vector<AIChatMessage>& messages) {
     httplib::Client cli("https://generativelanguage.googleapis.com");
@@ -249,7 +248,7 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
                             auto content = candidates[0].value("content", json::object());
                             auto parts = content.value("parts", json::array());
                             if (!parts.empty()) {
-                                appendDelta(parts[0].value("text", ""));
+                                sink.append(parts[0].value("text", ""));
                             }
                         }
 
@@ -257,7 +256,7 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
                             auto errObj = event["error"];
                             std::string errMsg = errObj.value("message", "Unknown Gemini error");
                             spdlog::error("Gemini Stream Error Object: {}", event.dump());
-                            finishWithError(errMsg);
+                            sink.fail(errMsg);
                             return false;
                         }
                     } catch (...) {
@@ -272,7 +271,7 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
 
     if (!res) {
         if (!stopToken.stop_requested()) {
-            finishWithError("Connection to Gemini API failed completely (network issue)");
+            sink.fail("Connection to Gemini API failed completely (network issue)");
             spdlog::error("Gemini API Connection failed entirely");
         }
     } else if (res->status != 200 && !stopToken.stop_requested()) {
@@ -288,15 +287,15 @@ void AIClient::streamGemini(const std::string& apiKey, const std::string& model,
                     "\nHint: Check if the selected model is supported by your API key/project.";
             }
 
-            finishWithError(std::format("Gemini API error ({}): {}", res->status, errMsg));
+            sink.fail(std::format("Gemini API error ({}): {}", res->status, errMsg));
         } catch (...) {
-            finishWithError(std::format("Gemini API error ({}): {}", res->status, res->body));
+            sink.fail(std::format("Gemini API error ({}): {}", res->status, res->body));
         }
     }
 }
 
 // responses api: server-sent events, text arrives as response.output_text.delta
-void AIClient::streamOpenAI(const std::string& apiKey, const std::string& model,
+void AIClient::streamOpenAI(Sink& sink, const std::string& apiKey, const std::string& model,
                             const std::string& systemPrompt, std::stop_token stopToken,
                             const std::vector<AIChatMessage>& messages) {
     httplib::Client cli("https://api.openai.com");
@@ -321,64 +320,64 @@ void AIClient::streamOpenAI(const std::string& apiKey, const std::string& model,
     };
 
     std::string lineBuffer;
-    auto res =
-        cli.Post("/v1/responses", headers, body.dump(), "application/json",
-                 [&](const char* data, size_t len) -> bool {
-                     if (stopToken.stop_requested()) {
-                         return false;
-                     }
-                     lineBuffer.append(data, len);
-                     size_t pos = 0;
-                     while (true) {
-                         const auto nl = lineBuffer.find('\n', pos);
-                         if (nl == std::string::npos) {
-                             break;
-                         }
-                         std::string line = lineBuffer.substr(pos, nl - pos);
-                         pos = nl + 1;
-                         if (!line.empty() && line.back() == '\r') {
-                             line.pop_back();
-                         }
-                         if (!line.starts_with("data: ")) {
-                             continue;
-                         }
-                         const std::string jsonStr = line.substr(6);
-                         if (jsonStr == "[DONE]") {
-                             continue;
-                         }
-                         try {
-                             const auto event = json::parse(jsonStr);
-                             const std::string type = event.value("type", "");
-                             if (type == "response.output_text.delta") {
-                                 appendDelta(event.value("delta", ""));
-                             } else if (type == "error" || type == "response.failed") {
-                                 const json err = event.contains("error")
-                                                      ? event["error"]
-                                                      : event.value("response", json::object())
-                                                            .value("error", json::object());
-                                 finishWithError(err.value("message", "Unknown OpenAI error"));
-                                 return false;
-                             }
-                         } catch (...) {
-                             // skip malformed json
-                         }
-                     }
-                     lineBuffer = lineBuffer.substr(pos);
-                     return true;
-                 });
+    auto res = cli.Post("/v1/responses", headers, body.dump(), "application/json",
+                        [&](const char* data, size_t len) -> bool {
+                            if (stopToken.stop_requested()) {
+                                return false;
+                            }
+                            lineBuffer.append(data, len);
+                            size_t pos = 0;
+                            while (true) {
+                                const auto nl = lineBuffer.find('\n', pos);
+                                if (nl == std::string::npos) {
+                                    break;
+                                }
+                                std::string line = lineBuffer.substr(pos, nl - pos);
+                                pos = nl + 1;
+                                if (!line.empty() && line.back() == '\r') {
+                                    line.pop_back();
+                                }
+                                if (!line.starts_with("data: ")) {
+                                    continue;
+                                }
+                                const std::string jsonStr = line.substr(6);
+                                if (jsonStr == "[DONE]") {
+                                    continue;
+                                }
+                                try {
+                                    const auto event = json::parse(jsonStr);
+                                    const std::string type = event.value("type", "");
+                                    if (type == "response.output_text.delta") {
+                                        sink.append(event.value("delta", ""));
+                                    } else if (type == "error" || type == "response.failed") {
+                                        const json err =
+                                            event.contains("error")
+                                                ? event["error"]
+                                                : event.value("response", json::object())
+                                                      .value("error", json::object());
+                                        sink.fail(err.value("message", "Unknown OpenAI error"));
+                                        return false;
+                                    }
+                                } catch (...) {
+                                    // skip malformed json
+                                }
+                            }
+                            lineBuffer = lineBuffer.substr(pos);
+                            return true;
+                        });
 
     if (!res) {
         if (!stopToken.stop_requested()) {
-            finishWithError("Connection to OpenAI API failed");
+            sink.fail("Connection to OpenAI API failed");
         }
     } else if (res->status != 200 && !stopToken.stop_requested()) {
         try {
             const auto errBody = json::parse(res->body);
             const auto errObj = errBody.value("error", json::object());
-            finishWithError(std::format("OpenAI API error ({}): {}", res->status,
-                                        errObj.value("message", res->body)));
+            sink.fail(std::format("OpenAI API error ({}): {}", res->status,
+                                  errObj.value("message", res->body)));
         } catch (...) {
-            finishWithError(std::format("OpenAI API error ({}): {}", res->status, res->body));
+            sink.fail(std::format("OpenAI API error ({}): {}", res->status, res->body));
         }
     }
 }

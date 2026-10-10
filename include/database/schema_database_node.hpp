@@ -7,6 +7,11 @@
 // the database node's pooled handle through IDatabase::schema(), so a database
 // with many schemas still holds only that node's few connections
 class LibSchemaNode : public LibDatabaseNode {
+public:
+    [[nodiscard]] IDatabaseNode* parentNode() const override {
+        return databaseNode();
+    }
+
 protected:
     [[nodiscard]] virtual LibDatabaseNode* databaseNode() const = 0;
 
@@ -33,19 +38,47 @@ public:
     AsyncOperation<Loaded<std::string>> schemasLoader;
     std::string lastSchemasError;
 
-    // schemas run on our handles: join theirs before ours
+    // schemas run on our handles: closing our pool stops theirs too
     void waitForLoaders() {
+        stopLoaders();
+        LibDatabaseNode::waitForLoaders();
         for (auto& s : schemas)
             s->waitForLoaders();
+    }
+    void stopLoaders() {
+        for (auto& s : schemas)
+            s->stopLoaders();
+        if (schemasLoader.isRunning()) {
+            for (auto& cancel : ConnectionPoolBase::cancelsFor(schemasLoader.workerId()))
+                cancel();
+        }
         schemasLoader.wait();
-        LibDatabaseNode::waitForLoaders();
+        LibDatabaseNode::stopLoaders();
+    }
+
+    // any thread: the next checkSchemasStatusAsync relists
+    void requestSchemasReload() {
+        schemasReloadPending_ = true;
+    }
+    [[nodiscard]] bool isLoadingSchemas() const {
+        return schemasLoader.isRunning() || schemasReloadPending_;
     }
 
     // refreshChildren reloads every schema's tables and views once the list lands
     void startSchemasLoadAsync(bool force = false, bool refreshChildren = false) {
-        if (schemasLoader.isRunning() || (schemasLoaded && !force))
+        // a forced relist during a load runs once more after it
+        if (schemasLoader.isRunning()) {
+            if (force) {
+                schemasReloadPending_ = true;
+                pendingRefreshChildren_ = pendingRefreshChildren_ || refreshChildren;
+            }
             return;
-        refreshChildren_ = refreshChildren;
+        }
+        if (schemasLoaded && !force && !schemasReloadPending_)
+            return;
+        schemasReloadPending_ = false;
+        refreshChildren_ = refreshChildren || pendingRefreshChildren_;
+        pendingRefreshChildren_ = false;
         schemasLoader.start([this] {
             return this->template load<std::string>("load schemas", [](dearsql::IDatabase& db) {
                 std::vector<std::string> names;
@@ -73,10 +106,21 @@ public:
                         next.back()->startSequencesLoadAsync(true);
                 }
             }
+            auto gone = std::move(schemas);
             schemas = std::move(next);
             schemasLoaded = true;
             generation = nextGeneration();
+            // dropped or renamed away: stop them, let tabs on them close first, and
+            // the node itself dies on the reaper (it waits out its workers)
+            for (auto& s : gone) {
+                if (!s)
+                    continue;
+                s->abandonLoaders();
+                retireNode(std::move(s));
+            }
         });
+        if (schemasReloadPending_ && !schemasLoader.isRunning())
+            startSchemasLoadAsync(true);
     }
 
     // ========== aggregated over schemas ==========
@@ -217,6 +261,8 @@ private:
     }
 
     bool refreshChildren_ = false;
+    std::atomic<bool> schemasReloadPending_{false};
+    bool pendingRefreshChildren_ = false;
     mutable uint64_t aggregatedGeneration_ = ~0ull;
     mutable std::vector<Table> allTables_;
     mutable std::vector<Table> allViews_;

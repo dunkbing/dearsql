@@ -6,7 +6,11 @@
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <string>
+#include <unistd.h>
 
 // test registration, one function per area
 void RegisterSidebarTests(ImGuiTestEngine* engine);
@@ -23,6 +27,18 @@ int main(int argc, char** argv) {
             headless = true;
         } else if (std::strcmp(argv[i], "-run") == 0 && i + 1 < argc) {
             filter = argv[++i]; // e.g. -run "Docs/assistant-empty"
+        }
+    }
+
+    std::string tempHome;
+    // run against a throwaway ~/.dearsql: the real one carries the user's connections,
+    // workspaces and license state (a full free tier fails the workspace test)
+    if (std::getenv("DEARSQL_UI_TESTS_REAL_HOME") == nullptr) {
+        const char* tmp = std::getenv("TMPDIR");
+        std::string dir = std::string(tmp ? tmp : "/tmp") + "/dearsql_ui_tests_XXXXXX";
+        if (mkdtemp(dir.data()) != nullptr) {
+            setenv("HOME", dir.c_str(), 1);
+            tempHome = dir;
         }
     }
 
@@ -93,6 +109,10 @@ int main(int argc, char** argv) {
     // cleanup() destroys the imgui context, which the engine requires to happen first
     app.cleanup();
     ImGuiTestEngine_DestroyContext(engine);
+    if (!tempHome.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(tempHome, ec);
+    }
 
     return summary.CountTested != summary.CountSuccess ? 1 : 0;
 }

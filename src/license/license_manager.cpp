@@ -331,7 +331,7 @@ void LicenseManager::activateLicense(const std::string& licenseKey, ActivationCa
     activating.store(true);
     std::string instanceId = getInstanceId();
 
-    std::thread([this, licenseKey, instanceId, callback]() {
+    const bool started = startOn(activationOp_, [this, licenseKey, instanceId, callback] {
         auto result = doActivation(licenseKey, instanceId);
 
         if (result.valid) {
@@ -344,7 +344,14 @@ void LicenseManager::activateLicense(const std::string& licenseKey, ActivationCa
 
         activating.store(false);
         callback(result);
-    }).detach();
+        return true;
+    });
+    if (!started) {
+        activating.store(false);
+        LicenseInfo err;
+        err.error = "Activation already in progress";
+        callback(err);
+    }
 }
 
 void LicenseManager::deactivateLicense(ActivationCallback callback) {
@@ -363,7 +370,7 @@ void LicenseManager::deactivateLicense(ActivationCallback callback) {
 
     activating.store(true);
 
-    std::thread([this, key, instanceId, callback]() {
+    const bool started = startOn(activationOp_, [this, key, instanceId, callback] {
         auto result = doDeactivation(key, instanceId);
 
         if (result.error.empty()) {
@@ -372,7 +379,14 @@ void LicenseManager::deactivateLicense(ActivationCallback callback) {
 
         activating.store(false);
         callback(result);
-    }).detach();
+        return true;
+    });
+    if (!started) {
+        activating.store(false);
+        LicenseInfo err;
+        err.error = "Activation already in progress";
+        callback(err);
+    }
 }
 
 void LicenseManager::validateLicense(ActivationCallback callback) {
@@ -389,7 +403,7 @@ void LicenseManager::validateLicense(ActivationCallback callback) {
         instanceId = currentLicense.instanceId;
     }
 
-    std::thread([this, key, instanceId, callback]() {
+    const bool started = startOn(validationOp_, [this, key, instanceId, callback] {
         auto result = doValidation(key, instanceId);
 
         if (!result.valid && !result.networkError) {
@@ -397,7 +411,13 @@ void LicenseManager::validateLicense(ActivationCallback callback) {
         }
 
         callback(result);
-    }).detach();
+        return true;
+    });
+    if (!started) {
+        LicenseInfo err;
+        err.error = "Validation already in progress";
+        callback(err);
+    }
 }
 
 void LicenseManager::validateStoredLicense() {
@@ -411,7 +431,8 @@ void LicenseManager::validateStoredLicense() {
         instanceId = currentLicense.instanceId;
     }
 
-    std::thread([this, key, instanceId]() {
+    // a validation already in flight covers this one
+    startOn(validationOp_, [this, key, instanceId] {
         auto result = doValidation(key, instanceId);
 
         if (result.networkError) {
@@ -422,5 +443,6 @@ void LicenseManager::validateStoredLicense() {
         } else {
             spdlog::info("Startup license validation: confirmed valid");
         }
-    }).detach();
+        return true;
+    });
 }

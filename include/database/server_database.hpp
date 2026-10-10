@@ -1,6 +1,7 @@
 #pragma once
 
 #include "async_helper.hpp"
+#include "database_node.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
 #include <dearsql/factory.hpp>
@@ -102,10 +103,8 @@ public:
             return {false, "Not connected to database"};
         if (options.name.empty())
             return {false, "Database name cannot be empty"};
-        auto status = conn->createDatabase(options);
-        if (status.first)
-            refreshDatabaseNames();
-        return status;
+        // may run on a worker: the caller relists on the UI thread
+        return conn->createDatabase(options);
     }
 
     std::pair<bool, std::string> createDatabase(const std::string& name,
@@ -117,41 +116,79 @@ public:
     }
 
     std::pair<bool, std::string> dropDatabase(const std::string& name) override {
-        auto conn = connection();
-        if (!conn)
-            return {false, "Not connected to database"};
-        // no loader may reopen a session on it mid-drop; a pooled one would block DROP
-        if (auto it = nodes_.find(name); it != nodes_.end()) {
-            it->second->waitForLoaders();
-            it->second->resetPool();
-        }
-        auto status = conn->dropDatabase(name);
-        if (status.first) {
-            // dropped the one we were on: follow the library to its fallback, or none
-            if (name == connectionInfo.database)
-                connectionInfo.database =
-                    conn->info().database != name ? conn->info().database : "";
-            nodes_.erase(name);
-            refreshDatabaseNames();
-        }
+        auto ddl = beginDropDatabase(name);
+        auto status = ddl.work();
+        if (ddl.finish)
+            ddl.finish(status.first);
         return status;
     }
 
     std::pair<bool, std::string> renameDatabase(const std::string& oldName,
                                                 const std::string& newName) override {
+        auto ddl = beginRenameDatabase(oldName, newName);
+        auto status = ddl.work();
+        if (ddl.finish)
+            ddl.finish(status.first);
+        return status;
+    }
+
+    DatabaseDdl beginDropDatabase(const std::string& name) override {
         auto conn = connection();
         if (!conn)
-            return {false, "Not connected to database"};
-        if (auto it = nodes_.find(oldName); it != nodes_.end()) {
-            it->second->waitForLoaders();
-            it->second->resetPool();
-        }
-        auto status = conn->renameDatabase(oldName, newName);
-        if (status.first) {
-            nodes_.erase(oldName);
+            return notConnected();
+        auto suspended = suspendNode(name);
+        NodeT* node = suspended.first;
+        std::shared_ptr<void> pin = std::move(suspended.second);
+        auto fallback = std::make_shared<std::string>();
+        DatabaseDdl ddl;
+        ddl.work = [conn, node, pin, name, fallback]() mutable {
+            // no pooled session may block DROP: cancel the busy ones and wait them out
+            if (node)
+                node->resetPool(true);
+            auto status = conn->dropDatabase(name);
+            *fallback = conn->info().database;
+            pin.reset();
+            return status;
+        };
+        ddl.finish = [this, name, fallback](bool ok) {
+            if (!ok) {
+                resumeNode(name);
+                return;
+            }
+            // dropped the one we were on: follow the library to its fallback, or none
+            if (name == connectionInfo.database)
+                connectionInfo.database = databaseAfterDrop(name, *fallback);
+            retireDatabaseNode(name);
             refreshDatabaseNames();
-        }
-        return status;
+        };
+        return ddl;
+    }
+
+    DatabaseDdl beginRenameDatabase(const std::string& oldName,
+                                    const std::string& newName) override {
+        auto conn = connection();
+        if (!conn)
+            return notConnected();
+        auto suspended = suspendNode(oldName);
+        NodeT* node = suspended.first;
+        std::shared_ptr<void> pin = std::move(suspended.second);
+        DatabaseDdl ddl;
+        ddl.work = [conn, node, pin, oldName, newName]() mutable {
+            if (node)
+                node->resetPool(true);
+            auto status = conn->renameDatabase(oldName, newName);
+            pin.reset();
+            return status;
+        };
+        ddl.finish = [this, oldName](bool ok) {
+            if (!ok) {
+                resumeNode(oldName);
+                return;
+            }
+            retireDatabaseNode(oldName);
+            refreshDatabaseNames();
+        };
+        return ddl;
     }
 
     void refreshDatabaseNames() override {
@@ -261,6 +298,13 @@ protected:
         node.startViewsLoadAsync(true);
     }
 
+    // where the connection lands after dropping the database it was on;
+    // libFallback is where the library moved its own connection
+    virtual std::string databaseAfterDrop(const std::string& dropped,
+                                          const std::string& libFallback) {
+        return libFallback != dropped ? libFallback : "";
+    }
+
     [[nodiscard]] bool listsAllDatabases() const {
         return connectionInfo.showAllDatabases || connectionInfo.database.empty();
     }
@@ -282,6 +326,38 @@ private:
             spdlog::error("list databases: {}", e.what());
             return {{}, e.what()};
         }
+    }
+
+    static DatabaseDdl notConnected() {
+        return {[] { return std::pair<bool, std::string>{false, "Not connected to database"}; },
+                nullptr};
+    }
+
+    // UI thread: no loader may reopen a session on the database while a worker
+    // drops or renames it; the pin keeps the node alive for that worker
+    std::pair<NodeT*, std::shared_ptr<void>> suspendNode(const std::string& name) {
+        auto it = nodes_.find(name);
+        if (it == nodes_.end())
+            return {nullptr, nullptr};
+        NodeT* node = it->second.get();
+        node->setSuspended(true);
+        node->abandonLoaders();
+        return {node, node->pin()};
+    }
+
+    void resumeNode(const std::string& name) {
+        if (auto it = nodes_.find(name); it != nodes_.end())
+            it->second->setSuspended(false);
+    }
+
+    // out of the map first, then to the app, which closes tabs on it before it dies
+    void retireDatabaseNode(const std::string& name) {
+        auto it = nodes_.find(name);
+        if (it == nodes_.end())
+            return;
+        std::unique_ptr<IDatabaseNode> node = std::move(it->second);
+        nodes_.erase(it);
+        retireNode(std::move(node));
     }
 
     // library connection and tunnel only; nodes are the caller's business

@@ -87,6 +87,7 @@ private:
     bool hasLoadingError = false;
     std::string loadingError;
     AsyncOperation<LoadResult> dataLoadOp;
+    bool reloadQueued_ = false; // a load asked for while one ran
 
     // Edit state
     int selectedRow = -1;

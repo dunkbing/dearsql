@@ -291,3 +291,25 @@ TEST_F(MSSQLSchemaNodeDDLTest, DropColumnRemovesColumn) {
     EXPECT_EQ(check[0].tableData[0][0], "id");
     EXPECT_EQ(check[0].tableData[1][0], "keep_me");
 }
+
+// cancel interrupts a WAITFOR through the db-lib interrupt hook; the pool's next
+// handle still works
+TEST_F(MSSQLDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+
+    AsyncOperation<QueryResult> op;
+    op.start([dbNode] { return dbNode->executeQuery("WAITFOR DELAY '00:00:30'"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // let it reach the server
+
+    const auto start = std::chrono::steady_clock::now();
+    ConnectionPoolBase::cancelQueriesOn(op.workerId());
+    const QueryResult result = op.waitAndGet();
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_FALSE(result.success());
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+
+    const auto after = dbNode->executeQuery("SELECT 1");
+    EXPECT_TRUE(after.success()) << after.errorMessage();
+}

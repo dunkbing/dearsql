@@ -9,8 +9,10 @@ namespace {
 } // namespace
 
 RedisDatabase::~RedisDatabase() {
-    refreshWorkflow_.cancel();
-    dbInfoLoadOp_.cancel();
+    // join every worker while the members they touch still exist
+    connectionOp.wait();
+    refreshWorkflow_.wait();
+    dbInfoLoadOp_.wait();
     RedisDatabase::disconnect();
 }
 

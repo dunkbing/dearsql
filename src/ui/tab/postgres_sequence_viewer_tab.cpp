@@ -2,6 +2,7 @@
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
 #include "application.hpp"
+#include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "imgui.h"
@@ -463,7 +464,8 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
             if (UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
                 auto* schema = schema_;
-                sqlExecutionOp_.start([schema, editedSQL]() -> std::pair<bool, std::string> {
+                sqlExecutionOp_.start([schema, keep = keepOwnerAlive(schema),
+                                       editedSQL]() -> std::pair<bool, std::string> {
                     if (!schema) {
                         return {false, "Schema not available"};
                     }
@@ -534,7 +536,7 @@ void PostgresSequenceViewerTab::fetchAsync() {
     const std::string seqName = sequenceName_;
     const std::string schemaName = schema_->name;
 
-    fetchOp_.start([schema, seqName, schemaName]() -> FetchResult {
+    fetchOp_.start([schema, keep = keepOwnerAlive(schema), seqName, schemaName]() -> FetchResult {
         FetchResult r;
         try {
             const std::string sql = std::format(
@@ -649,4 +651,15 @@ void PostgresSequenceViewerTab::rebuildDdl() {
     }
 
     ddlEditor_.SetText(ddl);
+}
+
+// never join a query on close: cancel it server-side and let the worker unwind;
+// the tasks hold the connection, not the tab
+PostgresSequenceViewerTab::~PostgresSequenceViewerTab() {
+    if (fetchOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(fetchOp_.workerId());
+    fetchOp_.detach();
+    if (sqlExecutionOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(sqlExecutionOp_.workerId());
+    sqlExecutionOp_.detach();
 }

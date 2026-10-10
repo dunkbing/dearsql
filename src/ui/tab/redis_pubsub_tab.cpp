@@ -2,6 +2,7 @@
 #include <winsock2.h>
 #else
 #include <poll.h>
+#include <sys/socket.h>
 #endif
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
@@ -19,6 +20,18 @@
 #include <hiredis/hiredis_ssl.h>
 #include <spdlog/spdlog.h>
 
+namespace {
+    void shutdownSocket(std::intptr_t fd) {
+        if (fd < 0)
+            return;
+#ifdef _WIN32
+        shutdown(static_cast<SOCKET>(fd), SD_BOTH);
+#else
+        shutdown(static_cast<int>(fd), SHUT_RDWR);
+#endif
+    }
+} // namespace
+
 RedisPubSubTab::RedisPubSubTab(const std::string& name, RedisDatabase* db)
     : Tab(name, TabType::REDIS_PUBSUB), db_(db), statusPanel_(db) {
     strncpy(publishChannelBuf_, "*", sizeof(publishChannelBuf_) - 1);
@@ -28,34 +41,50 @@ RedisPubSubTab::~RedisPubSubTab() {
     unsubscribe();
 }
 
-void RedisPubSubTab::setSubError(std::string error) {
-    std::lock_guard lock(subErrorMutex_);
-    subError_ = std::move(error);
-}
-
-void RedisPubSubTab::clearSubError() {
-    std::lock_guard lock(subErrorMutex_);
-    subError_.clear();
-}
-
-std::string RedisPubSubTab::getSubError() const {
-    std::lock_guard lock(subErrorMutex_);
-    return subError_;
-}
-
-redisContext* RedisPubSubTab::createSubscriberContext() {
-    const auto& info = db_->getConnectionInfo();
-
-    constexpr timeval timeout = {5, 0};
-    auto* ctx = redisConnectWithTimeout(info.host.c_str(), info.port, timeout);
-    if (!ctx || ctx->err) {
-        setSubError(ctx ? ctx->errstr : "Failed to allocate subscriber context");
+// runs on the worker and owns the context; everything it reports goes through sub
+void RedisPubSubTab::runSubscriber(const std::shared_ptr<Subscription>& sub,
+                                   const DatabaseConnectionInfo& info, const std::string& pattern,
+                                   const std::stop_token& stop) {
+    redisSSLContext* sslCtx = nullptr;
+    redisContext* ctx = nullptr;
+    auto fail = [&](std::string error) {
+        {
+            std::lock_guard lock(sub->mutex);
+            sub->error = std::move(error);
+        }
+        sub->state.store(SubState::Error);
+    };
+    // unpublish the socket before it is freed, so a stop never shuts down a reused fd
+    auto cleanup = [&] {
+        {
+            std::lock_guard lock(sub->mutex);
+            sub->fd = -1;
+        }
         if (ctx)
             redisFree(ctx);
-        return nullptr;
-    }
+        if (sslCtx)
+            redisFreeSSLContext(sslCtx);
+    };
 
-    // TLS
+    constexpr timeval timeout = {5, 0};
+    ctx = redisConnectWithTimeout(info.host.c_str(), info.port, timeout);
+    if (!ctx || ctx->err) {
+        fail(ctx ? ctx->errstr : "Failed to allocate subscriber context");
+        cleanup();
+        return;
+    }
+    {
+        std::lock_guard lock(sub->mutex);
+        sub->fd = static_cast<std::intptr_t>(ctx->fd);
+    }
+    // stopped while connecting: the shutdown missed the socket
+    if (stop.stop_requested()) {
+        cleanup();
+        return;
+    }
+    // no handshake step (TLS, AUTH, SUBSCRIBE) may block for good on a stalled server
+    redisSetTimeout(ctx, timeout);
+
     if (info.sslmode == SslMode::Require || info.sslmode == SslMode::VerifyCA ||
         info.sslmode == SslMode::VerifyFull) {
         redisSSLContextError sslErr = REDIS_SSL_CTX_NONE;
@@ -63,24 +92,19 @@ redisContext* RedisPubSubTab::createSubscriberContext() {
                                                               info.sslmode == SslMode::VerifyFull))
                                  ? info.sslCACertPath.c_str()
                                  : nullptr;
-
-        subSslCtx_ = redisCreateSSLContext(caPath, nullptr, nullptr, nullptr, nullptr, &sslErr);
-        if (!subSslCtx_) {
-            setSubError(std::string("Subscriber TLS context failed: ") +
-                        redisSSLContextGetError(sslErr));
-            redisFree(ctx);
-            return nullptr;
+        sslCtx = redisCreateSSLContext(caPath, nullptr, nullptr, nullptr, nullptr, &sslErr);
+        if (!sslCtx) {
+            fail(std::string("Subscriber TLS context failed: ") + redisSSLContextGetError(sslErr));
+            cleanup();
+            return;
         }
-        if (redisInitiateSSLWithContext(ctx, subSslCtx_) != REDIS_OK) {
-            setSubError(ctx->errstr[0] ? ctx->errstr : "Subscriber TLS handshake failed");
-            redisFree(ctx);
-            redisFreeSSLContext(subSslCtx_);
-            subSslCtx_ = nullptr;
-            return nullptr;
+        if (redisInitiateSSLWithContext(ctx, sslCtx) != REDIS_OK) {
+            fail(ctx->errstr[0] ? ctx->errstr : "Subscriber TLS handshake failed");
+            cleanup();
+            return;
         }
     }
 
-    // AUTH
     if (!info.password.empty()) {
         redisReply* reply = nullptr;
         if (!info.username.empty()) {
@@ -90,162 +114,159 @@ redisContext* RedisPubSubTab::createSubscriberContext() {
             reply = static_cast<redisReply*>(redisCommand(ctx, "AUTH %s", info.password.c_str()));
         }
         if (!reply || reply->type == REDIS_REPLY_ERROR) {
-            setSubError(reply ? reply->str : "Subscriber auth failed");
+            if (!stop.stop_requested())
+                fail(reply ? reply->str : "Subscriber auth failed");
             if (reply)
                 freeReplyObject(reply);
-            redisFree(ctx);
-            if (subSslCtx_) {
-                redisFreeSSLContext(subSslCtx_);
-                subSslCtx_ = nullptr;
-            }
-            return nullptr;
+            cleanup();
+            return;
         }
         freeReplyObject(reply);
     }
 
-    return ctx;
-}
-
-void RedisPubSubTab::subscribe(const std::string& pattern) {
-    auto cur = subState_.load();
-    if (cur == SubState::Subscribed || cur == SubState::Subscribing)
-        return;
-
-    // clean up stale resources from a previous error/stop before starting again
-    unsubscribe();
-    subState_.store(SubState::Subscribing);
-    clearSubError();
-    activePattern_ = pattern;
-
-    {
-        std::lock_guard lock(messageMutex_);
-        pendingMessages_.clear();
-    }
-    displayMessages_.clear();
-    totalMessageCount_.store(0);
-
-    subContext_ = createSubscriberContext();
-    if (!subContext_) {
-        subState_.store(SubState::Error);
-        return;
-    }
-
-    subThread_ = std::jthread([this](std::stop_token st) { subscriberLoop(st); });
-}
-
-void RedisPubSubTab::subscriberLoop(std::stop_token stopToken) {
-    // use PSUBSCRIBE for glob patterns, SUBSCRIBE for exact channel
-    bool isPattern = activePattern_.find_first_of("*?[") != std::string::npos;
-    const char* cmd = isPattern ? "PSUBSCRIBE" : "SUBSCRIBE";
-
-    auto* reply =
-        static_cast<redisReply*>(redisCommand(subContext_, "%s %s", cmd, activePattern_.c_str()));
+    // PSUBSCRIBE for glob patterns, SUBSCRIBE for an exact channel
+    const bool isPattern = pattern.find_first_of("*?[") != std::string::npos;
+    auto* reply = static_cast<redisReply*>(
+        redisCommand(ctx, "%s %s", isPattern ? "PSUBSCRIBE" : "SUBSCRIBE", pattern.c_str()));
     if (!reply || reply->type == REDIS_REPLY_ERROR) {
-        setSubError(reply ? reply->str : "Subscribe command failed");
+        if (!stop.stop_requested())
+            fail(reply ? reply->str : (ctx->errstr[0] ? ctx->errstr : "Subscribe failed"));
         if (reply)
             freeReplyObject(reply);
-        subState_.store(SubState::Error);
+        cleanup();
         return;
     }
     freeReplyObject(reply);
-    subState_.store(SubState::Subscribed);
+    sub->state.store(SubState::Subscribed);
 
-    // poll the socket instead of redisSetTimeout (which permanently errors the context)
+    // wait on poll (100ms) so a stop is seen; read only once data is there
 #ifdef _WIN32
     WSAPOLLFD pfd = {};
-    pfd.fd = subContext_->fd;
+    pfd.fd = ctx->fd;
     pfd.events = POLLIN;
 #else
-    struct pollfd pfd = {.fd = subContext_->fd, .events = POLLIN, .revents = 0};
+    struct pollfd pfd = {.fd = ctx->fd, .events = POLLIN, .revents = 0};
 #endif
 
-    while (!stopToken.stop_requested()) {
-        int pollRc =
+    while (!stop.stop_requested()) {
+        const int pollRc =
 #ifdef _WIN32
             WSAPoll(&pfd, 1, 100);
 #else
             poll(&pfd, 1, 100);
 #endif
         if (pollRc == 0)
-            continue; // timeout, check stop token
+            continue;
         if (pollRc < 0) {
             if (errno == EINTR)
                 continue;
-            setSubError("poll error: " + std::string(strerror(errno)));
-            subState_.store(SubState::Error);
+            fail("poll error: " + std::string(strerror(errno)));
             break;
         }
+        if (stop.stop_requested())
+            break;
 
         redisReply* msg = nullptr;
-        int rc = redisGetReply(subContext_, reinterpret_cast<void**>(&msg));
-        if (rc == REDIS_ERR) {
-            setSubError(subContext_->errstr);
-            subState_.store(SubState::Error);
+        if (redisGetReply(ctx, reinterpret_cast<void**>(&msg)) == REDIS_ERR) {
+            if (!stop.stop_requested())
+                fail(ctx->errstr);
             break;
         }
-
         if (!msg)
             continue;
 
         if (msg->type == REDIS_REPLY_ARRAY && msg->elements >= 3) {
-            std::string msgType = msg->element[0]->str;
+            const std::string msgType = msg->element[0]->str ? msg->element[0]->str : "";
             std::string channel;
             std::string payload;
-
+            bool isMessage = true;
             if (msgType == "pmessage" && msg->elements >= 4) {
-                channel = msg->element[2]->str;
-                payload = msg->element[3]->str;
+                channel = msg->element[2]->str ? msg->element[2]->str : "";
+                payload = msg->element[3]->str ? msg->element[3]->str : "";
             } else if (msgType == "message") {
-                channel = msg->element[1]->str;
-                payload = msg->element[2]->str;
+                channel = msg->element[1]->str ? msg->element[1]->str : "";
+                payload = msg->element[2]->str ? msg->element[2]->str : "";
             } else {
-                freeReplyObject(msg);
-                continue;
+                isMessage = false;
             }
-
-            PubSubMessage pubMsg{currentTimestampMs(), std::move(channel), std::move(payload)};
-            {
-                std::lock_guard lock(messageMutex_);
-                pendingMessages_.push_back(std::move(pubMsg));
-                pendingCount_.fetch_add(1, std::memory_order_release);
+            if (isMessage) {
+                PubSubMessage pubMsg{currentTimestampMs(), std::move(channel), std::move(payload)};
+                {
+                    std::lock_guard lock(sub->mutex);
+                    sub->pending.push_back(std::move(pubMsg));
+                    sub->pendingCount.fetch_add(1, std::memory_order_release);
+                }
+                sub->total.fetch_add(1, std::memory_order_relaxed);
             }
-            totalMessageCount_.fetch_add(1, std::memory_order_relaxed);
         }
-
         freeReplyObject(msg);
     }
+    cleanup();
+}
+
+void RedisPubSubTab::subscribe(const std::string& pattern) {
+    auto cur = sub_->state.load();
+    if (cur == SubState::Subscribed || cur == SubState::Subscribing)
+        return;
+    if (!db_)
+        return;
+
+    // a previous subscription's worker may still be unwinding: it keeps its own state
+    unsubscribe();
+    displayMessages_.clear();
+    sub_ = std::make_shared<Subscription>();
+    sub_->state.store(SubState::Subscribing);
+    activePattern_ = pattern;
+
+    // connect, TLS and AUTH happen on the worker: a slow server must not freeze the ui
+    subOp_.setWakesFrames(false);
+    subOp_.check();
+    subOp_.startCancellable(
+        [sub = sub_, info = db_->getConnectionInfo(), pattern](std::stop_token st) {
+            runSubscriber(sub, info, pattern, st);
+            return true;
+        });
 }
 
 void RedisPubSubTab::unsubscribe() {
-    if (subThread_.joinable()) {
-        subThread_.request_stop();
-        subThread_.join();
+    // stop the worker without waiting: break a blocking read by shutting the
+    // socket down, then let it unwind and free the context on its own
+    subOp_.cancel();
+    {
+        std::lock_guard lock(sub_->mutex);
+        shutdownSocket(sub_->fd);
     }
-    if (subContext_) {
-        redisFree(subContext_);
-        subContext_ = nullptr;
+    subOp_.detach();
+
+    // the old worker keeps writing into its own state; the tab moves on
+    auto next = std::make_shared<Subscription>();
+    if (sub_->state.load() == SubState::Error) {
+        std::lock_guard lock(sub_->mutex);
+        next->error = sub_->error;
+        next->state.store(SubState::Error);
     }
-    if (subSslCtx_) {
-        redisFreeSSLContext(subSslCtx_);
-        subSslCtx_ = nullptr;
+    next->total.store(sub_->total.load());
+    {
+        std::lock_guard lock(sub_->mutex);
+        next->pending = std::move(sub_->pending);
+        next->pendingCount.store(static_cast<int>(next->pending.size()));
     }
-    if (subState_.load() != SubState::Error)
-        subState_.store(SubState::Idle);
+    sub_ = std::move(next);
     activePattern_.clear();
 }
 
 void RedisPubSubTab::drainPendingMessages() {
-    if (pendingCount_.load(std::memory_order_acquire) == 0)
+    if (sub_->pendingCount.load(std::memory_order_acquire) == 0)
         return;
 
-    std::lock_guard lock(messageMutex_);
+    std::lock_guard lock(sub_->mutex);
 
     // prepend newest messages at front
     displayMessages_.insert(displayMessages_.begin(),
-                            std::make_move_iterator(pendingMessages_.rbegin()),
-                            std::make_move_iterator(pendingMessages_.rend()));
-    pendingMessages_.clear();
-    pendingCount_.store(0, std::memory_order_relaxed);
+                            std::make_move_iterator(sub_->pending.rbegin()),
+                            std::make_move_iterator(sub_->pending.rend()));
+    sub_->pending.clear();
+    sub_->pendingCount.store(0, std::memory_order_relaxed);
 
     constexpr size_t maxDisplay = 10000;
     if (displayMessages_.size() > maxDisplay)
@@ -370,23 +391,22 @@ void RedisPubSubTab::render() {
 }
 
 void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
-    auto state = subState_.load();
+    auto state = sub_->state.load();
     bool subscribed = (state == SubState::Subscribed);
+    const bool connecting = (state == SubState::Subscribing);
 
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
     ImGui::AlignTextToFramePadding();
 
     // stats
-    ImGui::Text("Messages: %d", totalMessageCount_.load());
+    ImGui::Text("Messages: %d", sub_->total.load());
     ImGui::SameLine(0, Theme::Spacing::L);
 
     // pattern input (editable only when not subscribed)
-    if (subscribed)
-        ImGui::BeginDisabled();
+    ImGui::BeginDisabled(subscribed || connecting);
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputTextWithHint("##sub_pattern", "Channel pattern", patternBuf_, sizeof(patternBuf_));
-    if (subscribed)
-        ImGui::EndDisabled();
+    ImGui::EndDisabled();
 
     ImGui::SameLine(0, Theme::Spacing::M);
 
@@ -394,18 +414,16 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     if (subscribed) {
         if (UIUtils::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", UIUtils::ButtonVariant::Danger)) {
             unsubscribe();
-            subState_.store(SubState::Idle);
         }
+    } else if (connecting) {
+        // connecting runs on a worker: it can be called off
+        if (UIUtils::Button(ICON_FA_XMARK " Cancel", UIUtils::ButtonVariant::Secondary))
+            unsubscribe();
     } else {
-        bool busy = (state == SubState::Subscribing);
-        if (busy)
-            ImGui::BeginDisabled();
         if (UIUtils::Button(ICON_FA_TOWER_BROADCAST " Subscribe",
                             UIUtils::ButtonVariant::Primary)) {
             subscribe(patternBuf_);
         }
-        if (busy)
-            ImGui::EndDisabled();
     }
 
     ImGui::SameLine(0, Theme::Spacing::S);
@@ -413,11 +431,15 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     // clear button
     if (UIUtils::Button(ICON_FA_TRASH_CAN " Clear", UIUtils::ButtonVariant::Danger)) {
         displayMessages_.clear();
-        totalMessageCount_.store(0);
+        sub_->total.store(0);
     }
 
     // error display
-    const std::string subError = getSubError();
+    std::string subError;
+    {
+        std::lock_guard lock(sub_->mutex);
+        subError = sub_->error;
+    }
     if (state == SubState::Error && !subError.empty()) {
         ImGui::SameLine(0, Theme::Spacing::L);
         ImGui::TextColored(colors.red, "%s", subError.c_str());

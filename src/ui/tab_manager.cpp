@@ -51,6 +51,57 @@ void TabManager::closeAllTabs() {
     pendingFocusTabId_ = 0;
 }
 
+namespace {
+    // the database node a tab works on, if it is a node-bound tab
+    IDatabaseNode* nodeOf(const Tab& tab) {
+        if (auto* t = dynamic_cast<const SQLEditorTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const TableViewerTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const TableEditorTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const DiagramTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const MongoEditorTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const PostgresSequenceViewerTab*>(&tab))
+            return t->getDatabaseNode();
+        if (auto* t = dynamic_cast<const RoutineViewerTab*>(&tab))
+            return t->getDatabaseNode();
+        return nullptr;
+    }
+} // namespace
+
+void TabManager::closeTabsForNode(const IDatabaseNode* node) {
+    if (!node)
+        return;
+    std::erase_if(tabs, [node](const std::shared_ptr<Tab>& tab) {
+        for (const IDatabaseNode* n = tab ? nodeOf(*tab) : nullptr; n; n = n->parentNode()) {
+            if (n == node)
+                return true;
+        }
+        return false;
+    });
+    pruneTabState();
+}
+
+void TabManager::retireNode(std::unique_ptr<IDatabaseNode> node) {
+    if (!node)
+        return;
+    // tabs first; the node itself dies on the reaper, where its destructor may
+    // wait out workers still running on it
+    if (!renderingTabs_) {
+        closeTabsForNode(node.get());
+        Reaper::dispose(std::move(node));
+        return;
+    }
+    // a tab being rendered may still use it: keep it alive until the loop ends
+    deferAfterRender([this, held = std::shared_ptr<IDatabaseNode>(std::move(node))]() mutable {
+        closeTabsForNode(held.get());
+        Reaper::dispose(std::move(held));
+    });
+}
+
 void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
     if (!db)
         return;
@@ -59,23 +110,10 @@ void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
     auto* sqliteDb = dynamic_cast<FileDatabase*>(db);
 
     std::erase_if(tabs, [db, redisDb, sqliteDb](const std::shared_ptr<Tab>& tab) {
-        IDatabaseNode* node = nullptr;
-        if (auto* t = dynamic_cast<SQLEditorTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<TableViewerTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<TableEditorTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<DiagramTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<MongoEditorTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<PostgresSequenceViewerTab*>(tab.get()))
-            node = t->getDatabaseNode();
-        else if (auto* t = dynamic_cast<AIChatTab*>(tab.get()))
+        if (auto* t = dynamic_cast<AIChatTab*>(tab.get()))
             return t->panel().database() == db;
 
-        if (node)
+        if (IDatabaseNode* node = nodeOf(*tab))
             return node->ownerDatabase() == db;
 
         if (sqliteDb) {
@@ -263,6 +301,7 @@ void TabManager::renderTabs() {
     ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected, colors.surface1);
     ImGui::PushStyleColor(ImGuiCol_TabDimmedSelectedOverline, ImVec4(0, 0, 0, 0));
 
+    renderingTabs_ = true;
     for (auto it = tabs.begin(); it != tabs.end();) {
         const auto& tab = *it;
         const std::uint64_t tabId = tab->getId();
@@ -352,6 +391,7 @@ void TabManager::renderTabs() {
             ++it;
         }
     }
+    renderingTabs_ = false;
 
     // Process pending close actions after the loop to avoid iterator invalidation
     if (pendingCloseAction != CloseAction::None) {

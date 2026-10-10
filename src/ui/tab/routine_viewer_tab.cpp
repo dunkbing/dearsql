@@ -1,6 +1,7 @@
 #include "ui/tab/routine_viewer_tab.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "database/connection_pool.hpp"
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
@@ -148,7 +149,7 @@ void RoutineViewerTab::fetchDefinitionAsync() {
         return;
     }
 
-    fetchOp_.start([node, routine, query, dbType]() -> std::string {
+    fetchOp_.start([node, keep = keepOwnerAlive(node), routine, query, dbType]() -> std::string {
         try {
             const QueryResult result = node->executeQuery(query);
             if (!result.success() || result.empty()) {
@@ -251,7 +252,7 @@ void RoutineViewerTab::saveDefinitionAsync() {
     auto* node = node_;
     const std::string sql = editor_.GetText();
 
-    saveOp_.start([node, sql]() -> std::pair<bool, std::string> {
+    saveOp_.start([node, keep = keepOwnerAlive(node), sql]() -> std::pair<bool, std::string> {
         try {
             const QueryResult result = node->executeQuery(sql);
             if (!result.success()) {
@@ -334,4 +335,15 @@ std::string RoutineViewerTab::buildDefinitionQuery() const {
     default:
         return {};
     }
+}
+
+// never join a query on close: cancel it server-side and let the worker unwind;
+// the tasks hold the connection, not the tab
+RoutineViewerTab::~RoutineViewerTab() {
+    if (fetchOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(fetchOp_.workerId());
+    fetchOp_.detach();
+    if (saveOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(saveOp_.workerId());
+    saveOp_.detach();
 }

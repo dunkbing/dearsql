@@ -34,6 +34,7 @@ bool DbMcpServer::start() {
     server_ = std::make_unique<httplib::Server>();
     token_ = makeToken();
     stopping_ = false;
+    tools_.resume();
 
     server_->Post("/mcp", [this](const httplib::Request& req, httplib::Response& res) {
         // set before the listener thread starts, so reading it here needs no lock
@@ -61,7 +62,9 @@ bool DbMcpServer::start() {
         server_.reset();
         return false;
     }
-    thread_ = std::thread([this] { server_->listen_after_bind(); });
+    listenOp_.setWakesFrames(false);
+    listenOp_.check();
+    listenOp_.start([this] { return server_->listen_after_bind(); });
     spdlog::info("DB MCP server listening on 127.0.0.1:{}", port_);
     return true;
 }
@@ -72,9 +75,11 @@ void DbMcpServer::stop() {
     finishConnectRequest(false, "DearSQL closed the database tools.");
 
     if (server_) {
+        // the join below waits for in-flight handlers: stop their query server-side
+        // (ponytail: a backend that cannot cancel, Mongo/Redis, still runs it out)
+        tools_.interrupt();
         server_->stop();
-        if (thread_.joinable())
-            thread_.join();
+        listenOp_.wait();
         server_.reset();
         port_ = 0;
         token_.clear();

@@ -23,6 +23,7 @@
 #include "ui/markdown_text.hpp"
 #include "utils/app_paths.hpp"
 #include "utils/button.hpp"
+#include "utils/reaper.hpp"
 #include "utils/spinner.hpp"
 #include <acp/log.hpp>
 #include <algorithm>
@@ -324,15 +325,9 @@ int AISidebarPanel::backendIndexFor(const std::string& id) const {
 
 void AISidebarPanel::stopAgent() {
     // stopping the agent waits up to a second for it to exit; keep that off the ui thread.
-    // the detached task still counts as running work, so the frame loop stays awake for it
-    if (acp_) {
-        AsyncOperation<bool> stopper;
-        stopper.start([client = std::shared_ptr<AcpClient>(std::move(acp_))]() mutable {
-            client.reset();
-            return true;
-        });
-        stopper.detach();
-    }
+    // on the reaper, so quitting drains it instead of racing static destruction
+    if (acp_)
+        Reaper::dispose(std::move(acp_));
     agentCommands_.clear();
     agentConfigOptions_.clear();
     // nothing is left to serve, so close the port rather than leave it listening

@@ -28,6 +28,7 @@
 
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/reaper.hpp"
 #include "utils/sentry_utils.hpp"
 #include <algorithm>
 #include <chrono>
@@ -194,6 +195,11 @@ bool Application::initialize() {
     }
 
     tabManager = std::make_unique<TabManager>();
+    // a dropped database or schema closes its tabs before its node is freed
+    retireNodeHook = [this](std::unique_ptr<IDatabaseNode> node) {
+        if (tabManager)
+            tabManager->retireNode(std::move(node));
+    };
     databaseSidebar = std::make_unique<DatabaseSidebarNew>();
     fileDialog = std::make_unique<FileDialog>();
 
@@ -275,7 +281,7 @@ void Application::run() {
         const double frameStart = glfwGetTime();
         const double timeSinceInteraction = frameStart - lastInteractionTime;
         const bool windowFocusedAtFrameStart = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        const bool hadAsyncWork = AsyncOperationControl::hasRunningTasks();
+        const bool hadAsyncWork = AsyncOperationControl::wantsFrames();
 
         double waitTimeout = 0.0;
         const bool idleBecauseUnfocused = !windowFocusedAtFrameStart && !hadAsyncWork;
@@ -302,7 +308,7 @@ void Application::run() {
         }
         lastWindowFocused = windowFocused;
 
-        const bool hasAsyncWork = AsyncOperationControl::hasRunningTasks();
+        const bool hasAsyncWork = AsyncOperationControl::wantsFrames();
 
         // never call renderFrame() when unfocused: CAMetalLayer::nextDrawable blocks
         // when the window is backgrounded, causing sluggish app switches
@@ -330,11 +336,18 @@ void Application::cleanup() {
     spdlog::info("Cleaning up {}...", APP_NAME);
     const bool signalShutdownRequested = isShutdownRequested();
     const bool pendingAsyncWork = hasPendingAsyncWork();
-    const bool fastShutdown = signalShutdownRequested || pendingAsyncWork;
+    // teardown already handed off (a removed connection, a dropped database) gets a
+    // bounded chance to finish; past it the fast exit leaves it to the OS
+    const bool fastShutdown =
+        signalShutdownRequested || pendingAsyncWork || !Reaper::drain(std::chrono::seconds(3));
 
     if (fastShutdown) {
         AsyncOperationControl::skipWaitOnDestroy().store(true);
     }
+
+    // tabs hold raw pointers into the databases: they go first
+    retireNodeHook = nullptr;
+    tabManager.reset();
 
     if (!fastShutdown) {
         for (auto& db : databases) {
@@ -353,16 +366,24 @@ void Application::cleanup() {
             }
         }
         workspaceDatabaseCache.clear();
+        // the factory deleter destroys them on the reaper
+        if (!Reaper::drain(std::chrono::seconds(3))) {
+            spdlog::info("Database teardown still running, exiting without it");
+            AsyncOperationControl::skipWaitOnDestroy().store(true);
+        } else {
+            Reaper::runInline();
+        }
         spdlog::debug("Databases disconnected");
     } else {
         if (signalShutdownRequested) {
             spdlog::info("Skipping database teardown during signal shutdown");
         } else if (pendingAsyncWork) {
             spdlog::info("Skipping database teardown during shutdown (async work still running)");
+        } else {
+            spdlog::info("Skipping database teardown during shutdown (teardown still running)");
         }
     }
 
-    tabManager.reset();
     databaseSidebar.reset();
     fileDialog.reset();
     spdlog::debug("Components cleaned up");
@@ -419,6 +440,10 @@ bool Application::hasPendingAsyncWork() const {
     if (databaseSidebar && databaseSidebar->hasRunningSqlDump()) {
         return true;
     }
+
+    // tab work (a query, a table load) runs outside any DatabaseInterface
+    if (AsyncOperationControl::hasRunningTasks())
+        return true;
 
     return std::ranges::any_of(databases, [](const std::shared_ptr<DatabaseInterface>& db) {
         return db && db->hasPendingAsyncWork();
@@ -487,6 +512,7 @@ void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
         (*it)->disconnect();
     }
 
+    // the factory's deleter destroys it on the reaper once the last owner lets go
     databases.erase(it);
 
     if (auto selected = selectedDatabase.lock(); selected && selected == db) {
@@ -515,27 +541,9 @@ void Application::restorePreviousConnections() {
     for (const auto& conn : savedConnections) {
         std::shared_ptr<DatabaseInterface> db = nullptr;
 
-        if (conn.connectionInfo.type == DatabaseType::POSTGRESQL ||
-            conn.connectionInfo.type == DatabaseType::REDSHIFT) {
-            db = std::make_shared<PostgresDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::MYSQL ||
-                   conn.connectionInfo.type == DatabaseType::MARIADB) {
-            db = std::make_shared<MySQLDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::SQLITE) {
-            db = std::make_shared<FileDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::DUCKDB) {
-            db = std::make_shared<FileDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::REDIS) {
-            db = std::make_shared<RedisDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::MONGODB) {
-            db = std::make_shared<MongoDBDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::MSSQL) {
-            db = std::make_shared<MSSQLDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::ORACLE) {
-            db = std::make_shared<OracleDatabase>(conn.connectionInfo);
-        } else if (conn.connectionInfo.type == DatabaseType::CASSANDRA) {
-            db = std::make_shared<CassandraDatabase>(conn.connectionInfo);
-        } else {
+        // through the factory: its deleter runs the destructor on the reaper
+        db = DatabaseFactory::createDatabase(conn.connectionInfo);
+        if (!db) {
             spdlog::warn("Unknown database type {} for connection '{}', skipping",
                          static_cast<int>(conn.connectionInfo.type), conn.connectionInfo.name);
             continue;
@@ -789,6 +797,15 @@ void Application::setCurrentWorkspace(const int workspaceId) {
         return;
     }
 
+    // the sidebar drops the hierarchies of the old workspace's connections, and a
+    // dump or pg_dump/pg_restore lives on its hierarchy
+    if (databaseSidebar && databaseSidebar->hasRunningSqlDump()) {
+        Alert::show("Switch Workspace",
+                    "Wait for the running import, export, backup or restore to finish "
+                    "before switching workspaces.");
+        return;
+    }
+
     // Keep current workspace connections in memory so we only load each workspace once.
     workspaceDatabaseCache[currentWorkspaceId] = std::move(databases);
 
@@ -861,6 +878,14 @@ bool Application::deleteWorkspace(const int workspaceId) {
     if (!appState || workspaceId == 1) {
         return false;
     }
+    // deleting the current workspace switches away, which a running dump refuses
+    if (currentWorkspaceId == workspaceId && databaseSidebar &&
+        databaseSidebar->hasRunningSqlDump()) {
+        Alert::show("Delete Workspace",
+                    "Wait for the running import, export, backup or restore to finish "
+                    "before deleting this workspace.");
+        return false;
+    }
 
     bool success = appState->deleteWorkspace(workspaceId);
 
@@ -892,11 +917,11 @@ bool Application::renameWorkspace(const int workspaceId, const std::string& name
 }
 
 void Application::refreshWorkspaceConnections() {
-    databases.clear();
-
+    // tabs hold raw pointers into the databases: they go first
     if (tabManager) {
         tabManager->closeAllTabs();
     }
+    databases.clear();
 
     if (auto cacheIt = workspaceDatabaseCache.find(currentWorkspaceId);
         cacheIt != workspaceDatabaseCache.end()) {

@@ -159,7 +159,7 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
     // Capture stderr so a failure can report ssh's actual complaint.
     char errTmpl[] = "/tmp/dearsql_ssh_err_XXXXXX";
     std::string errPath = "/dev/null";
-    if (int errFd = mkstemp(errTmpl); errFd >= 0) {
+    if (int errFd = mkostemp(errTmpl, O_CLOEXEC); errFd >= 0) {
         close(errFd);
         errPath = errTmpl;
     }
@@ -186,6 +186,11 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
 
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
+#if defined(__APPLE__)
+    // ssh lives as long as the connection: keep it from holding other pipes open
+    // (a pg_dump or agent pipe would then never see EOF). linux relies on O_CLOEXEC
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
 
     int rc = posix_spawnp(&sshPid_, "ssh", &actions, &attr, const_cast<char* const*>(argv.data()),
                           needAskPass ? const_cast<char* const*>(envp.data()) : environ);
@@ -241,15 +246,16 @@ std::pair<bool, std::string> SSHTunnel::start(const SSHConfig& ssh, const std::s
 void SSHTunnel::stop() {
     if (sshPid_ > 0) {
         kill(sshPid_, SIGTERM);
-        // Give it a moment to exit gracefully
+        // a short grace period (this can run on the ui thread), then SIGKILL. once
+        // reaped the pid may already belong to another process: never signal it again
         int status = 0;
-        for (int i = 0; i < 10; ++i) {
-            if (waitpid(sshPid_, &status, WNOHANG) != 0)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        bool reaped = false;
+        for (int i = 0; i < 20 && !reaped; ++i) {
+            reaped = waitpid(sshPid_, &status, WNOHANG) != 0;
+            if (!reaped)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        // Force kill if still alive
-        if (kill(sshPid_, 0) == 0) {
+        if (!reaped) {
             kill(sshPid_, SIGKILL);
             waitpid(sshPid_, &status, 0);
         }
@@ -343,7 +349,7 @@ std::string SSHTunnel::createAskPassScript(const std::string& secret) const {
     }
 
     char tmpl[] = "/tmp/ssh_askpass_XXXXXX";
-    int fd = mkstemp(tmpl);
+    int fd = mkostemp(tmpl, O_CLOEXEC);
     if (fd < 0)
         return "";
 

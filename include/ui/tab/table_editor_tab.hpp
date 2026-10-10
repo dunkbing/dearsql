@@ -1,5 +1,6 @@
 #pragma once
 
+#include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "database/db_interface.hpp"
 #include "ui/auto_complete_input.hpp"
@@ -19,6 +20,7 @@ class TableEditorTab final : public Tab {
 public:
     TableEditorTab(IDatabaseNode* node, const std::string& schema);
     TableEditorTab(IDatabaseNode* node, const Table& table, const std::string& schema);
+    ~TableEditorTab() override;
 
     void render() override;
     [[nodiscard]] bool hasUnsavedChanges() const override {
@@ -57,6 +59,11 @@ private:
     char defaultValue[256] = "";
 
     std::string errorMessage;
+    // the create / alter statements run here; the error, empty on success
+    AsyncOperation<std::string> executeOp_;
+    void startExecute();
+    void checkExecute(bool& closeRequested);
+    bool closePreview_ = false; // a failed execute keeps the preview open
     dearsql::TextEditor previewEditor;
     std::unique_ptr<AutoCompleteInput> columnTypeAutoComplete;
     bool showPreviewPopup = false;

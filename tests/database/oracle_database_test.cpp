@@ -467,3 +467,25 @@ TEST_F(OracleDatabaseNodeTest, ExecuteQueryViaDatabaseNode) {
     ASSERT_FALSE(result.statements.empty());
     EXPECT_FALSE(result.statements[0].tableData.empty());
 }
+
+// cancel breaks a running statement through dpiConn_breakExecution (a cpu-bound
+// query: DBMS_SESSION.SLEEP does not notice an in-band break, as over docker desktop)
+TEST_F(OracleDatabaseNodeTest, CancelQueriesOnUnblocksWorker) {
+    AsyncOperation<QueryResult> op;
+    op.start([this] {
+        return dbNode->executeQuery(
+            "SELECT COUNT(*) FROM all_objects a, all_objects b, all_objects c");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // let it reach the server
+
+    const auto start = std::chrono::steady_clock::now();
+    ConnectionPoolBase::cancelQueriesOn(op.workerId());
+    const QueryResult result = op.waitAndGet();
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_NE(result.errorMessage().find("ORA-01013"), std::string::npos) << result.errorMessage();
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+
+    const auto after = dbNode->executeQuery("SELECT 1 FROM DUAL");
+    EXPECT_TRUE(after.success()) << after.errorMessage();
+}

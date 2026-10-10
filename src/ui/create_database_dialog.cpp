@@ -101,15 +101,16 @@ void CreateDatabaseDialog::show(Application* app, std::shared_ptr<DatabaseInterf
 void CreateDatabaseDialog::startPostgresOptionsLoad() {
     loadingOptions_ = true;
 
-    auto db = db_;
-    optionsOp_.start([db]() {
+    // the worker talks to the library only: the server object's nodes and
+    // loaders belong to the UI thread
+    optionsOp_.start([conn = db_->libConnection()]() {
         PgOptions opts;
-        auto* executor = dynamic_cast<IQueryExecutor*>(db.get());
+        auto executor = conn ? conn->openDatabase() : nullptr;
         if (!executor)
             return opts;
 
         try {
-            auto result = executor->executeQuery("SELECT rolname FROM pg_roles ORDER BY rolname");
+            auto result = executor->execute("SELECT rolname FROM pg_roles ORDER BY rolname");
             if (result.success()) {
                 for (const auto& row : result[0].tableData) {
                     if (!row.empty())
@@ -121,7 +122,7 @@ void CreateDatabaseDialog::startPostgresOptionsLoad() {
         }
 
         try {
-            auto result = executor->executeQuery(
+            auto result = executor->execute(
                 "SELECT datname FROM pg_database WHERE datistemplate ORDER BY datname");
             if (result.success()) {
                 opts.templates.push_back("template1");
@@ -135,8 +136,7 @@ void CreateDatabaseDialog::startPostgresOptionsLoad() {
         }
 
         try {
-            auto result =
-                executor->executeQuery("SELECT spcname FROM pg_tablespace ORDER BY spcname");
+            auto result = executor->execute("SELECT spcname FROM pg_tablespace ORDER BY spcname");
             if (result.success()) {
                 for (const auto& row : result[0].tableData) {
                     if (!row.empty())
@@ -241,11 +241,8 @@ void CreateDatabaseDialog::pollCreate() {
     createOp_.check([this](std::pair<bool, std::string> result) {
         if (result.first) {
             // refresh the sidebar's database list
-            if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db_.get())) {
-                pgDb->refreshDatabaseNames();
-            } else if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db_.get())) {
-                mysqlDb->refreshDatabaseNames();
-            }
+            if (db_)
+                db_->refreshDatabaseNames();
             closeRequested_ = true;
         } else {
             setStatus("Failed: " + result.second, true);

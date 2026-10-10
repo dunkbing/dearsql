@@ -110,10 +110,21 @@ void TableRenderer::setColumns(const std::vector<std::string>& columnNames) {
 
 void TableRenderer::setData(const std::vector<std::vector<std::string>>& tableData) {
     data = tableData;
+    dropStaleEdit();
 }
 
 void TableRenderer::setData(std::vector<std::vector<std::string>>&& tableData) {
     data = std::move(tableData);
+    dropStaleEdit();
+}
+
+void TableRenderer::dropStaleEdit() {
+    if (editingRow < 0 || editingCol < 0)
+        return;
+    if (editingRow < static_cast<int>(data.size()) &&
+        editingCol < static_cast<int>(data[editingRow].size()))
+        return;
+    exitEditMode(false);
 }
 
 void TableRenderer::setCellEditedStatus(const std::vector<std::vector<bool>>& editedCellsStatus) {

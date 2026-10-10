@@ -164,8 +164,10 @@ namespace AcpAgents {
             return std::string(envPath ? envPath : "");
 #else
             const char* shell = std::getenv("SHELL");
+            // a hung shell profile must not block agent lookup forever
             const ProcessResult res = ProcessRunner::run(
-                {.args = {shell && *shell ? shell : "/bin/sh", "-l", "-c", "printf %s \"$PATH\""}});
+                {.args = {shell && *shell ? shell : "/bin/sh", "-l", "-c", "printf %s \"$PATH\""},
+                 .timeout = std::chrono::seconds(5)});
             if (!res.success || res.output.empty()) {
                 spdlog::warn("ACP: could not read login shell PATH: {}", res.errorMessage);
                 const char* envPath = std::getenv("PATH");
@@ -271,11 +273,11 @@ namespace AcpAgents {
         return nullptr;
     }
 
-    ProcessResult runInstall(const std::string& command) {
+    ProcessResult runInstall(const std::string& command, std::stop_token stop) {
 #if defined(_WIN32)
-        return ProcessRunner::run({.args = {"cmd.exe", "/d", "/s", "/c", command}});
+        return ProcessRunner::run({.args = {"cmd.exe", "/d", "/s", "/c", command}}, stop);
 #else
-        return ProcessRunner::run({.args = {"/bin/sh", "-lc", command}});
+        return ProcessRunner::run({.args = {"/bin/sh", "-lc", command}}, stop);
 #endif
     }
 
@@ -286,7 +288,9 @@ void AcpAgentInstaller::start(const std::string& installCmd) {
         return;
     }
     result_ = {};
-    op_.start([installCmd] { return AcpAgents::runInstall(installCmd); });
+    // the stop token kills the install when the panel goes away
+    op_.startCancellable(
+        [installCmd](std::stop_token stop) { return AcpAgents::runInstall(installCmd, stop); });
 }
 
 bool AcpAgentInstaller::isRunning() const {

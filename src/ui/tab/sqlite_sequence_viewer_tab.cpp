@@ -127,7 +127,7 @@ void SQLiteSequenceViewerTab::fetchAsync() {
     auto* db = db_;
     const std::string name = sequenceName_;
 
-    fetchOp_.start([db, name]() -> FetchResult {
+    fetchOp_.start([db, keep = db->keepAlive(), name]() -> FetchResult {
         FetchResult r;
         try {
             // escape single quotes for safe SQL literal
@@ -180,4 +180,9 @@ void SQLiteSequenceViewerTab::checkFetchStatus() {
         value_ = r.value;
         loaded_ = true;
     });
+}
+
+// never join on close: the task holds the database, not the tab
+SQLiteSequenceViewerTab::~SQLiteSequenceViewerTab() {
+    fetchOp_.detach();
 }

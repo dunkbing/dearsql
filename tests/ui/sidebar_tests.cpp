@@ -3,6 +3,7 @@
 #include "database/file_database.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
+#include <format>
 
 // helper function to create a test database
 static std::shared_ptr<DatabaseInterface> createTestDatabase(const std::string& name) {
@@ -131,10 +132,9 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         app.addDatabase(testDb);
         ctx->Yield(3); // wait for async loading
 
-        // try to find and click the database tree node
-        // note: actual ImGui ID depends on sidebar implementation
-        // this is a placeholder for tree node interaction
-        ctx->ItemOpen("*/Databases");
+        // "Databases" is the sidebar window; the connection row is keyed on its pointer
+        ctx->SetRef("Databases");
+        ctx->ItemOpen(std::format("**/###db_{:p}", static_cast<const void*>(testDb.get())).c_str());
         ctx->Yield();
 
         // cleanup
@@ -213,6 +213,12 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
     // test: workspace switching
     t = IM_REGISTER_TEST(engine, "Sidebar", "Workspace Switching");
     t->TestFunc = [](ImGuiTestContext* ctx) {
+#ifdef __APPLE__
+        // createWorkspace refreshes the titlebar dropdown (NSButton sizeToFit), which
+        // deadlocks on SwiftUI's graph lock when called from inside a test frame
+        ctx->LogWarning("skipped on macOS: titlebar refresh deadlocks mid-frame");
+        return;
+#endif
         auto& app = Application::getInstance();
 
         // get current workspace

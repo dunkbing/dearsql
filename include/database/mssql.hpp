@@ -8,16 +8,12 @@ class MSSQLDatabase final : public ServerDatabase<MSSQLDatabaseNode> {
 public:
     using ServerDatabase::ServerDatabase;
 
+protected:
     // dropping the connected database moves the connection to master
-    std::pair<bool, std::string> dropDatabase(const std::string& name) override {
-        const bool current = name == connectionInfo.database;
-        auto status = ServerDatabase::dropDatabase(name);
-        if (status.first && current)
-            connectionInfo.database = "master";
-        return status;
+    std::string databaseAfterDrop(const std::string&, const std::string&) override {
+        return "master";
     }
 
-protected:
     std::unique_ptr<MSSQLDatabaseNode> makeNode(const std::string& name) override {
         auto node = std::make_unique<MSSQLDatabaseNode>();
         node->name = name;

@@ -28,6 +28,11 @@ RedisStatusPanel::RedisStatusPanel(RedisDatabase* db) : db_(db) {
     lastRefreshAt_ = std::chrono::steady_clock::time_point::min();
 }
 
+// never join a status poll on close: the task keeps the connection alive
+RedisStatusPanel::~RedisStatusPanel() {
+    loadOp_.detach();
+}
+
 void RedisStatusPanel::setDatabase(RedisDatabase* db) {
     db_ = db;
 }
@@ -58,7 +63,7 @@ void RedisStatusPanel::tick() {
         return;
     }
 
-    loading_ = loadOp_.start([db]() { return fetchStatus(db); });
+    loading_ = loadOp_.start([db, keep = db->keepAlive()]() { return fetchStatus(db); });
 }
 
 std::string RedisStatusPanel::readFirstCell(const QueryResult& result) {

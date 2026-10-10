@@ -3,6 +3,9 @@
 #include "db.hpp"
 #include "db_interface.hpp"
 #include "query_executor.hpp"
+#include "utils/reaper.hpp"
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -23,6 +26,17 @@ public:
     virtual ~IDatabaseNode() = default;
 
     [[nodiscard]] virtual DatabaseInterface* ownerDatabase() const {
+        return nullptr;
+    }
+
+    // the node this one lives under (a schema's database); null at the top
+    [[nodiscard]] virtual IDatabaseNode* parentNode() const {
+        return nullptr;
+    }
+
+    // keeps the node from finishing destruction while held; null where teardown
+    // never waits on workers
+    [[nodiscard]] virtual std::shared_ptr<void> pin() {
         return nullptr;
     }
 
@@ -107,3 +121,38 @@ public:
 
     virtual void checkTableRefreshStatusAsync(const std::string& tableName) = 0;
 };
+
+// UI thread only. a live owner hands over a node it is about to destroy (a
+// database dropped or renamed, a schema gone from a relist) so the app can close
+// the tabs pointing into it first. the node then dies on the reaper: its
+// destructor waits for workers still running on it
+inline std::function<void(std::unique_ptr<IDatabaseNode>)> retireNodeHook;
+
+inline void retireNode(std::unique_ptr<IDatabaseNode> node) {
+    if (!node)
+        return;
+    if (retireNodeHook)
+        retireNodeHook(std::move(node));
+    else
+        Reaper::dispose(std::move(node));
+}
+
+// for a tab worker that may outlive its tab: owns the node's connection and pins
+// the node and its parents, so a node retired meanwhile (dropped, renamed, gone
+// from a relist) waits for the worker. take it on the UI thread, where the node
+// is still alive
+inline std::shared_ptr<void> keepOwnerAlive(IDatabaseNode* node) {
+    if (!node)
+        return nullptr;
+    auto* owner = node->ownerDatabase();
+    std::shared_ptr<void> conn = owner ? owner->keepAlive() : nullptr;
+    std::vector<std::shared_ptr<void>> pins; // the node first, then its parents
+    for (auto* n = node; n; n = n->parentNode())
+        pins.push_back(n->pin());
+    // released child first, the connection last
+    return {nullptr, [conn = std::move(conn), pins = std::move(pins)](void*) mutable {
+                for (auto& p : pins)
+                    p.reset();
+                conn.reset();
+            }};
+}

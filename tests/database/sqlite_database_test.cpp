@@ -1,6 +1,8 @@
 #include "database/file_database.hpp"
 
 #include <chrono>
+#include <filesystem>
+#include <format>
 #include <gtest/gtest.h>
 #include <thread>
 
@@ -154,6 +156,25 @@ TEST_F(SQLiteDatabaseFixture, DropTableRemovesTable) {
     EXPECT_TRUE(check[0].tableData.empty());
 }
 
+// regression: a reload asked for while a table load ran was dropped (the load
+// counts as running until check() applies it), leaving a dropped table listed
+TEST_F(SQLiteDatabaseFixture, DropTableDuringLoadLeavesNoStaleTable) {
+    ASSERT_TRUE(database_->executeQuery("CREATE TABLE doomed (id INTEGER)").success());
+    database_->startTablesLoadAsync(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // lists the table
+    ASSERT_TRUE(database_->tablesLoader.isRunning());
+
+    auto [ok, err] = database_->dropTable("doomed");
+    ASSERT_TRUE(ok) << err;
+    for (int i = 0; i < 300 && database_->isLoadingTables(); ++i) {
+        database_->checkLoadingStatus();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_FALSE(database_->isLoadingTables());
+    for (const auto& t : database_->getTables())
+        EXPECT_NE(t.name, "doomed");
+}
+
 TEST_F(SQLiteDatabaseFixture, DropColumnRemovesColumn) {
     auto r = database_->executeQuery(
         "CREATE TABLE col_test (id INTEGER PRIMARY KEY, keep_me TEXT, drop_me TEXT)");
@@ -184,4 +205,33 @@ TEST_F(SQLiteDatabaseFixture, DropNonexistentTableFails) {
     auto [ok, err] = database_->dropTable("nonexistent");
     EXPECT_FALSE(ok);
     EXPECT_FALSE(err.empty());
+}
+
+// regression: ~FileDatabase freed its handle and loaders while the base
+// connection worker (or a loader) still ran on `this`
+TEST(SQLiteDatabaseLifetime, DestroyedMidConnectAndLoad) {
+    const auto path =
+        (std::filesystem::temp_directory_path() / "dearsql_lifetime_test.db").string();
+    std::filesystem::remove(path);
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::SQLITE;
+    info.path = path;
+    {
+        FileDatabase seed(info);
+        ASSERT_TRUE(seed.connect().first);
+        for (int i = 0; i < 200; ++i)
+            seed.executeQuery(std::format("CREATE TABLE t{} (id INTEGER PRIMARY KEY, v TEXT)", i));
+    }
+    for (int i = 0; i < 20; ++i) {
+        auto db = std::make_unique<FileDatabase>(info);
+        db->startConnectionAsync();
+        db.reset();
+
+        db = std::make_unique<FileDatabase>(info);
+        ASSERT_TRUE(db->connect().first);
+        db->startTablesLoadAsync(true);
+        db->startViewsLoadAsync(true);
+        db.reset();
+    }
+    std::filesystem::remove(path);
 }

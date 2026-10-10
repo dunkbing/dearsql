@@ -43,6 +43,30 @@ namespace AsyncOperationControl {
         return getRunningTaskCount() > 0;
     }
 
+    // work the app does not own (an agent process starting, a stream) still shows a
+    // spinner: drawing one asks for frames a little longer, so the loop never idles
+    // under visible progress
+    inline std::atomic<std::int64_t>& framesWantedUntilMs() {
+        static std::atomic<std::int64_t> until{0};
+        return until;
+    }
+
+    inline std::int64_t steadyNowMs() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
+    inline void requestFrames(std::chrono::milliseconds for_ = std::chrono::milliseconds(250)) {
+        framesWantedUntilMs().store(steadyNowMs() + for_.count(), std::memory_order_relaxed);
+    }
+
+    // what the frame loop checks: running tasks or anything visibly in progress
+    inline bool wantsFrames() {
+        return hasRunningTasks() ||
+               steadyNowMs() < framesWantedUntilMs().load(std::memory_order_relaxed);
+    }
+
     inline void resetCancelledTaskCount() {
         cancelledTaskCount().store(0, std::memory_order_relaxed);
     }
@@ -127,7 +151,8 @@ public:
 
         std::promise<ResultType> resultPromise;
         auto resultFuture = resultPromise.get_future();
-        auto runningTaskScope = std::make_shared<AsyncOperationControl::RunningTaskScope>();
+        auto runningTaskScope =
+            wakesFrames_ ? std::make_shared<AsyncOperationControl::RunningTaskScope>() : nullptr;
         std::jthread worker(
             [task = std::move(task), promise = std::move(resultPromise),
              runningTaskScope = std::move(runningTaskScope)](std::stop_token stopToken) mutable {
@@ -217,6 +242,20 @@ public:
             waitForOperation(zombie);
     }
 
+    // long-lived loops (a listener, a subscription) set false so they do not keep the
+    // frame loop rendering for as long as they run
+    void setWakesFrames(bool wakes) {
+        wakesFrames_ = wakes;
+    }
+
+    // a worker thread still running, cancelled or not: destroying this would join it
+    [[nodiscard]] bool hasLiveWorker() {
+        reapZombies();
+        return !zombieOperations.empty() ||
+               (activeOperation.has_value() && activeOperation->future.valid() &&
+                !isReady(activeOperation->future));
+    }
+
     // id of the running worker thread (default-constructed when idle)
     [[nodiscard]] std::thread::id workerId() const {
         return activeOperation.has_value() ? activeOperation->worker.get_id() : std::thread::id{};
@@ -228,6 +267,11 @@ public:
      */
     void detach() {
         running = false;
+        // a task that polls its token can bail out early
+        if (activeOperation.has_value())
+            activeOperation->worker.request_stop();
+        for (auto& zombie : zombieOperations)
+            zombie.worker.request_stop();
         releaseOperation(activeOperation);
         for (auto& zombie : zombieOperations) {
             releaseOperation(zombie);
@@ -326,4 +370,5 @@ private:
     std::atomic<bool> running{false};
     std::optional<OperationState> activeOperation;
     std::vector<OperationState> zombieOperations;
+    bool wakesFrames_ = true;
 };

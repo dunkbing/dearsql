@@ -6,8 +6,10 @@
 #include "sql_builder.hpp"
 #include "table_data_provider.hpp"
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <mutex>
+#include <ranges>
 
 // single-file backends (SQLite, DuckDB, CSV via DuckDB): connection + node in one
 // class. libdearsql does the database work; this keeps the async loaders, the
@@ -20,6 +22,13 @@ public:
         connectionInfo = info;
     }
     ~FileDatabase() override {
+        // join every worker while the members they touch still exist
+        connectionOp.wait();
+        tablesLoader.wait();
+        viewsLoader.wait();
+        sequencesLoader.wait();
+        for (auto& loader : tableRefreshLoaders | std::views::values)
+            loader.wait();
         FileDatabase::disconnect();
     }
 
@@ -37,6 +46,7 @@ public:
                                                        const std::string& orderBy = "") override;
     std::vector<std::string> getColumnNames(const Table& table) override;
     int getRowCount(const Table& table, const std::string& whereClause = "") override;
+    std::pair<bool, std::string> getTableDdl(const Table& table) override;
     void startTableRefreshAsync(const std::string& tableName) override;
 
     const std::string& getPath() const {
@@ -93,8 +103,9 @@ public:
     [[nodiscard]] bool isViewsLoaded() const override {
         return viewsLoaded;
     }
+    // a reload a DDL asked for counts: checkLoadingStatus starts it
     [[nodiscard]] bool isLoadingTables() const override {
-        return tablesLoader.isRunning();
+        return tablesLoader.isRunning() || tablesReloadPending_;
     }
     [[nodiscard]] bool isLoadingViews() const override {
         return viewsLoader.isRunning();
@@ -110,6 +121,15 @@ public:
     void startTablesLoadAsync(bool forceRefresh = false) override {
         spdlog::debug("startTablesLoadAsync for file database{}",
                       (forceRefresh ? " (force refresh)" : ""));
+
+        // a forced reload during a load runs once more after it
+        if (tablesLoader.isRunning()) {
+            if (forceRefresh)
+                tablesReloadPending_ = true;
+            return;
+        }
+        if (tablesReloadPending_.exchange(false))
+            forceRefresh = true;
 
         if (forceRefresh) {
             tables.clear();
@@ -181,6 +201,8 @@ public:
             tablesLoaded = true;
             spdlog::debug("Table loading completed. Found {} tables", tables.size());
         });
+        if (tablesReloadPending_ && !tablesLoader.isRunning())
+            startTablesLoadAsync(true);
         viewsLoader.check([this](LoadResult<Table> result) {
             views = std::move(result.items);
             lastViewsError = std::move(result.error);
@@ -264,6 +286,7 @@ private:
     std::shared_ptr<dearsql::IConnection> conn_;
     dearsql::DatabasePtr db_;
     mutable std::mutex handleMutex_;
+    std::atomic<bool> tablesReloadPending_{false}; // set by DDL on any thread
 
 protected:
     std::vector<Table> tables;

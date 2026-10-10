@@ -7,42 +7,52 @@
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "utils/reaper.hpp"
+
+namespace {
+    // whoever lets go last, the destructor (it joins connect/list/load workers and
+    // closes the connection) runs on the reaper, never on the UI thread
+    template <typename T>
+    std::shared_ptr<DatabaseInterface> make(const DatabaseConnectionInfo& info) {
+        return std::shared_ptr<T>(new T(info), [](T* db) { Reaper::post([db] { delete db; }); });
+    }
+} // namespace
 
 std::shared_ptr<DatabaseInterface>
 DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
     switch (info.type) {
     case DatabaseType::SQLITE:
-        return std::make_shared<FileDatabase>(info);
+        return make<FileDatabase>(info);
 
     case DatabaseType::POSTGRESQL:
-        return std::make_shared<PostgresDatabase>(info);
+        return make<PostgresDatabase>(info);
 
     case DatabaseType::MYSQL:
-        return std::make_shared<MySQLDatabase>(info);
+        return make<MySQLDatabase>(info);
 
     case DatabaseType::REDIS:
-        return std::make_shared<RedisDatabase>(info);
+        return make<RedisDatabase>(info);
 
     case DatabaseType::MONGODB:
-        return std::make_shared<MongoDBDatabase>(info);
+        return make<MongoDBDatabase>(info);
 
     case DatabaseType::MARIADB:
-        return std::make_shared<MySQLDatabase>(info);
+        return make<MySQLDatabase>(info);
 
     case DatabaseType::MSSQL:
-        return std::make_shared<MSSQLDatabase>(info);
+        return make<MSSQLDatabase>(info);
 
     case DatabaseType::ORACLE:
-        return std::make_shared<OracleDatabase>(info);
+        return make<OracleDatabase>(info);
 
     case DatabaseType::REDSHIFT:
-        return std::make_shared<PostgresDatabase>(info);
+        return make<PostgresDatabase>(info);
 
     case DatabaseType::CASSANDRA:
-        return std::make_shared<CassandraDatabase>(info);
+        return make<CassandraDatabase>(info);
 
     case DatabaseType::DUCKDB:
-        return std::make_shared<FileDatabase>(info);
+        return make<FileDatabase>(info);
 
     default:
         return nullptr;

@@ -8,20 +8,12 @@ class PostgresDatabase final : public ServerDatabase<PostgresDatabaseNode> {
 public:
     using ServerDatabase::ServerDatabase;
 
+protected:
     // dropping the connected database moves the connection to the maintenance one
-    std::pair<bool, std::string> dropDatabase(const std::string& name) override {
-        if (name != connectionInfo.database)
-            return ServerDatabase::dropDatabase(name);
-        const std::string previous = connectionInfo.database;
-        connectionInfo.database =
-            connectionInfo.type == DatabaseType::REDSHIFT ? "dev" : "postgres";
-        auto status = ServerDatabase::dropDatabase(name);
-        if (!status.first)
-            connectionInfo.database = previous;
-        return status;
+    std::string databaseAfterDrop(const std::string&, const std::string&) override {
+        return connectionInfo.type == DatabaseType::REDSHIFT ? "dev" : "postgres";
     }
 
-protected:
     std::unique_ptr<PostgresDatabaseNode> makeNode(const std::string& name) override {
         auto node = std::make_unique<PostgresDatabaseNode>();
         node->name = name;

@@ -1,6 +1,7 @@
 #include "database/cassandra.hpp"
 #include "test_helpers.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <format>
@@ -215,4 +216,30 @@ TEST_F(CassandraDatabaseIntegrationTest, RowCountReturnsExpectedValue) {
     t.name = table;
     t.schema = keyspace_;
     EXPECT_EQ(node->getRowCount(t), 5);
+}
+
+// close() while catalog queries run on another thread must not free the
+// session under them
+TEST_F(CassandraDatabaseIntegrationTest, CloseDuringCatalogLoadIsSafe) {
+    auto conn = database->libConnection();
+    ASSERT_NE(conn, nullptr);
+    auto db = conn->database("system_schema");
+    ASSERT_NE(db, nullptr);
+
+    std::atomic<bool> stop = false;
+    std::thread loader([&] {
+        while (!stop) {
+            try {
+                (void)db->tables();
+            } catch (const std::exception&) {
+            }
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    conn->close();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    stop = true;
+    loader.join();
+
+    EXPECT_TRUE(db->tables().empty()); // closed: no session
 }

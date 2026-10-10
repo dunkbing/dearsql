@@ -73,13 +73,20 @@ TableViewerTab::TableViewerTab(const std::string& name, std::string databasePath
 
 TableViewerTab::~TableViewerTab() {
     // a slow view must not freeze the ui on close: cancel it server-side so the
-    // pooled connection comes back, then let the worker unwind on its own.
-    // ponytail: the worker still holds node_, which outlives the tab until the
-    // connection is closed (closing waits on the pool session anyway)
+    // pooled connection comes back, then let the worker unwind on its own. the
+    // tasks keep the connection alive and stop between calls once detached
     if (dataLoadOp.isRunning()) {
         ConnectionPoolBase::cancelQueriesOn(dataLoadOp.workerId());
     }
     dataLoadOp.detach();
+    if (sqlExecutionOp.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(sqlExecutionOp.workerId());
+    }
+    sqlExecutionOp.detach();
+    if (ddlOp_.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(ddlOp_.workerId());
+    }
+    ddlOp_.detach();
 }
 
 void TableViewerTab::render() {
@@ -579,6 +586,12 @@ void TableViewerTab::selectCell(const int row, const int col) {
 }
 
 void TableViewerTab::loadDataAsync() {
+    // a sort or page-size change while a page loads: run once more after it with
+    // the latest state, instead of start() silently refusing it
+    if (dataLoadOp.isRunning()) {
+        reloadQueued_ = true;
+        return;
+    }
     hasLoadingError = false;
     loadingError.clear();
 
@@ -599,11 +612,15 @@ void TableViewerTab::loadDataAsync() {
     }
 
     // everything the worker needs is copied; it must not touch `this`
-    dataLoadOp.start([node = node_, table = table_, filter = currentFilter, orderByClause,
-                      limit = rowsPerPage, offset = currentPage * rowsPerPage]() {
+    dataLoadOp.startCancellable([node = node_, keep = keepOwnerAlive(node_), table = table_,
+                                 filter = currentFilter, orderByClause, limit = rowsPerPage,
+                                 offset = currentPage * rowsPerPage](std::stop_token stop) {
         LoadResult result;
         try {
             result.totalRows = node->getRowCount(table, filter);
+            // closed meanwhile: a retired node may be gone after the first call
+            if (stop.stop_requested())
+                return result;
             result.rows = node->getTableData(table, limit, offset, filter, orderByClause);
         } catch (const std::exception& e) {
             result.error = e.what();
@@ -618,6 +635,9 @@ void TableViewerTab::checkAsyncLoadStatus() {
             hasLoadingError = true;
             loadingError = std::move(result.error);
         } else {
+            // an open edit belongs to the rows being replaced
+            if (tableRenderer)
+                tableRenderer->exitEditMode(false);
             totalRows = result.totalRows;
             tableData = std::move(result.rows);
             originalData = tableData;
@@ -663,6 +683,11 @@ void TableViewerTab::checkAsyncLoadStatus() {
             QueryHistory::instance().add(query, static_cast<int>(tableData.size()));
         }
     });
+    // the page that just landed was asked for before the latest change
+    if (reloadQueued_ && !dataLoadOp.isRunning()) {
+        reloadQueued_ = false;
+        loadDataAsync();
+    }
 }
 
 std::vector<std::string> TableViewerTab::getPrimaryKeyColumns() const {
@@ -881,7 +906,8 @@ void TableViewerTab::showSaveConfirmationDialog() {
         } else {
             if (UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
-                sqlExecutionOp.start([node = node_, editedSQL]() -> std::pair<bool, std::string> {
+                sqlExecutionOp.start([node = node_, keep = keepOwnerAlive(node_),
+                                      editedSQL]() -> std::pair<bool, std::string> {
                     if (!node) {
                         return {false, "Error: Database does not support query execution"};
                     }
@@ -988,6 +1014,10 @@ void TableViewerTab::initializeTableRenderer() {
 
     // Set up callbacks
     tableRenderer->setOnCellEdit([this](int row, int col, const std::string& newValue) {
+        // a reload may have replaced the rows under the edit
+        if (row < 0 || row >= static_cast<int>(tableData.size()) || col < 0 ||
+            col >= static_cast<int>(tableData[row].size()))
+            return;
         // empty edit on a null cell means no change
         if (newValue.empty() && isNullSentinel(tableData[row][col])) {
             return;
@@ -1035,7 +1065,8 @@ void TableViewerTab::initializeTableRenderer() {
     });
 
     tableRenderer->setOnSetNull([this](int row, int col) {
-        if (row < 0 || row >= static_cast<int>(tableData.size()))
+        if (row < 0 || row >= static_cast<int>(tableData.size()) || col < 0 ||
+            col >= static_cast<int>(tableData[row].size()))
             return;
         if (isNullSentinel(tableData[row][col]))
             return;
@@ -1308,6 +1339,11 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
                 renderMetadataTab();
                 ImGui::EndTabItem();
             }
+            if (hasDdl() && ImGui::BeginTabItem("DDL")) {
+                activeRightPanelTab = 2;
+                renderDdlTab();
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
     }
@@ -1434,6 +1470,63 @@ void TableViewerTab::renderValueTab() {
             valuePanelBufferDirty = false;
         }
     }
+}
+
+// tables only: views, materialized views, MongoDB collections and Redis keys have
+// no CREATE TABLE
+bool TableViewerTab::hasDdl() const {
+    if (!node_ || !dynamic_cast<ITableDataProvider*>(node_))
+        return false;
+    const auto type = node_->getDatabaseType();
+    if (type == DatabaseType::MONGODB || type == DatabaseType::REDIS)
+        return false;
+    return std::ranges::any_of(node_->getTables(),
+                               [&](const Table& t) { return t.name == table_.name; });
+}
+
+void TableViewerTab::startDdlLoad() {
+    auto* provider = dynamic_cast<ITableDataProvider*>(node_);
+    if (!provider || ddlOp_.isRunning())
+        return;
+    ddlRequested_ = true;
+    ddlOp_.start([provider, table = table_, keep = keepOwnerAlive(node_)] {
+        return provider->getTableDdl(table);
+    });
+}
+
+void TableViewerTab::renderDdlTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    if (!ddlRequested_) {
+        ddlEditor_.SetLanguage(dearsql::TextEditor::Language::SQL);
+        ddlEditor_.SetShowLineNumbers(false);
+        ddlEditor_.SetReadOnly(true);
+        startDdlLoad();
+    }
+    ddlOp_.check([this](std::pair<bool, std::string> result) {
+        ddlError_ = result.first ? "" : std::move(result.second);
+        ddlEditor_.SetText(result.first ? result.second : "");
+    });
+
+    if (ddlOp_.isRunning()) {
+        UIUtils::Spinner("##ddl_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        ImGui::SameLine();
+        ImGui::TextColored(colors.subtext0, "Reading DDL...");
+        return;
+    }
+    if (ImGui::SmallButton(ICON_FA_COPY " Copy"))
+        ImGui::SetClipboardText(ddlEditor_.GetText().c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_ROTATE " Refresh"))
+        startDdlLoad();
+    if (!ddlError_.empty()) {
+        ImGui::PushTextWrapPos();
+        ImGui::TextColored(colors.red, "%s", ddlError_.c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
+        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+    ddlEditor_.Render("##ddl_editor", ImVec2(-1, -1), false);
 }
 
 void TableViewerTab::renderMetadataTab() {

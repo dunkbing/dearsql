@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/spinner.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -138,6 +139,7 @@ TableEditorTab::TableEditorTab(IDatabaseNode* node, const Table& table, const st
 
 void TableEditorTab::render() {
     bool closeRequested = false;
+    checkExecute(closeRequested);
     renderContent(closeRequested);
     if (closeRequested) {
         requestClose();
@@ -619,38 +621,19 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (UIUtils::Button("Execute", UIUtils::ButtonVariant::Primary, ImVec2(120, 0))) {
-        if (dbNode) {
-            if (editorMode == TableEditorMode::Create) {
-                Table resultTable = buildResultTable();
-                spdlog::debug("Creating table: {}", resultTable.name);
-                auto [success, error] = dbNode->createTable(resultTable);
-                if (success) {
-                    dbNode->startTablesLoadAsync(true);
-                } else {
-                    errorMessage = error;
-                }
-            } else {
-                const auto statements = generateAlterTableStatements();
-                for (const auto& sql : statements) {
-                    spdlog::debug("Executing: {}", sql);
-                    auto result = dbNode->executeQuery(sql);
-                    if (!result.success()) {
-                        errorMessage = result.errorMessage();
-                        break;
-                    }
-                }
-                if (errorMessage.empty()) {
-                    dbNode->startTablesLoadAsync(true);
-                }
-            }
-        }
-
-        if (errorMessage.empty()) {
-            dirty = false;
-            ImGui::CloseCurrentPopup();
-            closeRequested = true;
-        }
+    const bool executing = executeOp_.isRunning();
+    ImGui::BeginDisabled(executing);
+    if (UIUtils::Button("Execute", UIUtils::ButtonVariant::Primary, ImVec2(120, 0)))
+        startExecute();
+    ImGui::EndDisabled();
+    if (executing) {
+        ImGui::SameLine();
+        UIUtils::Spinner("##executing_ddl", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Executing...");
+    } else if (closePreview_) {
+        closePreview_ = false;
+        ImGui::CloseCurrentPopup();
     }
 
     ImGui::SameLine();
@@ -1074,4 +1057,55 @@ void TableEditorTab::reset() {
     previewEditor.SetShowLineNumbers(false);
     dirty = false;
     dbNode = nullptr;
+}
+
+TableEditorTab::~TableEditorTab() {
+    // the statements hold the node and its connection themselves: let them finish
+    executeOp_.detach();
+}
+
+void TableEditorTab::startExecute() {
+    if (!dbNode || executeOp_.isRunning())
+        return;
+    errorMessage.clear();
+    std::vector<std::string> statements;
+    Table resultTable;
+    const bool create = editorMode == TableEditorMode::Create;
+    if (create)
+        resultTable = buildResultTable();
+    else
+        statements = generateAlterTableStatements();
+    // a worker: a lock wait or a slow ALTER must not freeze the ui
+    executeOp_.start([node = dbNode, keep = keepOwnerAlive(dbNode), create,
+                      resultTable = std::move(resultTable),
+                      statements = std::move(statements)]() -> std::string {
+        if (create) {
+            spdlog::debug("Creating table: {}", resultTable.name);
+            auto [success, error] = node->createTable(resultTable);
+            return success ? "" : (error.empty() ? "Create table failed" : error);
+        }
+        for (const auto& sql : statements) {
+            spdlog::debug("Executing: {}", sql);
+            auto result = node->executeQuery(sql);
+            if (!result.success()) {
+                auto error = result.errorMessage();
+                return error.empty() ? "Statement failed" : error;
+            }
+        }
+        return "";
+    });
+}
+
+void TableEditorTab::checkExecute(bool& closeRequested) {
+    executeOp_.check([&](const std::string& error) {
+        if (!error.empty()) {
+            errorMessage = error;
+            return;
+        }
+        if (dbNode)
+            dbNode->startTablesLoadAsync(true);
+        dirty = false;
+        closePreview_ = true;
+        closeRequested = true;
+    });
 }

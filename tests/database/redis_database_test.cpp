@@ -1,6 +1,7 @@
 #include "database/redis.hpp"
 #include "test_helpers.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -216,4 +217,44 @@ TEST_F(RedisDatabaseIntegrationTest, PingCommand) {
     auto result = database->executeQuery("PING");
     ASSERT_FALSE(result.empty());
     EXPECT_TRUE(result[0].success);
+}
+
+// regression: ~RedisDatabase tore down its connection while the base connect
+// worker (or the db-info load) still ran on `this`
+TEST_F(RedisDatabaseIntegrationTest, DestroyedMidConnect) {
+    for (int i = 0; i < 20; ++i) {
+        auto db = std::make_unique<RedisDatabase>(database->getConnectionInfo());
+        db->startConnectionAsync();
+        db.reset();
+
+        db = std::make_unique<RedisDatabase>(database->getConnectionInfo());
+        ASSERT_TRUE(db->connect().first);
+        db->startDbInfoLoadAsync(true);
+        db->refreshConnection();
+        db.reset();
+    }
+}
+
+// regression: closing a Redis tab joined its worker, so a blocking command froze
+// the UI. tabs now detach; the task holds an owning reference so the connection
+// survives being removed while the command still runs
+TEST_F(RedisDatabaseIntegrationTest, DetachedCommandOutlivesItsOwner) {
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    {
+        AsyncOperation<bool> op;
+        RedisDatabase* raw = database.get();
+        op.start([raw, keep = raw->keepAlive(), done] {
+            raw->executeQuery("BLPOP dearsql_detach_test_none 2");
+            *done = true;
+            return true;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        const auto start = std::chrono::steady_clock::now();
+        op.detach(); // what the tab destructor does
+        EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(100));
+    }
+    database.reset(); // the connection is removed while BLPOP still blocks
+    for (int i = 0; i < 100 && !*done; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_TRUE(*done);
 }

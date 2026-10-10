@@ -2,6 +2,7 @@
 
 #include "ai/ai_client.hpp"
 #include "database/async_helper.hpp"
+#include "database/db.hpp"
 #include <functional>
 #include <stop_token>
 #include <string>
@@ -29,8 +30,21 @@ public:
     [[nodiscard]] bool isBuildingPrompt() const;
 
 private:
-    [[nodiscard]] std::string buildSystemPrompt(std::stop_token stopToken = {}) const;
-    [[nodiscard]] std::string buildSchemaContext(std::stop_token stopToken = {}) const;
+    // what the prompt needs, copied on the UI thread: the worker never reads the
+    // live node (its table vectors are replaced by loaders) or the editor text
+    struct PromptInput {
+        std::string dbType;
+        bool isMongo = false;
+        bool tablesLoaded = false;
+        std::vector<Table> tables;
+        std::vector<std::string> views;
+        std::string sql;
+    };
+    [[nodiscard]] PromptInput snapshotPromptInput() const;
+    [[nodiscard]] static std::string buildSystemPrompt(const PromptInput& in,
+                                                       std::stop_token stopToken = {});
+    [[nodiscard]] static std::string buildSchemaContext(const PromptInput& in,
+                                                        std::stop_token stopToken = {});
 
     IDatabaseNode* node_;
     std::vector<AIChatMessage> messages_;

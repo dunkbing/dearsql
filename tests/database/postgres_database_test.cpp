@@ -1,10 +1,12 @@
 #include "database/postgresql.hpp"
 #include "test_helpers.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <format>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <thread>
@@ -159,6 +161,37 @@ TEST_F(PostgresDatabaseIntegrationTest, ExecuteQueryStructuredReadsInsertedRows)
     }
 }
 
+// a capped SELECT on a big table streams and stops after the limit instead of
+// downloading every row; the connection stays usable and batches still run whole
+TEST_F(PostgresDatabaseIntegrationTest, CappedSelectStopsAfterTheLimit) {
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+    auto setup = database->executeQuery(
+        std::format(R"(CREATE TABLE "{0}" AS SELECT g AS id, repeat('x', 200) AS pad
+                       FROM generate_series(1, 300000) g)",
+                    tableName));
+    ASSERT_TRUE(setup.success()) << setup.errorMessage();
+
+    auto r = dbNode->executeQuery(std::format(R"(SELECT * FROM "{}")", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+    ASSERT_EQ(r.statements.size(), 1u);
+    EXPECT_EQ(r.statements[0].tableData.size(), 1000u);
+    EXPECT_NE(r.statements[0].message.find("not fetched"), std::string::npos)
+        << r.statements[0].message;
+
+    auto count = dbNode->executeQuery(std::format(R"(SELECT count(*) FROM "{}")", tableName));
+    ASSERT_TRUE(count.success()) << count.errorMessage();
+    EXPECT_EQ(count.statements[0].tableData[0][0], "300000");
+
+    auto batch = dbNode->executeQuery(std::format(R"(SELECT * FROM "{}"; SELECT 1)", tableName));
+    ASSERT_TRUE(batch.success()) << batch.errorMessage();
+    ASSERT_EQ(batch.statements.size(), 2u);
+    EXPECT_EQ(batch.statements[0].tableData.size(), 1000u);
+    EXPECT_NE(batch.statements[0].message.find("(limited to 1000)"), std::string::npos)
+        << batch.statements[0].message;
+    EXPECT_EQ(batch.statements[1].tableData[0][0], "1");
+}
+
 TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesToPostgresDatabase) {
     ASSERT_NE(database, nullptr);
 
@@ -297,6 +330,30 @@ TEST_F(PostgresSchemaNodeDDLTest, RenameTableRenamesSuccessfully) {
     ASSERT_TRUE(check.success());
     ASSERT_FALSE(check.empty());
     EXPECT_EQ(check[0].tableData.size(), 1u);
+}
+
+// regression: a reload asked for while a table load ran was dropped, so a table
+// dropped mid-load stayed in the sidebar. the load's result is not applied until
+// check(), so it still counts as running when the drop asks for a reload
+TEST_F(PostgresSchemaNodeDDLTest, DropTableDuringLoadLeavesNoStaleTable) {
+    auto r = database->executeQuery(
+        std::format(R"(CREATE TABLE public."{}" (id SERIAL PRIMARY KEY))", tableName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    schemaNode->startTablesLoadAsync(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // lists the table
+    ASSERT_TRUE(schemaNode->tablesLoader.isRunning());
+
+    auto [ok, err] = schemaNode->dropTable(tableName);
+    ASSERT_TRUE(ok) << err;
+
+    for (int i = 0; i < 500 && schemaNode->isLoadingTables(); ++i) {
+        schemaNode->checkTablesStatusAsync();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_FALSE(schemaNode->isLoadingTables());
+    EXPECT_TRUE(std::ranges::none_of(schemaNode->tables,
+                                     [&](const Table& t) { return t.name == tableName; }));
 }
 
 TEST_F(PostgresSchemaNodeDDLTest, DropTableRemovesTable) {
@@ -465,4 +522,81 @@ TEST_F(PostgresDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
     EXPECT_NE(result.errorMessage().find("canceling statement"), std::string::npos)
         << result.errorMessage();
     EXPECT_LT(elapsed, std::chrono::seconds(5));
+}
+
+// regression: refresh/disconnect and removing a connection waited out a running
+// query on the UI thread (~ConnectionPool, waitForLoaders). resetPool now only
+// swaps the pool out and cancels on the reaper; destroying the server cancels the
+// busy sessions before it waits for them
+TEST_F(PostgresDatabaseIntegrationTest, TeardownDuringQueryReturnsQuickly) {
+    using clock = std::chrono::steady_clock;
+    auto* dbNode = database->getDatabaseData(config.database);
+    ASSERT_NE(dbNode, nullptr);
+
+    AsyncOperation<QueryResult> first;
+    first.start([dbNode] { return dbNode->executeQuery("SELECT pg_sleep(30)"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // let it reach the server
+
+    auto start = clock::now();
+    dbNode->resetPool();
+    const auto resetTook = clock::now() - start;
+    EXPECT_LT(resetTook, std::chrono::milliseconds(100)) << "resetPool did network work inline";
+    const QueryResult cancelled = first.waitAndGet();
+    EXPECT_FALSE(cancelled.success());
+    EXPECT_LT(clock::now() - start, std::chrono::seconds(5));
+
+    // a tab's detached worker is still inside a call when the server goes
+    AsyncOperation<QueryResult> second;
+    second.start([dbNode] { return dbNode->executeQuery("SELECT pg_sleep(30)"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    start = clock::now();
+    database.reset();
+    const auto destroyTook = clock::now() - start;
+    EXPECT_LT(destroyTook, std::chrono::seconds(5));
+    EXPECT_FALSE(second.waitAndGet().success());
+    EXPECT_TRUE(Reaper::drain(std::chrono::seconds(5))) << "reaper did not drain";
+    std::cout << std::format(
+        "[timing] resetPool {}ms, destroy {}ms\n",
+        std::chrono::duration_cast<std::chrono::milliseconds>(resetTook).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(destroyTook).count());
+}
+
+// regression: a schema gone from a relist was destroyed in place while tabs on it
+// lived on. it now goes through retireNodeHook, so the app closes them first
+TEST_F(PostgresSchemaNodeDDLTest, DroppedSchemaIsRetiredOnRelist) {
+    auto r = database->executeQuery(std::format(R"(CREATE SCHEMA "{}")", schemaName));
+    ASSERT_TRUE(r.success()) << r.errorMessage();
+
+    // the loader stays "running" until check() lands its result
+    auto settle = [&] {
+        for (int i = 0; i < 500 && dbNode->isLoadingSchemas(); ++i) {
+            dbNode->checkSchemasStatusAsync();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+    dbNode->startSchemasLoadAsync(true);
+    settle();
+    PostgresSchemaNode* live = nullptr;
+    for (const auto& s : dbNode->schemas)
+        if (s->name == schemaName)
+            live = s.get();
+    ASSERT_NE(live, nullptr);
+
+    std::vector<std::string> retired;
+    struct ResetHook {
+        ~ResetHook() {
+            retireNodeHook = nullptr;
+        }
+    } resetHook;
+    retireNodeHook = [&](std::unique_ptr<IDatabaseNode> node) {
+        // still alive and still under its database when handed over
+        EXPECT_EQ(node->parentNode(), dbNode);
+        retired.push_back(node->getName());
+    };
+    auto [ok, err] = live->dropSchema(); // relists
+    ASSERT_TRUE(ok) << err;
+    settle();
+
+    // other runs may drop their own schemas meanwhile: ours must be among them
+    EXPECT_NE(std::ranges::find(retired, schemaName), retired.end());
 }

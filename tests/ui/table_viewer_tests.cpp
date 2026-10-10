@@ -2,6 +2,7 @@
 #include "application.hpp"
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
+#include "database/postgres/postgres_database_node.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "ui/tab/table_viewer_tab.hpp"
@@ -137,6 +138,31 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
 
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
+        ctx->Yield();
+    };
+
+    // regression: dropping a database (or a schema leaving a relist) freed the node
+    // while tabs on it, or on a schema under it, kept rendering it
+    t = IM_REGISTER_TEST(engine, "TabManager", "Close Tabs Under Retired Node");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto* tabs = Application::getInstance().getTabManager();
+        // nodes off any connection: nothing here opens a handle
+        auto dbNode = std::make_unique<PostgresDatabaseNode>();
+        dbNode->name = "retired_db";
+        auto schema = std::make_unique<PostgresSchemaNode>();
+        schema->name = "s1";
+        schema->parentDbNode = dbNode.get();
+        auto* schemaPtr = schema.get();
+        dbNode->schemas.push_back(std::move(schema));
+
+        const size_t before = tabs->getTabCount();
+        tabs->createSQLEditorTab("", dbNode.get());
+        tabs->createSQLEditorTab("", schemaPtr);
+        IM_CHECK(tabs->getTabCount() == before + 2);
+
+        // the hook path the app installs; no frame runs in between
+        tabs->retireNode(std::move(dbNode));
+        IM_CHECK(tabs->getTabCount() == before);
         ctx->Yield();
     };
 }

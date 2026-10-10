@@ -16,7 +16,9 @@ add_executable(
     tests/database/connection_url_test.cpp
     tests/database/mcp_tools_test.cpp
     tests/database/cli_command_test.cpp
+    tests/database/process_runner_test.cpp
     tests/database/lsp_test.cpp
+    tests/database/table_transfer_test.cpp
     src/cli/completion_catalog.cpp
     src/cli/connections.cpp
     src/cli/lsp.cpp
@@ -38,6 +40,8 @@ add_executable(
     src/database/db_utils.cpp
     src/database/lib_database_node.cpp
     src/database/ssh_config_parser.cpp
+    src/utils/table_exporter.cpp
+    src/utils/table_importer.cpp
     tests/database/credential_migration_test.cpp
     src/app_state.cpp
     src/utils/crypto.cpp
@@ -52,7 +56,7 @@ endif()
 
 target_include_directories(
     database_tests
-    PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include
+    PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include external/imgui
 )
 
 target_link_libraries(
@@ -71,6 +75,7 @@ target_link_libraries(
         spdlog::spdlog
         OpenSSL::SSL
         OpenSSL::Crypto
+        nfd::nfd
 )
 
 # master secret keystore backends

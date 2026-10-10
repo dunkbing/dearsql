@@ -10,6 +10,7 @@ class FileDatabase;
 class SQLiteSequenceViewerTab final : public Tab {
 public:
     SQLiteSequenceViewerTab(FileDatabase* db, std::string sequenceName);
+    ~SQLiteSequenceViewerTab() override;
 
     void render() override;
 

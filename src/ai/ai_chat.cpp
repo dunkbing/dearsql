@@ -50,8 +50,27 @@ void AIChatState::buildSystemPromptAsync(std::function<void(std::string)> callba
     }
 
     promptReadyCallback_ = std::move(callback);
-    promptBuilderOp_.startCancellable(
-        [this](std::stop_token stopToken) { return buildSystemPrompt(stopToken); });
+    promptBuilderOp_.startCancellable([in = snapshotPromptInput()](std::stop_token stopToken) {
+        return buildSystemPrompt(in, stopToken);
+    });
+}
+
+AIChatState::PromptInput AIChatState::snapshotPromptInput() const {
+    PromptInput in;
+    in.dbType = dbTypeName();
+    in.sql = currentSQL_;
+    if (!node_)
+        return in;
+    in.isMongo = node_->getDatabaseType() == DatabaseType::MONGODB;
+    in.tablesLoaded = node_->isTablesLoaded();
+    if (in.tablesLoaded) {
+        in.tables = node_->getTables();
+        if (node_->isViewsLoaded()) {
+            for (const auto& view : node_->getViews())
+                in.views.push_back(view.name);
+        }
+    }
+    return in;
 }
 
 void AIChatState::cancelAsyncPrompt() {
@@ -112,14 +131,14 @@ std::string AIChatState::dbTypeName() const {
     return "SQL";
 }
 
-std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
-    if (!node_ || !node_->isTablesLoaded()) {
+std::string AIChatState::buildSchemaContext(const PromptInput& in, std::stop_token stopToken) {
+    if (!in.tablesLoaded) {
         return "(schema not loaded)";
     }
 
-    const bool isMongo = node_->getDatabaseType() == DatabaseType::MONGODB;
+    const bool isMongo = in.isMongo;
     std::string ctx;
-    for (const auto& table : node_->getTables()) {
+    for (const auto& table : in.tables) {
         if (stopToken.stop_requested())
             return "";
 
@@ -158,23 +177,20 @@ std::string AIChatState::buildSchemaContext(std::stop_token stopToken) const {
         }
     }
 
-    if (node_->isViewsLoaded()) {
-        for (const auto& view : node_->getViews()) {
-            ctx += std::format("View: {}\n", view.name);
-        }
-    }
+    for (const auto& view : in.views)
+        ctx += std::format("View: {}\n", view);
 
     return ctx;
 }
 
-std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
-    std::string dbType = dbTypeName();
-    std::string schema = buildSchemaContext(stopToken);
+std::string AIChatState::buildSystemPrompt(const PromptInput& in, std::stop_token stopToken) {
+    const std::string& dbType = in.dbType;
+    std::string schema = buildSchemaContext(in, stopToken);
 
     if (stopToken.stop_requested())
         return "";
 
-    bool isMongo = node_ && node_->getDatabaseType() == DatabaseType::MONGODB;
+    const bool isMongo = in.isMongo;
 
     if (isMongo) {
         return std::format("You are a MongoDB query assistant.\n"
@@ -185,7 +201,7 @@ std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
                            "Put queries in ```json code blocks. Be concise.\n\n"
                            "Current query in editor:\n{}\n\n"
                            "Collections:\n{}",
-                           currentSQL_.empty() ? "// empty" : currentSQL_, schema);
+                           in.sql.empty() ? "// empty" : in.sql, schema);
     }
 
     return std::format("You are a SQL assistant for a {} database.\n"
@@ -193,5 +209,5 @@ std::string AIChatState::buildSystemPrompt(std::stop_token stopToken) const {
                        "Put SQL in ```sql code blocks. Be concise.\n\n"
                        "Current SQL in editor:\n{}\n\n"
                        "Schema:\n{}",
-                       dbType, dbType, currentSQL_.empty() ? "-- empty" : currentSQL_, schema);
+                       dbType, dbType, in.sql.empty() ? "-- empty" : in.sql, schema);
 }

@@ -1,4 +1,5 @@
 #include "utils/spinner.hpp"
+#include "database/async_helper.hpp"
 #include "imgui_internal.h"
 #include <cmath>
 
@@ -7,6 +8,7 @@ namespace UIUtils {
         ImGuiWindow* window = ImGui::GetCurrentWindow();
         if (window->SkipItems)
             return false;
+        AsyncOperationControl::requestFrames(); // visible progress keeps the loop awake
 
         ImGuiContext& g = *GImGui;
         const ImGuiStyle& style = g.Style;
@@ -44,6 +46,7 @@ namespace UIUtils {
 
     void SpinnerOverlay(ImDrawList* drawList, const ImVec2 centre, const float radius,
                         const int thickness, const ImU32 color) {
+        AsyncOperationControl::requestFrames();
         if (!drawList) {
             return;
         }

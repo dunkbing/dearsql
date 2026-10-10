@@ -157,7 +157,11 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
 }
 
 SQLEditorTab::~SQLEditorTab() {
-    queryExecutionOp_.cancel();
+    // stop the query server-side and let the worker unwind on its own; the task
+    // only holds the query and the executor, not the tab
+    if (queryExecutionOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
+    queryExecutionOp_.detach();
 }
 
 void SQLEditorTab::render() {
@@ -829,20 +833,23 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
     }
 
     if (executor) {
-        queryExecutionOp_.startCancellable([query, executor](const std::stop_token& stopToken) {
-            QueryResult result;
+        auto keep = keepOwnerAlive(dynamic_cast<IDatabaseNode*>(executor));
+        queryExecutionOp_.startCancellable(
+            [query, executor, keep = std::move(keep)](const std::stop_token& stopToken) {
+                QueryResult result;
 
-            if (stopToken.stop_requested()) {
+                if (stopToken.stop_requested()) {
+                    return result;
+                }
+
+                result = executor->executeQuery(query);
+
+                if (stopToken.stop_requested()) {
+                    return QueryResult{};
+                }
                 return result;
-            }
-
-            result = executor->executeQuery(query);
-
-            if (stopToken.stop_requested()) {
-                return QueryResult{};
-            }
-            return result;
-        });
+            });
+        return;
     }
     StatementResult r;
     r.success = false;
@@ -890,9 +897,14 @@ void SQLEditorTab::bindNode(IDatabaseNode* node) {
 
         // Use the schema node as executor so queries go through PostgresSchemaNode::executeQuery()
         // and apply the correct search_path, while still re-resolving by name after refreshes.
-        binding_.resolveNode = [schemaNode, dbName, schemaName]() -> IDatabaseNode* {
-            auto* serverDb = schemaNode->parentDbNode->parentDb;
-            auto* dbNode = serverDb->getDatabaseData(dbName);
+        // captures the server and names, never the schema node: a relist or a
+        // drop destroys it while this tab lives
+        binding_.resolveNode = [serverDb = schemaNode->parentDbNode->parentDb, dbName,
+                                schemaName]() -> IDatabaseNode* {
+            // lookup only; a dropped database must not be recreated
+            const auto& nodes = std::as_const(*serverDb).getDatabaseDataMap();
+            auto dbIt = nodes.find(dbName);
+            auto* dbNode = dbIt != nodes.end() ? dbIt->second.get() : nullptr;
             if (!dbNode) {
                 return nullptr;
             }
@@ -975,6 +987,9 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 }
 
 void SQLEditorTab::cancelQueryExecution() {
+    // the stop token alone never reaches a query blocked in the driver
+    if (queryExecutionOp_.isRunning())
+        ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
     queryExecutionOp_.cancel();
 }
 

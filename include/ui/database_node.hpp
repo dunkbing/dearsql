@@ -15,7 +15,10 @@
 #include "ui/text_editor.hpp"
 #include "utils/mysql_dump_export.hpp"
 #include "utils/mysql_dump_import.hpp"
+#include "utils/table_exporter.hpp"
+#include "utils/table_importer.hpp"
 #include <cstdint>
+#include <format>
 #include <functional>
 #include <ios>
 #include <map>
@@ -34,6 +37,7 @@
 class DatabaseHierarchy {
 public:
     explicit DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface);
+    ~DatabaseHierarchy();
 
     /**
      * @brief Get the database interface
@@ -64,8 +68,9 @@ public:
     // A running SQL dump holds a raw MySQLDatabaseNode* and one pooled session for
     // the length of its run. Dropping the database, disconnecting or reconnecting
     // frees both under the worker, so those paths stay blocked while this is true.
+    // a pg_dump/pg_restore child counts too: removing the hierarchy would kill it.
     [[nodiscard]] bool hasRunningSqlDump() const {
-        return importOp_.isRunning() || exportOp_.isRunning();
+        return importOp_.isRunning() || exportOp_.isRunning() || postgresToolOp_.isRunning();
     }
 
     [[nodiscard]] bool hasRunningSqlDump(const std::string& dbName) const {
@@ -129,6 +134,47 @@ private:
     // invalidate the iteration, so the request is deferred to the next frame.
     std::optional<std::string> pendingDropDatabase_;
 
+    // sidebar DDL (drop, rename, truncate) runs on a worker, one at a time per
+    // connection. the work holds the connection (and a pinned node) itself, never
+    // `this`; done runs on the UI thread once it lands
+    using DdlResult = std::pair<bool, std::string>;
+    AsyncOperation<DdlResult> ddlOp_;
+    std::string ddlBusyKey_;
+    std::string ddlErrorPrefix_;
+    std::function<void(bool)> ddlDone_;
+    bool startDdl(std::string busyKey, std::string errorPrefix, LibDatabaseNode* pinNode,
+                  std::function<DdlResult()> work, std::function<void(bool)> done = nullptr);
+    void startDatabaseDdl(const std::string& busyKey, std::string errorPrefix,
+                          const std::function<DatabaseInterface::DatabaseDdl()>& begin,
+                          std::function<void(bool)> done);
+    void checkDdlStatus();
+    [[nodiscard]] bool ddlBusy() const {
+        return ddlOp_.isRunning();
+    }
+    // spinner after the label of the item just drawn while a DDL runs on key
+    void renderDdlSpinner(const std::string& key, const std::string& label) const;
+    static std::string ddlKey(const void* owner, const std::string& name) {
+        return std::format("{:p}/{}", owner, name);
+    }
+
+    // table export and csv import: a worker each, behind a progress panel with Cancel.
+    // the worker holds the connection and a pinned node, never `this`
+    AsyncOperation<TableExporter::Result> tableExportOp_;
+    std::shared_ptr<TableExporter::Progress> tableExportProgress_;
+    AsyncOperation<TableImporter::Result> csvImportOp_;
+    std::shared_ptr<TableImporter::Progress> csvImportProgress_;
+    void startTableExport(ITableDataProvider* provider, const std::vector<const Table*>& tables,
+                          ExportFormat format, DatabaseType dbType);
+    void startCsvImport(IDatabaseNode* node, const std::string& tableName);
+    void renderTableExportMenu(ITableDataProvider* provider, const Table& table,
+                               DatabaseType dbType);
+    void renderTableImportMenu(IDatabaseNode* node, const std::string& tableName);
+    void checkTableTransfers();
+    void renderTableTransferProgress();
+    // Copy DDL: the statement is read on a worker and put on the clipboard on return
+    AsyncOperation<std::pair<bool, std::string>> copyDdlOp_;
+    void startCopyDdl(ITableDataProvider* provider, const Table& table);
+
     AsyncOperation<MysqlDumpImport::Result> importOp_;
     std::shared_ptr<MysqlDumpImport::Progress> importProgress_;
     std::string importDbName_;
@@ -160,10 +206,12 @@ private:
     void renderSchemaFilterBadge(const std::string& dbName, std::vector<std::string> schemaNames,
                                  const ImVec2& nodeMin, const ImVec2& nodeMax,
                                  const void* popupKey);
+    // dropOne runs on a worker (pinNode, when given, is pinned for it)
     void renderMultiSelectMenuContent(ITableDataProvider* provider,
                                       const std::vector<Table>& nodeTables,
-                                      std::function<void(const std::string&)> dropOne,
-                                      DatabaseType dbType = DatabaseType::SQLITE);
+                                      std::function<DdlResult(const std::string&)> dropOne,
+                                      DatabaseType dbType = DatabaseType::SQLITE,
+                                      LibDatabaseNode* pinNode = nullptr);
     void checkPostgresToolStatus();
     void checkImportStatus();
     void renderImportProgress();

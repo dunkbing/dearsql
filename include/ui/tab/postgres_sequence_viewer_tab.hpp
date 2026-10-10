@@ -14,6 +14,7 @@ class PostgresSchemaNode;
 class PostgresSequenceViewerTab final : public Tab {
 public:
     PostgresSequenceViewerTab(PostgresSchemaNode* schema, std::string sequenceName);
+    ~PostgresSequenceViewerTab() override;
 
     void render() override;
     [[nodiscard]] bool hasUnsavedChanges() const override;

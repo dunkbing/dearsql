@@ -36,8 +36,9 @@ RedisKeyViewerTab::RedisKeyViewerTab(const std::string& name, RedisDatabase* db,
 }
 
 RedisKeyViewerTab::~RedisKeyViewerTab() {
-    loadOp_.cancel();
-    saveOp_.cancel();
+    // never join a blocking command on close: the tasks keep the connection alive
+    loadOp_.detach();
+    saveOp_.detach();
 }
 
 void RedisKeyViewerTab::initializeTableRenderer() {
@@ -113,7 +114,7 @@ void RedisKeyViewerTab::loadDataAsync() {
     const int offset = currentPage_ * rowsPerPage_;
     const int dbIdx = dbIndex_;
 
-    loadOp_.start([db, pattern, limit, offset, dbIdx] {
+    loadOp_.start([db, keep = db->keepAlive(), pattern, limit, offset, dbIdx] {
         // Atomically select database and fetch data in a single locked operation
         return db->getTableDataForDatabase(dbIdx, pattern, limit, offset);
     });
@@ -319,15 +320,16 @@ void RedisKeyViewerTab::saveChanges() {
 
     RedisDatabase* db = db_;
     const int dbIdx = dbIndex_;
-    saveOp_.start([commands = std::move(commands), db, dbIdx]() -> SaveResult {
-        for (const auto& cmd : commands) {
-            auto result = db->executeQueryInDatabase(dbIdx, cmd);
-            if (!result.empty() && !result[0].success) {
-                return {false, std::format("'{}': {}", cmd, result[0].errorMessage)};
+    saveOp_.start(
+        [commands = std::move(commands), db, keep = db->keepAlive(), dbIdx]() -> SaveResult {
+            for (const auto& cmd : commands) {
+                auto result = db->executeQueryInDatabase(dbIdx, cmd);
+                if (!result.empty() && !result[0].success) {
+                    return {false, std::format("'{}': {}", cmd, result[0].errorMessage)};
+                }
             }
-        }
-        return {true, ""};
-    });
+            return {true, ""};
+        });
 }
 
 void RedisKeyViewerTab::cancelChanges() {

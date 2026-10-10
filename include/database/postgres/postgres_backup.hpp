@@ -3,6 +3,7 @@
 #include "database/db_interface.hpp"
 
 #include <filesystem>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,8 @@ struct PostgresRestoreOptions {
 class PostgresBackupService {
 public:
     static PostgresToolResult checkToolsAvailable(const std::vector<std::string>& toolNames);
-    static PostgresToolResult backupDatabase(const PostgresBackupOptions& options);
-    static PostgresToolResult restoreDatabase(const PostgresRestoreOptions& options);
+    static PostgresToolResult backupDatabase(const PostgresBackupOptions& options,
+                                             std::stop_token stop = {});
+    static PostgresToolResult restoreDatabase(const PostgresRestoreOptions& options,
+                                              std::stop_token stop = {});
 };

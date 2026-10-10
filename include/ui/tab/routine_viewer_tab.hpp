@@ -12,6 +12,7 @@ class IDatabaseNode;
 class RoutineViewerTab final : public Tab {
 public:
     RoutineViewerTab(IDatabaseNode* node, const Routine& routine);
+    ~RoutineViewerTab() override;
 
     void render() override;
 

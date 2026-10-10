@@ -1,11 +1,15 @@
 #pragma once
 
+#include "utils/reaper.hpp"
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
+#include <ranges>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -15,17 +19,29 @@
 // cancelled server-side without the caller knowing which backend it is
 class ConnectionPoolBase {
 public:
+    using Cancel = std::function<void()>;
+
     virtual ~ConnectionPoolBase() {
         unregisterPool();
     }
 
-    // cancel whatever `worker` is currently running, across all pools. runs under
-    // the registry lock so no pool can be destroyed mid-call
-    static void cancelQueriesOn(std::thread::id worker) {
+    // cancels for whatever `worker` is currently running, across all pools. only
+    // collected under the locks (handle copies keep the connections alive); the
+    // caller runs them, since a cancel is network I/O
+    static std::vector<Cancel> cancelsFor(std::thread::id worker) {
+        std::vector<Cancel> out;
+        if (worker == std::thread::id{})
+            return out;
         std::lock_guard lock(registryMutex());
-        for (auto* pool : registry()) {
-            pool->cancelInUseBy(worker);
-        }
+        for (auto* pool : registry())
+            pool->collectInUseBy(worker, out);
+        return out;
+    }
+
+    // cancel what `worker` runs, on the reaper: safe to call from the UI thread
+    static void cancelQueriesOn(std::thread::id worker) {
+        for (auto& cancel : cancelsFor(worker))
+            Reaper::post(std::move(cancel));
     }
 
 protected:
@@ -38,7 +54,7 @@ protected:
         std::lock_guard lock(registryMutex());
         std::erase(registry(), this);
     }
-    virtual void cancelInUseBy(std::thread::id worker) = 0;
+    virtual void collectInUseBy(std::thread::id worker, std::vector<Cancel>& out) = 0;
 
 private:
     static std::mutex& registryMutex() {
@@ -51,7 +67,9 @@ private:
     }
 };
 
-template <typename ConnHandle> class ConnectionPool : public ConnectionPoolBase {
+template <typename ConnHandle>
+class ConnectionPool : public ConnectionPoolBase,
+                       public std::enable_shared_from_this<ConnectionPool<ConnHandle>> {
 public:
     using ConnFactory = std::function<ConnHandle()>;
     using ConnCloser = std::function<void(ConnHandle)>;
@@ -76,21 +94,13 @@ public:
         registerPool();
     }
 
+    // runs where the last owner lets go (the reaper, or a worker that held a
+    // copy): sessions are all back by then unless someone kept one without one
     ~ConnectionPool() override {
         unregisterPool();
-        {
-            std::unique_lock lock(mutex_);
-            shutdown_ = true;
-            // don't sit out a long query: ask the server to stop the busy ones
-            if (canceller_) {
-                for (const auto& [conn, owner] : owners_)
-                    canceller_(conn);
-            }
-            cv_.notify_all();
-            // sessions out, threads growing the pool or waiting for a free
-            // connection all still touch this object
-            cv_.wait(lock, [this] { return inUse_ == 0 && busy_ == 0; });
-        }
+        if (auto cancel = shutdown())
+            cancel();
+        drain();
 
         for (auto conn : all_) {
             if (closer_)
@@ -99,6 +109,42 @@ public:
         all_.clear();
         while (!available_.empty())
             available_.pop();
+    }
+
+    // refuse new sessions and return a cancel for every busy connection (null
+    // when none): the caller decides where that network call runs
+    Cancel shutdown() {
+        std::lock_guard lock(mutex_);
+        shutdown_ = true;
+        cv_.notify_all();
+        if (!canceller_ || owners_.empty())
+            return nullptr;
+        std::vector<ConnHandle> busy;
+        for (const auto& conn : owners_ | std::views::keys)
+            busy.push_back(conn);
+        return [canceller = canceller_, busy = std::move(busy)] {
+            for (const auto& conn : busy)
+                canceller(conn);
+        };
+    }
+
+    // wait until every session is back and no thread is inside acquire(). a cancel
+    // that lands while a handle is still connecting (or between statements) is
+    // lost, so the busy ones are cancelled again every 250ms
+    void drain() {
+        std::unique_lock lock(mutex_);
+        const auto idle = [this] { return inUse_ == 0 && busy_ == 0; };
+        while (!cv_.wait_for(lock, std::chrono::milliseconds(250), idle)) {
+            if (!canceller_)
+                continue;
+            std::vector<ConnHandle> busy;
+            for (const auto& conn : owners_ | std::views::keys)
+                busy.push_back(conn);
+            lock.unlock();
+            for (const auto& conn : busy)
+                canceller_(conn);
+            lock.lock();
+        }
     }
 
     ConnectionPool(const ConnectionPool&) = delete;
@@ -202,22 +248,41 @@ public:
 
         {
             std::lock_guard lock(mutex_);
-            owners_[conn] = std::this_thread::get_id();
+            // shut down while we validated: shutdown() could not see this one to cancel
+            if (shutdown_) {
+                --inUse_;
+                cv_.notify_all();
+                throw std::runtime_error("ConnectionPool: pool is shutting down");
+            }
+            owners_[conn] = {std::this_thread::get_id(), ++nextTicket_};
         }
         return Session(*this, conn);
     }
 
 private:
-    // under mutex_, so a connection released (and handed to another worker) in
-    // the meantime is never cancelled by mistake
-    void cancelInUseBy(std::thread::id worker) override {
+    // the cancel runs later, off the locks: it fires only if the connection is
+    // still in the same checkout, so one handed to another worker meanwhile is
+    // left alone (ponytail: a release in the instant before the call still slips)
+    void collectInUseBy(std::thread::id worker, std::vector<Cancel>& out) override {
         if (!canceller_)
             return;
         std::lock_guard lock(mutex_);
+        std::weak_ptr<ConnectionPool> self = this->weak_from_this();
         for (const auto& [conn, owner] : owners_) {
-            if (owner == worker)
-                canceller_(conn);
+            if (owner.thread != worker)
+                continue;
+            out.push_back([self, canceller = canceller_, conn, ticket = owner.ticket] {
+                if (auto pool = self.lock(); pool && !pool->stillCheckedOut(conn, ticket))
+                    return;
+                canceller(conn);
+            });
         }
+    }
+
+    bool stillCheckedOut(const ConnHandle& conn, uint64_t ticket) {
+        std::lock_guard lock(mutex_);
+        auto it = owners_.find(conn);
+        return it != owners_.end() && it->second.ticket == ticket;
     }
 
     ConnHandle reconnect_(ConnHandle oldConn) {
@@ -258,7 +323,12 @@ private:
     std::condition_variable cv_;
     std::queue<ConnHandle> available_;
     std::vector<ConnHandle> all_;
-    std::unordered_map<ConnHandle, std::thread::id> owners_; // in-use conn -> holder
+    struct Owner {
+        std::thread::id thread;
+        uint64_t ticket = 0; // one per checkout
+    };
+    std::unordered_map<ConnHandle, Owner> owners_; // in-use conn -> holder
+    uint64_t nextTicket_ = 0;
     ConnFactory factory_;
     ConnCloser closer_;
     ConnValidator validator_;

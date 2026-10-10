@@ -32,6 +32,11 @@ public:
     void closeTab(std::uint64_t id);
     void closeAllTabs();
     void closeTabsForDatabase(DatabaseInterface* db);
+    // tabs on `node` or on a node under it (a schema of a database)
+    void closeTabsForNode(const IDatabaseNode* node);
+    // a node its owner is destroying: tabs on it close first. mid-render the
+    // close (and the node) wait until the tab loop is done with its iterator
+    void retireNode(std::unique_ptr<IDatabaseNode> node);
 
     // Tab queries
     [[nodiscard]] bool hasTabId(std::uint64_t id) const;
@@ -111,6 +116,7 @@ private:
     std::uint64_t activeTabId_ = 0;
     std::uint64_t pendingFocusTabId_ = 0;
     std::vector<std::function<void()>> deferredActions_;
+    bool renderingTabs_ = false;
 
     std::string generateSQLEditorName() const;
 };

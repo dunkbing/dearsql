@@ -56,15 +56,17 @@ if [[ "$BUILD_TYPE" != "Release" ]]; then
 fi
 
 # ---- AppImage packaging ----
-LINUXDEPLOY="$BUILD_DIR/linuxdeploy-x86_64.AppImage"
-LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+# x86_64 or aarch64; linuxdeploy and type2-runtime publish both
+ARCH="$(uname -m)"
+LINUXDEPLOY="$BUILD_DIR/linuxdeploy-${ARCH}.AppImage"
+LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage"
 
 # bundle the newer type2-runtime instead of the default one shipped by
 # linuxdeploy. the old runtime segfaults on modern Arch / FUSE3 systems
 # right after process init (see issue #16) — the type2-runtime supports
 # both FUSE2/FUSE3 and falls back to extract-and-run when FUSE is unusable.
-RUNTIME_FILE="$BUILD_DIR/appimage-runtime-x86_64"
-RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64"
+RUNTIME_FILE="$BUILD_DIR/appimage-runtime-${ARCH}"
+RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${ARCH}"
 
 if [[ ! -x "$LINUXDEPLOY" ]]; then
     echo "Downloading linuxdeploy..."
@@ -79,7 +81,7 @@ if [[ ! -f "$RUNTIME_FILE" ]]; then
 fi
 
 APPDIR="$BUILD_DIR/AppDir"
-APPIMAGE_FILE="$BUILD_DIR/${APP_NAME}-x86_64.AppImage"
+APPIMAGE_FILE="$BUILD_DIR/${APP_NAME}-${ARCH}.AppImage"
 
 echo "Packaging AppImage..."
 
@@ -94,7 +96,8 @@ install -m644 "$ROOT_DIR/packaging/$APP_IDENTIFIER.desktop" \
 install -m644 "$ROOT_DIR/assets/appicon.png" \
     "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png"
 
-OUTPUT="$APPIMAGE_FILE" LDAI_RUNTIME_FILE="$RUNTIME_FILE" "$LINUXDEPLOY" \
+# extract-and-run: containers and arm runners often lack FUSE
+APPIMAGE_EXTRACT_AND_RUN=1 OUTPUT="$APPIMAGE_FILE" LDAI_RUNTIME_FILE="$RUNTIME_FILE" "$LINUXDEPLOY" \
     --appdir "$APPDIR" \
     --desktop-file "$APPDIR/usr/share/applications/$APP_IDENTIFIER.desktop" \
     --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/$APP_IDENTIFIER.png" \

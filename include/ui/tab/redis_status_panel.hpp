@@ -22,6 +22,7 @@ public:
     static constexpr float kFixedPanelWidth = 290.0f;
 
     explicit RedisStatusPanel(RedisDatabase* db = nullptr);
+    ~RedisStatusPanel();
 
     void setDatabase(RedisDatabase* db);
     void tick();

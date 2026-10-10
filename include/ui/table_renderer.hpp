@@ -132,6 +132,9 @@ public:
     void scrollToCell(int row, int col);
 
 private:
+    // new data without the cell being edited: drop the edit, never write it back
+    void dropStaleEdit();
+
     Config config;
     std::vector<Column> columns;
     std::vector<std::vector<std::string>> data;

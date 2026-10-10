@@ -1,16 +1,18 @@
 #pragma once
 
+#include "database/async_helper.hpp"
+#include "database/db_interface.hpp"
 #include "themes.hpp"
 #include "ui/tab/redis_status_panel.hpp"
 #include "ui/tab/tab.hpp"
 #include <atomic>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
-struct redisContext;
-struct redisSSLContext;
 class RedisDatabase;
 
 struct PubSubMessage {
@@ -34,9 +36,20 @@ private:
     RedisDatabase* db_;
 
     enum class SubState { Idle, Subscribing, Subscribed, Error };
-    std::atomic<SubState> subState_{SubState::Idle};
-    mutable std::mutex subErrorMutex_;
-    std::string subError_;
+
+    // what one subscription shares with its worker. the worker holds its own
+    // reference and owns the hiredis context, so stopping never waits for it: the
+    // socket is shut down under it and the worker is left to unwind
+    struct Subscription {
+        std::atomic<SubState> state{SubState::Idle};
+        std::mutex mutex; // error, pending, fd
+        std::string error;
+        std::vector<PubSubMessage> pending;
+        std::atomic<int> pendingCount{0};
+        std::atomic<int> total{0};
+        std::intptr_t fd = -1; // the open socket, -1 when none
+    };
+    std::shared_ptr<Subscription> sub_ = std::make_shared<Subscription>();
 
     char patternBuf_[256] = "*";
     std::string activePattern_;
@@ -45,27 +58,17 @@ private:
     char publishMessageBuf_[4096] = {};
     bool refocusMessageInput_ = false;
 
-    // subscriber connection (separate from main db context)
-    redisContext* subContext_ = nullptr;
-    redisSSLContext* subSslCtx_ = nullptr;
-    std::jthread subThread_;
-
-    // thread-safe message queue
-    std::mutex messageMutex_;
-    std::vector<PubSubMessage> pendingMessages_;
+    // subscriber connection (separate from main db context), run on a worker
+    AsyncOperation<bool> subOp_;
     std::vector<PubSubMessage> displayMessages_;
-    std::atomic<int> totalMessageCount_{0};
-    std::atomic<int> pendingCount_{0};
     bool statusPanelOpen_ = false;
     RedisStatusPanel statusPanel_;
 
     void subscribe(const std::string& pattern);
     void unsubscribe();
-    void subscriberLoop(std::stop_token stopToken);
-    redisContext* createSubscriberContext();
-    void setSubError(std::string error);
-    void clearSubError();
-    [[nodiscard]] std::string getSubError() const;
+    static void runSubscriber(const std::shared_ptr<Subscription>& sub,
+                              const DatabaseConnectionInfo& info, const std::string& pattern,
+                              const std::stop_token& stop);
 
     void renderToolbar(const Theme::Colors& colors);
     void renderMessageTable(const Theme::Colors& colors);

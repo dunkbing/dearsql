@@ -136,13 +136,6 @@ find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(ftxui CONFIG REQUIRED)
-if(APPLE)
-    # GLSL -> SPIR-V -> MSL transpilation for runtime-loadable custom shaders
-    find_package(unofficial-shaderc CONFIG REQUIRED)
-    find_package(spirv_cross_core CONFIG REQUIRED)
-    find_package(spirv_cross_glsl CONFIG REQUIRED)
-    find_package(spirv_cross_msl CONFIG REQUIRED)
-endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
 
@@ -264,8 +257,6 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
     list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
     list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
-    list(APPEND APP_SOURCES src/ui/table_aurora_shader.mm)
-    list(APPEND APP_SOURCES src/ui/custom_shader.mm)
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
@@ -309,6 +300,14 @@ if(WIN32)
             $<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>
             $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>
     )
+endif()
+
+# release size: drop unreferenced code (duckdb is most of the binary) and local
+# symbols; no dSYMs are uploaded, so crash reports lose nothing
+if(APPLE)
+    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-Wl,-dead_strip,-x>)
+elseif(LINUX)
+    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections,-s>)
 endif()
 
 add_subdirectory(external/acp-cpp)
@@ -392,14 +391,6 @@ if(APPLE)
             ${SECURITY_LIBRARY}
     )
     target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
-            unofficial::shaderc::shaderc
-            spirv-cross-core
-            spirv-cross-glsl
-            spirv-cross-msl
-    )
 elseif(LINUX)
     target_link_libraries(
         ${PROJECT_NAME}

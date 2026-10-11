@@ -45,10 +45,6 @@
 #include "IconsForkAwesome.h"
 #include "embedded_fonts.hpp"
 
-#if defined(__APPLE__)
-#include "ui/custom_shader.hpp"
-#endif
-
 namespace {
     volatile sig_atomic_t g_shutdownRequested = 0;
 
@@ -229,14 +225,6 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-#if defined(__APPLE__)
-    // load a custom Shadertoy-style GLSL shader (like ghostty's custom-shader)
-    if (appState->getSetting("custom_shader_enabled", "1") != "0") {
-        if (const std::string path = appState->getSetting("custom_shader_path", ""); !path.empty())
-            CustomShader::loadFromFile(path);
-    }
-#endif
-
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
@@ -321,10 +309,6 @@ void Application::run() {
         const bool userActive = isImGuiUserActive();
 
         bool keepAnimating = userActive || hasAsyncWork;
-#if defined(__APPLE__)
-        // an animated custom shader runs off the clock, so never let the loop idle
-        keepAnimating = keepAnimating || CustomShader::isLoaded();
-#endif
         if (keepAnimating) {
             lastInteractionTime = glfwGetTime();
         }

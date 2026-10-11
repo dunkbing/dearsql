@@ -5,7 +5,6 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "themes.hpp"
-#include "ui/table_aurora_shader.hpp"
 #include "utils/button.hpp"
 #include <algorithm>
 #include <cstring>
@@ -398,12 +397,6 @@ void TableRenderer::render(const char* tableId) {
         }
     }
 
-#if defined(__APPLE__) && DEARSQL_ENABLE_TABLE_AURORA
-    ImVec2 tableMin(0, 0);
-    ImVec2 tableMax(0, 0);
-    bool tableRendered = false;
-#endif
-
     fkTargets.assign(columns.size(), std::string{});
     if (foreignKeyTargetCb) {
         for (size_t i = 0; i < columns.size(); ++i) {
@@ -527,34 +520,7 @@ void TableRenderer::render(const char* tableId) {
 
         ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetStyle().ScrollbarSize);
         ImGui::EndTable();
-#if defined(__APPLE__) && DEARSQL_ENABLE_TABLE_AURORA
-        tableMin = ImGui::GetItemRectMin();
-        tableMax = ImGui::GetItemRectMax();
-        tableRendered = true;
-#endif
     }
-
-#if defined(__APPLE__) && DEARSQL_ENABLE_TABLE_AURORA
-    if (tableRendered && tableMax.x > tableMin.x && tableMax.y > tableMin.y) {
-        TableAurora::Params p{};
-        p.x = tableMin.x;
-        p.y = tableMin.y;
-        p.w = tableMax.x - tableMin.x;
-        p.h = tableMax.y - tableMin.y;
-        p.r1 = colors.blue.x;
-        p.g1 = colors.blue.y;
-        p.b1 = colors.blue.z;
-        p.r2 = colors.teal.x;
-        p.g2 = colors.teal.y;
-        p.b2 = colors.teal.z;
-        p.time = static_cast<float>(ImGui::GetTime());
-        p.intensity = 1.0f;
-
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddCallback(TableAurora::callback, &p, sizeof(p));
-        dl->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
-    }
-#endif
 
     if (pendingEditOverlay) {
         renderEditOverlay();

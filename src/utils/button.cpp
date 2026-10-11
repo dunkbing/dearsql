@@ -6,18 +6,13 @@
 
 namespace {
     void pushVariantColors(UIUtils::ButtonVariant variant) {
-        if (variant == UIUtils::ButtonVariant::Custom) {
+        // secondary takes the theme's button colours (themes.hpp)
+        if (variant == UIUtils::ButtonVariant::Custom ||
+            variant == UIUtils::ButtonVariant::Secondary) {
             return;
         }
 
         const auto& colors = Application::getInstance().getCurrentColors();
-        if (variant == UIUtils::ButtonVariant::Secondary) {
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-            return;
-        }
-
         const ImVec4 accent =
             variant == UIUtils::ButtonVariant::Primary ? colors.green : colors.red;
 
@@ -29,9 +24,8 @@ namespace {
     }
 
     void popVariantColors(UIUtils::ButtonVariant variant) {
-        if (variant == UIUtils::ButtonVariant::Secondary) {
-            ImGui::PopStyleColor(3);
-        } else if (variant != UIUtils::ButtonVariant::Custom) {
+        if (variant != UIUtils::ButtonVariant::Custom &&
+            variant != UIUtils::ButtonVariant::Secondary) {
             ImGui::PopStyleColor(4);
         }
     }

@@ -166,9 +166,17 @@ namespace Theme {
         c[ImGuiCol_CheckMark] = colors.blue;
         c[ImGuiCol_SliderGrab] = colors.blue;
         c[ImGuiCol_SliderGrabActive] = colors.sky;
-        c[ImGuiCol_Button] = colors.surface0;
-        c[ImGuiCol_ButtonHovered] = colors.surface1;
-        c[ImGuiCol_ButtonActive] = colors.surface2;
+        // tinted towards the text so buttons stand out on windows and popups in
+        // both themes (the surface steps are too close, and not ordered in light)
+        auto tint = [&](float t) {
+            const ImVec4& a = colors.surface0;
+            const ImVec4& b = colors.text;
+            return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t,
+                          1.0f);
+        };
+        c[ImGuiCol_Button] = tint(0.14f);
+        c[ImGuiCol_ButtonHovered] = tint(0.22f);
+        c[ImGuiCol_ButtonActive] = tint(0.30f);
         c[ImGuiCol_Header] = colors.surface0;
         c[ImGuiCol_HeaderHovered] = colors.surface1;
         c[ImGuiCol_HeaderActive] = colors.surface2;

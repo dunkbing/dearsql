@@ -56,10 +56,6 @@ void SettingsDialog::render() {
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
-    // colored buttons
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.overlay0);
 
     // --- Appearance ---
     ImGui::SeparatorText("Appearance");
@@ -127,7 +123,6 @@ void SettingsDialog::render() {
         ImGui::CloseCurrentPopup();
     }
 
-    ImGui::PopStyleColor(3); // button colors
     ImGui::PopStyleVar(2);   // ItemSpacing, FramePadding
     ImGui::EndPopup();
     ImGui::PopStyleColor(); // Border

@@ -13,6 +13,7 @@
 #include "cli/connections.hpp"
 #include "cli/lsp.hpp"
 #include "cli/tui.hpp"
+#include "config.hpp"
 #include "mcp/db_tools.hpp"
 #include <iostream>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -24,7 +25,9 @@ namespace {
   dearsql [file]                    open the app (and the file, if given)
   dearsql --tui [connection]        browse and query in the terminal
   dearsql --mcp [connection...]     MCP server on stdin/stdout for coding agents
+          [--allow-writes]          also offer execute_sql, marked destructive
   dearsql --lsp [connection]        SQL language server (completion, hover) for editors
+  dearsql --version                 print the version
 
 connection: a saved DearSQL connection name, a URL (postgres://user:pass@host/db,
 mysql://..., mongodb://..., redis://..., mssql://..., oracle://...), or a
@@ -52,6 +55,9 @@ register with an agent, e.g.:
         std::string connect(const std::string& name) override {
             return conns_.open(name);
         }
+        std::string add(const std::string& spec, std::string& error) override {
+            return conns_.add(spec, error);
+        }
         std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override {
             return conns_.connection(name);
         }
@@ -66,9 +72,9 @@ register with an agent, e.g.:
 
     // newline-delimited JSON-RPC, per the MCP stdio transport; stdout carries
     // only protocol messages, so logs go to stderr
-    int serveMcp(CliConnections& conns, const std::string& focus) {
+    int serveMcp(CliConnections& conns, const std::string& focus, bool allowWrites) {
         StdioHost host(conns, focus);
-        mcp::Server server(host);
+        mcp::Server server(host, allowWrites);
         // run by hand rather than by an agent: say so on stderr (stdout is the protocol)
         if (isatty(fileno(stdin))) {
             std::cerr << "dearsql MCP server: waiting for an agent on stdin/stdout. Nothing is "
@@ -100,15 +106,11 @@ std::optional<int> runCli(int argc, char** argv) {
     if (argc < 2)
         return std::nullopt;
     const std::string mode = argv[1];
-    if (mode == "-h" || mode == "--help") {
-        std::cout << USAGE;
-        return 0;
-    }
     const bool mcpMode = mode == "--mcp";
     const bool lspMode = mode == "--lsp";
-    if (!mcpMode && !lspMode && mode != "--tui")
+    const bool infoMode = mode == "-h" || mode == "--help" || mode == "-v" || mode == "--version";
+    if (!infoMode && !mcpMode && !lspMode && mode != "--tui")
         return std::nullopt; // the GUI, maybe with a file to open
-    std::vector<std::string> args(argv + 2, argv + argc);
 #ifdef _WIN32
     // release builds are GUI-subsystem: borrow the console we were started from.
     // mcp mode keeps the agent's pipes, which are already the std handles.
@@ -119,6 +121,16 @@ std::optional<int> runCli(int argc, char** argv) {
         freopen("CONIN$", "r", stdin);
     }
 #endif
+    if (mode == "-v" || mode == "--version") {
+        std::cout << "dearsql " << APP_VERSION << "\n";
+        return 0;
+    }
+    if (infoMode) {
+        std::cout << USAGE;
+        return 0;
+    }
+    std::vector<std::string> args(argv + 2, argv + argc);
+    const bool allowWrites = mcpMode && std::erase(args, "--allow-writes") > 0;
     // stdout belongs to the tui screen / the protocol stream: warnings go to stderr
     // in mcp and lsp mode, nowhere in the tui
     spdlog::set_default_logger(spdlog::stderr_color_mt("dearsql"));
@@ -146,7 +158,7 @@ std::optional<int> runCli(int argc, char** argv) {
     }
 
     if (mcpMode)
-        return serveMcp(conns, focus);
+        return serveMcp(conns, focus, allowWrites);
     if (lspMode)
         return runLsp(conns, focus);
     if (conns.entries().empty()) {

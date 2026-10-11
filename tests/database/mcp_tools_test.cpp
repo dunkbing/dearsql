@@ -116,3 +116,73 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
+
+TEST(Fuzzy, SwapIsOneEdit) {
+    EXPECT_EQ(fuzzy::editDistance("nmae", "name"), 1u);
+    EXPECT_GT(fuzzy::score("nmae", "name"), 0);
+}
+
+TEST_F(McpToolsTest, CursorFromAnotherToolOrQueryIsNotReused) {
+    auto [tables, err] = call("list_tables", {{"maxResults", 1}});
+    ASSERT_FALSE(err) << tables;
+    const auto cursor = tables.substr(tables.rfind("cursor: ") + 8, 1);
+    auto [wrong, err2] = call("run_query", {{"cursor", cursor}});
+    EXPECT_TRUE(err2);
+    EXPECT_NE(wrong.find("belongs to list_tables"), std::string::npos) << wrong;
+    // new sql wins over a stale cursor
+    auto [fresh, err3] = call("run_query", {{"sql", "SELECT 'other' AS q"}, {"cursor", cursor}});
+    EXPECT_FALSE(err3) << fresh;
+    EXPECT_NE(fresh.find("other"), std::string::npos) << fresh;
+}
+
+TEST_F(McpToolsTest, CellsEscapePipesAndShowBlobs) {
+    auto [text, err] = call("run_query", {{"sql", "SELECT 'a|b' AS x, x'00ff' AS b"}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("a\\|b | 0x00FF"), std::string::npos) << text;
+}
+
+TEST_F(McpToolsTest, SearchToleratesOneBadWordAndNamesTheDatabase) {
+    auto [text, err] = call("search_schema", {{"query", "usres emial"}});
+    EXPECT_NE(text.find("users.email"), std::string::npos) << text;
+    auto [partial, err2] = call("search_schema", {{"query", "emial zzzzqx"}});
+    EXPECT_NE(partial.find("users.email"), std::string::npos) << partial;
+    auto [none, err3] = call("search_schema", {{"query", "zzzzqx"}});
+    EXPECT_NE(none.find("of shop"), std::string::npos) << none;
+}
+
+TEST_F(McpToolsTest, QuerySaysWhyAPageIsShortAndThatTheTotalIsCapped) {
+    auto [text, err] = call("run_query", {{"sql", "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL "
+                                                  "SELECT n+1 FROM s WHERE n < 3000) SELECT n, "
+                                                  "printf('%0150d', n) FROM s"},
+                                          {"maxRows", 500}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("1000+ (only the first 1000 are fetched)"), std::string::npos) << text;
+    EXPECT_NE(text.find("page cut at"), std::string::npos) << text;
+    EXPECT_NE(text.find("cursor: "), std::string::npos) << text;
+}
+
+TEST_F(McpToolsTest, ConnectToAnUnknownUrlSaysWhy) {
+    auto [text, err] = call("connect", {{"name", "postgres://me@localhost/nope"}});
+    EXPECT_TRUE(err);
+    EXPECT_NE(text.find("add it in DearSQL"), std::string::npos) << text;
+}
+
+TEST_F(McpToolsTest, WritesOnlyWithAllowWrites) {
+    auto listed = [](mcp::Server& s) {
+        return s.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}})
+                   .dump()
+                   .find("execute_sql") != std::string::npos;
+    };
+    EXPECT_FALSE(listed(*server));
+    EXPECT_TRUE(call("execute_sql", {{"sql", "DELETE FROM users"}}).second);
+
+    mcp::Server writer(*host, true);
+    EXPECT_TRUE(listed(writer));
+    auto r = writer.callTool("execute_sql", {{"sql", "DELETE FROM users WHERE id <= 20"}});
+    const auto text = r["content"][0]["text"].get<std::string>();
+    ASSERT_FALSE(r["isError"].get<bool>()) << text;
+    EXPECT_NE(text.find("20 rows affected"), std::string::npos) << text;
+    r = writer.callTool("run_query", {{"sql", "DELETE FROM users"}});
+    EXPECT_NE(r["content"][0]["text"].get<std::string>().find("Use execute_sql"),
+              std::string::npos);
+}

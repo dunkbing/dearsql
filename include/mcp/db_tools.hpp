@@ -30,6 +30,12 @@ namespace mcp {
         virtual std::vector<ConnectionEntry> connections() = 0;
         // open a known connection by exact name; "" on success, else the error
         virtual std::string connect(const std::string& name) = 0;
+        // a connection URL or database file, kept for this session only; its name,
+        // or "" with error set
+        virtual std::string add(const std::string& spec, std::string& error) {
+            error = "only saved connections can be opened here; add it in DearSQL";
+            return "";
+        }
         // library connection of an open connection, or null
         virtual std::shared_ptr<dearsql::IConnection> connection(const std::string& name) = 0;
         // what the user is looking at, used when the agent names nothing:
@@ -41,7 +47,9 @@ namespace mcp {
 
     class Server {
     public:
-        explicit Server(Host& host) : host_(host) {}
+        // allowWrites adds execute_sql, marked destructive so the agent asks the user first
+        explicit Server(Host& host, bool allowWrites = false)
+            : host_(host), allowWrites_(allowWrites) {}
 
         // one JSON-RPC message in; the response, or null for notifications
         nlohmann::json handle(const nlohmann::json& request);
@@ -73,17 +81,21 @@ namespace mcp {
                                          size_t max = 5);
 
         std::string listConnections();
+        // saved name (fuzzy), or a URL/file the host adds; throws if neither
+        std::string findConnection(const std::string& name);
         std::string connect(const nlohmann::json& args);
         std::string searchSchema(const nlohmann::json& args);
         std::string listTables(const nlohmann::json& args);
+        std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
-        std::string runQuery(const nlohmann::json& args);
+        std::string runQuery(const nlohmann::json& args, bool write = false);
 
         // opaque cursor -> remaining text pages / offset, oldest evicted first
-        std::string storeCursor(nlohmann::json state);
-        nlohmann::json takeCursor(const std::string& id);
+        std::string storeCursor(const std::string& tool, nlohmann::json state);
+        nlohmann::json takeCursor(const std::string& id, const std::string& tool);
 
         Host& host_;
+        bool allowWrites_;
         std::mutex mutex_; // one tool call at a time; agents rarely run them in parallel
         std::mutex activeMutex_;
         dearsql::DatabasePtr active_; // the handle the running call works on

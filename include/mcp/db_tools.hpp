@@ -30,6 +30,12 @@ namespace mcp {
         virtual std::vector<ConnectionEntry> connections() = 0;
         // open a known connection by exact name; "" on success, else the error
         virtual std::string connect(const std::string& name) = 0;
+        // a connection URL or database file, kept for this session only; its name,
+        // or "" with error set
+        virtual std::string add(const std::string& spec, std::string& error) {
+            error = "only saved connections can be opened here; add it in DearSQL";
+            return "";
+        }
         // library connection of an open connection, or null
         virtual std::shared_ptr<dearsql::IConnection> connection(const std::string& name) = 0;
         // what the user is looking at, used when the agent names nothing:
@@ -73,6 +79,8 @@ namespace mcp {
                                          size_t max = 5);
 
         std::string listConnections();
+        // saved name (fuzzy), or a URL/file the host adds; throws if neither
+        std::string findConnection(const std::string& name);
         std::string connect(const nlohmann::json& args);
         std::string searchSchema(const nlohmann::json& args);
         std::string listTables(const nlohmann::json& args);

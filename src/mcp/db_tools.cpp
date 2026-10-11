@@ -299,7 +299,9 @@ namespace mcp {
                           withTarget({{"sql", {{"type", "string"}}},
                                       {"maxRows",
                                        {{"type", "integer"},
-                                        {"description", "Rows per page (default 50)."}}},
+                                        {"description",
+                                         "Rows per page (default 50, max 500). A page also stops "
+                                         "at 30 KB of text, and at most 1000 rows are fetched."}}},
                                       {"cursor", cursor}}),
                           {"sql"}),
                       toolDef("list_tables",
@@ -310,8 +312,11 @@ namespace mcp {
                               "The user's saved connections, which are open, and the databases "
                               "on open ones.",
                               json::object()),
-                      toolDef("connect", "Open one of the user's saved connections by name.",
-                              {{"name", {{"type", "string"}}}}, {"name"})})}};
+                      toolDef(
+                          "connect",
+                          "Open one of the user's saved connections by name, or (in dearsql --mcp) "
+                          "a connection URL or database file path for this session only.",
+                          {{"name", {{"type", "string"}}}}, {"name"})})}};
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -402,30 +407,20 @@ namespace mcp {
             }
         }
 
-        // exact (case-insensitive) or the best close match
-        const ConnectionEntry* entry = nullptr;
-        int best = 0;
-        for (const auto& c : conns) {
-            const int s = lower(c.name) == lower(conn) ? 2000 : fuzzy::score(conn, c.name);
-            if (s > best) {
-                best = s;
-                entry = &c;
-            }
-        }
-        if (!entry || best < 400)
-            throw ToolError("No connection named '" + conn + "'. Call list_connections.");
+        const std::string name = findConnection(conn);
         // a connection the agent named (or the user selected) opens on first use
-        if (!entry->open) {
-            if (auto err = host_.connect(entry->name); !err.empty())
-                throw ToolError("Could not open " + entry->name + ": " + err);
+        auto lib = host_.connection(name);
+        if (!lib) {
+            if (auto err = host_.connect(name); !err.empty())
+                throw ToolError("Could not open " + name + ": " + err);
+            lib = host_.connection(name);
         }
-        auto lib = host_.connection(entry->name);
         if (!lib)
-            throw ToolError("'" + entry->name + "' is not open. Call connect.");
+            throw ToolError("'" + name + "' is not open. Call connect.");
 
         std::string db = str(args, {"database", "db"});
         std::string schema = str(args, {"schema"});
-        if (db.empty() && entry->name == focusConn)
+        if (db.empty() && name == focusConn)
             db = focusDb;
         if (db.empty())
             db = lib->info().database;
@@ -438,7 +433,7 @@ namespace mcp {
 
         auto handle = lib->database(db);
         if (!handle)
-            throw ToolError("Could not open database '" + db + "' on " + entry->name + ".");
+            throw ToolError("Could not open database '" + db + "' on " + name + ".");
         {
             std::lock_guard active(activeMutex_);
             active_ = handle;
@@ -454,7 +449,7 @@ namespace mcp {
         std::string label = db;
         if (!schema.empty())
             label += "." + schema;
-        return {entry->name, label, std::move(handle)};
+        return {name, label, std::move(handle)};
     }
 
     const Server::Catalog& Server::catalog(const Target& target, bool refresh) {
@@ -561,9 +556,19 @@ namespace mcp {
         const std::string name = str(args, {"name", "connection"});
         if (name.empty())
             throw ToolError("Missing 'name'.");
-        const auto conns = host_.connections();
+        const std::string found = findConnection(name);
+        if (host_.connection(found))
+            return found + " is already open.";
+        if (auto err = host_.connect(found); !err.empty())
+            throw ToolError("Could not connect to " + found + ": " + err);
+        return "Connected to " + found + ".";
+    }
+
+    std::string Server::findConnection(const std::string& name) {
+        // exact (case-insensitive) or the best close match
         const ConnectionEntry* entry = nullptr;
         int best = 0;
+        const auto conns = host_.connections();
         for (const auto& c : conns) {
             const int s = lower(c.name) == lower(name) ? 2000 : fuzzy::score(name, c.name);
             if (s > best) {
@@ -571,13 +576,13 @@ namespace mcp {
                 entry = &c;
             }
         }
-        if (!entry || best < 400)
-            throw ToolError("No connection named '" + name + "'. Call list_connections.");
-        if (entry->open)
-            return entry->name + " is already open.";
-        if (auto err = host_.connect(entry->name); !err.empty())
-            throw ToolError("Could not connect to " + entry->name + ": " + err);
-        return "Connected to " + entry->name + ".";
+        if (entry && best >= 400)
+            return entry->name;
+        std::string error;
+        if (auto added = host_.add(name, error); !added.empty())
+            return added;
+        throw ToolError("No connection named '" + name + "' (" + error +
+                        "). Call list_connections.");
     }
 
     std::string Server::searchSchema(const json& args) {
@@ -929,7 +934,10 @@ namespace mcp {
                 break;
             body += line + "\n";
         }
-        const std::string totalText = more ? std::format("{}+", total) : std::to_string(total);
+        // ponytail: no COUNT(*) re-run for the true total, it would run a big query twice
+        const std::string totalText =
+            more ? std::format("{}+ (only the first {} are fetched)", total, total)
+                 : std::to_string(total);
         if (offset == 0 && i >= total)
             out += std::format("{} row{} · {:.0f} ms\n", totalText, total == 1 ? "" : "s",
                                page.value("ms", 0.0));
@@ -940,6 +948,9 @@ namespace mcp {
             header += (header.empty() ? "" : " | ") + cell(c.get<std::string>());
         out += header + "\n" + body;
         if (i < data.size()) {
+            if (i < offset + maxRows)
+                out += std::format("page cut at {} rows: output limit of {} KB per page\n",
+                                   i - offset, MAX_OUTPUT / 1024);
             page["offset"] = i;
             out += "cursor: " + storeCursor("run_query", page) + "\n";
         } else if (more) {

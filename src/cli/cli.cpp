@@ -54,6 +54,9 @@ register with an agent, e.g.:
         std::string connect(const std::string& name) override {
             return conns_.open(name);
         }
+        std::string add(const std::string& spec, std::string& error) override {
+            return conns_.add(spec, error);
+        }
         std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override {
             return conns_.connection(name);
         }

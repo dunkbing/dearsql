@@ -149,3 +149,20 @@ TEST_F(McpToolsTest, SearchToleratesOneBadWordAndNamesTheDatabase) {
     auto [none, err3] = call("search_schema", {{"query", "zzzzqx"}});
     EXPECT_NE(none.find("of shop"), std::string::npos) << none;
 }
+
+TEST_F(McpToolsTest, QuerySaysWhyAPageIsShortAndThatTheTotalIsCapped) {
+    auto [text, err] = call("run_query", {{"sql", "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL "
+                                                  "SELECT n+1 FROM s WHERE n < 3000) SELECT n, "
+                                                  "printf('%0150d', n) FROM s"},
+                                          {"maxRows", 500}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("1000+ (only the first 1000 are fetched)"), std::string::npos) << text;
+    EXPECT_NE(text.find("page cut at"), std::string::npos) << text;
+    EXPECT_NE(text.find("cursor: "), std::string::npos) << text;
+}
+
+TEST_F(McpToolsTest, ConnectToAnUnknownUrlSaysWhy) {
+    auto [text, err] = call("connect", {{"name", "postgres://me@localhost/nope"}});
+    EXPECT_TRUE(err);
+    EXPECT_NE(text.find("add it in DearSQL"), std::string::npos) << text;
+}

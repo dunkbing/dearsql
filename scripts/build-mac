@@ -35,11 +35,9 @@ echo "==> Building ${APP_NAME}..."
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Clear CMake cache to ensure vcpkg is used
-rm -rf CMakeCache.txt CMakeFiles
-
+# incremental: CMakeLists.txt sets the vcpkg toolchain itself, so the cache can stay
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(sysctl -n hw.ncpu)
+make -j$(sysctl -n hw.ncpu) dearsql
 
 # Verify no Homebrew references
 echo ""
@@ -79,7 +77,10 @@ rm -f "$ZIP_PATH"
 echo ""
 echo "==> Creating DMG with Applications shortcut..."
 rm -f "$DMG_PATH"
-create-dmg \
+# finder can't be scripted over ssh; skip window styling there
+DMG_EXTRA=()
+[ -n "${SSH_CONNECTION:-}" ] && DMG_EXTRA+=(--skip-jenkins)
+create-dmg "${DMG_EXTRA[@]}" \
   --volname "$APP_NAME" \
   --volicon "${PROJECT_DIR}/assets/AppIcon.icns" \
   --window-pos 200 120 \

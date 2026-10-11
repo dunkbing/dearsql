@@ -263,10 +263,15 @@ namespace mcp {
         const json params = req.value("params", json::object());
 
         if (method == "initialize") {
-            res["result"] = {{"protocolVersion", params.value("protocolVersion", "2025-03-26")},
-                             {"capabilities", {{"tools", json::object()}}},
-                             {"serverInfo", {{"name", "dearsql"}, {"version", "1.0"}}},
-                             {"instructions", instructions()}};
+            res["result"] = {
+                {"protocolVersion", params.value("protocolVersion", "2025-03-26")},
+                {"capabilities", {{"tools", json::object()}}},
+                {"serverInfo", {{"name", "dearsql"}, {"version", "1.0"}}},
+                {"instructions", std::string(instructions()) +
+                                     (allowWrites_ ? "\nWrites are enabled: execute_sql runs "
+                                                     "a change the user asked for. Rule 3 "
+                                                     "applies to run_query only.\n"
+                                                   : "")}};
         } else if (method == "ping") {
             res["result"] = json::object();
         } else if (method == "tools/list") {
@@ -317,6 +322,16 @@ namespace mcp {
                           "Open one of the user's saved connections by name, or (in dearsql --mcp) "
                           "a connection URL or database file path for this session only.",
                           {{"name", {{"type", "string"}}}}, {"name"})})}};
+            if (allowWrites_) {
+                auto def = toolDef(
+                    "execute_sql",
+                    "Run one statement that changes data or schema (INSERT, UPDATE, DELETE, "
+                    "DDL). Only when the user asked for the change; use run_query to read.",
+                    withTarget({{"sql", {{"type", "string"}}}}), {"sql"});
+                def["annotations"]["readOnlyHint"] = false;
+                def["annotations"]["destructiveHint"] = true;
+                res["result"]["tools"].push_back(std::move(def));
+            }
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -369,6 +384,8 @@ namespace mcp {
                 return textResult(listTables(args));
             if (name == "describe_table")
                 return textResult(describeTable(args));
+            if (name == "execute_sql" && allowWrites_)
+                return textResult(runQuery(args, true));
             if (name == "run_query")
                 return textResult(runQuery(args));
             return textResult("Unknown tool: " + name, true);
@@ -837,7 +854,7 @@ namespace mcp {
         return out;
     }
 
-    std::string Server::runQuery(const json& args) {
+    std::string Server::runQuery(const json& args, bool write) {
         const int maxRows = num(args, {"maxRows", "max_rows", "maxResults", "limit"}, 50, 1, 500);
 
         json page;
@@ -855,12 +872,13 @@ namespace mcp {
             if (sql.empty())
                 throw ToolError("Missing 'sql'.");
             auto target = resolve(args);
-            if (!readOnly(target.db->type(), sql))
+            if (!write && !readOnly(target.db->type(), sql))
                 throw ToolError(
-                    "Rejected: only read-only statements run here (SELECT, WITH, "
-                    "SHOW, EXPLAIN, DESCRIBE, read-only PRAGMA on SQLite, or read commands on "
-                    "Redis/MongoDB). "
-                    "Show the user the statement to run themselves.");
+                    std::string("Rejected: only read-only statements run here (SELECT, WITH, "
+                                "SHOW, EXPLAIN, DESCRIBE, read-only PRAGMA on SQLite, or read "
+                                "commands on Redis/MongoDB). ") +
+                    (allowWrites_ ? "Use execute_sql for a change the user asked for."
+                                  : "Show the user the statement to run themselves."));
             const auto result = target.db->execute(sql, FETCH_ROWS + 1);
             if (!result.success()) {
                 std::string msg = "Error: " + result.errorMessage();
@@ -893,6 +911,8 @@ namespace mcp {
                 }
                 throw ToolError(msg);
             }
+            if (write)
+                catalogs_.clear(); // ddl may have changed the schema
             // the last statement with rows is the answer; earlier ones only report
             const dearsql::StatementResult* rows = nullptr;
             std::string notes;

@@ -47,7 +47,9 @@ namespace mcp {
 
     class Server {
     public:
-        explicit Server(Host& host) : host_(host) {}
+        // allowWrites adds execute_sql, marked destructive so the agent asks the user first
+        explicit Server(Host& host, bool allowWrites = false)
+            : host_(host), allowWrites_(allowWrites) {}
 
         // one JSON-RPC message in; the response, or null for notifications
         nlohmann::json handle(const nlohmann::json& request);
@@ -86,13 +88,14 @@ namespace mcp {
         std::string listTables(const nlohmann::json& args);
         std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
-        std::string runQuery(const nlohmann::json& args);
+        std::string runQuery(const nlohmann::json& args, bool write = false);
 
         // opaque cursor -> remaining text pages / offset, oldest evicted first
         std::string storeCursor(const std::string& tool, nlohmann::json state);
         nlohmann::json takeCursor(const std::string& id, const std::string& tool);
 
         Host& host_;
+        bool allowWrites_;
         std::mutex mutex_; // one tool call at a time; agents rarely run them in parallel
         std::mutex activeMutex_;
         dearsql::DatabasePtr active_; // the handle the running call works on

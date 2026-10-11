@@ -166,3 +166,23 @@ TEST_F(McpToolsTest, ConnectToAnUnknownUrlSaysWhy) {
     EXPECT_TRUE(err);
     EXPECT_NE(text.find("add it in DearSQL"), std::string::npos) << text;
 }
+
+TEST_F(McpToolsTest, WritesOnlyWithAllowWrites) {
+    auto listed = [](mcp::Server& s) {
+        return s.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}})
+                   .dump()
+                   .find("execute_sql") != std::string::npos;
+    };
+    EXPECT_FALSE(listed(*server));
+    EXPECT_TRUE(call("execute_sql", {{"sql", "DELETE FROM users"}}).second);
+
+    mcp::Server writer(*host, true);
+    EXPECT_TRUE(listed(writer));
+    auto r = writer.callTool("execute_sql", {{"sql", "DELETE FROM users WHERE id <= 20"}});
+    const auto text = r["content"][0]["text"].get<std::string>();
+    ASSERT_FALSE(r["isError"].get<bool>()) << text;
+    EXPECT_NE(text.find("20 rows affected"), std::string::npos) << text;
+    r = writer.callTool("run_query", {{"sql", "DELETE FROM users"}});
+    EXPECT_NE(r["content"][0]["text"].get<std::string>().find("Use execute_sql"),
+              std::string::npos);
+}

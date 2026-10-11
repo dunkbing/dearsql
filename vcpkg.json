@@ -49,14 +49,6 @@
     },
     "libiconv",
     "spdlog",
-    {
-      "name": "shaderc",
-      "platform": "osx"
-    },
-    {
-      "name": "spirv-cross",
-      "platform": "osx"
-    },
     "duckdb",
     "ftxui"
   ]

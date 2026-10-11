@@ -13,6 +13,7 @@
 #include "cli/connections.hpp"
 #include "cli/lsp.hpp"
 #include "cli/tui.hpp"
+#include "config.hpp"
 #include "mcp/db_tools.hpp"
 #include <iostream>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -25,6 +26,7 @@ namespace {
   dearsql --tui [connection]        browse and query in the terminal
   dearsql --mcp [connection...]     MCP server on stdin/stdout for coding agents
   dearsql --lsp [connection]        SQL language server (completion, hover) for editors
+  dearsql --version                 print the version
 
 connection: a saved DearSQL connection name, a URL (postgres://user:pass@host/db,
 mysql://..., mongodb://..., redis://..., mssql://..., oracle://...), or a
@@ -100,15 +102,11 @@ std::optional<int> runCli(int argc, char** argv) {
     if (argc < 2)
         return std::nullopt;
     const std::string mode = argv[1];
-    if (mode == "-h" || mode == "--help") {
-        std::cout << USAGE;
-        return 0;
-    }
     const bool mcpMode = mode == "--mcp";
     const bool lspMode = mode == "--lsp";
-    if (!mcpMode && !lspMode && mode != "--tui")
+    const bool infoMode = mode == "-h" || mode == "--help" || mode == "-v" || mode == "--version";
+    if (!infoMode && !mcpMode && !lspMode && mode != "--tui")
         return std::nullopt; // the GUI, maybe with a file to open
-    std::vector<std::string> args(argv + 2, argv + argc);
 #ifdef _WIN32
     // release builds are GUI-subsystem: borrow the console we were started from.
     // mcp mode keeps the agent's pipes, which are already the std handles.
@@ -119,6 +117,15 @@ std::optional<int> runCli(int argc, char** argv) {
         freopen("CONIN$", "r", stdin);
     }
 #endif
+    if (mode == "-v" || mode == "--version") {
+        std::cout << "dearsql " << APP_VERSION << "\n";
+        return 0;
+    }
+    if (infoMode) {
+        std::cout << USAGE;
+        return 0;
+    }
+    std::vector<std::string> args(argv + 2, argv + argc);
     // stdout belongs to the tui screen / the protocol stream: warnings go to stderr
     // in mcp and lsp mode, nowhere in the tui
     spdlog::set_default_logger(spdlog::stderr_color_mt("dearsql"));

@@ -70,11 +70,40 @@ namespace mcp {
             return t.schema.empty() ? t.name : t.schema + "." + t.name;
         }
 
+        // not text: control bytes or invalid UTF-8 (BLOBs come back as raw bytes)
+        bool binary(std::string_view v) {
+            for (size_t i = 0; i < v.size();) {
+                const auto c = static_cast<unsigned char>(v[i]);
+                if (c < 0x20 && c != '\n' && c != '\r' && c != '\t')
+                    return true;
+                const size_t len = c < 0x80         ? 1
+                                   : (c >> 5) == 6  ? 2
+                                   : (c >> 4) == 14 ? 3
+                                   : (c >> 3) == 30 ? 4
+                                                    : 0;
+                if (len == 0 || i + len > v.size())
+                    return true;
+                for (size_t k = 1; k < len; ++k)
+                    if ((static_cast<unsigned char>(v[i + k]) >> 6) != 2)
+                        return true;
+                i += len;
+            }
+            return false;
+        }
+
         std::string cell(const std::string& v) {
             if (dearsql::isNullSentinel(v))
                 return "NULL";
             if (dearsql::isBoolSentinel(v))
                 return dearsql::boolSentinelValue(v) ? "true" : "false";
+            if (binary(v)) {
+                if (v.size() > 32)
+                    return std::format("<blob {} bytes>", v.size());
+                std::string hex = "0x";
+                for (unsigned char c : v)
+                    hex += std::format("{:02X}", c);
+                return hex;
+            }
             std::string out;
             out.reserve(std::min(v.size(), MAX_CELL + 16));
             for (char c : v) {
@@ -84,6 +113,7 @@ namespace mcp {
                 }
                 out += c == '\n'   ? std::string("\\n")
                        : c == '\t' ? std::string(" ")
+                       : c == '|'  ? std::string("\\|")
                                    : std::string(1, c);
             }
             return out;
@@ -207,7 +237,8 @@ namespace mcp {
                "or listing everything.\n"
                "- describe_table: columns, types, keys, indexes and foreign keys of one table. "
                "Call it before writing a query that joins or filters on that table.\n"
-               "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN), or a read-only command on "
+               "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
+               "SQLite), or a read-only command on "
                "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
                "- list_tables: the whole map (tables and views with column counts and sizes), "
                "paged. Use when search_schema is not enough.\n"
@@ -260,15 +291,17 @@ namespace mcp {
                               "and out of one table or view. Name may be schema-qualified; close "
                               "misspellings are resolved.",
                               withTarget({{"table", {{"type", "string"}}}}), {"table"}),
-                      toolDef("run_query",
-                              "Run one read-only statement and return rows as compact text. Use "
-                              "LIMIT. Redis/MongoDB take their read commands instead of SQL.",
-                              withTarget({{"sql", {{"type", "string"}}},
-                                          {"maxRows",
-                                           {{"type", "integer"},
-                                            {"description", "Rows per page (default 50)."}}},
-                                          {"cursor", cursor}}),
-                              {"sql"}),
+                      toolDef(
+                          "run_query",
+                          "Run one read-only statement and return rows as compact text. Use "
+                          "LIMIT. Read-only PRAGMA works on SQLite; Redis/MongoDB take their read "
+                          "commands instead of SQL.",
+                          withTarget({{"sql", {{"type", "string"}}},
+                                      {"maxRows",
+                                       {{"type", "integer"},
+                                        {"description", "Rows per page (default 50)."}}},
+                                      {"cursor", cursor}}),
+                          {"sql"}),
                       toolDef("list_tables",
                               "Every table and view with column count and size, paged. Prefer "
                               "search_schema when you know roughly what you want.",
@@ -461,8 +494,9 @@ namespace mcp {
 
     // ---------- cursors ----------
 
-    std::string Server::storeCursor(json state) {
+    std::string Server::storeCursor(const std::string& tool, json state) {
         const std::string id = std::to_string(nextCursor_++);
+        state["tool"] = tool;
         cursors_[id] = std::move(state);
         cursorOrder_.push_back(id);
         while (cursorOrder_.size() > MAX_CURSORS) {
@@ -472,11 +506,20 @@ namespace mcp {
         return id;
     }
 
-    json Server::takeCursor(const std::string& id) {
+    json Server::takeCursor(const std::string& id, const std::string& tool) {
         auto it = cursors_.find(id);
         if (it == cursors_.end())
             throw ToolError("Cursor '" + id + "' expired; run the call again without it.");
+        if (auto owner = it->second.value("tool", ""); owner != tool)
+            throw ToolError("Cursor '" + id + "' belongs to " + owner + ", not " + tool +
+                            "; call " + tool + " without it.");
         return it->second;
+    }
+
+    // "app_state.db (local)" for messages; a bare connection name when it has one database
+    std::string Server::where(const Target& target) const {
+        return target.database.empty() ? target.connection
+                                       : target.database + " (" + target.connection + ")";
     }
 
     // ---------- tools ----------
@@ -506,7 +549,11 @@ namespace mcp {
             }
             out += "\n";
         }
-        out += "* = selected in DearSQL. Closed ones open with connect.";
+        out +=
+            std::ranges::any_of(conns, [&](const auto& c) { return c.name == focus; })
+                ? "* = selected in DearSQL. Closed ones open with connect."
+                : "None selected in DearSQL: pass connection unless only one is open. Closed ones "
+                  "open with connect.";
         return out;
     }
 
@@ -540,7 +587,7 @@ namespace mcp {
         const int maxResults = num(args, {"maxResults", "max_results", "limit"}, 20, 1, 200);
         int offset = 0;
         if (auto c = str(args, {"cursor"}); !c.empty())
-            offset = takeCursor(c).value("offset", 0);
+            offset = takeCursor(c, "search_schema").value("offset", 0);
 
         auto target = resolve(args);
         const auto& cat = catalog(target);
@@ -562,18 +609,20 @@ namespace mcp {
             std::string detail;
         };
         std::vector<Hit> hits;
-        // every word must hit the table name or the column name
+        // each word hits the table name or the column name; more words hit ranks
+        // first, so one misspelled word lowers a hit instead of dropping it
         auto scoreAll = [&](const std::string& tableName, const std::string& colName) {
-            int total = 0;
+            int total = 0, matched = 0;
             for (const auto& w : words) {
                 int s = fuzzy::score(w, tableName);
                 if (!colName.empty())
                     s = std::max(s, fuzzy::score(w, colName));
-                if (s == 0)
-                    return 0;
-                total += s;
+                if (s) {
+                    total += s;
+                    ++matched;
+                }
             }
-            return total;
+            return matched ? matched * 10000 + total : 0;
         };
         for (const auto* list : {&cat.tables, &cat.views}) {
             const bool views = list == &cat.views;
@@ -591,7 +640,7 @@ namespace mcp {
                             }))
                             continue;
                         // a table that matches the whole query outranks its columns
-                        s = s * 8 / 10;
+                        s = s / 10000 * 10000 + s % 10000 * 8 / 10;
                         if (tableScore)
                             s = std::min(s, tableScore);
                         hits.push_back({s, "column", qualified(t) + "." + col.name, col.type});
@@ -606,11 +655,12 @@ namespace mcp {
         if (hits.empty())
             return std::format("0 matches for '{}' in {} tables/views of {}. Try one shorter "
                                "word, or list_tables.",
-                               query, total, target.database);
+                               query, total, where(target));
 
         std::string out;
         if (offset == 0 && hits[0].kind != "column" &&
-            (hits.size() == 1 || hits[0].score >= 1000 || hits[0].score > hits[1].score * 2))
+            (hits.size() == 1 || hits[0].score / 10000 > hits[1].score / 10000 ||
+             hits[0].score % 10000 >= 1000 || hits[0].score % 10000 > hits[1].score % 10000 * 2))
             out += std::format("→ describe_table {} (best match)\n", hits[0].name);
         const size_t end = std::min(hits.size(), static_cast<size_t>(offset + maxResults));
         if (hits.size() > static_cast<size_t>(maxResults) || offset > 0)
@@ -618,7 +668,7 @@ namespace mcp {
         for (size_t i = offset; i < end; ++i)
             out += std::format("{:<6} {}  {}\n", hits[i].kind, hits[i].name, hits[i].detail);
         if (end < hits.size())
-            out += "cursor: " + storeCursor({{"offset", end}}) + "\n";
+            out += "cursor: " + storeCursor("search_schema", {{"offset", end}}) + "\n";
         return out;
     }
 
@@ -626,7 +676,7 @@ namespace mcp {
         const int maxResults = num(args, {"maxResults", "max_results", "limit"}, 100, 1, 1000);
         int offset = 0;
         if (auto c = str(args, {"cursor"}); !c.empty())
-            offset = takeCursor(c).value("offset", 0);
+            offset = takeCursor(c, "list_tables").value("offset", 0);
 
         auto target = resolve(args);
         const auto& cat = catalog(target, offset == 0);
@@ -638,9 +688,8 @@ namespace mcp {
 
         std::string out;
         if (offset == 0)
-            out += std::format(
-                "{} tables, {} views in {} ({})\n", cat.tables.size(), cat.views.size(),
-                target.database.empty() ? "database" : target.database, target.connection);
+            out += std::format("{} tables, {} views in {}\n", cat.tables.size(), cat.views.size(),
+                               where(target));
         const size_t end = std::min(rows.size(), static_cast<size_t>(offset + maxResults));
         for (size_t i = offset; i < end; ++i) {
             const auto& [kind, t] = rows[i];
@@ -651,7 +700,7 @@ namespace mcp {
         }
         if (end < rows.size())
             out += std::format("{} more. cursor: {}\n", rows.size() - end,
-                               storeCursor({{"offset", end}}));
+                               storeCursor("list_tables", {{"offset", end}}));
         return out;
     }
 
@@ -678,7 +727,7 @@ namespace mcp {
         if (!found) {
             auto close = suggest(target, name);
             if (close.empty())
-                throw ToolError("No table '" + name + "' in " + target.database +
+                throw ToolError("No table '" + name + "' in " + where(target) +
                                 ". Try search_schema.");
             // one clearly-best candidate: show it rather than bounce the agent
             const int top = fuzzy::score(name, close[0].substr(close[0].rfind('.') + 1));
@@ -787,17 +836,26 @@ namespace mcp {
         const int maxRows = num(args, {"maxRows", "max_rows", "maxResults", "limit"}, 50, 1, 500);
 
         json page;
+        const std::string sql = str(args, {"sql", "query", "statement", "command"});
         if (auto c = str(args, {"cursor"}); !c.empty()) {
-            page = takeCursor(c);
-        } else {
-            const std::string sql = str(args, {"sql", "query", "statement", "command"});
+            // new sql with a cursor from elsewhere: the agent meant the new query
+            auto it = cursors_.find(c);
+            if (sql.empty())
+                page = takeCursor(c, "run_query");
+            else if (it != cursors_.end() && it->second.value("tool", "") == "run_query" &&
+                     it->second.value("sql", "") == sql)
+                page = it->second;
+        }
+        if (page.is_null()) {
             if (sql.empty())
                 throw ToolError("Missing 'sql'.");
             auto target = resolve(args);
             if (!readOnly(target.db->type(), sql))
-                throw ToolError("Rejected: only read-only statements run here (SELECT, WITH, "
-                                "SHOW, EXPLAIN, DESCRIBE, or read commands on Redis/MongoDB). "
-                                "Show the user the statement to run themselves.");
+                throw ToolError(
+                    "Rejected: only read-only statements run here (SELECT, WITH, "
+                    "SHOW, EXPLAIN, DESCRIBE, read-only PRAGMA on SQLite, or read commands on "
+                    "Redis/MongoDB). "
+                    "Show the user the statement to run themselves.");
             const auto result = target.db->execute(sql, FETCH_ROWS + 1);
             if (!result.success()) {
                 std::string msg = "Error: " + result.errorMessage();
@@ -844,7 +902,8 @@ namespace mcp {
             if (!rows)
                 return notes + std::format("OK ({:.0f} ms)", result.executionTimeMs);
             const bool more = rows->tableData.size() > FETCH_ROWS;
-            page = {{"columns", rows->columnNames},
+            page = {{"sql", sql},
+                    {"columns", rows->columnNames},
                     {"rows", json::array()},
                     {"offset", 0},
                     {"total", std::min<size_t>(rows->tableData.size(), FETCH_ROWS)},
@@ -878,11 +937,11 @@ namespace mcp {
             out += std::format("rows {}-{} of {}\n", offset + 1, i, totalText);
         std::string header;
         for (const auto& c : page["columns"])
-            header += (header.empty() ? "" : " | ") + c.get<std::string>();
+            header += (header.empty() ? "" : " | ") + cell(c.get<std::string>());
         out += header + "\n" + body;
         if (i < data.size()) {
             page["offset"] = i;
-            out += "cursor: " + storeCursor(page) + "\n";
+            out += "cursor: " + storeCursor("run_query", page) + "\n";
         } else if (more) {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }

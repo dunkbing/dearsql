@@ -76,12 +76,13 @@ namespace mcp {
         std::string connect(const nlohmann::json& args);
         std::string searchSchema(const nlohmann::json& args);
         std::string listTables(const nlohmann::json& args);
+        std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
         std::string runQuery(const nlohmann::json& args);
 
         // opaque cursor -> remaining text pages / offset, oldest evicted first
-        std::string storeCursor(nlohmann::json state);
-        nlohmann::json takeCursor(const std::string& id);
+        std::string storeCursor(const std::string& tool, nlohmann::json state);
+        nlohmann::json takeCursor(const std::string& id, const std::string& tool);
 
         Host& host_;
         std::mutex mutex_; // one tool call at a time; agents rarely run them in parallel

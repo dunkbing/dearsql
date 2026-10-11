@@ -116,3 +116,36 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
+
+TEST(Fuzzy, SwapIsOneEdit) {
+    EXPECT_EQ(fuzzy::editDistance("nmae", "name"), 1u);
+    EXPECT_GT(fuzzy::score("nmae", "name"), 0);
+}
+
+TEST_F(McpToolsTest, CursorFromAnotherToolOrQueryIsNotReused) {
+    auto [tables, err] = call("list_tables", {{"maxResults", 1}});
+    ASSERT_FALSE(err) << tables;
+    const auto cursor = tables.substr(tables.rfind("cursor: ") + 8, 1);
+    auto [wrong, err2] = call("run_query", {{"cursor", cursor}});
+    EXPECT_TRUE(err2);
+    EXPECT_NE(wrong.find("belongs to list_tables"), std::string::npos) << wrong;
+    // new sql wins over a stale cursor
+    auto [fresh, err3] = call("run_query", {{"sql", "SELECT 'other' AS q"}, {"cursor", cursor}});
+    EXPECT_FALSE(err3) << fresh;
+    EXPECT_NE(fresh.find("other"), std::string::npos) << fresh;
+}
+
+TEST_F(McpToolsTest, CellsEscapePipesAndShowBlobs) {
+    auto [text, err] = call("run_query", {{"sql", "SELECT 'a|b' AS x, x'00ff' AS b"}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("a\\|b | 0x00FF"), std::string::npos) << text;
+}
+
+TEST_F(McpToolsTest, SearchToleratesOneBadWordAndNamesTheDatabase) {
+    auto [text, err] = call("search_schema", {{"query", "usres emial"}});
+    EXPECT_NE(text.find("users.email"), std::string::npos) << text;
+    auto [partial, err2] = call("search_schema", {{"query", "emial zzzzqx"}});
+    EXPECT_NE(partial.find("users.email"), std::string::npos) << partial;
+    auto [none, err3] = call("search_schema", {{"query", "zzzzqx"}});
+    EXPECT_NE(none.find("of shop"), std::string::npos) << none;
+}

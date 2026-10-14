@@ -18,8 +18,8 @@
 
 ## Features
 
-- Support SQLite, PostgreSQL, MySQL, MariaDB, MongoDB, and Redis connections
-- Cross-platform: macOS (Metal), Linux (GTK4 + OpenGL)
+- SQLite, DuckDB, PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, MongoDB, Redis and more
+- Cross-platform: macOS (Metal), Linux (GTK4 + OpenGL), Windows (DirectX 11)
 - Database browser: Sidebar for exploring schemas, tables, and structure
 - Native file dialogs for SQLite files
 - Native alert/confirm dialogs per platform
@@ -27,9 +27,29 @@
 - Run SQL queries with formatted results display
 - Query history
 
+## Command line
+
+The same binary runs in the terminal ([docs](https://dearsql.dev/docs/command-line)):
+
+```sh
+dearsql --tui [connection]   # browse and query in the terminal
+dearsql --mcp                # database tools for coding agents (MCP)
+dearsql --lsp                # SQL completion and hover for editors
+```
+
+A connection is a saved name, a URL, or a SQLite/DuckDB/CSV file. For agents:
+
+```sh
+claude mcp add dearsql -- dearsql --mcp
+```
+
 ## Installation
 
-Download the latest release for macOS, Linux, and Windows from [GitHub Releases](https://github.com/dunkbing/dearsql/releases).
+Download the latest release for macOS, Linux, and Windows from [GitHub Releases](https://github.com/dunkbing/dearsql/releases), or on macOS/Linux:
+
+```sh
+curl -fsSL https://dearsql.dev/install.sh | sh
+```
 
 ### Arch Linux ([AUR](https://aur.archlinux.org/packages/dearsql))
 

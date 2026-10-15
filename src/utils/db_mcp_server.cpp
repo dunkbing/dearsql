@@ -73,6 +73,10 @@ void DbMcpServer::stop() {
     // release a parked connect handler, or the join below waits on it
     stopping_ = true;
     finishConnectRequest(false, "DearSQL closed the database tools.");
+    {
+        std::lock_guard lock(uiMutex_);
+        uiRequests_.clear(); // their tools return on stopping_
+    }
 
     if (server_) {
         // the join below waits for in-flight handlers: stop their query server-side
@@ -175,4 +179,54 @@ std::string DbMcpServer::connect(const std::string& name) {
     for (int i = 0; i < 50 && !this->connection(name); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     return "";
+}
+
+// http thread: queue for the UI thread and wait, without outliving stop()
+std::pair<bool, std::string> DbMcpServer::askUi(UiRequest::Kind kind, const std::string& connection,
+                                                const std::string& text) {
+    if (stopping_)
+        return {false, "DearSQL closed the database tools."};
+    auto request = std::make_shared<UiRequest>();
+    request->kind = kind;
+    request->connection = connection;
+    request->text = text;
+    auto reply = request->reply.get_future();
+    {
+        std::lock_guard lock(uiMutex_);
+        uiRequests_.push_back(std::move(request));
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    while (reply.wait_for(std::chrono::milliseconds(200)) != std::future_status::ready) {
+        if (stopping_)
+            return {false, "DearSQL closed the database tools."};
+        if (std::chrono::steady_clock::now() > deadline)
+            return {false, "the user did not answer within 5 minutes"};
+    }
+    try {
+        return reply.get();
+    } catch (const std::future_error&) {
+        return {false, "the chat was closed before the user answered"};
+    }
+}
+
+std::shared_ptr<DbMcpServer::UiRequest> DbMcpServer::takeUiRequest() {
+    std::lock_guard lock(uiMutex_);
+    if (uiRequests_.empty())
+        return nullptr;
+    auto request = std::move(uiRequests_.front());
+    uiRequests_.pop_front();
+    return request;
+}
+
+std::string DbMcpServer::approveWrite(const std::string& connection, const std::string& sql) {
+    auto [ok, why] = askUi(UiRequest::Kind::Write, connection, sql);
+    return ok ? "" : why;
+}
+
+std::string DbMcpServer::saveConnection(const std::string& spec, const std::string& name,
+                                        std::string& error) {
+    auto [ok, result] = askUi(UiRequest::Kind::SaveConnection, spec, name);
+    if (!ok)
+        error = result;
+    return ok ? result : "";
 }

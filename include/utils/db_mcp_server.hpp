@@ -4,6 +4,8 @@
 #include "mcp/db_tools.hpp"
 #include <atomic>
 #include <condition_variable>
+#include <deque>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -54,14 +56,33 @@ public:
     // timed-out request is ignored. empty = whatever is pending (shutdown)
     void finishConnectRequest(bool ok, const std::string& message, const std::string& name = "");
 
+    // a write to approve or a connection to save, answered on the UI thread: the
+    // tool waits (5 min at most) for reply; {ok, name or reason}
+    struct UiRequest {
+        enum class Kind { Write, SaveConnection };
+        Kind kind{};
+        std::string connection; // Write: the target; SaveConnection: the URL or file
+        std::string text;       // Write: the sql; SaveConnection: the name asked for
+        std::promise<std::pair<bool, std::string>> reply;
+    };
+    std::shared_ptr<UiRequest> takeUiRequest();
+
 private:
     // mcp::Host
     std::vector<mcp::ConnectionEntry> connections() override;
     std::string connect(const std::string& name) override;
     std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override;
     std::pair<std::string, std::string> focus() override;
+    std::string approveWrite(const std::string& connection, const std::string& sql) override;
+    bool canSaveConnections() override {
+        return true;
+    }
+    std::string saveConnection(const std::string& spec, const std::string& name,
+                               std::string& error) override;
+    std::pair<bool, std::string> askUi(UiRequest::Kind kind, const std::string& connection,
+                                       const std::string& text);
 
-    mcp::Server tools_{*this};
+    mcp::Server tools_{*this, true}; // writes go through approveWrite
     std::unique_ptr<httplib::Server> server_;
     std::string token_;
     AsyncOperation<bool> listenOp_;
@@ -80,4 +101,7 @@ private:
     bool connectOk_ = false;
     bool connectBusy_ = false;
     std::string connectMessage_;
+
+    std::mutex uiMutex_;
+    std::deque<std::shared_ptr<UiRequest>> uiRequests_;
 };

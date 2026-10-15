@@ -43,6 +43,21 @@ namespace mcp {
         virtual std::pair<std::string, std::string> focus() {
             return {};
         }
+        // a write on connection, shown to the user: "" to run it, else why not. the
+        // cli says yes: its agent client already asks before a destructive tool
+        virtual std::string approveWrite(const std::string& connection, const std::string& sql) {
+            return "";
+        }
+        // save spec (URL or file) as a connection after the user approves; its name,
+        // or "" with error set. hosts that can't leave add_connection out
+        virtual bool canSaveConnections() {
+            return false;
+        }
+        virtual std::string saveConnection(const std::string& spec, const std::string& name,
+                                           std::string& error) {
+            error = "not supported";
+            return "";
+        }
     };
 
     class Server {
@@ -84,6 +99,7 @@ namespace mcp {
         // saved name (fuzzy), or a URL/file the host adds; throws if neither
         std::string findConnection(const std::string& name);
         std::string connect(const nlohmann::json& args);
+        std::string addConnection(const nlohmann::json& args);
         std::string searchSchema(const nlohmann::json& args);
         std::string listTables(const nlohmann::json& args);
         std::string where(const Target& target) const;

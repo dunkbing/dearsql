@@ -186,3 +186,55 @@ TEST_F(McpToolsTest, WritesOnlyWithAllowWrites) {
     EXPECT_NE(r["content"][0]["text"].get<std::string>().find("Use execute_sql"),
               std::string::npos);
 }
+
+namespace {
+    // the GUI's shape: every write is asked about, connections can be saved
+    class AskingHost : public OneConnectionHost {
+    public:
+        using OneConnectionHost::OneConnectionHost;
+        std::string answer; // "" = approve
+        std::vector<std::string> asked;
+        std::string approveWrite(const std::string& connection, const std::string& sql) override {
+            asked.push_back(connection + ": " + sql);
+            return answer;
+        }
+        bool canSaveConnections() override {
+            return true;
+        }
+        std::string saveConnection(const std::string& spec, const std::string& name,
+                                   std::string& error) override {
+            if (spec.starts_with("postgres://"))
+                return name.empty() ? "shop" : name; // pretend saved, then "shop" opens
+            error = "the user rejected it";
+            return "";
+        }
+    };
+} // namespace
+
+TEST_F(McpToolsTest, WritesWaitForTheUserAndAddConnectionSaves) {
+    AskingHost asking(conn);
+    mcp::Server s(asking, true);
+    auto text = [](const nlohmann::json& r) { return r["content"][0]["text"].get<std::string>(); };
+
+    asking.answer = "the user rejected it";
+    auto r = s.callTool("execute_sql", {{"sql", "DELETE FROM users WHERE id = 1"}});
+    EXPECT_TRUE(r["isError"].get<bool>());
+    EXPECT_NE(text(r).find("Not run: the user rejected it"), std::string::npos) << text(r);
+    ASSERT_EQ(asking.asked.size(), 1u);
+    EXPECT_EQ(asking.asked[0], "shop: DELETE FROM users WHERE id = 1");
+
+    asking.answer = "";
+    r = s.callTool("execute_sql", {{"sql", "DELETE FROM users WHERE id = 1"}});
+    EXPECT_NE(text(r).find("1 rows affected"), std::string::npos) << text(r);
+
+    auto listed = s.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}}).dump();
+    EXPECT_NE(listed.find("add_connection"), std::string::npos);
+    r = s.callTool("add_connection", {{"url", "postgres://me@localhost/shop"}});
+    EXPECT_NE(text(r).find("Saved and connected to shop"), std::string::npos) << text(r);
+    r = s.callTool("add_connection", {{"url", "/nope.db"}});
+    EXPECT_NE(text(r).find("Not saved: the user rejected it"), std::string::npos) << text(r);
+
+    // the cli host can't save, so the tool isn't there
+    listed = server->handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}}).dump();
+    EXPECT_EQ(listed.find("add_connection"), std::string::npos);
+}

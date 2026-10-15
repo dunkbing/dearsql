@@ -8,6 +8,7 @@
 #include "app_state.hpp"
 #include "utils/db_mcp_server.hpp"
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,7 +45,18 @@ public:
 private:
     // one entry in the transcript
     struct Item {
-        enum class Kind { User, Assistant, Thought, Tool, Plan, Permission, Auth, Info, Error };
+        enum class Kind {
+            User,
+            Assistant,
+            Thought,
+            Tool,
+            Plan,
+            Permission,
+            Auth,
+            Info,
+            Error,
+            Approval, // database tools: a write or a new connection. last: saved as numbers
+        };
         Kind kind{};
         std::string text;
         std::string contextNote; // "context: a, b" shown under a user message
@@ -62,6 +74,8 @@ private:
         std::string permissionChoice;
         // Auth (reuses permissionAnswered/permissionChoice)
         std::vector<acp::AuthMethod> authMethods;
+        // Approval (reuses permissionAnswered/permissionChoice)
+        std::shared_ptr<DbMcpServer::UiRequest> approval;
     };
 
     struct NodeRef {
@@ -128,6 +142,8 @@ private:
     IDatabaseNode* contextNode();
     void syncContext(); // track selection changes, update mcp node
     void serviceAgentConnectRequests();
+    void serviceAgentUiRequests();
+    void answerApproval(Item& item, bool ok, bool allowForChat = false);
     std::string schemaOverview(IDatabaseNode* node) const;
     void rebuildContextCandidates();
     [[nodiscard]] std::string contextItemText(const ContextItem& item) const;
@@ -183,6 +199,7 @@ private:
     // context tracking
     // connection the agent asked us to open via the mcp connect_database tool
     std::shared_ptr<DatabaseInterface> pendingConnectDb_;
+    std::set<std::string> writesAllowed_; // connections the user allowed for this chat
 
     std::shared_ptr<DatabaseInterface> db_; // the connection this chat belongs to
     bool sentSchemaContext_ = false;

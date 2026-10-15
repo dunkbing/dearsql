@@ -63,6 +63,8 @@ paru -S dearsql
 ## Build instructions
 
 ```sh
+./scripts/build
+# or
 claude "build this project"
 ```
 

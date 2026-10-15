@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
+#include "database/connection_url.hpp"
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
 #include "database/mongodb.hpp"
@@ -293,6 +294,7 @@ void AISidebarPanel::switchBackend(int newIndex) {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = 0;
     resumeSessionId_.clear();
     backendIndex_ = newIndex;
@@ -384,6 +386,7 @@ void AISidebarPanel::startNewSession() {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = 0;
     resumeSessionId_.clear();
     sentSchemaContext_ = false;
@@ -406,6 +409,7 @@ void AISidebarPanel::openSession(const AiSession& session) {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = session.id;
     if (isAcpBackend()) {
         stopAgent();
@@ -601,6 +605,123 @@ void AISidebarPanel::syncContext() {
     mcp_.setConnections(std::move(connections));
 
     serviceAgentConnectRequests();
+    serviceAgentUiRequests();
+}
+
+namespace {
+    // prod-tagged connections always ask, even after "allow for this chat"
+    bool isProduction(const std::string& connection) {
+        for (const auto& db : Application::getInstance().getDatabases()) {
+            if (db && db->getConnectionInfo().name == connection) {
+                std::string tag = db->getConnectionInfo().envTag;
+                std::ranges::transform(tag, tag.begin(),
+                                       [](unsigned char c) { return std::tolower(c); });
+                return tag.starts_with("prod");
+            }
+        }
+        return false;
+    }
+
+    // what the user sees for a URL: everything but the password
+    std::string describeSpec(const std::string& spec) {
+        if (!looksLikeConnectionUrl(spec))
+            return spec;
+        const auto parsed = parseConnectionUrl(spec);
+        if (!parsed.ok)
+            return spec;
+        const auto& i = parsed.info;
+        if (!i.path.empty())
+            return std::format("{} {}", databaseTypeToString(i.type), i.path);
+        return std::format("{} {}{}@{}:{}/{}", databaseTypeToString(i.type), i.username,
+                           i.password.empty() ? "" : ":***", i.host, i.port, i.database);
+    }
+
+    // ui thread: the agent's new connection, saved like the connection dialog does
+    std::pair<bool, std::string> saveAgentConnection(const std::string& spec,
+                                                     const std::string& name) {
+        DatabaseConnectionInfo info;
+        if (looksLikeConnectionUrl(spec)) {
+            auto parsed = parseConnectionUrl(spec);
+            if (!parsed.ok)
+                return {false, parsed.error};
+            info = std::move(parsed.info);
+            if (info.name.empty() && !info.path.empty()) // sqlite://, duckdb://
+                info.name = std::filesystem::path(info.path).filename().string();
+            if (info.name.empty())
+                info.name = info.host + (info.database.empty() ? "" : "/" + info.database);
+        } else if (std::filesystem::exists(spec)) {
+            const auto ext = std::filesystem::path(spec).extension().string();
+            info.type = (ext == ".duckdb" || ext == ".ddb" || dearsql::isCsvPath(spec))
+                            ? DatabaseType::DUCKDB
+                            : DatabaseType::SQLITE;
+            info.path = std::filesystem::absolute(spec).string();
+            info.name = std::filesystem::path(spec).filename().string();
+        } else {
+            return {false, "'" + spec + "' is not a connection URL or an existing file"};
+        }
+        if (!name.empty())
+            info.name = name;
+
+        auto& app = Application::getInstance();
+        for (const auto& db : app.getDatabases()) {
+            if (db && db->getConnectionInfo().name == info.name)
+                return {false, "a connection named '" + info.name + "' already exists"};
+        }
+        if (!app.canAddConnection())
+            return {false, "the free tier's connection limit is reached"};
+        SavedConnection conn;
+        conn.connectionInfo = info;
+        conn.workspaceId = app.getCurrentWorkspaceId();
+        const int id = app.saveConnection(conn);
+        if (id <= 0)
+            return {false, "DearSQL could not save the connection"};
+        auto db = DatabaseFactory::createDatabase(info);
+        db->setConnectionId(id);
+        app.addDatabase(db);
+        return {true, info.name};
+    }
+} // namespace
+
+void AISidebarPanel::serviceAgentUiRequests() {
+    while (auto request = mcp_.takeUiRequest()) {
+        if (request->settled)
+            continue; // timed out before it was shown
+        if (request->kind == DbMcpServer::UiRequest::Kind::Write &&
+            writesAllowed_.contains(request->connection) && !isProduction(request->connection)) {
+            if (!request->settled.exchange(true))
+                request->reply.set_value({true, ""});
+            continue;
+        }
+        Item item;
+        item.kind = Item::Kind::Approval;
+        item.approval = std::move(request);
+        items_.push_back(std::move(item));
+        scrollToBottom_ = true;
+    }
+}
+
+void AISidebarPanel::answerApproval(Item& item, bool ok, bool allowForChat) {
+    auto& request = *item.approval;
+    item.permissionAnswered = true;
+    if (request.settled.exchange(true)) { // the tool gave up waiting
+        item.permissionChoice = "Expired";
+        item.approval.reset();
+        return;
+    }
+    if (!ok) {
+        item.permissionChoice = "Rejected";
+        request.reply.set_value({false, "the user rejected it"});
+    } else if (request.kind == DbMcpServer::UiRequest::Kind::Write) {
+        if (allowForChat)
+            writesAllowed_.insert(request.connection);
+        item.permissionChoice = allowForChat ? "Allowed for this chat" : "Run";
+        request.reply.set_value({true, ""});
+    } else {
+        auto result = saveAgentConnection(request.connection, request.text);
+        item.permissionChoice = result.first ? "Saved as " + result.second : result.second;
+        request.reply.set_value(std::move(result));
+    }
+    item.approval.reset();
 }
 
 void AISidebarPanel::serviceAgentConnectRequests() {
@@ -1662,6 +1783,46 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                     acp_->respondPermission(item.permission.rpcId, opt.optionId);
                     item.permissionAnswered = true;
                     item.permissionChoice = opt.name;
+                }
+            }
+        }
+        break;
+    }
+
+    case Item::Kind::Approval: {
+        const auto* request = item.approval.get();
+        const bool write = !request || request->kind == DbMcpServer::UiRequest::Kind::Write;
+        ImGui::TextColored(colors.peach, write ? ICON_FA_TRIANGLE_EXCLAMATION " Run a change?"
+                                               : ICON_FA_PLUG " Save a new connection?");
+        if (request) {
+            if (write) {
+                ImGui::TextWrapped("On %s:", request->connection.c_str());
+                ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+                ImGui::TextWrapped("%s", request->text.c_str());
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::TextWrapped("%s%s", describeSpec(request->connection).c_str(),
+                                   request->text.empty() ? "" : (" as " + request->text).c_str());
+            }
+        }
+        if (item.permissionAnswered || !request || request->settled) {
+            ImGui::TextColored(colors.subtext0, "-> %s",
+                               item.permissionChoice.empty() ? "Expired"
+                                                             : item.permissionChoice.c_str());
+        } else {
+            if (UIUtils::SmallButton(write ? "Run##approve" : "Save##approve",
+                                     UIUtils::ButtonVariant::Primary)) {
+                answerApproval(item, true);
+            } else {
+                if (write && !isProduction(request->connection)) {
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    if (UIUtils::SmallButton("Allow for this chat##approve"))
+                        answerApproval(item, true, true);
+                }
+                if (item.approval) {
+                    ImGui::SameLine(0, Theme::Spacing::S);
+                    if (UIUtils::SmallButton("Reject##approve", UIUtils::ButtonVariant::Danger))
+                        answerApproval(item, false);
                 }
             }
         }

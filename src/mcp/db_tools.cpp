@@ -332,6 +332,21 @@ namespace mcp {
                 def["annotations"]["destructiveHint"] = true;
                 res["result"]["tools"].push_back(std::move(def));
             }
+            if (host_.canSaveConnections()) {
+                auto def = toolDef(
+                    "add_connection",
+                    "Save a new connection in DearSQL (the user approves it first) and open "
+                    "it. Only for a database the user wants added, e.g. a local one you just "
+                    "started.",
+                    {{"url",
+                      {{"type", "string"},
+                       {"description", "Connection URL (postgres://user:pass@host:5432/db, "
+                                       "mysql://, ...) or a SQLite/DuckDB/CSV file path"}}},
+                     {"name", {{"type", "string"}, {"description", "Optional display name"}}}},
+                    {"url"});
+                def["annotations"]["readOnlyHint"] = false;
+                res["result"]["tools"].push_back(std::move(def));
+            }
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -384,6 +399,8 @@ namespace mcp {
                 return textResult(listTables(args));
             if (name == "describe_table")
                 return textResult(describeTable(args));
+            if (name == "add_connection" && host_.canSaveConnections())
+                return textResult(addConnection(args));
             if (name == "execute_sql" && allowWrites_)
                 return textResult(runQuery(args, true));
             if (name == "run_query")
@@ -579,6 +596,19 @@ namespace mcp {
         if (auto err = host_.connect(found); !err.empty())
             throw ToolError("Could not connect to " + found + ": " + err);
         return "Connected to " + found + ".";
+    }
+
+    std::string Server::addConnection(const json& args) {
+        const std::string spec = str(args, {"url", "uri", "path", "connection"});
+        if (spec.empty())
+            throw ToolError("Missing 'url'.");
+        std::string error;
+        const std::string name = host_.saveConnection(spec, str(args, {"name"}), error);
+        if (name.empty())
+            throw ToolError("Not saved: " + error);
+        if (auto err = host_.connect(name); !err.empty())
+            throw ToolError("Saved as " + name + ", but it did not open: " + err);
+        return "Saved and connected to " + name + ".";
     }
 
     std::string Server::findConnection(const std::string& name) {
@@ -879,6 +909,14 @@ namespace mcp {
                                 "commands on Redis/MongoDB). ") +
                     (allowWrites_ ? "Use execute_sql for a change the user asked for."
                                   : "Show the user the statement to run themselves."));
+            if (write) {
+                if (auto lib = host_.connection(target.connection); lib && lib->info().readOnly)
+                    throw ToolError(target.connection +
+                                    " is a read-only connection in DearSQL. Show the user "
+                                    "the statement instead.");
+                if (auto why = host_.approveWrite(target.connection, sql); !why.empty())
+                    throw ToolError("Not run: " + why);
+            }
             const auto result = target.db->execute(sql, FETCH_ROWS + 1);
             if (!result.success()) {
                 std::string msg = "Error: " + result.errorMessage();

@@ -64,6 +64,8 @@ public:
         std::string connection; // Write: the target; SaveConnection: the URL or file
         std::string text;       // Write: the sql; SaveConnection: the name asked for
         std::promise<std::pair<bool, std::string>> reply;
+        // the answer and the timeout race for it: whoever sets it first decides
+        std::atomic<bool> settled = false;
     };
     std::shared_ptr<UiRequest> takeUiRequest();
 

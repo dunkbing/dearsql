@@ -193,14 +193,18 @@ std::pair<bool, std::string> DbMcpServer::askUi(UiRequest::Kind kind, const std:
     auto reply = request->reply.get_future();
     {
         std::lock_guard lock(uiMutex_);
-        uiRequests_.push_back(std::move(request));
+        uiRequests_.push_back(request);
     }
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    // the ui thread claims settled before it acts, so after a timeout a late click
+    // does nothing, and once it has claimed it the answer is on its way
     while (reply.wait_for(std::chrono::milliseconds(200)) != std::future_status::ready) {
-        if (stopping_)
-            return {false, "DearSQL closed the database tools."};
-        if (std::chrono::steady_clock::now() > deadline)
-            return {false, "the user did not answer within 5 minutes"};
+        const char* why = stopping_ ? "DearSQL closed the database tools."
+                          : std::chrono::steady_clock::now() > deadline
+                              ? "the user did not answer within 5 minutes"
+                              : nullptr;
+        if (why && !request->settled.exchange(true))
+            return {false, why};
     }
     try {
         return reply.get();

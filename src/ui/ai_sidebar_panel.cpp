@@ -294,6 +294,7 @@ void AISidebarPanel::switchBackend(int newIndex) {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = 0;
     resumeSessionId_.clear();
     backendIndex_ = newIndex;
@@ -385,6 +386,7 @@ void AISidebarPanel::startNewSession() {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = 0;
     resumeSessionId_.clear();
     sentSchemaContext_ = false;
@@ -407,6 +409,7 @@ void AISidebarPanel::openSession(const AiSession& session) {
     saveCurrentSession();
     items_.clear();
     selectedContext_.clear();
+    writesAllowed_.clear(); // "allow for this chat" ends with the chat
     currentSessionId_ = session.id;
     if (isAcpBackend()) {
         stopAgent();
@@ -627,6 +630,8 @@ namespace {
         if (!parsed.ok)
             return spec;
         const auto& i = parsed.info;
+        if (!i.path.empty())
+            return std::format("{} {}", databaseTypeToString(i.type), i.path);
         return std::format("{} {}{}@{}:{}/{}", databaseTypeToString(i.type), i.username,
                            i.password.empty() ? "" : ":***", i.host, i.port, i.database);
     }
@@ -640,6 +645,8 @@ namespace {
             if (!parsed.ok)
                 return {false, parsed.error};
             info = std::move(parsed.info);
+            if (info.name.empty() && !info.path.empty()) // sqlite://, duckdb://
+                info.name = std::filesystem::path(info.path).filename().string();
             if (info.name.empty())
                 info.name = info.host + (info.database.empty() ? "" : "/" + info.database);
         } else if (std::filesystem::exists(spec)) {
@@ -677,9 +684,12 @@ namespace {
 
 void AISidebarPanel::serviceAgentUiRequests() {
     while (auto request = mcp_.takeUiRequest()) {
+        if (request->settled)
+            continue; // timed out before it was shown
         if (request->kind == DbMcpServer::UiRequest::Kind::Write &&
             writesAllowed_.contains(request->connection) && !isProduction(request->connection)) {
-            request->reply.set_value({true, ""});
+            if (!request->settled.exchange(true))
+                request->reply.set_value({true, ""});
             continue;
         }
         Item item;
@@ -693,6 +703,11 @@ void AISidebarPanel::serviceAgentUiRequests() {
 void AISidebarPanel::answerApproval(Item& item, bool ok, bool allowForChat) {
     auto& request = *item.approval;
     item.permissionAnswered = true;
+    if (request.settled.exchange(true)) { // the tool gave up waiting
+        item.permissionChoice = "Expired";
+        item.approval.reset();
+        return;
+    }
     if (!ok) {
         item.permissionChoice = "Rejected";
         request.reply.set_value({false, "the user rejected it"});
@@ -1790,7 +1805,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                                    request->text.empty() ? "" : (" as " + request->text).c_str());
             }
         }
-        if (item.permissionAnswered || !request) {
+        if (item.permissionAnswered || !request || request->settled) {
             ImGui::TextColored(colors.subtext0, "-> %s",
                                item.permissionChoice.empty() ? "Expired"
                                                              : item.permissionChoice.c_str());

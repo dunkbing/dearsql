@@ -37,6 +37,8 @@ dearsql --mcp                # database tools for coding agents (MCP)
 dearsql --lsp                # SQL completion and hover for editors
 ```
 
+![dearsql --tui](assets/tui.png)
+
 A connection is a saved name, a URL, or a SQLite/DuckDB/CSV file. For agents:
 
 ```sh

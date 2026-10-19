@@ -105,6 +105,12 @@ TEST_F(McpToolsTest, QueryRejectsWritesAndSuggestsNames) {
     auto [typo, err2] = call("run_query", {{"query", "SELECT * FROM user"}});
     EXPECT_TRUE(err2);
     EXPECT_NE(typo.find("Did you mean: users"), std::string::npos) << typo;
+
+    // a column of another table: point there, never suggest the same name back
+    auto [col, err3] = call("run_query", {{"sql", "SELECT user_id FROM users"}});
+    EXPECT_TRUE(err3);
+    EXPECT_EQ(col.find("Did you mean: user_id"), std::string::npos) << col;
+    EXPECT_NE(col.find("user_id is a column of: orders"), std::string::npos) << col;
 }
 
 TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {

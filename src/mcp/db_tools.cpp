@@ -926,19 +926,52 @@ namespace mcp {
                     if (isTable) {
                         close = suggest(target, missing);
                     } else {
-                        // columns of every table, best first
+                        // columns of the tables the query names, best first; never the
+                        // rejected name itself, which only sends the agent round again
+                        // ponytail: word match on the sql, not a parse; falls back to
+                        // every table when none is named
+                        std::set<std::string> words;
+                        static const std::regex word(R"([A-Za-z_][A-Za-z0-9_$]*)");
+                        for (std::sregex_iterator it(sql.begin(), sql.end(), word), end; it != end;
+                             ++it)
+                            words.insert(lower(it->str()));
+                        const auto& tables = catalog(target).tables;
+                        std::vector<const dearsql::Table*> named, holders;
+                        for (const auto& t : tables)
+                            if (words.contains(lower(t.name)))
+                                named.push_back(&t);
+                        if (named.empty())
+                            for (const auto& t : tables)
+                                named.push_back(&t);
                         std::vector<std::pair<int, std::string>> scored;
                         std::set<std::string> seen;
-                        for (const auto& t : catalog(target).tables) {
-                            for (const auto& col : t.columns) {
+                        for (const auto* t : named) {
+                            for (const auto& col : t->columns) {
+                                if (col.name == missing)
+                                    continue;
+                                // only the case differs (postgres "User_ID"): it needs quotes
+                                const std::string name = lower(col.name) == lower(missing)
+                                                             ? "\"" + col.name + "\""
+                                                             : col.name;
                                 if (int s = fuzzy::score(missing, col.name);
-                                    s && seen.insert(col.name).second)
-                                    scored.emplace_back(s, col.name);
+                                    s && seen.insert(name).second)
+                                    scored.emplace_back(s, name);
                             }
                         }
                         std::ranges::sort(scored, std::greater<>());
                         for (size_t i = 0; i < scored.size() && i < 5; ++i)
                             close.push_back(scored[i].second);
+                        for (const auto& t : tables)
+                            for (const auto& col : t.columns)
+                                if (col.name == missing) {
+                                    holders.push_back(&t);
+                                    break;
+                                }
+                        if (!holders.empty()) {
+                            msg += "\n" + missing + " is a column of: ";
+                            for (size_t i = 0; i < holders.size() && i < 5; ++i)
+                                msg += (i ? ", " : "") + qualified(*holders[i]);
+                        }
                     }
                     if (!close.empty()) {
                         msg += "\nDid you mean: ";

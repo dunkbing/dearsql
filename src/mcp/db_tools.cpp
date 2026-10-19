@@ -947,11 +947,15 @@ namespace mcp {
                         std::set<std::string> seen;
                         for (const auto* t : named) {
                             for (const auto& col : t->columns) {
-                                if (lower(col.name) == lower(missing))
+                                if (col.name == missing)
                                     continue;
+                                // only the case differs (postgres "User_ID"): it needs quotes
+                                const std::string name = lower(col.name) == lower(missing)
+                                                             ? "\"" + col.name + "\""
+                                                             : col.name;
                                 if (int s = fuzzy::score(missing, col.name);
-                                    s && seen.insert(col.name).second)
-                                    scored.emplace_back(s, col.name);
+                                    s && seen.insert(name).second)
+                                    scored.emplace_back(s, name);
                             }
                         }
                         std::ranges::sort(scored, std::greater<>());
@@ -959,7 +963,7 @@ namespace mcp {
                             close.push_back(scored[i].second);
                         for (const auto& t : tables)
                             for (const auto& col : t.columns)
-                                if (lower(col.name) == lower(missing)) {
+                                if (col.name == missing) {
                                     holders.push_back(&t);
                                     break;
                                 }

@@ -18,9 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-22.04
             arch: x86_64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-22.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
 
@@ -47,6 +47,15 @@ jobs:
             autoconf automake autoconf-archive \
             freetds-dev libgnutls28-dev libkrb5-dev
 
+      # 22.04 for glibc 2.35 (#54); its gcc 11 lacks std::format
+      - name: Install gcc 13
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-13 g++-13
+          echo "CC=gcc-13" >> "$GITHUB_ENV"
+          echo "CXX=g++-13" >> "$GITHUB_ENV"
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
@@ -56,9 +65,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build_release/vcpkg_installed
-          key: vcpkg-installed-linux-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}-0a434205
+          key: vcpkg-installed-linux-jammy-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-installed-linux-${{ matrix.arch }}-
+            vcpkg-installed-linux-jammy-${{ matrix.arch }}-
 
       - name: Inject secrets into APP_METADATA
         run: |

@@ -307,7 +307,9 @@ endif()
 if(APPLE)
     target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-Wl,-dead_strip,-x>)
 elseif(LINUX)
-    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections,-s>)
+    # static c++ runtime so the 22.04 AppImage needs no newer libstdc++ (#54)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release>:-Wl,--gc-sections,-s -static-libstdc++ -static-libgcc>)
 endif()
 
 add_subdirectory(external/acp-cpp)

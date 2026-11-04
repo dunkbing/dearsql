@@ -115,10 +115,15 @@ void LinuxTitlebar::setup() {
     // native-only actions the shared settings dialog can't do itself
     SettingsDialog::instance().onManageLicense = [this]() { showLicenseDialog(); };
     SettingsDialog::instance().onReportBug = [this]() {
-        GtkUriLauncher* launcher = gtk_uri_launcher_new(
-            "https://github.com/dunkbing/dearsql/issues/new?labels=bug&title=%5BBug%5D");
+        constexpr const char* url =
+            "https://github.com/dunkbing/dearsql/issues/new?labels=bug&title=%5BBug%5D";
+#if GTK_CHECK_VERSION(4, 10, 0)
+        GtkUriLauncher* launcher = gtk_uri_launcher_new(url);
         gtk_uri_launcher_launch(launcher, GTK_WINDOW(parentWindow_), nullptr, nullptr, nullptr);
         g_object_unref(launcher);
+#else
+        gtk_show_uri(GTK_WINDOW(parentWindow_), url, GDK_CURRENT_TIME);
+#endif
     };
 
     applyTheme(app_ ? app_->isDarkTheme() : false);
@@ -454,7 +459,11 @@ void LinuxTitlebar::applyTheme(bool isDark) {
                       "  -gtk-icon-filter: none;"
                       "}\n";
 
+#if GTK_CHECK_VERSION(4, 12, 0)
     gtk_css_provider_load_from_string(themeProvider, css.c_str());
+#else
+    gtk_css_provider_load_from_data(themeProvider, css.c_str(), -1);
+#endif
 }
 
 void LinuxTitlebar::showLicenseDialog() {

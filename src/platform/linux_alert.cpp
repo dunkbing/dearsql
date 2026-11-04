@@ -10,6 +10,54 @@ struct AlertCallbackData {
     std::vector<AlertButton> buttons;
 };
 
+struct DeferredAlertData {
+    std::string title;
+    std::string message;
+    std::vector<AlertButton> buttons;
+};
+
+#if !GTK_CHECK_VERSION(4, 10, 0)
+// gtk < 4.10 (ubuntu 22.04) has no GtkAlertDialog
+static void onMessageDialogResponse(GtkDialog* dialog, int response, gpointer userData) {
+    auto* data = static_cast<AlertCallbackData*>(userData);
+    if (response >= 0 && response < static_cast<int>(data->buttons.size()) &&
+        data->buttons[response].onPress) {
+        data->buttons[response].onPress();
+    }
+    delete data;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+}
+
+static gboolean showAlertIdle(gpointer userData) {
+    auto* deferred = static_cast<DeferredAlertData*>(userData);
+
+    GtkWindow* parent = nullptr;
+    auto* platform = dynamic_cast<LinuxPlatform*>(Application::getInstance().getPlatform());
+    if (platform) {
+        parent = GTK_WINDOW(platform->getGtkWindow());
+    }
+
+    GtkWidget* dialog = gtk_message_dialog_new(parent, GTK_DIALOG_MODAL, GTK_MESSAGE_OTHER,
+                                               GTK_BUTTONS_NONE, "%s", deferred->title.c_str());
+    if (!deferred->message.empty()) {
+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+                                                 deferred->message.c_str());
+    }
+    for (int i = 0; i < static_cast<int>(deferred->buttons.size()); ++i) {
+        gtk_dialog_add_button(GTK_DIALOG(dialog), deferred->buttons[i].text.c_str(), i);
+        if (deferred->buttons[i].style == AlertButton::Style::Default) {
+            gtk_dialog_set_default_response(GTK_DIALOG(dialog), i);
+        }
+    }
+
+    auto* cbData = new AlertCallbackData{std::move(deferred->buttons)};
+    g_signal_connect(dialog, "response", G_CALLBACK(onMessageDialogResponse), cbData);
+    gtk_window_present(GTK_WINDOW(dialog));
+
+    delete deferred;
+    return G_SOURCE_REMOVE;
+}
+#else
 static void onAlertResponse(GObject* source, GAsyncResult* result, gpointer userData) {
     auto* data = static_cast<AlertCallbackData*>(userData);
     auto* dialog = GTK_ALERT_DIALOG(source);
@@ -32,12 +80,6 @@ static void onAlertResponse(GObject* source, GAsyncResult* result, gpointer user
 
     delete data;
 }
-
-struct DeferredAlertData {
-    std::string title;
-    std::string message;
-    std::vector<AlertButton> buttons;
-};
 
 static gboolean showAlertIdle(gpointer userData) {
     auto* deferred = static_cast<DeferredAlertData*>(userData);
@@ -88,6 +130,8 @@ static gboolean showAlertIdle(gpointer userData) {
     delete deferred;
     return G_SOURCE_REMOVE;
 }
+
+#endif
 
 void Alert::show(const std::string& title, const std::string& message,
                  std::vector<AlertButton> buttons) {

@@ -77,6 +77,8 @@ namespace mcp {
         void interrupt();
         void resume();
         static const char* instructions();
+        // the tool definitions (name, description, inputSchema), as tools/list sends them
+        static nlohmann::json tools(bool allowWrites, bool canSaveConnections = false);
 
     private:
         struct Target {
@@ -106,9 +108,9 @@ namespace mcp {
         std::string describeTable(const nlohmann::json& args);
         std::string runQuery(const nlohmann::json& args, bool write = false);
 
-        // opaque cursor -> remaining text pages / offset, oldest evicted first
-        std::string storeCursor(const std::string& tool, nlohmann::json state);
-        nlohmann::json takeCursor(const std::string& id, const std::string& tool);
+        // self-describing cursors; run_query pages cached by cursor, oldest evicted first
+        std::string storeCursor(const std::string& sql, nlohmann::json page);
+        size_t cursorOffset(const std::string& id, char tag);
 
         Host& host_;
         bool allowWrites_;
@@ -119,7 +121,6 @@ namespace mcp {
         std::map<std::string, Catalog> catalogs_;
         std::map<std::string, nlohmann::json> cursors_;
         std::deque<std::string> cursorOrder_;
-        uint64_t nextCursor_ = 1;
     };
 
 } // namespace mcp

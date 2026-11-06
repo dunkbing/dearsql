@@ -50,6 +50,12 @@ namespace {
             return {r["content"][0]["text"].get<std::string>(), r["isError"].get<bool>()};
         }
 
+        static std::string cursorIn(const std::string& text) {
+            const auto pos = text.rfind("cursor: ");
+            return pos == std::string::npos ? ""
+                                            : text.substr(pos + 8, text.find('\n', pos) - pos - 8);
+        }
+
         std::shared_ptr<dearsql::IConnection> conn;
         std::unique_ptr<OneConnectionHost> host;
         std::unique_ptr<mcp::Server> server;
@@ -90,7 +96,7 @@ TEST_F(McpToolsTest, QueryPagesThroughCursor) {
     EXPECT_NE(first.find("rows 1-50 of 120"), std::string::npos) << first;
     const auto pos = first.find("cursor: ");
     ASSERT_NE(pos, std::string::npos);
-    const std::string cursor = first.substr(pos + 8, first.find('\n', pos) - pos - 8);
+    const std::string cursor = cursorIn(first);
 
     auto [second, err2] = call("run_query", {{"cursor", cursor}, {"maxRows", 100}});
     EXPECT_NE(second.find("rows 51-120 of 120"), std::string::npos) << second;
@@ -131,7 +137,7 @@ TEST(Fuzzy, SwapIsOneEdit) {
 TEST_F(McpToolsTest, CursorFromAnotherToolOrQueryIsNotReused) {
     auto [tables, err] = call("list_tables", {{"maxResults", 1}});
     ASSERT_FALSE(err) << tables;
-    const auto cursor = tables.substr(tables.rfind("cursor: ") + 8, 1);
+    const auto cursor = cursorIn(tables);
     auto [wrong, err2] = call("run_query", {{"cursor", cursor}});
     EXPECT_TRUE(err2);
     EXPECT_NE(wrong.find("belongs to list_tables"), std::string::npos) << wrong;
@@ -243,4 +249,21 @@ TEST_F(McpToolsTest, WritesWaitForTheUserAndAddConnectionSaves) {
     // the cli host can't save, so the tool isn't there
     listed = server->handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}}).dump();
     EXPECT_EQ(listed.find("add_connection"), std::string::npos);
+}
+
+// `dearsql run_query` is one process per call: a cursor must work on a new server
+TEST_F(McpToolsTest, CursorsOutliveTheServer) {
+    const std::string sql = "SELECT id FROM users ORDER BY id";
+    auto [first, err] = call("run_query", {{"sql", sql}, {"maxRows", 50}});
+    auto [tables, err2] = call("list_tables", {{"maxResults", 1}});
+    server = std::make_unique<mcp::Server>(*host);
+
+    auto [lost, err3] = call("run_query", {{"cursor", cursorIn(first)}});
+    EXPECT_TRUE(err3);
+    EXPECT_NE(lost.find("with the same sql"), std::string::npos) << lost;
+    auto [next, err4] = call("run_query", {{"sql", sql}, {"cursor", cursorIn(first)}});
+    EXPECT_NE(next.find("rows 51-100 of 120\nid\n51\n"), std::string::npos) << next;
+    auto [page2, err5] = call("list_tables", {{"cursor", cursorIn(tables)}});
+    EXPECT_FALSE(err5) << page2;
+    EXPECT_NE(page2.find("users"), std::string::npos) << page2;
 }

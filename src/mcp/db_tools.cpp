@@ -3,6 +3,7 @@
 #include "mcp/fuzzy.hpp"
 #include "utils/sql_guard.hpp"
 #include <algorithm>
+#include <cstring>
 #include <format>
 #include <regex>
 #include <set>
@@ -212,8 +213,9 @@ namespace mcp {
         const json TARGET_PROPS = {
             {"connection",
              {{"type", "string"},
-              {"description", "Connection name. Default: the one selected in DearSQL, or the only "
-                              "open one."}}},
+              {"description",
+               "Saved connection name (outside the app also a URL or database "
+               "file). Default: the one selected in DearSQL, or the only open one."}}},
             {"database",
              {{"type", "string"},
               {"description", "Database (or \"db.schema\" for Postgres/SQL Server). Default: the "
@@ -255,6 +257,78 @@ namespace mcp {
                "the next page instead of re-running with OFFSET.\n";
     }
 
+    json Server::tools(bool allowWrites, bool canSaveConnections) {
+        json maxResults = {{"type", "integer"}, {"description", "Max results (default 20)."}};
+        json cursor = {{"type", "string"},
+                       {"description", "Cursor from a previous result, for the next page."}};
+        json tools = json::array(
+            {toolDef("search_schema",
+                     "Fuzzy search over table, view and column NAMES of a database. "
+                     "Words narrow the search (\"orders user\" finds orders.user_id). "
+                     "Typo-tolerant, case and snake/camel insensitive. Start here.",
+                     withTarget({{"query",
+                                  {{"type", "string"},
+                                   {"description", "1-3 words, e.g. \"invoice total\""}}},
+                                 {"maxResults", maxResults},
+                                 {"cursor", cursor}}),
+                     {"query"}),
+             toolDef("describe_table",
+                     "Columns (type, null, default, key), indexes and foreign keys in "
+                     "and out of one table or view. Name may be schema-qualified; close "
+                     "misspellings are resolved.",
+                     withTarget({{"table", {{"type", "string"}}}}), {"table"}),
+             toolDef("run_query",
+                     "Run one read-only statement and return rows as compact text. Use "
+                     "LIMIT. Read-only PRAGMA works on SQLite; Redis/MongoDB take their read "
+                     "commands instead of SQL.",
+                     withTarget({{"sql", {{"type", "string"}}},
+                                 {"maxRows",
+                                  {{"type", "integer"},
+                                   {"description",
+                                    "Rows per page (default 50, max 500). A page also stops "
+                                    "at 30 KB of text, and at most 1000 rows are fetched."}}},
+                                 {"cursor", cursor}}),
+                     {"sql"}),
+             toolDef("list_tables",
+                     "Every table and view with column count and size, paged. Prefer "
+                     "search_schema when you know roughly what you want.",
+                     withTarget({{"maxResults", maxResults}, {"cursor", cursor}})),
+             toolDef("list_connections",
+                     "The user's saved connections, which are open, and the databases "
+                     "on open ones.",
+                     json::object()),
+             toolDef("connect",
+                     "Open one of the user's saved connections by name, or (in dearsql --mcp) "
+                     "a connection URL or database file path for this session only.",
+                     {{"name", {{"type", "string"}}}}, {"name"})});
+        if (allowWrites) {
+            auto def =
+                toolDef("execute_sql",
+                        "Run one statement that changes data or schema (INSERT, UPDATE, DELETE, "
+                        "DDL). Only when the user asked for the change; use run_query to read.",
+                        withTarget({{"sql", {{"type", "string"}}}}), {"sql"});
+            def["annotations"]["readOnlyHint"] = false;
+            def["annotations"]["destructiveHint"] = true;
+            tools.push_back(std::move(def));
+        }
+        if (canSaveConnections) {
+            auto def =
+                toolDef("add_connection",
+                        "Save a new connection in DearSQL (the user approves it first) and open "
+                        "it. Only for a database the user wants added, e.g. a local one you just "
+                        "started.",
+                        {{"url",
+                          {{"type", "string"},
+                           {"description", "Connection URL (postgres://user:pass@host:5432/db, "
+                                           "mysql://, ...) or a SQLite/DuckDB/CSV file path"}}},
+                         {"name", {{"type", "string"}, {"description", "Optional display name"}}}},
+                        {"url"});
+            def["annotations"]["readOnlyHint"] = false;
+            tools.push_back(std::move(def));
+        }
+        return tools;
+    }
+
     json Server::handle(const json& req) {
         if (!req.contains("id"))
             return nullptr; // notification
@@ -275,78 +349,7 @@ namespace mcp {
         } else if (method == "ping") {
             res["result"] = json::object();
         } else if (method == "tools/list") {
-            json maxResults = {{"type", "integer"}, {"description", "Max results (default 20)."}};
-            json cursor = {{"type", "string"},
-                           {"description", "Cursor from a previous result, for the next page."}};
-            res["result"] = {
-                {"tools",
-                 json::array(
-                     {toolDef("search_schema",
-                              "Fuzzy search over table, view and column NAMES of a database. "
-                              "Words narrow the search (\"orders user\" finds orders.user_id). "
-                              "Typo-tolerant, case and snake/camel insensitive. Start here.",
-                              withTarget({{"query",
-                                           {{"type", "string"},
-                                            {"description", "1-3 words, e.g. \"invoice total\""}}},
-                                          {"maxResults", maxResults},
-                                          {"cursor", cursor}}),
-                              {"query"}),
-                      toolDef("describe_table",
-                              "Columns (type, null, default, key), indexes and foreign keys in "
-                              "and out of one table or view. Name may be schema-qualified; close "
-                              "misspellings are resolved.",
-                              withTarget({{"table", {{"type", "string"}}}}), {"table"}),
-                      toolDef(
-                          "run_query",
-                          "Run one read-only statement and return rows as compact text. Use "
-                          "LIMIT. Read-only PRAGMA works on SQLite; Redis/MongoDB take their read "
-                          "commands instead of SQL.",
-                          withTarget({{"sql", {{"type", "string"}}},
-                                      {"maxRows",
-                                       {{"type", "integer"},
-                                        {"description",
-                                         "Rows per page (default 50, max 500). A page also stops "
-                                         "at 30 KB of text, and at most 1000 rows are fetched."}}},
-                                      {"cursor", cursor}}),
-                          {"sql"}),
-                      toolDef("list_tables",
-                              "Every table and view with column count and size, paged. Prefer "
-                              "search_schema when you know roughly what you want.",
-                              withTarget({{"maxResults", maxResults}, {"cursor", cursor}})),
-                      toolDef("list_connections",
-                              "The user's saved connections, which are open, and the databases "
-                              "on open ones.",
-                              json::object()),
-                      toolDef(
-                          "connect",
-                          "Open one of the user's saved connections by name, or (in dearsql --mcp) "
-                          "a connection URL or database file path for this session only.",
-                          {{"name", {{"type", "string"}}}}, {"name"})})}};
-            if (allowWrites_) {
-                auto def = toolDef(
-                    "execute_sql",
-                    "Run one statement that changes data or schema (INSERT, UPDATE, DELETE, "
-                    "DDL). Only when the user asked for the change; use run_query to read.",
-                    withTarget({{"sql", {{"type", "string"}}}}), {"sql"});
-                def["annotations"]["readOnlyHint"] = false;
-                def["annotations"]["destructiveHint"] = true;
-                res["result"]["tools"].push_back(std::move(def));
-            }
-            if (host_.canSaveConnections()) {
-                auto def = toolDef(
-                    "add_connection",
-                    "Save a new connection in DearSQL (the user approves it first) and open "
-                    "it. Only for a database the user wants added, e.g. a local one you just "
-                    "started.",
-                    {{"url",
-                      {{"type", "string"},
-                       {"description", "Connection URL (postgres://user:pass@host:5432/db, "
-                                       "mysql://, ...) or a SQLite/DuckDB/CSV file path"}}},
-                     {"name", {{"type", "string"}, {"description", "Optional display name"}}}},
-                    {"url"});
-                def["annotations"]["readOnlyHint"] = false;
-                res["result"]["tools"].push_back(std::move(def));
-            }
+            res["result"] = {{"tools", tools(allowWrites_, host_.canSaveConnections())}};
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -522,11 +525,26 @@ namespace mcp {
     }
 
     // ---------- cursors ----------
+    // a cursor carries its own position, so it outlives this server (a `dearsql
+    // run_query` call is one process): "t40" list_tables, "s40" search_schema,
+    // "q40-1a2b3c4d" run_query (offset, hash of the sql). run_query also keeps its
+    // fetched rows here so a cached page needs no re-run
 
-    std::string Server::storeCursor(const std::string& tool, json state) {
-        const std::string id = std::to_string(nextCursor_++);
-        state["tool"] = tool;
-        cursors_[id] = std::move(state);
+    namespace {
+        uint32_t sqlHash(const std::string& sql) {
+            uint32_t h = 2166136261u; // fnv-1a
+            for (unsigned char c : sql)
+                h = (h ^ c) * 16777619u;
+            return h;
+        }
+        const char* cursorTool(char tag) {
+            return tag == 't' ? "list_tables" : tag == 's' ? "search_schema" : "run_query";
+        }
+    } // namespace
+
+    std::string Server::storeCursor(const std::string& sql, json page) {
+        const std::string id = std::format("q{}-{:08x}", page.value("offset", 0), sqlHash(sql));
+        cursors_[id] = std::move(page);
         cursorOrder_.push_back(id);
         while (cursorOrder_.size() > MAX_CURSORS) {
             cursors_.erase(cursorOrder_.front());
@@ -535,14 +553,16 @@ namespace mcp {
         return id;
     }
 
-    json Server::takeCursor(const std::string& id, const std::string& tool) {
-        auto it = cursors_.find(id);
-        if (it == cursors_.end())
-            throw ToolError("Cursor '" + id + "' expired; run the call again without it.");
-        if (auto owner = it->second.value("tool", ""); owner != tool)
-            throw ToolError("Cursor '" + id + "' belongs to " + owner + ", not " + tool +
-                            "; call " + tool + " without it.");
-        return it->second;
+    size_t Server::cursorOffset(const std::string& id, char tag) {
+        const char* tool = cursorTool(tag);
+        if (id.empty() || !std::strchr("tsq", id[0]) || id.size() < 2 ||
+            !std::isdigit(static_cast<unsigned char>(id[1])))
+            throw ToolError("Cursor '" + id + "' is not one of " + tool +
+                            "'s; call it without the cursor.");
+        if (id[0] != tag)
+            throw ToolError("Cursor '" + id + "' belongs to " + cursorTool(id[0]) + ", not " +
+                            tool + "; call " + tool + " without it.");
+        return std::strtoull(id.c_str() + 1, nullptr, 10);
     }
 
     // "app_state.db (local)" for messages; a bare connection name when it has one database
@@ -578,11 +598,11 @@ namespace mcp {
             }
             out += "\n";
         }
-        out +=
-            std::ranges::any_of(conns, [&](const auto& c) { return c.name == focus; })
-                ? "* = selected in DearSQL. Closed ones open with connect."
-                : "None selected in DearSQL: pass connection unless only one is open. Closed ones "
-                  "open with connect.";
+        out += std::ranges::any_of(conns, [&](const auto& c) { return c.name == focus; })
+                   ? "* = selected in DearSQL. Closed ones open with connect."
+                   : "None selected in DearSQL: pass connection unless only one is open. "
+                     "Closed ones "
+                     "open with connect.";
         return out;
     }
 
@@ -639,7 +659,7 @@ namespace mcp {
         const int maxResults = num(args, {"maxResults", "max_results", "limit"}, 20, 1, 200);
         int offset = 0;
         if (auto c = str(args, {"cursor"}); !c.empty())
-            offset = takeCursor(c, "search_schema").value("offset", 0);
+            offset = cursorOffset(c, 's');
 
         auto target = resolve(args);
         const auto& cat = catalog(target);
@@ -720,7 +740,7 @@ namespace mcp {
         for (size_t i = offset; i < end; ++i)
             out += std::format("{:<6} {}  {}\n", hits[i].kind, hits[i].name, hits[i].detail);
         if (end < hits.size())
-            out += "cursor: " + storeCursor("search_schema", {{"offset", end}}) + "\n";
+            out += std::format("cursor: s{}\n", end);
         return out;
     }
 
@@ -728,7 +748,7 @@ namespace mcp {
         const int maxResults = num(args, {"maxResults", "max_results", "limit"}, 100, 1, 1000);
         int offset = 0;
         if (auto c = str(args, {"cursor"}); !c.empty())
-            offset = takeCursor(c, "list_tables").value("offset", 0);
+            offset = cursorOffset(c, 't');
 
         auto target = resolve(args);
         const auto& cat = catalog(target, offset == 0);
@@ -751,8 +771,7 @@ namespace mcp {
             out += "\n";
         }
         if (end < rows.size())
-            out += std::format("{} more. cursor: {}\n", rows.size() - end,
-                               storeCursor("list_tables", {{"offset", end}}));
+            out += std::format("{} more. cursor: t{}\n", rows.size() - end, end);
         return out;
     }
 
@@ -888,15 +907,19 @@ namespace mcp {
         const int maxRows = num(args, {"maxRows", "max_rows", "maxResults", "limit"}, 50, 1, 500);
 
         json page;
+        size_t resumeAt = 0; // a cursor whose rows are gone: re-run, start here
         const std::string sql = str(args, {"sql", "query", "statement", "command"});
         if (auto c = str(args, {"cursor"}); !c.empty()) {
-            // new sql with a cursor from elsewhere: the agent meant the new query
             auto it = cursors_.find(c);
-            if (sql.empty())
-                page = takeCursor(c, "run_query");
-            else if (it != cursors_.end() && it->second.value("tool", "") == "run_query" &&
-                     it->second.value("sql", "") == sql)
+            if (it != cursors_.end() && (sql.empty() || it->second.value("sql", "") == sql)) {
                 page = it->second;
+            } else if (sql.empty()) {
+                cursorOffset(c, 'q'); // throws for another tool's cursor
+                throw ToolError("Cursor '" + c +
+                                "' is no longer cached; pass it again with the same sql.");
+            } else if (!write && c[0] == 'q' && c.ends_with(std::format("-{:08x}", sqlHash(sql)))) {
+                resumeAt = cursorOffset(c, 'q');
+            } // else new sql with a cursor from elsewhere: the agent meant the new query
         }
         if (page.is_null()) {
             if (sql.empty())
@@ -1008,6 +1031,7 @@ namespace mcp {
                     {"notes", notes}};
             for (size_t i = 0; i < rows->tableData.size() && i < FETCH_ROWS; ++i)
                 page["rows"].push_back(rows->tableData[i]);
+            page["offset"] = std::min<size_t>(resumeAt, page["rows"].size());
         }
 
         const auto& data = page["rows"];
@@ -1043,7 +1067,7 @@ namespace mcp {
                 out += std::format("page cut at {} rows: output limit of {} KB per page\n",
                                    i - offset, MAX_OUTPUT / 1024);
             page["offset"] = i;
-            out += "cursor: " + storeCursor("run_query", page) + "\n";
+            out += "cursor: " + storeCursor(page.value("sql", ""), page) + "\n";
         } else if (more) {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }

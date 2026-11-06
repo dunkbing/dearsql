@@ -35,6 +35,7 @@ The same binary runs in the terminal ([docs](https://dearsql.dev/docs/command-li
 dearsql --tui [connection]   # browse and query in the terminal
 dearsql --mcp                # database tools for coding agents (MCP)
 dearsql --lsp                # SQL completion and hover for editors
+dearsql query "SELECT ..."   # the same tools as commands: search, describe, query, ...
 ```
 
 ![dearsql --tui](assets/tui.png)

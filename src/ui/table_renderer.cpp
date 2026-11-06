@@ -409,7 +409,7 @@ void TableRenderer::render(const char* tableId) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
             std::string maxRowStr = std::to_string(maxRowNum);
             float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
-            float columnWidth = textWidth + 10.0f;      // More padding for right alignment
+            float columnWidth = textWidth + 10.0f;
             columnWidth = std::max(columnWidth, 30.0f); // Minimum width
             ImGui::TableSetupColumn("",
                                     ImGuiTableColumnFlags_WidthFixed |
@@ -423,6 +423,10 @@ void TableRenderer::render(const char* tableId) {
         }
 
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+        // a step above the theme's header bg, so it stands out from the rows
+        ImGui::TableSetBgColor(
+            ImGuiTableBgTarget_RowBg0,
+            ImGui::GetColorU32(Application::getInstance().getCurrentColors().surface1));
 
         // Skip row number column header if present
         if (config.showRowNumbers) {
@@ -462,10 +466,7 @@ void TableRenderer::render(const char* tableId) {
                     std::string rowNumStr = std::to_string(rowNum);
                     float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
                     float columnWidth = ImGui::GetColumnWidth();
-                    float padding = 5.0f; // Right padding
-
-                    float cursorX = ImGui::GetCursorPosX();
-                    ImGui::SetCursorPosX(cursorX + columnWidth - textWidth - padding);
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (columnWidth - textWidth) / 2);
 
                     ImGui::PushStyleColor(ImGuiCol_Text,
                                           ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <vector>
@@ -267,7 +268,7 @@ namespace MasterSecret {
         return gUseKeychain;
     }
 
-    std::string moveToKeychain(bool on) {
+    std::string moveToKeychain(bool on, const std::function<bool()>& saveSetting) {
         if (on == gUseKeychain) {
             return "";
         }
@@ -275,19 +276,27 @@ namespace MasterSecret {
         if (secret.empty()) {
             return "no encryption key to move";
         }
-        if (on) {
-            if (!keystoreWrite(secret)) {
-                return "could not write to the keychain";
-            }
+        const fs::path file = keyFilePath();
+        // the old copy goes only once the setting points at the new one: a key in
+        // neither place would leave every saved password undecryptable
+        if (on ? !keystoreWrite(secret) : !writeFile(secret)) {
+            return on ? "could not write to the keychain" : "could not write " + file.string();
+        }
+        if (!saveSetting()) {
             std::error_code ec;
-            fs::remove(keyFilePath(), ec);
-        } else {
-            if (!writeFile(secret)) {
-                return "could not write " + keyFilePath().string();
-            }
-            keystoreDelete();
+            on ? keystoreDelete() : (void)fs::remove(file, ec);
+            return "could not save the setting";
         }
         gUseKeychain = on;
+        if (on) {
+            std::error_code ec;
+            if (fs::remove(file, ec); ec) {
+                return "the key is in the keychain, but " + file.string() +
+                       " could not be deleted: " + ec.message();
+            }
+        } else {
+            keystoreDelete();
+        }
         return "";
     }
 } // namespace MasterSecret

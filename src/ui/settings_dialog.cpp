@@ -119,10 +119,10 @@ void SettingsDialog::render() {
         bool keychain = MasterSecret::usingKeychain();
         if (ImGui::Checkbox(std::format("Keep the encryption key in the {}", store).c_str(),
                             &keychain)) {
-            keyStoreStatus_ = MasterSecret::moveToKeychain(keychain);
-            if (keyStoreStatus_.empty() && app.getAppState()) {
-                app.getAppState()->setSetting("use_keychain", keychain ? "1" : "0");
-            }
+            keyStoreStatus_ = MasterSecret::moveToKeychain(keychain, [&] {
+                return app.getAppState() &&
+                       app.getAppState()->setSetting("use_keychain", keychain ? "1" : "0");
+            });
         }
         if (!keyStoreStatus_.empty()) {
             ImGui::TextDisabled("%s", keyStoreStatus_.c_str());

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace MasterSecret {
@@ -14,6 +15,8 @@ namespace MasterSecret {
     // where get() looks; set before the first get()
     void useKeychain(bool on);
     bool usingKeychain();
-    // moves the secret between the keystore and the file; empty on success, else why not
-    std::string moveToKeychain(bool on);
+    // moves the secret between the keystore and the file: writes the new copy, then
+    // saveSetting (undone if it fails), then deletes the old copy. empty on success,
+    // else what went wrong
+    std::string moveToKeychain(bool on, const std::function<bool()>& saveSetting);
 } // namespace MasterSecret

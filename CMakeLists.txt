@@ -470,15 +470,19 @@ if(APPLE)
         COMMENT "Embedding Sparkle.framework into app bundle"
     )
 
-    add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND
-            ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:sentry::sentry>"
-            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
-        COMMENT "Embedding sentry dylib into app bundle"
-    )
+    # a static sentry is already in the executable
+    get_target_property(_SENTRY_TYPE sentry::sentry TYPE)
+    if(_SENTRY_TYPE STREQUAL "SHARED_LIBRARY")
+        add_custom_command(
+            TARGET ${PROJECT_NAME}
+            POST_BUILD
+            COMMAND
+                ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:sentry::sentry>"
+                "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
+            COMMENT "Embedding sentry dylib into app bundle"
+        )
+    endif()
 endif()
 
 include(cmake/Tests.cmake)

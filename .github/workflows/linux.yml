@@ -9,9 +9,6 @@ on:
 permissions:
   contents: write
 
-env:
-  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-
 jobs:
   build:
     strategy:
@@ -29,13 +26,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Export GitHub Actions cache env
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Install system dependencies
         run: |
@@ -65,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build_release/vcpkg_installed
-          key: vcpkg-installed-linux-jammy-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-installed-linux-jammy-${{ matrix.arch }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*') }}
           restore-keys: |
             vcpkg-installed-linux-jammy-${{ matrix.arch }}-
 
@@ -74,11 +64,6 @@ jobs:
           echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> APP_METADATA
           echo "POLAR_ORGANIZATION_ID=${{ secrets.POLAR_ORGANIZATION_ID }}" >> APP_METADATA
           echo "CREDS_SECRET=${{ secrets.CREDS_SECRET }}" >> APP_METADATA
-
-      - name: Debug cache env
-        run: |
-          echo "ACTIONS_CACHE_URL is set: $([ -n "$ACTIONS_CACHE_URL" ] && echo yes || echo no)"
-          echo "VCPKG_BINARY_SOURCES: $VCPKG_BINARY_SOURCES"
 
       - name: Build and package
         run: |

@@ -169,6 +169,7 @@ set(APP_SOURCES
     src/app_state.cpp
     src/embedded_images.cpp
     src/embedded_fonts.cpp
+    src/ui/fonts.cpp
     src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_backup.cpp

@@ -162,15 +162,10 @@ private:
     bool initializeGLFW();
     bool initializeImGui() const;
 #endif
-    static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
 
 public:
     void renderMainUI();
-    static ImFont* getTabFont() {
-        return tabFont_;
-    }
-
     // The dock node holding the tabs, i.e. everything but the sidebar. Zero before
     // the layout is built or while the sidebar is hidden.
     [[nodiscard]] ImGuiID getCenterDockId() const {
@@ -179,5 +174,4 @@ public:
 
 private:
     [[nodiscard]] bool hasPendingAsyncWork() const;
-    static ImFont* tabFont_;
 };

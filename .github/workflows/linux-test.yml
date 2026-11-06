@@ -13,7 +13,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -37,7 +37,7 @@ jobs:
             libtirpc-dev libltdl-dev python3-venv \
             autoconf automake autoconf-archive \
             freetds-dev libgnutls28-dev libkrb5-dev \
-            openssl
+            openssl gperf
 
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/vcpkg_installed
-          key: vcpkg-installed-linux-test-${{ runner.arch }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-installed-linux-test-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*') }}
           restore-keys: |
             vcpkg-installed-linux-test-${{ runner.arch }}-
             vcpkg-installed-linux-x86_64-
@@ -69,9 +69,9 @@ jobs:
           GTEST_COLOR: "no"
           GTEST_PRINT_TIME: "1"
         run: |
-          # 30-min wall-clock cap per test binary so a single hung test
+          # wall-clock cap (a cold vcpkg build alone takes ~30 min) so a hung test
           # cannot silently consume the whole job timeout
-          stdbuf -oL -eL timeout --foreground 30m ./scripts/run-tests
+          stdbuf -oL -eL timeout --foreground 75m ./scripts/run-tests
 
       - name: Dump container logs on failure
         if: failure()

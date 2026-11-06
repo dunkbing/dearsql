@@ -4,6 +4,7 @@
 #include "database/file_database.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "ui/fonts.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
@@ -370,7 +371,7 @@ void TabManager::renderTabs() {
         ImGui::PopID();
 
         if (beginOpen) {
-            ImFont* tabFont = Application::getTabFont();
+            ImFont* tabFont = fonts::tabFont();
             if (tabFont) {
                 ImGui::PushFont(tabFont);
             }

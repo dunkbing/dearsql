@@ -26,4 +26,5 @@ private:
     // the `dearsql` shell command, checked when the dialog opens
     bool cliInstalled_ = false;
     std::string cliStatus_;
+    std::string keyStoreStatus_;
 };

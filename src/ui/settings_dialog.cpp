@@ -1,13 +1,16 @@
 #include "ui/settings_dialog.hpp"
 
+#include "app_state.hpp"
 #include "application.hpp"
 #include "imgui.h"
 #include "platform/updater.hpp"
 #include "themes.hpp"
 #include "utils/button.hpp"
 #include "utils/cli_command.hpp"
+#include "utils/master_secret.hpp"
 
 #include <cfloat>
+#include <format>
 
 namespace {
     constexpr const char* POPUP_ID = "Settings";
@@ -26,6 +29,7 @@ void SettingsDialog::open() {
     pendingOpen_ = true;
     cliInstalled_ = CliCommand::installed();
     cliStatus_.clear();
+    keyStoreStatus_.clear();
 }
 
 void SettingsDialog::render() {
@@ -103,6 +107,32 @@ void SettingsDialog::render() {
             "dearsql --tui: terminal client   dearsql --mcp: tools for coding agents");
     }
 
+    if (MasterSecret::keychainSupported()) {
+        ImGui::SeparatorText("Security");
+#if defined(__APPLE__)
+        const char* store = "Keychain";
+#elif defined(_WIN32)
+        const char* store = "Credential Manager";
+#else
+        const char* store = "system keyring";
+#endif
+        bool keychain = MasterSecret::usingKeychain();
+        if (ImGui::Checkbox(std::format("Keep the encryption key in the {}", store).c_str(),
+                            &keychain)) {
+            keyStoreStatus_ = MasterSecret::moveToKeychain(keychain, [&] {
+                return app.getAppState() &&
+                       app.getAppState()->setSetting("use_keychain", keychain ? "1" : "0");
+            });
+        }
+        if (!keyStoreStatus_.empty()) {
+            ImGui::TextDisabled("%s", keyStoreStatus_.c_str());
+        }
+        ImGui::TextDisabled(
+            "Saved passwords are encrypted with a key kept in ~/.dearsql/master.key,\n"
+            "readable only by you. The %s may ask before letting DearSQL read it.",
+            store);
+    }
+
     // --- Actions ---
     ImGui::SeparatorText("About");
     if (onManageLicense && UIUtils::Button("Manage License...")) {
@@ -123,7 +153,7 @@ void SettingsDialog::render() {
         ImGui::CloseCurrentPopup();
     }
 
-    ImGui::PopStyleVar(2);   // ItemSpacing, FramePadding
+    ImGui::PopStyleVar(2); // ItemSpacing, FramePadding
     ImGui::EndPopup();
     ImGui::PopStyleColor(); // Border
     ImGui::PopStyleVar(2);  // WindowBorderSize, WindowRounding

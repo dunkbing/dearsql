@@ -7,3 +7,11 @@ set(VCPKG_OSX_ARCHITECTURES arm64)
 set(VCPKG_OSX_DEPLOYMENT_TARGET "14.0")
 
 set(SENTRY_BACKEND "breakpad")
+
+# duckdb is most of the binary: build it for size and without parquet
+# (read_parquet then autoloads the extension, needs network on first use)
+if(PORT STREQUAL "duckdb")
+    set(VCPKG_CMAKE_CONFIGURE_OPTIONS -DSKIP_EXTENSIONS=parquet)
+    # duckdb appends -O3 to the release flags, then CXX_EXTRA
+    set(VCPKG_CMAKE_CONFIGURE_OPTIONS_RELEASE -DCXX_EXTRA=-Os)
+endif()

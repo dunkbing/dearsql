@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "config.hpp"
 #include "utils/crypto.hpp"
+#include "utils/master_secret.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -92,6 +93,9 @@ TEST(CredentialMigration, LegacyRowsAreReencryptedWithMasterKey) {
             EXPECT_EQ("plaintext-pw", conn.connectionInfo.password);
         }
     }
+
+    // a fresh install keeps the key in a file, never the keychain
+    EXPECT_FALSE(MasterSecret::usingKeychain());
 
     // rows are now on the master key, not the legacy key
     std::string masterSecret;

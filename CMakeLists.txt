@@ -169,6 +169,7 @@ set(APP_SOURCES
     src/app_state.cpp
     src/embedded_images.cpp
     src/embedded_fonts.cpp
+    src/ui/fonts.cpp
     src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
     src/database/postgres/postgres_backup.cpp
@@ -469,15 +470,19 @@ if(APPLE)
         COMMENT "Embedding Sparkle.framework into app bundle"
     )
 
-    add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND
-            ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:sentry::sentry>"
-            "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
-        COMMENT "Embedding sentry dylib into app bundle"
-    )
+    # a static sentry is already in the executable
+    get_target_property(_SENTRY_TYPE sentry::sentry TYPE)
+    if(_SENTRY_TYPE STREQUAL "SHARED_LIBRARY")
+        add_custom_command(
+            TARGET ${PROJECT_NAME}
+            POST_BUILD
+            COMMAND
+                ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:sentry::sentry>"
+                "$<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/Contents/Frameworks/"
+            COMMENT "Embedding sentry dylib into app bundle"
+        )
+    endif()
 endif()
 
 include(cmake/Tests.cmake)

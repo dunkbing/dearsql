@@ -265,8 +265,30 @@ bool AppState::initialize() {
     if (!createTables()) {
         return false;
     }
+    chooseKeyStore();
     migrateCredentialKeys();
     return true;
+}
+
+// the master key lives in a file unless the user turned the keychain on. installs from
+// before the setting keep theirs where it is: in the keystore unless a key file exists
+void AppState::chooseKeyStore() const {
+    std::string keychain = getSetting("use_keychain", "");
+    if (keychain.empty()) {
+        bool keystoreRows = false;
+        if (MasterSecret::keychainSupported() && !MasterSecret::keyFileExists()) {
+            sqlite3_stmt* raw = nullptr;
+            if (sqlite3_prepare_v2(db_,
+                                   "SELECT 1 FROM saved_connections WHERE key_version = 1 LIMIT 1",
+                                   -1, &raw, nullptr) == SQLITE_OK) {
+                StmtPtr stmt(raw);
+                keystoreRows = sqlite3_step(stmt.get()) == SQLITE_ROW;
+            }
+        }
+        keychain = keystoreRows ? "1" : "0";
+        setSetting("use_keychain", keychain);
+    }
+    MasterSecret::useKeychain(keychain == "1");
 }
 
 // one-time re-encryption of legacy rows (shipped-constant key or plaintext)
@@ -1327,7 +1349,8 @@ std::vector<AiSession> AppState::getAiSessions(const int connectionId, const std
     std::vector<AiSession> sessions;
     const std::string sql =
         "SELECT id, backend, acp_session_id, title, updated_at FROM ai_sessions "
-        "WHERE connection_id IN (?, 0) AND (? = '' OR backend = ?) ORDER BY updated_at DESC LIMIT ?";
+        "WHERE connection_id IN (?, 0) AND (? = '' OR backend = ?) ORDER BY updated_at DESC LIMIT "
+        "?";
     sqlite3_stmt* raw = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
         return sessions;

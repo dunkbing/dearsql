@@ -2,6 +2,7 @@
 #include "mcp/fuzzy.hpp"
 #include <dearsql/factory.hpp>
 #include <gtest/gtest.h>
+#include <map>
 
 namespace {
 
@@ -50,6 +51,12 @@ namespace {
             return {r["content"][0]["text"].get<std::string>(), r["isError"].get<bool>()};
         }
 
+        static std::string cursorIn(const std::string& text) {
+            const auto pos = text.rfind("cursor: ");
+            return pos == std::string::npos ? ""
+                                            : text.substr(pos + 8, text.find('\n', pos) - pos - 8);
+        }
+
         std::shared_ptr<dearsql::IConnection> conn;
         std::unique_ptr<OneConnectionHost> host;
         std::unique_ptr<mcp::Server> server;
@@ -90,7 +97,7 @@ TEST_F(McpToolsTest, QueryPagesThroughCursor) {
     EXPECT_NE(first.find("rows 1-50 of 120"), std::string::npos) << first;
     const auto pos = first.find("cursor: ");
     ASSERT_NE(pos, std::string::npos);
-    const std::string cursor = first.substr(pos + 8, first.find('\n', pos) - pos - 8);
+    const std::string cursor = cursorIn(first);
 
     auto [second, err2] = call("run_query", {{"cursor", cursor}, {"maxRows", 100}});
     EXPECT_NE(second.find("rows 51-120 of 120"), std::string::npos) << second;
@@ -131,7 +138,7 @@ TEST(Fuzzy, SwapIsOneEdit) {
 TEST_F(McpToolsTest, CursorFromAnotherToolOrQueryIsNotReused) {
     auto [tables, err] = call("list_tables", {{"maxResults", 1}});
     ASSERT_FALSE(err) << tables;
-    const auto cursor = tables.substr(tables.rfind("cursor: ") + 8, 1);
+    const auto cursor = cursorIn(tables);
     auto [wrong, err2] = call("run_query", {{"cursor", cursor}});
     EXPECT_TRUE(err2);
     EXPECT_NE(wrong.find("belongs to list_tables"), std::string::npos) << wrong;
@@ -243,4 +250,64 @@ TEST_F(McpToolsTest, WritesWaitForTheUserAndAddConnectionSaves) {
     // the cli host can't save, so the tool isn't there
     listed = server->handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}}).dump();
     EXPECT_EQ(listed.find("add_connection"), std::string::npos);
+}
+
+// `dearsql run_query` is one process per call: a cursor must work on a new server
+TEST_F(McpToolsTest, CursorsOutliveTheServer) {
+    const std::string sql = "SELECT id FROM users ORDER BY id";
+    auto [first, err] = call("run_query", {{"sql", sql}, {"maxRows", 50}});
+    auto [tables, err2] = call("list_tables", {{"maxResults", 1}});
+    server = std::make_unique<mcp::Server>(*host);
+
+    auto [lost, err3] = call("run_query", {{"cursor", cursorIn(first)}});
+    EXPECT_TRUE(err3);
+    EXPECT_NE(lost.find("with the same sql"), std::string::npos) << lost;
+    auto [next, err4] = call("run_query", {{"sql", sql}, {"cursor", cursorIn(first)}});
+    EXPECT_NE(next.find("rows 51-100 of 120\nid\n51\n"), std::string::npos) << next;
+    auto [page2, err5] = call("list_tables", {{"cursor", cursorIn(tables)}});
+    EXPECT_FALSE(err5) << page2;
+    EXPECT_NE(page2.find("users"), std::string::npos) << page2;
+}
+
+// the same sql on two connections pages through each one's own rows
+TEST(McpCursors, SameSqlOnTwoConnectionsKeepsItsOwnRows) {
+    struct TwoHost : mcp::Host {
+        std::map<std::string, std::shared_ptr<dearsql::IConnection>> conns;
+        std::vector<mcp::ConnectionEntry> connections() override {
+            return {{"a", "sqlite", true}, {"b", "sqlite", true}};
+        }
+        std::string connect(const std::string&) override {
+            return "";
+        }
+        std::shared_ptr<dearsql::IConnection> connection(const std::string& n) override {
+            return conns.contains(n) ? conns[n] : nullptr;
+        }
+    } host;
+    for (std::string name : {"a", "b"}) {
+        dearsql::ConnectionInfo info;
+        info.type = dearsql::DatabaseType::SQLITE;
+        info.path = ":memory:";
+        info.name = name;
+        auto conn = dearsql::makeConnection(info);
+        ASSERT_TRUE(conn->open().first);
+        conn->database()->execute("CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('" + name +
+                                      "1'), ('" + name + "2');",
+                                  0);
+        host.conns[name] = conn;
+    }
+    mcp::Server server(host);
+    auto text = [&](nlohmann::json args) {
+        return server.callTool("run_query", args)["content"][0]["text"].get<std::string>();
+    };
+    const std::string sql = "SELECT v FROM t ORDER BY v";
+    const auto a = text({{"connection", "a"}, {"sql", sql}, {"maxRows", 1}});
+    text({{"connection", "b"}, {"sql", sql}, {"maxRows", 1}});
+    const auto cursor = a.substr(a.rfind("cursor: ") + 8,
+                                 a.find('\n', a.rfind("cursor: ")) - a.rfind("cursor: ") - 8);
+    EXPECT_NE(text({{"cursor", cursor}}).find("a2"), std::string::npos);
+    EXPECT_NE(text({{"connection", "a"}, {"sql", sql}, {"cursor", cursor}}).find("a2"),
+              std::string::npos);
+    // a's cursor with b named: b's query from the start
+    EXPECT_NE(text({{"connection", "b"}, {"sql", sql}, {"cursor", cursor}}).find("b1"),
+              std::string::npos);
 }

@@ -45,7 +45,7 @@ jobs:
             libgtk-4-dev libepoxy-dev libx11-dev \
             libtirpc-dev libltdl-dev python3-venv \
             autoconf automake autoconf-archive \
-            freetds-dev libgnutls28-dev libkrb5-dev
+            libkrb5-dev gperf
 
       # 22.04 for glibc 2.35 (#54); its gcc 11 lacks std::format
       - name: Install gcc 13

@@ -9,7 +9,6 @@
 using dearsql::BOOL_FALSE_SENTINEL;
 using dearsql::BOOL_TRUE_SENTINEL;
 using dearsql::boolSentinelValue;
-using dearsql::buildForeignKeyLookup;
 using dearsql::Column;
 using dearsql::ForeignKey;
 using dearsql::formatByteSize;

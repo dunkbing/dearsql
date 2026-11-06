@@ -527,8 +527,8 @@ namespace mcp {
     // ---------- cursors ----------
     // a cursor carries its own position, so it outlives this server (a `dearsql
     // run_query` call is one process): "t40" list_tables, "s40" search_schema,
-    // "q40-1a2b3c4d" run_query (offset, hash of the sql). run_query also keeps its
-    // fetched rows here so a cached page needs no re-run
+    // "q40-1a2b3c4d" run_query (offset, hash of connection, database and sql). run_query also keeps
+    // its fetched rows here so a cached page needs no re-run
 
     namespace {
         uint32_t sqlHash(const std::string& sql) {
@@ -542,8 +542,8 @@ namespace mcp {
         }
     } // namespace
 
-    std::string Server::storeCursor(const std::string& sql, json page) {
-        const std::string id = std::format("q{}-{:08x}", page.value("offset", 0), sqlHash(sql));
+    std::string Server::storeCursor(const std::string& key, json page) {
+        const std::string id = std::format("q{}-{:08x}", page.value("offset", 0), sqlHash(key));
         cursors_[id] = std::move(page);
         cursorOrder_.push_back(id);
         while (cursorOrder_.size() > MAX_CURSORS) {
@@ -909,22 +909,32 @@ namespace mcp {
         json page;
         size_t resumeAt = 0; // a cursor whose rows are gone: re-run, start here
         const std::string sql = str(args, {"sql", "query", "statement", "command"});
-        if (auto c = str(args, {"cursor"}); !c.empty()) {
-            auto it = cursors_.find(c);
-            if (it != cursors_.end() && (sql.empty() || it->second.value("sql", "") == sql)) {
-                page = it->second;
-            } else if (sql.empty()) {
-                cursorOffset(c, 'q'); // throws for another tool's cursor
-                throw ToolError("Cursor '" + c +
+        const std::string cursor = str(args, {"cursor"});
+        if (!cursor.empty() && sql.empty()) {
+            // the id hashes connection, database and sql, so it names one result set
+            auto it = cursors_.find(cursor);
+            if (it == cursors_.end()) {
+                cursorOffset(cursor, 'q'); // throws for another tool's cursor
+                throw ToolError("Cursor '" + cursor +
                                 "' is no longer cached; pass it again with the same sql.");
-            } else if (!write && c[0] == 'q' && c.ends_with(std::format("-{:08x}", sqlHash(sql)))) {
-                resumeAt = cursorOffset(c, 'q');
-            } // else new sql with a cursor from elsewhere: the agent meant the new query
+            }
+            page = it->second;
+        }
+        if (page.is_null() && sql.empty())
+            throw ToolError("Missing 'sql'.");
+        Target target;
+        if (page.is_null()) {
+            target = resolve(args);
+            const std::string key = target.connection + '\n' + target.database + '\n' + sql;
+            // a cursor for another query or database: the agent meant the new one
+            if (cursor.starts_with('q') && cursor.ends_with(std::format("-{:08x}", sqlHash(key)))) {
+                if (auto it = cursors_.find(cursor); it != cursors_.end())
+                    page = it->second;
+                else if (!write)
+                    resumeAt = cursorOffset(cursor, 'q');
+            }
         }
         if (page.is_null()) {
-            if (sql.empty())
-                throw ToolError("Missing 'sql'.");
-            auto target = resolve(args);
             if (!write && !readOnly(target.db->type(), sql))
                 throw ToolError(
                     std::string("Rejected: only read-only statements run here (SELECT, WITH, "
@@ -1022,6 +1032,7 @@ namespace mcp {
                 return notes + std::format("OK ({:.0f} ms)", result.executionTimeMs);
             const bool more = rows->tableData.size() > FETCH_ROWS;
             page = {{"sql", sql},
+                    {"key", target.connection + '\n' + target.database + '\n' + sql},
                     {"columns", rows->columnNames},
                     {"rows", json::array()},
                     {"offset", 0},
@@ -1067,7 +1078,7 @@ namespace mcp {
                 out += std::format("page cut at {} rows: output limit of {} KB per page\n",
                                    i - offset, MAX_OUTPUT / 1024);
             page["offset"] = i;
-            out += "cursor: " + storeCursor(page.value("sql", ""), page) + "\n";
+            out += "cursor: " + storeCursor(page.value("key", ""), page) + "\n";
         } else if (more) {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }

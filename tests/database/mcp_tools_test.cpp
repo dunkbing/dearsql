@@ -2,6 +2,7 @@
 #include "mcp/fuzzy.hpp"
 #include <dearsql/factory.hpp>
 #include <gtest/gtest.h>
+#include <map>
 
 namespace {
 
@@ -266,4 +267,47 @@ TEST_F(McpToolsTest, CursorsOutliveTheServer) {
     auto [page2, err5] = call("list_tables", {{"cursor", cursorIn(tables)}});
     EXPECT_FALSE(err5) << page2;
     EXPECT_NE(page2.find("users"), std::string::npos) << page2;
+}
+
+// the same sql on two connections pages through each one's own rows
+TEST(McpCursors, SameSqlOnTwoConnectionsKeepsItsOwnRows) {
+    struct TwoHost : mcp::Host {
+        std::map<std::string, std::shared_ptr<dearsql::IConnection>> conns;
+        std::vector<mcp::ConnectionEntry> connections() override {
+            return {{"a", "sqlite", true}, {"b", "sqlite", true}};
+        }
+        std::string connect(const std::string&) override {
+            return "";
+        }
+        std::shared_ptr<dearsql::IConnection> connection(const std::string& n) override {
+            return conns.contains(n) ? conns[n] : nullptr;
+        }
+    } host;
+    for (std::string name : {"a", "b"}) {
+        dearsql::ConnectionInfo info;
+        info.type = dearsql::DatabaseType::SQLITE;
+        info.path = ":memory:";
+        info.name = name;
+        auto conn = dearsql::makeConnection(info);
+        ASSERT_TRUE(conn->open().first);
+        conn->database()->execute("CREATE TABLE t (v TEXT); INSERT INTO t VALUES ('" + name +
+                                      "1'), ('" + name + "2');",
+                                  0);
+        host.conns[name] = conn;
+    }
+    mcp::Server server(host);
+    auto text = [&](nlohmann::json args) {
+        return server.callTool("run_query", args)["content"][0]["text"].get<std::string>();
+    };
+    const std::string sql = "SELECT v FROM t ORDER BY v";
+    const auto a = text({{"connection", "a"}, {"sql", sql}, {"maxRows", 1}});
+    text({{"connection", "b"}, {"sql", sql}, {"maxRows", 1}});
+    const auto cursor = a.substr(a.rfind("cursor: ") + 8,
+                                 a.find('\n', a.rfind("cursor: ")) - a.rfind("cursor: ") - 8);
+    EXPECT_NE(text({{"cursor", cursor}}).find("a2"), std::string::npos);
+    EXPECT_NE(text({{"connection", "a"}, {"sql", sql}, {"cursor", cursor}}).find("a2"),
+              std::string::npos);
+    // a's cursor with b named: b's query from the start
+    EXPECT_NE(text({{"connection", "b"}, {"sql", sql}, {"cursor", cursor}}).find("b1"),
+              std::string::npos);
 }

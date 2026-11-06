@@ -109,7 +109,7 @@ namespace mcp {
         std::string runQuery(const nlohmann::json& args, bool write = false);
 
         // self-describing cursors; run_query pages cached by cursor, oldest evicted first
-        std::string storeCursor(const std::string& sql, nlohmann::json page);
+        std::string storeCursor(const std::string& key, nlohmann::json page);
         size_t cursorOffset(const std::string& id, char tag);
 
         Host& host_;

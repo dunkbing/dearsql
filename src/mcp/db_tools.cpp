@@ -615,7 +615,7 @@ namespace mcp {
             return found + " is already open.";
         if (auto err = host_.connect(found); !err.empty())
             throw ToolError("Could not connect to " + found + ": " + err);
-        return "Connected to " + found + ".";
+        return found + ": connection OK.";
     }
 
     std::string Server::addConnection(const json& args) {

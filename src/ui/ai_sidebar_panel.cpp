@@ -1697,6 +1697,7 @@ void AISidebarPanel::renderMessages() {
                                warming.c_str());
         }
     }
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::L)); // room above the input
 }
 
 void AISidebarPanel::renderItem(Item& item, size_t index) {

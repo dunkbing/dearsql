@@ -2,6 +2,7 @@
 
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "embedded_fonts.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "themes.hpp"
@@ -113,14 +114,18 @@ namespace {
         }
         view.lastFrame = frame;
         auto palette = dearsql::TextEditor::FromTheme(colors);
-        palette.background = ImGui::ColorConvertFloat4ToU32(colors.mantle);
+        palette.background = ImGui::ColorConvertFloat4ToU32(colors.crust);
         view.editor->SetPalette(palette);
 
         // rich_md scopes the block's ids by its text, which changes while it streams:
         // key them by position instead, so the windows below stay the same
         ImGui::PushOverrideID(ImHashStr(key.c_str()));
         ImGui::PushFont(gScope.font, gScope.fontSize); // ours: monospace, with the icons
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+        // crust + a border: mantle alone blends into the chat
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.crust);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.surface1);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, Theme::CornerRadius::SMALL);
         if (ImGui::BeginChild("##md_code", ImVec2(-1, 0),
                               ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
             const ImVec2 topRight(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x,
@@ -151,7 +156,8 @@ namespace {
             ImGui::EndChild();
         }
         ImGui::EndChild();
-        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(2);
         ImGui::PopFont();
         ImGui::PopID();
     }
@@ -162,6 +168,18 @@ namespace {
         }
         RichMd::HostServices host = RichMd::GetHostServices();
         host.RenderCodeBlock = renderCode;
+        // the app's font for every text style. ponytail: one face, so bold and italic look
+        // regular; embed JetBrains Mono Bold/Italic if emphasis should show
+        host.ReadAsset = [fallback =
+                              host.ReadAsset](const std::string& path) -> RichMd::AssetBytes {
+            if (path.starts_with("fonts/") && path.ends_with(".ttf") &&
+                !path.starts_with("fonts/latex/")) {
+                if (const EmbeddedFont* font = findEmbeddedFont("JetBrainsMono-Medium")) {
+                    return std::vector<uint8_t>(font->data, font->data + font->size);
+                }
+            }
+            return fallback ? fallback(path) : RichMd::ReadAssetDefault(path);
+        };
         RichMd::SetHostServices(host);
         RichMd::MarkdownOptions options;
         options.hardSoftBreaks = true; // chat text: a newline is a line break
@@ -172,6 +190,8 @@ namespace {
 void MarkdownText::render(const std::string& markdown, const std::string& idPrefix,
                           const InsertSqlCallback& insertSql) {
     ensureContext();
+    // one face for every style: color inline code so it still stands out
+    RichMd::GetStyle().codeColor = Application::getInstance().getCurrentColors().peach;
     const RenderScope saved = gScope;
     gScope = {.idPrefix = &idPrefix,
               .insertSql = &insertSql,

@@ -56,6 +56,9 @@ public:
     [[nodiscard]] const QueryResult& getQueryResult() const {
         return queryResult;
     }
+    [[nodiscard]] const dearsql::TextEditor& getEditor() const {
+        return sqlEditor;
+    }
 
     // Script file association
     void loadFromScript(const SqlScript& script);

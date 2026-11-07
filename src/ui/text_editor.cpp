@@ -1,6 +1,7 @@
 #include "ui/text_editor.hpp"
 #include "IconsFontAwesome6.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -393,6 +394,7 @@ namespace dearsql {
         p.currentLineBackground = toImU32(colors.surface0);
         p.lineNumberBackground = toImU32(colors.base);
         p.run = toImU32(colors.green);
+        p.error = toImU32(colors.red);
         return p;
     }
 
@@ -578,13 +580,13 @@ namespace dearsql {
         // drawn after this child), on top of the current-line highlight
         if (hoveredRun_ >= 0 && hoveredRun_ < static_cast<int>(runRanges_.size())) {
             const auto [begin, end] = runRanges_[hoveredRun_];
-            const float top =
-                textOrigin_.y + getLineFromPos(static_cast<int>(begin)) * lineHeight_;
+            const float top = textOrigin_.y + getLineFromPos(static_cast<int>(begin)) * lineHeight_;
             const float bottom =
                 textOrigin_.y + (getLineFromPos(static_cast<int>(end)) + 1) * lineHeight_;
             drawList->AddRect(ImVec2(textAreaMin_.x + 1.0f, top),
                               ImVec2(textAreaMax_.x - 1.0f, bottom), palette_.run, 3.0f, 0, 1.5f);
         }
+        renderErrorMarker(drawList);
         if (content_.empty() && !placeholder_.empty()) {
             const ImU32 placeholderColor = (palette_.text & 0x00FFFFFF) | 0x60000000;
             const float x = textOrigin_.x;
@@ -649,6 +651,58 @@ namespace dearsql {
             ImU32 color =
                 (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
             drawList->AddText(ImVec2(x, y), color, buf);
+        }
+    }
+
+    void TextEditor::SetErrorMarker(size_t offset, std::string message) {
+        errorOffset_ = static_cast<int>(std::min(offset, content_.size()));
+        errorMessage_ = std::move(message);
+    }
+
+    void TextEditor::renderErrorMarker(ImDrawList* drawList) {
+        if (errorOffset_ < 0 || errorOffset_ > static_cast<int>(content_.size())) {
+            return;
+        }
+        auto word = [&](int i) {
+            const auto c = static_cast<unsigned char>(content_[i]);
+            return std::isalnum(c) || c == '_' || c >= 0x80;
+        };
+        auto blank = [&](int i) { return std::isspace(static_cast<unsigned char>(content_[i])); };
+        const int size = static_cast<int>(content_.size());
+        int b = errorOffset_;
+        // at the end or on a gap ('unexpected end'): mark the token before it
+        while (b > 0 && (b == size || blank(b))) {
+            --b;
+        }
+        if (b >= size || blank(b)) {
+            return;
+        }
+        int e = b + 1;
+        if (word(b)) {
+            while (b > 0 && word(b - 1)) {
+                --b;
+            }
+            while (e < size && word(e)) {
+                ++e;
+            }
+        }
+        const int line = getLineFromPos(b);
+        const float x0 = getScreenX(b);
+        const float x1 = std::max(getScreenX(e), x0 + 6.0f);
+        const float top = textOrigin_.y + line * lineHeight_;
+        const float y = top + lineHeight_; // just under the glyphs
+        // a zigzag, as editors draw it
+        constexpr float step = 2.5f;
+        ImVec2 points[256];
+        int n = 0;
+        for (float x = x0; x < x1 && n < 255; x += step, ++n) {
+            points[n] = ImVec2(x, y + ((n & 1) ? -1.2f : 0.8f));
+        }
+        points[n++] = ImVec2(x1, y);
+        drawList->AddPolyline(points, n, palette_.error, ImDrawFlags_None, 1.2f);
+        if (ImGui::IsWindowHovered() &&
+            ImGui::IsMouseHoveringRect(ImVec2(x0, top), ImVec2(x1, top + lineHeight_))) {
+            ImGui::SetTooltip("%s", errorMessage_.c_str());
         }
     }
 
@@ -829,13 +883,13 @@ namespace dearsql {
 
     // --- Cursor helpers ---
 
-    float TextEditor::getCursorScreenX() const {
-        int line = getLineFromPos(cursorIndex_);
+    float TextEditor::getScreenX(int pos) const {
+        int line = getLineFromPos(pos);
         int lineStart = lineStarts_[line];
         float spaceWidth = ImGui::CalcTextSize(" ").x;
         float x = textOrigin_.x;
 
-        for (int i = lineStart; i < cursorIndex_ && i < static_cast<int>(content_.size()); ++i) {
+        for (int i = lineStart; i < pos && i < static_cast<int>(content_.size()); ++i) {
             if (content_[i] == '\t') {
                 int col = static_cast<int>((x - textOrigin_.x) / spaceWidth);
                 int nextTab = ((col / tabSize_) + 1) * tabSize_;

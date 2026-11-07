@@ -421,4 +421,27 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->MouseMove("**/##run_2");
         holdForScreenshot(ctx);
     };
+
+    // a typo underlined where the parser stopped, the message next to the toolbar
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-syntax-error");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select count(*)\nfrom {};\n\nselect *\nfrm {}\nlimit 10;",
+                                  tables[0].name, tables[1 % tables.size()].name));
+        expandInSidebar(ctx, db);
+        for (int i = 0; i < 120 && tab->getEditor().GetErrorOffset() < 0; ++i) {
+            ctx->Yield();
+        }
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
 }

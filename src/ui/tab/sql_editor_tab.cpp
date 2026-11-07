@@ -208,6 +208,7 @@ void SQLEditorTab::render() {
             const std::string newText = sqlEditor.GetText();
             if (newText != sqlQuery) {
                 sqlQuery = newText;
+                sqlEditor.ClearErrorMarker(); // its offset is stale now
                 contentModified_ = true;
                 scheduleSyntaxCheck();
             }
@@ -1135,6 +1136,7 @@ void SQLEditorTab::updateSyntaxDiagnostics() {
 void SQLEditorTab::showSyntaxError(const std::optional<dearsql::SyntaxError>& error) {
     syntaxDiagnostic_ = {};
     if (!error) {
+        sqlEditor.ClearErrorMarker();
         return;
     }
     const std::string_view before = std::string_view(sqlQuery).substr(0, error->offset);
@@ -1142,6 +1144,7 @@ void SQLEditorTab::showSyntaxError(const std::optional<dearsql::SyntaxError>& er
     syntaxDiagnostic_.line = 1 + static_cast<int>(std::ranges::count(before, '\n'));
     syntaxDiagnostic_.column = 1 + static_cast<int>(before.size() - (before.rfind('\n') + 1));
     syntaxDiagnostic_.message = std::format("Line {}: {}", syntaxDiagnostic_.line, error->message);
+    sqlEditor.SetErrorMarker(error->offset, error->message);
 }
 
 void SQLEditorTab::updateCompletionCatalog() {

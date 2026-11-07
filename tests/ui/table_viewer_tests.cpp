@@ -223,4 +223,33 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // a syntax error is underlined at the token the parser stopped on
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Syntax error is underlined");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        const std::string sql = "select 1;\nselect *\nfrm parent;";
+        tab->setQuery(sql);
+        for (int i = 0; i < 120 && tab->getEditor().GetErrorOffset() < 0; ++i) {
+            ctx->Yield();
+        }
+        IM_CHECK_EQ(tab->getEditor().GetErrorOffset(), static_cast<int>(sql.find("frm")));
+
+        tab->setQuery("select 1;\nselect * from parent;"); // fixed: the marker goes
+        for (int i = 0; i < 120 && tab->getEditor().GetErrorOffset() >= 0; ++i) {
+            ctx->Yield();
+        }
+        IM_CHECK_EQ(tab->getEditor().GetErrorOffset(), -1);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

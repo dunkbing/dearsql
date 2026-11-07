@@ -91,6 +91,16 @@ namespace dearsql {
             std::function<std::vector<std::pair<size_t, size_t>>(std::string_view content)>;
         using RunCallback = std::function<void(size_t begin, size_t end)>;
         void SetRunnableRanges(RangeProvider provider, RunCallback onRun);
+
+        // a wavy underline under the token at a byte offset, the message on hover; edits
+        // clear it (the offset would point at the wrong text)
+        void SetErrorMarker(size_t offset, std::string message);
+        void ClearErrorMarker() {
+            errorOffset_ = -1;
+        }
+        [[nodiscard]] int GetErrorOffset() const {
+            return errorOffset_; // -1: none
+        }
         [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
 
         // Theme
@@ -111,6 +121,7 @@ namespace dearsql {
             ImU32 currentLineBackground;
             ImU32 lineNumberBackground;
             ImU32 run = IM_COL32(166, 227, 161, 255);
+            ImU32 error = IM_COL32(243, 139, 168, 255);
         };
 
         void SetPalette(const Palette& palette);
@@ -206,6 +217,9 @@ namespace dearsql {
         int hoveredRun_ = -1; // last frame's, so the click is not also a text click
         ImVec2 textAreaMin_{}, textAreaMax_{};
         void renderRunButtons(int startLine, int endLine);
+        int errorOffset_ = -1;
+        std::string errorMessage_;
+        void renderErrorMarker(ImDrawList* drawList);
         int autocompleteReplaceStart_ = -1; // provider range, -1 when unset
         int autocompleteReplaceEnd_ = -1;
         std::vector<CompletionItem> filteredCompletions_;
@@ -302,7 +316,10 @@ namespace dearsql {
 
         // --- Helpers ---
         float getCharWidth(const char* start, const char* end) const;
-        float getCursorScreenX() const;
+        float getCursorScreenX() const {
+            return getScreenX(cursorIndex_);
+        }
+        float getScreenX(int pos) const; // on pos's line
     };
 
 } // namespace dearsql

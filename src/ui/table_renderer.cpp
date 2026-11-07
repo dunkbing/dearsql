@@ -6,6 +6,8 @@
 #include "imgui_internal.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/csv_document.hpp"
+#include "utils/menu.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -46,38 +48,6 @@ namespace {
         return v;
     }
 
-    bool paddedMenuItem(const char* label, bool enabled = true) {
-        const auto& colors = Application::getInstance().getCurrentColors();
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-        const float padX = style.FramePadding.x + Theme::Spacing::S;
-        const float padY = style.FramePadding.y + Theme::Spacing::XS;
-        const float width = std::max(ImGui::GetContentRegionAvail().x, textSize.x + padX * 2.0f);
-        const float height = textSize.y + padY * 2.0f;
-
-        if (!enabled)
-            ImGui::BeginDisabled();
-        const bool pressed = ImGui::InvisibleButton(label, ImVec2(width, height));
-        const bool hovered = ImGui::IsItemHovered();
-        const bool active = ImGui::IsItemActive();
-        if (!enabled)
-            ImGui::EndDisabled();
-
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        if (enabled && (hovered || active)) {
-            drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height),
-                                    ImGui::GetColorU32(active ? colors.surface2 : colors.surface1),
-                                    style.FrameRounding);
-        }
-
-        const ImU32 textColor = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-        drawList->AddText(ImVec2(pos.x + padX, pos.y + padY), textColor, label);
-
-        if (pressed)
-            ImGui::CloseCurrentPopup();
-        return pressed && enabled;
-    }
 } // namespace
 
 TableRenderer::TableRenderer() {
@@ -236,6 +206,96 @@ void TableRenderer::updateDragFromItem(int row, int col) {
     }
 }
 
+bool TableRenderer::getSelectionRange(int& firstRow, int& firstCol, int& lastRow,
+                                      int& lastCol) const {
+    if (rangeAnchorRow < 0 || rangeEndRow < 0 || rangeAnchorCol < 0 || rangeEndCol < 0)
+        return false;
+    firstRow = std::min(rangeAnchorRow, rangeEndRow);
+    lastRow = std::min(std::max(rangeAnchorRow, rangeEndRow), static_cast<int>(data.size()) - 1);
+    firstCol = std::min(rangeAnchorCol, rangeEndCol);
+    lastCol = std::min(std::max(rangeAnchorCol, rangeEndCol), static_cast<int>(columns.size()) - 1);
+    return firstRow <= lastRow && firstCol <= lastCol;
+}
+
+void TableRenderer::selectRows(int firstRow, int lastRow) {
+    if (columns.empty() || data.empty())
+        return;
+    const int last = static_cast<int>(data.size()) - 1;
+    setSelectionRange(std::clamp(firstRow, 0, last), 0, std::clamp(lastRow, 0, last),
+                      static_cast<int>(columns.size()) - 1);
+    if (onCellSelect)
+        onCellSelect(selectedRow, selectedCol);
+}
+
+void TableRenderer::applyRange(int row, int col,
+                               const std::vector<std::vector<std::string>>& values) {
+    if (values.empty())
+        return;
+    if (onRangeEdit) {
+        onRangeEdit(row, col, values);
+        return;
+    }
+    if (!onCellEdit)
+        return;
+    for (std::size_t r = 0; r < values.size(); ++r) {
+        const int dr = row + static_cast<int>(r);
+        if (dr >= static_cast<int>(data.size()))
+            break;
+        for (std::size_t c = 0; c < values[r].size(); ++c) {
+            const int dc = col + static_cast<int>(c);
+            if (dc >= static_cast<int>(columns.size()))
+                break;
+            if (config.nonEditableColumns.contains(dc) ||
+                (cellEditableCb && !cellEditableCb(dr, dc)))
+                continue;
+            if (data[dr][dc] != values[r][c])
+                onCellEdit(dr, dc, values[r][c]);
+        }
+    }
+}
+
+void TableRenderer::pasteClipboard() {
+    const char* clip = ImGui::GetClipboardText();
+    if (!clip || !*clip)
+        return;
+    std::string val(clip);
+    // strip a single trailing CRLF/LF (common when pasting our own csv copy)
+    if (!val.empty() && val.back() == '\n')
+        val.pop_back();
+    if (!val.empty() && val.back() == '\r')
+        val.pop_back();
+
+    // a block: tab-separated (spreadsheets) or the multi-cell csv this table copied
+    // our own copy first: its cells may hold tabs
+    const bool own = !lastBlockCopy.empty() && clip == lastBlockCopy;
+    if (own || val.find('\t') != std::string::npos) {
+        CsvDialect dialect;
+        dialect.delimiter = own ? "," : "\t";
+        applyRange(selectedRow, selectedCol, csv::parse(val, dialect));
+        return;
+    }
+
+    int r0, c0, r1, c1;
+    if (getSelectionRange(r0, c0, r1, c1) && (r0 != r1 || c0 != c1)) {
+        applyRange(r0, c0,
+                   std::vector<std::vector<std::string>>(
+                       r1 - r0 + 1, std::vector<std::string>(c1 - c0 + 1, val)));
+        return;
+    }
+
+    if (config.nonEditableColumns.contains(selectedCol) ||
+        (cellEditableCb && !cellEditableCb(selectedRow, selectedCol)))
+        return;
+    enterEditMode(selectedRow, selectedCol);
+    if (editingRow == selectedRow && editingCol == selectedCol) {
+        std::strncpy(editBuffer, val.c_str(), sizeof(editBuffer) - 1);
+        editBuffer[sizeof(editBuffer) - 1] = '\0';
+        initialCursorPos = static_cast<int>(strnlen(editBuffer, sizeof(editBuffer)));
+        justEnteredEditWithChar = true;
+        editOverlayFrames = 0;
+    }
+}
+
 bool TableRenderer::isInSelectionRange(int row, int col) const {
     if (rangeAnchorRow < 0 || rangeEndRow < 0)
         return false;
@@ -308,35 +368,33 @@ void TableRenderer::render(const char* tableId) {
                 }
                 csv.push_back('\n');
             }
+            lastBlockCopy = csv;
             if (!csv.empty())
                 ImGui::SetClipboardText(csv.c_str());
         }
     }
 
-    // Cmd/Ctrl+V → paste clipboard into the selected cell and enter edit mode
+    // Cmd/Ctrl+V → paste: a copied block fills cells from the selection, one value
+    // fills a multi-cell selection, otherwise it opens the selected cell for editing
     if (config.allowEditing && editingRow == -1 && selectedRow >= 0 && selectedCol >= 0 &&
         selectedRow < static_cast<int>(data.size()) &&
         selectedCol < static_cast<int>(columns.size()) &&
-        !config.nonEditableColumns.contains(selectedCol) &&
-        (!cellEditableCb || cellEditableCb(selectedRow, selectedCol)) &&
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         !ImGui::GetIO().WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Shortcut | ImGuiKey_V)) {
-        if (const char* clip = ImGui::GetClipboardText(); clip && *clip) {
-            std::string val(clip);
-            // strip a single trailing CRLF/LF (common when pasting our own csv copy)
-            if (!val.empty() && val.back() == '\n')
-                val.pop_back();
-            if (!val.empty() && val.back() == '\r')
-                val.pop_back();
+        pasteClipboard();
+    }
 
-            enterEditMode(selectedRow, selectedCol);
-            if (editingRow == selectedRow && editingCol == selectedCol) {
-                std::strncpy(editBuffer, val.c_str(), sizeof(editBuffer) - 1);
-                editBuffer[sizeof(editBuffer) - 1] = '\0';
-                initialCursorPos = static_cast<int>(strnlen(editBuffer, sizeof(editBuffer)));
-                justEnteredEditWithChar = true;
-                editOverlayFrames = 0;
-            }
+    // Delete/Backspace → empty the selected cells
+    if (config.allowEditing && config.clearOnDelete && editingRow == -1 && selectedRow >= 0 &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        !ImGui::GetIO().WantTextInput &&
+        (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
+         ImGui::IsKeyPressed(ImGuiKey_Backspace, false))) {
+        int r0, c0, r1, c1;
+        if (getSelectionRange(r0, c0, r1, c1)) {
+            applyRange(r0, c0,
+                       std::vector<std::vector<std::string>>(
+                           r1 - r0 + 1, std::vector<std::string>(c1 - c0 + 1)));
         }
     }
 
@@ -407,6 +465,8 @@ void TableRenderer::render(const char* tableId) {
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         if (config.showRowNumbers) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
+            if (rowNumberCb)
+                maxRowNum = std::max(maxRowNum, rowNumberCb(static_cast<int>(data.size()) - 1));
             std::string maxRowStr = std::to_string(maxRowNum);
             float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
             float columnWidth = textWidth + 10.0f;
@@ -462,10 +522,28 @@ void TableRenderer::render(const char* tableId) {
                 if (config.showRowNumbers) {
                     ImGui::TableNextColumn();
 
-                    int rowNum = rowNumberOffset + rowIdx + 1;
+                    int rowNum = rowNumberCb ? rowNumberCb(rowIdx) : rowNumberOffset + rowIdx + 1;
                     std::string rowNumStr = std::to_string(rowNum);
                     float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
                     float columnWidth = ImGui::GetColumnWidth();
+                    // click selects the row, shift-click extends to it
+                    if (config.allowSelection) {
+                        const ImVec2 cellPos = ImGui::GetCursorPos();
+                        ImGui::PushID(rowIdx);
+                        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+                        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.surface1);
+                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors.surface2);
+                        if (ImGui::Selectable("##rownum", false, ImGuiSelectableFlags_None)) {
+                            if (ImGui::GetIO().KeyShift && rangeAnchorRow >= 0)
+                                selectRows(rangeAnchorRow, rowIdx);
+                            else
+                                selectRows(rowIdx, rowIdx);
+                        }
+                        ImGui::PopStyleColor(3);
+                        ImGui::PopID();
+                        ImGui::SetCursorPos(cellPos);
+                    }
+
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (columnWidth - textWidth) / 2);
 
                     ImGui::PushStyleColor(ImGuiCol_Text,
@@ -1023,7 +1101,7 @@ void TableRenderer::copyRowToClipboard(int row) const {
 
 void TableRenderer::renderCellContextMenu(int row, int col) {
     const std::string menuId = std::format("##cell_ctx_{}_{}", row, col);
-    if (!ImGui::BeginPopupContextItem(menuId.c_str())) {
+    if (!UIUtils::BeginContextMenu(menuId.c_str())) {
         return;
     }
 
@@ -1033,19 +1111,18 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
             onCellSelect(row, col);
     }
 
-    const ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
 
-    if (paddedMenuItem(ICON_FA_COPY " Copy cell")) {
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy cell")) {
         copyCellToClipboard(row, col);
     }
-    if (paddedMenuItem(ICON_FA_CLONE " Copy row")) {
+    if (ImGui::MenuItem(ICON_FA_CLONE " Copy row")) {
         copyRowToClipboard(row);
     }
 
     const bool canFilter = onFilterByValue && row >= 0 && row < static_cast<int>(data.size()) &&
                            col >= 0 && col < static_cast<int>(data[row].size());
-    if (paddedMenuItem(ICON_FA_FILTER " Filter by value", canFilter)) {
+    if (ImGui::MenuItem(ICON_FA_FILTER " Filter by value", nullptr, false, canFilter)) {
         onFilterByValue(row, col, data[row][col]);
     }
 
@@ -1055,7 +1132,7 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
         row < static_cast<int>(data.size()) && col >= 0 &&
         col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col])) {
         if (const std::string target = foreignKeyTargetCb(col); !target.empty()) {
-            if (paddedMenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
+            if (ImGui::MenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
                 onFollowForeignKey(row, col);
             }
         }
@@ -1065,7 +1142,7 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
 
     const bool canEdit = config.allowEditing && !config.nonEditableColumns.contains(col) &&
                          (!cellEditableCb || cellEditableCb(row, col));
-    if (paddedMenuItem(ICON_FA_PEN_TO_SQUARE " Edit row", canEdit)) {
+    if (ImGui::MenuItem(ICON_FA_PEN_TO_SQUARE " Edit row", nullptr, false, canEdit)) {
         enterEditMode(row, col);
     }
 
@@ -1076,15 +1153,19 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
         row < static_cast<int>(data.size()) && col >= 0 &&
         col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col]) &&
         (!cellEditableCb || cellEditableCb(row, col));
-    if (canSetNull && paddedMenuItem("Set NULL")) {
+    if (canSetNull && ImGui::MenuItem("Set NULL")) {
         onSetNull(row, col);
     }
 
     const bool canDelete = static_cast<bool>(onDeleteRow);
-    if (paddedMenuItem(ICON_FA_TRASH_CAN " Delete row", canDelete)) {
+    if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Delete row", nullptr, false, canDelete)) {
         onDeleteRow(row);
     }
 
+    if (cellMenuExt) {
+        ImGui::Separator();
+        cellMenuExt(row, col);
+    }
     ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
@@ -1453,9 +1534,8 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         ImGui::OpenPopup(popupId.c_str());
     }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
-    if (ImGui::BeginPopup(popupId.c_str())) {
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+    if (UIUtils::BeginMenuPopup(popupId.c_str())) {
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
         if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {
             if (isAsc) {
@@ -1492,7 +1572,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
         ImGui::EndPopup();
     }
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 
     ImGui::PopID();
 }

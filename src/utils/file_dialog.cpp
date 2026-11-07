@@ -130,3 +130,20 @@ std::string FileDialog::savePostgresBackupFile(const std::string& defaultName) {
     }
     return {};
 }
+
+std::string FileDialog::saveFile(const std::string& defaultName, const char* filterName,
+                                 const char* filterSpec) {
+    nfdchar_t* outPath;
+    const nfdfilteritem_t filterItem[1] = {{filterName, filterSpec}};
+    const nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 1, nullptr,
+                                              defaultName.empty() ? nullptr : defaultName.c_str());
+    if (result == NFD_OKAY) {
+        std::string path(outPath);
+        NFD_FreePath(outPath);
+        return path;
+    }
+    if (result != NFD_CANCEL) {
+        std::cerr << "File dialog error: " << NFD_GetError() << std::endl;
+    }
+    return {};
+}

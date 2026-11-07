@@ -217,6 +217,7 @@ set(APP_SOURCES
     src/utils/mysql_dump_export.cpp
     src/utils/mysql_dump_import.cpp
     src/utils/mysql_dump_splitter.cpp
+    src/utils/csv_document.cpp
     src/utils/table_exporter.cpp
     src/utils/table_importer.cpp
     src/utils/button.cpp
@@ -324,7 +325,6 @@ target_include_directories(
         external/imgui-node-editor
         external/imgui-node-editor/external/stb_image
         external/IconFontCppHeaders
-        external/csv2/include
         ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}/include
 )

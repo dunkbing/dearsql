@@ -127,7 +127,7 @@ namespace Theme {
         style.WindowRounding = 0.0f;
         style.ChildRounding = 0.0f;
         style.FrameRounding = CornerRadius::SMALL;
-        style.PopupRounding = CornerRadius::MEDIUM;
+        style.PopupRounding = 0.0f;
         style.ScrollbarRounding = 0.0f;
         style.GrabRounding = CornerRadius::SMALL;
         style.TabRounding = 0.0f;

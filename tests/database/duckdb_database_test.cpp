@@ -1,4 +1,5 @@
 #include "database/file_database.hpp"
+#include "dearsql/backends/duckdb_connection.hpp"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -157,16 +158,42 @@ TEST(DuckDBCsvTest, OpensCsvFileAsQueryableTable) {
     auto [success, error] = db.connect();
     ASSERT_TRUE(success) << error;
 
-    auto tables = db.getTablesAsync().items;
-    ASSERT_EQ(tables.size(), 1u);
-    EXPECT_EQ(tables.front().name, "dearsql_duckdb_test");
+    // a read-only view over the file
+    EXPECT_TRUE(db.getTablesAsync().items.empty());
+    auto views = db.getViewsAsync().items;
+    ASSERT_EQ(views.size(), 1u);
+    EXPECT_EQ(views.front().name, "dearsql_duckdb_test");
 
     auto r = db.executeQuery("SELECT name FROM \"dearsql_duckdb_test\" WHERE id = 2");
     ASSERT_TRUE(r.success()) << r.errorMessage();
     ASSERT_EQ(r.statements[0].tableData.size(), 1u);
     EXPECT_EQ(r.statements[0].tableData[0][0], "bob");
+    EXPECT_FALSE(db.executeQuery("DELETE FROM \"dearsql_duckdb_test\"").success());
 
     db.disconnect();
+    std::filesystem::remove(csvPath);
+}
+
+TEST(DuckDBCsvTest, MatchingRowsFollowFileOrder) {
+    const auto csvPath = std::filesystem::temp_directory_path() / "dearsql_duckdb_match.csv";
+    {
+        std::ofstream out(csvPath);
+        out << "id;label\n";
+        for (int i = 0; i < 50000; ++i)
+            out << i << ";\"x;" << i % 7 << "\"\n";
+    }
+    dearsql::CsvFormat format;
+    format.delimiter = ";";
+    const auto rows =
+        dearsql::csvMatchingRows(csvPath.string(), "id % 1000 = 0 AND label = 'x;3'", format);
+    ASSERT_FALSE(rows.empty());
+    for (std::size_t r : rows) {
+        EXPECT_EQ(r % 1000, 0u);
+        EXPECT_EQ(r % 7, 3u);
+    }
+    EXPECT_EQ(dearsql::csvMatchingRows(csvPath.string(), "", format).size(), 50000u);
+    EXPECT_THROW(dearsql::csvMatchingRows(csvPath.string(), "no_such_column = 1", format),
+                 dearsql::Error);
     std::filesystem::remove(csvPath);
 }
 

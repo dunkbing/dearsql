@@ -980,8 +980,11 @@ void Application::openFile(const std::string& rawPath) {
         return e;
     }();
 
-    // csv opens as a duckdb-backed connection so it shows in the sidebar and is queryable
-    const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb" || ext == ".csv");
+    // csv opens as a duckdb-backed connection so it shows in the sidebar and is queryable,
+    // plus the csv editor; the editor reads the file itself, so a csv DuckDB cannot read
+    // still opens
+    const bool isCsv = ext == ".csv";
+    const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb" || isCsv);
     if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb)
         return;
 
@@ -992,16 +995,21 @@ void Application::openFile(const std::string& rawPath) {
                 auto [ok, err] = fileDb->connect();
                 if (!ok) {
                     spdlog::error("Failed to reconnect database file: {}", err);
-                    return;
+                    if (!isCsv)
+                        return;
                 }
             }
             setSelectedDatabase(db);
+            if (isCsv)
+                tabManager->createCsvEditorTab(path);
             return;
         }
     }
 
     if (!canAddConnection()) {
         spdlog::warn("Cannot open file: connection limit reached (free tier: 3).");
+        if (isCsv)
+            tabManager->createCsvEditorTab(path);
         return;
     }
 
@@ -1014,7 +1022,8 @@ void Application::openFile(const std::string& rawPath) {
     auto [success, error] = db->connect();
     if (!success) {
         spdlog::error("Failed to open file: {}", error);
-        return;
+        if (!isCsv)
+            return;
     }
 
     SavedConnection conn;
@@ -1026,6 +1035,8 @@ void Application::openFile(const std::string& rawPath) {
 
     addDatabase(db);
     setSelectedDatabase(db);
+    if (isCsv)
+        tabManager->createCsvEditorTab(path);
 }
 
 #ifdef __APPLE__

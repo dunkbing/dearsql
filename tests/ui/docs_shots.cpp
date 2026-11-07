@@ -15,7 +15,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
+#include <fstream>
 
 // Not tests: these drive the app into a state and hold it there, so a screenshot
 // can be taken of a real window. Run one at a time, e.g.
@@ -179,8 +181,8 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         // DEARSQL_SHOT_TABLE picks a wider table (the readme hero)
         const auto& tables = node->getTables();
         const char* want = std::getenv("DEARSQL_SHOT_TABLE");
-        const auto it = std::ranges::find_if(
-            tables, [&](const auto& tbl) { return want && tbl.name == want; });
+        const auto it =
+            std::ranges::find_if(tables, [&](const auto& tbl) { return want && tbl.name == want; });
         Application::getInstance().getTabManager()->createTableViewerTab(
             node, it != tables.end() ? *it : tables.front());
         expandInSidebar(ctx, db);
@@ -230,6 +232,33 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         // hover, not click: clicking refocuses the parent popup, which then draws
         // over the submenu it just opened
         ctx->MouseMove("Export");
+        ctx->Yield(5);
+        holdForScreenshot(ctx);
+    };
+
+    // the csv editor with a cell selected
+    t = IM_REGISTER_TEST(engine, "Docs", "csv-editor");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const auto path = std::filesystem::temp_directory_path() / "employees.csv";
+        std::ofstream(path, std::ios::binary)
+            << "id;name;department;city;salary;hired\n"
+               "1;Ada Lovelace;Engineering;London;98000;2019-03-04\n"
+               "2;Grace Hopper;Engineering;New York;105000;2017-08-21\n"
+               "3;Linus Pauling;Research;Portland;87000;2020-01-13\n"
+               "4;Margaret Hamilton;Engineering;Boston;112000;2016-05-30\n"
+               "5;Alan Turing;Research;Manchester;91000;2018-11-02\n"
+               "6;Katherine Johnson;Operations;Hampton;79000;2021-06-15\n"
+               "7;Dennis Ritchie;Engineering;Murray Hill;101000;2015-09-09\n"
+               "8;Barbara Liskov;Research;Cambridge;99000;2019-12-01\n"
+               "9;Ken Thompson;Operations;Murray Hill;;2022-02-28\n"
+               "10;Frances Allen;Engineering;Yorktown;97000;2020-10-19\n";
+        const auto tab =
+            Application::getInstance().getTabManager()->createCsvEditorTab(path.string());
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        for (int i = 0; i < 300 && !ctx->ItemExists("**/Alan Turing"); ++i)
+            ctx->Yield();
+        ctx->ItemClick("**/Grace Hopper");
         ctx->Yield(5);
         holdForScreenshot(ctx);
     };

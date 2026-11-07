@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <cstring>
@@ -338,11 +339,14 @@ void TableEditorTab::renderColumnsNode() {
         ImGui::SetTooltip("Add New Column");
     }
 
-    if (ImGui::BeginPopupContextItem("columns_context_menu")) {
+    if (UIUtils::BeginContextMenu("columns_context_menu")) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add New Column")) {
             startAddColumn();
             rightPanelMode = RightPanelMode::ColumnEditor;
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -380,7 +384,9 @@ void TableEditorTab::renderColumnsNode() {
                 rightPanelMode = RightPanelMode::ColumnEditor;
             }
 
-            if (ImGui::BeginPopupContextItem("column_context_menu")) {
+            if (UIUtils::BeginContextMenu("column_context_menu")) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem("Edit Column")) {
                     startEditColumn(static_cast<int>(i));
                     rightPanelMode = RightPanelMode::ColumnEditor;
@@ -398,6 +404,7 @@ void TableEditorTab::renderColumnsNode() {
                     }
                     markDirty();
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
             ImGui::PopID();

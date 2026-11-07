@@ -21,6 +21,7 @@ public:
         std::set<int> nonEditableColumns;
         std::map<int, int> columnInputFlags; // per-column ImGuiInputTextFlags
         std::map<int, std::vector<std::string>> columnDropdownOptions;
+        bool clearOnDelete = false; // Delete/Backspace empties the selected cells
     };
 
     // Callbacks for editing functionality
@@ -43,6 +44,14 @@ public:
     // target table a column's foreign key points at, empty when it has none
     using ForeignKeyTargetCallback = std::function<std::string(int col)>;
     using OnFollowForeignKeyCallback = std::function<void(int row, int col)>;
+    // a block of values written at (row, col): multi-cell paste, fill, clear.
+    // without it each cell goes through OnCellEditCallback
+    using OnRangeEditCallback =
+        std::function<void(int row, int col, const std::vector<std::vector<std::string>>& values)>;
+    // extra items appended to the cell menu
+    using CellMenuCallback = std::function<void(int row, int col)>;
+    // number shown in the row-number column (filtered views show source rows)
+    using RowNumberCallback = std::function<int(int row)>;
 
     TableRenderer();
     explicit TableRenderer(const Config& config);
@@ -52,6 +61,12 @@ public:
     void setColumns(const std::vector<std::string>& columnNames); // convenience overload
     void setData(const std::vector<std::vector<std::string>>& tableData);
     void setData(std::vector<std::vector<std::string>>&& tableData);
+    // one cell, without handing over the whole table again
+    void setCellValue(int row, int col, const std::string& value) {
+        if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 &&
+            col < static_cast<int>(data[row].size()))
+            data[row][col] = value;
+    }
     void setCellEditedStatus(const std::vector<std::vector<bool>>& editedCells);
     void setRowsPendingDelete(const std::vector<bool>& rows);
     void setSelectedCell(int row, int col);
@@ -97,6 +112,20 @@ public:
     void setOnFollowForeignKey(OnFollowForeignKeyCallback callback) {
         onFollowForeignKey = callback;
     }
+    void setOnRangeEdit(OnRangeEditCallback callback) {
+        onRangeEdit = std::move(callback);
+    }
+    void setCellMenuExtension(CellMenuCallback callback) {
+        cellMenuExt = std::move(callback);
+    }
+    void setRowNumberCallback(RowNumberCallback callback) {
+        rowNumberCb = std::move(callback);
+    }
+
+    // selected block, inclusive; false when nothing is selected
+    bool getSelectionRange(int& firstRow, int& firstCol, int& lastRow, int& lastCol) const;
+    // selects whole rows [firstRow, lastRow]
+    void selectRows(int firstRow, int lastRow);
 
     // Sorting
     void setSortColumn(int col, SortDirection direction) {
@@ -201,6 +230,15 @@ private:
     // fk target per column, resolved once per frame rather than per cell
     std::vector<std::string> fkTargets;
     OnDeleteRowCallback onDeleteRow;
+    OnRangeEditCallback onRangeEdit;
+    CellMenuCallback cellMenuExt;
+    RowNumberCallback rowNumberCb;
+
+    // writes a block through onRangeEdit, or cell by cell
+    void applyRange(int row, int col, const std::vector<std::vector<std::string>>& values);
+    void pasteClipboard();
+    // the last multi-cell copy from any table, so pasting it back splits into cells
+    inline static std::string lastBlockCopy;
 
     // Sorting state
     int sortColumn = -1;

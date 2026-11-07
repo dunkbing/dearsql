@@ -433,7 +433,7 @@ namespace dearsql {
         if (showLineNumbers_) {
             int maxLine = static_cast<int>(lineStarts_.size());
             char buf[16];
-            snprintf(buf, sizeof(buf), "%d", std::max(maxLine, 999));
+            snprintf(buf, sizeof(buf), "%d", readOnly_ ? maxLine : std::max(maxLine, 999));
             lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 20.0f;
         } else {
             lineNumberWidth_ = 0.0f;
@@ -607,7 +607,8 @@ namespace dearsql {
             float textW = ImGui::CalcTextSize(buf).x;
             float x = textOrigin_.x - 18.0f - textW;
 
-            ImU32 color = (i == currentLine) ? palette_.currentLineNumber : palette_.lineNumber;
+            ImU32 color =
+                (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
             drawList->AddText(ImVec2(x, y), color, buf);
         }
     }

@@ -17,6 +17,16 @@ namespace dearsql {
         bool shift = io.KeyShift;
         bool super = io.KeySuper; // Cmd on macOS
 
+        if (readOnly_) {
+            if (ctrl) {
+                handleClipboard(); // cut and paste are off when read-only
+                handleSelectAll();
+            }
+            handleArrowKeys();
+            handleHomeEnd();
+            return;
+        }
+
         // Autocomplete navigation takes priority
         if (autocompleteVisible_) {
             if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {

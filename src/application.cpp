@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "ui/markdown_text.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
@@ -367,6 +368,8 @@ void Application::cleanup() {
     spdlog::debug("File dialog cleaned up");
 
     cleanupUpdater();
+
+    MarkdownText::shutdown(); // its textures need the backend
 
     if (platform_) {
         platform_->shutdownImGui();

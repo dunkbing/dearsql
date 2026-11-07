@@ -433,7 +433,7 @@ namespace dearsql {
         if (showLineNumbers_) {
             int maxLine = static_cast<int>(lineStarts_.size());
             char buf[16];
-            snprintf(buf, sizeof(buf), "%d", std::max(maxLine, 999));
+            snprintf(buf, sizeof(buf), "%d", readOnly_ ? maxLine : std::max(maxLine, 999));
             lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 20.0f;
         } else {
             lineNumberWidth_ = 0.0f;
@@ -466,7 +466,8 @@ namespace dearsql {
             ImGui::SetWindowFocus();
         }
 
-        bool isFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        // this editor only: several can share a root window (code blocks in a chat)
+        bool isFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 
         // Don't handle input if an ImGui text widget (InputText, etc.) is active,
         // since it reads from the same io.InputQueueCharacters queue.
@@ -476,7 +477,7 @@ namespace dearsql {
         cursorBlinkTimer_ += ImGui::GetIO().DeltaTime;
 
         // Input handling
-        if (isFocused && !readOnly_ && !imguiWantsText) {
+        if (isFocused && !imguiWantsText) { // read-only still copies and moves the cursor
             handleKeyboardInput();
         }
         if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
@@ -518,7 +519,8 @@ namespace dearsql {
             contentWidthDirty_ = false;
         }
         float contentWidth = cachedContentWidth_;
-        float contentHeight = lineStarts_.size() * lineHeight_ + lineHeight_;
+        // read-only: no spare line to type into
+        float contentHeight = lineStarts_.size() * lineHeight_ + (readOnly_ ? 4.0f : lineHeight_);
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::SetNextWindowContentSize(ImVec2(contentWidth, contentHeight));
@@ -541,7 +543,8 @@ namespace dearsql {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
 
         // Render layers
-        renderCurrentLineHighlight(drawList);
+        if (!readOnly_)
+            renderCurrentLineHighlight(drawList);
         renderFindHighlights(drawList, startLine, endLine);
         renderSelection(drawList, startLine, endLine);
         renderText(drawList, startLine, endLine);
@@ -560,7 +563,7 @@ namespace dearsql {
                 start = lineEnd < end ? lineEnd + 1 : end;
             }
         }
-        if (isFocused)
+        if (isFocused && !readOnly_)
             renderCursor(drawList);
 
         // Ensure cursor visible
@@ -605,7 +608,8 @@ namespace dearsql {
             float textW = ImGui::CalcTextSize(buf).x;
             float x = textOrigin_.x - 18.0f - textW;
 
-            ImU32 color = (i == currentLine) ? palette_.currentLineNumber : palette_.lineNumber;
+            ImU32 color =
+                (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
             drawList->AddText(ImVec2(x, y), color, buf);
         }
     }

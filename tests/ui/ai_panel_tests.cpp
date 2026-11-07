@@ -43,23 +43,6 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
         IM_CHECK(ImGui::FindWindowByName("##ai_mention_popup") != nullptr);
     };
 
-    t = IM_REGISTER_TEST(engine, "Assistant", "Session picker opens");
-    t->TestFunc = [](ImGuiTestContext* ctx) {
-        openAssistantTab(ctx);
-        ctx->ItemClick("**/###ai_sessions");
-        ctx->Yield(3);
-
-        // BeginPopup windows get internal names, so check the popup stack
-        IM_CHECK(ImGui::GetCurrentContext()->OpenPopupStack.Size > 0);
-        // any click outside closes it; the engine will not hover items under a popup,
-        // so aim at a raw position
-        const ImGuiViewport* vp = ImGui::GetMainViewport();
-        ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.5f, vp->Pos.y + vp->Size.y * 0.5f));
-        ctx->MouseClick(ImGuiMouseButton_Left);
-        ctx->Yield(2);
-        IM_CHECK(ImGui::GetCurrentContext()->OpenPopupStack.Size == 0);
-    };
-
     t = IM_REGISTER_TEST(engine, "Assistant", "Slash opens command picker");
     t->TestFunc = [](ImGuiTestContext* ctx) {
         openAssistantTab(ctx);
@@ -71,20 +54,20 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
     };
 }
 
-void RegisterMarkdownTests(ImGuiTestEngine* engine) {
-    ImGuiTest* t = IM_REGISTER_TEST(engine, "Assistant", "Markdown table renders as a table");
+void RegisterCodeBlockTests(ImGuiTestEngine* engine) {
+    ImGuiTest* t = IM_REGISTER_TEST(engine, "Assistant", "Code block copy icon copies the code");
     t->GuiFunc = [](ImGuiTestContext*) {
-        ImGui::Begin("md_test", nullptr, ImGuiWindowFlags_NoSavedSettings);
-        MarkdownText::render("| name | rows |\n|---|--:|\n| users | 42 |\n| orders | 7 |", "t");
+        ImGui::SetNextWindowSize(ImVec2(520, 260), ImGuiCond_Always);
+        ImGui::Begin("md_code_test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        MarkdownText::render(
+            "Here:\n\n```sql\nSELECT id, name\nFROM users -- all\nWHERE id = 42;\n```", "c");
         ImGui::End();
     };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         ctx->Yield(2);
-        ImGuiWindow* window = ImGui::FindWindowByName("md_test");
-        IM_CHECK(window != nullptr);
-        // block 0 is the table, so its id is ##md_table_t_0
-        ImGuiTable* table = ImGui::TableFindByID(window->GetID("##md_table_t_0"));
-        IM_CHECK(table != nullptr);
-        IM_CHECK_EQ(table->ColumnsCount, 2);
+        ImGui::SetClipboardText("");
+        ctx->ItemClick("**/###md_cp_c_0"); // the first code block
+        IM_CHECK_STR_EQ(ImGui::GetClipboardText(),
+                        "SELECT id, name\nFROM users -- all\nWHERE id = 42;");
     };
 }

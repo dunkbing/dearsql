@@ -30,3 +30,6 @@
 [submodule "external/libdearsql"]
 	path = external/libdearsql
 	url = https://github.com/dunkbing/libdearsql.git
+[submodule "external/imgui_rich_md"]
+	path = external/imgui_rich_md
+	url = https://github.com/pthom/imgui_rich_md

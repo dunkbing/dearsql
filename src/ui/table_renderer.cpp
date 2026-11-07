@@ -1533,7 +1533,6 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         ImGui::OpenPopup(popupId.c_str());
     }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     if (UIUtils::BeginMenuPopup(popupId.c_str())) {
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
@@ -1572,7 +1571,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
         ImGui::EndPopup();
     }
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
 
     ImGui::PopID();
 }

@@ -1,3 +1,4 @@
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -91,7 +92,7 @@ void RegisterCsvEditorTests(ImGuiTestEngine* engine) {
         ctx->Yield(3);
         ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_A);
         ctx->KeyChars("hopper");
-        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->ItemClick("**/" ICON_FA_FLOPPY_DISK); // the toolbar button, not the shortcut
         ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_S);
         ctx->Yield(3);
         IM_CHECK_EQ(readFile(path), std::string("id,name\n1,ada\n2,hopper\n3,linus\n"));

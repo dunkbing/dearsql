@@ -266,10 +266,11 @@ void TableRenderer::pasteClipboard() {
         val.pop_back();
 
     // a block: tab-separated (spreadsheets) or the multi-cell csv this table copied
-    const bool tsv = val.find('\t') != std::string::npos;
-    if (tsv || (!lastBlockCopy.empty() && clip == lastBlockCopy)) {
+    // our own copy first: its cells may hold tabs
+    const bool own = !lastBlockCopy.empty() && clip == lastBlockCopy;
+    if (own || val.find('\t') != std::string::npos) {
         CsvDialect dialect;
-        dialect.delimiter = tsv ? "\t" : ",";
+        dialect.delimiter = own ? "," : "\t";
         applyRange(selectedRow, selectedCol, csv::parse(val, dialect));
         return;
     }

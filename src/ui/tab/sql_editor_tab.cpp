@@ -125,6 +125,15 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
     : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName),
       scriptName_(name) {
     sqlEditor.SetShowLineNumbers(true);
+    // a play icon per statement: run one without selecting it
+    sqlEditor.SetRunnableRanges(
+        [this](std::string_view text) {
+            return dearsql::statementRanges(text, node_ ? node_->getDatabaseType()
+                                                        : DatabaseType::POSTGRESQL);
+        },
+        [this](size_t begin, size_t end) {
+            startQueryExecutionAsync(sqlEditor.GetText().substr(begin, end - begin));
+        });
     sqlEditor.SetSubmitCallback([this] {
         if (sqlEditor.HasSelection()) {
             startQueryExecutionAsync(sqlEditor.GetSelectedText());

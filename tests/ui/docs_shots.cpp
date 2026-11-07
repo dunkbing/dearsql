@@ -395,4 +395,30 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         app.getTabManager()->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
     };
+
+    // a script with the second statement's play icon hovered: the outline shows what runs
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-run-statement");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select *\nfrom {}\nlimit 20;\n\nselect count(*)\nfrom {};\n\n"
+                                  "select *\nfrom {}\nlimit 5;",
+                                  tables[0].name, tables[1 % tables.size()].name,
+                                  tables[2 % tables.size()].name));
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/##run_1");
+        ctx->Yield(60);
+        ctx->MouseMove("**/##run_1");
+        holdForScreenshot(ctx);
+    };
 }

@@ -84,6 +84,13 @@ namespace dearsql {
         void SetCompletionKeywords(const std::vector<std::string>& keywords);
         void SetCompletionFilter(CompletionFilter filter);
         void SetCompletionProvider(CompletionProvider provider);
+
+        // runnable statements: a play icon in the gutter on each range's first line;
+        // hovering outlines the range, clicking hands its byte offsets to onRun
+        using RangeProvider =
+            std::function<std::vector<std::pair<size_t, size_t>>(std::string_view content)>;
+        using RunCallback = std::function<void(size_t begin, size_t end)>;
+        void SetRunnableRanges(RangeProvider provider, RunCallback onRun);
         [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
 
         // Theme
@@ -103,6 +110,7 @@ namespace dearsql {
             ImU32 currentLineNumber;
             ImU32 currentLineBackground;
             ImU32 lineNumberBackground;
+            ImU32 run = IM_COL32(166, 227, 161, 255);
         };
 
         void SetPalette(const Palette& palette);
@@ -191,6 +199,13 @@ namespace dearsql {
         std::vector<CompletionItem> completionItems_;
         CompletionFilter completionFilter_;
         CompletionProvider completionProvider_;
+        RangeProvider rangeProvider_;
+        RunCallback onRun_;
+        std::vector<std::pair<size_t, size_t>> runRanges_;
+        bool runRangesDirty_ = true;
+        int hoveredRun_ = -1; // last frame's, so the click is not also a text click
+        ImVec2 textAreaMin_{}, textAreaMax_{};
+        void renderRunButtons(int startLine, int endLine);
         int autocompleteReplaceStart_ = -1; // provider range, -1 when unset
         int autocompleteReplaceEnd_ = -1;
         std::vector<CompletionItem> filteredCompletions_;

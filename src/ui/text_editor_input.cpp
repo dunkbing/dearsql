@@ -753,6 +753,10 @@ namespace dearsql {
     void TextEditor::handleMouseInput() {
         if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
             return;
+        // a press on a gutter play icon runs the statement; it is not a text click
+        if (hoveredRun_ >= 0 && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                                 ImGui::IsMouseDown(ImGuiMouseButton_Left)))
+            return;
 
         int charIndex = getCharIndexFromScreenPos(ImGui::GetMousePos());
 

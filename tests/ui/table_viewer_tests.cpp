@@ -194,4 +194,33 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // the gutter play icon runs just its statement, no selection needed
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Gutter play runs one statement");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 1 as first;\n-- a comment; with a semicolon\nselect label as second\n"
+                      "from parent\nwhere id = 7;");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/##run_1");
+        for (int i = 0; i < 300 && tab->getQueryResult().empty(); ++i) {
+            ctx->Yield();
+        }
+        const auto& result = tab->getQueryResult();
+        IM_CHECK(result.size() == 1u); // only the second statement ran
+        IM_CHECK(result[0].columnNames == std::vector<std::string>{"second"});
+        IM_CHECK(result[0].tableData.size() == 1u && result[0].tableData[0][0] == "seven");
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

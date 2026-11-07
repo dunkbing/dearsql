@@ -53,6 +53,9 @@ public:
     [[nodiscard]] const std::optional<dearsql::Plan>& getPlan() const {
         return plan_;
     }
+    [[nodiscard]] const QueryResult& getQueryResult() const {
+        return queryResult;
+    }
 
     // Script file association
     void loadFromScript(const SqlScript& script);

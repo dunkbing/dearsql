@@ -1,7 +1,9 @@
 #include "ui/text_editor.hpp"
+#include "IconsFontAwesome6.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <format>
 
 namespace dearsql {
 
@@ -28,9 +30,10 @@ namespace dearsql {
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
           completionItems_(std::move(other.completionItems_)),
           completionFilter_(std::move(other.completionFilter_)),
-          completionProvider_(std::move(other.completionProvider_)), language_(other.language_),
-          tsParser_(other.tsParser_), tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
-          tsPreviousContent_(std::move(other.tsPreviousContent_)),
+          completionProvider_(std::move(other.completionProvider_)),
+          rangeProvider_(std::move(other.rangeProvider_)), onRun_(std::move(other.onRun_)),
+          language_(other.language_), tsParser_(other.tsParser_), tsTree_(other.tsTree_),
+          tsQuery_(other.tsQuery_), tsPreviousContent_(std::move(other.tsPreviousContent_)),
           highlightDirty_(other.highlightDirty_) {
         other.tsParser_ = nullptr;
         other.tsTree_ = nullptr;
@@ -51,6 +54,9 @@ namespace dearsql {
             completionItems_ = std::move(other.completionItems_);
             completionFilter_ = std::move(other.completionFilter_);
             completionProvider_ = std::move(other.completionProvider_);
+            rangeProvider_ = std::move(other.rangeProvider_);
+            onRun_ = std::move(other.onRun_);
+            runRangesDirty_ = true;
             language_ = other.language_;
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
@@ -136,6 +142,12 @@ namespace dearsql {
 
     void TextEditor::SetCompletionProvider(CompletionProvider provider) {
         completionProvider_ = std::move(provider);
+    }
+
+    void TextEditor::SetRunnableRanges(RangeProvider provider, RunCallback onRun) {
+        rangeProvider_ = std::move(provider);
+        onRun_ = std::move(onRun);
+        runRangesDirty_ = true;
     }
 
     const std::vector<std::string>& TextEditor::GetDefaultCompletionKeywords() {
@@ -380,6 +392,7 @@ namespace dearsql {
         p.currentLineNumber = toImU32(colors.text);
         p.currentLineBackground = toImU32(colors.surface0);
         p.lineNumberBackground = toImU32(colors.base);
+        p.run = toImU32(colors.green);
         return p;
     }
 
@@ -436,8 +449,17 @@ namespace dearsql {
             char buf[16];
             snprintf(buf, sizeof(buf), "%d", readOnly_ ? maxLine : std::max(maxLine, 999));
             lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 20.0f;
+            if (rangeProvider_) {
+                lineNumberWidth_ += ImGui::GetFontSize() + 6.0f; // the play icons
+            }
         } else {
             lineNumberWidth_ = 0.0f;
+        }
+
+        // every edit marks the highlight dirty: the statements may have moved too
+        if (rangeProvider_ && (highlightDirty_ || runRangesDirty_)) {
+            runRanges_ = rangeProvider_(content_);
+            runRangesDirty_ = false;
         }
 
         // Rehighlight if needed
@@ -489,9 +511,9 @@ namespace dearsql {
         // --- Line numbers panel ---
         ImVec2 lineNumbersScreenPos = ImGui::GetCursorScreenPos();
         if (showLineNumbers_) {
-            ImGui::BeginChild("##line_nums", ImVec2(lineNumberWidth_, -1), false,
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-            ImGui::EndChild();
+            // space only: numbers and play icons are drawn after the text area, which
+            // knows the scroll. not a child window, which would sit over the icons
+            ImGui::Dummy(ImVec2(lineNumberWidth_, ImGui::GetContentRegionAvail().y));
             ImGui::SameLine(0, 0);
         }
 
@@ -530,6 +552,9 @@ namespace dearsql {
 
         scrollX_ = ImGui::GetScrollX();
         scrollY_ = ImGui::GetScrollY();
+        textAreaMin_ = ImGui::GetWindowPos();
+        textAreaMax_ = ImVec2(textAreaMin_.x + ImGui::GetWindowWidth(),
+                              textAreaMin_.y + ImGui::GetWindowHeight());
 
         textOrigin_ = ImGui::GetCursorScreenPos();
         textOrigin_.x += 8.0f; // left margin
@@ -580,6 +605,7 @@ namespace dearsql {
         // Render line numbers (after text area so we have scroll position)
         if (showLineNumbers_) {
             renderLineNumbers(ImGui::GetWindowDrawList(), startLine, endLine);
+            renderRunButtons(startLine, endLine);
         }
 
         // Render autocomplete popup
@@ -612,6 +638,52 @@ namespace dearsql {
             ImU32 color =
                 (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
             drawList->AddText(ImVec2(x, y), color, buf);
+        }
+    }
+
+    void TextEditor::renderRunButtons(int startLine, int endLine) {
+        hoveredRun_ = -1;
+        if (!rangeProvider_) {
+            return;
+        }
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const float iconX = textOrigin_.x - 8.0f - lineNumberWidth_ + 6.0f;
+        const float iconW = ImGui::GetFontSize();
+        for (size_t r = 0; r < runRanges_.size(); ++r) {
+            const auto [begin, end] = runRanges_[r];
+            const int line = getLineFromPos(static_cast<int>(begin));
+            if (line < startLine || line > endLine) {
+                continue;
+            }
+            const float y = textOrigin_.y + line * lineHeight_;
+            const ImVec2 hitMin(iconX - 3.0f, y);
+            const ImVec2 hitMax(iconX + iconW + 3.0f, y + lineHeight_);
+            // a real item, so tests can click it by id (##run_<n>)
+            const ImVec2 cursor = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(hitMin);
+            const bool clicked = ImGui::InvisibleButton(std::format("##run_{}", r).c_str(),
+                                                        ImVec2(hitMax.x - hitMin.x, lineHeight_));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::SetCursorScreenPos(cursor);
+            // dimmed until hovered, so a long script is not a column of bright icons
+            const ImU32 color = hovered ? palette_.run : (palette_.run & 0x00FFFFFF) | 0x99000000;
+            drawList->AddText(ImVec2(iconX, y), color, ICON_FA_PLAY);
+            if (!hovered) {
+                continue;
+            }
+            hoveredRun_ = static_cast<int>(r);
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            // outline what will run, clipped to the text area
+            const int lastLine = getLineFromPos(static_cast<int>(end));
+            drawList->PushClipRect(textAreaMin_, textAreaMax_, true);
+            drawList->AddRect(
+                ImVec2(textOrigin_.x - 4.0f, y - 1.0f),
+                ImVec2(textAreaMax_.x - 6.0f, textOrigin_.y + (lastLine + 1) * lineHeight_ + 1.0f),
+                palette_.run, 3.0f, 0, 1.5f);
+            drawList->PopClipRect();
+            if (clicked && onRun_) {
+                onRun_(begin, end);
+            }
         }
     }
 

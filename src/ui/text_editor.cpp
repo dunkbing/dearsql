@@ -466,7 +466,8 @@ namespace dearsql {
             ImGui::SetWindowFocus();
         }
 
-        bool isFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        // this editor only: several can share a root window (code blocks in a chat)
+        bool isFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
 
         // Don't handle input if an ImGui text widget (InputText, etc.) is active,
         // since it reads from the same io.InputQueueCharacters queue.

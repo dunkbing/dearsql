@@ -396,7 +396,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
     };
 
-    // a script with the second statement's play icon hovered: the outline shows what runs
+    // a script with the last statement's play icon hovered: the outline shows what runs
     t = IM_REGISTER_TEST(engine, "Docs", "sql-run-statement");
     t->TestFunc = [](ImGuiTestContext* ctx) {
         connectEverything(ctx);
@@ -416,9 +416,9 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         expandInSidebar(ctx, db);
         ctx->Yield(10);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/##run_1");
+        ctx->ItemClick("**/##run_2");
         ctx->Yield(60);
-        ctx->MouseMove("**/##run_1");
+        ctx->MouseMove("**/##run_2");
         holdForScreenshot(ctx);
     };
 }

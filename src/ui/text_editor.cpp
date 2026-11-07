@@ -557,7 +557,7 @@ namespace dearsql {
                               textAreaMin_.y + ImGui::GetWindowHeight());
 
         textOrigin_ = ImGui::GetCursorScreenPos();
-        textOrigin_.x += 8.0f; // left margin
+        textOrigin_.x += 2.0f; // left margin: the current-line highlight starts at the text
         textOrigin_.y += 2.0f; // top margin
 
         // Compute visible line range
@@ -574,6 +574,17 @@ namespace dearsql {
         renderFindHighlights(drawList, startLine, endLine);
         renderSelection(drawList, startLine, endLine);
         renderText(drawList, startLine, endLine);
+        // outline the statement whose play icon is hovered (last frame: the icons are
+        // drawn after this child), on top of the current-line highlight
+        if (hoveredRun_ >= 0 && hoveredRun_ < static_cast<int>(runRanges_.size())) {
+            const auto [begin, end] = runRanges_[hoveredRun_];
+            const float top =
+                textOrigin_.y + getLineFromPos(static_cast<int>(begin)) * lineHeight_;
+            const float bottom =
+                textOrigin_.y + (getLineFromPos(static_cast<int>(end)) + 1) * lineHeight_;
+            drawList->AddRect(ImVec2(textAreaMin_.x + 1.0f, top),
+                              ImVec2(textAreaMax_.x - 1.0f, bottom), palette_.run, 3.0f, 0, 1.5f);
+        }
         if (content_.empty() && !placeholder_.empty()) {
             const ImU32 placeholderColor = (palette_.text & 0x00FFFFFF) | 0x60000000;
             const float x = textOrigin_.x;
@@ -633,7 +644,7 @@ namespace dearsql {
             snprintf(buf, sizeof(buf), "%d", i + 1);
 
             float textW = ImGui::CalcTextSize(buf).x;
-            float x = textOrigin_.x - 10.0f - textW; // the text area adds its own 8px margin
+            float x = textOrigin_.x - 10.0f - textW;
 
             ImU32 color =
                 (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
@@ -647,7 +658,7 @@ namespace dearsql {
             return;
         }
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const float iconX = textOrigin_.x - 8.0f - lineNumberWidth_ + 6.0f;
+        const float iconX = textAreaMin_.x - lineNumberWidth_ + 6.0f; // the gutter's left edge
         const float iconW = ImGui::GetFontSize();
         for (size_t r = 0; r < runRanges_.size(); ++r) {
             const auto [begin, end] = runRanges_[r];
@@ -673,14 +684,6 @@ namespace dearsql {
             }
             hoveredRun_ = static_cast<int>(r);
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            // outline what will run, clipped to the text area
-            const int lastLine = getLineFromPos(static_cast<int>(end));
-            drawList->PushClipRect(textAreaMin_, textAreaMax_, true);
-            drawList->AddRect(
-                ImVec2(textOrigin_.x - 4.0f, y - 1.0f),
-                ImVec2(textAreaMax_.x - 6.0f, textOrigin_.y + (lastLine + 1) * lineHeight_ + 1.0f),
-                palette_.run, 3.0f, 0, 1.5f);
-            drawList->PopClipRect();
             if (clicked && onRun_) {
                 onRun_(begin, end);
             }

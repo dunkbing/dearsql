@@ -97,6 +97,13 @@ public:
     [[nodiscard]] bool canRedo() const {
         return !redo_.empty();
     }
+    // the next undo/redo restores a whole-table snapshot (rows may move), not one cell
+    [[nodiscard]] bool undoIsStructural() const {
+        return !undo_.empty() && undo_.back().snapshot;
+    }
+    [[nodiscard]] bool redoIsStructural() const {
+        return !redo_.empty() && redo_.back().snapshot;
+    }
     [[nodiscard]] bool isModified() const {
         return state_ != savedState_;
     }

@@ -282,6 +282,16 @@ void CsvEditorTab::clearFilter() {
     }
 }
 
+void CsvEditorTab::undoRedo(bool redo) {
+    const bool structural = redo ? doc_.redoIsStructural() : doc_.undoIsStructural();
+    if (!(redo ? doc_.redo() : doc_.undo()))
+        return;
+    // the filter's rows index the table as it was: a structural step invalidates them
+    if (filtered_ && structural)
+        clearFilter();
+    markChanged();
+}
+
 void CsvEditorTab::sortColumn(int col, bool ascending) {
     if (filtered_) {
         showMessage("Clear the filter to sort: sorting reorders the whole file.");
@@ -382,11 +392,9 @@ void CsvEditorTab::handleShortcuts() {
         save();
     } else if (!editingText && ((ImGui::IsKeyPressed(ImGuiKey_Z, false) && io.KeyShift) ||
                                 ImGui::IsKeyPressed(ImGuiKey_Y, false))) {
-        if (doc_.redo())
-            markChanged();
+        undoRedo(true);
     } else if (!editingText && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
-        if (doc_.undo())
-            markChanged();
+        undoRedo(false);
     }
 }
 
@@ -416,15 +424,15 @@ void CsvEditorTab::renderToolbar() {
     // undo / redo
     ImGui::SameLine(0, Theme::Spacing::M);
     ImGui::BeginDisabled(!doc_.canUndo());
-    if (UIUtils::IconButton(ICON_FA_ROTATE_LEFT) && doc_.undo())
-        markChanged();
+    if (UIUtils::IconButton(ICON_FA_ROTATE_LEFT))
+        undoRedo(false);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Undo (%s)", shortcut("Z").c_str());
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(!doc_.canRedo());
-    if (UIUtils::IconButton(ICON_FA_ROTATE_RIGHT) && doc_.redo())
-        markChanged();
+    if (UIUtils::IconButton(ICON_FA_ROTATE_RIGHT))
+        undoRedo(true);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Redo (%s)", shortcut("Z", true).c_str());

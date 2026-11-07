@@ -337,8 +337,9 @@ void S3BrowserTab::renderTable() {
         return;
     }
 
-    constexpr ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
+    constexpr ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody |
+                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                                      ImGuiTableFlags_Resizable;
     if (!ImGui::BeginTable("##s3_objects", 3, flags))
         return;
     ImGui::TableSetupScrollFreeze(0, 1);

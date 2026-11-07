@@ -86,7 +86,7 @@ void MacOSPlatform::cleanup() {
 void MacOSPlatform::renderFrame() {
     @autoreleasepool {
         const auto& clearCol =
-            app_->isDarkTheme() ? Theme::NATIVE_DARK.base : Theme::NATIVE_LIGHT.base;
+            Application::getInstance().getCurrentColors().base;
         ImVec4 clearColor(clearCol.x, clearCol.y, clearCol.z, clearCol.w);
 
         backend_->beginFrame(clearColor);

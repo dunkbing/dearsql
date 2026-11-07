@@ -2,6 +2,7 @@
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
 #include "imgui_te_context.h"
+#include "ui/settings_dialog.hpp"
 #include "imgui_te_engine.h"
 #include <format>
 
@@ -261,5 +262,16 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
 
         // if we got here without crashing, test passes
         IM_CHECK(true);
+    };
+
+    // settings has no close button: esc dismisses it
+    t = IM_REGISTER_TEST(engine, "Settings", "Esc Closes");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
+        ctx->Yield(3);
+        IM_CHECK(ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+        IM_CHECK(!ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
     };
 }

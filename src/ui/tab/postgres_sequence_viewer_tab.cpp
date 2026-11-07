@@ -91,7 +91,7 @@ void PostgresSequenceViewerTab::render() {
 
     if (!ddlEditorInitialized_) {
         ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
-            app.isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+            Application::getInstance().getCurrentColors()));
         ddlEditorInitialized_ = true;
     }
 
@@ -400,7 +400,6 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
 
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
-    const bool dark = app.isDarkTheme();
 
     if (!dialogOpened_) {
         std::string combined;
@@ -420,7 +419,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
     }
 
     saveDialogEditor_.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);

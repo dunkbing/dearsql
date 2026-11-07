@@ -43,9 +43,13 @@ public:
 
     // Theme management
     [[nodiscard]] bool isDarkTheme() const {
-        return darkTheme;
+        return theme_->dark;
     }
-    void setDarkTheme(bool dark);
+    [[nodiscard]] const Theme::ThemeDef& getTheme() const {
+        return *theme_;
+    }
+    // by Theme::THEMES id; applied at once and saved
+    void setTheme(std::string_view id);
     [[nodiscard]] const Theme::Colors& getCurrentColors() const;
 
     [[nodiscard]] float getFontScale() const {
@@ -140,7 +144,7 @@ private:
     std::unique_ptr<PlatformInterface> platform_;
 
     // Application state
-    bool darkTheme = true;
+    const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
     float fontScale_ = 1.0f;
     bool sidebarVisible = true;
     // previous frame's value: a change means the dock layout has to be rebuilt

@@ -189,7 +189,7 @@ void WindowsTitlebar::render() {
     if (isDark != lastAppliedDarkTheme_) {
         applyTheme(isDark);
     }
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
     const bool maximized = IsZoomed(hWnd);
 
     ImDrawList* fg = ImGui::GetForegroundDrawList();
@@ -380,7 +380,7 @@ void WindowsTitlebar::renderPopups() {
         return;
 
     const bool isDark = app_->isDarkTheme();
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
     const auto workspaces = app_->getWorkspaces();
     constexpr const char* newWorkspaceLabel = "  " ICON_FA_PLUS "  New Workspace...";
 

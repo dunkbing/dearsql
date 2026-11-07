@@ -167,9 +167,8 @@ SQLEditorTab::~SQLEditorTab() {
 
 void SQLEditorTab::render() {
     // Sync editor palette with current app theme
-    const bool dark = Application::getInstance().isDarkTheme();
     sqlEditor.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
     syncBoundNodePointer();
 
     // until the catalog is complete, then a cheap change check once a second

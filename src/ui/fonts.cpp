@@ -96,6 +96,12 @@ namespace {
         bool isPrimaryTextFont = false;
     };
 
+    // bold and italic faces are for chat markdown only (markdown_text.cpp), not the ui font
+    bool isMarkdownFace(const std::string_view name) {
+        return name.find("Bold") != std::string_view::npos ||
+               name.find("Italic") != std::string_view::npos;
+    }
+
     EmbeddedFontSpec classifyEmbeddedFont(const std::string& fontName, ImGuiIO& io) {
         if (fontName.find("fa-solid") != std::string::npos ||
             fontName.find("fa-regular") != std::string::npos) {
@@ -139,6 +145,9 @@ void fonts::setup() {
 
     for (size_t i = 0; i < embeddedFontCount; ++i) {
         const EmbeddedFont& font = embeddedFonts[i];
+        if (isMarkdownFace(font.name)) {
+            continue;
+        }
         std::string fontName = font.name;
         const EmbeddedFontSpec spec = classifyEmbeddedFont(fontName, io);
         if (spec.isPrimaryTextFont && !primaryFontEntry) {
@@ -196,7 +205,7 @@ void fonts::setup() {
         if (gTabFont) {
             for (size_t i = 0; i < embeddedFontCount; ++i) {
                 const EmbeddedFont& font = embeddedFonts[i];
-                if (&font == primaryFontEntry) {
+                if (&font == primaryFontEntry || isMarkdownFace(font.name)) {
                     continue;
                 }
 

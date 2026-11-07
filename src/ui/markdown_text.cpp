@@ -168,13 +168,17 @@ namespace {
         }
         RichMd::HostServices host = RichMd::GetHostServices();
         host.RenderCodeBlock = renderCode;
-        // the app's font for every text style. ponytail: one face, so bold and italic look
-        // regular; embed JetBrains Mono Bold/Italic if emphasis should show
+        // the app's font: rich_md asks for <base>-{Regular,Bold}[Italic].ttf and a code font
         host.ReadAsset = [fallback =
                               host.ReadAsset](const std::string& path) -> RichMd::AssetBytes {
             if (path.starts_with("fonts/") && path.ends_with(".ttf") &&
                 !path.starts_with("fonts/latex/")) {
-                if (const EmbeddedFont* font = findEmbeddedFont("JetBrainsMono-Medium")) {
+                const bool bold = path.ends_with("-Bold.ttf") || path.ends_with("-BoldItalic.ttf");
+                const bool italic = path.ends_with("Italic.ttf");
+                const char* face =
+                    bold ? (italic ? "JetBrainsMono-BoldItalic" : "JetBrainsMono-Bold")
+                         : (italic ? "JetBrainsMono-MediumItalic" : "JetBrainsMono-Medium");
+                if (const EmbeddedFont* font = findEmbeddedFont(face)) {
                     return std::vector<uint8_t>(font->data, font->data + font->size);
                 }
             }
@@ -190,8 +194,8 @@ namespace {
 void MarkdownText::render(const std::string& markdown, const std::string& idPrefix,
                           const InsertSqlCallback& insertSql) {
     ensureContext();
-    // one face for every style: color inline code so it still stands out
-    RichMd::GetStyle().codeColor = Application::getInstance().getCurrentColors().peach;
+    RichMd::GetStyle().codeColor =
+        Application::getInstance().getCurrentColors().peach; // inline code
     const RenderScope saved = gScope;
     gScope = {.idPrefix = &idPrefix,
               .insertSql = &insertSql,

@@ -339,10 +339,13 @@ void TableEditorTab::renderColumnsNode() {
     }
 
     if (ImGui::BeginPopupContextItem("columns_context_menu")) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add New Column")) {
             startAddColumn();
             rightPanelMode = RightPanelMode::ColumnEditor;
         }
+        ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
 
@@ -381,6 +384,8 @@ void TableEditorTab::renderColumnsNode() {
             }
 
             if (ImGui::BeginPopupContextItem("column_context_menu")) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem("Edit Column")) {
                     startEditColumn(static_cast<int>(i));
                     rightPanelMode = RightPanelMode::ColumnEditor;
@@ -398,6 +403,7 @@ void TableEditorTab::renderColumnsNode() {
                     }
                     markDirty();
                 }
+                ImGui::PopStyleVar();
                 ImGui::EndPopup();
             }
             ImGui::PopID();

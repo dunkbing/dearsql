@@ -450,9 +450,12 @@ void AISidebarPanel::renderSessionPopup() {
             ImGui::CloseCurrentPopup();
         }
         if (ImGui::BeginPopupContextItem("##ctx")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Delete")) {
                 deleteId = row.id;
             }
+            ImGui::PopStyleVar();
             ImGui::EndPopup();
         }
         // title left, age right, painted over the selectable so the cursor never moves

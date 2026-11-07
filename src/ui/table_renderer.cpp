@@ -1579,7 +1579,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     if (ImGui::BeginPopup(popupId.c_str())) {
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
         if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {

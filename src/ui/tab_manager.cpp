@@ -345,7 +345,8 @@ void TabManager::renderTabs() {
             const bool hasLeft = targetIt != tabs.end() && targetIt != tabs.begin();
             const bool hasRight = targetIt != tabs.end() && std::next(targetIt) != tabs.end();
 
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Close")) {
                 isOpen = false;
             }

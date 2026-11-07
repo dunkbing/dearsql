@@ -1040,12 +1040,15 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
             ImGui::SetTooltip("%s", session.title.c_str());
         }
         if (ImGui::BeginPopupContextItem()) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Open")) {
                 app.getTabManager()->createAIChatTab(db, &session);
             }
             if (ImGui::MenuItem("Delete")) {
                 deleteId = session.id;
             }
+            ImGui::PopStyleVar();
             ImGui::EndPopup();
         }
     }

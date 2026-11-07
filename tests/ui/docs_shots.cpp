@@ -12,6 +12,7 @@
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <format>
@@ -175,8 +176,13 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
             return;
         }
         auto* node = dynamic_cast<IDatabaseNode*>(db.get());
-        Application::getInstance().getTabManager()->createTableViewerTab(node,
-                                                                         node->getTables().front());
+        // DEARSQL_SHOT_TABLE picks a wider table (the readme hero)
+        const auto& tables = node->getTables();
+        const char* want = std::getenv("DEARSQL_SHOT_TABLE");
+        const auto it = std::ranges::find_if(
+            tables, [&](const auto& tbl) { return want && tbl.name == want; });
+        Application::getInstance().getTabManager()->createTableViewerTab(
+            node, it != tables.end() ? *it : tables.front());
         expandInSidebar(ctx, db);
         ctx->Yield(120); // let the first page of rows load
         holdForScreenshot(ctx);

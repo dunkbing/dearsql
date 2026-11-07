@@ -6,6 +6,7 @@ add_executable(
     tests/database/postgres_database_test.cpp
     tests/database/mysql_database_test.cpp
     tests/database/redis_database_test.cpp
+    tests/database/s3_test.cpp
     tests/database/mongodb_database_test.cpp
     tests/database/mssql_database_test.cpp
     tests/database/oracle_database_test.cpp
@@ -31,6 +32,8 @@ add_executable(
     src/database/postgres/postgres_database_node.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
+    src/database/s3.cpp
+    src/database/s3_client.cpp
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql/mssql_database_node.cpp
     src/database/oracle.cpp
@@ -72,6 +75,7 @@ target_link_libraries(
         $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
         $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         dearsql::dearsql
+        miniocpp::miniocpp
         spdlog::spdlog
         OpenSSL::SSL
         OpenSSL::Crypto

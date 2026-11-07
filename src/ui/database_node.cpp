@@ -12,6 +12,7 @@
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
@@ -693,6 +694,11 @@ void DatabaseHierarchy::renderRootNode() {
     const auto& colors = app.getCurrentColors();
 
     const auto dbType = db->getConnectionInfo().type;
+
+    if (dbType == DatabaseType::S3) {
+        renderS3Buckets();
+        return;
+    }
 
     if (isFileDatabase(dbType)) {
         if (dearsql::isCsvPath(db->getConnectionInfo().path)) {
@@ -5040,5 +5046,79 @@ void DatabaseHierarchy::renderCassandraViewNode(Table& view, CassandraDatabaseNo
             ImGui::TreeNodeEx((label + id).c_str(), leafFlags);
         }
         ImGui::TreePop();
+    }
+}
+
+void DatabaseHierarchy::renderS3Buckets() {
+    const auto s3 = std::dynamic_pointer_cast<S3Database>(db);
+    if (!s3 || !s3->isConnected())
+        return;
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    s3->checkBucketsStatus();
+    if (const std::string err = s3->takeChangeError(); !err.empty())
+        Alert::show("S3", err);
+    if (!s3->areBucketsLoaded() && !s3->isLoadingBuckets())
+        s3->loadBuckets();
+
+    if (s3->isLoadingBuckets() && s3->buckets().empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        ImGui::TextUnformatted(LOADING_LABEL);
+        ImGui::SameLine(0, Theme::Spacing::S);
+        UIUtils::Spinner("##loading_buckets_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        ImGui::PopStyleColor();
+        return;
+    }
+    if (!s3->bucketsError().empty()) {
+        ImGui::TextColored(colors.red, ICON_FA_CIRCLE_EXCLAMATION " Failed to list buckets");
+        ImGui::SetItemTooltip("%s", s3->bucketsError().c_str());
+        return;
+    }
+    if (s3->buckets().empty()) {
+        ImGui::TextDisabled("No buckets");
+        return;
+    }
+
+    constexpr ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf |
+                                         ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                         ImGuiTreeNodeFlags_FramePadding;
+    for (const auto& bucket : s3->buckets()) {
+        const std::string id =
+            std::format("s3_bucket_{:p}_{}", static_cast<const void*>(s3.get()), bucket.name);
+        ImGui::TreeNodeEx(std::format("   {}###{}", bucket.name, id).c_str(), flags);
+        const auto iconPos =
+            ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
+                   ImGui::GetItemRectMin().y +
+                       (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::GetWindowDrawList()->AddText(iconPos, ImGui::GetColorU32(colors.peach),
+                                            ICON_FA_BUCKET);
+        if (!bucket.created.empty())
+            ImGui::SetItemTooltip("Created %s", bucket.created.c_str());
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+            Application::getInstance().getTabManager()->createS3BrowserTab(s3, bucket.name);
+
+        if (UIUtils::BeginContextMenu(id.c_str())) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            if (ImGui::MenuItem("Open"))
+                Application::getInstance().getTabManager()->createS3BrowserTab(s3, bucket.name);
+            if (ImGui::MenuItem("Copy Name"))
+                ImGui::SetClipboardText(bucket.name.c_str());
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete Bucket...", nullptr, false, !s3->isChangingBuckets())) {
+                const std::string name = bucket.name;
+                Alert::show(
+                    "Delete Bucket", std::format("Delete the bucket '{}'? It must be empty.", name),
+                    {{"Cancel", [] {}, AlertButton::Style::Cancel},
+                     {"Delete",
+                      [s3, name] {
+                          s3->changeBuckets([name](const S3Client& c) { c.deleteBucket(name); });
+                      },
+                      AlertButton::Style::Destructive}});
+            }
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
+        }
     }
 }

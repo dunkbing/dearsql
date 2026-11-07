@@ -16,7 +16,8 @@ enum class TabType {
     ROUTINE_VIEWER,
     SQLITE_SEQUENCE_VIEWER,
     POSTGRES_SEQUENCE_VIEWER,
-    AI_CHAT
+    AI_CHAT,
+    S3_BROWSER
 };
 
 class Tab {

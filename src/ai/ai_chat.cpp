@@ -126,7 +126,8 @@ std::string AIChatState::dbTypeName() const {
         return "Cassandra";
     case DatabaseType::DUCKDB:
         return "DuckDB";
-        break;
+    case DatabaseType::S3:
+        return "S3";
     }
     return "SQL";
 }

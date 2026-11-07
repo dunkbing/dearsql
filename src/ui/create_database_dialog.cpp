@@ -9,6 +9,7 @@
 #include "utils/button.hpp"
 #include "utils/select.hpp"
 #include "utils/spinner.hpp"
+#include "utils/menu.hpp"
 #include <cfloat>
 #include <cstring>
 #include <spdlog/spdlog.h>
@@ -41,12 +42,12 @@ namespace {
             currentIdx = 0;
         const char* preview = items.empty() ? "" : items[static_cast<size_t>(currentIdx)].c_str();
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::BeginCombo(id, preview)) {
+        if (UIUtils::BeginSelect(id, preview)) {
             for (int i = 0; i < static_cast<int>(items.size()); i++) {
                 if (ImGui::Selectable(items[static_cast<size_t>(i)].c_str(), i == currentIdx))
                     currentIdx = i;
             }
-            ImGui::EndCombo();
+            UIUtils::EndSelect();
         }
     }
 } // namespace

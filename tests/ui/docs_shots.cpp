@@ -3,6 +3,7 @@
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -259,6 +260,60 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         for (int i = 0; i < 300 && !ctx->ItemExists("**/Alan Turing"); ++i)
             ctx->Yield();
         ctx->ItemClick("**/Grace Hopper");
+        ctx->Yield(5);
+        holdForScreenshot(ctx);
+    };
+
+    // an s3 bucket in the browser tab; needs DEARSQL_TEST_S3_* (scripts/run-tests starts one)
+    t = IM_REGISTER_TEST(engine, "Docs", "s3-browser");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const char* endpoint = std::getenv("DEARSQL_TEST_S3_ENDPOINT");
+        const char* access = std::getenv("DEARSQL_TEST_S3_ACCESS_KEY");
+        const char* secret = std::getenv("DEARSQL_TEST_S3_SECRET_KEY");
+        IM_CHECK_NO_RET(endpoint && access && secret);
+        if (!endpoint || !access || !secret)
+            return;
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::S3;
+        info.name = "Object Storage";
+        const std::string ep = endpoint;
+        info.host = ep.substr(0, ep.rfind(':'));
+        info.port = std::stoi(ep.substr(ep.rfind(':') + 1));
+        info.sslmode = SslMode::Disable;
+        info.username = access;
+        info.password = secret;
+        auto db = std::dynamic_pointer_cast<S3Database>(DatabaseFactory::createDatabase(info));
+        IM_CHECK_NO_RET(db && db->connect().first);
+
+        // a bucket with a few folders and files
+        const auto client = db->client();
+        const std::string bucket = "analytics-exports";
+        try {
+            client->deletePrefix(bucket, "");
+            client->deleteBucket(bucket);
+        } catch (const std::exception&) {
+        }
+        client->createBucket(bucket);
+        const auto tmp = std::filesystem::temp_directory_path() / "dearsql_s3_shot.bin";
+        for (const auto& [key, size] :
+             std::vector<std::pair<std::string, int>>{{"2026/05/orders.parquet", 1},
+                                                      {"2026/06/orders.parquet", 1},
+                                                      {"archive/2025-orders.csv.gz", 1},
+                                                      {"customers.csv", 48213},
+                                                      {"orders-2026-06.parquet", 2817446},
+                                                      {"products.json", 9182},
+                                                      {"README.md", 1204}}) {
+            std::ofstream(tmp, std::ios::binary) << std::string(size, 'x');
+            client->upload(bucket, key, tmp.string());
+        }
+        std::filesystem::remove(tmp);
+
+        Application::getInstance().addDatabase(db);
+        const auto tab = Application::getInstance().getTabManager()->createS3BrowserTab(db, bucket);
+        ctx->SetRef(tab->getWindowName().c_str());
+        for (int i = 0; i < 300 && !ctx->ItemExists("**/" ICON_FA_FILE " customers.csv"); ++i)
+            ctx->Yield();
+        ctx->ItemClick("**/" ICON_FA_FILE " customers.csv");
         ctx->Yield(5);
         holdForScreenshot(ctx);
     };

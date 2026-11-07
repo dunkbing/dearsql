@@ -11,6 +11,7 @@
 #include "ui/query_history.hpp"
 #include "utils/button.hpp"
 #include "utils/spinner.hpp"
+#include "utils/menu.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -337,7 +338,7 @@ void TableViewerTab::render() {
         currentSizeLabel = customSizeLabel.c_str();
     }
 
-    if (ImGui::BeginCombo("##pagesize", currentSizeLabel)) {
+    if (UIUtils::BeginSelect("##pagesize", currentSizeLabel)) {
         for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
             const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
             if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
@@ -360,7 +361,7 @@ void TableViewerTab::render() {
                 ImGui::SetItemDefaultFocus();
             }
         }
-        ImGui::EndCombo();
+        UIUtils::EndSelect();
     }
 
     // Show loading indicator

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app_state.hpp"
+#include "imgui.h"
 #include "ui/tab/tab.hpp"
 #include <cstdint>
 #include <functional>
@@ -75,6 +76,9 @@ public:
     std::shared_ptr<Tab> createRedisPubSubTab(RedisDatabase* db);
 
     std::shared_ptr<Tab> createCsvEditorTab(const std::string& filePath);
+    // one tab per bucket of a connection; focuses it when already open
+    std::shared_ptr<Tab> createS3BrowserTab(const std::shared_ptr<class S3Database>& db,
+                                            const std::string& bucket);
 
     std::shared_ptr<Tab> createRoutineViewerTab(IDatabaseNode* node, const Routine& routine);
 
@@ -109,6 +113,7 @@ private:
     void registerOpenedTab(const std::shared_ptr<Tab>& tab);
     void clearTabState(std::uint64_t id);
     void pruneTabState();
+    void renderTabSwitcher();
 
     std::vector<std::shared_ptr<Tab>> tabs;
     CloseAction pendingCloseAction = CloseAction::None;
@@ -117,6 +122,10 @@ private:
     std::uint64_t pendingFocusTabId_ = 0;
     std::vector<std::function<void()>> deferredActions_;
     bool renderingTabs_ = false;
+    // ctrl+tab: tabs most recent first, and the entry picked while the modifier is held
+    std::vector<std::uint64_t> recentTabs_;
+    int switcherIndex_ = -1;
+    ImGuiKeyChord switcherNext_ = 0, switcherPrev_ = 0;
 
     std::string generateSQLEditorName() const;
 };

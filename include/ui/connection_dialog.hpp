@@ -67,6 +67,7 @@ private:
     void renderUrlRow();
     void renderSqliteFields(bool& formChanged);
     void renderServerFields(bool& formChanged);
+    void renderS3Fields(bool& formChanged);
     void renderSshFields(bool& formChanged);
     void renderStatusRow();
     bool renderButtons();

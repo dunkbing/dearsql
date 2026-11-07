@@ -20,7 +20,8 @@ bool CliConnections::loadSaved(std::string& error) {
     }
     std::lock_guard lock(mutex_);
     for (auto& saved : state.getSavedConnections()) {
-        if (find(saved.connectionInfo.name))
+        // object storage is gui-only: the terminal modes are database tools
+        if (saved.connectionInfo.type == DatabaseType::S3 || find(saved.connectionInfo.name))
             continue;
         auto e = std::make_unique<Entry>();
         e->info = std::move(saved.connectionInfo);

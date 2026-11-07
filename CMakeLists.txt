@@ -131,6 +131,7 @@ find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(md4c CONFIG REQUIRED)
+find_package(miniocpp CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 find_package(sentry CONFIG REQUIRED)
@@ -175,6 +176,8 @@ set(APP_SOURCES
     src/database/postgres/postgres_backup.cpp
     src/database/mysql/mysql_database_node.cpp
     src/database/redis.cpp
+    src/database/s3.cpp
+    src/database/s3_client.cpp
     src/database/mongodb/mongodb_database_node.cpp
     src/database/mssql/mssql_database_node.cpp
     src/database/oracle.cpp
@@ -203,6 +206,7 @@ set(APP_SOURCES
     src/ui/text_editor_highlight.cpp
     src/ui/text_editor_format.cpp
     src/ui/tab/csv_editor_tab.cpp
+    src/ui/tab/s3_browser_tab.cpp
     src/ui/tab/routine_viewer_tab.cpp
     src/ui/tab/sqlite_sequence_viewer_tab.cpp
     src/ui/tab/postgres_sequence_viewer_tab.cpp
@@ -371,6 +375,7 @@ target_link_libraries(
         dearsql::dearsql
         httplib::httplib
         md4c::md4c
+        miniocpp::miniocpp
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
         tree-sitter-json-grammar

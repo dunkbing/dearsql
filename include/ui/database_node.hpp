@@ -237,6 +237,7 @@ private:
     void renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData);
     void renderCassandraDatabaseNode(CassandraDatabaseNode* dbData);
     void renderSQLiteNode();
+    void renderS3Buckets();
 
     // Table/view rendering (shared across database types)
     void renderTableNode(Table& table, PostgresSchemaNode* schemaNode);

@@ -7,6 +7,7 @@
 #include "ui/markdown_text.hpp"
 #include "utils/button.hpp"
 #include "utils/spinner.hpp"
+#include "utils/menu.hpp"
 #include <format>
 
 namespace {
@@ -205,7 +206,7 @@ void AIChatPanel::renderInputArea() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::S));
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        if (ImGui::BeginCombo("##ai_model", modelPreview.c_str(), ImGuiComboFlags_NoArrowButton)) {
+        if (UIUtils::BeginSelect("##ai_model", modelPreview.c_str(), ImGuiComboFlags_NoArrowButton)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::S));
             for (int i = 0; i < MODEL_COUNT; ++i) {
@@ -219,7 +220,7 @@ void AIChatPanel::renderInputArea() {
                 }
             }
             ImGui::PopStyleVar();
-            ImGui::EndCombo();
+            UIUtils::EndSelect();
         }
         ImGui::PopStyleColor();
         ImGui::PopStyleVar(2);

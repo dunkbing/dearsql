@@ -226,8 +226,6 @@ void S3BrowserTab::render() {
     renderToolbar();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
-    renderStatusBar();
-    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
     if (ImGui::BeginChild("##s3_body"))
         renderTable();
     ImGui::EndChild();
@@ -263,8 +261,12 @@ void S3BrowserTab::renderToolbar() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Upload a file here");
 
+    if (!prefix_.empty()) {
+        ImGui::SameLine(0, Theme::Spacing::L);
+        renderBreadcrumb();
+    }
     ImGui::SameLine(0, Theme::Spacing::L);
-    renderBreadcrumb();
+    renderStatusBar();
 
     if (op_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::L);
@@ -289,7 +291,7 @@ void S3BrowserTab::renderToolbar() {
 void S3BrowserTab::renderBreadcrumb() {
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::AlignTextToFramePadding();
-    // bucket / a / b, each a link to that folder
+    // a / b, each a link to that folder; the tab title names the bucket
     auto crumb = [&](const std::string& label, const std::string& target, bool last) {
         if (last) {
             ImGui::TextUnformatted(label.c_str());
@@ -301,13 +303,14 @@ void S3BrowserTab::renderBreadcrumb() {
         if (ImGui::IsItemClicked())
             open(target);
     };
-    crumb(ICON_FA_BUCKET " " + bucket_, "", prefix_.empty());
     std::size_t start = 0;
     while (start < prefix_.size()) {
         const auto end = prefix_.find('/', start);
-        ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextDisabled("/");
-        ImGui::SameLine(0, Theme::Spacing::S);
+        if (start > 0) {
+            ImGui::SameLine(0, Theme::Spacing::S);
+            ImGui::TextDisabled("/");
+            ImGui::SameLine(0, Theme::Spacing::S);
+        }
         crumb(prefix_.substr(start, end - start), prefix_.substr(0, end + 1),
               end + 1 >= prefix_.size());
         start = end + 1;
@@ -440,6 +443,7 @@ void S3BrowserTab::renderStatusBar() {
     const int files = static_cast<int>(entries_.size()) - folders;
     std::string text = std::format("{} folders · {} files{}", folders, files,
                                    nextToken_.empty() ? "" : " (more not loaded)");
+    ImGui::AlignTextToFramePadding();
     ImGui::TextColored(colors.subtext0, "%s", text.c_str());
     if (!status_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);

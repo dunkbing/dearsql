@@ -11,6 +11,8 @@
 //   redshift://                     -> REDSHIFT
 //   mysql://                        -> MYSQL
 //   mariadb://                      -> MARIADB
+//   tidb://                         -> TIDB
+//   cockroachdb:// | cockroach://   -> COCKROACHDB
 //   mongodb:// | mongodb+srv://     -> MONGODB
 //   redis://                        -> REDIS
 //   rediss://                       -> REDIS with TLS (sslmode=require)

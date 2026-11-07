@@ -165,7 +165,7 @@ void RoutineViewerTab::fetchDefinitionAsync() {
             // MySQL/MariaDB: SHOW CREATE returns definition in 3rd column (index 2).
             // Strip the DEFINER clause (requires SUPER/SET_USER_ID to recreate) and
             // prepend DROP so the content round-trips cleanly on save.
-            if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
+            if (dearsql::isMySQLFamily(dbType)) {
                 const auto& row = stmt.tableData[0];
                 std::string def = (row.size() >= 3) ? row[2] : (row.empty() ? "" : row[0]);
                 if (def.empty())
@@ -293,7 +293,8 @@ std::string RoutineViewerTab::buildDefinitionQuery() const {
 
     switch (dbType) {
     case DatabaseType::POSTGRESQL:
-    case DatabaseType::REDSHIFT: {
+    case DatabaseType::REDSHIFT:
+    case DatabaseType::COCKROACHDB: {
         // signature is "func_name(arg1_type, arg2_type)" from pg_get_function_identity_arguments.
         // Use regprocedure cast with schema + args for an exact match on overloaded routines.
         const auto lparen = routine_.signature.find('(');
@@ -314,6 +315,7 @@ std::string RoutineViewerTab::buildDefinitionQuery() const {
 
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         if (routine_.kind == RoutineKind::Procedure) {
             return std::format("SHOW CREATE PROCEDURE `{}`", name);
         }

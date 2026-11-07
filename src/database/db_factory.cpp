@@ -38,6 +38,7 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
         return make<MongoDBDatabase>(info);
 
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         return make<MySQLDatabase>(info);
 
     case DatabaseType::MSSQL:
@@ -47,6 +48,7 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
         return make<OracleDatabase>(info);
 
     case DatabaseType::REDSHIFT:
+    case DatabaseType::COCKROACHDB:
         return make<PostgresDatabase>(info);
 
     case DatabaseType::CASSANDRA:

@@ -292,10 +292,12 @@ void SQLEditorTab::renderConnectionInfo() {
     switch (node_->getDatabaseType()) {
     case DatabaseType::REDSHIFT:
     case DatabaseType::POSTGRESQL:
+    case DatabaseType::COCKROACHDB:
         renderConnectionInfoPostgres();
         break;
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         renderConnectionInfoMySQL();
         break;
     case DatabaseType::MSSQL:

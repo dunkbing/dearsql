@@ -44,8 +44,10 @@ namespace {
         case DatabaseType::DUCKDB:
         case DatabaseType::POSTGRESQL:
         case DatabaseType::REDSHIFT:
+        case DatabaseType::COCKROACHDB:
         case DatabaseType::MYSQL:
         case DatabaseType::MARIADB:
+        case DatabaseType::TIDB:
         case DatabaseType::MSSQL:
             return true;
         default:

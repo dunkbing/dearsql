@@ -11,6 +11,8 @@ public:
 protected:
     // dropping the connected database moves the connection to the maintenance one
     std::string databaseAfterDrop(const std::string&, const std::string&) override {
+        if (connectionInfo.type == DatabaseType::COCKROACHDB)
+            return "defaultdb";
         return connectionInfo.type == DatabaseType::REDSHIFT ? "dev" : "postgres";
     }
 

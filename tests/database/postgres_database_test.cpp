@@ -64,7 +64,7 @@ protected:
 
         DatabaseConnectionInfo connInfo;
         connInfo.name = config.name;
-        connInfo.type = DatabaseType::POSTGRESQL;
+        connInfo.type = TestHelpers::typeFromEnv("DEARSQL_TEST_PG_TYPE", DatabaseType::POSTGRESQL);
         connInfo.host = config.host;
         connInfo.port = config.port;
         connInfo.database = config.database;
@@ -218,7 +218,8 @@ TEST_F(PostgresDatabaseIntegrationTest, DropCurrentlyConnectedDatabaseSwitchesTo
 
     const auto [dropped, dropErr] = activeDb->dropDatabase(tempDb);
     ASSERT_TRUE(dropped) << dropErr;
-    EXPECT_EQ(activeDb->getConnectionInfo().database, "postgres");
+    EXPECT_EQ(activeDb->getConnectionInfo().database,
+              tempConnInfo.type == DatabaseType::COCKROACHDB ? "defaultdb" : "postgres");
 
     auto verifyResult = database->executeQuery(
         std::format("SELECT datname FROM pg_database WHERE datname = '{}'", tempDb));
@@ -492,7 +493,7 @@ TEST_F(PostgresSchemaNodeDDLTest, RoutinesLoadAsyncFindsRoutines) {
         if (r.name.find(funcName) != std::string::npos) {
             found = true;
             EXPECT_EQ(r.kind, RoutineKind::Function);
-            EXPECT_NE(r.signature.find("integer"), std::string::npos)
+            EXPECT_NE(r.signature.find("int"), std::string::npos) // integer, or int8 on cockroachdb
                 << "should include argument types: " << r.signature;
             EXPECT_FALSE(r.returnType.empty()) << "should have a return type";
             break;
@@ -519,7 +520,9 @@ TEST_F(PostgresDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     EXPECT_FALSE(result.success());
-    EXPECT_NE(result.errorMessage().find("canceling statement"), std::string::npos)
+    // postgres: "canceling statement", cockroachdb: "query execution canceled"
+    EXPECT_TRUE(result.errorMessage().find("canceling statement") != std::string::npos ||
+                result.errorMessage().find("canceled") != std::string::npos)
         << result.errorMessage();
     EXPECT_LT(elapsed, std::chrono::seconds(5));
 }

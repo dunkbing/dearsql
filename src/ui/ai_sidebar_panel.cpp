@@ -112,6 +112,10 @@ namespace {
             return "MySQL";
         case DatabaseType::MARIADB:
             return "MariaDB";
+        case DatabaseType::TIDB:
+            return "TiDB";
+        case DatabaseType::COCKROACHDB:
+            return "CockroachDB";
         case DatabaseType::MONGODB:
             return "MongoDB";
         case DatabaseType::REDIS:
@@ -524,10 +528,12 @@ std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
         switch (type) {
         case DatabaseType::POSTGRESQL:
         case DatabaseType::REDSHIFT:
+        case DatabaseType::COCKROACHDB:
             collect(dynamic_cast<PostgresDatabase*>(db.get()));
             break;
         case DatabaseType::MYSQL:
         case DatabaseType::MARIADB:
+        case DatabaseType::TIDB:
             collect(dynamic_cast<MySQLDatabase*>(db.get()));
             break;
         case DatabaseType::MONGODB:

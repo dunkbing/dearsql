@@ -63,7 +63,7 @@ protected:
 
         DatabaseConnectionInfo connInfo;
         connInfo.name = config.name;
-        connInfo.type = DatabaseType::MYSQL;
+        connInfo.type = TestHelpers::typeFromEnv("DEARSQL_TEST_MYSQL_TYPE", DatabaseType::MYSQL);
         connInfo.host = config.host;
         connInfo.port = config.port;
         connInfo.database = config.database;

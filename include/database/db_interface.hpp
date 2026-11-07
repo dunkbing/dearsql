@@ -195,12 +195,17 @@ public:
             connectionInfo.database = "dev";
             break;
         }
+        case DatabaseType::COCKROACHDB: {
+            connectionInfo.database = "defaultdb";
+            break;
+        }
         case DatabaseType::POSTGRESQL: {
             connectionInfo.database = "postgres";
             break;
         }
         case DatabaseType::MYSQL:
-        case DatabaseType::MARIADB: {
+        case DatabaseType::MARIADB:
+        case DatabaseType::TIDB: {
             // no default: MySQL/MariaDB connect fine without a schema and the
             // user may lack grants on `mysql` (#19)
             break;

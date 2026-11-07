@@ -95,18 +95,19 @@ add_test(NAME database_tests COMMAND database_tests)
 add_executable(
     sql_format_tests
     tests/ui/sql_format_test.cpp
-    tests/ui/csv_parser_test.cpp
+    tests/ui/csv_document_test.cpp
     tests/ui/env_tag_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
     external/libdearsql/tests/completion_tests.cpp
     src/ui/text_editor_format.cpp
     src/utils/mysql_dump_splitter.cpp
+    src/utils/csv_document.cpp
 )
 
 target_include_directories(
     sql_format_tests
-    PRIVATE include external/imgui external/csv2/include
+    PRIVATE include external/imgui
 )
 
 target_link_libraries(
@@ -116,6 +117,7 @@ target_link_libraries(
         dearsql::dearsql
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
+        nlohmann_json::nlohmann_json
 )
 
 add_test(NAME sql_format_tests COMMAND sql_format_tests)
@@ -148,6 +150,7 @@ if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
         tests/ui/sidebar_tests.cpp
         tests/ui/ai_panel_tests.cpp
         tests/ui/table_viewer_tests.cpp
+        tests/ui/csv_editor_tests.cpp
         tests/ui/docs_shots.cpp
     )
 

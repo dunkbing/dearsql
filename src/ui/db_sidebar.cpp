@@ -2,8 +2,8 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/cassandra.hpp"
-#include "database/ddl_utils.hpp"
 #include "database/db_interface.hpp"
+#include "database/ddl_utils.hpp"
 #include "database/file_database.hpp"
 #include "database/mongodb.hpp"
 #include "database/mssql.hpp"
@@ -17,9 +17,9 @@
 #include "platform/alert.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
-#include "ui/env_tag.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
+#include "ui/env_tag.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "utils/button.hpp"
@@ -35,20 +35,12 @@
 #include <spdlog/spdlog.h>
 
 namespace {
-    // opens the imported csv table in the table viewer
+    // opens the csv file in the editor; the connection's DuckDB view is for SQL only
     void openCsvData(FileDatabase* fileDb) {
         if (!fileDb) {
             return;
         }
-        Table table;
-        if (!fileDb->getTables().empty()) {
-            table = fileDb->getTables().front();
-        } else {
-            // tables not loaded yet; the viewer only needs the name to fetch data
-            table.name = std::filesystem::path(fileDb->getPath()).stem().string();
-            table.fullName = fileDb->getConnectionInfo().name + "." + table.name;
-        }
-        Application::getInstance().getTabManager()->createTableViewerTab(fileDb, table);
+        Application::getInstance().getTabManager()->createCsvEditorTab(fileDb->getPath());
     }
 } // namespace
 
@@ -652,8 +644,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         app.setSelectedDatabase(db);
     }
 
-    if (isCsv && db->isConnected() && ImGui::IsItemHovered() &&
-        ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+    if (isCsv && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         openCsvData(dynamic_cast<FileDatabase*>(db.get()));
     }
 
@@ -871,12 +862,14 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
         const bool isCsv = dearsql::isCsvPath(db->getConnectionInfo().path);
 
+        // the editor reads the file itself, connected or not
+        if (isCsv && ImGui::MenuItem("Open in CSV Editor")) {
+            openCsvData(dynamic_cast<FileDatabase*>(db.get()));
+        }
+
         if (db->isConnected() && isFileDatabase(db->getConnectionInfo().type)) {
             auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get());
             if (sqliteDb) {
-                if (isCsv && ImGui::MenuItem("View Data")) {
-                    openCsvData(sqliteDb);
-                }
                 if (ImGui::MenuItem("New SQL Editor")) {
                     Application::getInstance().getTabManager()->createSQLEditorTab("", sqliteDb);
                 }

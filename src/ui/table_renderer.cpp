@@ -6,6 +6,7 @@
 #include "imgui_internal.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/csv_document.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -236,6 +237,95 @@ void TableRenderer::updateDragFromItem(int row, int col) {
     }
 }
 
+bool TableRenderer::getSelectionRange(int& firstRow, int& firstCol, int& lastRow,
+                                      int& lastCol) const {
+    if (rangeAnchorRow < 0 || rangeEndRow < 0 || rangeAnchorCol < 0 || rangeEndCol < 0)
+        return false;
+    firstRow = std::min(rangeAnchorRow, rangeEndRow);
+    lastRow = std::min(std::max(rangeAnchorRow, rangeEndRow), static_cast<int>(data.size()) - 1);
+    firstCol = std::min(rangeAnchorCol, rangeEndCol);
+    lastCol = std::min(std::max(rangeAnchorCol, rangeEndCol), static_cast<int>(columns.size()) - 1);
+    return firstRow <= lastRow && firstCol <= lastCol;
+}
+
+void TableRenderer::selectRows(int firstRow, int lastRow) {
+    if (columns.empty() || data.empty())
+        return;
+    const int last = static_cast<int>(data.size()) - 1;
+    setSelectionRange(std::clamp(firstRow, 0, last), 0, std::clamp(lastRow, 0, last),
+                      static_cast<int>(columns.size()) - 1);
+    if (onCellSelect)
+        onCellSelect(selectedRow, selectedCol);
+}
+
+void TableRenderer::applyRange(int row, int col,
+                               const std::vector<std::vector<std::string>>& values) {
+    if (values.empty())
+        return;
+    if (onRangeEdit) {
+        onRangeEdit(row, col, values);
+        return;
+    }
+    if (!onCellEdit)
+        return;
+    for (std::size_t r = 0; r < values.size(); ++r) {
+        const int dr = row + static_cast<int>(r);
+        if (dr >= static_cast<int>(data.size()))
+            break;
+        for (std::size_t c = 0; c < values[r].size(); ++c) {
+            const int dc = col + static_cast<int>(c);
+            if (dc >= static_cast<int>(columns.size()))
+                break;
+            if (config.nonEditableColumns.contains(dc) ||
+                (cellEditableCb && !cellEditableCb(dr, dc)))
+                continue;
+            if (data[dr][dc] != values[r][c])
+                onCellEdit(dr, dc, values[r][c]);
+        }
+    }
+}
+
+void TableRenderer::pasteClipboard() {
+    const char* clip = ImGui::GetClipboardText();
+    if (!clip || !*clip)
+        return;
+    std::string val(clip);
+    // strip a single trailing CRLF/LF (common when pasting our own csv copy)
+    if (!val.empty() && val.back() == '\n')
+        val.pop_back();
+    if (!val.empty() && val.back() == '\r')
+        val.pop_back();
+
+    // a block: tab-separated (spreadsheets) or the multi-cell csv this table copied
+    const bool tsv = val.find('\t') != std::string::npos;
+    if (tsv || (!lastBlockCopy.empty() && clip == lastBlockCopy)) {
+        CsvDialect dialect;
+        dialect.delimiter = tsv ? "\t" : ",";
+        applyRange(selectedRow, selectedCol, csv::parse(val, dialect));
+        return;
+    }
+
+    int r0, c0, r1, c1;
+    if (getSelectionRange(r0, c0, r1, c1) && (r0 != r1 || c0 != c1)) {
+        applyRange(r0, c0,
+                   std::vector<std::vector<std::string>>(
+                       r1 - r0 + 1, std::vector<std::string>(c1 - c0 + 1, val)));
+        return;
+    }
+
+    if (config.nonEditableColumns.contains(selectedCol) ||
+        (cellEditableCb && !cellEditableCb(selectedRow, selectedCol)))
+        return;
+    enterEditMode(selectedRow, selectedCol);
+    if (editingRow == selectedRow && editingCol == selectedCol) {
+        std::strncpy(editBuffer, val.c_str(), sizeof(editBuffer) - 1);
+        editBuffer[sizeof(editBuffer) - 1] = '\0';
+        initialCursorPos = static_cast<int>(strnlen(editBuffer, sizeof(editBuffer)));
+        justEnteredEditWithChar = true;
+        editOverlayFrames = 0;
+    }
+}
+
 bool TableRenderer::isInSelectionRange(int row, int col) const {
     if (rangeAnchorRow < 0 || rangeEndRow < 0)
         return false;
@@ -308,35 +398,33 @@ void TableRenderer::render(const char* tableId) {
                 }
                 csv.push_back('\n');
             }
+            lastBlockCopy = csv;
             if (!csv.empty())
                 ImGui::SetClipboardText(csv.c_str());
         }
     }
 
-    // Cmd/Ctrl+V → paste clipboard into the selected cell and enter edit mode
+    // Cmd/Ctrl+V → paste: a copied block fills cells from the selection, one value
+    // fills a multi-cell selection, otherwise it opens the selected cell for editing
     if (config.allowEditing && editingRow == -1 && selectedRow >= 0 && selectedCol >= 0 &&
         selectedRow < static_cast<int>(data.size()) &&
         selectedCol < static_cast<int>(columns.size()) &&
-        !config.nonEditableColumns.contains(selectedCol) &&
-        (!cellEditableCb || cellEditableCb(selectedRow, selectedCol)) &&
         ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
         !ImGui::GetIO().WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Shortcut | ImGuiKey_V)) {
-        if (const char* clip = ImGui::GetClipboardText(); clip && *clip) {
-            std::string val(clip);
-            // strip a single trailing CRLF/LF (common when pasting our own csv copy)
-            if (!val.empty() && val.back() == '\n')
-                val.pop_back();
-            if (!val.empty() && val.back() == '\r')
-                val.pop_back();
+        pasteClipboard();
+    }
 
-            enterEditMode(selectedRow, selectedCol);
-            if (editingRow == selectedRow && editingCol == selectedCol) {
-                std::strncpy(editBuffer, val.c_str(), sizeof(editBuffer) - 1);
-                editBuffer[sizeof(editBuffer) - 1] = '\0';
-                initialCursorPos = static_cast<int>(strnlen(editBuffer, sizeof(editBuffer)));
-                justEnteredEditWithChar = true;
-                editOverlayFrames = 0;
-            }
+    // Delete/Backspace → empty the selected cells
+    if (config.allowEditing && config.clearOnDelete && editingRow == -1 && selectedRow >= 0 &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+        !ImGui::GetIO().WantTextInput &&
+        (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
+         ImGui::IsKeyPressed(ImGuiKey_Backspace, false))) {
+        int r0, c0, r1, c1;
+        if (getSelectionRange(r0, c0, r1, c1)) {
+            applyRange(r0, c0,
+                       std::vector<std::vector<std::string>>(
+                           r1 - r0 + 1, std::vector<std::string>(c1 - c0 + 1)));
         }
     }
 
@@ -407,6 +495,8 @@ void TableRenderer::render(const char* tableId) {
     if (ImGui::BeginTable(tableId, colCount, config.tableFlags, ImVec2(0.0f, availableHeight))) {
         if (config.showRowNumbers) {
             int maxRowNum = rowNumberOffset + static_cast<int>(data.size());
+            if (rowNumberCb)
+                maxRowNum = std::max(maxRowNum, rowNumberCb(static_cast<int>(data.size()) - 1));
             std::string maxRowStr = std::to_string(maxRowNum);
             float textWidth = ImGui::CalcTextSize(maxRowStr.c_str()).x;
             float columnWidth = textWidth + 10.0f;
@@ -452,6 +542,12 @@ void TableRenderer::render(const char* tableId) {
                 const auto& row = data[rowIdx];
                 ImGui::TableNextRow();
 
+                // row tint under the selection tint, so a flagged row stays visible
+                if (rowBgCb) {
+                    if (const ImU32 bg = rowBgCb(rowIdx); bg != 0)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, bg);
+                }
+
                 if (config.allowSelection && selectedRow == rowIdx) {
                     ImGui::TableSetBgColor(
                         ImGuiTableBgTarget_RowBg1,
@@ -462,10 +558,28 @@ void TableRenderer::render(const char* tableId) {
                 if (config.showRowNumbers) {
                     ImGui::TableNextColumn();
 
-                    int rowNum = rowNumberOffset + rowIdx + 1;
+                    int rowNum = rowNumberCb ? rowNumberCb(rowIdx) : rowNumberOffset + rowIdx + 1;
                     std::string rowNumStr = std::to_string(rowNum);
                     float textWidth = ImGui::CalcTextSize(rowNumStr.c_str()).x;
                     float columnWidth = ImGui::GetColumnWidth();
+                    // click selects the row, shift-click extends to it
+                    if (config.allowSelection) {
+                        const ImVec2 cellPos = ImGui::GetCursorPos();
+                        ImGui::PushID(rowIdx);
+                        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+                        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.surface1);
+                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors.surface2);
+                        if (ImGui::Selectable("##rownum", false, ImGuiSelectableFlags_None)) {
+                            if (ImGui::GetIO().KeyShift && rangeAnchorRow >= 0)
+                                selectRows(rangeAnchorRow, rowIdx);
+                            else
+                                selectRows(rowIdx, rowIdx);
+                        }
+                        ImGui::PopStyleColor(3);
+                        ImGui::PopID();
+                        ImGui::SetCursorPos(cellPos);
+                    }
+
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (columnWidth - textWidth) / 2);
 
                     ImGui::PushStyleColor(ImGuiCol_Text,
@@ -734,6 +848,9 @@ void TableRenderer::renderCell(int row, int col) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
                 ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.25f)));
+        } else if (cellBgCb) {
+            if (const ImU32 bg = cellBgCb(row, col); bg != 0)
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, bg);
         }
 
         const std::string& cellValue = data[row][col];
@@ -1086,6 +1203,10 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
     }
 
     ImGui::PopStyleVar();
+    if (cellMenuExt) {
+        ImGui::Separator();
+        cellMenuExt(row, col);
+    }
     ImGui::EndPopup();
 }
 
@@ -1488,6 +1609,11 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
                     onSortChanged(colIdx, colName, SortDirection::Descending);
                 }
             }
+        }
+
+        if (columnMenuExt) {
+            ImGui::Separator();
+            columnMenuExt(colIdx);
         }
 
         ImGui::EndPopup();

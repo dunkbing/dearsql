@@ -695,11 +695,12 @@ void DatabaseHierarchy::renderRootNode() {
 
     if (isFileDatabase(dbType)) {
         if (dearsql::isCsvPath(db->getConnectionInfo().path)) {
-            // csv nodes show only saved queries; data opens via context menu / double-click.
-            // keep tables loading so View Data has column metadata.
-            if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get())) {
-                if (!fileDb->isTablesLoaded() && !fileDb->isLoadingTables()) {
-                    fileDb->startTablesLoadAsync();
+            // csv nodes show only saved queries; the file opens in the csv editor via the
+            // context menu / double-click. its DuckDB view still loads for sql completion
+            if (auto* fileDb = dynamic_cast<FileDatabase*>(db.get());
+                fileDb && fileDb->isConnected()) {
+                if (!fileDb->isViewsLoaded() && !fileDb->isLoadingViews()) {
+                    fileDb->startViewsLoadAsync();
                 }
                 fileDb->checkLoadingStatus();
             }

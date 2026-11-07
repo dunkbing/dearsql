@@ -18,6 +18,7 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine);
 void RegisterMarkdownTests(ImGuiTestEngine* engine);
 void RegisterDocsShots(ImGuiTestEngine* engine);
 void RegisterTableViewerTests(ImGuiTestEngine* engine);
+void RegisterCsvEditorTests(ImGuiTestEngine* engine);
 
 int main(int argc, char** argv) {
     bool headless = false;
@@ -76,6 +77,7 @@ int main(int argc, char** argv) {
     RegisterAiPanelTests(engine);
     RegisterMarkdownTests(engine);
     RegisterTableViewerTests(engine);
+    RegisterCsvEditorTests(engine);
     RegisterDocsShots(engine);
 
     if (headless) {

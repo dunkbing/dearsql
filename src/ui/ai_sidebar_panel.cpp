@@ -1709,21 +1709,15 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
 
     switch (item.kind) {
     case Item::Kind::User:
-        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(colors.subtext0, "You");
-        ImGui::SameLine(0, Theme::Spacing::S);
-        MarkdownText::copyButton("copy_msg", item.text);
-        ImGui::TextWrapped("%s", item.text.c_str());
+        renderTextWithCodeBlocks(item.text, index); // selectable, like the replies
         if (!item.contextNote.empty()) {
             ImGui::TextColored(colors.overlay1, "%s", item.contextNote.c_str());
         }
         break;
 
     case Item::Kind::Assistant:
-        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(colors.subtext0, "Assistant");
-        ImGui::SameLine(0, Theme::Spacing::S);
-        MarkdownText::copyButton("copy_msg", item.text);
         renderTextWithCodeBlocks(item.text, index);
         break;
 
@@ -1738,6 +1732,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     }
 
     case Item::Kind::Tool: {
+        ImGui::Dummy(ImVec2(0, Theme::Spacing::S)); // room around the row
         const bool running = item.toolStatus == "pending" || item.toolStatus == "in_progress";
         const bool failed = item.toolStatus == "failed";
         if (running) {
@@ -1746,7 +1741,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
             ImGui::TextColored(failed ? colors.red : colors.green,
                                failed ? ICON_FA_XMARK : ICON_FA_CHECK);
         }
-        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::SameLine(0, Theme::Spacing::M);
         const std::string title = item.toolTitle.empty() ? "Tool call" : item.toolTitle;
         if (item.toolOutput.empty()) {
             ImGui::TextColored(colors.subtext0, "%s", title.c_str());
@@ -1766,6 +1761,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 ImGui::PopStyleColor();
             }
         }
+        ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
         break;
     }
 

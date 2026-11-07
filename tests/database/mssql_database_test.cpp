@@ -313,3 +313,39 @@ TEST_F(MSSQLDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
     const auto after = dbNode->executeQuery("SELECT 1");
     EXPECT_TRUE(after.success()) << after.errorMessage();
 }
+
+// SET PARSEONLY: syntax only, nothing runs, and the session is back to normal afterwards
+TEST_F(MSSQLSchemaNodeDDLTest, ServerSyntaxCheck) {
+    auto check = [&](const std::string& sql) {
+        return schemaNode->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sql); });
+    };
+    EXPECT_FALSE(check(
+        std::format("create table [{}] (a int); select top 1 x from [no].[such]", tableName)));
+    const std::string bad = "select 1\nselect *\n frm t";
+    const auto error = check(bad);
+    ASSERT_TRUE(error);
+    EXPECT_EQ(error->offset, bad.find(" frm")) << error->message; // line 3, no column
+    EXPECT_NE(error->message.find("frm"), std::string::npos) << error->message;
+
+    auto exists = schemaNode->executeQuery(std::format(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{}'", tableName));
+    ASSERT_TRUE(exists.success()) << exists.errorMessage();
+    ASSERT_FALSE(exists[0].tableData.empty()); // parse-only would return no rows
+    EXPECT_EQ(exists[0].tableData[0][0], "0");
+
+    // nothing in checked text runs, even text that turns parse-only off itself
+    for (const auto& sneaky :
+         {std::format("create table [{}] (a int)", tableName),
+          std::format("set parseonly off\ncreate table [{}] (a int)", tableName),
+          std::format("SET PARSEONLY OFF; create table [{}] (a int)", tableName)}) {
+        check(sneaky);
+    }
+    auto created = schemaNode->executeQuery(std::format(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{}'", tableName));
+    ASSERT_TRUE(created.success() && !created[0].tableData.empty()) << created.errorMessage();
+    EXPECT_EQ(created[0].tableData[0][0], "0");
+
+    // a failing query reports the server's message, not db-lib's "check messages"
+    auto failed = schemaNode->executeQuery("select * frm t");
+    EXPECT_NE(failed.errorMessage().find("frm"), std::string::npos) << failed.errorMessage();
+}

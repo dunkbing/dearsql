@@ -136,6 +136,7 @@ private:
     void formatSQL();
     void scheduleSyntaxCheck();
     void updateSyntaxDiagnostics();
+    void showSyntaxError(const std::optional<dearsql::SyntaxError>& error);
 
     // Autocomplete: dearsql::complete over a catalog snapshot of the loaded nodes
     void updateCompletionCatalog();
@@ -158,6 +159,8 @@ private:
     SyntaxDiagnostic syntaxDiagnostic_;
     float syntaxCheckDelay_ = 0.0f;
     bool syntaxCheckPending_ = false;
+    // sql server and cockroachdb check on the server: the text sent, and what came back
+    AsyncOperation<std::pair<std::string, std::optional<dearsql::SyntaxError>>> serverSyntaxOp_;
 
     // Deferred database switch (PostgreSQL: waiting for schemas to load)
     std::string pendingDatabaseSwitch_;

@@ -4,6 +4,7 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
+#include "database/lib_database_node.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
@@ -1082,28 +1083,57 @@ void SQLEditorTab::formatSQL() {
 
 void SQLEditorTab::scheduleSyntaxCheck() {
     syntaxCheckPending_ = true;
-    syntaxCheckDelay_ = 0.25f;
+    // a server check is a round trip: wait for a longer pause in typing
+    syntaxCheckDelay_ =
+        node_ && dearsql::hasServerSyntaxCheck(node_->getDatabaseType()) ? 0.8f : 0.25f;
 }
 
 void SQLEditorTab::updateSyntaxDiagnostics() {
+    // a server answer for text that has changed since is dropped: a newer check follows
+    serverSyntaxOp_.check([this](std::pair<std::string, std::optional<dearsql::SyntaxError>> r) {
+        if (r.first == sqlQuery) {
+            showSyntaxError(r.second);
+        }
+    });
     if (!syntaxCheckPending_) {
         return;
     }
-
     syntaxCheckDelay_ -= ImGui::GetIO().DeltaTime;
     if (syntaxCheckDelay_ > 0.0f) {
         return;
     }
-
-    syntaxCheckPending_ = false;
-    syntaxDiagnostic_ = {};
-
-    // the engine's own parser, so a valid query is never flagged; engines without
-    // one (mysql, sql server, oracle...) are not checked at all
     if (!node_ || trimSqlView(sqlQuery).empty()) {
+        syntaxCheckPending_ = false;
+        showSyntaxError(std::nullopt);
         return;
     }
-    const auto error = dearsql::checkSyntax(sqlQuery, node_->getDatabaseType());
+    const auto type = node_->getDatabaseType();
+    if (!dearsql::hasServerSyntaxCheck(type)) {
+        // the engine's own parser, so a valid query is never flagged; engines without
+        // one (mysql, oracle...) are not checked at all
+        syntaxCheckPending_ = false;
+        showSyntaxError(dearsql::checkSyntax(sqlQuery, type));
+        return;
+    }
+    auto* lib = dynamic_cast<LibDatabaseNode*>(node_);
+    if (!lib || serverSyntaxOp_.isRunning()) {
+        syntaxCheckPending_ = lib != nullptr; // one at a time: retry when it lands
+        return;
+    }
+    syntaxCheckPending_ = false;
+    serverSyntaxOp_.start([lib, keep = keepOwnerAlive(node_), text = sqlQuery] {
+        std::optional<dearsql::SyntaxError> error;
+        try {
+            error = lib->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(text); });
+        } catch (const std::exception& e) {
+            spdlog::debug("syntax check: {}", e.what()); // no connection: no check
+        }
+        return std::pair{text, error};
+    });
+}
+
+void SQLEditorTab::showSyntaxError(const std::optional<dearsql::SyntaxError>& error) {
+    syntaxDiagnostic_ = {};
     if (!error) {
         return;
     }

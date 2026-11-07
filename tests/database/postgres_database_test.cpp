@@ -631,3 +631,39 @@ TEST_F(PostgresDatabaseIntegrationTest, ExplainParsesServerPlans) {
         EXPECT_EQ(plan->executionTimeMs.has_value(), analyze);
     }
 }
+
+// cockroachdb only: SHOW SYNTAX on the server; a missing table is not a syntax error
+TEST_F(PostgresDatabaseIntegrationTest, ServerSyntaxCheck) {
+    if (!dearsql::hasServerSyntaxCheck(database->getConnectionInfo().type)) {
+        GTEST_SKIP() << "checked offline on this engine";
+    }
+    auto* node = dynamic_cast<LibDatabaseNode*>(database->getDatabaseData(config.database));
+    ASSERT_NE(node, nullptr);
+    auto check = [&](const std::string& sql) {
+        return node->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sql); });
+    };
+    EXPECT_FALSE(check("insert into no_such_table (a) values ('it''s') returning a::int"));
+    const std::string bad = "select 1;\nselect *\n  frm t";
+    const auto error = check(bad);
+    ASSERT_TRUE(error);
+    EXPECT_EQ(bad.substr(error->offset, 3), "frm") << error->message;
+}
+
+// SHOW SYNTAX only parses: nothing in the text runs, even text that tries to end the literal
+TEST_F(PostgresDatabaseIntegrationTest, ServerSyntaxCheckRunsNothing) {
+    if (!dearsql::hasServerSyntaxCheck(database->getConnectionInfo().type)) {
+        GTEST_SKIP() << "checked offline on this engine";
+    }
+    auto* node = dynamic_cast<LibDatabaseNode*>(database->getDatabaseData(config.database));
+    ASSERT_NE(node, nullptr);
+    for (const auto& sneaky : {std::format("create table {} (a int)", tableName),
+                               std::format("'); create table {} (a int); --", tableName),
+                               std::format("select '\\'; create table {} (a int); --'", tableName),
+                               std::format("select $$'$$; create table {} (a int)", tableName)}) {
+        node->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sneaky); });
+    }
+    auto created = database->executeQuery(std::format(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name = '{}'", tableName));
+    ASSERT_TRUE(created.success()) << created.errorMessage();
+    EXPECT_EQ(created[0].tableData[0][0], "0");
+}

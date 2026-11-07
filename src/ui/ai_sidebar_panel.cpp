@@ -1279,7 +1279,9 @@ void AISidebarPanel::render() {
     // the footer is the spacing imgui adds after the list, the input box itself, and a
     // margin below it -- under-reserving here is what clipped the input's bottom edge.
     const float inputH = computeInputHeight();
-    const float chipsHeight = contextChipsHeight(ImGui::GetContentRegionAvail().x);
+    // chips and input are inset by M on each side (renderInputArea)
+    const float chipsHeight =
+        contextChipsHeight(ImGui::GetContentRegionAvail().x - Theme::Spacing::M * 2.0f);
     const float footerHeight =
         ImGui::GetStyle().ItemSpacing.y + chipsHeight + inputH + INPUT_BOTTOM_MARGIN;
     const float availHeight =
@@ -1324,7 +1326,7 @@ void AISidebarPanel::render() {
     ImGui::EndChild();
 
     // pinned context sits above the input box rather than inside its border
-    renderContextChips(ImGui::GetContentRegionAvail().x);
+    renderContextChips(ImGui::GetContentRegionAvail().x - Theme::Spacing::M * 2.0f);
     renderInputArea();
 }
 
@@ -2156,6 +2158,7 @@ void AISidebarPanel::renderContextChips(float availWidth) {
     if (selectedContext_.empty()) {
         return;
     }
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::M); // in line with the input
     const auto& colors = Application::getInstance().getCurrentColors();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const float chipH = chipHeight();
@@ -2235,9 +2238,12 @@ void AISidebarPanel::renderInputArea() {
                         ImVec2(INPUT_CONTAINER_PAD_X, INPUT_CONTAINER_PAD_Y));
 
     ImVec2 inputRectMin{};
-    float inputWidth = 0.0f;
+    // inset like the transcript and the pickers, not edge to edge
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::M);
+    const float boxWidth = ImGui::GetContentRegionAvail().x - Theme::Spacing::M;
+    const ImVec2 boxMin = ImGui::GetCursorScreenPos();
 
-    if (ImGui::BeginChild("##ai_side_input", ImVec2(-1, containerHeight),
+    if (ImGui::BeginChild("##ai_side_input", ImVec2(boxWidth, containerHeight),
                           ImGuiChildFlags_Borders)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
@@ -2266,7 +2272,6 @@ void AISidebarPanel::renderInputArea() {
                 ImGuiInputTextFlags_CallbackCompletion,
             sidebarInputCallbackThunk, this);
         inputRectMin = ImGui::GetItemRectMin();
-        inputWidth = ImGui::GetItemRectSize().x;
 
         // InputTextMultiline has no hint variant, so draw the placeholder ourselves
         if (inputBuf_[0] == '\0') {
@@ -2322,5 +2327,5 @@ void AISidebarPanel::renderInputArea() {
     ImGui::PopStyleVar(3); // ChildRounding, ChildBorderSize, WindowPadding
     ImGui::PopStyleColor(2);
 
-    renderMentionPopupAt(inputRectMin.x, inputRectMin.y - Theme::Spacing::S, inputWidth);
+    renderMentionPopupAt(boxMin.x, boxMin.y - Theme::Spacing::S, boxWidth);
 }

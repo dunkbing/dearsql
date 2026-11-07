@@ -714,7 +714,7 @@ void DatabaseHierarchy::renderRootNode() {
         } else {
             renderSQLiteNode();
         }
-    } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
+    } else if (dearsql::isPostgresFamily(dbType)) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
         if (!pgDb) {
             return;
@@ -752,7 +752,7 @@ void DatabaseHierarchy::renderRootNode() {
                 }
             }
         }
-    } else if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
+    } else if (dearsql::isMySQLFamily(dbType)) {
         auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
         if (!mysqlDb) {
             return;
@@ -1715,7 +1715,9 @@ void DatabaseHierarchy::renderPostgresBackupRestoreMenus(PostgresDatabaseNode* d
         return;
     }
 
-    if (dbData->parentDb->getConnectionInfo().type == DatabaseType::REDSHIFT) {
+    // pg_dump cannot read redshift or cockroachdb
+    if (const auto t = dbData->parentDb->getConnectionInfo().type;
+        t == DatabaseType::REDSHIFT || t == DatabaseType::COCKROACHDB) {
         return;
     }
 
@@ -4595,7 +4597,7 @@ IDatabaseNode* DatabaseHierarchy::resolveNodeForQuery(const SqlScript& query) co
     if (dbType == DatabaseType::SQLITE) {
         return dynamic_cast<FileDatabase*>(db.get());
     }
-    if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
+    if (dearsql::isPostgresFamily(dbType)) {
         auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get());
         if (!pgDb)
             return nullptr;
@@ -4610,7 +4612,7 @@ IDatabaseNode* DatabaseHierarchy::resolveNodeForQuery(const SqlScript& query) co
         }
         return nullptr;
     }
-    if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
+    if (dearsql::isMySQLFamily(dbType)) {
         auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get());
         if (!mysqlDb)
             return nullptr;
@@ -4668,7 +4670,7 @@ void DatabaseHierarchy::renderQueriesNode() {
             const auto dbType = db->getConnectionInfo().type;
             if (auto* sqliteDb = dynamic_cast<FileDatabase*>(db.get())) {
                 node = sqliteDb;
-            } else if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT) {
+            } else if (dearsql::isPostgresFamily(dbType)) {
                 if (auto* pgDb = dynamic_cast<PostgresDatabase*>(db.get())) {
                     for (const auto& entry : pgDb->getDatabaseDataMap()) {
                         if (entry.second && !entry.second->schemas.empty() &&
@@ -4682,7 +4684,7 @@ void DatabaseHierarchy::renderQueriesNode() {
                         }
                     }
                 }
-            } else if (dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB) {
+            } else if (dearsql::isMySQLFamily(dbType)) {
                 if (auto* mysqlDb = dynamic_cast<MySQLDatabase*>(db.get())) {
                     // prefer a real database over the schema-less server node
                     for (const auto& entry : mysqlDb->getDatabaseDataMap()) {

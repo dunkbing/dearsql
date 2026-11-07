@@ -71,6 +71,9 @@ namespace {
             {"redshift", {DatabaseType::REDSHIFT, 5439, false}},
             {"mysql", {DatabaseType::MYSQL, 3306, false}},
             {"mariadb", {DatabaseType::MARIADB, 3306, false}},
+            {"tidb", {DatabaseType::TIDB, 4000, false}},
+            {"cockroachdb", {DatabaseType::COCKROACHDB, 26257, false}},
+            {"cockroach", {DatabaseType::COCKROACHDB, 26257, false}},
             {"mongodb", {DatabaseType::MONGODB, 27017, false}},
             {"mongodb+srv", {DatabaseType::MONGODB, 27017, false}},
             {"redis", {DatabaseType::REDIS, 6379, false}},
@@ -176,6 +179,12 @@ std::string buildConnectionUrl(const DatabaseConnectionInfo& info) {
         break;
     case DatabaseType::MARIADB:
         scheme = "mariadb";
+        break;
+    case DatabaseType::TIDB:
+        scheme = "tidb";
+        break;
+    case DatabaseType::COCKROACHDB:
+        scheme = "cockroachdb";
         break;
     case DatabaseType::MONGODB:
         scheme = "mongodb";

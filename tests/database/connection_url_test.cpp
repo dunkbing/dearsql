@@ -339,3 +339,28 @@ TEST(ConnectionUrlTest, LooksLikeConnectionUrlDetectsKnownSchemes) {
     EXPECT_FALSE(looksLikeConnectionUrl("http://example.com"));
     EXPECT_FALSE(looksLikeConnectionUrl(""));
 }
+
+TEST(ConnectionUrlTest, CompatibleEngines) {
+    {
+        auto r = parseConnectionUrl("tidb://root@gateway01.us-west-2.prod.aws.tidbcloud.com/test");
+        ASSERT_TRUE(r.ok) << r.error;
+        EXPECT_EQ(r.info.type, DatabaseType::TIDB);
+        EXPECT_EQ(r.info.port, 4000);
+        EXPECT_EQ(r.info.database, "test");
+    }
+    {
+        auto r = parseConnectionUrl("cockroachdb://root@localhost/defaultdb");
+        ASSERT_TRUE(r.ok) << r.error;
+        EXPECT_EQ(r.info.type, DatabaseType::COCKROACHDB);
+        EXPECT_EQ(r.info.port, 26257);
+    }
+    {
+        auto r = parseConnectionUrl("cockroach://u:p@h:26258/bank");
+        ASSERT_TRUE(r.ok) << r.error;
+        EXPECT_EQ(r.info.type, DatabaseType::COCKROACHDB);
+        EXPECT_EQ(r.info.port, 26258);
+        DatabaseConnectionInfo round = r.info;
+        EXPECT_EQ(parseConnectionUrl(buildConnectionUrl(round)).info.type,
+                  DatabaseType::COCKROACHDB);
+    }
+}

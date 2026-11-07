@@ -517,10 +517,12 @@ void TableEditorTab::renderColumnEditor() {
         switch (databaseType) {
         case DatabaseType::MYSQL:
         case DatabaseType::MARIADB:
+        case DatabaseType::TIDB:
         case DatabaseType::SQLITE:
             label = "AUTO_INCREMENT";
             break;
         case DatabaseType::POSTGRESQL:
+        case DatabaseType::COCKROACHDB:
             label = "SERIAL";
             tooltip = "Uses SERIAL/BIGSERIAL type for auto-incrementing columns";
             break;
@@ -574,8 +576,8 @@ void TableEditorTab::renderColumnEditor() {
 
     ImGui::Spacing();
 
-    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB ||
-        databaseType == DatabaseType::POSTGRESQL) {
+    if (dearsql::isMySQLFamily(databaseType) ||
+        (databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
         ImGui::Text("Comment:");
         ImGui::PopStyleColor();
@@ -768,7 +770,8 @@ std::string TableEditorTab::generateAddColumnSQL() const {
     auto builder = createSQLBuilder(databaseType);
 
     std::string qualifiedTableName;
-    if (databaseType == DatabaseType::POSTGRESQL && tableName.find('.') == std::string::npos) {
+    if ((databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB) &&
+        tableName.find('.') == std::string::npos) {
         const std::string schema = schemaName.empty() ? "public" : schemaName;
         qualifiedTableName = std::format("{}.{}", builder->quoteIdentifier(schema),
                                          builder->quoteIdentifier(tableName));
@@ -793,7 +796,8 @@ std::string TableEditorTab::generateEditColumnSQL() const {
     auto builder = createSQLBuilder(databaseType);
 
     std::string qualifiedTableName;
-    if (databaseType == DatabaseType::POSTGRESQL && tableName.find('.') == std::string::npos) {
+    if ((databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB) &&
+        tableName.find('.') == std::string::npos) {
         const std::string schema = schemaName.empty() ? "public" : schemaName;
         qualifiedTableName = std::format("{}.{}", builder->quoteIdentifier(schema),
                                          builder->quoteIdentifier(tableName));
@@ -827,6 +831,7 @@ std::vector<std::string> TableEditorTab::getCommonDataTypes() const {
 
     switch (databaseType) {
     case DatabaseType::POSTGRESQL:
+    case DatabaseType::COCKROACHDB:
         types = {
             "INTEGER",      "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC", "REAL", "DOUBLE PRECISION",
             "VARCHAR(255)", "TEXT",   "CHAR(10)", "BOOLEAN", "DATE",    "TIME", "TIMESTAMP",
@@ -835,6 +840,7 @@ std::vector<std::string> TableEditorTab::getCommonDataTypes() const {
 
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         types = {"INT",    "BIGINT",       "SMALLINT",  "TINYINT",  "DECIMAL(10,2)", "FLOAT",
                  "DOUBLE", "VARCHAR(255)", "TEXT",      "CHAR(10)", "BOOLEAN",       "DATE",
                  "TIME",   "DATETIME",     "TIMESTAMP", "JSON"};
@@ -875,8 +881,8 @@ void TableEditorTab::renderTableProperties() {
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
 
-    if (databaseType == DatabaseType::MYSQL || databaseType == DatabaseType::MARIADB ||
-        databaseType == DatabaseType::POSTGRESQL) {
+    if (dearsql::isMySQLFamily(databaseType) ||
+        (databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
         ImGui::Text("Comment:");
         ImGui::PopStyleColor();
@@ -974,7 +980,7 @@ std::string TableEditorTab::generateCreateTableSQL() const {
     table.comment = std::string(tableCommentBuffer);
 
     std::string schema;
-    if (databaseType == DatabaseType::POSTGRESQL) {
+    if ((databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
         schema = schemaName.empty() ? "public" : schemaName;
     } else if (databaseType == DatabaseType::CASSANDRA) {
         schema = schemaName;
@@ -988,7 +994,8 @@ std::vector<std::string> TableEditorTab::generateAlterTableStatements() const {
     auto builder = createSQLBuilder(databaseType);
 
     std::string tableName = originalTable.name;
-    if (databaseType == DatabaseType::POSTGRESQL && !schemaName.empty()) {
+    if ((databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB) &&
+        !schemaName.empty()) {
         tableName = schemaName + "." + originalTable.name;
     }
 

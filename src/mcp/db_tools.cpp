@@ -59,7 +59,7 @@ namespace mcp {
 
         bool hasSchemas(dearsql::DatabaseType t) {
             using enum dearsql::DatabaseType;
-            return t == POSTGRESQL || t == REDSHIFT || t == MSSQL;
+            return dearsql::isPostgresFamily(t) || t == MSSQL;
         }
 
         std::string lower(std::string s) {

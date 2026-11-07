@@ -44,10 +44,12 @@ inline constexpr SslMode kS3SslValues[] = {SslMode::Require, SslMode::Disable};
 inline SslModeConfig getSslConfig(DatabaseType type) {
     switch (type) {
     case DatabaseType::REDSHIFT:
+    case DatabaseType::COCKROACHDB:
     case DatabaseType::POSTGRESQL:
         return {kPgSslLabels, kPgSslValues, 6, 2};
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         return {kMySqlSslLabels, kMySqlSslValues, 5, 1};
     case DatabaseType::MSSQL:
         return {kMssqlSslLabels, kMssqlSslValues, 4, 0};

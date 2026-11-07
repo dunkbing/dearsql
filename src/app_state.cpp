@@ -58,31 +58,8 @@ namespace {
         conn.connectionInfo.name = columnText(stmt, 1);
 
         std::string typeStr = columnText(stmt, 2);
-        if (typeStr == "sqlite") {
-            conn.connectionInfo.type = DatabaseType::SQLITE;
-        } else if (typeStr == "postgresql") {
-            conn.connectionInfo.type = DatabaseType::POSTGRESQL;
-        } else if (typeStr == "mysql") {
-            conn.connectionInfo.type = DatabaseType::MYSQL;
-        } else if (typeStr == "redis") {
-            conn.connectionInfo.type = DatabaseType::REDIS;
-        } else if (typeStr == "mongodb") {
-            conn.connectionInfo.type = DatabaseType::MONGODB;
-        } else if (typeStr == "mariadb") {
-            conn.connectionInfo.type = DatabaseType::MARIADB;
-        } else if (typeStr == "mssql") {
-            conn.connectionInfo.type = DatabaseType::MSSQL;
-        } else if (typeStr == "oracle") {
-            conn.connectionInfo.type = DatabaseType::ORACLE;
-        } else if (typeStr == "redshift") {
-            conn.connectionInfo.type = DatabaseType::REDSHIFT;
-        } else if (typeStr == "cassandra") {
-            conn.connectionInfo.type = DatabaseType::CASSANDRA;
-        } else if (typeStr == "s3") {
-            conn.connectionInfo.type = DatabaseType::S3;
-        } else if (typeStr == "duckdb") {
-            conn.connectionInfo.type = DatabaseType::DUCKDB;
-        } else {
+        conn.connectionInfo.type = dearsql::stringToDatabaseType(typeStr);
+        if (dearsql::databaseTypeToString(conn.connectionInfo.type) != typeStr) {
             spdlog::warn("Unknown database type '{}' for connection '{}', skipping", typeStr,
                          conn.connectionInfo.name);
             return false;
@@ -584,45 +561,7 @@ int AppState::saveConnection(const SavedConnection& connection) const {
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.ssh.password, encryptionKey);
 
-    std::string typeStr;
-    switch (connection.connectionInfo.type) {
-    case DatabaseType::SQLITE:
-        typeStr = "sqlite";
-        break;
-    case DatabaseType::POSTGRESQL:
-        typeStr = "postgresql";
-        break;
-    case DatabaseType::MYSQL:
-        typeStr = "mysql";
-        break;
-    case DatabaseType::REDIS:
-        typeStr = "redis";
-        break;
-    case DatabaseType::MONGODB:
-        typeStr = "mongodb";
-        break;
-    case DatabaseType::MARIADB:
-        typeStr = "mariadb";
-        break;
-    case DatabaseType::MSSQL:
-        typeStr = "mssql";
-        break;
-    case DatabaseType::ORACLE:
-        typeStr = "oracle";
-        break;
-    case DatabaseType::REDSHIFT:
-        typeStr = "redshift";
-        break;
-    case DatabaseType::CASSANDRA:
-        typeStr = "cassandra";
-        break;
-    case DatabaseType::DUCKDB:
-        typeStr = "duckdb";
-        break;
-    case DatabaseType::S3:
-        typeStr = "s3";
-        break;
-    }
+    const std::string typeStr = dearsql::databaseTypeToString(connection.connectionInfo.type);
 
     std::string saltBase64 =
         CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end()));
@@ -715,45 +654,7 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
             ? ""
             : CryptoUtils::encrypt(connection.connectionInfo.ssh.password, encryptionKey);
 
-    std::string typeStr;
-    switch (connection.connectionInfo.type) {
-    case DatabaseType::SQLITE:
-        typeStr = "sqlite";
-        break;
-    case DatabaseType::POSTGRESQL:
-        typeStr = "postgresql";
-        break;
-    case DatabaseType::MYSQL:
-        typeStr = "mysql";
-        break;
-    case DatabaseType::REDIS:
-        typeStr = "redis";
-        break;
-    case DatabaseType::MONGODB:
-        typeStr = "mongodb";
-        break;
-    case DatabaseType::MARIADB:
-        typeStr = "mariadb";
-        break;
-    case DatabaseType::MSSQL:
-        typeStr = "mssql";
-        break;
-    case DatabaseType::ORACLE:
-        typeStr = "oracle";
-        break;
-    case DatabaseType::REDSHIFT:
-        typeStr = "redshift";
-        break;
-    case DatabaseType::CASSANDRA:
-        typeStr = "cassandra";
-        break;
-    case DatabaseType::DUCKDB:
-        typeStr = "duckdb";
-        break;
-    case DatabaseType::S3:
-        typeStr = "s3";
-        break;
-    }
+    const std::string typeStr = dearsql::databaseTypeToString(connection.connectionInfo.type);
 
     std::string saltBase64 =
         CryptoUtils::base64Encode(std::vector<uint8_t>(salt.begin(), salt.end()));

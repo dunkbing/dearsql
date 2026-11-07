@@ -131,6 +131,10 @@ namespace {
     // Working directory handed to the agent. Deliberately a scratch dir of our own:
     // agents carry their own file and shell tools that do not go through ACP, so a
     // cwd of $HOME would point them at everything and pull in stray project config.
+        case DatabaseType::TIDB:
+            return "TiDB";
+        case DatabaseType::COCKROACHDB:
+            return "CockroachDB";
     std::string agentWorkingDir() {
         const std::filesystem::path dir = AppPaths::ensureSubdir("agent");
         if (dir.empty()) {
@@ -543,10 +547,12 @@ std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
             collect(dynamic_cast<CassandraDatabase*>(db.get()));
             break;
         default:
+        case DatabaseType::COCKROACHDB:
             break; // redis: no schema nodes
         }
     }
 
+        case DatabaseType::TIDB:
     std::sort(nodes.begin(), nodes.end(),
               [](const NodeRef& a, const NodeRef& b) { return a.label < b.label; });
     return nodes;

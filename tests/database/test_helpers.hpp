@@ -1,5 +1,7 @@
 #pragma once
 
+#include "database/db.hpp"
+#include <cstdlib>
 #include <random>
 #include <sstream>
 #include <string>
@@ -13,5 +15,12 @@ namespace TestHelpers {
         std::ostringstream oss;
         oss << prefix << std::hex << dist(rng);
         return oss.str();
+    }
+
+    // the postgres and mysql suites also run against compatible engines (cockroachdb, tidb):
+    // `envVar` names the type, `fallback` when unset
+    inline DatabaseType typeFromEnv(const char* envVar, DatabaseType fallback) {
+        const char* v = std::getenv(envVar);
+        return v && *v ? dearsql::stringToDatabaseType(v) : fallback;
     }
 } // namespace TestHelpers

@@ -7,9 +7,9 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/select.hpp"
 #include "utils/spinner.hpp"
-#include "utils/menu.hpp"
 #include <cfloat>
 #include <cstring>
 #include <spdlog/spdlog.h>
@@ -61,7 +61,7 @@ bool CreateDatabaseDialog::isPostgres() const {
     if (!db_)
         return false;
     DatabaseType type = db_->getConnectionInfo().type;
-    return type == DatabaseType::POSTGRESQL || type == DatabaseType::REDSHIFT;
+    return dearsql::isPostgresFamily(type);
 }
 
 void CreateDatabaseDialog::show(Application* app, std::shared_ptr<DatabaseInterface> db) {
@@ -321,18 +321,24 @@ void CreateDatabaseDialog::render() {
         fieldLabel("Owner");
         stringCombo("##createdb_owner", owners_, ownerIdx_);
 
-        fieldLabel("Template");
-        stringCombo("##createdb_template", templates_, templateIdx_);
+        // cockroachdb has no templates or tablespaces
+        const bool crdb = db_->getConnectionInfo().type == DatabaseType::COCKROACHDB;
+        if (!crdb) {
+            fieldLabel("Template");
+            stringCombo("##createdb_template", templates_, templateIdx_);
+        }
         ImGui::EndDisabled();
 
         fieldLabel("Encoding");
         ImGui::SetNextItemWidth(-FLT_MIN);
         UIUtils::Select("##createdb_encoding", &encodingIdx_, kEncodings, kEncodingCount);
 
-        ImGui::BeginDisabled(loadingOptions_);
-        fieldLabel("Tablespace");
-        stringCombo("##createdb_tablespace", tablespaces_, tablespaceIdx_);
-        ImGui::EndDisabled();
+        if (!crdb) {
+            ImGui::BeginDisabled(loadingOptions_);
+            fieldLabel("Tablespace");
+            stringCombo("##createdb_tablespace", tablespaces_, tablespaceIdx_);
+            ImGui::EndDisabled();
+        }
     } else {
         fieldLabel("Charset");
         ImGui::SetNextItemWidth(-FLT_MIN);

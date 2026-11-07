@@ -31,9 +31,9 @@ namespace {
     constexpr float kButtonW = 90.0f;
 
     // popup index == DatabaseType enum value
-    constexpr const char* kTypeLabels[] = {"SQLite",   "PostgreSQL", "MySQL",  "MariaDB",
-                                           "Redis",    "MongoDB",    "MSSQL",  "Oracle",
-                                           "Redshift", "Cassandra",  "DuckDB", "S3 Storage"};
+    constexpr const char* kTypeLabels[] = {
+        "SQLite", "PostgreSQL", "MySQL",     "MariaDB", "Redis", "MongoDB",     "MSSQL",
+        "Oracle", "Redshift",   "Cassandra", "DuckDB",  "TiDB",  "CockroachDB", "S3 Storage"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
 
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
@@ -95,14 +95,13 @@ namespace {
     bool shouldShowCACertField(DatabaseType type, SslMode mode) {
         if (sslModeNeedsCACert(mode))
             return true;
-        return (type == DatabaseType::MYSQL || type == DatabaseType::MARIADB) &&
-               mode == SslMode::Require;
+        return dearsql::isMySQLFamily(type) && mode == SslMode::Require;
     }
 
     bool sslModesMatchForType(DatabaseType type, SslMode lhs, SslMode rhs) {
         if (lhs == rhs)
             return true;
-        const bool mysqlFamily = type == DatabaseType::MYSQL || type == DatabaseType::MARIADB;
+        const bool mysqlFamily = dearsql::isMySQLFamily(type);
         if (!mysqlFamily)
             return false;
         const bool lhsVerifiesIdentity =
@@ -217,6 +216,14 @@ void ConnectionDialog::applyTypeDefaults(DatabaseType type) {
         break;
     case DatabaseType::REDSHIFT:
         copyToBuf(portBuf_, sizeof(portBuf_), "5439");
+        authIdx_ = 0;
+        break;
+    case DatabaseType::TIDB:
+        copyToBuf(portBuf_, sizeof(portBuf_), "4000");
+        authIdx_ = 0;
+        break;
+    case DatabaseType::COCKROACHDB:
+        copyToBuf(portBuf_, sizeof(portBuf_), "26257");
         authIdx_ = 0;
         break;
     case DatabaseType::CASSANDRA:
@@ -470,11 +477,16 @@ void ConnectionDialog::startServerConnect() {
         break;
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         // empty database is fine: connects without a default schema (#19)
         break;
     case DatabaseType::MSSQL:
         if (info.database.empty())
             info.database = "master";
+        break;
+    case DatabaseType::COCKROACHDB:
+        if (info.database.empty())
+            info.database = "defaultdb";
         break;
     case DatabaseType::REDSHIFT:
         if (info.database.empty())
@@ -898,6 +910,8 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
                                                 sizeof(databaseBuf_));
         if (type == DatabaseType::POSTGRESQL) {
             ImGui::SetItemTooltip("Leave empty to use the default 'postgres' database");
+        } else if (type == DatabaseType::COCKROACHDB) {
+            ImGui::SetItemTooltip("Leave empty to use the default 'defaultdb' database");
         } else if (type == DatabaseType::REDSHIFT) {
             ImGui::SetItemTooltip("Leave empty to use the default 'dev' database");
         }

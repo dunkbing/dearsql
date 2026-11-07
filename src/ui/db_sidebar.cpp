@@ -664,10 +664,12 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     switch (type) {
     case DatabaseType::POSTGRESQL:
     case DatabaseType::REDSHIFT:
+    case DatabaseType::COCKROACHDB:
         tryRefresh.template operator()<PostgresDatabase>();
         break;
     case DatabaseType::MYSQL:
     case DatabaseType::MARIADB:
+    case DatabaseType::TIDB:
         tryRefresh.template operator()<MySQLDatabase>();
         break;
     case DatabaseType::MONGODB:
@@ -701,10 +703,12 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         switch (type) {
         case DatabaseType::POSTGRESQL:
         case DatabaseType::REDSHIFT:
+        case DatabaseType::COCKROACHDB:
             collectNames.template operator()<PostgresDatabase>();
             break;
         case DatabaseType::MYSQL:
         case DatabaseType::MARIADB:
+        case DatabaseType::TIDB:
             collectNames.template operator()<MySQLDatabase>();
             break;
         case DatabaseType::MSSQL:
@@ -910,8 +914,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
-            if (dbType == DatabaseType::POSTGRESQL || dbType == DatabaseType::REDSHIFT ||
-                dbType == DatabaseType::MYSQL || dbType == DatabaseType::MARIADB ||
+            if (dearsql::isPostgresFamily(dbType) ||
+                dearsql::isMySQLFamily(dbType) ||
                 dbType == DatabaseType::MSSQL) {
                 if (ImGui::MenuItem("Create New Database")) {
                     CreateDatabaseDialog::instance().show(&app, db);

@@ -119,8 +119,7 @@ namespace {
     }
 
     bool hasSchemas(dearsql::DatabaseType t) {
-        return t == dearsql::DatabaseType::POSTGRESQL || t == dearsql::DatabaseType::REDSHIFT ||
-               t == dearsql::DatabaseType::MSSQL;
+        return dearsql::isPostgresFamily(t) || t == dearsql::DatabaseType::MSSQL;
     }
 
     json range(const std::string& text, size_t start, size_t end) {

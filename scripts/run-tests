@@ -15,6 +15,8 @@ MSSQL_CONTAINER="dearsql-mssql-test"
 ORACLE_CONTAINER="dearsql-oracle-test"
 CASSANDRA_CONTAINER="dearsql-cassandra-test"
 S3_CONTAINER="dearsql-s3-test"
+COCKROACH_CONTAINER="dearsql-cockroach-test"
+TIDB_CONTAINER="dearsql-tidb-test"
 SSH_CONTAINER="dearsql-ssh-test"
 
 # Docker images
@@ -24,6 +26,9 @@ REDIS_IMAGE="redis:7-alpine"
 MONGODB_IMAGE="mongo:7.0"
 # S3-compatible gateway on a plain directory (minio no longer publishes images)
 S3_IMAGE="versity/versitygw:latest"
+# wire-compatible engines: the postgres and mysql suites run against them too
+COCKROACH_IMAGE="cockroachdb/cockroach:latest"
+TIDB_IMAGE="pingcap/tidb:latest"
 MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
 # xe 21 is x86-only and fails under emulation on arm64 (ORA-00442); 23ai free has arm64
 if [[ "$(uname -m)" == "arm64" || "$(uname -m)" == "aarch64" ]]; then
@@ -49,6 +54,8 @@ MSSQL_PORT="${MSSQL_PORT:-51433}"
 ORACLE_PORT="${ORACLE_PORT:-51521}"
 CASSANDRA_PORT="${CASSANDRA_PORT:-59042}"
 S3_PORT="${S3_PORT:-59000}"
+COCKROACH_PORT="${COCKROACH_PORT:-56257}"
+TIDB_PORT="${TIDB_PORT:-54000}"
 SSH_PORT="${SSH_PORT:-52222}"
 
 # TLS cert directory
@@ -311,6 +318,8 @@ all_ports_open() {
     port_open 127.0.0.1 "$ORACLE_PORT" &&
     port_open 127.0.0.1 "$CASSANDRA_PORT" &&
     port_open 127.0.0.1 "$S3_PORT" &&
+    port_open 127.0.0.1 "$COCKROACH_PORT" &&
+    port_open 127.0.0.1 "$TIDB_PORT" &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$REDIS_TLS_PORT"; } &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SSH_PORT"; } &&
     ssh_test_environment_ready
@@ -402,6 +411,16 @@ setup_containers() {
         --entrypoint sh "$S3_IMAGE" \
         -c "mkdir -p /tmp/vgw && exec versitygw --port :7070 posix /tmp/vgw"
     wait_for_port 127.0.0.1 "$S3_PORT" "S3"
+
+    # ── CockroachDB and TiDB (insecure single nodes, root without a password) ──
+    start_or_create "$COCKROACH_CONTAINER" \
+        -p "127.0.0.1:${COCKROACH_PORT}:26257" \
+        "$COCKROACH_IMAGE" start-single-node --insecure
+    start_or_create "$TIDB_CONTAINER" \
+        -p "127.0.0.1:${TIDB_PORT}:4000" \
+        "$TIDB_IMAGE"
+    wait_for_port 127.0.0.1 "$COCKROACH_PORT" "CockroachDB"
+    wait_for_port 127.0.0.1 "$TIDB_PORT" "TiDB"
 
     # ── MongoDB (with TLS if certs available) ──
     if $has_certs; then
@@ -547,10 +566,19 @@ echo "MSSQL:       $DEARSQL_TEST_MSSQL_HOST:$DEARSQL_TEST_MSSQL_PORT"
 echo "Oracle:      $DEARSQL_TEST_ORACLE_HOST:$DEARSQL_TEST_ORACLE_PORT"
 echo "Cassandra:   $DEARSQL_TEST_CASSANDRA_HOST:$DEARSQL_TEST_CASSANDRA_PORT"
 echo "S3:          $DEARSQL_TEST_S3_ENDPOINT"
+echo "CockroachDB: 127.0.0.1:$COCKROACH_PORT"
+echo "TiDB:        127.0.0.1:$TIDB_PORT"
 echo "SSH:         $DEARSQL_TEST_SSH_HOST:$DEARSQL_TEST_SSH_PORT"
 echo "CA cert:     ${DEARSQL_TEST_CA_CERT:-<not available>}"
 echo ""
 
 cd "$BUILD_DIR"
 ./database_tests "$@"
+# the postgres and mysql suites again on the compatible engines (no tls there)
+DEARSQL_TEST_PG_TYPE=cockroachdb DEARSQL_TEST_PG_PORT="$COCKROACH_PORT" \
+    DEARSQL_TEST_PG_DB=defaultdb DEARSQL_TEST_PG_USER=root DEARSQL_TEST_PG_PASSWORD= \
+    ./database_tests --gtest_filter='Postgres*-PostgresSSL*' "$@"
+DEARSQL_TEST_MYSQL_TYPE=tidb DEARSQL_TEST_MYSQL_PORT="$TIDB_PORT" \
+    DEARSQL_TEST_MYSQL_DB=test DEARSQL_TEST_MYSQL_USER=root DEARSQL_TEST_MYSQL_PASSWORD= \
+    ./database_tests --gtest_filter='MySQL*-MySQLSSL*' "$@"
 ./sql_format_tests "$@"

@@ -66,13 +66,6 @@ namespace {
     constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
     constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
 
-#ifdef NDEBUG
-    constexpr std::size_t kFreeConnectionLimit = 10;
-#else
-    constexpr std::size_t kFreeConnectionLimit = 20;
-#endif
-    constexpr std::size_t kFreeWorkspaceLimit = 2;
-
     // open the pro purchase page in the user's browser
     void openPurchaseUrl() {
         const std::string url = PURCHASE_URL;

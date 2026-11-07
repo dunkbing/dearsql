@@ -298,8 +298,8 @@ namespace mcp {
                      "on open ones.",
                      json::object()),
              toolDef("connect",
-                     "Open one of the user's saved connections by name, or (in dearsql --mcp) "
-                     "a connection URL or database file path for this session only.",
+                     "Open one of the user's saved connections by name, or a connection URL or "
+                     "database file path (the `dearsql connect` command also saves it).",
                      {{"name", {{"type", "string"}}}}, {"name"})});
         if (allowWrites) {
             auto def =
@@ -615,7 +615,8 @@ namespace mcp {
             return found + " is already open.";
         if (auto err = host_.connect(found); !err.empty())
             throw ToolError("Could not connect to " + found + ": " + err);
-        return found + ": connection OK.";
+        const std::string note = host_.remember(found);
+        return found + ": connection OK." + (note.empty() ? "" : " " + note);
     }
 
     std::string Server::addConnection(const json& args) {

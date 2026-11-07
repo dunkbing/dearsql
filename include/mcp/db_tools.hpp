@@ -50,6 +50,11 @@ namespace mcp {
         }
         // save spec (URL or file) as a connection after the user approves; its name,
         // or "" with error set. hosts that can't leave add_connection out
+        // after connect opens name: a note to append, e.g. that it was saved. the
+        // one-shot `dearsql connect` saves a new url or file this way
+        virtual std::string remember(const std::string& name) {
+            return "";
+        }
         virtual bool canSaveConnections() {
             return false;
         }

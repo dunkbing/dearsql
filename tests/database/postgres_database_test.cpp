@@ -1,5 +1,6 @@
 #include "database/postgresql.hpp"
 #include "test_helpers.hpp"
+#include <dearsql/explain.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -602,4 +603,31 @@ TEST_F(PostgresSchemaNodeDDLTest, DroppedSchemaIsRetiredOnRelist) {
 
     // other runs may drop their own schemas meanwhile: ours must be among them
     EXPECT_NE(std::ranges::find(retired, schemaName), retired.end());
+}
+
+// the plan parser on what the server really returns, plain and analyzed
+TEST_F(PostgresDatabaseIntegrationTest, ExplainParsesServerPlans) {
+    const DatabaseType type = database->getConnectionInfo().type;
+    if (!dearsql::explainSql(type, "SELECT 1", false)) {
+        GTEST_SKIP() << "no parsed plans for this engine";
+    }
+    auto create = database->executeQuery(std::format(
+        R"(CREATE TABLE "{}" (id SERIAL PRIMARY KEY, value TEXT); INSERT INTO "{}"(value) SELECT 'v' || g FROM generate_series(1, 50) g)",
+        tableName, tableName));
+    ASSERT_TRUE(create.success()) << create.errorMessage();
+    auto* node = database->getDatabaseData(config.database);
+    ASSERT_NE(node, nullptr);
+    const std::string query = std::format(
+        R"(SELECT a.value FROM "{}" a JOIN "{}" b ON b.id = a.id WHERE a.id > 10 ORDER BY 1)",
+        tableName, tableName);
+    for (const bool analyze : {false, true}) {
+        auto result = node->executeQuery(*dearsql::explainSql(type, query, analyze));
+        ASSERT_TRUE(result.success()) << result.errorMessage();
+        const auto plan = dearsql::parsePlan(type, result[0], analyze);
+        ASSERT_TRUE(plan) << result[0].tableData[0][0];
+        EXPECT_FALSE(plan->root.children.empty());
+        EXPECT_TRUE(plan->root.cost);
+        EXPECT_EQ(plan->root.totalTimeMs.has_value(), analyze);
+        EXPECT_EQ(plan->executionTimeMs.has_value(), analyze);
+    }
 }

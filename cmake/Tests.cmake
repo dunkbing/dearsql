@@ -104,6 +104,7 @@ add_executable(
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
     external/libdearsql/tests/completion_tests.cpp
+    external/libdearsql/tests/explain_tests.cpp
     src/ui/text_editor_format.cpp
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp

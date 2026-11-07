@@ -7,8 +7,10 @@
 #include "ui/text_editor.hpp"
 #include <chrono>
 #include <dearsql/completion.hpp>
+#include <dearsql/explain.hpp>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 // Forward declarations
@@ -47,6 +49,9 @@ public:
     [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
         return node_;
     }
+    [[nodiscard]] const std::optional<dearsql::Plan>& getPlan() const {
+        return plan_;
+    }
 
     // Script file association
     void loadFromScript(const SqlScript& script);
@@ -79,6 +84,18 @@ private:
 
     // Async query execution state
     AsyncOperation<QueryResult> queryExecutionOp_;
+
+    // query plan: the explain in flight, then its parsed result (shown instead of rows)
+    struct PendingExplain {
+        DatabaseType type;
+        bool analyze;
+    };
+    std::optional<PendingExplain> pendingExplain_;
+    std::optional<dearsql::Plan> plan_;
+    mutable bool planRaw_ = false;
+    bool explainAnalyze_ = false;
+    void explainStatement();
+    void showError(std::string message);
 
     // Splitter state for resizing between editor and results
     float splitterPosition = 0.4f;

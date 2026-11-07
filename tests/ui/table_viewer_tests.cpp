@@ -5,6 +5,7 @@
 #include "database/postgres/postgres_database_node.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
+#include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <algorithm>
@@ -163,6 +164,34 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         // the hook path the app installs; no frame runs in between
         tabs->retireNode(std::move(dbNode));
         IM_CHECK(tabs->getTabCount() == before);
+        ctx->Yield();
+    };
+
+    // explain takes the statement under the cursor (here: after its closing ';')
+    // and shows the parsed plan instead of a result grid
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Explain shows the plan");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 1;\nselect * from child c join parent p on p.id = c.parent_id;");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/" ICON_FA_DIAGRAM_PROJECT " Explain");
+        for (int i = 0; i < 300 && !tab->getPlan(); ++i) {
+            ctx->Yield();
+        }
+        IM_CHECK(tab->getPlan().has_value());
+        IM_CHECK(tab->getPlan()->root.children.size() == 2u); // scan child, search parent
+        IM_CHECK(tab->getPlan()->root.children[0].operation.starts_with("SCAN"));
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
         ctx->Yield();
     };
 }

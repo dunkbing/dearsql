@@ -3,6 +3,7 @@
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
+#include "database/postgresql.hpp"
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
@@ -333,5 +334,65 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         AISettingsDialog::instance().show();
         ctx->Yield(5);
         holdForScreenshot(ctx);
+    };
+
+    // explain analyze on postgres; needs the DEARSQL_TEST_PG_* server scripts/run-tests starts
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-explain");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const char* host = std::getenv("DEARSQL_TEST_PG_HOST");
+        if (!host) {
+            ctx->LogError("set DEARSQL_TEST_PG_HOST/_PORT/_DB/_USER/_PASSWORD");
+            return;
+        }
+        auto env = [](const char* name, const char* fallback) {
+            const char* v = std::getenv(name);
+            return std::string(v ? v : fallback);
+        };
+        DatabaseConnectionInfo info;
+        info.name = "shop";
+        info.type = DatabaseType::POSTGRESQL;
+        info.host = host;
+        info.port = std::stoi(env("DEARSQL_TEST_PG_PORT", "5432"));
+        info.database = env("DEARSQL_TEST_PG_DB", "postgres");
+        info.username = env("DEARSQL_TEST_PG_USER", "postgres");
+        info.password = env("DEARSQL_TEST_PG_PASSWORD", "");
+        auto db = std::make_shared<PostgresDatabase>(info);
+        if (auto [ok, err] = db->connect(); !ok) {
+            ctx->LogError("%s", err.c_str());
+            return;
+        }
+        auto& app = Application::getInstance();
+        app.addDatabase(db);
+        db->executeQuery(
+            "DROP TABLE IF EXISTS orders, customers;"
+            "CREATE TABLE customers (id int PRIMARY KEY, name text, country text);"
+            "CREATE TABLE orders (id int PRIMARY KEY, customer_id int REFERENCES customers, "
+            "total numeric, created_at timestamptz);"
+            "INSERT INTO customers SELECT g, 'customer ' || g, (ARRAY['US','DE','VN','FR','JP'])[1 "
+            "+ "
+            "g % 5] FROM generate_series(1, 5000) g;"
+            "INSERT INTO orders SELECT g, 1 + g % 5000, (g % 500) / 3.0, now() - (g % 365) * "
+            "interval '1 day' FROM generate_series(1, 200000) g;"
+            "ANALYZE customers; ANALYZE orders;");
+        auto* node = db->getDatabaseData(info.database);
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            app.getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery("select c.country, count(*), sum(o.total)\nfrom orders o\njoin customers c "
+                      "on c.id = o.customer_id\nwhere o.created_at > now() - interval '30 "
+                      "days'\ngroup by c.country\norder by 3 desc;");
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/###explain_analyze");
+        ctx->ItemClick("**/" ICON_FA_DIAGRAM_PROJECT " Explain");
+        // park the mouse over the sql text: no tooltip over the plan
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.6f, vp->Pos.y + 200.0f));
+        for (int i = 0; i < 600 && !tab->getPlan(); ++i) {
+            ctx->Yield();
+        }
+        holdForScreenshot(ctx);
+        db->executeQuery("DROP TABLE IF EXISTS orders, customers");
+        app.getTabManager()->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
     };
 }

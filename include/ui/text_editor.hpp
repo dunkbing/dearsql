@@ -32,6 +32,9 @@ namespace dearsql {
         [[nodiscard]] std::string GetSelectedText() const {
             return getSelectedText();
         }
+        [[nodiscard]] int GetCursorIndex() const {
+            return cursorIndex_;
+        }
         void SetPlaceholder(const std::string& text);
         void Render(const char* label, ImVec2 size, bool border = false);
         void SetFocus();

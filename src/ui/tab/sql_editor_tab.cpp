@@ -14,13 +14,15 @@
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/plan_view.hpp"
 #include "ui/table_renderer.hpp"
 #include "utils/app_paths.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
-#include "utils/menu.hpp"
+#include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -648,6 +650,28 @@ void SQLEditorTab::renderToolbar() {
         if (UIUtils::Button(ICON_FA_ALIGN_LEFT " Format")) {
             formatSQL();
         }
+        ImGui::SameLine(0, Theme::Spacing::M);
+        const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
+        const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
+        ImGui::BeginDisabled(!canExplain);
+        if (UIUtils::Button(ICON_FA_DIAGRAM_PROJECT " Explain")) {
+            explainStatement();
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", canExplain ? "Show the plan of the statement under the cursor, "
+                                                 "or of the selection"
+                                               : "Query plans are available for PostgreSQL, MySQL "
+                                                 "and SQLite");
+        }
+        if (canExplain && dearsql::supportsExplainAnalyze(type)) {
+            ImGui::SameLine(0, Theme::Spacing::M);
+            ImGui::Checkbox("Analyze###explain_analyze", &explainAnalyze_);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Run the statement to show real row counts and timings. Read "
+                                  "queries only");
+            }
+        }
     }
 
     if (syntaxDiagnostic_.active) {
@@ -672,6 +696,10 @@ void SQLEditorTab::renderServerMessages() const {
 }
 
 void SQLEditorTab::renderQueryResults() const {
+    if (plan_) {
+        PlanView::render(*plan_, planRaw_);
+        return;
+    }
     if (queryResult.empty() && queryResult.messages.empty()) {
         ImGui::Text("%s", LABEL_NO_RESULTS);
         return;
@@ -821,11 +849,13 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
 
     queryError.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
+    pendingExplain_.reset();
+    plan_.reset();
 
     syncBoundNodePointer();
 
     if (auto reason = ReadOnly::rejectReason(node_, query); !reason.empty()) {
-        queryError = std::move(reason);
+        showError(std::move(reason));
         return;
     }
 
@@ -853,11 +883,60 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             });
         return;
     }
+    showError(LABEL_NO_DATABASE_SELECTED);
+}
+
+void SQLEditorTab::showError(std::string message) {
     StatementResult r;
     r.success = false;
-    r.errorMessage = LABEL_NO_DATABASE_SELECTED;
+    r.errorMessage = std::move(message);
     queryResult = QueryResult{};
-    queryResult.statements.push_back(r);
+    queryResult.statements.push_back(std::move(r));
+}
+
+void SQLEditorTab::explainStatement() {
+    if (!node_ || queryExecutionOp_.isRunning()) {
+        return;
+    }
+    const DatabaseType type = node_->getDatabaseType();
+    const bool analyze = explainAnalyze_ && dearsql::supportsExplainAnalyze(type);
+    const bool fromSelection = sqlEditor.HasSelection();
+    const std::string source = fromSelection ? sqlEditor.GetSelectedText() : sqlQuery;
+    const size_t offset =
+        fromSelection ? 0 : static_cast<size_t>(std::max(sqlEditor.GetCursorIndex(), 0));
+    auto [begin, end] = dearsql::statementRangeAt(source, offset, type);
+    // the cursor just after a closing ';': the statement it closes
+    if (begin == end && !fromSelection) {
+        size_t back = std::min(offset, source.size());
+        while (back > 0 && (std::isspace(static_cast<unsigned char>(source[back - 1])) ||
+                            source[back - 1] == ';')) {
+            --back;
+        }
+        if (back > 0) {
+            std::tie(begin, end) = dearsql::statementRangeAt(source, back - 1, type);
+        }
+    }
+    const std::string statement = source.substr(begin, end - begin);
+    plan_.reset();
+    // analyze runs what it is given: a second statement in the selection would run too
+    if (fromSelection && source.find_first_not_of(" \t\r\n;", end) != std::string::npos) {
+        showError("Select a single statement to explain.");
+        return;
+    }
+    if (analyze && !SqlGuard::isReadOnly(statement)) {
+        showError("Analyze runs the statement, so it is only offered for read queries. Turn off "
+                  "Analyze to see the plan of this one.");
+        return;
+    }
+    const auto sql = dearsql::explainSql(type, statement, analyze);
+    if (!sql) {
+        showError("Put the cursor in a statement to explain.");
+        return;
+    }
+    startQueryExecutionAsync(*sql);
+    if (queryExecutionOp_.isRunning()) {
+        pendingExplain_ = PendingExplain{type, analyze};
+    }
 }
 
 void SQLEditorTab::bindNode(IDatabaseNode* node) {
@@ -979,6 +1058,11 @@ void SQLEditorTab::checkQueryExecutionStatus() {
                 SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
             }
 
+            if (pendingExplain_ && !result.statements.empty()) {
+                plan_ = dearsql::parsePlan(pendingExplain_->type, result.statements.front(),
+                                           pendingExplain_->analyze);
+            }
+            pendingExplain_.reset();
             lastQueryDuration =
                 std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
             queryResult = std::move(result);

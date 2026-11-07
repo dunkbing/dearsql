@@ -247,6 +247,7 @@ set(APP_SOURCES
     src/ui/ai_sidebar_panel.cpp
     src/ui/ai_settings_dialog.cpp
     src/ui/markdown_text.cpp
+    src/ui/plan_view.cpp
     src/ui/connection_dialog.cpp
     src/ui/create_database_dialog.cpp
     src/ui/settings_dialog.cpp

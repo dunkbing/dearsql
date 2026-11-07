@@ -1,5 +1,6 @@
 #include "database/mysql.hpp"
 #include "test_helpers.hpp"
+#include <dearsql/explain.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -414,4 +415,30 @@ TEST_F(MySQLDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
 
     const auto after = dbNode->executeQuery("SELECT 1");
     EXPECT_TRUE(after.success()) << after.errorMessage();
+}
+
+// the tree parser on what the server really returns, plain and analyzed
+TEST_F(MySQLDatabaseIntegrationTest, ExplainParsesServerPlans) {
+    const DatabaseType type = database->getConnectionInfo().type;
+    if (!dearsql::explainSql(type, "SELECT 1", false)) {
+        GTEST_SKIP() << "no parsed plans for this engine";
+    }
+    auto create = database->executeQuery(std::format(
+        "CREATE TABLE `{}` (id INT PRIMARY KEY, value TEXT); INSERT INTO `{}` VALUES (1,'a'), "
+        "(2,'b'), (3,'c')",
+        tableName, tableName));
+    ASSERT_TRUE(create.success()) << create.errorMessage();
+    auto* node = database->getDatabaseData(config.database);
+    ASSERT_NE(node, nullptr);
+    const std::string query = std::format(
+        "SELECT a.value FROM `{}` a JOIN `{}` b ON b.id = a.id WHERE a.value <> 'x' ORDER BY 1",
+        tableName, tableName);
+    for (const bool analyze : {false, true}) {
+        auto result = node->executeQuery(*dearsql::explainSql(type, query, analyze));
+        ASSERT_TRUE(result.success()) << result.errorMessage();
+        const auto plan = dearsql::parsePlan(type, result[0], analyze);
+        ASSERT_TRUE(plan) << result[0].tableData[0][0];
+        EXPECT_FALSE(plan->root.children.empty()) << plan->raw;
+        EXPECT_EQ(plan->root.totalTimeMs.has_value(), analyze) << plan->raw;
+    }
 }

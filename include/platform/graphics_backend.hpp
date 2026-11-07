@@ -103,6 +103,10 @@ private:
     GLFWwindow* window_ = nullptr;
 };
 
+// docs screenshots: render the next frame offscreen at `scale` and save it as a png
+void requestFrameCapture(const char* path, float scale);
+bool frameCapturePending();
+
 // ---- Windows: Direct3D 11 via GLFW/HWND ----
 #elif defined(_WIN32)
 

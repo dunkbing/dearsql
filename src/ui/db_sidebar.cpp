@@ -891,7 +891,9 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 db->startConnectionAsync();
             }
         }
-        ImGui::Separator();
+        if (!isCsv) {
+            ImGui::Separator(); // csv: the edit section is empty, Remove has its own
+        }
 
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;

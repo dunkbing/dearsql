@@ -15,7 +15,7 @@
 // test registration, one function per area
 void RegisterSidebarTests(ImGuiTestEngine* engine);
 void RegisterAiPanelTests(ImGuiTestEngine* engine);
-void RegisterMarkdownTests(ImGuiTestEngine* engine);
+void RegisterCodeBlockTests(ImGuiTestEngine* engine);
 void RegisterDocsShots(ImGuiTestEngine* engine);
 void RegisterTableViewerTests(ImGuiTestEngine* engine);
 void RegisterCsvEditorTests(ImGuiTestEngine* engine);
@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
 
     RegisterSidebarTests(engine);
     RegisterAiPanelTests(engine);
-    RegisterMarkdownTests(engine);
+    RegisterCodeBlockTests(engine);
     RegisterTableViewerTests(engine);
     RegisterCsvEditorTests(engine);
     RegisterDocsShots(engine);

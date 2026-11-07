@@ -130,7 +130,6 @@ find_package(mongocxx CONFIG REQUIRED)
 find_package(bsoncxx CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
-find_package(md4c CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
@@ -320,6 +319,12 @@ endif()
 
 add_subdirectory(external/acp-cpp)
 
+# chat markdown. it links a target named imgui; ours is compiled into each executable, so headers only
+add_library(imgui INTERFACE)
+target_include_directories(imgui INTERFACE external/imgui)
+set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # texture_manager.cpp has it
+add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
+
 target_include_directories(
     ${PROJECT_NAME}
     PRIVATE
@@ -374,7 +379,7 @@ target_link_libraries(
         sentry::sentry
         dearsql::dearsql
         httplib::httplib
-        md4c::md4c
+        imgui_rich_md
         miniocpp::miniocpp
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar

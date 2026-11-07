@@ -31,7 +31,6 @@
     "libuv",
     "zlib",
     "cpp-httplib",
-    "md4c",
     "tree-sitter",
     "gtest",
     "nativefiledialog-extended",

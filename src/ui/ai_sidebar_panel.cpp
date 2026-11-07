@@ -86,7 +86,7 @@ namespace {
     constexpr float INPUT_ROW_GAP = Theme::Spacing::S;
     constexpr float INPUT_BOTTOM_MARGIN = Theme::Spacing::M;
     constexpr float INPUT_TEXT_SLACK = 2.0f;
-    constexpr float INPUT_ROUNDING = 10.0f;
+    constexpr float INPUT_ROUNDING = Theme::CornerRadius::SMALL; // as buttons and fields
     constexpr float INPUT_MAX_LINES = 8.0f;
     constexpr const char* INPUT_HINT = "Ask about your database";
 
@@ -1709,7 +1709,10 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
 
     switch (item.kind) {
     case Item::Kind::User:
+        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(colors.subtext0, "You");
+        ImGui::SameLine(0, Theme::Spacing::S);
+        MarkdownText::copyButton("copy_msg", item.text);
         ImGui::TextWrapped("%s", item.text.c_str());
         if (!item.contextNote.empty()) {
             ImGui::TextColored(colors.overlay1, "%s", item.contextNote.c_str());
@@ -1717,7 +1720,10 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         break;
 
     case Item::Kind::Assistant:
+        ImGui::AlignTextToFramePadding();
         ImGui::TextColored(colors.subtext0, "Assistant");
+        ImGui::SameLine(0, Theme::Spacing::S);
+        MarkdownText::copyButton("copy_msg", item.text);
         renderTextWithCodeBlocks(item.text, index);
         break;
 

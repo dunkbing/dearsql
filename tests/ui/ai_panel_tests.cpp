@@ -71,20 +71,20 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
     };
 }
 
-void RegisterMarkdownTests(ImGuiTestEngine* engine) {
-    ImGuiTest* t = IM_REGISTER_TEST(engine, "Assistant", "Markdown table renders as a table");
+void RegisterCodeBlockTests(ImGuiTestEngine* engine) {
+    ImGuiTest* t = IM_REGISTER_TEST(engine, "Assistant", "Code block copy icon copies the code");
     t->GuiFunc = [](ImGuiTestContext*) {
-        ImGui::Begin("md_test", nullptr, ImGuiWindowFlags_NoSavedSettings);
-        MarkdownText::render("| name | rows |\n|---|--:|\n| users | 42 |\n| orders | 7 |", "t");
+        ImGui::SetNextWindowSize(ImVec2(520, 260), ImGuiCond_Always);
+        ImGui::Begin("md_code_test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        MarkdownText::render(
+            "Here:\n\n```sql\nSELECT id, name\nFROM users -- all\nWHERE id = 42;\n```", "c");
         ImGui::End();
     };
     t->TestFunc = [](ImGuiTestContext* ctx) {
         ctx->Yield(2);
-        ImGuiWindow* window = ImGui::FindWindowByName("md_test");
-        IM_CHECK(window != nullptr);
-        // block 0 is the table, so its id is ##md_table_t_0
-        ImGuiTable* table = ImGui::TableFindByID(window->GetID("##md_table_t_0"));
-        IM_CHECK(table != nullptr);
-        IM_CHECK_EQ(table->ColumnsCount, 2);
+        ImGui::SetClipboardText("");
+        ctx->ItemClick("**/###md_cp_c_0"); // the first code block
+        IM_CHECK_STR_EQ(ImGui::GetClipboardText(),
+                        "SELECT id, name\nFROM users -- all\nWHERE id = 42;");
     };
 }

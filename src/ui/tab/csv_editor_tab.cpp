@@ -681,6 +681,8 @@ void CsvEditorTab::renderToolbar() {
 void CsvEditorTab::renderFileMenu() {
     if (!ImGui::BeginPopup("##csv_file_menu"))
         return;
+    // tabs render with zero item spacing; menus put it back, like the others
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     if (ImGui::MenuItem("Save", shortcut("S").c_str(), false, hasUnsavedChanges()))
         save();
     if (ImGui::MenuItem("Save As...", shortcut("S", true).c_str()))
@@ -706,12 +708,15 @@ void CsvEditorTab::renderFileMenu() {
         inputNumber_ = 1000;
         openDialog(Dialog::SplitFile);
     }
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 
 void CsvEditorTab::renderEditMenu() {
     if (!ImGui::BeginPopup("##csv_edit_menu"))
         return;
+    // tabs render with zero item spacing; menus put it back, like the others
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     int r0 = -1, c0 = -1, r1 = -1, c1 = -1;
     const bool hasSel = table_->getSelectionRange(r0, c0, r1, c1);
     const auto rows = selectedDocRows();
@@ -781,12 +786,15 @@ void CsvEditorTab::renderEditMenu() {
         dialogColumn_ = hasSel ? c0 : 0;
         openDialog(Dialog::JumpTo);
     }
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 
 void CsvEditorTab::renderDataMenu() {
     if (!ImGui::BeginPopup("##csv_data_menu"))
         return;
+    // tabs render with zero item spacing; menus put it back, like the others
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     int r0 = -1, c0 = -1, r1 = -1, c1 = -1;
     const bool hasSel = table_->getSelectionRange(r0, c0, r1, c1);
     const auto rows = selectedDocRows();
@@ -833,6 +841,7 @@ void CsvEditorTab::renderDataMenu() {
         deleteDocRows(doc_.flaggedRows());
     if (ImGui::MenuItem("Export Flagged Rows...", nullptr, false, flagged > 0))
         exportFlagged();
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 

@@ -1205,7 +1205,11 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
     ImGui::PopStyleVar();
     if (cellMenuExt) {
         ImGui::Separator();
+        // plain MenuItems: put back the spacing the tab area zeroes
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         cellMenuExt(row, col);
+        ImGui::PopStyleVar();
     }
     ImGui::EndPopup();
 }

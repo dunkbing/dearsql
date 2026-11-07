@@ -79,6 +79,7 @@ private:
     void applyFilter();
     void clearFilter();
     void sortColumn(int col, bool ascending);
+    void undoRedo(bool redo);
     void openDialog(Dialog dialog);
     void showMessage(std::string message);
 

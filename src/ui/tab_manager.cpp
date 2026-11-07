@@ -113,8 +113,14 @@ void TabManager::closeTabsForDatabase(DatabaseInterface* db) {
 
     auto* redisDb = dynamic_cast<RedisDatabase*>(db);
     auto* sqliteDb = dynamic_cast<FileDatabase*>(db);
+    // bucket tabs keep the client they opened with: an edited connection must not reuse them
+    const std::string s3Name =
+        dynamic_cast<S3Database*>(db) ? db->getConnectionInfo().name : std::string();
 
-    std::erase_if(tabs, [db, redisDb, sqliteDb](const std::shared_ptr<Tab>& tab) {
+    std::erase_if(tabs, [db, redisDb, sqliteDb, &s3Name](const std::shared_ptr<Tab>& tab) {
+        if (auto* t = dynamic_cast<S3BrowserTab*>(tab.get()))
+            return !s3Name.empty() && t->connection() == s3Name;
+
         if (auto* t = dynamic_cast<AIChatTab*>(tab.get()))
             return t->panel().database() == db;
 

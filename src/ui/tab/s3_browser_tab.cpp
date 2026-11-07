@@ -44,6 +44,9 @@ S3BrowserTab::S3BrowserTab(const std::string& name, std::shared_ptr<const S3Clie
 
 S3BrowserTab::~S3BrowserTab() {
     cancel_->store(true); // a running transfer stops at its next progress callback
+    // the rest run to completion off the ui thread: workers hold only copies, never the tab
+    listOp_.detach();
+    op_.detach();
 }
 
 void S3BrowserTab::list(bool append) {
@@ -376,7 +379,7 @@ void S3BrowserTab::renderTable() {
             }
             if (UIUtils::BeginContextMenu("##s3_entry_menu")) {
                 selected_ = i;
-                renderEntryMenu(e);
+                renderEntryMenu(e, navigate);
                 ImGui::EndPopup();
             }
             ImGui::TableNextColumn();
@@ -403,12 +406,12 @@ void S3BrowserTab::renderTable() {
         open(*navigate);
 }
 
-void S3BrowserTab::renderEntryMenu(const Entry& entry) {
+void S3BrowserTab::renderEntryMenu(const Entry& entry, std::optional<std::string>& navigate) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     const bool busy = op_.isRunning();
     if (entry.folder) {
         if (ImGui::MenuItem("Open"))
-            open(entry.key);
+            navigate = entry.key;
     } else {
         if (ImGui::MenuItem("Download...", nullptr, false, !busy))
             download(entry);

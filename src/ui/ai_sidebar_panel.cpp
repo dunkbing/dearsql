@@ -1452,7 +1452,7 @@ void AISidebarPanel::renderHeader() {
     }
 
     ImGui::SetNextItemWidth(backendW);
-    if (ImGui::BeginCombo("##ai_backend", currentLabel)) {
+    if (UIUtils::BeginSelect("##ai_backend", currentLabel)) {
         for (int i = 0; i < static_cast<int>(cat.size()); ++i) {
             if (ImGui::Selectable(cat[static_cast<size_t>(i)].name.c_str(), backendIndex_ == i)) {
                 switchBackend(i);
@@ -1461,25 +1461,25 @@ void AISidebarPanel::renderHeader() {
         if (ImGui::Selectable("API key", backendIndex_ == apiIndex)) {
             switchBackend(apiIndex);
         }
-        ImGui::EndCombo();
+        UIUtils::EndSelect();
     }
 
     // the model picker shares the row with the backend picker
     if (isApi) {
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::SetNextItemWidth(modelW);
-        if (ImGui::BeginCombo("##ai_api_model", API_MODELS[apiModelIndex_].label)) {
+        if (UIUtils::BeginSelect("##ai_api_model", API_MODELS[apiModelIndex_].label)) {
             for (int i = 0; i < API_MODEL_COUNT; ++i) {
                 if (ImGui::Selectable(API_MODELS[i].label, apiModelIndex_ == i)) {
                     apiModelIndex_ = i;
                 }
             }
-            ImGui::EndCombo();
+            UIUtils::EndSelect();
         }
     } else if (agentModelOption) {
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::SetNextItemWidth(modelW);
-        if (ImGui::BeginCombo("##acp_model", agentModelLabel.c_str())) {
+        if (UIUtils::BeginSelect("##acp_model", agentModelLabel.c_str())) {
             const std::string current = agentModelOption->currentValue.is_string()
                                             ? agentModelOption->currentValue.get<std::string>()
                                             : std::string{};
@@ -1493,7 +1493,7 @@ void AISidebarPanel::renderHeader() {
                     ImGui::SetTooltip("%s", option.description.c_str());
                 }
             }
-            ImGui::EndCombo();
+            UIUtils::EndSelect();
         }
     }
     // api keys and the agent database toggle live in the same dialog, so every backend

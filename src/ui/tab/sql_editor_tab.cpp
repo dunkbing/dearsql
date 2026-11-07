@@ -20,6 +20,7 @@
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
+#include "utils/menu.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -404,7 +405,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(200.0f);
-    if (ImGui::BeginCombo("##schema_combo", preview.c_str())) {
+    if (UIUtils::BeginSelect("##schema_combo", preview.c_str())) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
         bool first = true;
@@ -453,7 +454,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
             }
         }
         ImGui::PopStyleVar();
-        ImGui::EndCombo();
+        UIUtils::EndSelect();
     }
 
     if (queryExecutionOp_.isRunning())
@@ -584,7 +585,7 @@ void SQLEditorTab::renderDatabaseCombo(const std::string& host, const char* labe
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(150.0f);
-    if (ImGui::BeginCombo("##db_combo", currentName.c_str())) {
+    if (UIUtils::BeginSelect("##db_combo", currentName.c_str())) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
         for (const auto& name : dbNames) {
@@ -600,7 +601,7 @@ void SQLEditorTab::renderDatabaseCombo(const std::string& host, const char* labe
             }
         }
         ImGui::PopStyleVar();
-        ImGui::EndCombo();
+        UIUtils::EndSelect();
     }
 
     if (queryExecutionOp_.isRunning())

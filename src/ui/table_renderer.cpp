@@ -633,7 +633,7 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::OpenPopup(ImGui::GetID("##dropdown_edit"));
                 comboNeedsOpen = false;
             }
-            if (ImGui::BeginCombo("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
+            if (UIUtils::BeginSelect("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
                 comboHasOpened = true;
                 for (const auto& option : dropdownIt->second) {
                     bool selected = (option == std::string(editBuffer));
@@ -645,7 +645,7 @@ void TableRenderer::renderCell(int row, int col) {
                     if (selected)
                         ImGui::SetItemDefaultFocus();
                 }
-                ImGui::EndCombo();
+                UIUtils::EndSelect();
             } else if (comboHasOpened) {
                 exitEditMode(false);
             }

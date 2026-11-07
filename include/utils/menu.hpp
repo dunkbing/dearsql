@@ -30,4 +30,20 @@ namespace UIUtils {
         ImGui::PopStyleVar();
         return open;
     }
+
+    // dropdowns: same padding and item spacing as the menus. close with EndSelect()
+    inline bool BeginSelect(const char* id, const char* preview, ImGuiComboFlags flags = 0) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kMenuPadding, kMenuPadding));
+        const bool open = ImGui::BeginCombo(id, preview, flags);
+        ImGui::PopStyleVar();
+        if (open)
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        return open;
+    }
+
+    inline void EndSelect() {
+        ImGui::PopStyleVar();
+        ImGui::EndCombo();
+    }
 } // namespace UIUtils

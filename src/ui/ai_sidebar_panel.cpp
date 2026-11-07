@@ -438,56 +438,6 @@ void AISidebarPanel::openSession(const AiSession& session) {
     focusInput_ = true;
 }
 
-void AISidebarPanel::renderSessionPopup() {
-    const auto& colors = Application::getInstance().getCurrentColors();
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
-    if (!UIUtils::BeginMenuPopup("##ai_session_popup")) {
-        return;
-    }
-    if (sessionRows_.empty()) {
-        ImGui::TextDisabled("No earlier sessions");
-    }
-    int deleteId = 0;
-    for (const auto& row : sessionRows_) {
-        ImGui::PushID(row.id);
-        const std::string age = relativeAge(row.updatedAt);
-        const float ageW = ImGui::CalcTextSize(age.c_str()).x;
-        if (ImGui::Selectable("##row", row.id == currentSessionId_)) {
-            openSession(row);
-            ImGui::CloseCurrentPopup();
-        }
-        if (UIUtils::BeginContextMenu("##ctx")) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-            if (ImGui::MenuItem("Delete")) {
-                deleteId = row.id;
-            }
-            ImGui::PopStyleVar();
-            ImGui::EndPopup();
-        }
-        // title left, age right, painted over the selectable so the cursor never moves
-        const ImVec2 min = ImGui::GetItemRectMin();
-        const ImVec2 max = ImGui::GetItemRectMax();
-        const float textY = min.y + (max.y - min.y - ImGui::GetTextLineHeight()) * 0.5f;
-        ImDrawList* draw = ImGui::GetWindowDrawList();
-        draw->PushClipRect(min, ImVec2(max.x - ageW - Theme::Spacing::L, max.y), true);
-        draw->AddText(ImVec2(min.x + Theme::Spacing::S, textY), ImGui::GetColorU32(ImGuiCol_Text),
-                      row.title.c_str());
-        draw->PopClipRect();
-        draw->AddText(ImVec2(max.x - ageW - Theme::Spacing::S, textY),
-                      ImGui::GetColorU32(colors.subtext0), age.c_str());
-        ImGui::PopID();
-    }
-    if (deleteId > 0) {
-        Application::getInstance().getAppState()->deleteAiSession(deleteId);
-        std::erase_if(sessionRows_, [deleteId](const AiSession& s) { return s.id == deleteId; });
-        if (deleteId == currentSessionId_) {
-            currentSessionId_ = 0; // the next save creates a fresh row
-        }
-    }
-    ImGui::EndPopup();
-}
-
 // ---------------------------------------------------------------- context
 
 std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
@@ -1443,11 +1393,9 @@ void AISidebarPanel::renderHeader() {
     // tooltips inherit it, so without this their contents sit flush against the edges
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
 
-    // right: sessions, new. the settings gear follows the pickers
+    // the settings gear follows the pickers
     const float iconW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2.0f;
-    const float iconsW = iconW * 2.0f + Theme::Spacing::S;
-    const float rowAvail =
-        ImGui::GetContentRegionAvail().x - iconsW - style.ItemSpacing.x - iconW - Theme::Spacing::S;
+    const float rowAvail = ImGui::GetContentRegionAvail().x - iconW - Theme::Spacing::S;
     float backendW = comboWidth(backendLabels);
     float modelW = isApi              ? comboWidth(modelLabels)
                    : agentModelOption ? comboWidth(agentModelLabels)
@@ -1527,29 +1475,6 @@ void AISidebarPanel::renderHeader() {
         ImGui::SetTooltip("AI settings");
     }
     ImGui::PopStyleVar();
-
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - iconsW);
-    // IconButton keeps the frame transparent and skips the drop shadow, matching the
-    // toolbar icons in the table viewer
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-    if (UIUtils::IconButton(ICON_FA_CLOCK_ROTATE_LEFT "###ai_sessions")) {
-        sessionRows_ = Application::getInstance().getAppState()->getAiSessions(
-            db_ ? db_->getConnectionId() : 0, backendId());
-        ImGui::OpenPopup("##ai_session_popup");
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Sessions");
-    }
-    renderSessionPopup();
-    ImGui::SameLine(0, Theme::Spacing::S);
-    if (UIUtils::IconButton(ICON_FA_SQUARE_PLUS "###ai_new_session")) {
-        startNewSession();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("New session");
-    }
-    ImGui::PopStyleColor();
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
 }

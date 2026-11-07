@@ -126,7 +126,6 @@ private:
     // sessions: the api transcript is ours, acp agents replay theirs via session/load
     void saveCurrentSession();
     void startNewSession();
-    void renderSessionPopup();
 
     // sending
     void sendMessage();
@@ -186,7 +185,6 @@ private:
     int currentSessionId_ = 0;           // ai_sessions row, 0 until the first turn is saved
     std::string resumeSessionId_;        // acp session to load on the next agent start
     bool wasBusy_ = false;               // saves the session on the busy → idle edge
-    std::vector<AiSession> sessionRows_; // fetched when the picker opens
     bool agentMissing_ = false;
     std::string agentMissingReason_;
     nlohmann::json pendingPromptBlocks_ = nlohmann::json::array(); // queued until session ready

@@ -448,7 +448,7 @@ namespace dearsql {
             int maxLine = static_cast<int>(lineStarts_.size());
             char buf[16];
             snprintf(buf, sizeof(buf), "%d", readOnly_ ? maxLine : std::max(maxLine, 999));
-            lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 20.0f;
+            lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 14.0f;
             if (rangeProvider_) {
                 lineNumberWidth_ += ImGui::GetFontSize() + 6.0f; // the play icons
             }
@@ -633,7 +633,7 @@ namespace dearsql {
             snprintf(buf, sizeof(buf), "%d", i + 1);
 
             float textW = ImGui::CalcTextSize(buf).x;
-            float x = textOrigin_.x - 18.0f - textW;
+            float x = textOrigin_.x - 10.0f - textW; // the text area adds its own 8px margin
 
             ImU32 color =
                 (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;

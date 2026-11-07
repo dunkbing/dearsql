@@ -8,6 +8,7 @@
 #include "utils/button.hpp"
 #include "utils/cli_command.hpp"
 #include "utils/master_secret.hpp"
+#include "utils/menu.hpp"
 
 #include <cfloat>
 #include <format>
@@ -67,13 +68,16 @@ void SettingsDialog::render() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Theme");
     ImGui::SameLine();
-    bool dark = app.isDarkTheme();
-    if (ImGui::RadioButton("Light", !dark)) {
-        app.setDarkTheme(false);
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Dark", dark)) {
-        app.setDarkTheme(true);
+    ImGui::SetNextItemWidth(220.0f);
+    if (UIUtils::BeginSelect("##theme", app.getTheme().name)) {
+        for (const auto& theme : Theme::THEMES) {
+            const bool selected = &theme == &app.getTheme();
+            if (ImGui::Selectable(theme.name, selected))
+                app.setTheme(theme.id);
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        UIUtils::EndSelect();
     }
 
     float scale = app.getFontScale();
@@ -147,8 +151,9 @@ void SettingsDialog::render() {
         onReportBug();
     }
 
-    ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
-    if (UIUtils::Button("Close", UIUtils::ButtonVariant::Secondary, ImVec2(-1, 0))) {
+    // esc closes, unless a field, dropdown or a dialog on top has it
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive() &&
+        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         open_ = false;
         ImGui::CloseCurrentPopup();
     }

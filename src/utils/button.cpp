@@ -58,16 +58,16 @@ namespace {
             ImGui::CalcItemSize(size, textSize.x + padding.x * 2.0f, textSize.y + padding.y * 2.0f);
         const ImVec2 cursorPos = ImGui::GetCursorScreenPos();
         const float baseAlpha = Application::getInstance().isDarkTheme() ? 0.28f : 0.16f;
-        constexpr int layers = 5;
+        constexpr int layers = 2; // a faint lift, not a drop shadow
 
         for (int layer = layers; layer >= 0; --layer) {
-            const float spread = static_cast<float>(layer) * 0.8f;
+            const float spread = static_cast<float>(layer) * 0.5f;
             const float strength =
                 1.0f - static_cast<float>(layer) / static_cast<float>(layers + 1);
             const float alpha = baseAlpha * strength * 0.22f;
-            const ImVec2 min(cursorPos.x - spread, ImMax(cursorPos.y + 2.0f - spread, cursorPos.y));
+            const ImVec2 min(cursorPos.x - spread, ImMax(cursorPos.y + 1.0f - spread, cursorPos.y));
             const ImVec2 max(cursorPos.x + buttonSize.x + spread,
-                             cursorPos.y + buttonSize.y + 2.0f + spread);
+                             cursorPos.y + buttonSize.y + 1.0f + spread);
 
             ImGui::GetWindowDrawList()->AddRectFilled(
                 min, max, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, alpha)),

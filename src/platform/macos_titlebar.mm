@@ -914,7 +914,7 @@ void MacOSTitlebar::setup() {
     NSLog(@"Custom titlebar and toolbar configured");
 
     // set background color to match app theme
-    const auto& colors = app_->isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
     NSColor* bgColor = [NSColor colorWithRed:colors.base.x
                                        green:colors.base.y
                                         blue:colors.base.z
@@ -942,7 +942,7 @@ void MacOSTitlebar::applyTheme(bool isDark) {
     if (!nsWindow)
         return;
 
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
     NSColor* bgColor = [NSColor colorWithRed:colors.base.x
                                        green:colors.base.y
                                         blue:colors.base.z

@@ -192,7 +192,7 @@ void WindowsPlatform::renderFrame() {
         titlebar_->applyTheme(app_->isDarkTheme());
     }
 
-    const auto& clearCol = app_->isDarkTheme() ? Theme::NATIVE_DARK.base : Theme::NATIVE_LIGHT.base;
+    const auto& clearCol = Application::getInstance().getCurrentColors().base;
     backend_->beginFrame(clearCol);
 
     ImGui_ImplGlfw_NewFrame();

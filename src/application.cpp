@@ -204,9 +204,9 @@ bool Application::initialize() {
     }
 
     const std::string themeStr = appState->getSetting("theme", "dark");
-    darkTheme = (themeStr != "light");
-    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
-    platform_->applyTheme(darkTheme);
+    theme_ = &Theme::themeById(themeStr);
+    Theme::ApplyNativeTheme(theme_->colors);
+    platform_->applyTheme(theme_->dark);
 
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
     try {
@@ -387,16 +387,16 @@ void Application::cleanup() {
     spdlog::debug("Application cleanup completed");
 }
 
-void Application::setDarkTheme(const bool dark) {
-    darkTheme = dark;
-    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+void Application::setTheme(const std::string_view id) {
+    theme_ = &Theme::themeById(id);
+    Theme::ApplyNativeTheme(theme_->colors);
     if (platform_) {
-        platform_->applyTheme(darkTheme);
+        platform_->applyTheme(theme_->dark);
     }
     if (appState) {
-        appState->setSetting("theme", darkTheme ? "dark" : "light");
+        appState->setSetting("theme", theme_->id);
     }
-    SentryUtils::addBreadcrumb("app", "Theme changed", "theme", darkTheme ? "dark" : "light");
+    SentryUtils::addBreadcrumb("app", "Theme changed", "theme", theme_->id);
 }
 
 void Application::setFontScale(const float scale) {
@@ -430,7 +430,7 @@ bool Application::isShutdownRequested() const {
 }
 
 const Theme::Colors& Application::getCurrentColors() const {
-    return darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    return theme_->colors;
 }
 
 std::shared_ptr<DatabaseInterface> Application::getSelectedDatabase() const {
@@ -575,7 +575,7 @@ void Application::setupImGuiContext() const {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     fonts::setup();
     ImGui::StyleColorsDark();
-    Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
+    Theme::ApplyNativeTheme(theme_->colors);
 }
 
 #if defined(__APPLE__) || defined(_WIN32)
@@ -856,7 +856,7 @@ void Application::renderMainUI() {
 
     // Customize titlebar colors — use mantle so the dock tab bar visually
     // matches the native titlebar through the vibrancy layer.
-    const auto& colors = darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = theme_->colors;
     ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.mantle);
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.mantle);
     ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.mantle);

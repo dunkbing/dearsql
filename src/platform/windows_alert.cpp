@@ -50,7 +50,7 @@ namespace {
         std::vector<AlertButton> buttons;
         std::vector<std::wstring> wideLabels;
         std::vector<AlertButtonLayout> layoutButtons;
-        Theme::Colors colors = Theme::NATIVE_DARK;
+        Theme::Colors colors = Theme::ONE_DARK;
         HWND parent = nullptr;
         HFONT bodyFont = nullptr;
         HFONT titleFont = nullptr;

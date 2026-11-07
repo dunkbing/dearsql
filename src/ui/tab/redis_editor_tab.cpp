@@ -398,9 +398,8 @@ RedisEditorTab::~RedisEditorTab() {
 }
 
 void RedisEditorTab::render() {
-    const bool dark = Application::getInstance().isDarkTheme();
     editor_.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     checkCommandExecutionStatus();
 

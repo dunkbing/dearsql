@@ -19,9 +19,8 @@ RoutineViewerTab::RoutineViewerTab(IDatabaseNode* node, const Routine& routine)
     : Tab(makeTabName(routine), TabType::ROUTINE_VIEWER), node_(node), routine_(routine) {}
 
 void RoutineViewerTab::render() {
-    const bool dark = Application::getInstance().isDarkTheme();
     editor_.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     if (!definitionLoaded_ && !fetchOp_.isRunning() && !loadError_) {
         fetchDefinitionAsync();

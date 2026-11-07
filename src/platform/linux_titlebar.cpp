@@ -293,7 +293,7 @@ void LinuxTitlebar::applyTheme(bool isDark) {
                                                    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 
-    const auto& colors = isDark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT;
+    const auto& colors = Application::getInstance().getCurrentColors();
 
     auto toHex = [](const ImVec4& c) -> std::string {
         char buf[8];

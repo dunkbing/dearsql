@@ -49,9 +49,8 @@ MongoEditorTab::~MongoEditorTab() {
 }
 
 void MongoEditorTab::render() {
-    const bool dark = Application::getInstance().isDarkTheme();
     editor_.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     if (!completionKeywordsSet_) {
         updateCompletionKeywords();

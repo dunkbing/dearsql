@@ -837,7 +837,6 @@ void TableViewerTab::showSaveConfirmationDialog() {
     }
 
     const auto& colors = Application::getInstance().getCurrentColors();
-    const bool dark = Application::getInstance().isDarkTheme();
 
     // Only open popup once when dialog first shows
     if (!dialogOpened) {
@@ -861,7 +860,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
     // Sync palette with current theme every frame
     saveDialogEditor_.SetPalette(
-        dearsql::TextEditor::FromTheme(dark ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
@@ -1526,7 +1525,7 @@ void TableViewerTab::renderDdlTab() {
         return;
     }
     ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
-        Application::getInstance().isDarkTheme() ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT));
+        Application::getInstance().getCurrentColors()));
     ddlEditor_.Render("##ddl_editor", ImVec2(-1, -1), false);
 }
 

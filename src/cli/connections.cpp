@@ -46,6 +46,9 @@ std::string CliConnections::add(const std::string& spec, std::string& error) {
             return "";
         }
         info = std::move(parsed.info);
+        // sqlite://relative.db: pin it to this folder, it may be saved
+        if (!info.path.empty() && info.path != ":memory:")
+            info.path = std::filesystem::absolute(info.path).string();
         if (info.name.empty())
             info.name = info.host.empty()
                             ? spec
@@ -61,10 +64,12 @@ std::string CliConnections::add(const std::string& spec, std::string& error) {
         error = "'" + spec + "' is not a saved connection, a connection URL, or a file";
         return "";
     }
-    // a url or file already saved: use the saved one (its name, its ssh settings)
+    // a url or file already saved: use the saved one (its name, its ssh settings). tls
+    // must match too, or a url asking for verify-full could end up on a weaker saved one
     for (auto& s : entries_) {
         const auto& o = s->info;
-        if (s->saved && o.type == info.type &&
+        if (s->saved && o.type == info.type && o.sslmode == info.sslmode &&
+            o.sslCACertPath == info.sslCACertPath &&
             (info.path.empty() ? o.host == info.host && o.port == info.port &&
                                      o.database == info.database && o.username == info.username
                                : o.path == info.path))

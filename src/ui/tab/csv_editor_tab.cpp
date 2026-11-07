@@ -8,6 +8,7 @@
 #include "ui/auto_complete_input.hpp"
 #include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/menu.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -679,7 +680,7 @@ void CsvEditorTab::renderToolbar() {
 }
 
 void CsvEditorTab::renderFileMenu() {
-    if (!ImGui::BeginPopup("##csv_file_menu"))
+    if (!UIUtils::BeginMenuPopup("##csv_file_menu"))
         return;
     // tabs render with zero item spacing; menus put it back, like the others
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -713,7 +714,7 @@ void CsvEditorTab::renderFileMenu() {
 }
 
 void CsvEditorTab::renderEditMenu() {
-    if (!ImGui::BeginPopup("##csv_edit_menu"))
+    if (!UIUtils::BeginMenuPopup("##csv_edit_menu"))
         return;
     // tabs render with zero item spacing; menus put it back, like the others
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -791,7 +792,7 @@ void CsvEditorTab::renderEditMenu() {
 }
 
 void CsvEditorTab::renderDataMenu() {
-    if (!ImGui::BeginPopup("##csv_data_menu"))
+    if (!UIUtils::BeginMenuPopup("##csv_data_menu"))
         return;
     // tabs render with zero item spacing; menus put it back, like the others
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));

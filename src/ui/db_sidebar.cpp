@@ -24,6 +24,7 @@
 #include "ui/query_history.hpp"
 #include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/menu.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
 #include <algorithm>
@@ -97,7 +98,7 @@ void DatabaseSidebarNew::renderEmpty() {
         ImGui::OpenPopup("AddDatabasePopup");
     }
 
-    if (ImGui::BeginPopup("AddDatabasePopup")) {
+    if (UIUtils::BeginMenuPopup("AddDatabasePopup")) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
@@ -264,7 +265,7 @@ void DatabaseSidebarNew::renderStructure() {
         ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::IsAnyItemHovered()) {
         ImGui::OpenPopup("SidebarContextMenu");
     }
-    if (ImGui::BeginPopup("SidebarContextMenu")) {
+    if (UIUtils::BeginMenuPopup("SidebarContextMenu")) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
@@ -376,7 +377,7 @@ void DatabaseSidebarNew::renderHistory() {
             ImGui::EndTooltip();
         }
 
-        if (ImGui::BeginPopupContextItem("history_entry_menu")) {
+        if (UIUtils::BeginContextMenu("history_entry_menu")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Copy to clipboard")) {
@@ -770,7 +771,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                                                     countStr.c_str());
             }
 
-            if (ImGui::BeginPopup(popupId.c_str())) {
+            if (UIUtils::BeginMenuPopup(popupId.c_str())) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 std::sort(dbNames.begin(), dbNames.end());
@@ -848,7 +849,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         return;
     }
 
-    if (ImGui::BeginPopupContextItem(nullptr)) {
+    if (UIUtils::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
 
@@ -1039,7 +1040,7 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", session.title.c_str());
         }
-        if (ImGui::BeginPopupContextItem()) {
+        if (UIUtils::BeginContextMenu()) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Open")) {

@@ -18,6 +18,7 @@
 #include "ui/tab/sqlite_sequence_viewer_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
+#include "utils/menu.hpp"
 #include <algorithm>
 #include <format>
 #include <iostream>
@@ -338,7 +339,7 @@ void TabManager::renderTabs() {
         }
         ImGui::PushID(windowName.c_str());
         ImGui::OpenPopupOnItemClick("TabContextMenu", ImGuiPopupFlags_MouseButtonRight);
-        if (ImGui::BeginPopup("TabContextMenu")) {
+        if (UIUtils::BeginMenuPopup("TabContextMenu")) {
             const bool hasOthers = tabs.size() > 1;
             const auto targetIt = std::ranges::find_if(
                 tabs, [tabId](const auto& t) { return t && t->getId() == tabId; });

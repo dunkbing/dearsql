@@ -6,20 +6,21 @@
 #include "database/ddl_utils.hpp"
 #include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
-#include "ui/env_tag.hpp"
 #include "imgui.h"
 #include "themes.hpp"
+#include "ui/env_tag.hpp"
 #include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
+#include "utils/menu.hpp"
 #include "utils/select.hpp"
 #include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
 #include <cfloat>
 #include <cstdlib>
 #include <cstring>
-#include <unordered_set>
 #include <format>
 #include <iterator>
+#include <unordered_set>
 
 namespace {
     constexpr const char* kPopupId = "###connection_dialog";
@@ -737,7 +738,7 @@ void ConnectionDialog::renderAppearanceRow() {
         if (ImGui::Button(ICON_FA_CHEVRON_DOWN "##conn_env_tag_pick")) {
             ImGui::OpenPopup("##conn_env_tag_list");
         }
-        if (ImGui::BeginPopup("##conn_env_tag_list")) {
+        if (UIUtils::BeginMenuPopup("##conn_env_tag_list")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             for (const auto& tag : knownTags_) {

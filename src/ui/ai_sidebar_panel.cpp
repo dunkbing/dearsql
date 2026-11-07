@@ -1,4 +1,5 @@
 #include "ui/ai_sidebar_panel.hpp"
+#include "utils/menu.hpp"
 
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
@@ -434,7 +435,7 @@ void AISidebarPanel::openSession(const AiSession& session) {
 void AISidebarPanel::renderSessionPopup() {
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
-    if (!ImGui::BeginPopup("##ai_session_popup")) { // padding comes from the theme
+    if (!UIUtils::BeginMenuPopup("##ai_session_popup")) {
         return;
     }
     if (sessionRows_.empty()) {
@@ -449,7 +450,7 @@ void AISidebarPanel::renderSessionPopup() {
             openSession(row);
             ImGui::CloseCurrentPopup();
         }
-        if (ImGui::BeginPopupContextItem("##ctx")) {
+        if (UIUtils::BeginContextMenu("##ctx")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Delete")) {

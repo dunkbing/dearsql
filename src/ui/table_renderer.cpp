@@ -7,6 +7,7 @@
 #include "themes.hpp"
 #include "utils/button.hpp"
 #include "utils/csv_document.hpp"
+#include "utils/menu.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -47,38 +48,6 @@ namespace {
         return v;
     }
 
-    bool paddedMenuItem(const char* label, bool enabled = true) {
-        const auto& colors = Application::getInstance().getCurrentColors();
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-        const float padX = style.FramePadding.x + Theme::Spacing::S;
-        const float padY = style.FramePadding.y + Theme::Spacing::XS;
-        const float width = std::max(ImGui::GetContentRegionAvail().x, textSize.x + padX * 2.0f);
-        const float height = textSize.y + padY * 2.0f;
-
-        if (!enabled)
-            ImGui::BeginDisabled();
-        const bool pressed = ImGui::InvisibleButton(label, ImVec2(width, height));
-        const bool hovered = ImGui::IsItemHovered();
-        const bool active = ImGui::IsItemActive();
-        if (!enabled)
-            ImGui::EndDisabled();
-
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        if (enabled && (hovered || active)) {
-            drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + height),
-                                    ImGui::GetColorU32(active ? colors.surface2 : colors.surface1),
-                                    style.FrameRounding);
-        }
-
-        const ImU32 textColor = ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-        drawList->AddText(ImVec2(pos.x + padX, pos.y + padY), textColor, label);
-
-        if (pressed)
-            ImGui::CloseCurrentPopup();
-        return pressed && enabled;
-    }
 } // namespace
 
 TableRenderer::TableRenderer() {
@@ -1140,7 +1109,7 @@ void TableRenderer::copyRowToClipboard(int row) const {
 
 void TableRenderer::renderCellContextMenu(int row, int col) {
     const std::string menuId = std::format("##cell_ctx_{}_{}", row, col);
-    if (!ImGui::BeginPopupContextItem(menuId.c_str())) {
+    if (!UIUtils::BeginContextMenu(menuId.c_str())) {
         return;
     }
 
@@ -1150,19 +1119,18 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
             onCellSelect(row, col);
     }
 
-    const ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
 
-    if (paddedMenuItem(ICON_FA_COPY " Copy cell")) {
+    if (ImGui::MenuItem(ICON_FA_COPY " Copy cell")) {
         copyCellToClipboard(row, col);
     }
-    if (paddedMenuItem(ICON_FA_CLONE " Copy row")) {
+    if (ImGui::MenuItem(ICON_FA_CLONE " Copy row")) {
         copyRowToClipboard(row);
     }
 
     const bool canFilter = onFilterByValue && row >= 0 && row < static_cast<int>(data.size()) &&
                            col >= 0 && col < static_cast<int>(data[row].size());
-    if (paddedMenuItem(ICON_FA_FILTER " Filter by value", canFilter)) {
+    if (ImGui::MenuItem(ICON_FA_FILTER " Filter by value", nullptr, false, canFilter)) {
         onFilterByValue(row, col, data[row][col]);
     }
 
@@ -1172,7 +1140,7 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
         row < static_cast<int>(data.size()) && col >= 0 &&
         col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col])) {
         if (const std::string target = foreignKeyTargetCb(col); !target.empty()) {
-            if (paddedMenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
+            if (ImGui::MenuItem(std::format(ICON_FA_ARROW_RIGHT " Go to {}", target).c_str())) {
                 onFollowForeignKey(row, col);
             }
         }
@@ -1182,7 +1150,7 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
 
     const bool canEdit = config.allowEditing && !config.nonEditableColumns.contains(col) &&
                          (!cellEditableCb || cellEditableCb(row, col));
-    if (paddedMenuItem(ICON_FA_PEN_TO_SQUARE " Edit row", canEdit)) {
+    if (ImGui::MenuItem(ICON_FA_PEN_TO_SQUARE " Edit row", nullptr, false, canEdit)) {
         enterEditMode(row, col);
     }
 
@@ -1193,24 +1161,20 @@ void TableRenderer::renderCellContextMenu(int row, int col) {
         row < static_cast<int>(data.size()) && col >= 0 &&
         col < static_cast<int>(data[row].size()) && !isNullSentinel(data[row][col]) &&
         (!cellEditableCb || cellEditableCb(row, col));
-    if (canSetNull && paddedMenuItem("Set NULL")) {
+    if (canSetNull && ImGui::MenuItem("Set NULL")) {
         onSetNull(row, col);
     }
 
     const bool canDelete = static_cast<bool>(onDeleteRow);
-    if (paddedMenuItem(ICON_FA_TRASH_CAN " Delete row", canDelete)) {
+    if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Delete row", nullptr, false, canDelete)) {
         onDeleteRow(row);
     }
 
-    ImGui::PopStyleVar();
     if (cellMenuExt) {
         ImGui::Separator();
-        // plain MenuItems: put back the spacing the tab area zeroes
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
-                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         cellMenuExt(row, col);
-        ImGui::PopStyleVar();
     }
+    ImGui::PopStyleVar();
     ImGui::EndPopup();
 }
 
@@ -1580,7 +1544,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-    if (ImGui::BeginPopup(popupId.c_str())) {
+    if (UIUtils::BeginMenuPopup(popupId.c_str())) {
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
         if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {
             if (isAsc) {

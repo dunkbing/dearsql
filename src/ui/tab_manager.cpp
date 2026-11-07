@@ -3,6 +3,7 @@
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
 #include "database/redis.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "ui/fonts.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
@@ -14,6 +15,7 @@
 #include "ui/tab/redis_key_viewer_tab.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
 #include "ui/tab/routine_viewer_tab.hpp"
+#include "ui/tab/s3_browser_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/sqlite_sequence_viewer_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
@@ -597,6 +599,27 @@ std::shared_ptr<Tab> TabManager::createCsvEditorTab(const std::string& filePath)
     }
 
     auto tab = std::make_shared<CsvEditorTab>(tabName, filePath);
+    registerOpenedTab(tab);
+    return tab;
+}
+
+std::shared_ptr<Tab> TabManager::createS3BrowserTab(const std::shared_ptr<S3Database>& db,
+                                                    const std::string& bucket) {
+    auto client = db ? db->client() : nullptr;
+    if (!client)
+        return nullptr;
+    const std::string& connection = db->getConnectionInfo().name;
+    for (auto& tab : tabs) {
+        if (const auto s3Tab = std::dynamic_pointer_cast<S3BrowserTab>(tab);
+            s3Tab && s3Tab->connection() == connection && s3Tab->bucket() == bucket) {
+            requestTabFocus(tab->getId());
+            return tab;
+        }
+    }
+    std::string tabName = bucket;
+    for (int count = 2; hasTabTitle(tabName); ++count)
+        tabName = std::format("{} ({})", bucket, count);
+    auto tab = std::make_shared<S3BrowserTab>(tabName, std::move(client), connection, bucket);
     registerOpenedTab(tab);
     return tab;
 }

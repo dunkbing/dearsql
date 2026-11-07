@@ -75,6 +75,9 @@ public:
     std::shared_ptr<Tab> createRedisPubSubTab(RedisDatabase* db);
 
     std::shared_ptr<Tab> createCsvEditorTab(const std::string& filePath);
+    // one tab per bucket of a connection; focuses it when already open
+    std::shared_ptr<Tab> createS3BrowserTab(const std::shared_ptr<class S3Database>& db,
+                                            const std::string& bucket);
 
     std::shared_ptr<Tab> createRoutineViewerTab(IDatabaseNode* node, const Routine& routine);
 

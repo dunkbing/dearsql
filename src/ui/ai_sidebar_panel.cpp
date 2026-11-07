@@ -122,6 +122,8 @@ namespace {
             return "Oracle";
         case DatabaseType::CASSANDRA:
             return "Cassandra";
+        case DatabaseType::S3:
+            return "S3";
         }
         return "SQL";
     }
@@ -599,7 +601,8 @@ void AISidebarPanel::syncContext() {
     // publish every saved connection so the agent can see, and open, closed ones
     std::vector<McpConnectionInfo> connections;
     for (const auto& db : Application::getInstance().getDatabases()) {
-        if (!db) {
+        // object storage has no database tools
+        if (!db || db->getConnectionInfo().type == DatabaseType::S3) {
             continue;
         }
         const auto info = db->getConnectionInfo();
@@ -808,7 +811,7 @@ void AISidebarPanel::rebuildContextCandidates() {
 
     // closed connections are offered too: the agent can open one with connect_database
     for (const auto& db : Application::getInstance().getDatabases()) {
-        if (db && !db->isConnected()) {
+        if (db && !db->isConnected() && db->getConnectionInfo().type != DatabaseType::S3) {
             contextCandidates_.push_back({ContextItem::Kind::Database, db->getConnectionInfo().name,
                                           "not connected", nullptr});
         }

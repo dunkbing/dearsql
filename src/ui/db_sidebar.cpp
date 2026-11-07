@@ -12,6 +12,7 @@
 #include "database/oracle/oracle_client_installer.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
@@ -839,7 +840,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                 hierarchy->renderRootNode();
             }
         }
-        renderChatHistoryNode(db);
+        if (db->getConnectionInfo().type != DatabaseType::S3)
+            renderChatHistoryNode(db);
         ImGui::TreePop();
     }
 }
@@ -884,7 +886,18 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         }
         auto& app = Application::getInstance();
 
-        if (ImGui::MenuItem(ICON_FA_COMMENTS " Open Assistant")) {
+        const bool isS3 = db->getConnectionInfo().type == DatabaseType::S3;
+        if (isS3) {
+            if (ImGui::MenuItem("Create Bucket...", nullptr, false, db->isConnected())) {
+                auto s3 = std::dynamic_pointer_cast<S3Database>(db);
+                InputDialog::show("Create Bucket", "Bucket name:", "", "Create",
+                                  [s3](const std::string& name) -> std::string {
+                                      s3->changeBuckets(
+                                          [name](const S3Client& c) { c.createBucket(name); });
+                                      return "";
+                                  });
+            }
+        } else if (ImGui::MenuItem(ICON_FA_COMMENTS " Open Assistant")) {
             app.getTabManager()->createAIChatTab(db);
             // the agent's tools need the connection open
             if (!db->isConnected() && !db->isConnecting()) {

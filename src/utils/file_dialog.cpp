@@ -135,7 +135,7 @@ std::string FileDialog::saveFile(const std::string& defaultName, const char* fil
                                  const char* filterSpec) {
     nfdchar_t* outPath;
     const nfdfilteritem_t filterItem[1] = {{filterName, filterSpec}};
-    const nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 1, nullptr,
+    const nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, filterName ? 1 : 0, nullptr,
                                               defaultName.empty() ? nullptr : defaultName.c_str());
     if (result == NFD_OKAY) {
         std::string path(outPath);

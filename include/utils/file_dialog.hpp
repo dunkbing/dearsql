@@ -24,7 +24,8 @@ public:
     static std::string openCSVFile();
     static std::string openPostgresBackupFile();
     static std::string savePostgresBackupFile(const std::string& defaultName);
-    // save dialog with one filter, e.g. ("CSV Files", "csv"); empty when cancelled
+    // save dialog with one filter, e.g. ("CSV Files", "csv"), or none (nullptr); empty when
+    // cancelled
     static std::string saveFile(const std::string& defaultName, const char* filterName,
                                 const char* filterSpec);
 

@@ -78,6 +78,8 @@ namespace {
             conn.connectionInfo.type = DatabaseType::REDSHIFT;
         } else if (typeStr == "cassandra") {
             conn.connectionInfo.type = DatabaseType::CASSANDRA;
+        } else if (typeStr == "s3") {
+            conn.connectionInfo.type = DatabaseType::S3;
         } else if (typeStr == "duckdb") {
             conn.connectionInfo.type = DatabaseType::DUCKDB;
         } else {
@@ -617,6 +619,9 @@ int AppState::saveConnection(const SavedConnection& connection) const {
     case DatabaseType::DUCKDB:
         typeStr = "duckdb";
         break;
+    case DatabaseType::S3:
+        typeStr = "s3";
+        break;
     }
 
     std::string saltBase64 =
@@ -744,6 +749,9 @@ bool AppState::updateConnection(const SavedConnection& connection) const {
         break;
     case DatabaseType::DUCKDB:
         typeStr = "duckdb";
+        break;
+    case DatabaseType::S3:
+        typeStr = "s3";
         break;
     }
 

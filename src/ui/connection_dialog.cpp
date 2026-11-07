@@ -31,9 +31,9 @@ namespace {
     constexpr float kButtonW = 90.0f;
 
     // popup index == DatabaseType enum value
-    constexpr const char* kTypeLabels[] = {"SQLite",   "PostgreSQL", "MySQL", "MariaDB",
-                                           "Redis",    "MongoDB",    "MSSQL", "Oracle",
-                                           "Redshift", "Cassandra",  "DuckDB"};
+    constexpr const char* kTypeLabels[] = {"SQLite",   "PostgreSQL", "MySQL",  "MariaDB",
+                                           "Redis",    "MongoDB",    "MSSQL",  "Oracle",
+                                           "Redshift", "Cassandra",  "DuckDB", "S3 Storage"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
 
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
@@ -223,6 +223,12 @@ void ConnectionDialog::applyTypeDefaults(DatabaseType type) {
         copyToBuf(portBuf_, sizeof(portBuf_), "9042");
         authIdx_ = 1;
         break;
+    case DatabaseType::S3:
+        copyToBuf(portBuf_, sizeof(portBuf_), "443");
+        if (std::strcmp(hostBuf_, "localhost") == 0)
+            hostBuf_[0] = '\0'; // empty = aws
+        authIdx_ = 0;
+        break;
     }
     sslModeIdx_ = getSslConfig(type).defaultIdx;
     setStatus("", false);
@@ -405,7 +411,9 @@ void ConnectionDialog::startConnect() {
     bool authEnabled = (authIdx_ == 0);
     if (authEnabled && usernameBuf_[0] == '\0' && type != DatabaseType::MONGODB &&
         type != DatabaseType::REDIS) {
-        setStatus("Please enter a username", true);
+        setStatus(type == DatabaseType::S3 ? "Please enter an access key"
+                                           : "Please enter a username",
+                  true);
         return;
     }
     if (sshEnabled_) {
@@ -644,7 +652,8 @@ void ConnectionDialog::render() {
 
     renderTypeRow();
 
-    if (!isFileDatabase(selectedType())) {
+    // s3 has no url form
+    if (!isFileDatabase(selectedType()) && selectedType() != DatabaseType::S3) {
         fieldLabel("Connect by");
         ImGui::RadioButton("Host##connect_by", &connectByIdx_, 0);
         ImGui::SameLine();
@@ -659,7 +668,9 @@ void ConnectionDialog::render() {
         renderSqliteFields(formChanged);
     } else {
         renderServerFields(formChanged);
-        renderSshFields(formChanged);
+        // ssh forwarding would break the bucket host names of virtual-hosted addressing
+        if (selectedType() != DatabaseType::S3)
+            renderSshFields(formChanged);
     }
 
     ImGui::Separator();
@@ -810,8 +821,57 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
     }
 }
 
+void ConnectionDialog::renderS3Fields(bool& formChanged) {
+    connectByIdx_ = 0; // no url form for s3
+    authIdx_ = 0;
+    sshEnabled_ = false; // not offered: tunnels break virtual-hosted bucket names
+
+    fieldLabel("Endpoint");
+    constexpr float kPortW = 70.0f;
+    float portLabelW = ImGui::CalcTextSize("Port").x;
+    ImGui::SetNextItemWidth(-(kPortW + portLabelW + Theme::Spacing::M * 2));
+    formChanged |= ImGui::InputTextWithHint("##conn_host",
+                                            "empty for AWS, or <account>.r2.cloudflarestorage.com",
+                                            hostBuf_, sizeof(hostBuf_));
+    ImGui::SetItemTooltip("Host of the S3 API. Leave empty for Amazon S3; for MinIO or "
+                          "VersityGW use its host, e.g. localhost with port 9000 and HTTP.");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Port");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(kPortW);
+    formChanged |= ImGui::InputText("##conn_port", portBuf_, sizeof(portBuf_),
+                                    ImGuiInputTextFlags_CharsDecimal);
+
+    auto sslCfg = getSslConfig(DatabaseType::S3);
+    if (sslModeIdx_ < 0 || sslModeIdx_ >= sslCfg.count)
+        sslModeIdx_ = sslCfg.defaultIdx;
+    fieldLabel("Protocol");
+    ImGui::SetNextItemWidth(180.0f);
+    formChanged |= UIUtils::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
+
+    fieldLabel("Region");
+    ImGui::SetNextItemWidth(180.0f);
+    formChanged |= ImGui::InputTextWithHint("##conn_database", "us-east-1", databaseBuf_,
+                                            sizeof(databaseBuf_));
+    ImGui::SetItemTooltip("Cloudflare R2 uses 'auto'. Empty means us-east-1.");
+
+    fieldLabel("Access Key");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    formChanged |= ImGui::InputTextWithHint("##conn_username", "Access key ID", usernameBuf_,
+                                            sizeof(usernameBuf_));
+    fieldLabel("Secret Key");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    formChanged |= ImGui::InputTextWithHint("##conn_password", "Secret access key", passwordBuf_,
+                                            sizeof(passwordBuf_), ImGuiInputTextFlags_Password);
+}
+
 void ConnectionDialog::renderServerFields(bool& formChanged) {
     DatabaseType type = selectedType();
+    if (type == DatabaseType::S3) {
+        renderS3Fields(formChanged);
+        return;
+    }
 
     // url mode: the url field drives everything it can express, so lock the
     // form fields it maps to (ssh + show-all stay editable — not in the url)

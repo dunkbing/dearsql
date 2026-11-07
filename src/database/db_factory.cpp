@@ -7,6 +7,7 @@
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "database/s3.hpp"
 #include "utils/reaper.hpp"
 
 namespace {
@@ -53,6 +54,9 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
 
     case DatabaseType::DUCKDB:
         return make<FileDatabase>(info);
+
+    case DatabaseType::S3:
+        return make<S3Database>(info);
 
     default:
         return nullptr;

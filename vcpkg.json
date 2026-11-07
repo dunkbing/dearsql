@@ -50,6 +50,7 @@
     "libiconv",
     "spdlog",
     "duckdb",
-    "ftxui"
+    "ftxui",
+    "minio-cpp"
   ]
 }

@@ -337,9 +337,9 @@ void S3BrowserTab::renderTable() {
         return;
     }
 
-    constexpr ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_NoBordersInBody |
-                                      ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-                                      ImGuiTableFlags_Resizable;
+    constexpr ImGuiTableFlags flags = ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
+                                      ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_RowBg |
+                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
     if (!ImGui::BeginTable("##s3_objects", 3, flags))
         return;
     ImGui::TableSetupScrollFreeze(0, 1);
@@ -348,7 +348,9 @@ void S3BrowserTab::renderTable() {
     ImGui::TableSetupColumn("Last modified", ImGuiTableColumnFlags_WidthFixed, 170.0f);
     ImGui::TableHeadersRow();
 
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::XS));
+    // a selectable reaches half the item spacing past itself: 2x cell padding fills the row
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                        ImVec2(Theme::Spacing::M, ImGui::GetStyle().CellPadding.y * 2));
     std::optional<std::string> navigate;
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(entries_.size()));

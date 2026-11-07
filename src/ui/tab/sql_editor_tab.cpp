@@ -1,6 +1,5 @@
 #include "ui/tab/sql_editor_tab.hpp"
 #include "IconsFontAwesome6.h"
-#include "SQLParser.h"
 #include "ai/ai_chat.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
@@ -105,14 +104,6 @@ namespace {
         }
     }
 
-    std::string toLowerCopy(std::string_view s) {
-        std::string out;
-        out.reserve(s.size());
-        for (const char ch : s)
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-        return out;
-    }
-
     std::string_view trimSqlView(const std::string& sql) {
         size_t start = 0;
         while (start < sql.size() && std::isspace(static_cast<unsigned char>(sql[start]))) {
@@ -127,14 +118,6 @@ namespace {
         return std::string_view(sql).substr(start, end - start);
     }
 
-    std::string getLeadingSqlKeyword(std::string_view sql) {
-        size_t pos = 0;
-        while (pos < sql.size() &&
-               (std::isalpha(static_cast<unsigned char>(sql[pos])) || sql[pos] == '_')) {
-            ++pos;
-        }
-        return toLowerCopy(sql.substr(0, pos));
-    }
 } // namespace
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
@@ -1106,39 +1089,20 @@ void SQLEditorTab::updateSyntaxDiagnostics() {
     syntaxCheckPending_ = false;
     syntaxDiagnostic_ = {};
 
-    const std::string_view trimmed = trimSqlView(sqlQuery);
-    if (trimmed.empty()) {
+    // the engine's own parser, so a valid query is never flagged; engines without
+    // one (mysql, sql server, oracle...) are not checked at all
+    if (!node_ || trimSqlView(sqlQuery).empty()) {
         return;
     }
-
-    hsql::SQLParserResult parseResult;
-    if (!hsql::SQLParser::parse(sqlQuery, &parseResult)) {
-        syntaxDiagnostic_.active = true;
-        syntaxDiagnostic_.message = "SQL parser failed internally while checking syntax.";
+    const auto error = dearsql::checkSyntax(sqlQuery, node_->getDatabaseType());
+    if (!error) {
         return;
     }
-
-    if (parseResult.isValid()) {
-        return;
-    }
-
+    const std::string_view before = std::string_view(sqlQuery).substr(0, error->offset);
     syntaxDiagnostic_.active = true;
-    syntaxDiagnostic_.line = std::max(1, parseResult.errorLine());
-    syntaxDiagnostic_.column = std::max(1, parseResult.errorColumn());
-
-    const std::string keyword = getLeadingSqlKeyword(trimmed);
-    if (keyword == "alter" || keyword == "explain" || keyword == "rename" || keyword == "export") {
-        syntaxDiagnostic_.message =
-            std::format("The embedded parser does not fully support '{}' statements yet.", keyword);
-        return;
-    }
-
-    const char* parserMessage = parseResult.errorMsg();
-    if (parserMessage && parserMessage[0] != '\0') {
-        syntaxDiagnostic_.message = parserMessage;
-    } else {
-        syntaxDiagnostic_.message = "Syntax issue.";
-    }
+    syntaxDiagnostic_.line = 1 + static_cast<int>(std::ranges::count(before, '\n'));
+    syntaxDiagnostic_.column = 1 + static_cast<int>(before.size() - (before.rfind('\n') + 1));
+    syntaxDiagnostic_.message = std::format("Line {}: {}", syntaxDiagnostic_.line, error->message);
 }
 
 void SQLEditorTab::updateCompletionCatalog() {

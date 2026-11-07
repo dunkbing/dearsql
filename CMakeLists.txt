@@ -161,7 +161,6 @@ if(WIN32)
 endif()
 
 include(cmake/TreeSitterGrammars.cmake)
-include(cmake/HsqlParser.cmake)
 include(cmake/Imgui.cmake)
 
 set(APP_SOURCES
@@ -386,7 +385,6 @@ target_link_libraries(
         tree-sitter-sql-grammar
         tree-sitter-json-grammar
         spdlog::spdlog
-        sql-parser
         acp::acp
         ftxui::screen
         ftxui::dom

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <dearsql/completion.hpp>
 #include <dearsql/explain.hpp>
+#include <dearsql/syntax.hpp>
 #include <functional>
 #include <memory>
 #include <optional>

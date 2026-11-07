@@ -8,6 +8,55 @@
 #import <GLFW/glfw3.h>
 #import <GLFW/glfw3native.h>
 
+#import <ImageIO/ImageIO.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#include <string>
+
+namespace {
+    // docs screenshots: a frame rendered offscreen at a set scale, saved as png
+    struct FrameCapture {
+        std::string path;
+        float scale = 2;
+        int frames = 0; // two: the first bakes the fonts at the new density
+        id<MTLTexture> target = nil;
+    } capture;
+
+    void savePng(id<MTLTexture> tex, const std::string& path) {
+        const size_t w = tex.width, h = tex.height;
+        NSMutableData* data = [NSMutableData dataWithLength:w * h * 4];
+        [tex getBytes:data.mutableBytes
+            bytesPerRow:w * 4
+             fromRegion:MTLRegionMake2D(0, 0, w, h)
+            mipmapLevel:0];
+        CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
+        CGImageRef image = CGImageCreate(w, h, 8, 32, w * 4, cs,
+                                         kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst,
+                                         provider, nullptr, false, kCGRenderingIntentDefault);
+        NSURL* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+        CGImageDestinationRef dest = CGImageDestinationCreateWithURL(
+            (__bridge CFURLRef)url, (__bridge CFStringRef)UTTypePNG.identifier, 1, nullptr);
+        if (dest) {
+            CGImageDestinationAddImage(dest, image, nullptr);
+            CGImageDestinationFinalize(dest);
+            CFRelease(dest);
+        }
+        CGImageRelease(image);
+        CGDataProviderRelease(provider);
+        CGColorSpaceRelease(cs);
+    }
+} // namespace
+
+void requestFrameCapture(const char* path, float scale) {
+    capture.path = path;
+    capture.scale = scale;
+    capture.frames = 2;
+}
+
+bool frameCapturePending() {
+    return capture.frames > 0;
+}
+
 // Pass-through views: hitTest returns nil so all events reach GLFW's content view.
 @interface PassthroughView : NSView
 @end
@@ -85,11 +134,33 @@ bool MacOSMetalBackend::initializeImGui() {
 }
 
 void MacOSMetalBackend::beginFrame(ImVec4 clearColor) {
-    id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer_ nextDrawable];
-    currentDrawable_ = drawable;
+    id<MTLTexture> texture = nil;
+    if (capture.frames > 0) {
+        int w = 0, h = 0;
+        glfwGetWindowSize(window_, &w, &h);
+        const auto tw = static_cast<NSUInteger>(w * capture.scale);
+        const auto th = static_cast<NSUInteger>(h * capture.scale);
+        if (!capture.target || capture.target.width != tw || capture.target.height != th) {
+            MTLTextureDescriptor* d =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                   width:tw
+                                                                  height:th
+                                                               mipmapped:NO];
+            d.usage = MTLTextureUsageRenderTarget;
+            d.storageMode = MTLStorageModeShared;
+            capture.target = [(id<MTLDevice>)metalDevice_ newTextureWithDescriptor:d];
+        }
+        texture = capture.target;
+        clearColor.w = 1; // no vibrancy behind a png
+        currentDrawable_ = nil;
+    } else {
+        id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer_ nextDrawable];
+        currentDrawable_ = drawable;
+        texture = drawable.texture;
+    }
 
     MTLRenderPassDescriptor* renderPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
-    renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
+    renderPassDescriptor.colorAttachments[0].texture = texture;
     renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
     renderPassDescriptor.colorAttachments[0].clearColor =
         MTLClearColorMake(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
@@ -104,6 +175,9 @@ void MacOSMetalBackend::beginFrame(ImVec4 clearColor) {
 
     ImGui_ImplMetal_NewFrame(renderPassDescriptor);
     ImGui_ImplGlfw_NewFrame();
+    if (capture.frames > 0) {
+        ImGui::GetIO().DisplayFramebufferScale = ImVec2(capture.scale, capture.scale);
+    }
 }
 
 void MacOSMetalBackend::renderDrawData(ImDrawData* drawData) {
@@ -117,10 +191,18 @@ void MacOSMetalBackend::renderDrawData(ImDrawData* drawData) {
     [(id<MTLRenderCommandEncoder>)currentRenderEncoder_ endEncoding];
 
     [(id<MTLCommandBuffer>)currentCommandBuffer_ commit];
+
+    if (currentDrawable_ == nil && capture.frames > 0 && --capture.frames == 0) {
+        [(id<MTLCommandBuffer>)currentCommandBuffer_ waitUntilCompleted];
+        savePng(capture.target, capture.path);
+        capture.target = nil;
+    }
 }
 
 void MacOSMetalBackend::present() {
-    [(id<CAMetalDrawable>)currentDrawable_ present];
+    if (currentDrawable_) {
+        [(id<CAMetalDrawable>)currentDrawable_ present];
+    }
 }
 
 void MacOSMetalBackend::shutdown() {

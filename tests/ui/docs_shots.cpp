@@ -6,12 +6,14 @@
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
+#include "platform/graphics_backend.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <chrono>
+#include <cstdlib>
 #include <format>
 
 // Not tests: these drive the app into a state and hold it there, so a screenshot
@@ -24,6 +26,15 @@ namespace {
     // Hold by the wall clock, not ctx->Sleep*: those count simulation time, and in
     // Fast mode the engine burns through it in a fraction of a real second.
     void holdForScreenshot(ImGuiTestContext* ctx, int seconds = 20) {
+        // DEARSQL_SHOT_DIR: render offscreen at 2x into <dir>/<name>.png, crisp on any display
+        if (const char* dir = std::getenv("DEARSQL_SHOT_DIR")) {
+            ctx->Yield(30); // let hover and popups settle
+            requestFrameCapture(std::format("{}/{}.png", dir, ctx->Test->Name).c_str(), 2);
+            while (frameCapturePending()) {
+                ctx->Yield();
+            }
+            return;
+        }
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
         while (std::chrono::steady_clock::now() < until) {
             ctx->Yield();

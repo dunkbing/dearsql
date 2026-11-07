@@ -2,8 +2,10 @@
 
 #include "app_state.hpp"
 #include "database/connection_url.hpp"
+#include "license/license_manager.hpp"
 #include <dearsql/factory.hpp>
 #include <filesystem>
+#include <format>
 
 CliConnections::~CliConnections() {
     for (auto& e : entries_) {
@@ -25,6 +27,7 @@ bool CliConnections::loadSaved(std::string& error) {
             continue;
         auto e = std::make_unique<Entry>();
         e->info = std::move(saved.connectionInfo);
+        e->saved = true;
         entries_.push_back(std::move(e));
     }
     return true;
@@ -43,6 +46,9 @@ std::string CliConnections::add(const std::string& spec, std::string& error) {
             return "";
         }
         info = std::move(parsed.info);
+        // sqlite://relative.db: pin it to this folder, it may be saved
+        if (!info.path.empty() && info.path != ":memory:")
+            info.path = std::filesystem::absolute(info.path).string();
         if (info.name.empty())
             info.name = info.host.empty()
                             ? spec
@@ -57,6 +63,17 @@ std::string CliConnections::add(const std::string& spec, std::string& error) {
     } else {
         error = "'" + spec + "' is not a saved connection, a connection URL, or a file";
         return "";
+    }
+    // a url or file already saved: use the saved one (its name, its ssh settings). tls
+    // must match too, or a url asking for verify-full could end up on a weaker saved one
+    for (auto& s : entries_) {
+        const auto& o = s->info;
+        if (s->saved && o.type == info.type && o.sslmode == info.sslmode &&
+            o.sslCACertPath == info.sslCACertPath &&
+            (info.path.empty() ? o.host == info.host && o.port == info.port &&
+                                     o.database == info.database && o.username == info.username
+                               : o.path == info.path))
+            return o.name;
     }
     auto e = std::make_unique<Entry>();
     e->info = std::move(info);
@@ -114,4 +131,38 @@ std::shared_ptr<dearsql::IConnection> CliConnections::connection(const std::stri
     std::lock_guard lock(mutex_);
     auto* e = find(name);
     return e ? e->conn : nullptr;
+}
+
+std::string CliConnections::save(const std::string& name, std::string& error) {
+    std::lock_guard lock(mutex_);
+    auto* e = find(name);
+    if (!e || e->saved)
+        return "";
+    AppState state;
+    if (!state.initialize()) {
+        error = "could not open ~/.dearsql/connections.db";
+        return "";
+    }
+    int workspace = 1;
+    try {
+        workspace = std::stoi(state.getSetting("current_workspace", "1"));
+    } catch (const std::exception&) {
+    }
+    // the stored license, as LicenseManager::loadStoredLicense reads it (that needs the gui)
+    const bool pro = !state.getSetting("license_key", "").empty() &&
+                     state.getSetting("license_status", "") == "active";
+    if (!pro &&
+        state.getConnectionsForWorkspace(workspace).size() >= kFreeConnectionLimit) {
+        error = std::format("not saved: the free tier keeps {} connections", kFreeConnectionLimit);
+        return "";
+    }
+    SavedConnection conn;
+    conn.connectionInfo = e->info;
+    conn.workspaceId = workspace;
+    if (state.saveConnection(conn) <= 0) {
+        error = "could not save the connection";
+        return "";
+    }
+    e->saved = true;
+    return "Saved as '" + e->info.name + "', so it shows in DearSQL too.";
 }

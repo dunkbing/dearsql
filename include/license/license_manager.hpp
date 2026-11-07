@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -21,6 +22,14 @@ struct LicenseInfo {
     std::string expiresAt;
     std::string error;
 };
+
+// free tier caps; pro is unlimited
+#ifdef NDEBUG
+inline constexpr std::size_t kFreeConnectionLimit = 10;
+#else
+inline constexpr std::size_t kFreeConnectionLimit = 20;
+#endif
+inline constexpr std::size_t kFreeWorkspaceLimit = 2;
 
 class LicenseManager {
 public:

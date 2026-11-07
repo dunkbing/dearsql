@@ -54,8 +54,8 @@ or let it run commands:
     // single connection given on the command line becomes the focus
     class StdioHost : public mcp::Host {
     public:
-        StdioHost(CliConnections& conns, std::string focus)
-            : conns_(conns), focus_(std::move(focus)) {}
+        StdioHost(CliConnections& conns, std::string focus, bool saveOnConnect = false)
+            : conns_(conns), focus_(std::move(focus)), saveOnConnect_(saveOnConnect) {}
 
         std::vector<mcp::ConnectionEntry> connections() override {
             std::vector<mcp::ConnectionEntry> out;
@@ -76,10 +76,18 @@ or let it run commands:
         std::pair<std::string, std::string> focus() override {
             return {focus_, ""};
         }
+        std::string remember(const std::string& name) override {
+            if (!saveOnConnect_)
+                return "";
+            std::string error;
+            auto note = conns_.save(name, error);
+            return error.empty() ? note : "(" + error + ")";
+        }
 
     private:
         CliConnections& conns_;
         std::string focus_;
+        bool saveOnConnect_;
     };
 
     // newline-delimited JSON-RPC, per the MCP stdio transport; stdout carries
@@ -166,7 +174,7 @@ or let it run commands:
     // for agents that have a shell but no MCP client. same server, same text
     int runTool(CliConnections& conns, const std::string& focus, const std::string& command,
                 std::vector<std::string> args) {
-        StdioHost host(conns, focus);
+        StdioHost host(conns, focus, true); // `dearsql connect <url>` saves it
         mcp::Server server(host, true); // `exec` is its own command; read-only conns still refuse
         const auto tools = mcp::Server::tools(true);
         const std::string name = toolName(command);

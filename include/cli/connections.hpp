@@ -17,6 +17,7 @@ public:
         std::string spec; // the URL or path it was added from, so a repeat finds it
         std::shared_ptr<dearsql::IConnection> conn; // null until opened
         std::unique_ptr<SSHTunnel> tunnel;
+        bool saved = false; // one of the GUI's saved connections
     };
 
     ~CliConnections();
@@ -26,6 +27,9 @@ public:
     // a connection URL, a .sqlite/.duckdb/.csv path, or a saved connection name.
     // returns the entry's name, or "" with error set
     std::string add(const std::string& spec, std::string& error);
+    // adds name to the GUI's saved connections (current workspace) unless it is one:
+    // a note for the user, "" if it was saved already, or "" with error set
+    std::string save(const std::string& name, std::string& error);
 
     std::vector<Entry*> entries();
     // by name, or by the URL/path it was added from

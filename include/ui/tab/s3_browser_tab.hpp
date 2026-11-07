@@ -86,7 +86,8 @@ private:
     void renderToolbar();
     void renderBreadcrumb();
     void renderTable();
-    void renderEntryMenu(const Entry& entry);
+    // a folder's Open sets navigate: opening clears the entries being drawn
+    void renderEntryMenu(const Entry& entry, std::optional<std::string>& navigate);
     void renderStatusBar();
     void renderDetails();
 };

@@ -5,6 +5,7 @@
 #include "database/redis.hpp"
 #include "database/s3.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "ui/fonts.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
@@ -289,6 +290,7 @@ std::shared_ptr<Tab> TabManager::createTableViewerTab(IDatabaseNode* node, const
 }
 
 void TabManager::renderTabs() {
+    renderTabSwitcher();
     const auto& colors = Application::getInstance().getCurrentColors();
 
     // Square tab corners and style tabs (selected = lighter, unselected = darker)
@@ -786,4 +788,63 @@ void TabManager::forgetChatSession(const int sessionId) {
             chat->panel().forgetSession(sessionId);
         }
     }
+}
+
+// ctrl+tab switcher over the tabs, drawn like the app's popups. replaces imgui's window list,
+// which also offers the sidebar and cannot be styled
+void TabManager::renderTabSwitcher() {
+    if (ImGuiContext& g = *ImGui::GetCurrentContext(); g.ConfigNavWindowingKeyNext != 0) {
+        switcherNext_ = g.ConfigNavWindowingKeyNext; // ctrl+tab, or the mac equivalent
+        switcherPrev_ = g.ConfigNavWindowingKeyPrev;
+        g.ConfigNavWindowingKeyNext = g.ConfigNavWindowingKeyPrev = 0;
+    }
+
+    std::erase_if(recentTabs_, [this](std::uint64_t id) { return !hasTabId(id); });
+    if (switcherIndex_ < 0 && activeTabId_ != 0) {
+        std::erase(recentTabs_, activeTabId_);
+        recentTabs_.insert(recentTabs_.begin(), activeTabId_);
+    }
+    for (const auto& tab : tabs)
+        if (std::ranges::find(recentTabs_, tab->getId()) == recentTabs_.end())
+            recentTabs_.push_back(tab->getId());
+
+    const int n = static_cast<int>(recentTabs_.size());
+    const bool next = ImGui::IsKeyChordPressed(switcherNext_);
+    const bool prev = !next && ImGui::IsKeyChordPressed(switcherPrev_);
+    if ((next || prev) && n > 1)
+        switcherIndex_ = ((switcherIndex_ < 0 ? 0 : switcherIndex_) + (next ? 1 : n - 1)) % n;
+    if (switcherIndex_ < 0)
+        return;
+    if (switcherIndex_ >= n) {
+        switcherIndex_ = -1;
+        return;
+    }
+    // releasing the modifier picks the highlighted tab
+    if (!ImGui::IsKeyDown(static_cast<ImGuiKey>(switcherNext_ & ImGuiMod_Mask_))) {
+        requestTabFocus(recentTabs_[switcherIndex_]);
+        switcherIndex_ = -1;
+        return;
+    }
+
+    const auto& style = ImGui::GetStyle();
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(UIUtils::kMenuPadding, UIUtils::kMenuPadding));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, style.PopupBorderSize);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, style.PopupRounding);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, style.Colors[ImGuiCol_PopupBg]);
+    ImGui::PushStyleColor(ImGuiCol_Header, style.Colors[ImGuiCol_HeaderHovered]); // as if hovered
+    // tooltip: always on top, never takes focus from the tab
+    ImGui::Begin("##tab_switcher", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_Tooltip);
+    for (int i = 0; i < n; ++i)
+        if (const auto tab = findTabById(recentTabs_[i]))
+            ImGui::Selectable(tab->getWindowName().c_str(), i == switcherIndex_);
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(4);
 }

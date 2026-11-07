@@ -104,21 +104,6 @@ namespace {
         return out;
     }
 
-    // bytes without a bom, in a known encoding
-    std::string decodeAs(const std::string& bytes, CsvDialect::Encoding encoding) {
-        switch (encoding) {
-        case CsvDialect::Encoding::Utf16LE:
-            return decodeUtf16(bytes, 0, true);
-        case CsvDialect::Encoding::Utf16BE:
-            return decodeUtf16(bytes, 0, false);
-        case CsvDialect::Encoding::Windows1252:
-            return decodeCp1252(bytes);
-        case CsvDialect::Encoding::Utf8:
-            break;
-        }
-        return bytes;
-    }
-
     // the whole string as a number; strtod since floating from_chars needs macOS 26
     std::optional<double> parseNumber(const std::string& s) {
         if (s.empty() || std::isspace(static_cast<unsigned char>(s[0])))
@@ -148,37 +133,6 @@ namespace {
         return field.find(d.delimiter) != std::string::npos ||
                field.find(d.quote) != std::string::npos ||
                field.find_first_of("\r\n") != std::string::npos;
-    }
-
-    // kind of a value, for the consistency check
-    enum class Kind { Empty, Integer, Decimal, DecimalComma, Date, Email, Text };
-
-    Kind kindOf(const std::string& v) {
-        static const std::regex integer(R"([+-]?\d+)");
-        static const std::regex decimal(R"([+-]?(\d+\.\d*|\.\d+)([eE][+-]?\d+)?)");
-        static const std::regex decimalComma(R"([+-]?\d+,\d+)");
-        static const std::regex date(
-            R"(\d{4}-\d{1,2}-\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?.*)?|\d{1,2}[./]\d{1,2}[./]\d{2,4})");
-        static const std::regex email(R"([^@\s]+@[^@\s]+\.[^@\s]+)");
-        if (v.empty())
-            return Kind::Empty;
-        if (std::regex_match(v, integer))
-            return Kind::Integer;
-        if (std::regex_match(v, decimal))
-            return Kind::Decimal;
-        if (std::regex_match(v, decimalComma))
-            return Kind::DecimalComma;
-        if (std::regex_match(v, date))
-            return Kind::Date;
-        if (std::regex_match(v, email))
-            return Kind::Email;
-        return Kind::Text;
-    }
-
-    std::string lower(std::string s) {
-        std::ranges::transform(s, s.begin(),
-                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return s;
     }
 
     bool writeAtomically(const std::string& path, const std::string& bytes, std::string& error) {
@@ -484,8 +438,7 @@ namespace csv {
 
 } // namespace csv
 
-bool CsvDocument::load(const std::string& path, std::string& error,
-                       const std::optional<CsvDialect>& dialect) {
+bool CsvDocument::load(const std::string& path, std::string& error) {
     std::ifstream in(std::filesystem::path(path), std::ios::binary);
     if (!in) {
         error = "Cannot open " + path;
@@ -496,23 +449,10 @@ bool CsvDocument::load(const std::string& path, std::string& error,
 
     CsvDialect detected;
     const std::string text = csv::decode(buffer.str(), detected);
-    if (dialect) {
-        dialect_ = *dialect;
-        if (dialect_.encoding == detected.encoding) {
-            applyRecords(csv::parse(text, dialect_));
-        } else {
-            // a chosen encoding re-decodes the bytes behind any bom
-            std::string raw = buffer.str();
-            if (detected.bom)
-                raw.erase(0, detected.encoding == CsvDialect::Encoding::Utf8 ? 3 : 2);
-            applyRecords(csv::parse(decodeAs(raw, dialect_.encoding), dialect_));
-        }
-    } else {
-        dialect_ = csv::sniff(text);
-        dialect_.encoding = detected.encoding;
-        dialect_.bom = detected.bom;
-        applyRecords(csv::parse(text, dialect_));
-    }
+    dialect_ = csv::sniff(text);
+    dialect_.encoding = detected.encoding;
+    dialect_.bom = detected.bom;
+    applyRecords(csv::parse(text, dialect_));
 
     undo_.clear();
     redo_.clear();
@@ -540,23 +480,6 @@ void CsvDocument::applyRecords(std::vector<std::vector<std::string>> records) {
             headers_.push_back(std::format("Column {}", i + 1));
     }
     rows_ = std::move(records);
-    flags_.assign(rows_.size(), false);
-}
-
-std::vector<std::vector<std::string>> CsvDocument::records(const std::vector<int>& rows,
-                                                           bool all) const {
-    std::vector<std::vector<std::string>> out;
-    out.reserve((all ? rows_.size() : rows.size()) + 1);
-    if (dialect_.hasHeader)
-        out.push_back(headers_);
-    if (all) {
-        out.insert(out.end(), rows_.begin(), rows_.end());
-    } else {
-        for (int r : rows)
-            if (r >= 0 && r < rowCount())
-                out.push_back(rows_[r]);
-    }
-    return out;
 }
 
 bool CsvDocument::save(const std::string& path, std::string& error) {
@@ -566,27 +489,13 @@ bool CsvDocument::save(const std::string& path, std::string& error) {
     return true;
 }
 
-bool CsvDocument::saveRows(const std::string& path, const std::vector<int>& rows,
-                           std::string& error) const {
-    CsvDialect d = dialect_;
-    d.trailingLineBreak = true;
-    return writeAtomically(path, csv::encode(csv::serialize(records(rows, false), d), d), error);
-}
-
 std::string CsvDocument::toText() const {
-    return csv::serialize(records({}, true), dialect_);
-}
-
-void CsvDocument::setDialect(const CsvDialect& dialect) {
-    CsvDialect next = dialect;
-    next.hasHeader = dialect_.hasHeader;
-    if (next == dialect_)
-        return;
-    // a format change is its own undo step and makes the file unsaved
-    UndoStep step;
-    step.dialect = dialect_;
-    pushStep(std::move(step));
-    dialect_ = next;
+    std::vector<std::vector<std::string>> out;
+    out.reserve(rows_.size() + 1);
+    if (dialect_.hasHeader && !headers_.empty())
+        out.push_back(headers_);
+    out.insert(out.end(), rows_.begin(), rows_.end());
+    return csv::serialize(out, dialect_);
 }
 
 void CsvDocument::padRow(std::vector<std::string>& row) const {
@@ -594,14 +503,12 @@ void CsvDocument::padRow(std::vector<std::string>& row) const {
 }
 
 CsvDocument::Snapshot CsvDocument::snapshot() const {
-    return {headers_, rows_, flags_, dialect_};
+    return {headers_, rows_};
 }
 
 void CsvDocument::restore(Snapshot s) {
     headers_ = std::move(s.headers);
     rows_ = std::move(s.rows);
-    flags_ = std::move(s.flags);
-    dialect_ = s.dialect;
 }
 void CsvDocument::pushStep(UndoStep step) {
     step.state = state_;
@@ -624,9 +531,6 @@ CsvDocument::UndoStep CsvDocument::apply(UndoStep step) {
     if (step.snapshot) {
         inverse.snapshot = snapshot();
         restore(std::move(*step.snapshot));
-    } else if (step.dialect) {
-        inverse.dialect = dialect_;
-        dialect_ = *step.dialect;
     } else {
         inverse.row = step.row;
         inverse.col = step.col;
@@ -687,7 +591,6 @@ void CsvDocument::setRange(int row, int col, const std::vector<std::vector<std::
     }
     while (rowCount() < row + static_cast<int>(values.size())) {
         rows_.emplace_back(headers_.size());
-        flags_.push_back(false);
     }
     for (std::size_t r = 0; r < values.size(); ++r)
         for (std::size_t c = 0; c < values[r].size(); ++c)
@@ -698,7 +601,6 @@ void CsvDocument::insertRows(int at, int count) {
     at = std::clamp(at, 0, rowCount());
     pushSnapshot();
     rows_.insert(rows_.begin() + at, count, std::vector<std::string>(headers_.size()));
-    flags_.insert(flags_.begin() + at, count, false);
 }
 
 void CsvDocument::deleteRows(std::vector<int> rows) {
@@ -711,60 +613,13 @@ void CsvDocument::deleteRows(std::vector<int> rows) {
     pushSnapshot();
     for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
         rows_.erase(rows_.begin() + *it);
-        flags_.erase(flags_.begin() + *it);
     }
-}
-
-void CsvDocument::insertColumn(int at, const std::string& name) {
-    at = std::clamp(at, 0, columnCount());
-    pushSnapshot();
-    headers_.insert(headers_.begin() + at,
-                    !name.empty() || dialect_.hasHeader ? name : std::format("Column {}", at + 1));
-    for (auto& r : rows_)
-        r.insert(r.begin() + at, std::string{});
-}
-
-void CsvDocument::deleteColumns(int first, int last) {
-    first = std::max(first, 0);
-    last = std::min(last, columnCount() - 1);
-    if (first > last)
-        return;
-    pushSnapshot();
-    headers_.erase(headers_.begin() + first, headers_.begin() + last + 1);
-    for (auto& r : rows_)
-        r.erase(r.begin() + first, r.begin() + last + 1);
-}
-
-bool CsvDocument::moveColumns(int first, int last, int delta) {
-    if (first < 0 || last >= columnCount() || first > last)
-        return false;
-    if ((delta < 0 && first == 0) || (delta > 0 && last == columnCount() - 1))
-        return false;
-    pushSnapshot();
-    auto rotate = [&](auto& v) {
-        if (delta < 0)
-            std::rotate(v.begin() + first - 1, v.begin() + first, v.begin() + last + 1);
-        else
-            std::rotate(v.begin() + first, v.begin() + last + 1, v.begin() + last + 2);
-    };
-    rotate(headers_);
-    for (auto& r : rows_)
-        rotate(r);
-    return true;
-}
-
-void CsvDocument::renameColumn(int col, const std::string& name) {
-    if (col < 0 || col >= columnCount() || headers_[col] == name)
-        return;
-    pushSnapshot();
-    headers_[col] = name;
 }
 
 void CsvDocument::sortBy(int col, bool ascending) {
     if (col < 0 || col >= columnCount() || rows_.size() < 2)
         return;
     pushSnapshot();
-    // flags travel with their rows
     std::vector<std::size_t> order(rows_.size());
     for (std::size_t i = 0; i < order.size(); ++i)
         order[i] = i;
@@ -787,115 +642,11 @@ void CsvDocument::sortBy(int col, bool ascending) {
         return ascending ? x < y : y < x;
     });
     std::vector<std::vector<std::string>> sorted;
-    std::vector<bool> flags;
     sorted.reserve(rows_.size());
-    flags.reserve(rows_.size());
     for (std::size_t i : order) {
         sorted.push_back(std::move(rows_[i]));
-        flags.push_back(flags_[i]);
     }
     rows_ = std::move(sorted);
-    flags_ = std::move(flags);
-}
-
-CsvDocument::Matcher::Matcher(const FindOptions& find) : find_(find) {
-    needle_ = find.matchCase ? find.text : lower(find.text);
-    if (!find.regex || find.text.empty())
-        return;
-    try {
-        auto flags = std::regex::ECMAScript;
-        if (!find.matchCase)
-            flags |= std::regex::icase;
-        regex_.emplace(find.text, flags);
-    } catch (const std::regex_error&) {
-        valid_ = false;
-    }
-}
-
-bool CsvDocument::Matcher::operator()(const std::string& value) const {
-    if (find_.text.empty() || !valid_)
-        return false;
-    if (regex_)
-        return find_.wholeCell ? std::regex_match(value, *regex_)
-                               : std::regex_search(value, *regex_);
-    if (find_.matchCase)
-        return find_.wholeCell ? value == needle_ : value.find(needle_) != std::string::npos;
-    const std::string v = lower(value);
-    return find_.wholeCell ? v == needle_ : v.find(needle_) != std::string::npos;
-}
-
-std::string CsvDocument::Matcher::replace(const std::string& value,
-                                          const std::string& replacement) const {
-    if (!(*this)(value))
-        return value;
-    if (regex_)
-        return std::regex_replace(value, *regex_, replacement);
-    if (find_.wholeCell)
-        return replacement;
-    // plain text: every occurrence, case-insensitively when asked
-    const std::string hay = find_.matchCase ? value : lower(value);
-    std::string out;
-    std::size_t from = 0;
-    for (std::size_t at = hay.find(needle_); at != std::string::npos;
-         at = hay.find(needle_, from)) {
-        out.append(value, from, at - from);
-        out += replacement;
-        from = at + needle_.size();
-    }
-    out.append(value, from);
-    return out;
-}
-
-std::optional<std::pair<int, int>> CsvDocument::findNext(const FindOptions& find, int row, int col,
-                                                         bool forward,
-                                                         const std::vector<int>& rows) const {
-    const Matcher matches(find);
-    if (find.text.empty() || !matches.valid() || rows_.empty() || headers_.empty())
-        return std::nullopt;
-
-    const int viewRows = rows.empty() ? rowCount() : static_cast<int>(rows.size());
-    const int cols = columnCount();
-    if (viewRows == 0)
-        return std::nullopt;
-    // position in the view, not the document
-    int vr = 0;
-    if (rows.empty()) {
-        vr = std::clamp(row, 0, viewRows - 1);
-    } else {
-        const auto it = std::ranges::lower_bound(rows, row);
-        vr = it == rows.end() ? viewRows - 1 : static_cast<int>(it - rows.begin());
-    }
-    const long total = static_cast<long>(viewRows) * cols;
-    long pos = static_cast<long>(vr) * cols + std::clamp(col, 0, cols - 1);
-    for (long step = 0; step < total; ++step) {
-        pos = forward ? (pos + 1) % total : (pos - 1 + total) % total;
-        const int r = static_cast<int>(pos / cols);
-        const int c = static_cast<int>(pos % cols);
-        if (find.column >= 0 && c != find.column)
-            continue;
-        const int docRow = rows.empty() ? r : rows[r];
-        if (matches(rows_[docRow][c]))
-            return std::make_pair(docRow, c);
-    }
-    return std::nullopt;
-}
-
-int CsvDocument::replaceAll(const FindOptions& find, const std::string& replacement) {
-    const Matcher matches(find);
-    if (find.text.empty() || !matches.valid())
-        return 0;
-    // collect first so a search that finds nothing leaves no undo step
-    std::vector<std::pair<int, int>> hits;
-    for (int r = 0; r < rowCount(); ++r)
-        for (int c = 0; c < columnCount(); ++c)
-            if ((find.column < 0 || c == find.column) && matches(rows_[r][c]))
-                hits.emplace_back(r, c);
-    if (hits.empty())
-        return 0;
-    pushSnapshot();
-    for (const auto& [r, c] : hits)
-        rows_[r][c] = matches.replace(rows_[r][c], replacement);
-    return static_cast<int>(hits.size());
 }
 
 void CsvDocument::setCells(const std::vector<CellValue>& cells) {
@@ -913,177 +664,4 @@ void CsvDocument::setCells(const std::vector<CellValue>& cells) {
     pushSnapshot();
     for (const auto* cell : changed)
         rows_[cell->row][cell->col] = cell->value;
-}
-
-int CsvDocument::splitColumn(int col, const std::string& separator) {
-    if (col < 0 || col >= columnCount() || separator.empty())
-        return 0;
-    std::vector<std::vector<std::string>> parts(rows_.size());
-    std::size_t width = 1;
-    for (std::size_t r = 0; r < rows_.size(); ++r) {
-        const std::string& v = rows_[r][col];
-        std::size_t from = 0;
-        for (std::size_t at = v.find(separator); at != std::string::npos;
-             at = v.find(separator, from)) {
-            parts[r].push_back(v.substr(from, at - from));
-            from = at + separator.size();
-        }
-        parts[r].push_back(v.substr(from));
-        width = std::max(width, parts[r].size());
-    }
-    if (width < 2)
-        return 0;
-    pushSnapshot();
-    const std::string base = headers_[col];
-    std::vector<std::string> names;
-    for (std::size_t i = 0; i < width; ++i)
-        names.push_back(std::format("{} {}", base, i + 1));
-    headers_.erase(headers_.begin() + col);
-    headers_.insert(headers_.begin() + col, names.begin(), names.end());
-    for (std::size_t r = 0; r < rows_.size(); ++r) {
-        parts[r].resize(width);
-        rows_[r].erase(rows_[r].begin() + col);
-        rows_[r].insert(rows_[r].begin() + col, parts[r].begin(), parts[r].end());
-    }
-    return static_cast<int>(width);
-}
-
-void CsvDocument::mergeColumns(int first, int last, const std::string& separator) {
-    first = std::max(first, 0);
-    last = std::min(last, columnCount() - 1);
-    if (first >= last)
-        return;
-    pushSnapshot();
-    for (auto& r : rows_) {
-        std::string merged = r[first];
-        for (int c = first + 1; c <= last; ++c) {
-            if (!r[c].empty()) {
-                if (!merged.empty())
-                    merged += separator;
-                merged += r[c];
-            }
-        }
-        r[first] = std::move(merged);
-        r.erase(r.begin() + first + 1, r.begin() + last + 1);
-    }
-    headers_.erase(headers_.begin() + first + 1, headers_.begin() + last + 1);
-}
-
-void CsvDocument::setHasHeader(bool hasHeader) {
-    if (hasHeader == dialect_.hasHeader)
-        return;
-    pushSnapshot();
-    if (hasHeader) {
-        if (rows_.empty()) {
-            headers_.assign(headers_.size(), std::string{});
-        } else {
-            headers_ = std::move(rows_.front());
-            rows_.erase(rows_.begin());
-            flags_.erase(flags_.begin());
-        }
-    } else {
-        rows_.insert(rows_.begin(), headers_);
-        flags_.insert(flags_.begin(), false);
-        for (std::size_t i = 0; i < headers_.size(); ++i)
-            headers_[i] = std::format("Column {}", i + 1);
-    }
-    dialect_.hasHeader = hasHeader;
-}
-
-void CsvDocument::setFlags(const std::vector<int>& rows, bool flagged) {
-    for (int r : rows)
-        if (r >= 0 && r < static_cast<int>(flags_.size()))
-            flags_[r] = flagged;
-}
-
-void CsvDocument::invertFlags() {
-    flags_.flip();
-}
-
-void CsvDocument::clearFlags() {
-    std::fill(flags_.begin(), flags_.end(), false);
-}
-
-std::vector<int> CsvDocument::flaggedRows() const {
-    std::vector<int> out;
-    for (std::size_t i = 0; i < flags_.size(); ++i)
-        if (flags_[i])
-            out.push_back(static_cast<int>(i));
-    return out;
-}
-
-int CsvDocument::flaggedCount() const {
-    return static_cast<int>(std::ranges::count(flags_, true));
-}
-
-int CsvDocument::flagInconsistent(int col) {
-    if (col < 0 || col >= columnCount())
-        return 0;
-    std::vector<Kind> kinds;
-    kinds.reserve(rows_.size());
-    std::map<Kind, int> counts;
-    for (const auto& r : rows_) {
-        kinds.push_back(kindOf(r[col]));
-        if (kinds.back() != Kind::Empty)
-            ++counts[kinds.back()];
-    }
-    if (counts.empty())
-        return 0;
-    const Kind common =
-        std::ranges::max_element(counts, {}, &std::pair<const Kind, int>::second)->first;
-    int flagged = 0;
-    for (std::size_t i = 0; i < kinds.size(); ++i) {
-        // integers and decimals mix in a numeric column
-        auto numeric = [](Kind k) { return k == Kind::Integer || k == Kind::Decimal; };
-        const bool fits =
-            kinds[i] == common || kinds[i] == Kind::Empty || (numeric(common) && numeric(kinds[i]));
-        if (!fits) {
-            flags_[i] = true;
-            ++flagged;
-        }
-    }
-    return flagged;
-}
-
-std::string CsvDocument::toJson(const std::vector<int>& rows) const {
-    auto out = nlohmann::ordered_json::array();
-    auto addRow = [&](const std::vector<std::string>& r) {
-        nlohmann::ordered_json obj = nlohmann::ordered_json::object();
-        for (std::size_t c = 0; c < headers_.size(); ++c) {
-            std::string key = headers_[c].empty() ? std::format("Column {}", c + 1) : headers_[c];
-            obj[key] = r[c];
-        }
-        out.push_back(std::move(obj));
-    };
-    if (rows.empty()) {
-        for (const auto& r : rows_)
-            addRow(r);
-    } else {
-        for (int r : rows)
-            if (r >= 0 && r < rowCount())
-                addRow(rows_[r]);
-    }
-    return out.dump(2) + "\n";
-}
-
-std::vector<std::string> CsvDocument::splitFile(const std::string& path, int rowsPerFile,
-                                                std::string& error) const {
-    std::vector<std::string> written;
-    if (rowsPerFile < 1) {
-        error = "Rows per file must be at least 1";
-        return written;
-    }
-    const auto p = std::filesystem::path(path);
-    const std::string stem = p.stem().string();
-    const std::string ext = p.has_extension() ? p.extension().string() : ".csv";
-    for (int start = 0, part = 1; start < rowCount(); start += rowsPerFile, ++part) {
-        std::vector<int> rows;
-        for (int r = start; r < std::min(rowCount(), start + rowsPerFile); ++r)
-            rows.push_back(r);
-        const auto out = (p.parent_path() / std::format("{}_{}{}", stem, part, ext)).string();
-        if (!saveRows(out, rows, error))
-            return written;
-        written.push_back(out);
-    }
-    return written;
 }

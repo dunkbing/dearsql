@@ -7,13 +7,10 @@
 #include "themes.hpp"
 #include "ui/auto_complete_input.hpp"
 #include "utils/button.hpp"
-#include "utils/file_dialog.hpp"
-#include "utils/menu.hpp"
 #include "utils/spinner.hpp"
 #include <algorithm>
-#include <filesystem>
+#include <cstring>
 #include <format>
-#include <fstream>
 #include <spdlog/spdlog.h>
 
 namespace {
@@ -52,14 +49,6 @@ namespace {
         buffer[size - 1] = '\0';
     }
 
-    const char* kDelimiterLabels[] = {"Comma (,)", "Semicolon (;)", "Tab",
-                                      "Pipe (|)",  "Colon (:)",     "Other"};
-    const char* kDelimiters[] = {",", ";", "\t", "|", ":"};
-    const char* kLineBreakLabels[] = {"LF (Unix, macOS)", "CRLF (Windows)", "CR (classic Mac)"};
-    const char* kLineBreaks[] = {"\n", "\r\n", "\r"};
-    const char* kEncodingLabels[] = {"UTF-8", "UTF-16 LE", "UTF-16 BE", "Windows-1252"};
-    const char* kQuoteStyleLabels[] = {"When needed", "Every field", "Non-numeric fields"};
-
     const char* lineBreakName(const std::string& lb) {
         return lb == "\r\n" ? "CRLF" : lb == "\r" ? "CR" : "LF";
     }
@@ -93,12 +82,11 @@ void CsvEditorTab::startLoad() {
     loadError_.clear();
     if (table_ && table_->isEditing())
         table_->exitEditMode(false);
-    loadOp_.start([path = filePath_, dialect = reloadDialect_]() {
+    loadOp_.start([path = filePath_]() {
         CsvLoadResult result;
-        result.ok = result.doc.load(path, result.error, dialect);
+        result.ok = result.doc.load(path, result.error);
         return result;
     });
-    reloadDialect_.reset();
 }
 
 void CsvEditorTab::markChanged() {
@@ -115,26 +103,6 @@ void CsvEditorTab::save() {
         showMessage("Could not save the file.\n\n" + error);
         return;
     }
-    statusText_ = "Saved";
-}
-
-void CsvEditorTab::saveAs() {
-    const auto current = std::filesystem::path(filePath_);
-    const std::string path =
-        FileDialog::saveFile(current.filename().string(), "CSV Files", "csv,tsv,txt");
-    if (path.empty())
-        return;
-    if (table_->isEditing())
-        table_->exitEditMode(true);
-    std::string error;
-    if (!doc_.save(path, error)) {
-        showMessage("Could not save the file.\n\n" + error);
-        return;
-    }
-    filePath_ = path;
-    setName(std::filesystem::path(path).filename().string());
-    // the filter reads the file it was run against
-    clearFilter();
     statusText_ = "Saved";
 }
 
@@ -197,22 +165,6 @@ void CsvEditorTab::initTable() {
             sortColumn(col, direction == SortDirection::Ascending);
     });
     table_->setRowNumberCallback([this](int row) { return docRow(row) + 1; });
-    table_->setRowBgCallback([this](int row) -> unsigned int {
-        if (!doc_.isFlagged(docRow(row)))
-            return 0;
-        const auto& c = Application::getInstance().getCurrentColors();
-        return ImGui::GetColorU32(ImVec4(c.peach.x, c.peach.y, c.peach.z, 0.22f));
-    });
-    table_->setCellBgCallback([this](int row, int col) -> unsigned int {
-        if (!findOpen_ || !matcher_)
-            return 0;
-        const int r = docRow(row);
-        if (r < 0 || r >= doc_.rowCount() || !(*matcher_)(doc_.rows()[r][col]))
-            return 0;
-        const auto& c = Application::getInstance().getCurrentColors();
-        return ImGui::GetColorU32(ImVec4(c.yellow.x, c.yellow.y, c.yellow.z, 0.28f));
-    });
-    table_->setColumnMenuExtension([this](int col) { renderColumnMenu(col); });
     table_->setCellMenuExtension([this](int row, int col) { renderCellMenu(row, col); });
 }
 
@@ -241,13 +193,6 @@ int CsvEditorTab::docRow(int viewRow) const {
     return viewRow >= 0 && viewRow < static_cast<int>(viewRows_.size()) ? viewRows_[viewRow] : -1;
 }
 
-int CsvEditorTab::viewRowOf(int row) const {
-    if (!filtered_)
-        return row >= 0 && row < doc_.rowCount() ? row : -1;
-    const auto it = std::ranges::lower_bound(viewRows_, row);
-    return it != viewRows_.end() && *it == row ? static_cast<int>(it - viewRows_.begin()) : -1;
-}
-
 int CsvEditorTab::viewRowCount() const {
     return filtered_ ? static_cast<int>(viewRows_.size()) : doc_.rowCount();
 }
@@ -258,21 +203,6 @@ std::vector<int> CsvEditorTab::selectedDocRows() const {
         if (const int d = docRow(r); d >= 0)
             rows.push_back(d);
     return rows;
-}
-
-bool CsvEditorTab::selectedColumns(int& first, int& last) const {
-    int r0, r1;
-    return table_->getSelectionRange(r0, first, r1, last);
-}
-
-void CsvEditorTab::selectCell(int row, int col) {
-    const int vr = viewRowOf(row);
-    if (vr < 0)
-        return;
-    if (tableDirty_)
-        rebuildTable();
-    table_->setSelectedCell(vr, col);
-    table_->scrollToCell(vr, col);
 }
 
 void CsvEditorTab::deleteDocRows(const std::vector<int>& rows) {
@@ -325,8 +255,8 @@ void CsvEditorTab::applyFilter() {
         try {
             for (std::size_t r : dearsql::csvMatchingRows(path, where, format)) {
                 if (static_cast<int>(r) >= total) {
-                    result.error = "DuckDB read more rows than the editor did; check the "
-                                   "file's format in CSV Properties.";
+                    result.error = "DuckDB read more rows than the editor did, so the "
+                                   "filter can't be matched to the rows here.";
                     return result;
                 }
                 result.rows.push_back(static_cast<int>(r));
@@ -352,74 +282,6 @@ void CsvEditorTab::clearFilter() {
     }
 }
 
-void CsvEditorTab::findNext(bool forward) {
-    find_.text = findBuffer_;
-    if (find_.text.empty() || viewRowCount() == 0)
-        return;
-    // search from the selected cell; with nothing selected, from just before the first
-    // cell (or after the last one going back)
-    int r0, c0, r1, c1;
-    int row, col;
-    if (table_->getSelectionRange(r0, c0, r1, c1)) {
-        row = docRow(r0);
-        col = c0;
-    } else {
-        row = docRow(forward ? viewRowCount() - 1 : 0);
-        col = forward ? doc_.columnCount() - 1 : 0;
-    }
-    find_.column = onlyCurrentColumn_ ? col : -1;
-    const auto hit =
-        doc_.findNext(find_, row, col, forward, filtered_ ? viewRows_ : std::vector<int>{});
-    if (!hit) {
-        findStatus_ = matcher_ && !matcher_->valid() ? "Invalid regular expression" : "No matches";
-        return;
-    }
-    findStatus_.clear();
-    selectCell(hit->first, hit->second);
-}
-
-void CsvEditorTab::replaceCurrent() {
-    int r0, c0, r1, c1;
-    if (!matcher_ || !table_->getSelectionRange(r0, c0, r1, c1)) {
-        findNext(true);
-        return;
-    }
-    const int row = docRow(r0);
-    if (row >= 0 && (*matcher_)(doc_.rows()[row][c0])) {
-        doc_.setCell(row, c0, matcher_->replace(doc_.rows()[row][c0], replaceBuffer_));
-        markChanged();
-    }
-    findNext(true);
-}
-
-void CsvEditorTab::replaceAll() {
-    find_.text = findBuffer_;
-    int r0 = 0, c0 = 0, r1, c1;
-    table_->getSelectionRange(r0, c0, r1, c1);
-    find_.column = onlyCurrentColumn_ ? std::max(c0, 0) : -1;
-    const CsvDocument::Matcher matches(find_);
-    if (!matches.valid()) {
-        findStatus_ = "Invalid regular expression";
-        return;
-    }
-    int count = 0;
-    if (!filtered_) {
-        count = doc_.replaceAll(find_, replaceBuffer_);
-    } else {
-        std::vector<CsvDocument::CellValue> cells;
-        for (int r : viewRows_)
-            for (int c = 0; c < doc_.columnCount(); ++c)
-                if ((find_.column < 0 || c == find_.column) && matches(doc_.rows()[r][c]))
-                    cells.push_back({r, c, matches.replace(doc_.rows()[r][c], replaceBuffer_)});
-        count = static_cast<int>(cells.size());
-        doc_.setCells(cells);
-    }
-    findStatus_ =
-        count == 0 ? "No matches" : std::format("Replaced {} cell{}", count, count == 1 ? "" : "s");
-    if (count > 0)
-        markChanged();
-}
-
 void CsvEditorTab::sortColumn(int col, bool ascending) {
     if (filtered_) {
         showMessage("Clear the filter to sort: sorting reorders the whole file.");
@@ -427,61 +289,6 @@ void CsvEditorTab::sortColumn(int col, bool ascending) {
     }
     doc_.sortBy(col, ascending);
     markChanged();
-}
-
-void CsvEditorTab::jumpToFlag(bool forward) {
-    const auto flagged = doc_.flaggedRows();
-    std::vector<int> visible;
-    for (int r : flagged)
-        if (viewRowOf(r) >= 0)
-            visible.push_back(r);
-    if (visible.empty()) {
-        statusText_ = "No flagged rows";
-        return;
-    }
-    int r0 = -1, c0 = 0, r1, c1;
-    const int current = table_->getSelectionRange(r0, c0, r1, c1) ? docRow(r0) : -1;
-    int target;
-    if (forward) {
-        const auto it = std::ranges::upper_bound(visible, current);
-        target = it == visible.end() ? visible.front() : *it;
-    } else {
-        const auto it = std::ranges::lower_bound(visible, current);
-        target = it == visible.begin() ? visible.back() : *(it - 1);
-    }
-    selectCell(target, std::max(c0, 0));
-}
-
-void CsvEditorTab::exportJson() {
-    const auto stem = std::filesystem::path(filePath_).stem().string();
-    const std::string path = FileDialog::saveFile(stem + ".json", "JSON Files", "json");
-    if (path.empty())
-        return;
-    std::ofstream out(std::filesystem::path(path), std::ios::binary | std::ios::trunc);
-    out << doc_.toJson(filtered_ ? viewRows_ : std::vector<int>{});
-    out.close();
-    if (!out)
-        showMessage("Could not write " + path);
-    else
-        statusText_ = std::format("Exported {} rows to JSON", viewRowCount());
-}
-
-void CsvEditorTab::exportFlagged() {
-    const auto rows = doc_.flaggedRows();
-    if (rows.empty()) {
-        showMessage("There are no flagged rows.");
-        return;
-    }
-    const auto stem = std::filesystem::path(filePath_).stem().string();
-    const std::string path =
-        FileDialog::saveFile(stem + "_flagged.csv", "CSV Files", "csv,tsv,txt");
-    if (path.empty())
-        return;
-    std::string error;
-    if (!doc_.saveRows(path, rows, error))
-        showMessage("Could not export the flagged rows.\n\n" + error);
-    else
-        statusText_ = std::format("Exported {} flagged rows", rows.size());
 }
 
 void CsvEditorTab::openDialog(Dialog dialog) {
@@ -544,13 +351,9 @@ void CsvEditorTab::render() {
 
     handleShortcuts();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
     renderToolbar();
-    ImGui::PopStyleColor(3);
-    if (findOpen_)
-        renderFindBar();
+    // same gap under the toolbar as the table viewer
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
     if (!filterError_.empty())
         ImGui::TextColored(colors.red, "%s", filterError_.c_str());
@@ -571,23 +374,12 @@ void CsvEditorTab::handleShortcuts() {
     if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
         return;
     const ImGuiIO& io = ImGui::GetIO();
-    const bool mod = io.KeyMods & ImGuiMod_Shortcut;
-    if (!mod)
+    if (!(io.KeyMods & ImGuiMod_Shortcut))
         return;
     const bool editingText = io.WantTextInput || table_->isEditing();
 
     if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
-        if (io.KeyShift)
-            saveAs();
-        else
-            save();
-    } else if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
-        findOpen_ = true;
-        focusFind_ = true;
-    } else if (ImGui::IsKeyPressed(ImGuiKey_L, false)) {
-        inputNumber_ = 1;
-        dialogColumn_ = 0;
-        openDialog(Dialog::JumpTo);
+        save();
     } else if (!editingText && ((ImGui::IsKeyPressed(ImGuiKey_Z, false) && io.KeyShift) ||
                                 ImGui::IsKeyPressed(ImGuiKey_Y, false))) {
         if (doc_.redo())
@@ -637,28 +429,6 @@ void CsvEditorTab::renderToolbar() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Redo (%s)", shortcut("Z", true).c_str());
 
-    // menus
-    ImGui::SameLine(0, Theme::Spacing::M);
-    if (UIUtils::Button("File " ICON_FA_CARET_DOWN))
-        ImGui::OpenPopup("##csv_file_menu");
-    renderFileMenu();
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::Button("Edit " ICON_FA_CARET_DOWN))
-        ImGui::OpenPopup("##csv_edit_menu");
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::Button("Data " ICON_FA_CARET_DOWN))
-        ImGui::OpenPopup("##csv_data_menu");
-    renderEditMenu();
-    renderDataMenu();
-
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::IconButton(ICON_FA_MAGNIFYING_GLASS)) {
-        findOpen_ = !findOpen_;
-        focusFind_ = findOpen_;
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Find and replace (%s)", shortcut("F").c_str());
-
     // filter
     ImGui::SameLine(0, Theme::Spacing::L);
     filterInput_->render("##csv_filter", filterBuffer_, sizeof(filterBuffer_));
@@ -679,217 +449,8 @@ void CsvEditorTab::renderToolbar() {
     }
 }
 
-void CsvEditorTab::renderFileMenu() {
-    if (!UIUtils::BeginMenuPopup("##csv_file_menu"))
-        return;
-    // tabs render with zero item spacing; menus put it back, like the others
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-    if (ImGui::MenuItem("Save", shortcut("S").c_str(), false, hasUnsavedChanges()))
-        save();
-    if (ImGui::MenuItem("Save As...", shortcut("S", true).c_str()))
-        saveAs();
-    if (ImGui::MenuItem("Reload from Disk")) {
-        if (doc_.isModified())
-            openDialog(Dialog::ConfirmReload);
-        else
-            startLoad();
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem("CSV Properties...")) {
-        editDialect_ = doc_.dialect();
-        copyTo(inputBuffer_, sizeof(inputBuffer_), editDialect_.delimiter);
-        openDialog(Dialog::Properties);
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem("Export JSON..."))
-        exportJson();
-    if (ImGui::MenuItem("Export Flagged Rows...", nullptr, false, doc_.flaggedCount() > 0))
-        exportFlagged();
-    if (ImGui::MenuItem("Split File...", nullptr, false, doc_.rowCount() > 0)) {
-        inputNumber_ = 1000;
-        openDialog(Dialog::SplitFile);
-    }
-    ImGui::PopStyleVar();
-    ImGui::EndPopup();
-}
-
-void CsvEditorTab::renderEditMenu() {
-    if (!UIUtils::BeginMenuPopup("##csv_edit_menu"))
-        return;
-    // tabs render with zero item spacing; menus put it back, like the others
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-    int r0 = -1, c0 = -1, r1 = -1, c1 = -1;
-    const bool hasSel = table_->getSelectionRange(r0, c0, r1, c1);
-    const auto rows = selectedDocRows();
-
-    if (ImGui::MenuItem("Undo", shortcut("Z").c_str(), false, doc_.canUndo()) && doc_.undo())
-        markChanged();
-    if (ImGui::MenuItem("Redo", shortcut("Z", true).c_str(), false, doc_.canRedo()) && doc_.redo())
-        markChanged();
-    ImGui::Separator();
-
-    // inserting rows into a filtered view would land them out of sight
-    if (ImGui::MenuItem("Insert Row Above", nullptr, false, !filtered_)) {
-        doc_.insertRows(hasSel ? docRow(r0) : 0);
-        markChanged();
-    }
-    if (ImGui::MenuItem("Insert Row Below", nullptr, false, !filtered_)) {
-        doc_.insertRows(hasSel ? docRow(r1) + 1 : doc_.rowCount());
-        markChanged();
-    }
-    if (ImGui::MenuItem(rows.size() > 1 ? "Delete Rows" : "Delete Row", nullptr, false,
-                        !rows.empty()))
-        deleteDocRows(rows);
-    ImGui::Separator();
-    if (ImGui::MenuItem("Insert Column Left", nullptr, false, true)) {
-        doc_.insertColumn(hasSel ? c0 : 0);
-        markChanged();
-    }
-    if (ImGui::MenuItem("Insert Column Right", nullptr, false, true)) {
-        doc_.insertColumn(hasSel ? c1 + 1 : doc_.columnCount());
-        markChanged();
-    }
-    if (ImGui::MenuItem(c1 > c0 ? "Delete Columns" : "Delete Column", nullptr, false, hasSel)) {
-        doc_.deleteColumns(c0, c1);
-        table_->setSelectedCell(-1, -1);
-        markChanged();
-    }
-    if (ImGui::MenuItem("Move Columns Left", nullptr, false, hasSel && c0 > 0) &&
-        doc_.moveColumns(c0, c1, -1)) {
-        markChanged();
-        table_->setSelectedCell(-1, -1);
-    }
-    if (ImGui::MenuItem("Move Columns Right", nullptr, false,
-                        hasSel && c1 < doc_.columnCount() - 1) &&
-        doc_.moveColumns(c0, c1, 1)) {
-        markChanged();
-        table_->setSelectedCell(-1, -1);
-    }
-    if (ImGui::MenuItem("Rename Column...", nullptr, false, hasSel && doc_.dialect().hasHeader)) {
-        dialogColumn_ = c0;
-        copyTo(inputBuffer_, sizeof(inputBuffer_), doc_.headers()[c0]);
-        openDialog(Dialog::RenameColumn);
-    }
-    ImGui::Separator();
-    bool header = doc_.dialect().hasHeader;
-    if (ImGui::MenuItem("First Row Is Header", nullptr, &header, !filtered_)) {
-        doc_.setHasHeader(header);
-        filterInput_->addKeywords(doc_.headers());
-        markChanged();
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem("Find and Replace...", shortcut("F").c_str())) {
-        findOpen_ = true;
-        focusFind_ = true;
-    }
-    if (ImGui::MenuItem("Jump to Cell...", shortcut("L").c_str())) {
-        inputNumber_ = hasSel ? docRow(r0) + 1 : 1;
-        dialogColumn_ = hasSel ? c0 : 0;
-        openDialog(Dialog::JumpTo);
-    }
-    ImGui::PopStyleVar();
-    ImGui::EndPopup();
-}
-
-void CsvEditorTab::renderDataMenu() {
-    if (!UIUtils::BeginMenuPopup("##csv_data_menu"))
-        return;
-    // tabs render with zero item spacing; menus put it back, like the others
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-    int r0 = -1, c0 = -1, r1 = -1, c1 = -1;
-    const bool hasSel = table_->getSelectionRange(r0, c0, r1, c1);
-    const auto rows = selectedDocRows();
-    const int flagged = doc_.flaggedCount();
-
-    if (ImGui::MenuItem("Sort Ascending by Column", nullptr, false, hasSel))
-        sortColumn(c0, true);
-    if (ImGui::MenuItem("Sort Descending by Column", nullptr, false, hasSel))
-        sortColumn(c0, false);
-    ImGui::Separator();
-    if (ImGui::MenuItem("Split Column...", nullptr, false, hasSel)) {
-        dialogColumn_ = c0;
-        copyTo(inputBuffer_, sizeof(inputBuffer_), ",");
-        openDialog(Dialog::SplitColumn);
-    }
-    if (ImGui::MenuItem("Merge Selected Columns...", nullptr, false, hasSel && c1 > c0)) {
-        inputNumber_ = c0;
-        inputNumber2_ = c1;
-        copyTo(inputBuffer_, sizeof(inputBuffer_), " ");
-        openDialog(Dialog::MergeColumns);
-    }
-    if (ImGui::MenuItem("Check Column Consistency", nullptr, false, hasSel)) {
-        const int count = doc_.flagInconsistent(c0);
-        showMessage(count == 0
-                        ? std::format("Every value in \"{}\" looks alike.", doc_.headers()[c0])
-                        : std::format("{} row{} in \"{}\" do not match the column's "
-                                      "usual kind of value and were flagged.",
-                                      count, count == 1 ? "" : "s", doc_.headers()[c0]));
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem("Flag Selected Rows", nullptr, false, !rows.empty()))
-        doc_.setFlags(rows, true);
-    if (ImGui::MenuItem("Unflag Selected Rows", nullptr, false, !rows.empty()))
-        doc_.setFlags(rows, false);
-    if (ImGui::MenuItem("Invert Flags"))
-        doc_.invertFlags();
-    if (ImGui::MenuItem("Clear Flags", nullptr, false, flagged > 0))
-        doc_.clearFlags();
-    if (ImGui::MenuItem("Previous Flagged Row", nullptr, false, flagged > 0))
-        jumpToFlag(false);
-    if (ImGui::MenuItem("Next Flagged Row", nullptr, false, flagged > 0))
-        jumpToFlag(true);
-    if (ImGui::MenuItem("Delete Flagged Rows", nullptr, false, flagged > 0))
-        deleteDocRows(doc_.flaggedRows());
-    if (ImGui::MenuItem("Export Flagged Rows...", nullptr, false, flagged > 0))
-        exportFlagged();
-    ImGui::PopStyleVar();
-    ImGui::EndPopup();
-}
-
-void CsvEditorTab::renderColumnMenu(int col) {
-    if (ImGui::MenuItem("Insert Column Left")) {
-        doc_.insertColumn(col);
-        markChanged();
-    }
-    if (ImGui::MenuItem("Insert Column Right")) {
-        doc_.insertColumn(col + 1);
-        markChanged();
-    }
-    if (ImGui::MenuItem("Rename...", nullptr, false, doc_.dialect().hasHeader)) {
-        dialogColumn_ = col;
-        copyTo(inputBuffer_, sizeof(inputBuffer_), doc_.headers()[col]);
-        openDialog(Dialog::RenameColumn);
-    }
-    if (ImGui::MenuItem("Move Left", nullptr, false, col > 0) && doc_.moveColumns(col, col, -1))
-        markChanged();
-    if (ImGui::MenuItem("Move Right", nullptr, false, col < doc_.columnCount() - 1) &&
-        doc_.moveColumns(col, col, 1))
-        markChanged();
-    if (ImGui::MenuItem("Split...")) {
-        dialogColumn_ = col;
-        copyTo(inputBuffer_, sizeof(inputBuffer_), ",");
-        openDialog(Dialog::SplitColumn);
-    }
-    if (ImGui::MenuItem("Check Consistency")) {
-        const int count = doc_.flagInconsistent(col);
-        showMessage(count == 0 ? "Every value in this column looks alike."
-                               : std::format("{} inconsistent row{} flagged.", count,
-                                             count == 1 ? "" : "s"));
-    }
-    if (ImGui::MenuItem("Delete Column")) {
-        doc_.deleteColumns(col, col);
-        table_->setSelectedCell(-1, -1);
-        markChanged();
-    }
-}
-
 void CsvEditorTab::renderCellMenu(int row, int) {
-    auto rows = selectedDocRows();
-    if (rows.empty())
-        rows.push_back(docRow(row));
-    const bool flagged = doc_.isFlagged(docRow(row));
-    if (ImGui::MenuItem(flagged ? ICON_FA_FLAG " Unflag Row" : ICON_FA_FLAG " Flag Row"))
-        doc_.setFlags(rows, !flagged);
+    // inserting rows into a filtered view would land them out of sight
     if (ImGui::MenuItem("Insert Row Above", nullptr, false, !filtered_)) {
         doc_.insertRows(docRow(row));
         markChanged();
@@ -900,93 +461,11 @@ void CsvEditorTab::renderCellMenu(int row, int) {
     }
 }
 
-void CsvEditorTab::renderFindBar() {
-    const auto& colors = Application::getInstance().getCurrentColors();
-    bool changed = false;
-
-    ImGui::SetNextItemWidth(240.0f);
-    if (focusFind_) {
-        ImGui::SetKeyboardFocusHere();
-        focusFind_ = false;
-    }
-    if (ImGui::InputTextWithHint("##csv_find", "Find", findBuffer_, sizeof(findBuffer_),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-        findNext(!ImGui::GetIO().KeyShift);
-        ImGui::SetKeyboardFocusHere(-1);
-    }
-    changed |= ImGui::IsItemEdited();
-    if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape))
-        findOpen_ = false;
-
-    auto toggle = [&](const char* label, bool& value, const char* tip) {
-        ImGui::SameLine(0, Theme::Spacing::XS);
-        if (value)
-            ImGui::PushStyleColor(ImGuiCol_Button, colors.surface2);
-        if (UIUtils::Button(label, value ? UIUtils::ButtonVariant::Custom
-                                         : UIUtils::ButtonVariant::Secondary)) {
-            value = !value;
-            changed = true;
-        }
-        if (value)
-            ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", tip);
-    };
-    toggle("Aa", find_.matchCase, "Match case");
-    toggle("[ab]", find_.wholeCell, "Match the whole cell");
-    toggle(".*", find_.regex, "Regular expression");
-    toggle(ICON_FA_TABLE_COLUMNS, onlyCurrentColumn_, "Only the selected column");
-
-    ImGui::SameLine(0, Theme::Spacing::S);
-    if (UIUtils::IconButton(ICON_FA_ARROW_UP))
-        findNext(false);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Previous match (Shift+Enter)");
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::IconButton(ICON_FA_ARROW_DOWN))
-        findNext(true);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Next match (Enter)");
-
-    ImGui::SameLine(0, Theme::Spacing::M);
-    ImGui::SetNextItemWidth(200.0f);
-    ImGui::InputTextWithHint("##csv_replace", "Replace with", replaceBuffer_,
-                             sizeof(replaceBuffer_));
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::Button("Replace"))
-        replaceCurrent();
-    ImGui::SameLine(0, Theme::Spacing::XS);
-    if (UIUtils::Button("Replace All"))
-        replaceAll();
-
-    if (!findStatus_.empty()) {
-        ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(colors.subtext0, "%s", findStatus_.c_str());
-    }
-    ImGui::SameLine(0, Theme::Spacing::M);
-    if (UIUtils::IconButton(ICON_FA_XMARK))
-        findOpen_ = false;
-
-    if (changed) {
-        find_.text = findBuffer_;
-        findStatus_.clear();
-    }
-    // the matcher behind the cell highlight; rebuilt only when the search changes
-    if (changed || !matcher_) {
-        find_.text = findBuffer_;
-        matcher_.emplace(find_);
-    }
-}
-
 void CsvEditorTab::renderTableView() {
     if (tableDirty_)
         rebuildTable();
     if (doc_.columnCount() == 0) {
         ImGui::TextDisabled("This file is empty.");
-        if (UIUtils::Button(ICON_FA_PLUS " Add Column")) {
-            doc_.insertColumn(0, "column1");
-            markChanged();
-        }
         return;
     }
     if (viewRowCount() == 0) {
@@ -1010,8 +489,6 @@ void CsvEditorTab::renderStatusBar() {
                         d.bom ? " BOM" : "", lineBreakName(d.lineBreak));
     if (!d.hasHeader)
         text += " · no header row";
-    if (const int flagged = doc_.flaggedCount(); flagged > 0)
-        text += std::format(" · {} flagged", flagged);
     ImGui::TextColored(colors.subtext0, "%s", text.c_str());
     if (doc_.raggedRows() > 0) {
         ImGui::SameLine(0, Theme::Spacing::M);
@@ -1046,33 +523,8 @@ void CsvEditorTab::renderDialogs() {
         dialog_ = Dialog::None;
         return;
     }
-    const auto& colors = Application::getInstance().getCurrentColors();
     bool close = false;
-    auto title = [&](const char* text) {
-        ImGui::TextUnformatted(text);
-        ImGui::Spacing();
-    };
-    auto buttons = [&](const char* ok, bool enabled = true) {
-        ImGui::Spacing();
-        bool pressed = false;
-        ImGui::BeginDisabled(!enabled);
-        if (UIUtils::Button(ok, UIUtils::ButtonVariant::Primary) ||
-            (enabled && ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
-            pressed = true;
-        ImGui::EndDisabled();
-        ImGui::SameLine(0, Theme::Spacing::S);
-        if (UIUtils::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
-            close = true;
-        if (pressed)
-            close = true;
-        return pressed;
-    };
-    auto column = [&](int col) {
-        return col >= 0 && col < doc_.columnCount() ? doc_.headers()[col] : std::string{};
-    };
-
-    switch (dialog_) {
-    case Dialog::Message:
+    if (dialog_ == Dialog::Message) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
         ImGui::TextUnformatted(message_.c_str());
         ImGui::PopTextWrapPos();
@@ -1081,220 +533,25 @@ void CsvEditorTab::renderDialogs() {
             ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
             ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             close = true;
-        break;
-
-    case Dialog::ConfirmReload:
-        title("Discard unsaved changes and reload the file?");
-        if (buttons("Reload"))
+    } else if (dialog_ == Dialog::ConfirmReload) {
+        ImGui::TextUnformatted("Discard unsaved changes and reload the file?");
+        ImGui::Spacing();
+        ImGui::Spacing();
+        if (UIUtils::Button("Reload", UIUtils::ButtonVariant::Primary) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             startLoad();
-        else if (close)
-            reloadDialect_.reset();
-        break;
-
-    case Dialog::RenameColumn:
-        title("Rename column");
-        ImGui::SetNextItemWidth(280.0f);
-        if (ImGui::IsWindowAppearing())
-            ImGui::SetKeyboardFocusHere();
-        ImGui::InputText("##rename", inputBuffer_, sizeof(inputBuffer_));
-        if (buttons("Rename")) {
-            doc_.renameColumn(dialogColumn_, inputBuffer_);
-            filterInput_->addKeywords({inputBuffer_});
-            markChanged();
-        }
-        break;
-
-    case Dialog::SplitColumn:
-        ImGui::Text("Split \"%s\" into columns", column(dialogColumn_).c_str());
-        ImGui::Spacing();
-        ImGui::TextColored(colors.subtext0, "Separator");
-        ImGui::SetNextItemWidth(120.0f);
-        if (ImGui::IsWindowAppearing())
-            ImGui::SetKeyboardFocusHere();
-        ImGui::InputText("##sep", inputBuffer_, sizeof(inputBuffer_));
-        if (buttons("Split", inputBuffer_[0] != '\0')) {
-            const int parts = doc_.splitColumn(dialogColumn_, inputBuffer_);
-            if (parts == 0)
-                statusText_ = "Nothing to split";
-            else {
-                statusText_ = std::format("Split into {} columns", parts);
-                markChanged();
-            }
-        }
-        break;
-
-    case Dialog::MergeColumns:
-        ImGui::Text("Merge \"%s\" to \"%s\" into one column", column(inputNumber_).c_str(),
-                    column(inputNumber2_).c_str());
-        ImGui::Spacing();
-        ImGui::TextColored(colors.subtext0, "Join with");
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputText("##join", inputBuffer_, sizeof(inputBuffer_));
-        if (buttons("Merge")) {
-            doc_.mergeColumns(inputNumber_, inputNumber2_, inputBuffer_);
-            table_->setSelectedCell(-1, -1);
-            markChanged();
-        }
-        break;
-
-    case Dialog::SplitFile: {
-        title("Split into several files");
-        ImGui::TextColored(colors.subtext0, "Rows per file");
-        ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputInt("##rows", &inputNumber_, 100, 1000);
-        inputNumber_ = std::max(inputNumber_, 1);
-        const int files = (doc_.rowCount() + inputNumber_ - 1) / inputNumber_;
-        ImGui::TextColored(colors.subtext0, "%d file%s, each with the header row", files,
-                           files == 1 ? "" : "s");
-        if (buttons("Choose Location...")) {
-            const auto stem = std::filesystem::path(filePath_).filename().string();
-            const std::string path = FileDialog::saveFile(stem, "CSV Files", "csv,tsv,txt");
-            if (!path.empty()) {
-                std::string error;
-                const auto written = doc_.splitFile(path, inputNumber_, error);
-                if (!error.empty())
-                    message_ = "Could not split the file.\n\n" + error;
-                else
-                    statusText_ = std::format("Wrote {} files", written.size());
-            }
-        }
-        break;
-    }
-
-    case Dialog::JumpTo: {
-        title("Jump to cell");
-        ImGui::TextColored(colors.subtext0, "Row (1 to %d)", doc_.rowCount());
-        ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::IsWindowAppearing())
-            ImGui::SetKeyboardFocusHere();
-        ImGui::InputInt("##row", &inputNumber_);
-        inputNumber_ = std::clamp(inputNumber_, 1, std::max(doc_.rowCount(), 1));
-        ImGui::TextColored(colors.subtext0, "Column");
-        ImGui::SetNextItemWidth(220.0f);
-        if (ImGui::BeginCombo("##col", column(dialogColumn_).c_str())) {
-            for (int c = 0; c < doc_.columnCount(); ++c) {
-                ImGui::PushID(c);
-                if (ImGui::Selectable(doc_.headers()[c].empty() ? "(unnamed)"
-                                                                : doc_.headers()[c].c_str(),
-                                      c == dialogColumn_))
-                    dialogColumn_ = c;
-                ImGui::PopID();
-            }
-            ImGui::EndCombo();
-        }
-        if (buttons("Go")) {
-            const int row = inputNumber_ - 1;
-            if (viewRowOf(row) < 0 && filtered_)
-                clearFilter();
-            selectCell(row, std::max(dialogColumn_, 0));
-        }
-        break;
-    }
-
-    case Dialog::Properties: {
-        title("CSV properties");
-        CsvDialect& d = editDialect_;
-        const float w = 220.0f;
-
-        int delim = 5;
-        for (int i = 0; i < 5; ++i)
-            if (d.delimiter == kDelimiters[i])
-                delim = i;
-        ImGui::TextColored(colors.subtext0, "Delimiter");
-        ImGui::SetNextItemWidth(w);
-        if (ImGui::Combo("##delim", &delim, kDelimiterLabels, 6)) {
-            if (delim < 5)
-                d.delimiter = kDelimiters[delim];
-            copyTo(inputBuffer_, sizeof(inputBuffer_), d.delimiter);
-        }
-        if (delim == 5) {
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(60.0f);
-            if (ImGui::InputText("##delim_other", inputBuffer_, sizeof(inputBuffer_)) &&
-                inputBuffer_[0])
-                d.delimiter = inputBuffer_;
-        }
-
-        ImGui::TextColored(colors.subtext0, "Quote character");
-        char quote[2] = {d.quote, '\0'};
-        ImGui::SetNextItemWidth(60.0f);
-        if (ImGui::InputText("##quote", quote, sizeof(quote)) && quote[0])
-            d.quote = quote[0];
-
-        ImGui::TextColored(colors.subtext0, "Quote fields");
-        int style = static_cast<int>(d.quoteStyle);
-        ImGui::SetNextItemWidth(w);
-        if (ImGui::Combo("##qstyle", &style, kQuoteStyleLabels, 3))
-            d.quoteStyle = static_cast<CsvDialect::QuoteStyle>(style);
-
-        ImGui::TextColored(colors.subtext0, "Line break");
-        int lb = d.lineBreak == "\r\n" ? 1 : d.lineBreak == "\r" ? 2 : 0;
-        ImGui::SetNextItemWidth(w);
-        if (ImGui::Combo("##lb", &lb, kLineBreakLabels, 3))
-            d.lineBreak = kLineBreaks[lb];
-
-        ImGui::TextColored(colors.subtext0, "Encoding");
-        int enc = static_cast<int>(d.encoding);
-        ImGui::SetNextItemWidth(w);
-        if (ImGui::Combo("##enc", &enc, kEncodingLabels, 4))
-            d.encoding = static_cast<CsvDialect::Encoding>(enc);
-        ImGui::SameLine();
-        ImGui::Checkbox("BOM", &d.bom);
-
-        ImGui::Checkbox("First row is the header", &d.hasHeader);
-        ImGui::Checkbox("End the file with a line break", &d.trailingLineBreak);
-
-        ImGui::Spacing();
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 26.0f);
-        ImGui::TextColored(colors.subtext0,
-                           "Apply keeps the data and writes it in this format on the next "
-                           "save. Reopen reads the file again with these settings, for a "
-                           "file that was detected wrongly.");
-        ImGui::PopTextWrapPos();
-        ImGui::Spacing();
-        if (UIUtils::Button("Apply", UIUtils::ButtonVariant::Primary)) {
-            doc_.setDialect(d);
-            doc_.setHasHeader(d.hasHeader);
-            filterInput_->addKeywords(doc_.headers());
-            markChanged();
             close = true;
-        }
-        ImGui::SameLine(0, Theme::Spacing::S);
-        if (UIUtils::Button("Reopen with These Settings")) {
-            reloadDialect_ = d;
-            close = true;
-            if (doc_.isModified()) {
-                // keep the chosen format for after the confirmation
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-                openDialog(Dialog::ConfirmReload);
-                return;
-            }
-            startLoad();
         }
         ImGui::SameLine(0, Theme::Spacing::S);
         if (UIUtils::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             close = true;
-        break;
-    }
-
-    case Dialog::None:
+    } else {
         close = true;
-        break;
     }
 
     if (close) {
         ImGui::CloseCurrentPopup();
-        // a dialog that ended in an error shows it next
-        if (!message_.empty() && dialog_ != Dialog::Message) {
-            ImGui::EndPopup();
-            ImGui::PopStyleVar();
-            openDialog(Dialog::Message);
-            return;
-        }
-        if (dialog_ == Dialog::Message)
-            message_.clear();
+        message_.clear();
         dialog_ = Dialog::None;
     }
     ImGui::EndPopup();

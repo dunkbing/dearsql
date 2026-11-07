@@ -236,7 +236,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         holdForScreenshot(ctx);
     };
 
-    // the csv editor with a flagged row and find highlighting
+    // the csv editor with a cell selected
     t = IM_REGISTER_TEST(engine, "Docs", "csv-editor");
     t->TestFunc = [](ImGuiTestContext* ctx) {
         const auto path = std::filesystem::temp_directory_path() / "employees.csv";
@@ -258,14 +258,6 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->SetRef(tab->getWindowName().c_str());
         for (int i = 0; i < 300 && !ctx->ItemExists("**/Alan Turing"); ++i)
             ctx->Yield();
-        ctx->ItemClick("**/Alan Turing");
-        ctx->ItemClick("**/Data " ICON_FA_CARET_DOWN);
-        ctx->SetRef("//$FOCUSED");
-        ctx->ItemClick("Flag Selected Rows");
-        ctx->SetRef(tab->getWindowName().c_str());
-        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_F);
-        ctx->Yield(2);
-        ctx->ItemInputValue("**/##csv_find", "Engineering");
         ctx->ItemClick("**/Grace Hopper");
         ctx->Yield(5);
         holdForScreenshot(ctx);

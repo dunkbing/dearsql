@@ -48,12 +48,8 @@ public:
     // without it each cell goes through OnCellEditCallback
     using OnRangeEditCallback =
         std::function<void(int row, int col, const std::vector<std::vector<std::string>>& values)>;
-    // background tint for a row / a cell, 0 = none
-    using RowBgCallback = std::function<unsigned int(int row)>;
-    using CellBgCallback = std::function<unsigned int(int row, int col)>;
-    // extra items appended to the cell and column menus
+    // extra items appended to the cell menu
     using CellMenuCallback = std::function<void(int row, int col)>;
-    using ColumnMenuCallback = std::function<void(int col)>;
     // number shown in the row-number column (filtered views show source rows)
     using RowNumberCallback = std::function<int(int row)>;
 
@@ -119,17 +115,8 @@ public:
     void setOnRangeEdit(OnRangeEditCallback callback) {
         onRangeEdit = std::move(callback);
     }
-    void setRowBgCallback(RowBgCallback callback) {
-        rowBgCb = std::move(callback);
-    }
-    void setCellBgCallback(CellBgCallback callback) {
-        cellBgCb = std::move(callback);
-    }
     void setCellMenuExtension(CellMenuCallback callback) {
         cellMenuExt = std::move(callback);
-    }
-    void setColumnMenuExtension(ColumnMenuCallback callback) {
-        columnMenuExt = std::move(callback);
     }
     void setRowNumberCallback(RowNumberCallback callback) {
         rowNumberCb = std::move(callback);
@@ -244,10 +231,7 @@ private:
     std::vector<std::string> fkTargets;
     OnDeleteRowCallback onDeleteRow;
     OnRangeEditCallback onRangeEdit;
-    RowBgCallback rowBgCb;
-    CellBgCallback cellBgCb;
     CellMenuCallback cellMenuExt;
-    ColumnMenuCallback columnMenuExt;
     RowNumberCallback rowNumberCb;
 
     // writes a block through onRangeEdit, or cell by cell

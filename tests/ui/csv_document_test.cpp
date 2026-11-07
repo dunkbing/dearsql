@@ -107,17 +107,6 @@ TEST(CsvDocumentTest, Utf16AndWindows1252RoundTrip) {
     }
 }
 
-TEST(CsvDocumentTest, OpenWithChosenFormat) {
-    TempFile f("a,b;c\n1,2;3\n");
-    CsvDocument doc;
-    std::string error;
-    CsvDialect d;
-    d.delimiter = ";";
-    ASSERT_TRUE(doc.load(f.str(), error, d));
-    EXPECT_EQ(doc.columnCount(), 2);
-    EXPECT_EQ(doc.headers()[0], "a,b");
-}
-
 TEST(CsvDocumentTest, PadsRaggedRows) {
     TempFile f("a,b\n1\n1,2,3\n");
     const CsvDocument doc = loaded(f);
@@ -132,10 +121,7 @@ TEST(CsvDocumentTest, EmptyFile) {
     CsvDocument doc = loaded(f);
     EXPECT_EQ(doc.rowCount(), 0);
     EXPECT_EQ(doc.columnCount(), 0);
-    doc.insertColumn(0, "x");
-    doc.insertRows(0);
-    doc.setCell(0, 0, "1");
-    EXPECT_EQ(doc.toText(), "x\n1\n");
+    EXPECT_EQ(doc.toText(), "");
 }
 
 TEST(CsvDocumentTest, UndoRedoTracksSavedState) {
@@ -162,68 +148,18 @@ TEST(CsvDocumentTest, UndoRedoTracksSavedState) {
     EXPECT_FALSE(doc.canRedo());
 }
 
-TEST(CsvDocumentTest, SortIsNumericAwareAndCarriesFlags) {
+TEST(CsvDocumentTest, SortIsNumericAware) {
     TempFile f("n\n10\n9\n\nabc\n100\n");
     CsvDocument doc = loaded(f);
-    doc.setFlags({0}, true); // the "10" row
     doc.sortBy(0, true);
     std::vector<std::string> got;
     for (const auto& r : doc.rows())
         got.push_back(r[0]);
     EXPECT_EQ(got, (std::vector<std::string>{"9", "10", "100", "abc", ""}));
-    EXPECT_EQ(doc.flaggedRows(), std::vector<int>{1});
     doc.sortBy(0, false);
     EXPECT_EQ(doc.rows()[0][0], "abc");
     EXPECT_EQ(doc.rows()[1][0], "100");
     EXPECT_EQ(doc.rows().back()[0], "");
-}
-
-TEST(CsvDocumentTest, FindAndReplace) {
-    TempFile f("a,b\nFoo,bar\nbaz,food\n");
-    CsvDocument doc = loaded(f);
-    CsvDocument::FindOptions find;
-    find.text = "foo";
-    auto hit = doc.findNext(find, 0, 0, true);
-    ASSERT_TRUE(hit);
-    EXPECT_EQ(*hit, std::make_pair(1, 1)); // after (0,0), wrapping
-    hit = doc.findNext(find, 1, 1, true);
-    EXPECT_EQ(*hit, std::make_pair(0, 0));
-    find.matchCase = true;
-    EXPECT_EQ(*doc.findNext(find, 1, 1, true), std::make_pair(1, 1));
-    // a filtered view only searches its rows
-    find.matchCase = false;
-    EXPECT_EQ(*doc.findNext(find, 1, 0, true, {1}), std::make_pair(1, 1));
-
-    find.matchCase = false;
-    EXPECT_EQ(doc.replaceAll(find, "x"), 2);
-    EXPECT_EQ(doc.rows()[0][0], "x");
-    EXPECT_EQ(doc.rows()[1][1], "xd");
-
-    CsvDocument::FindOptions re;
-    re.text = "^b(a)";
-    re.regex = true;
-    EXPECT_EQ(doc.replaceAll(re, "B$1"), 2);
-    EXPECT_EQ(doc.rows()[0][1], "Bar");
-    EXPECT_EQ(doc.rows()[1][0], "Baz");
-}
-
-TEST(CsvDocumentTest, ColumnTools) {
-    TempFile f("name,city\nada lovelace,london\ngrace,ny\n");
-    CsvDocument doc = loaded(f);
-    EXPECT_EQ(doc.splitColumn(0, " "), 2);
-    EXPECT_EQ(doc.headers(), (std::vector<std::string>{"name 1", "name 2", "city"}));
-    EXPECT_EQ(doc.rows()[1], (std::vector<std::string>{"grace", "", "ny"}));
-    doc.mergeColumns(0, 1, " ");
-    EXPECT_EQ(doc.rows()[0][0], "ada lovelace");
-    EXPECT_EQ(doc.rows()[1][0], "grace");
-    EXPECT_TRUE(doc.moveColumns(1, 1, -1));
-    EXPECT_EQ(doc.headers()[0], "city");
-    EXPECT_FALSE(doc.moveColumns(0, 0, -1));
-    doc.insertColumn(1, "age");
-    doc.renameColumn(1, "years");
-    EXPECT_EQ(doc.headers()[1], "years");
-    doc.deleteColumns(1, 1);
-    EXPECT_EQ(doc.columnCount(), 2);
 }
 
 TEST(CsvDocumentTest, PasteGrowsTable) {
@@ -235,49 +171,6 @@ TEST(CsvDocumentTest, PasteGrowsTable) {
     EXPECT_EQ(doc.rows()[1][1], "w");
     doc.undo();
     EXPECT_EQ(doc.columnCount(), 1);
-}
-
-TEST(CsvDocumentTest, SwitchHeaderRow) {
-    TempFile f("a,b\n1,2\n");
-    CsvDocument doc = loaded(f);
-    doc.setHasHeader(false);
-    EXPECT_EQ(doc.rowCount(), 2);
-    EXPECT_EQ(doc.headers()[0], "Column 1");
-    EXPECT_EQ(doc.toText(), "a,b\n1,2\n");
-    doc.setHasHeader(true);
-    EXPECT_EQ(doc.headers()[0], "a");
-    EXPECT_EQ(doc.rowCount(), 1);
-}
-
-TEST(CsvDocumentTest, FlagsAndConsistency) {
-    TempFile f("n\n1\n2.5\nabc\n\n4\n");
-    CsvDocument doc = loaded(f);
-    EXPECT_EQ(doc.flagInconsistent(0), 1);
-    EXPECT_EQ(doc.flaggedRows(), std::vector<int>{2});
-    doc.invertFlags();
-    EXPECT_EQ(doc.flaggedCount(), 4);
-    doc.deleteRows(doc.flaggedRows());
-    EXPECT_EQ(doc.rowCount(), 1);
-    EXPECT_EQ(doc.rows()[0][0], "abc");
-    EXPECT_FALSE(doc.isFlagged(0));
-}
-
-TEST(CsvDocumentTest, ExportRowsJsonAndSplit) {
-    TempFile f("id;name\n1;a\n2;b\n3;c\n");
-    CsvDocument doc = loaded(f);
-    TempFile out("", ".csv");
-    std::string error;
-    ASSERT_TRUE(doc.saveRows(out.str(), {0, 2}, error)) << error;
-    EXPECT_EQ(readFile(out.path), "id;name\n1;a\n3;c\n");
-
-    EXPECT_EQ(doc.toJson({1}), "[\n  {\n    \"id\": \"2\",\n    \"name\": \"b\"\n  }\n]\n");
-
-    const auto files = doc.splitFile(out.str(), 2, error);
-    ASSERT_EQ(files.size(), 2u) << error;
-    EXPECT_EQ(readFile(files[0]), "id;name\n1;a\n2;b\n");
-    EXPECT_EQ(readFile(files[1]), "id;name\n3;c\n");
-    for (const auto& p : files)
-        std::filesystem::remove(p);
 }
 
 TEST(CsvDocumentTest, SetCellsIsOneUndoStep) {
@@ -292,25 +185,3 @@ TEST(CsvDocumentTest, SetCellsIsOneUndoStep) {
     EXPECT_FALSE(doc.isModified());
 }
 
-TEST(CsvDocumentTest, MatcherRejectsBadRegex) {
-    CsvDocument::FindOptions find;
-    find.text = "([";
-    find.regex = true;
-    const CsvDocument::Matcher m(find);
-    EXPECT_FALSE(m.valid());
-    EXPECT_FALSE(m("(["));
-}
-
-TEST(CsvDocumentTest, FormatChangeIsUndoable) {
-    TempFile f("a,b\n1,2\n");
-    CsvDocument doc = loaded(f);
-    CsvDialect d = doc.dialect();
-    d.delimiter = ";";
-    d.lineBreak = "\r\n";
-    doc.setDialect(d);
-    EXPECT_TRUE(doc.isModified());
-    EXPECT_EQ(doc.toText(), "a;b\r\n1;2\r\n");
-    doc.undo();
-    EXPECT_FALSE(doc.isModified());
-    EXPECT_EQ(doc.toText(), "a,b\n1,2\n");
-}

@@ -511,12 +511,6 @@ void TableRenderer::render(const char* tableId) {
                 const auto& row = data[rowIdx];
                 ImGui::TableNextRow();
 
-                // row tint under the selection tint, so a flagged row stays visible
-                if (rowBgCb) {
-                    if (const ImU32 bg = rowBgCb(rowIdx); bg != 0)
-                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, bg);
-                }
-
                 if (config.allowSelection && selectedRow == rowIdx) {
                     ImGui::TableSetBgColor(
                         ImGuiTableBgTarget_RowBg1,
@@ -817,9 +811,6 @@ void TableRenderer::renderCell(int row, int col) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
                 ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.25f)));
-        } else if (cellBgCb) {
-            if (const ImU32 bg = cellBgCb(row, col); bg != 0)
-                ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, bg);
         }
 
         const std::string& cellValue = data[row][col];
@@ -1577,11 +1568,6 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
                     onSortChanged(colIdx, colName, SortDirection::Descending);
                 }
             }
-        }
-
-        if (columnMenuExt) {
-            ImGui::Separator();
-            columnMenuExt(colIdx);
         }
 
         ImGui::EndPopup();

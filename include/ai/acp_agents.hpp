@@ -44,10 +44,13 @@ namespace AcpAgents {
 
     // PATH of the user's login shell (cached); GUI apps inherit a minimal one
     const std::string& loginShellPath();
+    // full path of a command on the login PATH (or a path given as is)
+    std::optional<std::string> locateExecutable(const std::string& name);
     bool executableExists(const std::string& name);
 
     // argv to launch the agent: a registry binary, the binary on PATH, the managed
-    // bun, else the first available runner. nullopt when nothing can run it
+    // bun, else the first available runner; argv[0] is always a full path. nullopt
+    // when nothing can run it
     std::optional<std::vector<std::string>> resolveInvocation(const AgentDef& def);
 
     // first install option whose tool is present, or nullptr

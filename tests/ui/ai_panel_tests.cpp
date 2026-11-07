@@ -1,3 +1,4 @@
+#include "ai/acp_agents.hpp"
 #include "application.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -51,6 +52,18 @@ void RegisterAiPanelTests(ImGuiTestEngine* engine) {
         ctx->Yield(3);
 
         IM_CHECK(ImGui::FindWindowByName("##ai_mention_popup") != nullptr);
+    };
+
+    // a gui app opened from the dock has a minimal PATH, so a bare name would not
+    // spawn: every resolved agent command must start with a full path
+    t = IM_REGISTER_TEST(engine, "Assistant", "Agent commands resolve to full paths");
+    t->TestFunc = [](ImGuiTestContext*) {
+        IM_CHECK_STR_EQ(AcpAgents::locateExecutable("sh").value_or("").c_str(), "/bin/sh");
+        for (const auto& def : AcpAgents::catalog()) {
+            if (const auto argv = AcpAgents::resolveInvocation(def)) {
+                IM_CHECK(!argv->empty() && argv->front().starts_with("/"));
+            }
+        }
     };
 }
 

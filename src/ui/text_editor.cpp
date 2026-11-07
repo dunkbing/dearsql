@@ -374,7 +374,8 @@ namespace dearsql {
         p.type = toImU32(colors.yellow);
         p.operator_ = toImU32(colors.teal);
         p.cursor = toImU32(colors.text);
-        p.selection = toImU32Alpha(colors.surface2, 120);
+        p.selection =
+            toImU32Alpha(colors.blue, 90); // accent: a grey surface vanishes on the background
         p.lineNumber = toImU32(colors.overlay2);
         p.currentLineNumber = toImU32(colors.text);
         p.currentLineBackground = toImU32(colors.surface0);

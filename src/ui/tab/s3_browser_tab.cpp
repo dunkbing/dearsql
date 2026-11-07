@@ -226,13 +226,11 @@ void S3BrowserTab::render() {
     renderToolbar();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
-    const float statusH = ImGui::GetTextLineHeightWithSpacing() + Theme::Spacing::XS;
-    if (ImGui::BeginChild(
-            "##s3_body", ImVec2(0, std::max(ImGui::GetContentRegionAvail().y - statusH, 100.0f)))) {
-        renderTable();
-    }
-    ImGui::EndChild();
     renderStatusBar();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    if (ImGui::BeginChild("##s3_body"))
+        renderTable();
+    ImGui::EndChild();
     renderDetails();
 }
 

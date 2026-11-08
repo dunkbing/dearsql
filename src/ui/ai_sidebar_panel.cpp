@@ -253,6 +253,10 @@ AISidebarPanel::AISidebarPanel(std::shared_ptr<DatabaseInterface> db)
             case acp::LogLevel::Warn:
             case acp::LogLevel::Error: {
                 spdlog::warn("ACP: {}", msg);
+                // a stray reply (grok answers its own "skills-reload") is the agent's
+                // business: logged, not shown
+                if (msg.starts_with("response for unknown request id"))
+                    break;
                 std::lock_guard lock(g_acpWarnMutex);
                 g_acpWarnings.push_back(msg);
                 break;
@@ -288,17 +292,10 @@ std::vector<std::string> AISidebarPanel::currentInvocation(std::string& missingR
         if (auto inv = AcpAgents::resolveInvocation(*def)) {
             return *inv;
         }
-        std::string tried = def->runCmd.empty() ? "" : "`" + def->runCmd.front() + "`";
-        for (const auto& runner : AcpAgents::runners()) {
-            const bool usable = runner.python ? !def->pyPackage.empty() : !def->npmPackage.empty();
-            if (usable) {
-                tried += (tried.empty() ? "" : ", ") + ("`" + runner.tool + "`");
-            }
-        }
-        missingReason = tried.empty()
+        // npm agents and registry binaries set themselves up: the card says so
+        missingReason = def->npmPackage.empty() && def->registryId.empty()
                             ? std::format("{} is not installed.", def->name)
-                            : std::format("{} is not installed (looked for {} on your PATH).",
-                                          def->name, tried);
+                            : "";
         return {};
     }
     missingReason = "No agent selected.";
@@ -1072,25 +1069,6 @@ AISidebarPanel::Item* AISidebarPanel::findToolItem(const std::string& toolId) {
 }
 
 void AISidebarPanel::pollAcp() {
-    // installer finished?
-    if (installer_.check()) {
-        const auto& res = installer_.lastResult();
-        if (res.success) {
-            items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
-            agentMissing_ = false;
-            if (!pendingPromptBlocks_.empty()) {
-                queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
-            }
-        } else {
-            std::string tail = res.output.empty() ? res.errorMessage : res.output;
-            if (tail.size() > 1200) {
-                tail = "..." + tail.substr(tail.size() - 1200);
-            }
-            items_.push_back({.kind = Item::Kind::Error, .text = "Install failed:\n" + tail});
-        }
-        scrollToBottom_ = true;
-    }
-
     if (!acp_) {
         return;
     }
@@ -1149,9 +1127,23 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::Commands:
             agentCommands_ = std::move(ev.commands);
             break;
-        case AcpEvent::Type::ConfigOptions:
+        case AcpEvent::Type::ConfigOptions: {
             agentConfigOptions_ = std::move(ev.configOptions);
+            // the model last picked for this agent, over its own default (codex's comes
+            // from ~/.codex/config.toml, which may name one the account can't use)
+            const std::string saved = Application::getInstance().getAppState()->getSetting(
+                "acp_model_" + backendId(), "");
+            for (const auto& option : agentConfigOptions_) {
+                if (saved.empty() || !acp_ || option.category != "model" || option.type != "select")
+                    continue;
+                const bool offered = std::ranges::any_of(
+                    option.options, [&](const auto& o) { return o.value == saved; });
+                if (offered && option.currentValue != saved)
+                    acp_->setConfigOption(option.id, saved);
+                break;
+            }
             break;
+        }
         case AcpEvent::Type::Plan: {
             Item* planItem = nullptr;
             for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
@@ -1208,6 +1200,8 @@ void AISidebarPanel::pollAcp() {
             break;
         }
         case AcpEvent::Type::Exited:
+            if (!ev.text.empty()) // why it died, as the agent put it
+                items_.push_back({.kind = Item::Kind::Error, .text = ev.text});
             items_.push_back(
                 {.kind = Item::Kind::Info, .text = "Agent exited. Next message restarts it."});
             agentGone = true;
@@ -1256,6 +1250,9 @@ void AISidebarPanel::tick() {
             scrollToBottom_ = true;
         }
     }
+    // a browser sign-in can take minutes: the clock starts once it is done
+    if (acp_ && acp_->isSigningIn())
+        agentStartedAt_ = ImGui::GetTime();
     // a spinner forever is the worst outcome; say what is going on
     if (acp_ && acp_->isRunning() && !acp_->isSessionReady() && !agentStartWarned_ &&
         ImGui::GetTime() - agentStartedAt_ > AGENT_START_TIMEOUT_S) {
@@ -1480,6 +1477,8 @@ void AISidebarPanel::renderHeader() {
                 const bool selected = option.value == current;
                 if (ImGui::Selectable(label.c_str(), selected) && acp_) {
                     acp_->setConfigOption(agentModelOption->id, option.value);
+                    Application::getInstance().getAppState()->setSetting("acp_model_" + backendId(),
+                                                                         option.value);
                 }
                 if (!option.description.empty() && ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("%s", option.description.c_str());
@@ -1514,6 +1513,27 @@ void AISidebarPanel::renderHeader() {
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
 }
 
+namespace {
+    // what an agent needs is being downloaded (bun, a registry binary): no details
+    void renderSettingUp(const std::string& name) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        UIUtils::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.subtext0));
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::TextColored(colors.subtext0, "Setting up %s...", name.c_str());
+    }
+
+    void renderSetupFailed(const std::string& name, const std::string& error,
+                           const std::function<void()>& retry) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextColored(colors.red, "Could not set up %s.%s%s", name.c_str(),
+                           error.empty() ? "" : " ", error.c_str());
+        ImGui::PopTextWrapPos();
+        if (UIUtils::SmallButton("Retry##ai_setup_retry"))
+            retry();
+    }
+} // namespace
+
 void AISidebarPanel::renderInstallCard() {
     const auto& colors = Application::getInstance().getCurrentColors();
     const AcpAgentDef* def = currentAgentDef();
@@ -1525,46 +1545,26 @@ void AISidebarPanel::renderInstallCard() {
                           ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
         ImGui::Indent(Theme::Spacing::M);
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(colors.peach, "%s", agentMissingReason_.c_str());
-        ImGui::PopTextWrapPos();
+        if (!agentMissingReason_.empty()) {
+            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+            ImGui::TextColored(colors.peach, "%s", agentMissingReason_.c_str());
+            ImGui::PopTextWrapPos();
+        }
 
         if (def) {
-            if (installer_.isRunning()) {
-                UIUtils::Spinner("##install_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
-                ImGui::SameLine(0, Theme::Spacing::S);
-                ImGui::TextColored(colors.subtext0, "Installing...");
-            } else if (const AcpInstallOption* install = AcpAgents::resolveInstall(*def)) {
-                if (UIUtils::SmallButton(
-                        std::format("Install with {}##ai_install", install->label).c_str())) {
-                    installer_.start(install->command);
-                }
-                ImGui::SameLine(0, Theme::Spacing::S);
-                ImGui::TextColored(colors.subtext0, "runs: %s", install->command.c_str());
-            } else if (!def->registryId.empty()) {
+            if (!def->registryId.empty()) {
                 renderRegistryDownload(*def);
             } else {
-                // no runtime anywhere: fetch the managed bun without asking
+                // npm agents always run on the managed bun: fetch it without asking
                 if (!bunDownloadStarted_ && !registry_.isBusy()) {
                     bunDownloadStarted_ = true;
                     registry_.startInstallBun();
                 }
-                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-                if (registry_.isBusy()) {
-                    ImGui::TextColored(colors.subtext0,
-                                       "No JavaScript runtime was found, so DearSQL is downloading "
-                                       "Bun v%s (about 25 MB) into ~/.dearsql/agents to run this "
-                                       "agent.",
-                                       AcpRegistry::BUN_VERSION);
-                } else {
-                    ImGui::TextColored(colors.subtext0,
-                                       "This agent ships as an npm package and no JavaScript "
-                                       "runtime was found.");
-                    if (UIUtils::SmallButton("Retry Bun download##ai_install_bun")) {
-                        registry_.startInstallBun();
-                    }
-                }
-                ImGui::PopTextWrapPos();
+                if (registry_.isBusy())
+                    renderSettingUp(def->name);
+                else
+                    renderSetupFailed(def->name, registry_.error(),
+                                      [this] { registry_.startInstallBun(); });
             }
         }
 
@@ -1589,10 +1589,6 @@ void AISidebarPanel::pollRegistry() {
     if (!registry_.poll() || registry_.installedName().empty()) {
         return;
     }
-    const bool runtime = registry_.installedName() == "Bun";
-    items_.push_back({.kind = Item::Kind::Info,
-                      .text = runtime ? "Downloaded Bun. The agent will run through it."
-                                      : "Downloaded " + registry_.installedName() + "."});
     agentMissing_ = false;
     scrollToBottom_ = true;
     if (!pendingPromptBlocks_.empty()) {
@@ -1617,23 +1613,16 @@ void AISidebarPanel::renderRegistryDownload(const AcpAgentDef& def) {
 
     ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
     if (registry_.isBusy()) {
-        ImGui::TextColored(colors.subtext0,
-                           "Downloading %s into ~/.dearsql/agents. It runs on its own, no "
-                           "Node needed.",
-                           def.name.c_str());
+        renderSettingUp(def.name);
     } else if (registry_.fetched() && (!entry || !entry->hasBinary)) {
         ImGui::TextColored(colors.subtext0, "The ACP registry has no %s build for %s.",
                            def.name.c_str(), AcpRegistry::platformKey().c_str());
     } else {
-        if (!registry_.error().empty()) {
-            ImGui::TextColored(colors.red, "%s", registry_.error().c_str());
-        }
-        if (UIUtils::SmallButton("Retry download##ai_registry_retry")) {
+        renderSetupFailed(def.name, registry_.error(), [this] {
             registryDownloadFor_.clear();
-            if (!registry_.fetched()) {
+            if (!registry_.fetched())
                 registry_.startFetch();
-            }
-        }
+        });
     }
     ImGui::PopTextWrapPos();
 }
@@ -1809,7 +1798,17 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         ImGui::TextColored(colors.peach, ICON_FA_KEY " Sign in required");
         if (item.permissionAnswered) {
             ImGui::TextColored(colors.subtext0, "-> %s", item.permissionChoice.c_str());
+            if (item.terminalSignIn && acp_) {
+                ImGui::TextColored(colors.subtext0,
+                                   "Finish signing in in the Terminal window, then continue.");
+                if (UIUtils::SmallButton("Continue##auth_continue",
+                                         UIUtils::ButtonVariant::Primary)) {
+                    item.terminalSignIn = false;
+                    acp_->retrySession();
+                }
+            }
         } else if (acp_ && !item.authMethods.empty()) {
+            const acp::AuthMethod* picked = nullptr;
             for (size_t i = 0; i < item.authMethods.size(); ++i) {
                 if (i > 0) {
                     ImGui::SameLine(0, Theme::Spacing::S);
@@ -1817,20 +1816,42 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 const auto& m = item.authMethods[i];
                 if (UIUtils::SmallButton(std::format("{}##auth{}", m.name, i).c_str(),
                                          UIUtils::ButtonVariant::Primary)) {
+                    picked = &m;
+                }
+                if (!m.description.empty() && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", m.description.c_str());
+                }
+            }
+            // acted on after the loop: pushing to items_ moves the item `m` points into
+            if (picked) {
+                const acp::AuthMethod m = *picked;
+                item.permissionAnswered = true;
+                item.permissionChoice = m.name;
+                if (m.type == "terminal") {
+                    // like zed: the agent's own command plus the method's args, in a terminal
+                    std::string reason;
+                    auto argv = currentInvocation(reason);
+                    argv.insert(argv.end(), m.args.begin(), m.args.end());
+                    auto env = m.env;
+                    if (const auto bun = AcpRegistry::bunPath();
+                        bun && !argv.empty() && argv.front() == *bun) {
+                        const auto extra = AcpRegistry::bunEnv();
+                        env.insert(env.end(), extra.begin(), extra.end());
+                    }
+                    const std::string err = AcpAgents::openInTerminal(argv, env);
+                    item.terminalSignIn = err.empty();
+                    if (!err.empty())
+                        items_.push_back({.kind = Item::Kind::Error, .text = err});
+                } else {
                     acp_->authenticate(m.id);
                     Application::getInstance().getAppState()->setSetting("acp_auth_" + backendId(),
                                                                          m.id);
-                    item.permissionAnswered = true;
-                    item.permissionChoice = m.name;
                     if (m.id.find("api") != std::string::npos && !hasSavedApiKeyFor(backendId())) {
                         items_.push_back({.kind = Item::Kind::Info,
                                           .text =
                                               "Tip: paste the key into AI Settings (API key "
                                               "backend, gear icon); it is handed to the agent."});
                     }
-                }
-                if (!m.description.empty() && ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", m.description.c_str());
                 }
             }
         } else if (const AcpAgentDef* def = currentAgentDef()) {

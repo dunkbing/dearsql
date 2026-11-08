@@ -2,6 +2,10 @@
 // `dearsql --mcp` (a stdio MCP server with the GUI's agent database tools) and
 // `dearsql --lsp` (a stdio language server for editors)
 #include "cli/cli.hpp"
+
+// before windows.h: httplib brings winsock2
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include <httplib.h>
 #ifdef _WIN32
 #include <io.h>
 #include <windows.h>
@@ -20,10 +24,11 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
-#include <regex>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -143,44 +148,61 @@ or let it run commands:
         return parts(a) > parts(b);
     }
 
+    // GET https://<host><path> into sink, following redirects (release assets go to
+    // a cdn). "" on success, else the error
+    std::string httpGet(const std::string& host, const std::string& path,
+                        const std::function<void(const char*, size_t)>& sink) {
+        httplib::Client client("https://" + host);
+        client.set_follow_location(true);
+        client.set_connection_timeout(15);
+        client.set_read_timeout(120);
+        auto res = client.Get(path, [&](const char* data, size_t n) {
+            sink(data, n);
+            return true;
+        });
+        if (!res)
+            return httplib::to_string(res.error());
+        return res->status == 200 ? "" : "HTTP " + std::to_string(res->status);
+    }
+
     // `dearsql upgrade`: the latest release over this copy, through the same
     // install.sh (macOS, Linux) or msi (Windows) a fresh install uses
     int runUpgrade() {
-#ifdef _WIN32
-        FILE* pipe = _popen("curl -fsSL https://dearsql.dev/api/version.json", "r");
-#else
-        FILE* pipe = popen("curl -fsSL https://dearsql.dev/api/version.json", "r");
-#endif
         std::string manifest;
-        if (pipe) {
-            char buf[512];
-            while (size_t n = fread(buf, 1, sizeof(buf), pipe))
-                manifest.append(buf, n);
-#ifdef _WIN32
-            _pclose(pipe);
-#else
-            pclose(pipe);
-#endif
-        }
-        std::smatch m;
-        if (!std::regex_search(manifest, m, std::regex(R"re("version"\s*:\s*"([0-9.]+)")re"))) {
-            std::cerr << "dearsql: could not check for updates (is curl installed?)\n";
+        auto error = httpGet("dearsql.dev", "/api/version.json",
+                             [&](const char* d, size_t n) { manifest.append(d, n); });
+        const auto json = nlohmann::json::parse(manifest, nullptr, false);
+        const std::string latest = json.is_object() ? json.value("version", "") : "";
+        if (latest.empty()) {
+            std::cerr << "dearsql: could not check for updates"
+                      << (error.empty() ? "" : ": " + error) << "\n";
             return 1;
         }
-        const std::string latest = m[1];
         if (!isNewer(latest, APP_VERSION)) {
             std::cout << "dearsql " << APP_VERSION << " is the latest version\n";
             return 0;
         }
         std::cout << "upgrading dearsql " << APP_VERSION << " to " << latest << "\n" << std::flush;
 #ifdef _WIN32
-        // started detached: the installer replaces this exe, so it can't wait on us
         const char* temp = std::getenv("TEMP");
         const std::string msi = std::string(temp ? temp : ".") + "\\DearSQL-x64.msi";
-        const std::string cmd =
-            std::format("curl -fL -o \"{0}\" https://github.com/dunkbing/dearsql/releases/download/"
-                        "v{1}/DearSQL-x64.msi && start \"\" msiexec /i \"{0}\" /passive",
-                        msi, latest);
+        {
+            std::ofstream out(msi, std::ios::binary);
+            error = httpGet(
+                "github.com",
+                std::format("/dunkbing/dearsql/releases/download/v{}/DearSQL-x64.msi", latest),
+                [&](const char* d, size_t n) { out.write(d, std::streamsize(n)); });
+            if (error.empty() && !out)
+                error = "could not write " + msi;
+        }
+        if (!error.empty()) {
+            std::cerr << "dearsql: download failed: " << error << "\n";
+            return 1;
+        }
+        // started detached: the installer replaces this exe, so it can't wait on us
+        return std::system(std::format("start \"\" msiexec /i \"{}\" /passive", msi).c_str()) == 0
+                   ? 0
+                   : 1;
 #else
         std::filesystem::path target = CliCommand::executable();
 #ifdef __APPLE__
@@ -193,15 +215,25 @@ or let it run commands:
                          "https://dearsql.dev\n";
             return 1;
         }
+        std::string script;
+        error = httpGet("dearsql.dev", "/install.sh",
+                        [&](const char* d, size_t n) { script.append(d, n); });
+        if (!error.empty() || script.empty()) {
+            std::cerr << "dearsql: could not download the installer: " << error << "\n";
+            return 1;
+        }
         std::string quoted = "'";
         for (char c : target.string())
             quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
-        // fetched first: a failed download piped to sh would run nothing and exit 0
-        const std::string cmd = "s=$(curl -fsSL https://dearsql.dev/install.sh) && printf '%s\\n' "
-                                "\"$s\" | DEARSQL_TARGET=" +
-                                quoted + "' sh";
+        // install.sh still downloads with curl or wget, which every supported system has
+        FILE* sh = popen(("DEARSQL_TARGET=" + quoted + "' sh").c_str(), "w");
+        if (!sh) {
+            std::cerr << "dearsql: could not run sh\n";
+            return 1;
+        }
+        fwrite(script.data(), 1, script.size(), sh);
+        return pclose(sh) == 0 ? 0 : 1;
 #endif
-        return std::system(cmd.c_str()) == 0 ? 0 : 1;
     }
 
     // short names; the full tool names (snake or kebab case) work too

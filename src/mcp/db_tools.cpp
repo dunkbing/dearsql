@@ -1681,7 +1681,9 @@ namespace mcp {
             if (c.hasMinMax && c.nonNull > 0)
                 out += std::format(", {} .. {}", cut(c.min), cut(c.max));
             // the common values, where there are few of them (at most 10 columns)
-            const bool few = c.distinct > 0 && (c.distinct <= 20 || c.distinct * 2 < c.nonNull);
+            // (not when every value is unique: each would count 1)
+            const bool few = c.distinct > 0 && c.distinct < c.nonNull &&
+                             (c.distinct <= 20 || c.distinct * 2 < c.nonNull);
             const auto* col = &*std::ranges::find(table->columns, c.column, &dearsql::Column::name);
             if (few && topQueries < 10) {
                 if (const auto top = dearsql::topValuesSql(type, *table, *col, 5, sample)) {

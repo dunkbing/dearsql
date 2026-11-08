@@ -35,6 +35,7 @@ namespace dearsql {
           rangeProvider_(std::move(other.rangeProvider_)), onRun_(std::move(other.onRun_)),
           language_(other.language_), tsParser_(other.tsParser_), tsTree_(other.tsTree_),
           tsQuery_(other.tsQuery_), tsPreviousContent_(std::move(other.tsPreviousContent_)),
+          tsPreviousColors_(std::move(other.tsPreviousColors_)),
           highlightDirty_(other.highlightDirty_) {
         other.tsParser_ = nullptr;
         other.tsTree_ = nullptr;
@@ -63,6 +64,7 @@ namespace dearsql {
             tsTree_ = other.tsTree_;
             tsQuery_ = other.tsQuery_;
             tsPreviousContent_ = std::move(other.tsPreviousContent_);
+            tsPreviousColors_ = std::move(other.tsPreviousColors_);
             highlightDirty_ = other.highlightDirty_;
             other.tsParser_ = nullptr;
             other.tsTree_ = nullptr;
@@ -311,7 +313,11 @@ namespace dearsql {
     }
 
     void TextEditor::SetPalette(const Palette& palette) {
+        // callers set it every frame to follow the theme: only a real change rehighlights
+        if (palette == palette_)
+            return;
         palette_ = palette;
+        tsPreviousColors_.clear(); // every color changes
         highlightDirty_ = true;
     }
 

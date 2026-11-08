@@ -437,4 +437,68 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.setVSync(vsync);
         app.setMaxFps(limit);
     };
+
+    // edits recolor only what changed; the result must match highlighting from scratch
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Incremental highlight matches full");
+    t->TestFunc = [](ImGuiTestContext*) {
+        dearsql::TextEditor editor;
+        std::string sql;
+        for (int i = 0; i < 50; ++i)
+            sql += "select a, 'x', 42 from t where b = 1; -- note\n";
+        editor.SetText(sql);
+        (void)editor.GetColors();
+        const std::vector<std::pair<size_t, std::string>> inserts = {
+            {120, "/*"},   // opens a comment to the end
+            {900, "*/"},   // and closes it far below
+            {300, "'"},    // an unclosed string
+            {301, "abc'"}, // closed again
+            {0, "with q as (select 1) "},
+            {100000, "update t set c = 'y';\n"},
+        };
+        for (const auto& [at, text] : inserts) {
+            auto current = editor.GetText();
+            current.insert(std::min(at, current.size()), text);
+            editor.SetText(current);
+            dearsql::TextEditor fresh;
+            fresh.SetText(current);
+            IM_CHECK(editor.GetColors() == fresh.GetColors());
+        }
+        auto current = editor.GetText();
+        current.erase(100, 400); // a big delete
+        editor.SetText(current);
+        dearsql::TextEditor fresh;
+        fresh.SetText(current);
+        IM_CHECK(editor.GetColors() == fresh.GetColors());
+    };
+
+    // opt+backspace (ctrl elsewhere) deletes a word, cmd+backspace (ctrl+shift) to the line start
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Backspace deletes a word or the line");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 1;\nselect foo_bar,  baz.qux  ");
+        ctx->Yield(3);
+        const bool mac = ImGui::GetIO().ConfigMacOSXBehaviors;
+        const ImGuiKeyChord word = (mac ? ImGuiMod_Alt : ImGuiMod_Ctrl) | ImGuiKey_Backspace;
+        const ImGuiKeyChord line =
+            (mac ? ImGuiMod_Super : ImGuiMod_Ctrl | ImGuiMod_Shift) | ImGuiKey_Backspace;
+        ctx->KeyPress(word); // trailing spaces and "qux"
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 1;\nselect foo_bar,  baz.");
+        ctx->KeyPress(word); // "."
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 1;\nselect foo_bar,  baz");
+        ctx->KeyPress(line);
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 1;\n");
+        ctx->KeyPress(line); // at the line start: joins with the line above
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 1;");
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

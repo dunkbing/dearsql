@@ -26,6 +26,14 @@ namespace dearsql {
         // --- Public API ---
         void SetText(const std::string& text);
         [[nodiscard]] std::string GetText() const;
+        // the highlight, brought up to date (tests)
+        const std::vector<ImU32>& GetColors() {
+            if (highlightDirty_) {
+                rehighlight();
+                highlightDirty_ = false;
+            }
+            return colors_;
+        }
         [[nodiscard]] bool HasSelection() const {
             return selectionActive_ && selectionAnchor_ != cursorIndex_;
         }
@@ -122,6 +130,7 @@ namespace dearsql {
             ImU32 lineNumberBackground;
             ImU32 run = IM_COL32(166, 227, 161, 255);
             ImU32 error = IM_COL32(243, 139, 168, 255);
+            bool operator==(const Palette&) const = default;
         };
 
         void SetPalette(const Palette& palette);
@@ -195,7 +204,7 @@ namespace dearsql {
         std::function<void()> submitCallback_;
 
         // --- Palette ---
-        Palette palette_;
+        Palette palette_{};
 
         // --- Undo/Redo ---
         struct Snapshot {
@@ -234,6 +243,7 @@ namespace dearsql {
         TSTree* tsTree_ = nullptr;
         TSQuery* tsQuery_ = nullptr;
         std::string tsPreviousContent_;
+        std::vector<ImU32> tsPreviousColors_; // colors_ as of tsPreviousContent_
         bool highlightDirty_ = true;
 
         // --- Content manipulation ---

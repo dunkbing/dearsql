@@ -253,6 +253,10 @@ AISidebarPanel::AISidebarPanel(std::shared_ptr<DatabaseInterface> db)
             case acp::LogLevel::Warn:
             case acp::LogLevel::Error: {
                 spdlog::warn("ACP: {}", msg);
+                // a stray reply (grok answers its own "skills-reload") is the agent's
+                // business: logged, not shown
+                if (msg.starts_with("response for unknown request id"))
+                    break;
                 std::lock_guard lock(g_acpWarnMutex);
                 g_acpWarnings.push_back(msg);
                 break;

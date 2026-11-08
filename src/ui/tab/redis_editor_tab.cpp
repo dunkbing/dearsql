@@ -426,7 +426,7 @@ void RedisEditorTab::render() {
             const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
             const float editorHeight = paneHeight * splitterPosition_;
             const float resultsHeight =
-                paneHeight * (1.0f - splitterPosition_) - 6.0f - toolbarHeight;
+                paneHeight * (1.0f - splitterPosition_) - 4.0f - toolbarHeight;
 
             if (ImGui::BeginChild("RedisEditor", ImVec2(-1, editorHeight), true,
                                   ImGuiWindowFlags_NoScrollbar)) {

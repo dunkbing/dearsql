@@ -76,7 +76,7 @@ void MongoEditorTab::render() {
         float paneHeight = ImGui::GetContentRegionAvail().y;
         const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
         const float editorHeight = paneHeight * splitterPosition_;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition_) - 6.0f - toolbarHeight;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition_) - 4.0f - toolbarHeight;
 
         if (ImGui::BeginChild("MongoEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -240,17 +240,13 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
 
     if (r.tableData.empty()) {
         ImGui::Text("%s%s", LABEL_NO_ROWS, took.c_str());
-    } else {
-        ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
-                    took.c_str());
-        if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
-        }
+        return;
     }
 
-    if (!r.tableData.empty()) {
-        float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 20.0f, 50.0f);
+    // the grid, then "347 rows  0.53 ms" under it
+    {
+        float tableHeight = std::max(
+            ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing(), 50.0f);
 
         TableRenderer::Config config;
         config.allowEditing = false;
@@ -262,7 +258,21 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         tableRenderer.setData(r.tableData);
 
         std::string tableId = "MongoQueryResults_" + std::to_string(index);
-        tableRenderer.render(tableId.c_str());
+        // the grid fills what it is given, so give it all but the status line
+
+        if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, tableHeight))) {
+
+            tableRenderer.render(tableId.c_str());
+
+        }
+
+        ImGui::EndChild();
+    }
+    ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
+                took.c_str());
+    if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
     }
 }
 

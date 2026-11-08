@@ -244,3 +244,53 @@ TEST_F(CassandraDatabaseIntegrationTest, CloseDuringCatalogLoadIsSafe) {
 
     EXPECT_TRUE(db->tables().empty()); // closed: no session
 }
+
+// DESCRIBE runs on the server (cassandra 4+, scylladb): the table and its index
+TEST_F(CassandraDatabaseIntegrationTest, TableDdlComesFromDescribe) {
+    auto [ok, err] = database->createDatabase(keyspace_);
+    ASSERT_TRUE(ok) << err;
+    // one statement per call: cql has no batches of DDL
+    for (const auto& sql :
+         {std::format("CREATE TABLE \"{}\".t (id int PRIMARY KEY, v text)", keyspace_),
+          std::format("CREATE INDEX t_v ON \"{}\".t (v)", keyspace_)}) {
+        auto r = database->executeQuery(sql);
+        ASSERT_TRUE(r.success()) << r.errorMessage();
+    }
+    auto* node = database->getDatabaseData(keyspace_);
+    ASSERT_NE(node, nullptr);
+    const auto ddl = node->withHandle([](dearsql::IDatabase& db) { return db.tableDdl("t"); });
+    EXPECT_NE(ddl.find("CREATE TABLE"), std::string::npos) << ddl;
+    EXPECT_NE(ddl.find("CREATE INDEX t_v"), std::string::npos) << ddl;
+    // table options only come from the server's own DESCRIBE
+    EXPECT_NE(ddl.find("gc_grace_seconds"), std::string::npos) << ddl;
+}
+
+// the tls port of the scylladb pass; cassandra's container has none
+TEST(CassandraTls, EncryptsAndVerifiesTheServer) {
+    const char* host = std::getenv("DEARSQL_TEST_CASSANDRA_HOST");
+    const char* port = std::getenv("DEARSQL_TEST_CASSANDRA_TLS_PORT");
+    const char* ca = std::getenv("DEARSQL_TEST_CA_CERT");
+    if (!host || !port || !*port || !ca)
+        GTEST_SKIP() << "no TLS port (DEARSQL_TEST_CASSANDRA_TLS_PORT, DEARSQL_TEST_CA_CERT)";
+    auto open = [&](SslMode mode, const std::string& caPath) {
+        DatabaseConnectionInfo info;
+        info.type =
+            TestHelpers::typeFromEnv("DEARSQL_TEST_CASSANDRA_TYPE", DatabaseType::CASSANDRA);
+        info.host = host;
+        info.port = std::stoi(port);
+        info.sslmode = mode;
+        info.sslCACertPath = caPath;
+        CassandraDatabase db(info);
+        auto result = db.connect();
+        db.disconnect();
+        return result;
+    };
+    auto [encrypted, e1] = open(SslMode::Require, "");
+    EXPECT_TRUE(encrypted) << e1;
+    auto [verified, e2] = open(SslMode::VerifyCA, ca);
+    EXPECT_TRUE(verified) << e2;
+    // asking to verify without a CA must not quietly skip the check
+    auto [noCa, e3] = open(SslMode::VerifyCA, "");
+    EXPECT_FALSE(noCa);
+    EXPECT_NE(e3.find("CA certificate"), std::string::npos) << e3;
+}

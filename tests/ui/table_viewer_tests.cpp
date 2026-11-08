@@ -83,6 +83,17 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
                  std::string::npos);
         IM_CHECK(diff->getQueryResult().statements.empty()); // nothing ran
 
+        // child.parent_id references parent with no index on it
+        const size_t beforeReview = tabs->getTabCount();
+        SchemaCompare::reviewIndexes(prod.get());
+        for (int i = 0; i < 300 && tabs->getTabCount() == beforeReview; ++i)
+            ctx->Yield();
+        auto review = std::dynamic_pointer_cast<SQLEditorTab>(tabs->getTabs().back());
+        IM_CHECK_SILENT(review != nullptr && review != diff);
+        IM_CHECK(review->getQuery().find("[unindexed-fk] child") != std::string::npos);
+        IM_CHECK(review->getQuery().find("CREATE INDEX") != std::string::npos);
+        IM_CHECK(review->getQueryResult().statements.empty());
+
         tabs->closeAllTabs();
         app.removeDatabase(prod);
         app.removeDatabase(dev);

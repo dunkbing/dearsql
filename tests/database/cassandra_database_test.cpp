@@ -272,16 +272,22 @@ TEST(CassandraTls, EncryptsAndVerifiesTheServer) {
     const char* ca = std::getenv("DEARSQL_TEST_CA_CERT");
     if (!host || !port || !*port || !ca)
         GTEST_SKIP() << "no TLS port (DEARSQL_TEST_CASSANDRA_TLS_PORT, DEARSQL_TEST_CA_CERT)";
-    auto open = [&](SslMode mode, const std::string& caPath) {
+    // connects, then queries: pool connections verify too, not only the control one
+    auto open = [&](SslMode mode, const std::string& caPath, const std::string& on = "") {
         DatabaseConnectionInfo info;
         info.type =
             TestHelpers::typeFromEnv("DEARSQL_TEST_CASSANDRA_TYPE", DatabaseType::CASSANDRA);
-        info.host = host;
+        info.host = on.empty() ? host : on;
         info.port = std::stoi(port);
         info.sslmode = mode;
         info.sslCACertPath = caPath;
         CassandraDatabase db(info);
         auto result = db.connect();
+        if (result.first) {
+            const auto r = db.executeQuery("SELECT release_version FROM system.local");
+            if (!r.success())
+                result = {false, r.errorMessage()};
+        }
         db.disconnect();
         return result;
     };
@@ -293,4 +299,10 @@ TEST(CassandraTls, EncryptsAndVerifiesTheServer) {
     auto [noCa, e3] = open(SslMode::VerifyCA, "");
     EXPECT_FALSE(noCa);
     EXPECT_NE(e3.find("CA certificate"), std::string::npos) << e3;
+    // verify host: the test cert names localhost and 127.0.0.1. a hostname is checked
+    // against the reverse lookup of each node's ip (127.0.0.1 -> localhost), an ip as is
+    auto [byName, e4] = open(SslMode::VerifyFull, ca, "localhost");
+    EXPECT_TRUE(byName) << e4;
+    auto [byIp, e5] = open(SslMode::VerifyFull, ca, "127.0.0.1");
+    EXPECT_TRUE(byIp) << e5;
 }

@@ -562,6 +562,50 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         holdForScreenshot(ctx);
     };
 
+    // the inspector's Profile tab on a small orders table
+    t = IM_REGISTER_TEST(engine, "Docs", "inspector-profile");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "shop.db";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first) {
+            ctx->LogError("no sqlite");
+            return;
+        }
+        db->executeQuery("CREATE TABLE orders (id INTEGER PRIMARY KEY, status TEXT NOT NULL, "
+                         "total REAL, coupon TEXT, created_at TEXT)");
+        db->executeQuery(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 240) "
+            "INSERT INTO orders (status, total, coupon, created_at) SELECT "
+            "CASE WHEN i % 10 < 6 THEN 'paid' WHEN i % 10 < 9 THEN 'shipped' ELSE 'refunded' END, "
+            "round(5 + (i * 37 % 200) + 0.99, 2), CASE WHEN i % 4 = 0 THEN 'SPRING10' END, "
+            "date('2026-01-01', '+' || (i % 300) || ' days') FROM n");
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const auto& tables = db->getTables();
+        const auto orders = std::ranges::find(tables, std::string("orders"), &Table::name);
+        if (orders == tables.end()) {
+            ctx->LogError("no orders table");
+            return;
+        }
+        app.addDatabase(db);
+        const auto tab = app.getTabManager()->createTableViewerTab(db.get(), *orders);
+        ctx->Yield(20);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/##toggle_inspector");
+        ctx->Yield(3);
+        ctx->ItemClick("**/Profile");
+        for (int i = 0; i < 200 && !ctx->ItemExists("**/Refresh"); ++i)
+            ctx->Yield();
+        holdForScreenshot(ctx);
+    };
+
     // the chart tab under a query result
     t = IM_REGISTER_TEST(engine, "Docs", "results-chart");
     t->TestFunc = [](ImGuiTestContext* ctx) {

@@ -88,6 +88,10 @@ TableViewerTab::~TableViewerTab() {
         ConnectionPoolBase::cancelQueriesOn(ddlOp_.workerId());
     }
     ddlOp_.detach();
+    if (profileOp_.isRunning()) {
+        ConnectionPoolBase::cancelQueriesOn(profileOp_.workerId());
+    }
+    profileOp_.detach();
 }
 
 void TableViewerTab::render() {
@@ -1379,6 +1383,11 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
                 renderDdlTab();
                 ImGui::EndTabItem();
             }
+            if (hasProfile() && ImGui::BeginTabItem("Profile")) {
+                activeRightPanelTab = 3;
+                renderProfileTab();
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
     }
@@ -1567,6 +1576,122 @@ void TableViewerTab::renderDdlTab() {
     ddlEditor_.SetPalette(
         dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
     ddlEditor_.Render("##ddl_editor", ImVec2(-1, -1), false);
+}
+
+// sql engines with columns to profile (views too: it only reads)
+bool TableViewerTab::hasProfile() const {
+    return node_ && dearsql::profileSql(node_->getDatabaseType(), table_).has_value();
+}
+
+void TableViewerTab::startProfileLoad() {
+    if (!node_ || profileOp_.isRunning())
+        return;
+    profileRequested_ = true;
+    profileOp_.start([node = node_, table = table_, keep = keepOwnerAlive(node_)] {
+        ProfileView v;
+        const auto type = node->getDatabaseType();
+        const auto r = node->executeQuery(*dearsql::profileSql(type, table), 1);
+        if (!r.success() || r.statements.empty()) {
+            v.error = r.success() ? "The profile query returned nothing." : r.errorMessage();
+            return v;
+        }
+        v.profile = dearsql::parseProfile(type, table, r.statements.back());
+        if (!v.profile) {
+            v.error = "The profile query returned nothing.";
+            return v;
+        }
+        // common values where there are few to show, for at most 10 columns
+        int asked = 0;
+        for (const auto& c : v.profile->columns) {
+            if (asked == 10)
+                break;
+            if (c.distinct <= 0 || c.distinct >= c.nonNull || c.distinct > 20)
+                continue;
+            const auto col = std::ranges::find(table.columns, c.column, &Column::name);
+            if (col == table.columns.end())
+                continue;
+            const auto sql = dearsql::topValuesSql(type, table, *col, 3);
+            if (!sql)
+                continue;
+            ++asked;
+            const auto top = node->executeQuery(*sql, 3);
+            if (!top.success() || top.statements.empty())
+                continue;
+            for (const auto& row : top.statements.back().tableData)
+                if (row.size() >= 2)
+                    v.top[c.column].emplace_back(isNullSentinel(row[0]) ? "NULL" : row[0], row[1]);
+        }
+        return v;
+    });
+}
+
+void TableViewerTab::renderProfileTab() {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    if (!profileRequested_)
+        startProfileLoad();
+    profileOp_.check([this](ProfileView v) { profile_ = std::move(v); });
+
+    if (profileOp_.isRunning()) {
+        UIUtils::Spinner("##profile_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        ImGui::SameLine();
+        ImGui::TextColored(colors.subtext0, "Profiling columns...");
+        return;
+    }
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
+    if (UIUtils::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
+        startProfileLoad();
+    ImGui::PopStyleVar();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    ImGui::PushTextWrapPos();
+    if (!profile_.error.empty() || !profile_.profile) {
+        ImGui::TextColored(colors.red, "%s", profile_.error.c_str());
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    const auto& p = *profile_.profile;
+    if (p.sampled)
+        ImGui::TextColored(colors.subtext0, "First %lld rows, not a random sample",
+                           static_cast<long long>(p.rows));
+    else
+        ImGui::TextColored(colors.subtext0, "%lld rows", static_cast<long long>(p.rows));
+
+    // tabs zero item spacing; a column per block, a gap between blocks
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::S, Theme::Spacing::M));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::XS));
+    ImGui::BeginChild("##profile_columns", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+    for (const auto& c : p.columns) {
+        if (&c != &p.columns.front())
+            ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
+        ImGui::TextUnformatted(c.column.c_str());
+        ImGui::SameLine();
+        ImGui::TextColored(colors.subtext0, "%s", c.type.c_str());
+        const double nullPct =
+            p.rows > 0 ? 100.0 * static_cast<double>(p.rows - c.nonNull) / p.rows : 0.0;
+        std::string line = std::format("{:.0f}% null", nullPct);
+        if (c.distinct >= 0)
+            line += std::format(" · {} distinct", c.distinct);
+        ImGui::TextColored(colors.subtext1, "%s", line.c_str());
+        if (c.hasMinMax && !c.min.empty())
+            ImGui::TextColored(colors.subtext1, "%s .. %s", c.min.c_str(), c.max.c_str());
+        if (const auto it = profile_.top.find(c.column); it != profile_.top.end()) {
+            std::string top;
+            for (const auto& [value, n] : it->second) {
+                std::string shown = value;
+                if (shown.size() > 40) {
+                    size_t cut = 40; // not inside a utf-8 sequence
+                    while (cut > 0 && (static_cast<unsigned char>(shown[cut]) & 0xC0) == 0x80)
+                        --cut;
+                    shown = shown.substr(0, cut) + "...";
+                }
+                top += std::format("{}{} ({})", top.empty() ? "" : " · ", shown, n);
+            }
+            ImGui::TextColored(colors.subtext1, "%s", top.c_str());
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar(2);
+    ImGui::PopTextWrapPos();
 }
 
 void TableViewerTab::renderMetadataTab() {

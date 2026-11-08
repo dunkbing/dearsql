@@ -37,6 +37,12 @@ inline constexpr const char* kSimpleSslLabels[] = {"Off", "TLS", "TLS + Verify C
 inline constexpr SslMode kSimpleSslModeValues[] = {SslMode::Disable, SslMode::Require,
                                                    SslMode::VerifyCA};
 
+// Cassandra/ScyllaDB: verify host checks the certificate names the host as typed
+inline constexpr const char* kCqlSslLabels[] = {"Off", "TLS", "TLS + Verify CA",
+                                                "TLS + Verify Host"};
+inline constexpr SslMode kCqlSslValues[] = {SslMode::Disable, SslMode::Require, SslMode::VerifyCA,
+                                            SslMode::VerifyFull};
+
 // S3: https or plain http (local MinIO/VersityGW)
 inline constexpr const char* kS3SslLabels[] = {"HTTPS", "HTTP"};
 inline constexpr SslMode kS3SslValues[] = {SslMode::Require, SslMode::Disable};
@@ -57,6 +63,9 @@ inline SslModeConfig getSslConfig(DatabaseType type) {
         return {kOracleSslLabels, kOracleSslValues, 3, 0};
     case DatabaseType::S3:
         return {kS3SslLabels, kS3SslValues, 2, 0};
+    case DatabaseType::CASSANDRA:
+    case DatabaseType::SCYLLADB:
+        return {kCqlSslLabels, kCqlSslValues, 4, 0};
     default:
         return {kSimpleSslLabels, kSimpleSslModeValues, 3, 0};
     }

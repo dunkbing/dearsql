@@ -45,7 +45,7 @@ namespace UIUtils {
         const float centerY = pos.y + size.y / 2.0f;
         const ImU32 color = (hovered || held) ? ImGui::GetColorU32(ImGuiCol_SeparatorHovered)
                                               : ImGui::GetColorU32(ImGuiCol_Separator);
-        drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 2.0f);
+        drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 1.0f);
 
         return changed;
     }

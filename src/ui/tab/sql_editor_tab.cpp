@@ -700,8 +700,9 @@ void SQLEditorTab::renderQueryResults() const {
         return;
     }
 
-    // Show execution time above results
-    if (queryResult.executionTimeMs > 0) {
+    // one result shows its time on its row-count line
+    if (queryResult.executionTimeMs > 0 &&
+        !(queryResult.size() == 1 && queryResult.phaseTimings.empty())) {
         ImGui::Text("Execution time: %.2f ms", queryResult.executionTimeMs);
     }
 
@@ -803,17 +804,24 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
         return;
     }
 
+    // "347 rows  0.53 ms": the time rides along when this is the only result
+    const std::string took = queryResult.size() == 1 && queryResult.phaseTimings.empty() &&
+                                     queryResult.executionTimeMs > 0
+                                 ? std::format("  {:.2f} ms", queryResult.executionTimeMs)
+                                 : "";
+
     if (r.columnNames.empty()) {
         // DML/DDL result
-        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s%s", r.message.c_str(), took.c_str());
         return;
     }
 
     // SELECT result
     if (r.tableData.empty()) {
-        ImGui::Text("%s", LABEL_NO_ROWS);
+        ImGui::Text("%s%s", LABEL_NO_ROWS, took.c_str());
     } else {
-        ImGui::Text("Rows: %zu", r.tableData.size());
+        ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
+                    took.c_str());
         if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);

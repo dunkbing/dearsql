@@ -191,7 +191,8 @@ void MongoEditorTab::renderQueryResults() const {
         return;
     }
 
-    if (queryResult_.executionTimeMs > 0) {
+    // one result shows its time on its row-count line
+    if (queryResult_.executionTimeMs > 0 && !(queryResult_.size() == 1)) {
         ImGui::Text("Execution time: %.2f ms", queryResult_.executionTimeMs);
     }
 
@@ -227,15 +228,21 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         return;
     }
 
+    // "347 rows  0.53 ms": the time rides along when this is the only result
+    const std::string took = queryResult_.size() == 1 && queryResult_.executionTimeMs > 0
+                                 ? std::format("  {:.2f} ms", queryResult_.executionTimeMs)
+                                 : "";
+
     if (r.columnNames.empty()) {
-        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s%s", r.message.c_str(), took.c_str());
         return;
     }
 
     if (r.tableData.empty()) {
-        ImGui::Text("%s", LABEL_NO_ROWS);
+        ImGui::Text("%s%s", LABEL_NO_ROWS, took.c_str());
     } else {
-        ImGui::Text("Rows: %zu", r.tableData.size());
+        ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
+                    took.c_str());
         if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);

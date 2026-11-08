@@ -45,6 +45,37 @@ namespace {
 void RegisterTableViewerTests(ImGuiTestEngine* engine) {
     ImGuiTest* t = nullptr;
 
+    // the inspector's Profile tab reads the table on a worker and lists its columns
+    t = IM_REGISTER_TEST(engine, "TableViewer", "Inspector profiles columns");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const Table* parent = findTable(db->getTables(), "parent");
+        IM_CHECK_SILENT(parent != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab = tabs->createTableViewerTab(db.get(), *parent);
+        ctx->Yield(20);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/##toggle_inspector");
+        ctx->Yield(3);
+        ctx->ItemClick("**/Profile");
+        bool shown = false;
+        for (int i = 0; i < 200 && !shown; ++i) {
+            ctx->Yield();
+            shown = ctx->ItemExists("**/Refresh"); // the profile is in, the button back
+        }
+        IM_CHECK(shown);
+        tabs->closeAllTabs();
+        app.removeDatabase(db);
+    };
+
     // profile columns runs its query in a new editor; compare opens the diff unrun
     t = IM_REGISTER_TEST(engine, "Schema", "Profile and compare open scripts");
     t->TestFunc = [](ImGuiTestContext* ctx) {

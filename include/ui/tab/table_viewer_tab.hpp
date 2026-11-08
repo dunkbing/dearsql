@@ -8,6 +8,8 @@
 #include "ui/table_renderer.hpp"
 #include "ui/text_editor.hpp"
 #include <dearsql/delete_impact.hpp>
+#include <dearsql/profile.hpp>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -161,7 +163,7 @@ private:
     // Right panel state
     bool rightPanelOpen = false;
     float rightPanelWidth = 300.0f;
-    int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata, 2 = DDL
+    int activeRightPanelTab = 0; // 0 = Value, 1 = Metadata, 2 = DDL, 3 = Profile
     char valuePanelBuffer[4096] = {0};
     bool valuePanelBufferDirty = false;
     int lastSyncedRow = -1;
@@ -174,6 +176,19 @@ private:
     bool ddlRequested_ = false;
     [[nodiscard]] bool hasDdl() const;
     void startDdlLoad();
+    // Profile tab: nulls, distinct, min/max per column over the first 100,000 rows, and the
+    // common values of low-cardinality columns. read once on first show, again on Refresh
+    struct ProfileView {
+        std::string error;
+        std::optional<dearsql::TableProfile> profile;
+        std::map<std::string, std::vector<std::pair<std::string, std::string>>> top;
+    };
+    AsyncOperation<ProfileView> profileOp_;
+    ProfileView profile_;
+    bool profileRequested_ = false;
+    [[nodiscard]] bool hasProfile() const;
+    void startProfileLoad();
+    void renderProfileTab();
 
     // Helper methods
     void initializeTableRenderer();

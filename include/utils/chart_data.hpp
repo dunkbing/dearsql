@@ -46,6 +46,17 @@ namespace chart {
     Data build(const std::vector<std::string>& columns,
                const std::vector<std::vector<std::string>>& rows, const Settings& settings);
 
+    struct Axis {
+        double lo = 0, hi = 1, step = 1;
+    };
+    // lo and hi widened to 1, 2 or 5 times a power of ten, about target steps apart
+    Axis niceAxis(double lo, double hi, int target);
+    // the tick values, at most 50 (built by index, so huge values with tiny steps still end)
+    std::vector<double> ticks(const Axis& axis);
+
+    // longest x label kept, in code points
+    constexpr size_t kMaxLabel = 60;
+
     const char* kindName(Kind kind);
     const char* aggName(Agg agg);
 

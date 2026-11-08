@@ -28,30 +28,7 @@ namespace {
         return ImGui::GetColorU32(v);
     }
 
-    // 1, 2 or 5 times a power of ten, about target steps across the range
-    double niceStep(double range, int target) {
-        const double raw = range / target;
-        const double mag = std::pow(10.0, std::floor(std::log10(raw)));
-        const double f = raw / mag;
-        return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
-    }
-
-    struct Axis {
-        double lo = 0, hi = 1, step = 1;
-    };
-
-    Axis niceAxis(double lo, double hi, int target) {
-        if (!(hi > lo)) {
-            const double pad = lo == 0 ? 1 : std::abs(lo) * 0.5;
-            lo -= pad;
-            hi += pad;
-        }
-        Axis a;
-        a.step = niceStep(hi - lo, target);
-        a.lo = std::floor(lo / a.step) * a.step;
-        a.hi = std::ceil(hi / a.step) * a.step;
-        return a;
-    }
+    using chart::Axis;
 
     // tick labels share one unit, picked from the largest tick: 9K, 10K rather than 9000, 10K
     struct TickFormat {
@@ -78,9 +55,15 @@ namespace {
     std::string fit(const std::string& text, float width) {
         if (ImGui::CalcTextSize(text.c_str()).x <= width)
             return text;
+        // labels are capped at 60 code points (chart::build), so this stays short
         std::string s = text;
-        while (!s.empty() && ImGui::CalcTextSize((s + "...").c_str()).x > width)
-            s.pop_back();
+        while (!s.empty()) {
+            do // a whole utf-8 character, never half of one
+                s.pop_back();
+            while (!s.empty() && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80);
+            if (ImGui::CalcTextSize((s + "...").c_str()).x <= width)
+                break;
+        }
         return s.empty() ? "" : s + "...";
     }
 
@@ -100,6 +83,16 @@ namespace {
     }
 } // namespace
 
+void ResultChart::rebuild(const std::vector<std::string>& columns,
+                          const std::vector<std::vector<std::string>>& rows) {
+    data_ = chart::build(columns, rows, settings_);
+    dirty_ = false;
+    // measured here, not per frame: there can be a thousand labels
+    maxLabelWidth_ = 0;
+    for (const auto& l : data_.labels)
+        maxLabelWidth_ = std::max(maxLabelWidth_, ImGui::CalcTextSize(l.c_str()).x);
+}
+
 void ResultChart::render(const char* id, const std::vector<std::string>& columns,
                          const std::vector<std::vector<std::string>>& rows) {
     lastFrame_ = ImGui::GetFrameCount();
@@ -115,10 +108,8 @@ void ResultChart::render(const char* id, const std::vector<std::string>& columns
         numeric_ = chart::numericColumns(columns, rows);
         dirty_ = true;
     }
-    if (dirty_) {
-        data_ = chart::build(columns, rows, settings_);
-        dirty_ = false;
-    }
+    if (dirty_)
+        rebuild(columns, rows);
 
     ImGui::PushID(id);
     renderControls();
@@ -133,10 +124,8 @@ void ResultChart::render(const char* id, const std::vector<std::string>& columns
         renderCartesian(size);
     }
     ImGui::PopID();
-    if (dirty_) { // a control changed
-        data_ = chart::build(columns, rows, settings_);
-        dirty_ = false;
-    }
+    if (dirty_) // a control changed
+        rebuild(columns, rows);
 }
 
 void ResultChart::renderControls() {
@@ -244,7 +233,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
     }
     if (bars || settings_.kind == chart::Kind::Area)
         lo = std::min(lo, 0.0), hi = std::max(hi, 0.0);
-    const Axis y = niceAxis(lo, hi, std::max(2, static_cast<int>(size.y / 60)));
+    const Axis y = chart::niceAxis(lo, hi, std::max(2, static_cast<int>(size.y / 60)));
     const TickFormat yFmt = tickFormat(y);
 
     double xlo = 0, xhi = 1;
@@ -258,7 +247,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
         }
         if (!std::isfinite(xlo))
             xlo = 0, xhi = 1;
-        xAxis = niceAxis(xlo, xhi, std::max(2, static_cast<int>(size.x / 120)));
+        xAxis = chart::niceAxis(xlo, xhi, std::max(2, static_cast<int>(size.x / 120)));
         xFmt = tickFormat(xAxis);
         xlo = xAxis.lo, xhi = xAxis.hi;
     }
@@ -281,7 +270,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
     }
 
     float yLabelW = 0;
-    for (double v = y.lo; v <= y.hi + y.step * 0.5; v += y.step)
+    for (double v : chart::ticks(y))
         yLabelW = std::max(yLabelW, ImGui::CalcTextSize(formatTick(v, yFmt).c_str()).x);
     const float left = origin.x + yLabelW + Theme::Spacing::M;
     const float right = origin.x + size.x - Theme::Spacing::M;
@@ -302,7 +291,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
     // grid and y labels
     const ImU32 grid = ImGui::GetColorU32(colors.surface0);
     const ImU32 tickText = ImGui::GetColorU32(colors.subtext0);
-    for (double v = y.lo; v <= y.hi + y.step * 0.5; v += y.step) {
+    for (double v : chart::ticks(y)) {
         const float yy = py(v);
         dl->AddLine(ImVec2(left, yy), ImVec2(right, yy), grid);
         const std::string t = formatTick(v, yFmt);
@@ -314,7 +303,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
 
     // x labels: numeric ticks, or every k-th category so they don't overlap
     if (numericX) {
-        for (double v = xAxis.lo; v <= xAxis.hi + xAxis.step * 0.5; v += xAxis.step) {
+        for (double v : chart::ticks(xAxis)) {
             const float xx = left + static_cast<float>((v - xlo) / (xhi - xlo)) * (right - left);
             const std::string t = formatTick(v, xFmt);
             dl->AddText(
@@ -323,10 +312,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
         }
     } else {
         // widest label (capped), then every k-th one so neighbours never touch
-        float labelW = 0;
-        for (const auto& l : d.labels)
-            labelW = std::max(labelW, ImGui::CalcTextSize(l.c_str()).x);
-        labelW = std::min(labelW, 140.0f);
+        const float labelW = std::min(maxLabelWidth_, 140.0f);
         const size_t every =
             std::max<size_t>(1, static_cast<size_t>(std::ceil((labelW + 8.0f) / slot)));
         for (size_t i = 0; i < n; i += every) {
@@ -374,8 +360,17 @@ void ResultChart::renderCartesian(const ImVec2& size) {
                     (!numericX || std::isfinite(d.xs[i + 1]))) {
                     const ImVec2 q(px(i + 1), py(vals[i + 1]));
                     if (settings_.kind == chart::Kind::Area) {
-                        const ImVec2 quad[] = {p, q, ImVec2(q.x, base), ImVec2(p.x, base)};
-                        dl->AddConvexPolyFilled(quad, 4, withAlpha(col, 0.25f));
+                        const ImU32 fill = withAlpha(col, 0.25f);
+                        if ((p.y - base) * (q.y - base) < 0) {
+                            // crosses the baseline: two triangles, each convex
+                            const float t = (base - p.y) / (q.y - p.y);
+                            const ImVec2 c(p.x + (q.x - p.x) * t, base);
+                            dl->AddTriangleFilled(p, c, ImVec2(p.x, base), fill);
+                            dl->AddTriangleFilled(c, q, ImVec2(q.x, base), fill);
+                        } else {
+                            const ImVec2 quad[] = {p, q, ImVec2(q.x, base), ImVec2(p.x, base)};
+                            dl->AddConvexPolyFilled(quad, 4, fill);
+                        }
                     }
                     dl->AddLine(p, q, col, 2.0f);
                 }

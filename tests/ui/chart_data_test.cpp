@@ -87,3 +87,40 @@ TEST(ChartData, StaleColumnsAreIgnored) {
     s.agg = chart::Agg::Avg;
     EXPECT_NO_THROW(chart::build({"a"}, {{"1"}}, s)); // no y, not a count: nothing to plot
 }
+
+TEST(ChartData, TicksAlwaysEnd) {
+    const auto a = chart::niceAxis(0, 9400, 5);
+    EXPECT_EQ(a.lo, 0);
+    EXPECT_EQ(a.hi, 10000);
+    EXPECT_EQ(chart::ticks(a).size(), 6u); // 0, 2K .. 10K
+    // a step below one ulp of the values: summing it would never move
+    const auto big = chart::ticks(chart::niceAxis(1e17, 1e17 + 16, 5));
+    EXPECT_FALSE(big.empty());
+    EXPECT_LE(big.size(), 51u);
+    EXPECT_LE(chart::ticks(chart::niceAxis(-1e308, 1e308, 5)).size(), 51u);
+    EXPECT_EQ(chart::ticks(chart::niceAxis(7, 7, 5)).size() > 1, true); // flat data
+}
+
+TEST(ChartData, LongLabelsAreCappedOnACharacter) {
+    std::string long_label;
+    for (int i = 0; i < 5000; ++i)
+        long_label += "é"; // two bytes each
+    chart::Settings s;
+    s.x = 0;
+    s.ys = {1};
+    const auto d = chart::build({"t", "v"}, {{long_label, "1"}}, s);
+    ASSERT_EQ(d.labels.size(), 1u);
+    EXPECT_EQ(d.labels[0], long_label.substr(0, chart::kMaxLabel * 2) + "...");
+}
+
+TEST(ChartData, NumericXIsSortedWithoutGrouping) {
+    chart::Settings s;
+    s.x = 0;
+    s.ys = {1};
+    const auto d = chart::build({"n", "v"}, {{"3", "30"}, {NUL, "0"}, {"1", "10"}, {"2", "20"}}, s);
+    EXPECT_EQ(d.xs[0], 1);
+    EXPECT_EQ(d.xs[1], 2);
+    EXPECT_EQ(d.xs[2], 3);
+    EXPECT_TRUE(std::isnan(d.xs[3])); // NULL x last
+    EXPECT_EQ(d.series[0].values, (std::vector<double>{10, 20, 30, 0}));
+}

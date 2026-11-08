@@ -2,11 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <locale>
-#include <sstream>
 #include <cmath>
 #include <dearsql/types.hpp>
 #include <limits>
+#include <locale>
+#include <sstream>
 #include <unordered_map>
 
 namespace chart {
@@ -33,6 +33,18 @@ namespace chart {
                                    [](unsigned char c) { return std::tolower(c); });
             return lower == "id" || lower.ends_with("_id") ||
                    (name.size() > 2 && name.ends_with("Id"));
+        }
+
+        // at most kMaxLabel code points, cut on a character boundary
+        std::string capLabel(std::string s) {
+            size_t points = 0;
+            for (size_t i = 0; i < s.size(); ++i) {
+                if ((static_cast<unsigned char>(s[i]) & 0xC0) != 0x80 && ++points > kMaxLabel) {
+                    s.resize(i);
+                    return s + "...";
+                }
+            }
+            return s;
         }
 
         struct Acc {
@@ -157,11 +169,22 @@ namespace chart {
             if (x < 0)
                 return std::to_string(i + 1);
             const auto v = cell(row, x);
-            return isNull(v) ? std::string("NULL") : std::string(v);
+            return isNull(v) ? std::string("NULL") : capLabel(std::string(v));
         };
 
         if (settings.agg == Agg::None) {
-            for (size_t i = 0; i < rows.size(); ++i) {
+            // a numeric x is drawn left to right whatever the row order (NULL x last)
+            std::vector<size_t> order(rows.size());
+            for (size_t i = 0; i < order.size(); ++i)
+                order[i] = i;
+            if (d.numericX) {
+                std::vector<double> key(rows.size());
+                for (size_t i = 0; i < rows.size(); ++i)
+                    key[i] = parseNumber(cell(rows[i], x)).value_or(INFINITY);
+                std::ranges::stable_sort(order,
+                                         [&](size_t a, size_t b) { return key[a] < key[b]; });
+            }
+            for (size_t i : order) {
                 d.labels.push_back(xLabel(rows[i], i));
                 d.xs.push_back(d.numericX ? parseNumber(cell(rows[i], x)).value_or(kNaN)
                                           : static_cast<double>(i));
@@ -238,6 +261,38 @@ namespace chart {
             return "Max";
         }
         return "";
+    }
+
+} // namespace chart
+
+namespace chart {
+
+    Axis niceAxis(double lo, double hi, int target) {
+        if (!(hi > lo)) {
+            const double pad = lo == 0 ? 1 : std::abs(lo) * 0.5;
+            lo -= pad;
+            hi += pad;
+        }
+        Axis a{lo, hi, (hi - lo) / std::max(1, target)};
+        const double mag = std::pow(10.0, std::floor(std::log10(a.step)));
+        if (!std::isfinite(mag) || mag <= 0)
+            return {lo, hi, hi - lo}; // overflow: two ticks, the ends
+        const double f = a.step / mag;
+        a.step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+        a.lo = std::floor(lo / a.step) * a.step;
+        a.hi = std::ceil(hi / a.step) * a.step;
+        return a;
+    }
+
+    std::vector<double> ticks(const Axis& axis) {
+        double count = std::round((axis.hi - axis.lo) / axis.step);
+        if (!std::isfinite(count) || count < 1)
+            count = 1;
+        const int n = static_cast<int>(std::min(count, 50.0));
+        std::vector<double> out;
+        for (int k = 0; k <= n; ++k)
+            out.push_back(k == n ? axis.hi : axis.lo + axis.step * k);
+        return out;
     }
 
 } // namespace chart

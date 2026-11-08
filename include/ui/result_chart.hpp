@@ -35,6 +35,8 @@ private:
     void renderControls();
     void renderCartesian(const ImVec2& size);
     void renderPie(const ImVec2& size);
+    void rebuild(const std::vector<std::string>& columns,
+                 const std::vector<std::vector<std::string>>& rows);
 
     chart::Settings settings_;
     chart::Data data_;
@@ -44,4 +46,5 @@ private:
     size_t size_ = 0;
     bool dirty_ = true;
     int lastFrame_ = -10;
+    float maxLabelWidth_ = 0;
 };

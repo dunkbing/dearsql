@@ -829,6 +829,8 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
     if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, gridHeight))) {
         if (resultView_ == 1) {
             jsonView_.render("##result_json", r.columnNames, r.tableData);
+        } else if (resultView_ == 2) {
+            chart_.render("##result_chart", r.columnNames, r.tableData);
         } else {
             TableRenderer::Config config;
             config.allowEditing = false;
@@ -842,7 +844,7 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
     ImGui::EndChild();
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
-    UIUtils::SegmentedTabs("##result_view", {"Data", "JSON"}, &resultView_);
+    UIUtils::SegmentedTabs("##result_view", {"Data", "JSON", "Chart"}, &resultView_);
 
     const std::string status =
         std::format("{} {}{}", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows", took);

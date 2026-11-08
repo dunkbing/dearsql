@@ -197,6 +197,7 @@ set(APP_SOURCES
     src/ui/tab/tab.cpp
     src/ui/tab/sql_editor_tab.cpp
     src/ui/tab/table_viewer_tab.cpp
+    src/ui/result_chart.cpp
     src/ui/tab/table_editor_tab.cpp
     src/ui/tab/diagram_tab.cpp
     src/ui/text_editor.cpp
@@ -221,6 +222,7 @@ set(APP_SOURCES
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp
     src/utils/table_exporter.cpp
+    src/utils/chart_data.cpp
     src/utils/table_importer.cpp
     src/utils/button.cpp
     src/utils/select.cpp

@@ -348,6 +348,55 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // chart tab: picks columns, and survives a re-run with fewer columns
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Results chart");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        const auto run = [&](const char* sql, const std::string& firstColumn) {
+            tab->setQuery(sql);
+            ctx->Yield(2);
+            ctx->ItemClick("**/Run");
+            for (int i = 0; i < 300; ++i) {
+                const auto& r = tab->getQueryResult();
+                if (r.size() == 1 && !r[0].columnNames.empty() &&
+                    r[0].columnNames[0] == firstColumn)
+                    break;
+                ctx->Yield();
+            }
+            ctx->Yield(2);
+        };
+        ctx->SetRef(tab->getWindowName().c_str());
+        run("select 'a' as k, 1 as x, 2 as y union all select 'b', 3, 4", "k");
+        ctx->ItemClick("**/Chart");
+        ctx->Yield(2);
+        IM_CHECK(tab->chart().visible());
+        IM_CHECK_EQ(tab->chart().settings().x, 0);
+        IM_CHECK(tab->chart().settings().ys == (std::vector<int>{1, 2}));
+        IM_CHECK_EQ(tab->chart().data().series.size(), 2u);
+        auto pie = tab->chart().settings();
+        pie.kind = chart::Kind::Pie;
+        pie.ys = {2};
+        tab->chart().setSettings(pie);
+        ctx->Yield(2);
+        IM_CHECK_EQ(tab->chart().data().series.size(), 1u);
+
+        run("select 5 as only_col", "only_col"); // the old y index is gone
+        IM_CHECK(tab->chart().visible());
+        IM_CHECK(tab->chart().settings().ys == (std::vector<int>{0}));
+        IM_CHECK_EQ(tab->chart().data().labels.size(), 1u);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // data / json tabs under the results and under a table
     t = IM_REGISTER_TEST(engine, "SQLEditor", "Results JSON view");
     t->TestFunc = [](ImGuiTestContext* ctx) {
@@ -390,6 +439,10 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         IM_CHECK_SILENT(viewerTab != nullptr);
         IM_CHECK(viewerTab->jsonView().visible());
         IM_CHECK(viewerTab->jsonView().text().starts_with("[\n  {"));
+        ctx->ItemClick("**/Chart");
+        ctx->Yield(2);
+        IM_CHECK(viewerTab->chart().visible());
+        IM_CHECK(!viewerTab->chart().data().labels.empty());
 
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);

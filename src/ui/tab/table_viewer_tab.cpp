@@ -240,11 +240,14 @@ void TableViewerTab::render() {
         if (dataLoadOp.isRunning()) {
             ImGui::Text("Loading table data...");
         } else if (!table_.columns.empty() && !tableData.empty()) {
-            if (dataView_ == 1) {
+            if (dataView_ == 1 || dataView_ == 2) {
                 std::vector<std::string> names;
                 for (const auto& c : table_.columns)
                     names.push_back(c.name);
-                jsonView_.render("##table_json", names, tableData);
+                if (dataView_ == 1)
+                    jsonView_.render("##table_json", names, tableData);
+                else
+                    chart_.render("##table_chart", names, tableData);
             } else {
                 // Update table renderer with current data
                 tableRenderer->setColumns(table_.columns);
@@ -286,8 +289,9 @@ void TableViewerTab::render() {
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
 
     // data / json on the left, paging on the right (width from last frame)
-    if (UIUtils::SegmentedTabs("##data_view", {"Data", "JSON"}, &dataView_)) {
+    if (UIUtils::SegmentedTabs("##data_view", {"Data", "JSON", "Chart"}, &dataView_)) {
         jsonView_.invalidate(); // edits since the last look
+        chart_.invalidate();
     }
     if (dataLoadOp.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::M);

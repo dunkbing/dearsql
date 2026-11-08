@@ -4,6 +4,7 @@
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
 #include "ui/json_rows_view.hpp"
+#include "ui/result_chart.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
 #include <array>
@@ -103,10 +104,14 @@ private:
     std::optional<PendingExplain> pendingExplain_;
     std::optional<dearsql::Plan> plan_;
     mutable bool planRaw_ = false;
-    mutable int resultView_ = 0; // 0 data, 1 json
+    mutable int resultView_ = 0; // 0 data, 1 json, 2 chart
     mutable JsonRowsView jsonView_;
+    mutable ResultChart chart_;
 
 public:
+    [[nodiscard]] ResultChart& chart() const {
+        return chart_;
+    }
     [[nodiscard]] const JsonRowsView& jsonView() const {
         return jsonView_;
     }

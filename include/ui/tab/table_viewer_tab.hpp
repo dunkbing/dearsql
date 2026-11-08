@@ -3,6 +3,7 @@
 #include "database/async_helper.hpp"
 #include "ui/auto_complete_input.hpp"
 #include "ui/json_rows_view.hpp"
+#include "ui/result_chart.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
 #include "ui/text_editor.hpp"
@@ -131,10 +132,14 @@ private:
 
     // Table renderer
     std::unique_ptr<TableRenderer> tableRenderer;
-    int dataView_ = 0; // 0 grid, 1 json
+    int dataView_ = 0; // 0 grid, 1 json, 2 chart
     JsonRowsView jsonView_;
+    ResultChart chart_;
 
 public:
+    [[nodiscard]] const ResultChart& chart() const {
+        return chart_;
+    }
     [[nodiscard]] const JsonRowsView& jsonView() const {
         return jsonView_;
     }

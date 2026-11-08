@@ -547,4 +547,37 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(10);
         holdForScreenshot(ctx);
     };
+
+    // the chart tab under a query result
+    t = IM_REGISTER_TEST(engine, "Docs", "results-chart");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "shop.db";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first) {
+            ctx->LogError("no sqlite");
+            return;
+        }
+        app.addDatabase(db);
+        const auto editor = std::dynamic_pointer_cast<SQLEditorTab>(
+            app.getTabManager()->createSQLEditorTab("", db.get()));
+        editor->setQuery(
+            "with sales(month, revenue, cost) as (values\n"
+            "  ('Jan', 4200, 2600), ('Feb', 5100, 2900), ('Mar', 6300, 3100),\n"
+            "  ('Apr', 5800, 3300), ('May', 7200, 3600), ('Jun', 8100, 3900),\n"
+            "  ('Jul', 7600, 4000), ('Aug', 8800, 4200), ('Sep', 9400, 4300))\n"
+            "select * from sales;");
+        ctx->Yield(10);
+        ctx->SetRef(editor->getWindowName().c_str());
+        ctx->ItemClick("**/Run");
+        for (int i = 0; i < 300 && editor->getQueryResult().empty(); ++i)
+            ctx->Yield();
+        ctx->Yield(5);
+        ctx->ItemClick("**/Chart");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
 }

@@ -506,7 +506,6 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
             return;
         }
         for (const char* sql : {
-                 "PRAGMA foreign_keys = ON",
                  "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT)",
                  "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER "
                  "REFERENCES customers(id) ON DELETE CASCADE, total REAL)",

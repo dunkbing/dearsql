@@ -380,4 +380,36 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // cmd/ctrl+p finds a loaded table by a sloppy name and opens it
+    t = IM_REGISTER_TEST(engine, "OpenQuickly", "Opens a table by name");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const size_t before = tabs->getTabCount();
+
+        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
+        ctx->Yield(2);
+        ctx->KeyChars("chlid"); // a typo still finds child
+        ctx->Yield(2);
+        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->Yield(3);
+
+        IM_CHECK_SILENT(tabs->getTabCount() == before + 1);
+        const auto viewer = std::dynamic_pointer_cast<TableViewerTab>(tabs->getTabs().back());
+        IM_CHECK(viewer != nullptr);
+        IM_CHECK(viewer && viewer->getWindowName().find("child") != std::string::npos);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

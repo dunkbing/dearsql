@@ -1,4 +1,5 @@
 #include "ui/tab_manager.hpp"
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
@@ -6,6 +7,7 @@
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "mcp/fuzzy.hpp"
 #include "ui/fonts.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
@@ -861,4 +863,126 @@ void TabManager::renderTabSwitcher() {
     ImGui::End();
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(4);
+}
+
+// cmd/ctrl+p: every table and view the sidebar has loaded, matched as you type; enter opens it
+void TabManager::renderOpenQuickly() {
+    constexpr const char* popupId = "##open_quickly";
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Shortcut | ImGuiKey_P)) {
+        openQuicklyQuery_[0] = '\0';
+        openQuicklyIndex_ = 0;
+        ImGui::OpenPopup(popupId);
+    }
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->GetCenter().x, vp->WorkPos.y + vp->WorkSize.y * 0.15f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(std::min(640.0f, vp->WorkSize.x * 0.8f), 0.0f));
+    if (!UIUtils::BeginMenuPopup(popupId)) {
+        return;
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+
+    struct Hit {
+        int score;
+        IDatabaseNode* node;
+        const Table* table;
+        bool view;
+        std::string where;
+    };
+    std::vector<Hit> hits;
+    const std::string_view query = openQuicklyQuery_;
+    for (const auto& db : Application::getInstance().getDatabases()) {
+        if (!db || !db->isConnected())
+            continue;
+        for (IDatabaseNode* node : db->loadedNodes()) {
+            // a file's path is its name already
+            const std::string where =
+                node == dynamic_cast<IDatabaseNode*>(db.get())
+                    ? db->getConnectionInfo().name
+                    : db->getConnectionInfo().name + " · " + node->getFullPath();
+            auto add = [&](const std::vector<Table>& tables, bool view) {
+                for (const auto& t : tables) {
+                    const int s = query.empty() ? 1 : fuzzy::score(query, t.name);
+                    if (s > 0)
+                        hits.push_back({s, node, &t, view, where});
+                }
+            };
+            if (node->isTablesLoaded())
+                add(node->getTables(), false);
+            if (node->isViewsLoaded())
+                add(node->getViews(), true);
+        }
+    }
+    std::ranges::stable_sort(hits, [](const Hit& a, const Hit& b) {
+        return a.score != b.score ? a.score > b.score : a.table->name < b.table->name;
+    });
+    constexpr size_t kMaxHits = 50; // ponytail: no paging, typing narrows it
+    if (hits.size() > kMaxHits)
+        hits.resize(kMaxHits);
+    const int n = static_cast<int>(hits.size());
+
+    if (ImGui::IsWindowAppearing())
+        ImGui::SetKeyboardFocusHere();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::InputTextWithHint("##open_quickly_query", "Open table or view...", openQuicklyQuery_,
+                                 sizeof(openQuicklyQuery_)))
+        openQuicklyIndex_ = 0;
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && n > 0)
+        openQuicklyIndex_ = (openQuicklyIndex_ + 1) % n;
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && n > 0)
+        openQuicklyIndex_ = (openQuicklyIndex_ + n - 1) % n;
+    openQuicklyIndex_ = std::clamp(openQuicklyIndex_, 0, std::max(0, n - 1));
+
+    int picked = -1;
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))
+        picked = n > 0 ? openQuicklyIndex_ : -1;
+
+    const auto& colors = Application::getInstance().getCurrentColors();
+    if (n == 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::TextUnformatted(query.empty()
+                                   ? "Expand a database in the sidebar to load its tables."
+                                   : "No matching table or view.");
+        ImGui::PopStyleColor();
+    }
+    const float rowH = ImGui::GetTextLineHeightWithSpacing();
+    // the row enter opens, drawn as if hovered
+    ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyle().Colors[ImGuiCol_HeaderHovered]);
+    if (n > 0 && ImGui::BeginChild("##open_quickly_list",
+                                   ImVec2(0, std::min(n, 12) * rowH + Theme::Spacing::S))) {
+        for (int i = 0; i < n; ++i) {
+            const auto& h = hits[i];
+            ImGui::PushID(i);
+            const bool selected = i == openQuicklyIndex_;
+            if (ImGui::Selectable(
+                    std::format("{} {}", h.view ? ICON_FA_EYE : ICON_FA_TABLE, h.table->name)
+                        .c_str(),
+                    selected))
+                picked = i;
+            if (selected && ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
+                selected && ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+                ImGui::SetScrollHereY();
+            const float w = ImGui::CalcTextSize(h.where.c_str()).x;
+            ImGui::SameLine(std::max(ImGui::GetContentRegionAvail().x * 0.4f,
+                                     ImGui::GetWindowContentRegionMax().x - w));
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::TextUnformatted(h.where.c_str());
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+    }
+    if (n > 0)
+        ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::PopStyleVar();
+    if (picked >= 0) {
+        const auto& h = hits[picked];
+        const Table table = *h.table;
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        createTableViewerTab(h.node, table);
+        return;
+    }
+    ImGui::EndPopup();
 }

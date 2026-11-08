@@ -472,4 +472,22 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(10);
         holdForScreenshot(ctx);
     };
+
+    // cmd/ctrl+p over the loaded tables and views
+    t = IM_REGISTER_TEST(engine, "Docs", "open-quickly");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
+        ctx->Yield(2);
+        ctx->KeyChars("inv");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
 }

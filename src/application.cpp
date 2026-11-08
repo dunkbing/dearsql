@@ -933,6 +933,7 @@ void Application::renderMainUI() {
     } else {
         tabManager->renderTabs();
     }
+    tabManager->renderOpenQuickly();
 
     ImGui::PopStyleVar(1);
     ImGui::PopStyleColor(3);

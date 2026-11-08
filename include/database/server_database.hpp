@@ -257,6 +257,21 @@ public:
         return it->second.get();
     }
 
+    std::vector<IDatabaseNode*> loadedNodes() override {
+        std::vector<IDatabaseNode*> out;
+        for (auto& node : nodes_ | std::views::values) {
+            if constexpr (requires { node->schemas; }) {
+                if (node->schemasLoaded && !node->schemas.empty()) {
+                    for (auto& schema : node->schemas)
+                        out.push_back(schema.get());
+                    continue;
+                }
+            }
+            out.push_back(node.get());
+        }
+        return out;
+    }
+
     // every known database; lists them on first access
     NodeMap& getDatabaseDataMap() {
         if (!databasesLoaded && !databasesLoader.isRunning() && isConnected())

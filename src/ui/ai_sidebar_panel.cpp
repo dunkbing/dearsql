@@ -1123,9 +1123,23 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::Commands:
             agentCommands_ = std::move(ev.commands);
             break;
-        case AcpEvent::Type::ConfigOptions:
+        case AcpEvent::Type::ConfigOptions: {
             agentConfigOptions_ = std::move(ev.configOptions);
+            // the model last picked for this agent, over its own default (codex's comes
+            // from ~/.codex/config.toml, which may name one the account can't use)
+            const std::string saved = Application::getInstance().getAppState()->getSetting(
+                "acp_model_" + backendId(), "");
+            for (const auto& option : agentConfigOptions_) {
+                if (saved.empty() || !acp_ || option.category != "model" || option.type != "select")
+                    continue;
+                const bool offered = std::ranges::any_of(
+                    option.options, [&](const auto& o) { return o.value == saved; });
+                if (offered && option.currentValue != saved)
+                    acp_->setConfigOption(option.id, saved);
+                break;
+            }
             break;
+        }
         case AcpEvent::Type::Plan: {
             Item* planItem = nullptr;
             for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
@@ -1459,6 +1473,8 @@ void AISidebarPanel::renderHeader() {
                 const bool selected = option.value == current;
                 if (ImGui::Selectable(label.c_str(), selected) && acp_) {
                     acp_->setConfigOption(agentModelOption->id, option.value);
+                    Application::getInstance().getAppState()->setSetting("acp_model_" + backendId(),
+                                                                         option.value);
                 }
                 if (!option.description.empty() && ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("%s", option.description.c_str());

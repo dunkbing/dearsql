@@ -329,12 +329,7 @@ void TableViewerTab::render() {
     ImGui::PopStyleColor();
 
     // Page size selector
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Rows per page:");
-    ImGui::SameLine(0, Theme::Spacing::S);
+    ImGui::SameLine(0, Theme::Spacing::L);
     ImGui::SetNextItemWidth(80.0f);
 
     static const int pageSizeOptions[] = {10, 25, 50, 100, 200, 500};
@@ -383,6 +378,9 @@ void TableViewerTab::render() {
             }
         }
         UIUtils::EndSelect();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Rows per page");
     }
     ImGui::SameLine(0, 0);
     paginationWidth_ = ImGui::GetCursorScreenPos().x - paginationStart;

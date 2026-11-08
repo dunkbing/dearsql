@@ -37,7 +37,10 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     }
     // claude refuses to start when it thinks it is nested in another session;
     // inherited when DearSQL itself was launched from one
-    opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"};
+    opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+                    // the agent runs where the window is: started from an ssh shell, gemini
+                    // would think it is remote and print a sign-in url into the protocol
+                    "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"};
     // the managed bun keeps its package cache next to itself, not in ~/.bun; the
     // user's own bun keeps theirs
     if (const auto bun = AcpRegistry::bunPath(); bun && !argv.empty() && argv.front() == *bun) {

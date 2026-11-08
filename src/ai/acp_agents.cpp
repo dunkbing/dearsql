@@ -97,6 +97,14 @@ namespace AcpAgents {
                 {},
                 "Sign in with `codex login` or set OPENAI_API_KEY.",
             },
+            {
+                "grok",
+                "Grok",
+                {},
+                "@xai-official/grok",
+                {"agent", "stdio"},
+                "Run `grok` once in a terminal to sign in.",
+            },
             // binary-only: the registry archive already carries its args ("acp")
             {
                 "cursor",

@@ -933,6 +933,13 @@ void TabManager::renderOpenQuickly() {
         openQuicklyIndex_ = (openQuicklyIndex_ + n - 1) % n;
     openQuicklyIndex_ = std::clamp(openQuicklyIndex_, 0, std::max(0, n - 1));
 
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        ImGui::PopStyleVar();
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
     int picked = -1;
     if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))
         picked = n > 0 ? openQuicklyIndex_ : -1;

@@ -1,5 +1,4 @@
 #include "application.hpp"
-#include "ui/markdown_text.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
@@ -15,6 +14,7 @@
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
+#include "ui/markdown_text.hpp"
 #include "ui/settings_dialog.hpp"
 
 #include "platform/updater.hpp"
@@ -41,6 +41,7 @@
 #include <iostream>
 #include <limits>
 #include <spdlog/spdlog.h>
+#include <thread>
 
 #include "ui/fonts.hpp"
 
@@ -217,6 +218,15 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
+    showFps_ = appState->getSetting("show_fps", "1") == "1";
+    vsync_ = appState->getSetting("vsync", "1") == "1";
+    try {
+        maxFps_ = std::max(0, std::stoi(appState->getSetting("max_fps", "120")));
+    } catch (const std::exception&) {
+        maxFps_ = 120;
+    }
+    platform_->setVSync(vsync_);
+
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
@@ -297,6 +307,13 @@ void Application::run() {
         }
 
         platform_->renderFrame();
+
+        // without vsync nothing paces the loop: sleep out the rest of the frame
+        if (!vsync_ && maxFps_ > 0) {
+            const double left = frameStart + 1.0 / maxFps_ - glfwGetTime();
+            if (left > 0)
+                std::this_thread::sleep_for(std::chrono::duration<double>(left));
+        }
 
         const bool userActive = isImGuiUserActive();
 
@@ -408,6 +425,25 @@ void Application::setFontScale(const float scale) {
     if (appState) {
         appState->setSetting("font_scale", std::format("{:.2f}", fontScale_));
     }
+}
+
+void Application::setShowFps(const bool on) {
+    showFps_ = on;
+    if (appState)
+        appState->setSetting("show_fps", on ? "1" : "0");
+}
+
+void Application::setVSync(const bool on) {
+    vsync_ = on;
+    platform_->setVSync(on);
+    if (appState)
+        appState->setSetting("vsync", on ? "1" : "0");
+}
+
+void Application::setMaxFps(const int fps) {
+    maxFps_ = std::max(0, fps);
+    if (appState)
+        appState->setSetting("max_fps", std::to_string(maxFps_));
 }
 
 bool Application::hasPendingAsyncWork() const {
@@ -958,7 +994,7 @@ void Application::renderMainUI() {
     maybeRemindToUpgrade();
 
     // frames per second, bottom right, above everything (not in docs screenshots)
-    if (!std::getenv("DEARSQL_SHOT_DIR")) {
+    if (showFps_ && !std::getenv("DEARSQL_SHOT_DIR")) {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         const std::string fps = std::format("{:.0f} FPS", ImGui::GetIO().Framerate);
         const ImVec2 size = ImGui::CalcTextSize(fps.c_str());

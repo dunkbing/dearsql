@@ -396,6 +396,14 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         auto* tabs = app.getTabManager();
         const size_t before = tabs->getTabCount();
 
+        // esc closes it, even with the text field focused
+        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
+        ctx->Yield(2);
+        IM_CHECK(ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId));
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+        IM_CHECK(!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId));
+
         ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
         ctx->Yield(2);
         ctx->KeyChars("chlid"); // a typo still finds child
@@ -411,5 +419,22 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
         ctx->Yield();
+    };
+
+    // the performance settings persist (the frame cap lives in Application::run, not the test loop)
+    t = IM_REGISTER_TEST(engine, "Settings", "Frame rate settings");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        const bool fps = app.showFps(), vsync = app.vsync();
+        const int limit = app.maxFps();
+        app.setShowFps(!fps);
+        app.setVSync(false);
+        app.setMaxFps(30);
+        IM_CHECK(app.getAppState()->getSetting("show_fps", "") == (fps ? "0" : "1"));
+        IM_CHECK(app.getAppState()->getSetting("vsync", "") == "0");
+        IM_CHECK(app.getAppState()->getSetting("max_fps", "") == "30");
+        app.setShowFps(fps);
+        app.setVSync(vsync);
+        app.setMaxFps(limit);
     };
 }

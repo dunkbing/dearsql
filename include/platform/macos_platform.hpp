@@ -19,6 +19,9 @@ public:
     void onSidebarToggleClicked() override;
     void cleanup() override;
     void renderFrame() override;
+    void setVSync(bool on) override {
+        backend_->vsync = on;
+    }
     void shutdownImGui() override;
     void updateWorkspaceDropdown() override;
     void applyTheme(bool isDark) override;

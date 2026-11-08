@@ -56,6 +56,19 @@ public:
         return fontScale_;
     }
     void setFontScale(float scale);
+    [[nodiscard]] bool showFps() const {
+        return showFps_;
+    }
+    [[nodiscard]] bool vsync() const {
+        return vsync_;
+    }
+    // frames per second without vsync; 0 = no limit
+    [[nodiscard]] int maxFps() const {
+        return maxFps_;
+    }
+    void setShowFps(bool on);
+    void setVSync(bool on);
+    void setMaxFps(int fps);
 
     // Selection state
     [[nodiscard]] std::shared_ptr<DatabaseInterface> getSelectedDatabase() const;
@@ -146,6 +159,9 @@ private:
     // Application state
     const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
     float fontScale_ = 1.0f;
+    bool showFps_ = true;
+    bool vsync_ = true;
+    int maxFps_ = 120;
     bool sidebarVisible = true;
     // previous frame's value: a change means the dock layout has to be rebuilt
     bool sidebarVisibleLastFrame_ = true;

@@ -994,7 +994,7 @@ void Application::renderMainUI() {
     maybeRemindToUpgrade();
 
     // frames per second, bottom right, above everything (not in docs screenshots)
-    if (showFps_ && !std::getenv("DEARSQL_SHOT_DIR")) {
+    if (fpsCounterWidth() > 0.0f) {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         const std::string fps = std::format("{:.0f} FPS", ImGui::GetIO().Framerate);
         const ImVec2 size = ImGui::CalcTextSize(fps.c_str());
@@ -1097,3 +1097,10 @@ float Application::getTitlebarHeight() const {
     return 0.0f;
 }
 #endif
+
+float Application::fpsCounterWidth() const {
+    if (!showFps_ || std::getenv("DEARSQL_SHOT_DIR")) {
+        return 0.0f;
+    }
+    return ImGui::CalcTextSize("000 FPS").x + Theme::Spacing::M * 2;
+}

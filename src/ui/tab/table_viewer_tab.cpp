@@ -295,7 +295,8 @@ void TableViewerTab::render() {
         ImGui::Text("Loading...");
     }
     ImGui::SameLine();
-    const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x -
+                          Application::getInstance().fpsCounterWidth();
     ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), lineEnd - paginationWidth_));
     const float paginationStart = ImGui::GetCursorScreenPos().x;
 

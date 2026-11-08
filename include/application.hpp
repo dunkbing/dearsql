@@ -59,6 +59,8 @@ public:
     [[nodiscard]] bool showFps() const {
         return showFps_;
     }
+    // width the bottom-right fps counter takes, for content right-aligned at the bottom
+    [[nodiscard]] float fpsCounterWidth() const;
     [[nodiscard]] bool vsync() const {
         return vsync_;
     }

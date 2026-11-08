@@ -64,15 +64,10 @@ The `dearsql` command has to be on your PATH: **Settings → Command Line → In
 
 or only the MCP server: `claude mcp add dearsql -- dearsql --mcp`.
 
-**Codex**: add the server to `~/.codex/config.toml` and the skill to `~/.agents/skills`:
-
-```toml
-[mcp_servers.dearsql]
-command = "dearsql"
-args = ["--mcp"]
-```
+**Codex**: register the server and add the skill to `~/.agents/skills`:
 
 ```sh
+codex mcp add dearsql -- dearsql --mcp
 mkdir -p ~/.agents/skills/dearsql && curl -fsSL https://raw.githubusercontent.com/dunkbing/dearsql/main/plugins/dearsql/skills/dearsql/SKILL.md -o ~/.agents/skills/dearsql/SKILL.md
 ```
 

@@ -210,7 +210,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         expandInSidebar(ctx, db);
         ctx->Yield(10);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->ItemClick("**/Run");
         ctx->Yield(120);
         holdForScreenshot(ctx);
     };
@@ -384,7 +384,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(10);
         ctx->SetRef(tab->getWindowName().c_str());
         ctx->ItemClick("**/###explain_analyze");
-        ctx->ItemClick("**/" ICON_FA_DIAGRAM_PROJECT " Explain");
+        ctx->ItemClick("**/Explain");
         // park the mouse over the sql text: no tooltip over the plan
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.6f, vp->Pos.y + 200.0f));
@@ -465,7 +465,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         expandInSidebar(ctx, db);
         ctx->Yield(10);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->ItemClick("**/Run");
         ctx->Yield(3);
         ctx->SetRef("//$FOCUSED");
         ctx->ItemInputValue("##param_from_id", "100");

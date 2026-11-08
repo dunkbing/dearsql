@@ -18,6 +18,9 @@ namespace UIUtils {
     bool Button(const char* label, ButtonVariant variant = ButtonVariant::Secondary,
                 const ImVec2& size = ImVec2(0.0f, 0.0f));
     bool SmallButton(const char* label, ButtonVariant variant = ButtonVariant::Secondary);
+    // label button with a smaller icon in front of the text
+    bool IconLabelButton(const char* icon, const char* label,
+                         ButtonVariant variant = ButtonVariant::Secondary);
     bool IconButton(const char* icon, ButtonVariant variant = ButtonVariant::Secondary,
                     const ImVec2& size = ImVec2(0.0f, 0.0f),
                     ButtonSize buttonSize = ButtonSize::Default);

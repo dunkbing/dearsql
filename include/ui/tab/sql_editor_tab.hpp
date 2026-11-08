@@ -142,6 +142,7 @@ private:
                              const std::vector<std::string>& dbNames,
                              const std::function<void(const std::string&)>& onSelect);
     void renderToolbar();
+    float toolbarWidth_ = 0.0f;
     void renderQueryResults() const;
     void renderServerMessages() const;
     void renderSingleResult(const StatementResult& r, size_t index) const;

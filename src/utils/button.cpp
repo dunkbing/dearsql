@@ -109,3 +109,27 @@ bool UIUtils::IconButton(const char* icon, ButtonVariant variant, const ImVec2& 
     ImGui::PopStyleVar(2);
     return clicked;
 }
+
+bool UIUtils::IconLabelButton(const char* icon, const char* label, ButtonVariant variant) {
+    ImFont* font = ImGui::GetFont();
+    const float iconSize = ImGui::GetFontSize() * 0.8f;
+    const float iconWidth = font->CalcTextSizeA(iconSize, FLT_MAX, 0.0f, icon).x;
+    const ImVec2 pad = ImGui::GetStyle().FramePadding;
+    const ImVec2 textSize = ImGui::CalcTextSize(label, nullptr, true);
+    const ImVec2 size(pad.x * 2.0f + iconWidth + Theme::Spacing::S + 2.0f + textSize.x,
+                      textSize.y + pad.y * 2.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, Theme::CornerRadius::SMALL);
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(1.0f, 0.5f));
+    pushVariantColors(variant);
+    drawButtonShadow(label, size, pad);
+    const bool clicked = ImGui::Button(label, size);
+    const ImVec2 min = ImGui::GetItemRectMin();
+    ImGui::GetWindowDrawList()->AddText(font, iconSize,
+                                        ImVec2(min.x + pad.x, min.y + (size.y - iconSize) * 0.5f),
+                                        ImGui::GetColorU32(ImGuiCol_Text), icon);
+    popVariantColors(variant);
+    ImGui::PopStyleVar(3);
+    return clicked;
+}

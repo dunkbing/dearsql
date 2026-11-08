@@ -184,7 +184,7 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         tab->setQuery("select 1;\nselect * from child c join parent p on p.id = c.parent_id;");
         ctx->Yield(3);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/" ICON_FA_DIAGRAM_PROJECT " Explain");
+        ctx->ItemClick("**/Explain");
         for (int i = 0; i < 300 && !tab->getPlan(); ++i) {
             ctx->Yield();
         }
@@ -362,7 +362,7 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         tab->setQuery("select :a as x, ':not_me' as y, :b as z, :a + 1 as w");
         ctx->Yield(3);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->ItemClick("**/Run");
         ctx->Yield(2);
         ctx->SetRef("//$FOCUSED");
         ctx->ItemInputValue("##param_a", "7");

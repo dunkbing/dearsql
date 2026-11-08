@@ -195,9 +195,8 @@ void SQLEditorTab::render() {
     // Left pane: editor + results
     if (ImGui::BeginChild("##sql_left_pane", ImVec2(editorAreaWidth, totalContentHeight), false)) {
         float paneHeight = ImGui::GetContentRegionAvail().y;
-        const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
         const float editorHeight = paneHeight * splitterPosition;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f - toolbarHeight;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f;
 
         if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -221,7 +220,6 @@ void SQLEditorTab::render() {
             saveScript();
         }
 
-        renderToolbar();
         UIUtils::Splitter("##sql_splitter", &splitterPosition, totalContentHeight, 100.0f, 200.0f);
 
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
@@ -624,9 +622,20 @@ void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
 void SQLEditorTab::renderToolbar() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
+    // before the buttons, so they stay put when it appears
+    if (syntaxDiagnostic_.active) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        const std::string inlineMessage =
+            std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
+        ImGui::TextUnformatted(inlineMessage.c_str());
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, Theme::Spacing::L);
+    }
+
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
+        UIUtils::IconLabelButton(ICON_FA_PLAY, "Run", UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
@@ -634,7 +643,7 @@ void SQLEditorTab::renderToolbar() {
             cancelQueryExecution();
         }
     } else {
-        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
+        if (UIUtils::IconLabelButton(ICON_FA_PLAY, "Run", UIUtils::ButtonVariant::Primary)) {
             if (sqlEditor.HasSelection()) {
                 startQueryExecutionAsync(sqlEditor.GetSelectedText());
             } else {
@@ -642,14 +651,14 @@ void SQLEditorTab::renderToolbar() {
             }
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(ICON_FA_ALIGN_LEFT " Format")) {
+        if (UIUtils::IconLabelButton(ICON_FA_ALIGN_LEFT, "Format")) {
             formatSQL();
         }
         ImGui::SameLine(0, Theme::Spacing::M);
         const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
         const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
         ImGui::BeginDisabled(!canExplain);
-        if (UIUtils::Button(ICON_FA_DIAGRAM_PROJECT " Explain")) {
+        if (UIUtils::IconLabelButton(ICON_FA_DIAGRAM_PROJECT, "Explain")) {
             explainStatement();
         }
         ImGui::EndDisabled();
@@ -667,15 +676,6 @@ void SQLEditorTab::renderToolbar() {
                                   "queries only");
             }
         }
-    }
-
-    if (syntaxDiagnostic_.active) {
-        ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        const std::string inlineMessage =
-            std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
-        ImGui::TextUnformatted(inlineMessage.c_str());
-        ImGui::PopStyleColor();
     }
 }
 
@@ -1494,6 +1494,9 @@ void SQLEditorTab::loadFromScript(const SqlScript& script) {
 
 void SQLEditorTab::renderScriptHeader() {
     const auto& colors = Application::getInstance().getCurrentColors();
+    // same button height as the settings dialog
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
+    ImGui::AlignTextToFramePadding();
 
     // file icon
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
@@ -1597,6 +1600,16 @@ void SQLEditorTab::renderScriptHeader() {
             ImGui::PopStyleColor();
         }
     }
+
+    // run, format, explain: right-aligned on the header line (width from last frame)
+    ImGui::SameLine();
+    const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), lineEnd - toolbarWidth_));
+    const float toolbarStart = ImGui::GetCursorScreenPos().x;
+    renderToolbar();
+    toolbarWidth_ = ImGui::GetItemRectMax().x - toolbarStart;
+    ImGui::PopStyleVar();
+
     ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     ImGui::Separator();
 }

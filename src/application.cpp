@@ -956,6 +956,17 @@ void Application::renderMainUI() {
 
     maybeRemindToUpgrade();
 
+    // frames per second, bottom right, above everything
+    {
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        const std::string fps = std::format("{:.0f} FPS", ImGui::GetIO().Framerate);
+        const ImVec2 size = ImGui::CalcTextSize(fps.c_str());
+        ImGui::GetForegroundDrawList()->AddText(
+            ImVec2(vp->WorkPos.x + vp->WorkSize.x - size.x - Theme::Spacing::M,
+                   vp->WorkPos.y + vp->WorkSize.y - size.y - Theme::Spacing::S),
+            ImGui::GetColorU32(getCurrentColors().subtext0), fps.c_str());
+    }
+
     ImGui::End();
 }
 

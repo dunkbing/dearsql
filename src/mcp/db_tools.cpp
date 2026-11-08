@@ -1608,6 +1608,11 @@ namespace mcp {
         std::string note;
         const auto fromTables = describeTables(from, "", note);
         const auto toTables = describeTables(to, "", note);
+        // a table left out would read as missing and come back as a DROP TABLE
+        if (!note.empty())
+            throw ToolError("Can't compare an incomplete schema, it would suggest dropping "
+                            "tables that exist.\n" +
+                            note);
         // new tables go where from's tables are
         std::string schema = fromTables.empty() ? "" : fromTables.front().schema;
         if (schema.empty() && hasSchemas(from.db->type()) &&

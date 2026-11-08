@@ -40,12 +40,16 @@ namespace SchemaCompare {
             return conn.empty() ? node->getFullPath() : conn + " / " + node->getFullPath();
         }
 
-        // every table described (columns, indexes, foreign keys), at most 200
+        // every table described (columns, indexes, foreign keys). throws past 200 or on
+        // any failure: a table left out would show up as one to drop
         Side describe(dearsql::IDatabase& db) {
             Side side{.schema = db.schemaName()};
-            for (const auto& t : db.tables()) {
-                if (side.tables.size() == 200)
-                    break;
+            const auto listed = db.tables();
+            if (listed.size() > 200)
+                throw std::runtime_error(
+                    std::format("{} has {} tables; Compare Schema handles up to 200.", db.name(),
+                                listed.size()));
+            for (const auto& t : listed) {
                 auto full = db.describeTable(t.name);
                 if (full.schema.empty())
                     full.schema = t.schema;
@@ -105,8 +109,9 @@ namespace SchemaCompare {
             for (const auto& db : Application::getInstance().getDatabases()) {
                 if (!db)
                     continue;
+                // a database with loaded schemas lists the schemas, not itself
                 for (auto* n : db->loadedNodes())
-                    if (n == node)
+                    if (n == node || n->parentNode() == node)
                         return true;
             }
             return false;

@@ -59,6 +59,7 @@ S3_PORT="${S3_PORT:-59000}"
 COCKROACH_PORT="${COCKROACH_PORT:-56257}"
 TIDB_PORT="${TIDB_PORT:-54000}"
 SCYLLA_PORT="${SCYLLA_PORT:-59043}"
+SCYLLA_TLS_PORT="${SCYLLA_TLS_PORT:-59143}"
 SSH_PORT="${SSH_PORT:-52222}"
 
 # TLS cert directory
@@ -304,7 +305,7 @@ setup_tls_certs() {
 
     # remove old containers so they get recreated with TLS mounts
     echo "Recreating containers with TLS support..."
-    for name in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MONGODB_CONTAINER"; do
+    for name in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MONGODB_CONTAINER" "$SCYLLA_CONTAINER"; do
         docker_cmd rm -f "$name" 2>/dev/null || true
     done
     docker_cmd rm -f "$SSH_CONTAINER" 2>/dev/null || true
@@ -325,6 +326,7 @@ all_ports_open() {
     port_open 127.0.0.1 "$TIDB_PORT" &&
     port_open 127.0.0.1 "$SCYLLA_PORT" &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$REDIS_TLS_PORT"; } &&
+    { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SCYLLA_TLS_PORT"; } &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SSH_PORT"; } &&
     ssh_test_environment_ready
 }
@@ -492,10 +494,28 @@ setup_containers() {
         sh -c "grep -q 'Starting listening for CQL clients' /var/log/cassandra/system.log 2>/dev/null \
             || grep -q 'Starting listening for CQL clients' /opt/cassandra/logs/system.log 2>/dev/null"
 
-    # ── ScyllaDB (cql, one small shard) ──
-    start_or_create "$SCYLLA_CONTAINER" \
-        -p "127.0.0.1:${SCYLLA_PORT}:9042" \
-        "$SCYLLA_IMAGE" --smp 1 --memory 750M --overprovisioned 1 --developer-mode 1
+    # ── ScyllaDB (cql, one small shard; tls on 9142 when certs exist) ──
+    # map options go as repeated key=value: the entrypoint splits on spaces
+    if $has_certs; then
+        # one from before tls (no 9142 mapping) would never pick the flags up
+        if docker_cmd ps -a --format '{{.Names}}' | grep -Fxq "$SCYLLA_CONTAINER" &&
+            ! docker_cmd port "$SCYLLA_CONTAINER" 9142 >/dev/null 2>&1; then
+            docker_cmd rm -f "$SCYLLA_CONTAINER" >/dev/null
+        fi
+        start_or_create "$SCYLLA_CONTAINER" \
+            -v "$CERT_DIR:/certs:ro" \
+            -p "127.0.0.1:${SCYLLA_PORT}:9042" \
+            -p "127.0.0.1:${SCYLLA_TLS_PORT}:9142" \
+            "$SCYLLA_IMAGE" --smp 1 --memory 750M --overprovisioned 1 --developer-mode 1 \
+            --native-transport-port-ssl 9142 \
+            --client-encryption-options enabled=true \
+            --client-encryption-options certificate=/certs/server.crt \
+            --client-encryption-options keyfile=/certs/server.key
+    else
+        start_or_create "$SCYLLA_CONTAINER" \
+            -p "127.0.0.1:${SCYLLA_PORT}:9042" \
+            "$SCYLLA_IMAGE" --smp 1 --memory 750M --overprovisioned 1 --developer-mode 1
+    fi
     wait_for_command "ScyllaDB" 300 docker_cmd exec "$SCYLLA_CONTAINER" cqlsh -e "SELECT now() FROM system.local"
 
     # ── SSH server (for tunnel tests, same network as PostgreSQL) ──
@@ -578,7 +598,7 @@ echo "Cassandra:   $DEARSQL_TEST_CASSANDRA_HOST:$DEARSQL_TEST_CASSANDRA_PORT"
 echo "S3:          $DEARSQL_TEST_S3_ENDPOINT"
 echo "CockroachDB: 127.0.0.1:$COCKROACH_PORT"
 echo "TiDB:        127.0.0.1:$TIDB_PORT"
-echo "ScyllaDB:    127.0.0.1:$SCYLLA_PORT"
+echo "ScyllaDB:    127.0.0.1:$SCYLLA_PORT (TLS: $SCYLLA_TLS_PORT)"
 echo "SSH:         $DEARSQL_TEST_SSH_HOST:$DEARSQL_TEST_SSH_PORT"
 echo "CA cert:     ${DEARSQL_TEST_CA_CERT:-<not available>}"
 echo ""
@@ -593,5 +613,6 @@ DEARSQL_TEST_MYSQL_TYPE=tidb DEARSQL_TEST_MYSQL_PORT="$TIDB_PORT" \
     DEARSQL_TEST_MYSQL_DB=test DEARSQL_TEST_MYSQL_USER=root DEARSQL_TEST_MYSQL_PASSWORD= \
     ./database_tests --gtest_filter='MySQL*-MySQLSSL*' "$@"
 DEARSQL_TEST_CASSANDRA_TYPE=scylladb DEARSQL_TEST_CASSANDRA_PORT="$SCYLLA_PORT" \
+    DEARSQL_TEST_CASSANDRA_TLS_PORT="$( [[ -f "$CERT_DIR/server.crt" ]] && echo "$SCYLLA_TLS_PORT" )" \
     ./database_tests --gtest_filter='Cassandra*' "$@"
 ./sql_format_tests "$@"

@@ -856,6 +856,7 @@ std::vector<std::string> TableEditorTab::getCommonDataTypes() const {
         break;
 
     case DatabaseType::CASSANDRA:
+    case DatabaseType::SCYLLADB:
         types = {"text",     "ascii",     "varchar", "int",    "bigint",  "smallint", "tinyint",
                  "varint",   "decimal",   "float",   "double", "boolean", "blob",     "uuid",
                  "timeuuid", "timestamp", "date",    "time",   "inet",    "counter"};
@@ -982,7 +983,7 @@ std::string TableEditorTab::generateCreateTableSQL() const {
     std::string schema;
     if ((databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
         schema = schemaName.empty() ? "public" : schemaName;
-    } else if (databaseType == DatabaseType::CASSANDRA) {
+    } else if (isCassandraFamily(databaseType)) {
         schema = schemaName;
     }
 

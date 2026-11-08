@@ -846,7 +846,7 @@ void DatabaseHierarchy::renderRootNode() {
                 }
             }
         }
-    } else if (dbType == DatabaseType::CASSANDRA) {
+    } else if (isCassandraFamily(dbType)) {
         auto* cassDb = dynamic_cast<CassandraDatabase*>(db.get());
         if (!cassDb) {
             return;
@@ -1355,7 +1355,7 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     pendingDropDatabase_.reset();
 
     const char* noun =
-        db->getConnectionInfo().type == DatabaseType::CASSANDRA ? "keyspace" : "database";
+        isCassandraFamily(db->getConnectionInfo().type) ? "keyspace" : "database";
 
     // the server round trip runs on a worker; the node leaves the tree when it lands
     startDatabaseDdl(

@@ -12,3 +12,8 @@ dearsql::DatabasePtr CassandraDatabaseNode::openHandle() {
     auto conn = parentDb->connection();
     return conn ? conn->database(name) : nullptr;
 }
+
+DatabaseType CassandraDatabaseNode::getDatabaseType() const {
+    auto* owner = ownerDatabase();
+    return owner ? owner->getConnectionInfo().type : DatabaseType::CASSANDRA;
+}

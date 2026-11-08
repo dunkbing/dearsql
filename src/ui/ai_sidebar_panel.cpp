@@ -148,6 +148,8 @@ namespace {
             return "Oracle";
         case DatabaseType::CASSANDRA:
             return "Cassandra";
+        case DatabaseType::SCYLLADB:
+            return "ScyllaDB";
         case DatabaseType::S3:
             return "S3";
         }
@@ -518,6 +520,7 @@ std::vector<AISidebarPanel::NodeRef> AISidebarPanel::collectNodes() const {
             collect(dynamic_cast<OracleDatabase*>(db.get()));
             break;
         case DatabaseType::CASSANDRA:
+        case DatabaseType::SCYLLADB:
             collect(dynamic_cast<CassandraDatabase*>(db.get()));
             break;
         default:

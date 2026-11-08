@@ -38,6 +38,7 @@ void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
         {DatabaseType::TIDB, "tidb"},
         {DatabaseType::COCKROACHDB, "cockroachdb"},
         {DatabaseType::S3, "s3"},
+        {DatabaseType::SCYLLADB, "scylladb"},
     };
 
     for (const auto& [type, name] : mappings) {

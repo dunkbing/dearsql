@@ -17,9 +17,8 @@ public:
     [[nodiscard]] std::string getFullPath() const override {
         return name;
     }
-    [[nodiscard]] DatabaseType getDatabaseType() const override {
-        return DatabaseType::CASSANDRA;
-    }
+    // cassandra or scylladb, as the connection says
+    [[nodiscard]] DatabaseType getDatabaseType() const override;
 
 protected:
     dearsql::DatabasePtr openHandle() override;

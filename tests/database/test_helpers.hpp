@@ -17,7 +17,8 @@ namespace TestHelpers {
         return oss.str();
     }
 
-    // the postgres and mysql suites also run against compatible engines (cockroachdb, tidb):
+    // the postgres, mysql and cassandra suites also run against compatible engines
+    // (cockroachdb, tidb, scylladb):
     // `envVar` names the type, `fallback` when unset
     inline DatabaseType typeFromEnv(const char* envVar, DatabaseType fallback) {
         const char* v = std::getenv(envVar);

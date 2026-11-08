@@ -61,7 +61,8 @@ protected:
 
         DatabaseConnectionInfo connInfo;
         connInfo.name = config.name;
-        connInfo.type = DatabaseType::CASSANDRA;
+        connInfo.type =
+            TestHelpers::typeFromEnv("DEARSQL_TEST_CASSANDRA_TYPE", DatabaseType::CASSANDRA);
         connInfo.host = config.host;
         connInfo.port = config.port;
         connInfo.username = config.user;

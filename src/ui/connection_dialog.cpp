@@ -31,9 +31,10 @@ namespace {
     constexpr float kButtonW = 90.0f;
 
     // popup index == DatabaseType enum value
-    constexpr const char* kTypeLabels[] = {
-        "SQLite", "PostgreSQL", "MySQL",     "MariaDB", "Redis", "MongoDB",     "MSSQL",
-        "Oracle", "Redshift",   "Cassandra", "DuckDB",  "TiDB",  "CockroachDB", "S3 Storage"};
+    constexpr const char* kTypeLabels[] = {"SQLite",      "PostgreSQL", "MySQL",   "MariaDB",
+                                           "Redis",       "MongoDB",    "MSSQL",   "Oracle",
+                                           "Redshift",    "Cassandra",  "DuckDB",  "TiDB",
+                                           "CockroachDB", "S3 Storage", "ScyllaDB"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
 
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
@@ -227,6 +228,7 @@ void ConnectionDialog::applyTypeDefaults(DatabaseType type) {
         authIdx_ = 0;
         break;
     case DatabaseType::CASSANDRA:
+    case DatabaseType::SCYLLADB:
         copyToBuf(portBuf_, sizeof(portBuf_), "9042");
         authIdx_ = 1;
         break;

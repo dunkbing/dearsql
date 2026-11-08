@@ -686,6 +686,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         tryRefresh.template operator()<RedisDatabase>();
         break;
     case DatabaseType::CASSANDRA:
+    case DatabaseType::SCYLLADB:
         tryRefresh.template operator()<CassandraDatabase>();
         break;
     default:
@@ -727,6 +728,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                     dbNames.push_back(std::format("db{}", info.index));
             break;
         case DatabaseType::CASSANDRA:
+        case DatabaseType::SCYLLADB:
             collectNames.template operator()<CassandraDatabase>();
             break;
         default:

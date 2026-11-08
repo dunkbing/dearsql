@@ -309,6 +309,7 @@ namespace Theme {
         c[ImGuiCol_ScrollbarGrabHovered] = colors.overlay1;
         c[ImGuiCol_ScrollbarGrabActive] = colors.overlay2;
         c[ImGuiCol_CheckMark] = colors.blue;
+        c[ImGuiCol_CheckboxSelectedBg] = colors.surface0; // imgui keeps a dark default otherwise
         c[ImGuiCol_SliderGrab] = colors.blue;
         c[ImGuiCol_SliderGrabActive] = colors.sky;
         // tinted towards the text so buttons stand out on windows and popups in

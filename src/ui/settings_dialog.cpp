@@ -101,6 +101,7 @@ void SettingsDialog::render() {
         app.setShowFps(on);
     }
 #ifndef __linux__ // gtk paces frames to the display itself
+    ImGui::SameLine(0.0f, Theme::Spacing::XL);
     if (bool on = app.vsync(); ImGui::Checkbox("VSync", &on)) {
         app.setVSync(on);
     }

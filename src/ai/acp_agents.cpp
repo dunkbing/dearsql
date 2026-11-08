@@ -86,14 +86,14 @@ namespace AcpAgents {
                 "Gemini CLI",
                 {},
                 "@google/gemini-cli",
-                {"--experimental-acp"},
+                {"--acp"},
                 "Run `gemini` once in a terminal to sign in.",
             },
             {
                 "codex",
                 "Codex",
                 {},
-                "@zed-industries/codex-acp",
+                "@agentclientprotocol/codex-acp",
                 {},
                 "Sign in with `codex login` or set OPENAI_API_KEY.",
             },
@@ -198,7 +198,9 @@ namespace AcpAgents {
                 bun = AcpRegistry::bunPath();
             if (!bun)
                 return std::nullopt;
-            std::vector<std::string> argv = {*bun, "x", def.npmPackage};
+            // --bun: bun x otherwise honours the package's `#!/usr/bin/env node` and runs an old
+            // node
+            std::vector<std::string> argv = {*bun, "x", "--bun", def.npmPackage};
             argv.insert(argv.end(), def.runArgs.begin(), def.runArgs.end());
             return argv;
         }
@@ -210,6 +212,65 @@ namespace AcpAgents {
             }
         }
         return std::nullopt;
+    }
+
+} // namespace AcpAgents
+
+namespace AcpAgents {
+
+    std::string openInTerminal(const std::vector<std::string>& argv,
+                               const std::vector<std::pair<std::string, std::string>>& env) {
+        if (argv.empty())
+            return "nothing to run";
+#if defined(_WIN32)
+        std::string cmd;
+        for (const auto& [k, v] : env)
+            cmd += "set \"" + k + "=" + v + "\" && ";
+        for (const auto& a : argv)
+            cmd += "\"" + a + "\" ";
+        // ponytail: cmd quoting, fine for paths and flags; a quote inside an arg breaks it
+        return std::system(("start \"\" cmd /k " + cmd).c_str()) == 0 ? "" : "could not open cmd";
+#else
+        auto quote = [](const std::string& s) {
+            std::string out = "'";
+            for (char c : s)
+                out += c == '\'' ? std::string("'\\''") : std::string(1, c);
+            return out + "'";
+        };
+        std::string cmd;
+        if (!env.empty()) {
+            cmd = "env";
+            for (const auto& [k, v] : env)
+                cmd += " " + quote(k + "=" + v);
+            cmd += " ";
+        }
+        for (const auto& a : argv)
+            cmd += quote(a) + " ";
+#if defined(__APPLE__)
+        std::string escaped; // an applescript string
+        for (char c : cmd) {
+            if (c == '"' || c == '\\')
+                escaped += '\\';
+            escaped += c;
+        }
+        const auto r = ProcessRunner::run(
+            {.args = {"/usr/bin/osascript", "-e",
+                      "tell application \"Terminal\" to do script \"" + escaped + "\"", "-e",
+                      "tell application \"Terminal\" to activate"},
+             .timeout = std::chrono::seconds(10)});
+        return r.success ? "" : "could not open Terminal: " + r.output + r.errorMessage;
+#else
+        // ponytail: the debian alternative, else xterm; other terminals can add themselves
+        for (const char* term : {"x-terminal-emulator", "xterm"}) {
+            if (const auto path = locateExecutable(term)) {
+                const std::string line = quote(*path) + " -e sh -c " + quote(cmd) + " &";
+                if (std::system(line.c_str()) == 0)
+                    return "";
+            }
+        }
+        return "no terminal found (x-terminal-emulator or xterm)";
+#endif
+#endif
     }
 
 } // namespace AcpAgents

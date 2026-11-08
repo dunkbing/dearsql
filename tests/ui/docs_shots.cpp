@@ -11,6 +11,7 @@
 #include "platform/graphics_backend.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/s3_browser_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -44,6 +45,36 @@ namespace {
         }
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
         while (std::chrono::steady_clock::now() < until) {
+            ctx->Yield();
+        }
+    }
+
+    // customers and orders: orders.customer_id unindexed, orders_status a prefix of
+    // orders_status_total. added to the app, tables loaded
+    std::shared_ptr<FileDatabase> makeShopDatabase(const char* name) {
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = name;
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first)
+            return nullptr;
+        for (const char* sql :
+             {"CREATE TABLE customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, "
+              "name TEXT)",
+              "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL "
+              "REFERENCES customers(id), status TEXT NOT NULL, total REAL, created_at TEXT)",
+              "CREATE INDEX orders_status ON orders (status)",
+              "CREATE INDEX orders_status_total ON orders (status, total)"})
+            db->executeQuery(sql);
+        Application::getInstance().addDatabase(db);
+        return db;
+    }
+
+    void loadTables(ImGuiTestContext* ctx, FileDatabase& db) {
+        db.startTablesLoadAsync(true);
+        for (int i = 0; i < 300 && !db.isTablesLoaded(); ++i) {
+            db.checkLoadingStatus();
             ctx->Yield();
         }
     }
@@ -602,6 +633,42 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(3);
         ctx->ItemClick("**/Profile");
         for (int i = 0; i < 200 && !ctx->ItemExists("**/Refresh"); ++i)
+            ctx->Yield();
+        holdForScreenshot(ctx);
+    };
+
+    // review indexes on a shop database: an unindexed foreign key and a prefix index
+    t = IM_REGISTER_TEST(engine, "Docs", "review-indexes");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto db = makeShopDatabase("shop.db");
+        if (!db)
+            return ctx->LogError("no sqlite");
+        loadTables(ctx, *db);
+        auto* tabs = Application::getInstance().getTabManager();
+        const size_t before = tabs->getTabCount();
+        SchemaCompare::reviewIndexes(db.get());
+        for (int i = 0; i < 300 && tabs->getTabCount() == before; ++i)
+            ctx->Yield();
+        holdForScreenshot(ctx);
+    };
+
+    // compare schema: dev has a column, a table and an index production lacks
+    t = IM_REGISTER_TEST(engine, "Docs", "schema-compare");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto prod = makeShopDatabase("production.db");
+        auto dev = makeShopDatabase("dev.db");
+        if (!prod || !dev)
+            return ctx->LogError("no sqlite");
+        dev->executeQuery("ALTER TABLE customers ADD COLUMN phone TEXT");
+        dev->executeQuery("CREATE TABLE refunds (id INTEGER PRIMARY KEY, order_id INTEGER NOT "
+                          "NULL REFERENCES orders(id), amount REAL NOT NULL)");
+        dev->executeQuery("CREATE INDEX orders_created_at ON orders (created_at)");
+        loadTables(ctx, *prod);
+        loadTables(ctx, *dev);
+        auto* tabs = Application::getInstance().getTabManager();
+        const size_t before = tabs->getTabCount();
+        SchemaCompare::compare(prod.get(), dev.get());
+        for (int i = 0; i < 300 && tabs->getTabCount() == before; ++i)
             ctx->Yield();
         holdForScreenshot(ctx);
     };

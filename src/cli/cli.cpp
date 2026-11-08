@@ -15,13 +15,18 @@
 #include "cli/tui.hpp"
 #include "config.hpp"
 #include "mcp/db_tools.hpp"
+#include "utils/cli_command.hpp"
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <format>
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <regex>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <sstream>
 
 namespace {
 
@@ -34,6 +39,7 @@ namespace {
   dearsql <command> [args]          the agent database tools as commands, no MCP needed:
           tools                     every command with its options and agent guidance
           connections, connect, search, describe, tables, query, exec (writes)
+  dearsql upgrade                   install the latest release over this one
   dearsql --version                 print the version
 
 connection: a saved DearSQL connection name, a URL (postgres://user:pass@host/db,
@@ -123,6 +129,77 @@ or let it run commands:
                 std::cout << reply.dump() << "\n" << std::flush;
         }
         return 0;
+    }
+
+    // 0.7.10 > 0.7.9
+    bool isNewer(const std::string& a, const std::string& b) {
+        auto parts = [](const std::string& v) {
+            std::vector<int> out;
+            std::istringstream in(v);
+            for (std::string p; std::getline(in, p, '.');)
+                out.push_back(std::atoi(p.c_str()));
+            return out;
+        };
+        return parts(a) > parts(b);
+    }
+
+    // `dearsql upgrade`: the latest release over this copy, through the same
+    // install.sh (macOS, Linux) or msi (Windows) a fresh install uses
+    int runUpgrade() {
+#ifdef _WIN32
+        FILE* pipe = _popen("curl -fsSL https://dearsql.dev/api/version.json", "r");
+#else
+        FILE* pipe = popen("curl -fsSL https://dearsql.dev/api/version.json", "r");
+#endif
+        std::string manifest;
+        if (pipe) {
+            char buf[512];
+            while (size_t n = fread(buf, 1, sizeof(buf), pipe))
+                manifest.append(buf, n);
+#ifdef _WIN32
+            _pclose(pipe);
+#else
+            pclose(pipe);
+#endif
+        }
+        std::smatch m;
+        if (!std::regex_search(manifest, m, std::regex(R"re("version"\s*:\s*"([0-9.]+)")re"))) {
+            std::cerr << "dearsql: could not check for updates (is curl installed?)\n";
+            return 1;
+        }
+        const std::string latest = m[1];
+        if (!isNewer(latest, APP_VERSION)) {
+            std::cout << "dearsql " << APP_VERSION << " is the latest version\n";
+            return 0;
+        }
+        std::cout << "upgrading dearsql " << APP_VERSION << " to " << latest << "\n" << std::flush;
+#ifdef _WIN32
+        // started detached: the installer replaces this exe, so it can't wait on us
+        const char* temp = std::getenv("TEMP");
+        const std::string msi = std::string(temp ? temp : ".") + "\\DearSQL-x64.msi";
+        const std::string cmd =
+            std::format("curl -fL -o \"{0}\" https://github.com/dunkbing/dearsql/releases/download/"
+                        "v{1}/DearSQL-x64.msi && start \"\" msiexec /i \"{0}\" /passive",
+                        msi, latest);
+#else
+        std::filesystem::path target = CliCommand::executable();
+#ifdef __APPLE__
+        target = target.parent_path().parent_path().parent_path(); // X.app/Contents/MacOS/X
+        if (target.extension() != ".app") {
+#else
+        if (!std::getenv("APPIMAGE")) {
+#endif
+            std::cerr << "dearsql: this copy wasn't installed from a release; get the latest from "
+                         "https://dearsql.dev\n";
+            return 1;
+        }
+        std::string quoted = "'";
+        for (char c : target.string())
+            quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+        const std::string cmd =
+            "curl -fsSL https://dearsql.dev/install.sh | DEARSQL_TARGET=" + quoted + "' sh";
+#endif
+        return std::system(cmd.c_str()) == 0 ? 0 : 1;
     }
 
     // short names; the full tool names (snake or kebab case) work too
@@ -259,8 +336,9 @@ std::optional<int> runCli(int argc, char** argv) {
     const bool mcpMode = mode == "--mcp";
     const bool lspMode = mode == "--lsp";
     const bool infoMode = mode == "-h" || mode == "--help" || mode == "-v" || mode == "--version";
+    const bool upgradeMode = mode == "upgrade";
     const bool toolMode = !infoMode && isToolCommand(mode);
-    if (!infoMode && !toolMode && !mcpMode && !lspMode && mode != "--tui")
+    if (!infoMode && !upgradeMode && !toolMode && !mcpMode && !lspMode && mode != "--tui")
         return std::nullopt; // the GUI, maybe with a file to open
 #ifdef _WIN32
     // release builds are GUI-subsystem: borrow the console we were started from.
@@ -280,6 +358,8 @@ std::optional<int> runCli(int argc, char** argv) {
         std::cout << USAGE;
         return 0;
     }
+    if (upgradeMode)
+        return runUpgrade();
     std::vector<std::string> args(argv + 2, argv + argc);
     const bool allowWrites = mcpMode && std::erase(args, "--allow-writes") > 0;
     // stdout belongs to the tui screen / the protocol stream: warnings go to stderr

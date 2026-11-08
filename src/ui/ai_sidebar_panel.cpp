@@ -6,6 +6,7 @@
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
 #include "database/connection_url.hpp"
+#include "database/s3.hpp"
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
 #include "database/mongodb.hpp"
@@ -557,11 +558,17 @@ void AISidebarPanel::syncContext() {
     // publish every saved connection so the agent can see, and open, closed ones
     std::vector<McpConnectionInfo> connections;
     for (const auto& db : Application::getInstance().getDatabases()) {
-        // object storage has no database tools
-        if (!db || db->getConnectionInfo().type == DatabaseType::S3) {
+        if (!db) {
             continue;
         }
         const auto info = db->getConnectionInfo();
+        // object storage: the S3 tools, on the connection's client
+        if (info.type == DatabaseType::S3) {
+            auto s3db = std::dynamic_pointer_cast<S3Database>(db);
+            connections.push_back({info.name, "s3", db->isConnected(), nullptr,
+                                   s3db ? s3db->client() : nullptr});
+            continue;
+        }
         connections.push_back({info.name, databaseTypeToString(info.type), db->isConnected(),
                                db->isConnected() ? db->libConnection() : nullptr});
     }

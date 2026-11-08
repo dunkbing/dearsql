@@ -25,6 +25,7 @@ struct McpConnectionInfo {
     std::string type;
     bool connected = false;
     std::shared_ptr<dearsql::IConnection> lib; // null when closed
+    std::shared_ptr<const S3Client> s3;        // S3 connections, null when closed
 };
 
 class DbMcpServer : private mcp::Host {
@@ -74,6 +75,7 @@ private:
     std::vector<mcp::ConnectionEntry> connections() override;
     std::string connect(const std::string& name) override;
     std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override;
+    std::shared_ptr<const S3Client> s3(const std::string& name) override;
     std::pair<std::string, std::string> focus() override;
     std::string approveWrite(const std::string& connection, const std::string& sql) override;
     bool canSaveConnections() override {

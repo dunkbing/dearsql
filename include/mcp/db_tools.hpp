@@ -91,6 +91,14 @@ namespace mcp {
         // the tool definitions (name, description, inputSchema), as tools/list sends them
         static nlohmann::json tools(bool allowWrites, bool canSaveConnections = false,
                                     bool s3 = false);
+        // workflows a client can offer as slash commands (prompts/list, prompts/get)
+        struct Prompt {
+            std::string name;
+            std::string description;
+            nlohmann::json arguments;
+            std::string text; // {argument} placeholders
+        };
+        static const std::vector<Prompt>& prompts();
 
     private:
         struct Target {

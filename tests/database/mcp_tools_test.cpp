@@ -343,3 +343,20 @@ TEST_F(McpToolsTest, ReviewIndexesFindsTheUnindexedForeignKeyAndExplainsIt) {
     auto [one, oneErr] = call("review_indexes", {{"table", "users"}});
     EXPECT_NE(one.find("No index findings in 1 table."), std::string::npos) << one;
 }
+
+TEST_F(McpToolsTest, PromptsListAndFillTheirArguments) {
+    auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "prompts/list"}});
+    ASSERT_EQ(list["result"]["prompts"].size(), 2u);
+    auto got = server->handle({{"jsonrpc", "2.0"},
+                               {"id", 2},
+                               {"method", "prompts/get"},
+                               {"params",
+                                {{"name", "diagnose-slow-query"},
+                                 {"arguments", {{"sql", "SELECT '{sql}' FROM orders"}}}}}});
+    const std::string text = got["result"]["messages"][0]["content"]["text"];
+    EXPECT_NE(text.find("SELECT '{sql}' FROM orders"), std::string::npos) << text;
+    EXPECT_NE(text.find("connection (not given)"), std::string::npos) << text;
+    auto bad = server->handle(
+        {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "prompts/get"}, {"params", {{"name", "x"}}}});
+    EXPECT_TRUE(bad.contains("error"));
+}

@@ -112,7 +112,7 @@ std::vector<mcp::ConnectionEntry> DbMcpServer::connections() {
     std::lock_guard lock(stateMutex_);
     std::vector<mcp::ConnectionEntry> out;
     for (const auto& c : connections_)
-        out.push_back({c.name, c.type, c.connected && c.lib});
+        out.push_back({c.name, c.type, c.connected && (c.lib || c.s3)});
     return out;
 }
 
@@ -121,6 +121,15 @@ std::shared_ptr<dearsql::IConnection> DbMcpServer::connection(const std::string&
     for (const auto& c : connections_) {
         if (c.name == name)
             return c.lib;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<const S3Client> DbMcpServer::s3(const std::string& name) {
+    std::lock_guard lock(stateMutex_);
+    for (const auto& c : connections_) {
+        if (c.name == name)
+            return c.s3;
     }
     return nullptr;
 }
@@ -176,7 +185,7 @@ std::string DbMcpServer::connect(const std::string& name) {
         return message;
     // the panel republishes connections next frame; until then nothing is open yet
     lock.unlock();
-    for (int i = 0; i < 50 && !this->connection(name); ++i)
+    for (int i = 0; i < 50 && !this->connection(name) && !this->s3(name); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     return "";
 }

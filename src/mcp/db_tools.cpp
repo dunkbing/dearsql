@@ -431,6 +431,39 @@ namespace mcp {
         return tools;
     }
 
+    const std::vector<Server::Prompt>& Server::prompts() {
+        static const std::vector<Prompt> all = {
+            {"diagnose-slow-query", "Find out why a query is slow and what would fix it",
+             json::array(
+                 {{{"name", "sql"}, {"description", "The slow statement"}, {"required", true}},
+                  {{"name", "connection"},
+                   {"description", "Saved connection; default: the selected one"}}}),
+             "Find out why this query is slow on connection {connection}, without changing "
+             "anything:\n\n{sql}\n\n"
+             "1. explain_query it. If it is read-only and the user is fine waiting for it, "
+             "explain_query again with analyze for real row counts and times.\n"
+             "2. For each [code] in the warnings, explain_finding the code and do what its "
+             "\"How to confirm\" says (describe_table, count rows with run_query).\n"
+             "3. review_indexes on the tables involved.\n"
+             "4. Report: the step that costs the most, the evidence, and the smallest fix "
+             "(usually one CREATE INDEX or a rewrite), with the exact statement. Say what you "
+             "could not confirm. Do not run the fix."},
+            {"review-schema", "Check a database's indexes and foreign keys",
+             json::array({{{"name", "connection"},
+                           {"description", "Saved connection; default: the selected one"}},
+                          {{"name", "database"}, {"description", "Database or db.schema"}}}),
+             "Review the indexes of database {database} on connection {connection}, without "
+             "changing anything.\n\n"
+             "1. review_indexes.\n"
+             "2. explain_finding each code that comes back, and check the findings worth "
+             "acting on (table sizes from list_tables, how the columns are used).\n"
+             "3. Report a short prioritized list: what to add or drop, why, the statement, and "
+             "what to check first. Group the rest as low priority. Do not run anything that "
+             "changes the schema."},
+        };
+        return all;
+    }
+
     json Server::handle(const json& req) {
         if (!req.contains("id"))
             return nullptr; // notification
@@ -441,7 +474,7 @@ namespace mcp {
         if (method == "initialize") {
             res["result"] = {
                 {"protocolVersion", params.value("protocolVersion", "2025-03-26")},
-                {"capabilities", {{"tools", json::object()}}},
+                {"capabilities", {{"tools", json::object()}, {"prompts", json::object()}}},
                 {"serverInfo", {{"name", "dearsql"}, {"version", "1.0"}}},
                 {"instructions", std::string(instructions()) +
                                      (allowWrites_ ? "\nWrites are enabled: execute_sql runs "
@@ -456,6 +489,35 @@ namespace mcp {
                                 std::ranges::any_of(host_.connections(), [](const auto& c) {
                                     return c.type == "s3";
                                 }))}};
+        } else if (method == "prompts/list") {
+            json list = json::array();
+            for (const auto& p : prompts())
+                list.push_back(
+                    {{"name", p.name}, {"description", p.description}, {"arguments", p.arguments}});
+            res["result"] = {{"prompts", list}};
+        } else if (method == "prompts/get") {
+            const std::string name = params.value("name", "");
+            const json args = params.value("arguments", json::object());
+            const auto& all = prompts();
+            const auto it = std::ranges::find(all, name, &Prompt::name);
+            if (it == all.end()) {
+                res["error"] = {{"code", -32602}, {"message", "Unknown prompt: " + name}};
+            } else {
+                // {name} in the text becomes the argument
+                std::string text = it->text;
+                for (const auto& a : it->arguments) {
+                    const std::string key = a["name"];
+                    const std::string value = str(args, {key.c_str()});
+                    const std::string with = value.empty() ? "(not given)" : value;
+                    for (size_t at = 0; (at = text.find("{" + key + "}", at)) != std::string::npos;
+                         at += with.size())
+                        text.replace(at, key.size() + 2, with);
+                }
+                res["result"] = {
+                    {"description", it->description},
+                    {"messages", json::array({{{"role", "user"},
+                                               {"content", {{"type", "text"}, {"text", text}}}}})}};
+            }
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -1228,7 +1290,13 @@ namespace mcp {
                                                                  return a + ", " + b;
                                                              }));
         }
-        const auto client = host_.s3(conn);
+        auto client = host_.s3(conn);
+        if (!client && std::ranges::find(s3, conn) != s3.end()) {
+            // a saved S3 connection that is not open yet
+            if (auto err = host_.connect(conn); !err.empty())
+                throw ToolError("Could not open " + conn + ": " + err);
+            client = host_.s3(conn);
+        }
         if (!client)
             throw ToolError("'" + conn + "' is not an S3 connection. Call list_connections.");
 

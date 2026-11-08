@@ -1232,6 +1232,9 @@ void AISidebarPanel::tick() {
             scrollToBottom_ = true;
         }
     }
+    // a browser sign-in can take minutes: the clock starts once it is done
+    if (acp_ && acp_->isSigningIn())
+        agentStartedAt_ = ImGui::GetTime();
     // a spinner forever is the worst outcome; say what is going on
     if (acp_ && acp_->isRunning() && !acp_->isSessionReady() && !agentStartWarned_ &&
         ImGui::GetTime() - agentStartedAt_ > AGENT_START_TIMEOUT_S) {
@@ -1775,7 +1778,17 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         ImGui::TextColored(colors.peach, ICON_FA_KEY " Sign in required");
         if (item.permissionAnswered) {
             ImGui::TextColored(colors.subtext0, "-> %s", item.permissionChoice.c_str());
+            if (item.terminalSignIn && acp_) {
+                ImGui::TextColored(colors.subtext0,
+                                   "Finish signing in in the Terminal window, then continue.");
+                if (UIUtils::SmallButton("Continue##auth_continue",
+                                         UIUtils::ButtonVariant::Primary)) {
+                    item.terminalSignIn = false;
+                    acp_->retrySession();
+                }
+            }
         } else if (acp_ && !item.authMethods.empty()) {
+            const acp::AuthMethod* picked = nullptr;
             for (size_t i = 0; i < item.authMethods.size(); ++i) {
                 if (i > 0) {
                     ImGui::SameLine(0, Theme::Spacing::S);
@@ -1783,20 +1796,42 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 const auto& m = item.authMethods[i];
                 if (UIUtils::SmallButton(std::format("{}##auth{}", m.name, i).c_str(),
                                          UIUtils::ButtonVariant::Primary)) {
+                    picked = &m;
+                }
+                if (!m.description.empty() && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", m.description.c_str());
+                }
+            }
+            // acted on after the loop: pushing to items_ moves the item `m` points into
+            if (picked) {
+                const acp::AuthMethod m = *picked;
+                item.permissionAnswered = true;
+                item.permissionChoice = m.name;
+                if (m.type == "terminal") {
+                    // like zed: the agent's own command plus the method's args, in a terminal
+                    std::string reason;
+                    auto argv = currentInvocation(reason);
+                    argv.insert(argv.end(), m.args.begin(), m.args.end());
+                    auto env = m.env;
+                    if (const auto bun = AcpRegistry::bunPath();
+                        bun && !argv.empty() && argv.front() == *bun) {
+                        const auto extra = AcpRegistry::bunEnv();
+                        env.insert(env.end(), extra.begin(), extra.end());
+                    }
+                    const std::string err = AcpAgents::openInTerminal(argv, env);
+                    item.terminalSignIn = err.empty();
+                    if (!err.empty())
+                        items_.push_back({.kind = Item::Kind::Error, .text = err});
+                } else {
                     acp_->authenticate(m.id);
                     Application::getInstance().getAppState()->setSetting("acp_auth_" + backendId(),
                                                                          m.id);
-                    item.permissionAnswered = true;
-                    item.permissionChoice = m.name;
                     if (m.id.find("api") != std::string::npos && !hasSavedApiKeyFor(backendId())) {
                         items_.push_back({.kind = Item::Kind::Info,
                                           .text =
                                               "Tip: paste the key into AI Settings (API key "
                                               "backend, gear icon); it is handed to the agent."});
                     }
-                }
-                if (!m.description.empty() && ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", m.description.c_str());
                 }
             }
         } else if (const AcpAgentDef* def = currentAgentDef()) {

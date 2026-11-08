@@ -74,6 +74,7 @@ private:
         std::string permissionChoice;
         // Auth (reuses permissionAnswered/permissionChoice)
         std::vector<acp::AuthMethod> authMethods;
+        bool terminalSignIn = false; // a terminal method ran: offer Continue
         // Approval (reuses permissionAnswered/permissionChoice)
         std::shared_ptr<DbMcpServer::UiRequest> approval;
     };

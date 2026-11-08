@@ -62,9 +62,11 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
         return {false, err};
     }
     conn_ = std::move(conn);
-    // DearSQL is a database client, not an editor: no fs, no terminal
-    conn_->initialize(acp::ClientCapabilities{}, acp::kProtocolVersion,
-                      [this](acp::Response r) { onInitialized(r); });
+    // DearSQL is a database client, not an editor: no fs, no terminal. terminal sign-in
+    // yes: claude offers no method without it (the panel opens the system terminal)
+    acp::ClientCapabilities caps;
+    caps.authTerminal = true;
+    conn_->initialize(caps, acp::kProtocolVersion, [this](acp::Response r) { onInitialized(r); });
     return {true, ""};
 }
 
@@ -94,6 +96,11 @@ void AcpClient::onInitialized(const acp::Response& r) {
         return;
     }
     openSession();
+}
+
+void AcpClient::retrySession() {
+    if (conn_ && conn_->isRunning() && !sessionReady_)
+        openSession();
 }
 
 void AcpClient::openSession() {
@@ -164,8 +171,11 @@ void AcpClient::authenticateWith(const std::string& methodId) {
             name = m.name;
         }
     }
-    pushEvent({.type = AcpEvent::Type::Info, .text = "Signing in: " + name + "..."});
+    pushEvent({.type = AcpEvent::Type::Info,
+               .text = "Signing in: " + name + ". If a browser window opened, finish there."});
+    signingIn_ = true;
     conn_->authenticate(methodId, [this](acp::Response res) {
+        signingIn_ = false;
         if (!res.ok()) {
             pushEvent({.type = AcpEvent::Type::Error,
                        .text = "Sign-in failed: " + res.error->describe()});
@@ -407,6 +417,7 @@ void AcpClient::agentStderr(const std::string& line) {
 
 void AcpClient::agentExited() {
     sessionReady_ = false;
+    signingIn_ = false;
     turnActive_ = false;
     std::string tail;
     {

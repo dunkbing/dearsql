@@ -33,6 +33,11 @@ namespace AcpAgents {
     // argv[0] is always a full path. nullopt until the binary or bun is downloaded
     std::optional<std::vector<std::string>> resolveInvocation(const AgentDef& def);
 
+    // runs argv (with env) in a new window of the system terminal, for an agent's
+    // terminal sign-in method (`claude /login`). "" on success, else the error
+    std::string openInTerminal(const std::vector<std::string>& argv,
+                               const std::vector<std::pair<std::string, std::string>>& env);
+
 } // namespace AcpAgents
 
 using AcpAgentDef = AcpAgents::AgentDef;

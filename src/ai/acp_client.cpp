@@ -38,9 +38,11 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     // claude refuses to start when it thinks it is nested in another session;
     // inherited when DearSQL itself was launched from one
     opts.dropEnv = {"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"};
-    // the managed bun keeps its package cache next to itself, not in ~/.bun
-    for (const auto& kv : AcpRegistry::bunEnv()) {
-        opts.env.push_back(kv);
+    // the managed bun keeps its package cache next to itself, not in ~/.bun; the
+    // user's own bun keeps theirs
+    if (const auto bun = AcpRegistry::bunPath(); bun && !argv.empty() && argv.front() == *bun) {
+        for (const auto& kv : AcpRegistry::bunEnv())
+            opts.env.push_back(kv);
     }
     // api keys saved in AI Settings; a key already in the environment wins
     exportedApiKey_ = false;

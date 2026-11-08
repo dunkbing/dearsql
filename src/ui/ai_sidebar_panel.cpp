@@ -288,10 +288,10 @@ std::vector<std::string> AISidebarPanel::currentInvocation(std::string& missingR
         if (auto inv = AcpAgents::resolveInvocation(*def)) {
             return *inv;
         }
-        missingReason = def->npmPackage.empty() ? std::format("{} is not installed.", def->name)
-                                                : std::format("{} runs on Bun, which DearSQL "
-                                                              "downloads the first time.",
-                                                              def->name);
+        // npm agents and registry binaries set themselves up: the card says so
+        missingReason = def->npmPackage.empty() && def->registryId.empty()
+                            ? std::format("{} is not installed.", def->name)
+                            : "";
         return {};
     }
     missingReason = "No agent selected.";
@@ -1490,6 +1490,27 @@ void AISidebarPanel::renderHeader() {
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
 }
 
+namespace {
+    // what an agent needs is being downloaded (bun, a registry binary): no details
+    void renderSettingUp(const std::string& name) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        UIUtils::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.subtext0));
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::TextColored(colors.subtext0, "Setting up %s...", name.c_str());
+    }
+
+    void renderSetupFailed(const std::string& name, const std::string& error,
+                           const std::function<void()>& retry) {
+        const auto& colors = Application::getInstance().getCurrentColors();
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextColored(colors.red, "Could not set up %s.%s%s", name.c_str(),
+                           error.empty() ? "" : " ", error.c_str());
+        ImGui::PopTextWrapPos();
+        if (UIUtils::SmallButton("Retry##ai_setup_retry"))
+            retry();
+    }
+} // namespace
+
 void AISidebarPanel::renderInstallCard() {
     const auto& colors = Application::getInstance().getCurrentColors();
     const AcpAgentDef* def = currentAgentDef();
@@ -1501,9 +1522,11 @@ void AISidebarPanel::renderInstallCard() {
                           ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
         ImGui::Indent(Theme::Spacing::M);
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(colors.peach, "%s", agentMissingReason_.c_str());
-        ImGui::PopTextWrapPos();
+        if (!agentMissingReason_.empty()) {
+            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+            ImGui::TextColored(colors.peach, "%s", agentMissingReason_.c_str());
+            ImGui::PopTextWrapPos();
+        }
 
         if (def) {
             if (!def->registryId.empty()) {
@@ -1514,20 +1537,11 @@ void AISidebarPanel::renderInstallCard() {
                     bunDownloadStarted_ = true;
                     registry_.startInstallBun();
                 }
-                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-                if (registry_.isBusy()) {
-                    ImGui::TextColored(colors.subtext0,
-                                       "DearSQL is downloading Bun v%s (about 25 MB, once) into "
-                                       "~/.dearsql/agents to run this agent.",
-                                       AcpRegistry::BUN_VERSION);
-                } else {
-                    ImGui::TextColored(colors.subtext0,
-                                       "Could not download Bun, which runs this agent.");
-                    if (UIUtils::SmallButton("Retry Bun download##ai_install_bun")) {
-                        registry_.startInstallBun();
-                    }
-                }
-                ImGui::PopTextWrapPos();
+                if (registry_.isBusy())
+                    renderSettingUp(def->name);
+                else
+                    renderSetupFailed(def->name, registry_.error(),
+                                      [this] { registry_.startInstallBun(); });
             }
         }
 
@@ -1552,10 +1566,6 @@ void AISidebarPanel::pollRegistry() {
     if (!registry_.poll() || registry_.installedName().empty()) {
         return;
     }
-    const bool runtime = registry_.installedName() == "Bun";
-    items_.push_back({.kind = Item::Kind::Info,
-                      .text = runtime ? "Downloaded Bun. The agent will run through it."
-                                      : "Downloaded " + registry_.installedName() + "."});
     agentMissing_ = false;
     scrollToBottom_ = true;
     if (!pendingPromptBlocks_.empty()) {
@@ -1580,23 +1590,16 @@ void AISidebarPanel::renderRegistryDownload(const AcpAgentDef& def) {
 
     ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
     if (registry_.isBusy()) {
-        ImGui::TextColored(colors.subtext0,
-                           "Downloading %s into ~/.dearsql/agents. It runs on its own, no "
-                           "Node needed.",
-                           def.name.c_str());
+        renderSettingUp(def.name);
     } else if (registry_.fetched() && (!entry || !entry->hasBinary)) {
         ImGui::TextColored(colors.subtext0, "The ACP registry has no %s build for %s.",
                            def.name.c_str(), AcpRegistry::platformKey().c_str());
     } else {
-        if (!registry_.error().empty()) {
-            ImGui::TextColored(colors.red, "%s", registry_.error().c_str());
-        }
-        if (UIUtils::SmallButton("Retry download##ai_registry_retry")) {
+        renderSetupFailed(def.name, registry_.error(), [this] {
             registryDownloadFor_.clear();
-            if (!registry_.fetched()) {
+            if (!registry_.fetched())
                 registry_.startFetch();
-            }
-        }
+        });
     }
     ImGui::PopTextWrapPos();
 }

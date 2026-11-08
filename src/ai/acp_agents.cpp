@@ -192,7 +192,10 @@ namespace AcpAgents {
             return managed;
         }
         if (!def.npmPackage.empty()) {
-            auto bun = AcpRegistry::bunPath();
+            // the user's own bun first; ours only when there is none
+            auto bun = locateExecutable("bun");
+            if (!bun)
+                bun = AcpRegistry::bunPath();
             if (!bun)
                 return std::nullopt;
             std::vector<std::string> argv = {*bun, "x", def.npmPackage};

@@ -27,10 +27,10 @@ namespace AcpAgents {
     // full path of a command on the login PATH (or a path given as is)
     std::optional<std::string> locateExecutable(const std::string& name);
 
-    // argv to launch the agent: a registry binary, else for npm agents the managed
-    // bun (never the user's node, npx or a global install: the packages need node 22+
-    // and a version manager's is often older), else the binary on PATH; argv[0] is
-    // always a full path. nullopt until the binary or bun is downloaded
+    // argv to launch the agent: a registry binary, else for npm agents `bun x` on the
+    // user's bun or else the managed one (never the user's node, npx or a global install: the
+    // packages need node 22+ and a version manager's is often older), else the binary on PATH;
+    // argv[0] is always a full path. nullopt until the binary or bun is downloaded
     std::optional<std::vector<std::string>> resolveInvocation(const AgentDef& def);
 
 } // namespace AcpAgents

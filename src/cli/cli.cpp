@@ -62,6 +62,8 @@ or let it run commands:
             for (auto* e : conns_.entries())
                 out.push_back(
                     {e->info.name, databaseTypeToString(e->info.type), e->conn != nullptr});
+            for (const auto& info : conns_.s3Connections())
+                out.push_back({info.name, "s3", true}); // stateless: nothing to open
             return out;
         }
         std::string connect(const std::string& name) override {
@@ -72,6 +74,9 @@ or let it run commands:
         }
         std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override {
             return conns_.connection(name);
+        }
+        std::shared_ptr<const S3Client> s3(const std::string& name) override {
+            return conns_.s3(name);
         }
         std::pair<std::string, std::string> focus() override {
             return {focus_, ""};
@@ -133,7 +138,7 @@ or let it run commands:
 
     bool isToolCommand(const std::string& arg) {
         const std::string name = toolName(arg);
-        return name == "tools" || std::ranges::any_of(mcp::Server::tools(true),
+        return name == "tools" || std::ranges::any_of(mcp::Server::tools(true, false, true),
                                                       [&](auto& t) { return t["name"] == name; });
     }
 
@@ -176,7 +181,7 @@ or let it run commands:
                 std::vector<std::string> args) {
         StdioHost host(conns, focus, true); // `dearsql connect <url>` saves it
         mcp::Server server(host, true); // `exec` is its own command; read-only conns still refuse
-        const auto tools = mcp::Server::tools(true);
+        const auto tools = mcp::Server::tools(true, false, true);
         const std::string name = toolName(command);
         if (name == "tools") {
             std::cout << mcp::Server::instructions() << "\n## Commands\n"

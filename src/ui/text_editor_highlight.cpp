@@ -681,14 +681,13 @@ namespace dearsql {
         }
 
         // Incremental parsing
-        bool initialParse = tsPreviousContent_.empty();
+        const bool initialParse = tsPreviousContent_.empty();
+        size_t start = 0;
+        size_t oldEnd = tsPreviousContent_.size();
+        size_t newEnd = content_.size();
 
         if (!initialParse && tsTree_) {
             // Compute edit range
-            size_t start = 0;
-            size_t oldEnd = tsPreviousContent_.size();
-            size_t newEnd = content_.size();
-
             while (start < oldEnd && start < newEnd && tsPreviousContent_[start] == content_[start])
                 ++start;
 
@@ -713,6 +712,22 @@ namespace dearsql {
             ts_parser_parse_string(tsParser_, initialParse ? nullptr : tsTree_, content_.c_str(),
                                    static_cast<uint32_t>(content_.size()));
 
+        // recolor only what changed: the edited bytes plus whatever the parse restructured
+        // (an opened comment or string reaches far), widened to whole lines. a first parse,
+        // or a palette change (which drops the saved colors), recolors everything
+        const bool full = initialParse || !tsTree_ || !newTree ||
+                          tsPreviousColors_.size() != tsPreviousContent_.size() ||
+                          (start == oldEnd && start == newEnd);
+        std::vector<std::pair<uint32_t, uint32_t>> ranges;
+        if (!full) {
+            ranges.emplace_back(start, newEnd);
+            uint32_t count = 0;
+            TSRange* changed = ts_tree_get_changed_ranges(tsTree_, newTree, &count);
+            for (uint32_t i = 0; i < count; ++i)
+                ranges.emplace_back(changed[i].start_byte, changed[i].end_byte);
+            free(changed);
+        }
+
         if (tsTree_)
             ts_tree_delete(tsTree_);
         tsTree_ = newTree;
@@ -720,51 +735,67 @@ namespace dearsql {
 
         if (!tsTree_) {
             colors_.assign(content_.size(), palette_.text);
+            tsPreviousColors_.clear();
             return;
         }
 
-        // Fill all colors with default text color first
-        colors_.assign(content_.size(), palette_.text);
-
-        // Execute highlight query
-        TSQueryCursor* cursor = ts_query_cursor_new();
-        ts_query_cursor_exec(cursor, tsQuery_, ts_tree_root_node(newTree));
-
-        TSQueryMatch match;
-        while (ts_query_cursor_next_match(cursor, &match)) {
-            for (uint32_t i = 0; i < match.capture_count; ++i) {
-                TSNode node = match.captures[i].node;
-                uint32_t nameLen;
-                const char* name =
-                    ts_query_capture_name_for_id(tsQuery_, match.captures[i].index, &nameLen);
-
-                uint32_t startByte = ts_node_start_byte(node);
-                uint32_t endByte = ts_node_end_byte(node);
-
-                // Map capture name to palette color
-                ImU32 color = palette_.text;
-                if (strncmp(name, "keyword", nameLen) == 0)
-                    color = palette_.keyword;
-                else if (strncmp(name, "string", nameLen) == 0)
-                    color = palette_.string;
-                else if (strncmp(name, "number", nameLen) == 0)
-                    color = palette_.number;
-                else if (strncmp(name, "comment", nameLen) == 0)
-                    color = palette_.comment;
-                else if (strncmp(name, "function", nameLen) == 0)
-                    color = palette_.function;
-                else if (strncmp(name, "type", nameLen) == 0)
-                    color = palette_.type;
-                else if (strncmp(name, "operator", nameLen) == 0)
-                    color = palette_.operator_;
-
-                // Apply color to range
-                for (uint32_t j = startByte; j < endByte && j < colors_.size(); ++j)
-                    colors_[j] = color;
-            }
+        if (full) {
+            colors_.assign(content_.size(), palette_.text);
+            ranges = {{0u, static_cast<uint32_t>(content_.size())}};
+        } else {
+            // the old colors, shifted past the edit
+            colors_.assign(tsPreviousColors_.begin(), tsPreviousColors_.begin() + start);
+            colors_.insert(colors_.end(), newEnd - start, palette_.text);
+            colors_.insert(colors_.end(), tsPreviousColors_.begin() + oldEnd,
+                           tsPreviousColors_.end());
         }
 
+        TSQueryCursor* cursor = ts_query_cursor_new();
+        const auto size = static_cast<uint32_t>(content_.size());
+        for (auto [from, to] : ranges) {
+            while (from > 0 && content_[from - 1] != '\n')
+                --from;
+            while (to < size && content_[to] != '\n')
+                ++to;
+            std::fill(colors_.begin() + from, colors_.begin() + to, palette_.text);
+            ts_query_cursor_set_byte_range(cursor, from, to);
+            ts_query_cursor_exec(cursor, tsQuery_, ts_tree_root_node(tsTree_));
+
+            TSQueryMatch match;
+            while (ts_query_cursor_next_match(cursor, &match)) {
+                for (uint32_t i = 0; i < match.capture_count; ++i) {
+                    TSNode node = match.captures[i].node;
+                    uint32_t nameLen;
+                    const char* name =
+                        ts_query_capture_name_for_id(tsQuery_, match.captures[i].index, &nameLen);
+
+                    // Map capture name to palette color
+                    ImU32 color = palette_.text;
+                    if (strncmp(name, "keyword", nameLen) == 0)
+                        color = palette_.keyword;
+                    else if (strncmp(name, "string", nameLen) == 0)
+                        color = palette_.string;
+                    else if (strncmp(name, "number", nameLen) == 0)
+                        color = palette_.number;
+                    else if (strncmp(name, "comment", nameLen) == 0)
+                        color = palette_.comment;
+                    else if (strncmp(name, "function", nameLen) == 0)
+                        color = palette_.function;
+                    else if (strncmp(name, "type", nameLen) == 0)
+                        color = palette_.type;
+                    else if (strncmp(name, "operator", nameLen) == 0)
+                        color = palette_.operator_;
+
+                    // only inside the range: outside it the saved colors stand
+                    const uint32_t a = std::max(ts_node_start_byte(node), from);
+                    const uint32_t b = std::min(ts_node_end_byte(node), to);
+                    for (uint32_t j = a; j < b; ++j)
+                        colors_[j] = color;
+                }
+            }
+        }
         ts_query_cursor_delete(cursor);
+        tsPreviousColors_ = colors_;
     }
 
 } // namespace dearsql

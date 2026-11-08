@@ -76,7 +76,7 @@ void MongoEditorTab::render() {
         float paneHeight = ImGui::GetContentRegionAvail().y;
         const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
         const float editorHeight = paneHeight * splitterPosition_;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition_) - 6.0f - toolbarHeight;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition_) - 4.0f - toolbarHeight;
 
         if (ImGui::BeginChild("MongoEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -191,7 +191,8 @@ void MongoEditorTab::renderQueryResults() const {
         return;
     }
 
-    if (queryResult_.executionTimeMs > 0) {
+    // one result shows its time on its row-count line
+    if (queryResult_.executionTimeMs > 0 && !(queryResult_.size() == 1)) {
         ImGui::Text("Execution time: %.2f ms", queryResult_.executionTimeMs);
     }
 
@@ -227,23 +228,25 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         return;
     }
 
+    // "347 rows  0.53 ms": the time rides along when this is the only result
+    const std::string took = queryResult_.size() == 1 && queryResult_.executionTimeMs > 0
+                                 ? std::format("  {:.2f} ms", queryResult_.executionTimeMs)
+                                 : "";
+
     if (r.columnNames.empty()) {
-        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s%s", r.message.c_str(), took.c_str());
         return;
     }
 
     if (r.tableData.empty()) {
-        ImGui::Text("%s", LABEL_NO_ROWS);
-    } else {
-        ImGui::Text("Rows: %zu", r.tableData.size());
-        if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
-        }
+        ImGui::Text("%s%s", LABEL_NO_ROWS, took.c_str());
+        return;
     }
 
-    if (!r.tableData.empty()) {
-        float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 20.0f, 50.0f);
+    // the grid, then "347 rows  0.53 ms" under it
+    {
+        float tableHeight = std::max(
+            ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing(), 50.0f);
 
         TableRenderer::Config config;
         config.allowEditing = false;
@@ -255,7 +258,21 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         tableRenderer.setData(r.tableData);
 
         std::string tableId = "MongoQueryResults_" + std::to_string(index);
-        tableRenderer.render(tableId.c_str());
+        // the grid fills what it is given, so give it all but the status line
+
+        if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, tableHeight))) {
+
+            tableRenderer.render(tableId.c_str());
+
+        }
+
+        ImGui::EndChild();
+    }
+    ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
+                took.c_str());
+    if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
     }
 }
 

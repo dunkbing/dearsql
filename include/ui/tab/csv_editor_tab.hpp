@@ -26,6 +26,9 @@ struct CsvFilterResult {
 // own format. DuckDB only reads the saved file, for the WHERE filter
 class CsvEditorTab final : public Tab {
 public:
+    [[nodiscard]] bool hasBottomBar() const override {
+        return true;
+    }
     CsvEditorTab(const std::string& name, std::string filePath);
     ~CsvEditorTab() override;
 

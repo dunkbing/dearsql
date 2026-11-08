@@ -1,0 +1,12 @@
+{
+  "name": "dearsql",
+  "description": "DearSQL database tools for coding agents",
+  "owner": { "name": "dunkbing" },
+  "plugins": [
+    {
+      "name": "dearsql",
+      "source": "./plugins/dearsql",
+      "description": "Your DearSQL connections as agent tools: schema search, read-only queries, query plans with index warnings, index review, S3 storage"
+    }
+  ]
+}

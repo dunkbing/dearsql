@@ -303,7 +303,35 @@ namespace dearsql {
 
         pushUndoSnapshot();
 
+        // mac: cmd deletes to the line start, opt the word before; elsewhere ctrl+shift and ctrl
+        const ImGuiIO& io = ImGui::GetIO();
+        const bool mac = io.ConfigMacOSXBehaviors;
+        // cmd arrives as ctrl or super depending on the event source, as for the shortcuts above
+        const bool toLineStart = mac ? io.KeyCtrl || io.KeySuper : io.KeyCtrl && io.KeyShift;
+        const bool toWordStart = !toLineStart && (mac ? io.KeyAlt : io.KeyCtrl);
+        int from = cursorIndex_;
+        if (toLineStart) {
+            from = lineStarts_[getLineFromPos(cursorIndex_)];
+        } else if (toWordStart) {
+            while (from > 0 && (content_[from - 1] == ' ' || content_[from - 1] == '\t'))
+                --from;
+            const int word = findWordStart(from);
+            if (word < from) {
+                from = word;
+            } else { // a run of punctuation counts as a word
+                while (from > 0 && !isWordChar(content_[from - 1]) &&
+                       !std::isspace(static_cast<unsigned char>(content_[from - 1])))
+                    --from;
+            }
+        }
+        // at the line start (or before only spaces) a plain backspace joins the lines
+        const bool rangeDelete = (toLineStart || toWordStart) && from < cursorIndex_;
+
         if (selectionActive_ && selectionStart() != selectionEnd()) {
+            deleteSelection();
+        } else if (rangeDelete) {
+            selectionAnchor_ = from;
+            selectionActive_ = true;
             deleteSelection();
         } else if (cursorIndex_ > 0) {
             // Find start of previous character (UTF-8 aware)
@@ -752,6 +780,10 @@ namespace dearsql {
 
     void TextEditor::handleMouseInput() {
         if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
+            return;
+        // a press on a gutter play icon runs the statement; it is not a text click
+        if (hoveredRun_ >= 0 && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                                 ImGui::IsMouseDown(ImGuiMouseButton_Left)))
             return;
 
         int charIndex = getCharIndexFromScreenPos(ImGui::GetMousePos());

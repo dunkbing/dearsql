@@ -1,10 +1,10 @@
 #include "ui/tab/sql_editor_tab.hpp"
 #include "IconsFontAwesome6.h"
-#include "SQLParser.h"
 #include "ai/ai_chat.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
+#include "database/lib_database_node.hpp"
 #include "database/mssql.hpp"
 #include "database/mysql.hpp"
 #include "database/oracle.hpp"
@@ -14,13 +14,15 @@
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/plan_view.hpp"
 #include "ui/table_renderer.hpp"
 #include "utils/app_paths.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/spinner.hpp"
 #include "utils/splitter.hpp"
-#include "utils/menu.hpp"
+#include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -103,14 +105,6 @@ namespace {
         }
     }
 
-    std::string toLowerCopy(std::string_view s) {
-        std::string out;
-        out.reserve(s.size());
-        for (const char ch : s)
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-        return out;
-    }
-
     std::string_view trimSqlView(const std::string& sql) {
         size_t start = 0;
         while (start < sql.size() && std::isspace(static_cast<unsigned char>(sql[start]))) {
@@ -125,14 +119,6 @@ namespace {
         return std::string_view(sql).substr(start, end - start);
     }
 
-    std::string getLeadingSqlKeyword(std::string_view sql) {
-        size_t pos = 0;
-        while (pos < sql.size() &&
-               (std::isalpha(static_cast<unsigned char>(sql[pos])) || sql[pos] == '_')) {
-            ++pos;
-        }
-        return toLowerCopy(sql.substr(0, pos));
-    }
 } // namespace
 
 SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
@@ -140,6 +126,15 @@ SQLEditorTab::SQLEditorTab(const std::string& name, IDatabaseNode* node,
     : Tab(name, TabType::SQL_EDITOR), node_(node), selectedSchemaName(schemaName),
       scriptName_(name) {
     sqlEditor.SetShowLineNumbers(true);
+    // a play icon per statement: run one without selecting it
+    sqlEditor.SetRunnableRanges(
+        [this](std::string_view text) {
+            return dearsql::statementRanges(text, node_ ? node_->getDatabaseType()
+                                                        : DatabaseType::POSTGRESQL);
+        },
+        [this](size_t begin, size_t end) {
+            startQueryExecutionAsync(sqlEditor.GetText().substr(begin, end - begin));
+        });
     sqlEditor.SetSubmitCallback([this] {
         if (sqlEditor.HasSelection()) {
             startQueryExecutionAsync(sqlEditor.GetSelectedText());
@@ -179,6 +174,7 @@ void SQLEditorTab::render() {
 
     checkQueryExecutionStatus();
     updateSyntaxDiagnostics();
+    renderParamPrompt();
 
     // Cmd+S / Ctrl+S save shortcut — flag here, execute after editor text is synced below
     const bool wantSave = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) &&
@@ -199,9 +195,8 @@ void SQLEditorTab::render() {
     // Left pane: editor + results
     if (ImGui::BeginChild("##sql_left_pane", ImVec2(editorAreaWidth, totalContentHeight), false)) {
         float paneHeight = ImGui::GetContentRegionAvail().y;
-        const float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::S;
         const float editorHeight = paneHeight * splitterPosition;
-        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 6.0f - toolbarHeight;
+        const float resultsHeight = paneHeight * (1.0f - splitterPosition) - 4.0f;
 
         if (ImGui::BeginChild("SQLEditor", ImVec2(-1, editorHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -213,6 +208,7 @@ void SQLEditorTab::render() {
             const std::string newText = sqlEditor.GetText();
             if (newText != sqlQuery) {
                 sqlQuery = newText;
+                sqlEditor.ClearErrorMarker(); // its offset is stale now
                 contentModified_ = true;
                 scheduleSyntaxCheck();
             }
@@ -224,7 +220,6 @@ void SQLEditorTab::render() {
             saveScript();
         }
 
-        renderToolbar();
         UIUtils::Splitter("##sql_splitter", &splitterPosition, totalContentHeight, 100.0f, 200.0f);
 
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
@@ -627,9 +622,35 @@ void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
 void SQLEditorTab::renderToolbar() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
+    // before the buttons, so they stay put when it appears
+    if (syntaxDiagnostic_.active) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        std::string inlineMessage =
+            std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
+        // capped, or a long server message pushes run off the line; full text on hover
+        constexpr float kMaxWidth = 320.0f;
+        const bool clipped = ImGui::CalcTextSize(inlineMessage.c_str()).x > kMaxWidth;
+        while (inlineMessage.size() > 4 &&
+               ImGui::CalcTextSize((inlineMessage + "...").c_str()).x > kMaxWidth) {
+            inlineMessage.pop_back();
+            while ((inlineMessage.back() & 0xC0) == 0x80) // whole utf-8 characters
+                inlineMessage.pop_back();
+            if (static_cast<unsigned char>(inlineMessage.back()) >= 0xC0)
+                inlineMessage.pop_back();
+        }
+        if (clipped)
+            inlineMessage += "...";
+        ImGui::TextUnformatted(inlineMessage.c_str());
+        ImGui::PopStyleColor();
+        if (clipped && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", syntaxDiagnostic_.message.c_str());
+        ImGui::SameLine(0, Theme::Spacing::L);
+    }
+
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
+        UIUtils::IconLabelButton(ICON_FA_PLAY, "Run", UIUtils::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
@@ -637,7 +658,7 @@ void SQLEditorTab::renderToolbar() {
             cancelQueryExecution();
         }
     } else {
-        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
+        if (UIUtils::IconLabelButton(ICON_FA_PLAY, "Run", UIUtils::ButtonVariant::Primary)) {
             if (sqlEditor.HasSelection()) {
                 startQueryExecutionAsync(sqlEditor.GetSelectedText());
             } else {
@@ -645,18 +666,31 @@ void SQLEditorTab::renderToolbar() {
             }
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(ICON_FA_ALIGN_LEFT " Format")) {
+        if (UIUtils::IconLabelButton(ICON_FA_ALIGN_LEFT, "Format")) {
             formatSQL();
         }
-    }
-
-    if (syntaxDiagnostic_.active) {
-        ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        const std::string inlineMessage =
-            std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
-        ImGui::TextUnformatted(inlineMessage.c_str());
-        ImGui::PopStyleColor();
+        ImGui::SameLine(0, Theme::Spacing::M);
+        const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
+        const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
+        ImGui::BeginDisabled(!canExplain);
+        if (UIUtils::IconLabelButton(ICON_FA_DIAGRAM_PROJECT, "Explain")) {
+            explainStatement();
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", canExplain ? "Show the plan of the statement under the cursor, "
+                                                 "or of the selection"
+                                               : "Query plans are available for PostgreSQL, MySQL "
+                                                 "and SQLite");
+        }
+        if (canExplain && dearsql::supportsExplainAnalyze(type)) {
+            ImGui::SameLine(0, Theme::Spacing::M);
+            ImGui::Checkbox("Analyze###explain_analyze", &explainAnalyze_);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Run the statement to show real row counts and timings. Read "
+                                  "queries only");
+            }
+        }
     }
 }
 
@@ -672,13 +706,18 @@ void SQLEditorTab::renderServerMessages() const {
 }
 
 void SQLEditorTab::renderQueryResults() const {
+    if (plan_) {
+        PlanView::render(*plan_, planRaw_);
+        return;
+    }
     if (queryResult.empty() && queryResult.messages.empty()) {
         ImGui::Text("%s", LABEL_NO_RESULTS);
         return;
     }
 
-    // Show execution time above results
-    if (queryResult.executionTimeMs > 0) {
+    // one result shows its time on its row-count line
+    if (queryResult.executionTimeMs > 0 &&
+        !(queryResult.size() == 1 && queryResult.phaseTimings.empty())) {
         ImGui::Text("Execution time: %.2f ms", queryResult.executionTimeMs);
     }
 
@@ -780,52 +819,90 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
         return;
     }
 
+    // "347 rows  0.53 ms": the time rides along when this is the only result
+    const std::string took = queryResult.size() == 1 && queryResult.phaseTimings.empty() &&
+                                     queryResult.executionTimeMs > 0
+                                 ? std::format("  {:.2f} ms", queryResult.executionTimeMs)
+                                 : "";
+
     if (r.columnNames.empty()) {
         // DML/DDL result
-        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", r.message.c_str());
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s%s", r.message.c_str(), took.c_str());
         return;
     }
 
     // SELECT result
     if (r.tableData.empty()) {
-        ImGui::Text("%s", LABEL_NO_ROWS);
-    } else {
-        ImGui::Text("Rows: %zu", r.tableData.size());
-        if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
+        ImGui::Text("%s%s", LABEL_NO_ROWS, took.c_str());
+        return;
+    }
+
+    // the grid (or its json), then the view tabs and "347 rows  0.53 ms" under it
+    const float footer = ImGui::GetFrameHeight() + Theme::Spacing::S;
+    const float gridHeight = std::max(ImGui::GetContentRegionAvail().y - footer, 50.0f);
+    const std::string tableId = "QueryResults_" + std::to_string(index);
+    if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, gridHeight))) {
+        if (resultView_ == 1) {
+            jsonView_.render("##result_json", r.columnNames, r.tableData);
+        } else if (resultView_ == 2) {
+            chart_.render("##result_chart", r.columnNames, r.tableData);
+        } else {
+            TableRenderer::Config config;
+            config.allowEditing = false;
+            config.showRowNumbers = false;
+            TableRenderer tableRenderer(config);
+            tableRenderer.setColumns(r.columnNames);
+            tableRenderer.setData(r.tableData);
+            tableRenderer.render(tableId.c_str());
         }
     }
+    ImGui::EndChild();
 
-    if (!r.tableData.empty()) {
-        float tableHeight = std::max(ImGui::GetContentRegionAvail().y - 20.0f, 50.0f);
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    UIUtils::SegmentedTabs("##result_view", {"Data", "JSON", "Chart"}, &resultView_);
 
-        TableRenderer::Config config;
-        config.allowEditing = false;
-        config.showRowNumbers = false;
-        config.minHeight = tableHeight;
-
-        TableRenderer tableRenderer(config);
-        tableRenderer.setColumns(r.columnNames);
-        tableRenderer.setData(r.tableData);
-
-        std::string tableId = "QueryResults_" + std::to_string(index);
-        tableRenderer.render(tableId.c_str());
+    const std::string status =
+        std::format("{} {}{}", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows", took);
+    const bool limited = static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS;
+    float width = ImGui::CalcTextSize(status.c_str()).x;
+    if (limited)
+        width += ImGui::CalcTextSize(LABEL_ROW_LIMIT).x + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - width));
+    ImGui::AlignTextToFramePadding();
+    if (limited) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
+        ImGui::SameLine();
     }
+    ImGui::TextUnformatted(status.c_str());
 }
 
-void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
+void SQLEditorTab::startQueryExecutionAsync(const std::string& query,
+                                            std::optional<PendingExplain> explain) {
+    if (queryExecutionOp_.isRunning() || paramPrompt_) {
+        return;
+    }
+    const auto type = node_ ? node_->getDatabaseType() : DatabaseType::POSTGRESQL;
+    if (auto names = dearsql::queryParameters(query, type); !names.empty()) {
+        paramPrompt_ = ParamPrompt{query, std::move(names), explain};
+        return;
+    }
+    runQueryNow(query, explain);
+}
+
+void SQLEditorTab::runQueryNow(const std::string& query, std::optional<PendingExplain> explain) {
     if (queryExecutionOp_.isRunning()) {
         return;
     }
 
     queryError.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
+    pendingExplain_ = explain;
+    plan_.reset();
 
     syncBoundNodePointer();
 
     if (auto reason = ReadOnly::rejectReason(node_, query); !reason.empty()) {
-        queryError = std::move(reason);
+        showError(std::move(reason));
         return;
     }
 
@@ -853,11 +930,57 @@ void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
             });
         return;
     }
+    showError(LABEL_NO_DATABASE_SELECTED);
+}
+
+void SQLEditorTab::showError(std::string message) {
     StatementResult r;
     r.success = false;
-    r.errorMessage = LABEL_NO_DATABASE_SELECTED;
+    r.errorMessage = std::move(message);
     queryResult = QueryResult{};
-    queryResult.statements.push_back(r);
+    queryResult.statements.push_back(std::move(r));
+}
+
+void SQLEditorTab::explainStatement() {
+    if (!node_ || queryExecutionOp_.isRunning()) {
+        return;
+    }
+    const DatabaseType type = node_->getDatabaseType();
+    const bool analyze = explainAnalyze_ && dearsql::supportsExplainAnalyze(type);
+    const bool fromSelection = sqlEditor.HasSelection();
+    const std::string source = fromSelection ? sqlEditor.GetSelectedText() : sqlQuery;
+    const size_t offset =
+        fromSelection ? 0 : static_cast<size_t>(std::max(sqlEditor.GetCursorIndex(), 0));
+    auto [begin, end] = dearsql::statementRangeAt(source, offset, type);
+    // the cursor just after a closing ';': the statement it closes
+    if (begin == end && !fromSelection) {
+        size_t back = std::min(offset, source.size());
+        while (back > 0 && (std::isspace(static_cast<unsigned char>(source[back - 1])) ||
+                            source[back - 1] == ';')) {
+            --back;
+        }
+        if (back > 0) {
+            std::tie(begin, end) = dearsql::statementRangeAt(source, back - 1, type);
+        }
+    }
+    const std::string statement = source.substr(begin, end - begin);
+    plan_.reset();
+    // analyze runs what it is given: a second statement in the selection would run too
+    if (fromSelection && source.find_first_not_of(" \t\r\n;", end) != std::string::npos) {
+        showError("Select a single statement to explain.");
+        return;
+    }
+    if (analyze && !SqlGuard::isReadOnly(statement)) {
+        showError("Analyze runs the statement, so it is only offered for read queries. Turn off "
+                  "Analyze to see the plan of this one.");
+        return;
+    }
+    const auto sql = dearsql::explainSql(type, statement, analyze);
+    if (!sql) {
+        showError("Put the cursor in a statement to explain.");
+        return;
+    }
+    startQueryExecutionAsync(*sql, PendingExplain{type, analyze});
 }
 
 void SQLEditorTab::bindNode(IDatabaseNode* node) {
@@ -979,6 +1102,11 @@ void SQLEditorTab::checkQueryExecutionStatus() {
                 SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
             }
 
+            if (pendingExplain_ && !result.statements.empty()) {
+                plan_ = dearsql::parsePlan(pendingExplain_->type, result.statements.front(),
+                                           pendingExplain_->analyze);
+            }
+            pendingExplain_.reset();
             lastQueryDuration =
                 std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
             queryResult = std::move(result);
@@ -1006,55 +1134,67 @@ void SQLEditorTab::formatSQL() {
 
 void SQLEditorTab::scheduleSyntaxCheck() {
     syntaxCheckPending_ = true;
-    syntaxCheckDelay_ = 0.25f;
+    // a server check is a round trip: wait for a longer pause in typing
+    syntaxCheckDelay_ =
+        node_ && dearsql::hasServerSyntaxCheck(node_->getDatabaseType()) ? 0.8f : 0.25f;
 }
 
 void SQLEditorTab::updateSyntaxDiagnostics() {
+    // a server answer for text that has changed since is dropped: a newer check follows
+    serverSyntaxOp_.check([this](std::pair<std::string, std::optional<dearsql::SyntaxError>> r) {
+        if (r.first == sqlQuery) {
+            showSyntaxError(r.second);
+        }
+    });
     if (!syntaxCheckPending_) {
         return;
     }
-
     syntaxCheckDelay_ -= ImGui::GetIO().DeltaTime;
     if (syntaxCheckDelay_ > 0.0f) {
         return;
     }
-
+    if (!node_ || trimSqlView(sqlQuery).empty()) {
+        syntaxCheckPending_ = false;
+        showSyntaxError(std::nullopt);
+        return;
+    }
+    const auto type = node_->getDatabaseType();
+    if (!dearsql::hasServerSyntaxCheck(type)) {
+        // the engine's own parser, so a valid query is never flagged; engines without
+        // one (mysql, oracle...) are not checked at all
+        syntaxCheckPending_ = false;
+        showSyntaxError(dearsql::checkSyntax(sqlQuery, type));
+        return;
+    }
+    auto* lib = dynamic_cast<LibDatabaseNode*>(node_);
+    if (!lib || serverSyntaxOp_.isRunning()) {
+        syntaxCheckPending_ = lib != nullptr; // one at a time: retry when it lands
+        return;
+    }
     syntaxCheckPending_ = false;
+    serverSyntaxOp_.start([lib, keep = keepOwnerAlive(node_), text = sqlQuery] {
+        std::optional<dearsql::SyntaxError> error;
+        try {
+            error = lib->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(text); });
+        } catch (const std::exception& e) {
+            spdlog::debug("syntax check: {}", e.what()); // no connection: no check
+        }
+        return std::pair{text, error};
+    });
+}
+
+void SQLEditorTab::showSyntaxError(const std::optional<dearsql::SyntaxError>& error) {
     syntaxDiagnostic_ = {};
-
-    const std::string_view trimmed = trimSqlView(sqlQuery);
-    if (trimmed.empty()) {
+    if (!error) {
+        sqlEditor.ClearErrorMarker();
         return;
     }
-
-    hsql::SQLParserResult parseResult;
-    if (!hsql::SQLParser::parse(sqlQuery, &parseResult)) {
-        syntaxDiagnostic_.active = true;
-        syntaxDiagnostic_.message = "SQL parser failed internally while checking syntax.";
-        return;
-    }
-
-    if (parseResult.isValid()) {
-        return;
-    }
-
+    const std::string_view before = std::string_view(sqlQuery).substr(0, error->offset);
     syntaxDiagnostic_.active = true;
-    syntaxDiagnostic_.line = std::max(1, parseResult.errorLine());
-    syntaxDiagnostic_.column = std::max(1, parseResult.errorColumn());
-
-    const std::string keyword = getLeadingSqlKeyword(trimmed);
-    if (keyword == "alter" || keyword == "explain" || keyword == "rename" || keyword == "export") {
-        syntaxDiagnostic_.message =
-            std::format("The embedded parser does not fully support '{}' statements yet.", keyword);
-        return;
-    }
-
-    const char* parserMessage = parseResult.errorMsg();
-    if (parserMessage && parserMessage[0] != '\0') {
-        syntaxDiagnostic_.message = parserMessage;
-    } else {
-        syntaxDiagnostic_.message = "Syntax issue.";
-    }
+    syntaxDiagnostic_.line = 1 + static_cast<int>(std::ranges::count(before, '\n'));
+    syntaxDiagnostic_.column = 1 + static_cast<int>(before.size() - (before.rfind('\n') + 1));
+    syntaxDiagnostic_.message = std::format("Line {}: {}", syntaxDiagnostic_.line, error->message);
+    sqlEditor.SetErrorMarker(error->offset, error->message);
 }
 
 void SQLEditorTab::updateCompletionCatalog() {
@@ -1385,6 +1525,9 @@ void SQLEditorTab::loadFromScript(const SqlScript& script) {
 
 void SQLEditorTab::renderScriptHeader() {
     const auto& colors = Application::getInstance().getCurrentColors();
+    // same button height as the settings dialog
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
+    ImGui::AlignTextToFramePadding();
 
     // file icon
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
@@ -1488,6 +1631,16 @@ void SQLEditorTab::renderScriptHeader() {
             ImGui::PopStyleColor();
         }
     }
+
+    // run, format, explain: right-aligned on the header line (width from last frame)
+    ImGui::SameLine();
+    const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), lineEnd - toolbarWidth_));
+    const float toolbarStart = ImGui::GetCursorScreenPos().x;
+    renderToolbar();
+    toolbarWidth_ = ImGui::GetItemRectMax().x - toolbarStart;
+    ImGui::PopStyleVar();
+
     ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     ImGui::Separator();
 }
@@ -1531,4 +1684,69 @@ void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
+}
+
+void SQLEditorTab::renderParamPrompt() {
+    if (!paramPrompt_) {
+        return;
+    }
+    constexpr const char* popupId = "Query parameters###query_params";
+    if (!ImGui::IsPopupOpen(popupId)) {
+        ImGui::OpenPopup(popupId);
+    }
+    ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        return;
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+    bool run = false;
+    float labelWidth = 0.0f;
+    for (const auto& name : paramPrompt_->names) {
+        labelWidth = std::max(labelWidth, ImGui::CalcTextSize((":" + name).c_str()).x);
+    }
+    for (size_t i = 0; i < paramPrompt_->names.size(); ++i) {
+        const auto& name = paramPrompt_->names[i];
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted((":" + name).c_str());
+        ImGui::SameLine(labelWidth + Theme::Spacing::L * 2);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (static_cast<int>(i) == paramPrompt_->focus) {
+            ImGui::SetKeyboardFocusHere();
+            paramPrompt_->focus = -1;
+        }
+        auto& buf = paramValues_[name];
+        if (ImGui::InputText(std::format("##param_{}", name).c_str(), buf.data(), buf.size(),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            // enter moves on, and runs from the last field
+            if (i + 1 < paramPrompt_->names.size()) {
+                paramPrompt_->focus = static_cast<int>(i + 1);
+            } else {
+                run = true;
+            }
+        }
+    }
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::TextWrapped("Numbers and NULL go in as typed, anything else as a quoted string.");
+    ImGui::PopStyleColor();
+
+    run |= UIUtils::Button("Run###param_run", UIUtils::ButtonVariant::Primary);
+    ImGui::SameLine();
+    const bool cancel =
+        ImGui::Button("Cancel###param_cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    ImGui::PopStyleVar();
+    if (run || cancel) {
+        auto prompt = std::move(*paramPrompt_);
+        paramPrompt_.reset();
+        ImGui::CloseCurrentPopup();
+        if (run) {
+            std::map<std::string, std::string> values;
+            for (const auto& name : prompt.names) {
+                values[name] = paramValues_[name].data();
+            }
+            const auto type = node_ ? node_->getDatabaseType() : DatabaseType::POSTGRESQL;
+            runQueryNow(dearsql::bindParameters(prompt.query, type, values), prompt.explain);
+        }
+    }
+    ImGui::EndPopup();
 }

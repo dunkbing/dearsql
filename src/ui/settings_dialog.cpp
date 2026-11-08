@@ -95,6 +95,38 @@ void SettingsDialog::render() {
         app.setFontScale(scale + 0.1f);
     }
 
+    // --- Performance ---
+    ImGui::SeparatorText("Performance");
+    if (bool on = app.showFps(); ImGui::Checkbox("Show frame rate", &on)) {
+        app.setShowFps(on);
+    }
+#ifndef __linux__ // gtk paces frames to the display itself
+    ImGui::SameLine(0.0f, Theme::Spacing::XL);
+    if (bool on = app.vsync(); ImGui::Checkbox("VSync", &on)) {
+        app.setVSync(on);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Draw in step with the display's refresh rate. Off can cut input lag, "
+                          "at the cost of more power.");
+    }
+    if (!app.vsync()) {
+        constexpr int kLimits[] = {30, 60, 120, 144, 240, 0};
+        auto label = [](int fps) { return fps ? std::format("{} FPS", fps) : "Unlimited"; };
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Frame Rate Limit");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140.0f);
+        if (UIUtils::BeginSelect("##max_fps", label(app.maxFps()).c_str())) {
+            for (const int fps : kLimits) {
+                if (ImGui::Selectable(label(fps).c_str(), fps == app.maxFps())) {
+                    app.setMaxFps(fps);
+                }
+            }
+            UIUtils::EndSelect();
+        }
+    }
+#endif
+
     if (CliCommand::supported()) {
         ImGui::SeparatorText("Command Line");
         if (cliInstalled_) {

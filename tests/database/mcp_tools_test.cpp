@@ -125,7 +125,7 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_NE(init["result"]["instructions"].get<std::string>().find("search_schema"),
               std::string::npos);
     auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
-    EXPECT_EQ(list["result"]["tools"].size(), 6u);
+    EXPECT_EQ(list["result"]["tools"].size(), 9u);
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
@@ -310,4 +310,64 @@ TEST(McpCursors, SameSqlOnTwoConnectionsKeepsItsOwnRows) {
     // a's cursor with b named: b's query from the start
     EXPECT_NE(text({{"connection", "b"}, {"sql", sql}, {"cursor", cursor}}).find("b1"),
               std::string::npos);
+}
+
+TEST_F(McpToolsTest, ExplainShowsThePlanAndWarnsAboutRepeatedScans) {
+    // neither side has an index on the join columns
+    auto [text, err] =
+        call("explain_query",
+             {{"sql", "SELECT * FROM users u JOIN orders o ON o.total = u.created_at"}});
+    EXPECT_FALSE(err) << text;
+    EXPECT_NE(text.find("SCAN"), std::string::npos) << text;
+    EXPECT_NE(text.find("Warnings"), std::string::npos) << text;
+
+    auto [quiet, err2] = call("explain_query", {{"sql", "SELECT * FROM users WHERE id = 3"}});
+    EXPECT_NE(quiet.find("No warnings"), std::string::npos) << quiet;
+
+    auto [refused, isErr] =
+        call("explain_query", {{"sql", "DELETE FROM users"}, {"analyze", true}});
+    EXPECT_TRUE(isErr) << refused;
+}
+
+TEST_F(McpToolsTest, ReviewIndexesFindsTheUnindexedForeignKeyAndExplainsIt) {
+    auto [text, err] = call("review_indexes", nlohmann::json::object());
+    EXPECT_FALSE(err) << text;
+    EXPECT_NE(text.find("[unindexed-fk] orders (user_id) references users"), std::string::npos)
+        << text;
+    EXPECT_NE(text.find("CREATE INDEX idx_orders_user_id ON orders (user_id);"), std::string::npos)
+        << text;
+    auto [doc, docErr] = call("explain_finding", {{"code", "unindexed-fk"}});
+    EXPECT_FALSE(docErr);
+    EXPECT_NE(doc.find("How to confirm:"), std::string::npos) << doc;
+    EXPECT_TRUE(call("explain_finding", {{"code", "bogus"}}).second);
+    auto [one, oneErr] = call("review_indexes", {{"table", "users"}});
+    EXPECT_NE(one.find("No index findings in 1 table."), std::string::npos) << one;
+}
+
+TEST_F(McpToolsTest, PromptsListAndFillTheirArguments) {
+    auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "prompts/list"}});
+    ASSERT_EQ(list["result"]["prompts"].size(), 2u);
+    auto got = server->handle({{"jsonrpc", "2.0"},
+                               {"id", 2},
+                               {"method", "prompts/get"},
+                               {"params",
+                                {{"name", "diagnose-slow-query"},
+                                 {"arguments", {{"sql", "SELECT '{sql}' FROM orders"}}}}}});
+    const std::string text = got["result"]["messages"][0]["content"]["text"];
+    EXPECT_NE(text.find("SELECT '{sql}' FROM orders"), std::string::npos) << text;
+    EXPECT_NE(text.find("connection (not given)"), std::string::npos) << text;
+    auto bad = server->handle(
+        {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "prompts/get"}, {"params", {{"name", "x"}}}});
+    EXPECT_TRUE(bad.contains("error"));
+}
+
+TEST_F(McpToolsTest, ExplainRefusesASecondStatement) {
+    // EXPLAIN covers only the first statement: the DROP would run
+    auto [text, err] = call("explain_query", {{"sql", "SELECT 1; DROP TABLE orders"}});
+    EXPECT_TRUE(err) << text;
+    auto [text3, err3] =
+        call("explain_query", {{"sql", "SELECT 1; /*!50000 DROP TABLE orders */"}});
+    EXPECT_TRUE(err3) << text3;
+    auto [rows, err2] = call("run_query", {{"sql", "SELECT COUNT(*) FROM orders"}});
+    EXPECT_FALSE(err2) << rows;
 }

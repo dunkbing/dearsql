@@ -187,12 +187,14 @@ namespace AcpAgents {
         return path;
     }
 
-    bool executableExists(const std::string& name) {
+    // the full path: posix_spawnp searches the app's own PATH, which is minimal when
+    // DearSQL is opened from Finder or the Dock, not the login PATH the agent is given
+    std::optional<std::string> locateExecutable(const std::string& name) {
 #if defined(_WIN32)
-        return findExecutable(name).has_value();
+        return findExecutable(name);
 #else
         if (name.find('/') != std::string::npos) {
-            return access(name.c_str(), X_OK) == 0;
+            return access(name.c_str(), X_OK) == 0 ? std::optional(name) : std::nullopt;
         }
         const std::string& path = loginShellPath();
         size_t pos = 0;
@@ -203,12 +205,16 @@ namespace AcpAgents {
             }
             const std::string dir = path.substr(pos, colon - pos);
             if (!dir.empty() && access((dir + "/" + name).c_str(), X_OK) == 0) {
-                return true;
+                return dir + "/" + name;
             }
             pos = colon + 1;
         }
-        return false;
+        return std::nullopt;
 #endif
+    }
+
+    bool executableExists(const std::string& name) {
+        return locateExecutable(name).has_value();
     }
 
     std::optional<std::vector<std::string>> resolveInvocation(const AgentDef& def) {
@@ -218,17 +224,11 @@ namespace AcpAgents {
             return managed;
         }
         if (!def.runCmd.empty()) {
-#if defined(_WIN32)
-            if (auto executable = findExecutable(def.runCmd.front())) {
+            if (auto executable = locateExecutable(def.runCmd.front())) {
                 std::vector<std::string> argv = def.runCmd;
                 argv.front() = std::move(*executable);
                 return argv;
             }
-#else
-            if (executableExists(def.runCmd.front())) {
-                return def.runCmd;
-            }
-#endif
         }
         // the managed bun beats runners on PATH: it was downloaded for this
         if (!def.npmPackage.empty()) {
@@ -243,20 +243,12 @@ namespace AcpAgents {
             if (package.empty()) {
                 continue;
             }
-#if defined(_WIN32)
-            auto executable = findExecutable(runner.tool);
+            auto executable = locateExecutable(runner.tool);
             if (!executable) {
                 continue;
             }
-#else
-            if (!executableExists(runner.tool)) {
-                continue;
-            }
-#endif
             std::vector<std::string> argv = runner.prefix;
-#if defined(_WIN32)
             argv.front() = std::move(*executable);
-#endif
             argv.push_back(package);
             argv.insert(argv.end(), def.runArgs.begin(), def.runArgs.end());
             return argv;

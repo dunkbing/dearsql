@@ -109,3 +109,55 @@ bool UIUtils::IconButton(const char* icon, ButtonVariant variant, const ImVec2& 
     ImGui::PopStyleVar(2);
     return clicked;
 }
+
+bool UIUtils::IconLabelButton(const char* icon, const char* label, ButtonVariant variant) {
+    ImFont* font = ImGui::GetFont();
+    const float iconSize = ImGui::GetFontSize() * 0.8f;
+    const float iconWidth = font->CalcTextSizeA(iconSize, FLT_MAX, 0.0f, icon).x;
+    const ImVec2 pad = ImGui::GetStyle().FramePadding;
+    const ImVec2 textSize = ImGui::CalcTextSize(label, nullptr, true);
+    const ImVec2 size(pad.x * 2.0f + iconWidth + Theme::Spacing::S + 2.0f + textSize.x,
+                      textSize.y + pad.y * 2.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, Theme::CornerRadius::SMALL);
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(1.0f, 0.5f));
+    pushVariantColors(variant);
+    drawButtonShadow(label, size, pad);
+    const bool clicked = ImGui::Button(label, size);
+    const ImVec2 min = ImGui::GetItemRectMin();
+    ImGui::GetWindowDrawList()->AddText(font, iconSize,
+                                        ImVec2(min.x + pad.x, min.y + (size.y - iconSize) * 0.5f),
+                                        ImGui::GetColorU32(ImGuiCol_Text), icon);
+    popVariantColors(variant);
+    ImGui::PopStyleVar(3);
+    return clicked;
+}
+
+bool UIUtils::SegmentedTabs(const char* id, std::initializer_list<const char*> labels,
+                            int* current) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    bool changed = false;
+    ImGui::PushID(id);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, Theme::CornerRadius::SMALL);
+    int i = 0;
+    for (const char* label : labels) {
+        if (i > 0)
+            ImGui::SameLine(0, Theme::Spacing::XS);
+        const bool selected = *current == i;
+        ImGui::PushStyleColor(ImGuiCol_Button, selected ? colors.surface1 : ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? colors.surface1 : colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_Text, selected ? colors.text : colors.subtext0);
+        if (ImGui::Button(label) && !selected) {
+            *current = i;
+            changed = true;
+        }
+        ImGui::PopStyleColor(4);
+        ++i;
+    }
+    ImGui::PopStyleVar(2);
+    ImGui::PopID();
+    return changed;
+}

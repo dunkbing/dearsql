@@ -1,5 +1,6 @@
 #include "database/postgresql.hpp"
 #include "test_helpers.hpp"
+#include <dearsql/explain.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -602,4 +603,67 @@ TEST_F(PostgresSchemaNodeDDLTest, DroppedSchemaIsRetiredOnRelist) {
 
     // other runs may drop their own schemas meanwhile: ours must be among them
     EXPECT_NE(std::ranges::find(retired, schemaName), retired.end());
+}
+
+// the plan parser on what the server really returns, plain and analyzed
+TEST_F(PostgresDatabaseIntegrationTest, ExplainParsesServerPlans) {
+    const DatabaseType type = database->getConnectionInfo().type;
+    if (!dearsql::explainSql(type, "SELECT 1", false)) {
+        GTEST_SKIP() << "no parsed plans for this engine";
+    }
+    auto create = database->executeQuery(std::format(
+        R"(CREATE TABLE "{}" (id SERIAL PRIMARY KEY, value TEXT); INSERT INTO "{}"(value) SELECT 'v' || g FROM generate_series(1, 50) g)",
+        tableName, tableName));
+    ASSERT_TRUE(create.success()) << create.errorMessage();
+    auto* node = database->getDatabaseData(config.database);
+    ASSERT_NE(node, nullptr);
+    const std::string query = std::format(
+        R"(SELECT a.value FROM "{}" a JOIN "{}" b ON b.id = a.id WHERE a.id > 10 ORDER BY 1)",
+        tableName, tableName);
+    for (const bool analyze : {false, true}) {
+        auto result = node->executeQuery(*dearsql::explainSql(type, query, analyze));
+        ASSERT_TRUE(result.success()) << result.errorMessage();
+        const auto plan = dearsql::parsePlan(type, result[0], analyze);
+        ASSERT_TRUE(plan) << result[0].tableData[0][0];
+        EXPECT_FALSE(plan->root.children.empty());
+        EXPECT_TRUE(plan->root.cost);
+        EXPECT_EQ(plan->root.totalTimeMs.has_value(), analyze);
+        EXPECT_EQ(plan->executionTimeMs.has_value(), analyze);
+    }
+}
+
+// cockroachdb only: SHOW SYNTAX on the server; a missing table is not a syntax error
+TEST_F(PostgresDatabaseIntegrationTest, ServerSyntaxCheck) {
+    if (!dearsql::hasServerSyntaxCheck(database->getConnectionInfo().type)) {
+        GTEST_SKIP() << "checked offline on this engine";
+    }
+    auto* node = dynamic_cast<LibDatabaseNode*>(database->getDatabaseData(config.database));
+    ASSERT_NE(node, nullptr);
+    auto check = [&](const std::string& sql) {
+        return node->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sql); });
+    };
+    EXPECT_FALSE(check("insert into no_such_table (a) values ('it''s') returning a::int"));
+    const std::string bad = "select 1;\nselect *\n  frm t";
+    const auto error = check(bad);
+    ASSERT_TRUE(error);
+    EXPECT_EQ(bad.substr(error->offset, 3), "frm") << error->message;
+}
+
+// SHOW SYNTAX only parses: nothing in the text runs, even text that tries to end the literal
+TEST_F(PostgresDatabaseIntegrationTest, ServerSyntaxCheckRunsNothing) {
+    if (!dearsql::hasServerSyntaxCheck(database->getConnectionInfo().type)) {
+        GTEST_SKIP() << "checked offline on this engine";
+    }
+    auto* node = dynamic_cast<LibDatabaseNode*>(database->getDatabaseData(config.database));
+    ASSERT_NE(node, nullptr);
+    for (const auto& sneaky : {std::format("create table {} (a int)", tableName),
+                               std::format("'); create table {} (a int); --", tableName),
+                               std::format("select '\\'; create table {} (a int); --'", tableName),
+                               std::format("select $$'$$; create table {} (a int)", tableName)}) {
+        node->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sneaky); });
+    }
+    auto created = database->executeQuery(std::format(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name = '{}'", tableName));
+    ASSERT_TRUE(created.success()) << created.errorMessage();
+    EXPECT_EQ(created[0].tableData[0][0], "0");
 }

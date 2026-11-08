@@ -1,8 +1,12 @@
 #include "database/s3_client.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <format>
 #include <miniocpp/client.h>
+#include <random>
 
 namespace {
     // the provider must outlive the client, which keeps a pointer to it
@@ -161,12 +165,93 @@ void S3Client::upload(const std::string& bucket, const std::string& key, const s
     check(s.client.UploadObject(args));
 }
 
+std::string S3Client::readHead(const std::string& bucket, const std::string& key,
+                               std::size_t maxBytes) const {
+    Session s(config_);
+    minio::s3::GetObjectArgs args;
+    args.bucket = bucket;
+    args.object = key;
+    std::size_t offset = 0;
+    std::size_t length = maxBytes;
+    args.offset = &offset;
+    args.length = &length;
+    std::string out;
+    args.datafunc = [&](minio::http::DataFunctionArgs a) {
+        out += a.datachunk;
+        return true;
+    };
+    auto resp = s.client.GetObject(args);
+    // an empty object has no byte range to return
+    if (!resp && resp.code != "InvalidRange")
+        check(std::move(resp));
+    if (out.size() > maxBytes)
+        out.resize(maxBytes);
+    return out;
+}
+
 void S3Client::deleteObject(const std::string& bucket, const std::string& key) const {
     Session s(config_);
     minio::s3::RemoveObjectArgs args;
     args.bucket = bucket;
     args.object = key;
     check(s.client.RemoveObject(args));
+}
+
+void S3Client::copyObject(const std::string& srcBucket, const std::string& srcKey,
+                          const std::string& dstBucket, const std::string& dstKey) const {
+    Session s(config_);
+    minio::s3::CopyObjectArgs args;
+    args.bucket = dstBucket;
+    args.object = dstKey;
+    args.source.bucket = srcBucket;
+    args.source.object = srcKey;
+    auto resp = s.client.CopyObject(args);
+    if (resp)
+        return;
+    // minio-cpp percent-encodes the slashes of x-amz-copy-source; aws decodes them, some
+    // gateways (versitygw) do not and reject the source. copy through a temp file there
+    std::string msg = resp.Error().String();
+    std::ranges::transform(msg, msg.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (msg.find("copy source") == std::string::npos)
+        check(std::move(resp));
+    const auto tmp = std::filesystem::temp_directory_path() /
+                     std::format("dearsql-s3-copy-{}-{}", std::random_device{}(),
+                                 std::hash<std::string>{}(srcKey));
+    struct Remove {
+        std::filesystem::path p;
+        ~Remove() {
+            std::error_code ec;
+            std::filesystem::remove(p, ec);
+        }
+    } cleanup{tmp};
+    download(srcBucket, srcKey, tmp.string());
+    upload(dstBucket, dstKey, tmp.string());
+}
+
+int S3Client::copyPrefix(const std::string& srcBucket, const std::string& srcPrefix,
+                         const std::string& dstBucket, const std::string& dstPrefix) const {
+    Session s(config_);
+    minio::s3::ListObjectsArgs list;
+    list.bucket = srcBucket;
+    list.prefix = srcPrefix;
+    list.recursive = true;
+    list.use_url_encoding_type = false;
+    std::vector<std::string> keys;
+    for (auto it = s.client.ListObjects(list); it; it++) {
+        const auto& item = *it;
+        if (!item)
+            throw S3Error(item.Error().String());
+        keys.push_back(item.name);
+    }
+    int copied = 0;
+    for (const auto& key : keys) {
+        // folder markers come back on their own on file-backed gateways; copy files only
+        if (key.ends_with('/'))
+            continue;
+        copyObject(srcBucket, key, dstBucket, dstPrefix + key.substr(srcPrefix.size()));
+        ++copied;
+    }
+    return copied;
 }
 
 int S3Client::deletePrefix(const std::string& bucket, const std::string& prefix) const {

@@ -45,6 +45,11 @@ namespace TableExporter {
     std::optional<Request> chooseDestination(const std::vector<const Table*>& tables,
                                              ExportFormat format, DatabaseType dbType);
 
+    // rows as a pretty json array of objects: NULL as null, booleans as true/false, numbers
+    // as numbers when they read back the same, everything else a string
+    std::string rowsToJson(const std::vector<std::string>& columns,
+                           const std::vector<std::vector<std::string>>& rows);
+
     // any thread: writes every table, polling progress.cancelRequested between pages
     Result run(ITableDataProvider* provider, const Request& request, Progress& progress);
 

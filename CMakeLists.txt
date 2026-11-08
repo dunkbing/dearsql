@@ -161,7 +161,6 @@ if(WIN32)
 endif()
 
 include(cmake/TreeSitterGrammars.cmake)
-include(cmake/HsqlParser.cmake)
 include(cmake/Imgui.cmake)
 
 set(APP_SOURCES
@@ -198,6 +197,7 @@ set(APP_SOURCES
     src/ui/tab/tab.cpp
     src/ui/tab/sql_editor_tab.cpp
     src/ui/tab/table_viewer_tab.cpp
+    src/ui/result_chart.cpp
     src/ui/tab/table_editor_tab.cpp
     src/ui/tab/diagram_tab.cpp
     src/ui/text_editor.cpp
@@ -222,6 +222,7 @@ set(APP_SOURCES
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp
     src/utils/table_exporter.cpp
+    src/utils/chart_data.cpp
     src/utils/table_importer.cpp
     src/utils/button.cpp
     src/utils/select.cpp
@@ -247,6 +248,7 @@ set(APP_SOURCES
     src/ui/ai_sidebar_panel.cpp
     src/ui/ai_settings_dialog.cpp
     src/ui/markdown_text.cpp
+    src/ui/plan_view.cpp
     src/ui/connection_dialog.cpp
     src/ui/create_database_dialog.cpp
     src/ui/settings_dialog.cpp
@@ -385,7 +387,6 @@ target_link_libraries(
         tree-sitter-sql-grammar
         tree-sitter-json-grammar
         spdlog::spdlog
-        sql-parser
         acp::acp
         ftxui::screen
         ftxui::dom

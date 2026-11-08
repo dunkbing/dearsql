@@ -1,5 +1,6 @@
 #include "database/mysql.hpp"
 #include "test_helpers.hpp"
+#include <dearsql/explain.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -414,4 +415,54 @@ TEST_F(MySQLDatabaseIntegrationTest, CancelQueriesOnUnblocksWorker) {
 
     const auto after = dbNode->executeQuery("SELECT 1");
     EXPECT_TRUE(after.success()) << after.errorMessage();
+}
+
+// the tree parser on what the server really returns, plain and analyzed
+TEST_F(MySQLDatabaseIntegrationTest, ExplainParsesServerPlans) {
+    const DatabaseType type = database->getConnectionInfo().type;
+    if (!dearsql::explainSql(type, "SELECT 1", false)) {
+        GTEST_SKIP() << "no parsed plans for this engine";
+    }
+    auto create = database->executeQuery(std::format(
+        "CREATE TABLE `{}` (id INT PRIMARY KEY, value TEXT); INSERT INTO `{}` VALUES (1,'a'), "
+        "(2,'b'), (3,'c')",
+        tableName, tableName));
+    ASSERT_TRUE(create.success()) << create.errorMessage();
+    auto* node = database->getDatabaseData(config.database);
+    ASSERT_NE(node, nullptr);
+    const std::string query = std::format(
+        "SELECT a.value FROM `{}` a JOIN `{}` b ON b.id = a.id WHERE a.value <> 'x' ORDER BY 1",
+        tableName, tableName);
+    for (const bool analyze : {false, true}) {
+        auto result = node->executeQuery(*dearsql::explainSql(type, query, analyze));
+        ASSERT_TRUE(result.success()) << result.errorMessage();
+        const auto plan = dearsql::parsePlan(type, result[0], analyze);
+        ASSERT_TRUE(plan) << result[0].tableData[0][0];
+        EXPECT_FALSE(plan->root.children.empty()) << plan->raw;
+        EXPECT_EQ(plan->root.totalTimeMs.has_value(), analyze) << plan->raw;
+    }
+}
+
+// prepare on the server: syntax errors only (1064), and nothing in the text runs
+TEST_F(MySQLDatabaseIntegrationTest, ServerSyntaxCheck) {
+    auto* node = dynamic_cast<LibDatabaseNode*>(database->getDatabaseData(config.database));
+    ASSERT_NE(node, nullptr);
+    auto check = [&](const std::string& sql) {
+        return node->withHandle([&](dearsql::IDatabase& db) { return db.checkSyntax(sql); });
+    };
+    // missing tables and databases are not syntax errors; nor is a procedure body
+    const auto valid = check("select `a` from no_such_db.no_such_table where b = 'it\\'s; ok'; # c;\n"
+                       "insert into nope values (1);\n"
+                       "create procedure p() begin select 1; select 2; end");
+    EXPECT_FALSE(valid) << (valid ? valid->message : "");
+    const std::string bad = "select 1;\nselect *\nfrom no_such_db.t\nwhere x = = 1;\nselect 2";
+    const auto error = check(bad);
+    ASSERT_TRUE(error);
+    EXPECT_EQ(bad.substr(error->offset, 3), "= 1") << error->message;
+
+    check(std::format("create table `{}` (a int); drop database `{}`", tableName, config.database));
+    auto created = database->executeQuery(std::format(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{}'", tableName));
+    ASSERT_TRUE(created.success()) << created.errorMessage();
+    EXPECT_EQ(created[0].tableData[0][0], "0");
 }

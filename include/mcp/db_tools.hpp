@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+class S3Client;
+
 // database tools for coding agents, served over MCP. transport-free: the GUI
 // serves it over loopback http, `dearsql --mcp` over stdio. modelled on fff's
 // file-search server: compact plain-text results, opaque cursors for paging,
@@ -35,6 +37,10 @@ namespace mcp {
         virtual std::string add(const std::string& spec, std::string& error) {
             error = "only saved connections can be opened here; add it in DearSQL";
             return "";
+        }
+        // an S3 connection's client (type "s3"), or null; S3 tools only
+        virtual std::shared_ptr<const S3Client> s3(const std::string& name) {
+            return nullptr;
         }
         // library connection of an open connection, or null
         virtual std::shared_ptr<dearsql::IConnection> connection(const std::string& name) = 0;
@@ -83,7 +89,16 @@ namespace mcp {
         void resume();
         static const char* instructions();
         // the tool definitions (name, description, inputSchema), as tools/list sends them
-        static nlohmann::json tools(bool allowWrites, bool canSaveConnections = false);
+        static nlohmann::json tools(bool allowWrites, bool canSaveConnections = false,
+                                    bool s3 = false);
+        // workflows a client can offer as slash commands (prompts/list, prompts/get)
+        struct Prompt {
+            std::string name;
+            std::string description;
+            nlohmann::json arguments;
+            std::string text; // {argument} placeholders
+        };
+        static const std::vector<Prompt>& prompts();
 
     private:
         struct Target {
@@ -112,6 +127,11 @@ namespace mcp {
         std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
         std::string runQuery(const nlohmann::json& args, bool write = false);
+        std::string explainQuery(const nlohmann::json& args);
+        std::string reviewIndexes(const nlohmann::json& args);
+        std::string explainFinding(const nlohmann::json& args);
+        // list_objects, read_object and, with writes, copy/delete/upload/download_object
+        std::string s3Tool(const std::string& name, const nlohmann::json& args);
 
         // self-describing cursors; run_query pages cached by cursor, oldest evicted first
         std::string storeCursor(const std::string& key, nlohmann::json page);

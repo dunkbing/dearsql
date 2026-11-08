@@ -82,6 +82,8 @@ public:
     void getFramebufferSize(int& width, int& height) override;
     ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
 
+    bool vsync = true;
+
 #ifdef __OBJC__
     id metalDevice_ = nullptr;
     id metalCommandQueue_ = nullptr;
@@ -135,6 +137,8 @@ public:
     void shutdown() override;
     void getFramebufferSize(int& width, int& height) override;
     ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
+
+    bool vsync = true;
 
     // Called from WndProc WM_SIZE to resize the swap chain
     void resizeSwapChain(int width, int height);

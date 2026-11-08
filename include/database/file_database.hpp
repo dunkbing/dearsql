@@ -21,6 +21,9 @@ public:
     explicit FileDatabase(const DatabaseConnectionInfo& info) {
         connectionInfo = info;
     }
+    std::vector<IDatabaseNode*> loadedNodes() override {
+        return {this};
+    }
     ~FileDatabase() override {
         // join every worker while the members they touch still exist
         connectionOp.wait();

@@ -262,6 +262,9 @@ private:
     // Helper to resolve an IDatabaseNode from a SqlScript's metadata
     IDatabaseNode* resolveNodeForQuery(const SqlScript& script) const;
 
+    // a collapsed row scrolled out of view: its height only (true), so a schema with
+    // ~1000 tables doesn't lay out every row each frame
+    static bool skipOffscreenRow(const std::string& nodeId);
     // Helper function to render a tree node with icon
     static bool
     renderTreeNodeWithIcon(const std::string& label, const std::string& nodeId,

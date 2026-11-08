@@ -3,6 +3,7 @@
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
+#include "database/postgresql.hpp"
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
@@ -11,7 +12,9 @@
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/settings_dialog.hpp"
+#include "ui/tab/s3_browser_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <algorithm>
 #include <chrono>
@@ -208,7 +211,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         expandInSidebar(ctx, db);
         ctx->Yield(10);
         ctx->SetRef(tab->getWindowName().c_str());
-        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->ItemClick("**/Run");
         ctx->Yield(120);
         holdForScreenshot(ctx);
     };
@@ -313,8 +316,21 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->SetRef(tab->getWindowName().c_str());
         for (int i = 0; i < 300 && !ctx->ItemExists("**/" ICON_FA_FILE " customers.csv"); ++i)
             ctx->Yield();
+        const auto s3tab = std::static_pointer_cast<S3BrowserTab>(tab);
+        // drag from one row to another box-selects the rows between
+        ctx->MouseMove("**/" ICON_FA_FILE " README.md");
+        ctx->MouseDown();
+        ctx->MouseMove("**/" ICON_FA_FILE " orders-2026-06.parquet",
+                       ImGuiTestOpFlags_NoCheckHoveredId);
+        ctx->MouseUp();
+        IM_CHECK_EQ(s3tab->selectedCount(), 3u);
         ctx->ItemClick("**/" ICON_FA_FILE " customers.csv");
+        IM_CHECK_EQ(s3tab->selectedCount(), 1u);
+        ctx->KeyDown(ImGuiMod_Ctrl); // a second file joins the selection
+        ctx->ItemClick("**/" ICON_FA_FILE " products.json");
+        ctx->KeyUp(ImGuiMod_Ctrl);
         ctx->Yield(5);
+        IM_CHECK_EQ(s3tab->selectedCount(), 2u);
         holdForScreenshot(ctx);
     };
 
@@ -332,6 +348,249 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         openAssistant(ctx);
         AISettingsDialog::instance().show();
         ctx->Yield(5);
+        holdForScreenshot(ctx);
+    };
+
+    // explain analyze on postgres; needs the DEARSQL_TEST_PG_* server scripts/run-tests starts
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-explain");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const char* host = std::getenv("DEARSQL_TEST_PG_HOST");
+        if (!host) {
+            ctx->LogError("set DEARSQL_TEST_PG_HOST/_PORT/_DB/_USER/_PASSWORD");
+            return;
+        }
+        auto env = [](const char* name, const char* fallback) {
+            const char* v = std::getenv(name);
+            return std::string(v ? v : fallback);
+        };
+        DatabaseConnectionInfo info;
+        info.name = "shop";
+        info.type = DatabaseType::POSTGRESQL;
+        info.host = host;
+        info.port = std::stoi(env("DEARSQL_TEST_PG_PORT", "5432"));
+        info.database = env("DEARSQL_TEST_PG_DB", "postgres");
+        info.username = env("DEARSQL_TEST_PG_USER", "postgres");
+        info.password = env("DEARSQL_TEST_PG_PASSWORD", "");
+        auto db = std::make_shared<PostgresDatabase>(info);
+        if (auto [ok, err] = db->connect(); !ok) {
+            ctx->LogError("%s", err.c_str());
+            return;
+        }
+        auto& app = Application::getInstance();
+        app.addDatabase(db);
+        db->executeQuery(
+            "DROP TABLE IF EXISTS orders, customers;"
+            "CREATE TABLE customers (id int PRIMARY KEY, name text, country text);"
+            "CREATE TABLE orders (id int PRIMARY KEY, customer_id int REFERENCES customers, "
+            "total numeric, created_at timestamptz);"
+            "INSERT INTO customers SELECT g, 'customer ' || g, (ARRAY['US','DE','VN','FR','JP'])[1 "
+            "+ "
+            "g % 5] FROM generate_series(1, 5000) g;"
+            "INSERT INTO orders SELECT g, 1 + g % 5000, (g % 500) / 3.0, now() - (g % 365) * "
+            "interval '1 day' FROM generate_series(1, 200000) g;"
+            "ANALYZE customers; ANALYZE orders;");
+        auto* node = db->getDatabaseData(info.database);
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            app.getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery("select c.country, count(*), sum(o.total)\nfrom orders o\njoin customers c "
+                      "on c.id = o.customer_id\nwhere o.created_at > now() - interval '30 "
+                      "days'\ngroup by c.country\norder by 3 desc;");
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/###explain_analyze");
+        ctx->ItemClick("**/Explain");
+        // park the mouse over the sql text: no tooltip over the plan
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.6f, vp->Pos.y + 200.0f));
+        for (int i = 0; i < 600 && !tab->getPlan(); ++i) {
+            ctx->Yield();
+        }
+        holdForScreenshot(ctx);
+        db->executeQuery("DROP TABLE IF EXISTS orders, customers");
+        app.getTabManager()->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+    };
+
+    // a script with the last statement's play icon hovered: the outline shows what runs
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-run-statement");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select *\nfrom {}\nlimit 20;\n\nselect count(*)\nfrom {};\n\n"
+                                  "select *\nfrom {}\nlimit 5;",
+                                  tables[0].name, tables[1 % tables.size()].name,
+                                  tables[2 % tables.size()].name));
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/##run_2");
+        ctx->Yield(60);
+        ctx->MouseMove("**/##run_2");
+        holdForScreenshot(ctx);
+    };
+
+    // a typo underlined where the parser stopped, the message next to the toolbar
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-syntax-error");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select count(*)\nfrom {};\n\nselect *\nfrm {}\nlimit 10;",
+                                  tables[0].name, tables[1 % tables.size()].name));
+        expandInSidebar(ctx, db);
+        for (int i = 0; i < 120 && tab->getEditor().GetErrorOffset() < 0; ++i) {
+            ctx->Yield();
+        }
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
+
+    // :name placeholders prompt for their values before the query runs
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-parameters");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select *\nfrom {}\nwhere rowid >= :from_id\n  and rowid < "
+                                  ":from_id + :page_size;",
+                                  tables[0].name));
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/Run");
+        ctx->Yield(3);
+        ctx->SetRef("//$FOCUSED");
+        ctx->ItemInputValue("##param_from_id", "100");
+        ctx->KeyChars("25");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
+
+    // cmd/ctrl+p over the loaded tables and views
+    t = IM_REGISTER_TEST(engine, "Docs", "open-quickly");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
+        ctx->Yield(2);
+        ctx->KeyChars("inv");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
+
+    // saving a delete previews what foreign keys do to the rows referencing it
+    t = IM_REGISTER_TEST(engine, "Docs", "delete-preview");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "shop.db";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first) {
+            ctx->LogError("no sqlite");
+            return;
+        }
+        for (const char* sql : {
+                 "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT)",
+                 "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE CASCADE, total REAL)",
+                 "CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER "
+                 "REFERENCES orders(id) ON DELETE CASCADE, sku TEXT)",
+                 "CREATE TABLE reviews (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE SET NULL, body TEXT)",
+                 "CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id), amount REAL)",
+                 "INSERT INTO customers VALUES (1, 'Ada', 'ada@example.com'), "
+                 "(2, 'Grace', 'grace@example.com'), (3, 'Linus', 'linus@example.com')",
+                 "INSERT INTO orders VALUES (10, 1, 42.0), (11, 1, 18.5), (12, 1, 7.0), "
+                 "(13, 2, 99.0)",
+                 "INSERT INTO order_items VALUES (100, 10, 'A-1'), (101, 10, 'B-2'), "
+                 "(102, 11, 'C-3'), (103, 12, 'A-1'), (104, 12, 'D-4'), (105, 13, 'E-5')",
+                 "INSERT INTO reviews VALUES (1, 1, 'Great'), (2, 1, 'Fine')",
+                 "INSERT INTO invoices VALUES (1, 1, 42.0)",
+             })
+            db->executeQuery(sql);
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const auto& tables = db->getTables();
+        const auto customers = std::ranges::find(tables, std::string("customers"), &Table::name);
+        if (customers == tables.end()) {
+            ctx->LogError("no customers table");
+            return;
+        }
+        app.addDatabase(db);
+        const auto tab = std::dynamic_pointer_cast<TableViewerTab>(
+            app.getTabManager()->createTableViewerTab(db.get(), *customers));
+        ctx->Yield(40);
+        tab->deleteRows({0});
+        tab->saveChanges();
+        for (int i = 0; i < 200 && !tab->deleteImpact(); ++i)
+            ctx->Yield();
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
+
+    // the chart tab under a query result
+    t = IM_REGISTER_TEST(engine, "Docs", "results-chart");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "shop.db";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first) {
+            ctx->LogError("no sqlite");
+            return;
+        }
+        app.addDatabase(db);
+        const auto editor = std::dynamic_pointer_cast<SQLEditorTab>(
+            app.getTabManager()->createSQLEditorTab("", db.get()));
+        editor->setQuery("with sales(month, revenue, cost) as (values\n"
+                         "  ('Jan', 4200, 2600), ('Feb', 5100, 2900), ('Mar', 6300, 3100),\n"
+                         "  ('Apr', 5800, 3300), ('May', 7200, 3600), ('Jun', 8100, 3900),\n"
+                         "  ('Jul', 7600, 4000), ('Aug', 8800, 4200), ('Sep', 9400, 4300))\n"
+                         "select * from sales;");
+        ctx->Yield(10);
+        ctx->SetRef(editor->getWindowName().c_str());
+        ctx->ItemClick("**/Run");
+        for (int i = 0; i < 300 && editor->getQueryResult().empty(); ++i)
+            ctx->Yield();
+        ctx->Yield(5);
+        ctx->ItemClick("**/Chart");
+        ctx->Yield(10);
         holdForScreenshot(ctx);
     };
 }

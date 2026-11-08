@@ -106,7 +106,7 @@ void WindowsDX11Backend::renderDrawData(ImDrawData* drawData) {
 }
 
 void WindowsDX11Backend::present() {
-    swapChain_->Present(1, 0);
+    swapChain_->Present(vsync ? 1 : 0, 0);
 }
 
 void WindowsDX11Backend::onResize(int width, int height) {

@@ -100,13 +100,18 @@ add_executable(
     sql_format_tests
     tests/ui/sql_format_test.cpp
     tests/ui/csv_document_test.cpp
+    tests/ui/chart_data_test.cpp
     tests/ui/env_tag_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
     external/libdearsql/tests/completion_tests.cpp
+    external/libdearsql/tests/delete_impact_tests.cpp
+    external/libdearsql/tests/explain_tests.cpp
+    external/libdearsql/tests/syntax_tests.cpp
     src/ui/text_editor_format.cpp
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp
+    src/utils/chart_data.cpp
 )
 
 target_include_directories(

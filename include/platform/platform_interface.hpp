@@ -24,6 +24,8 @@ public:
     virtual void shutdownImGui() = 0;
     virtual void updateWorkspaceDropdown() {}
     virtual void applyTheme(bool isDark) = 0;
+    // false: present as soon as a frame is ready instead of on the display refresh
+    virtual void setVSync(bool) {}
     // windows
     [[nodiscard]] virtual float getClientAreaTopInset() const {
         return 0.0f;

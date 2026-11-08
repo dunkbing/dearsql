@@ -26,6 +26,20 @@ namespace {
         return u == 0 ? std::format("{} B", bytes) : std::format("{:.1f} {}", v, units[u]);
     }
 
+    // "Folder", or the extension in capitals ("PNG"), or "File" with none
+    std::string fileType(bool folder, const std::string& key) {
+        if (folder)
+            return "Folder";
+        const auto slash = key.rfind('/');
+        const auto dot = key.rfind('.');
+        if (dot == std::string::npos || (slash != std::string::npos && dot < slash) ||
+            dot + 1 == key.size() || dot == (slash == std::string::npos ? 0 : slash + 1))
+            return "File";
+        std::string ext = key.substr(dot + 1);
+        std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::toupper(c); });
+        return ext;
+    }
+
     // last path segment: "a/b/c.txt" -> "c.txt", "a/b/" -> "b"
     std::string baseName(std::string key) {
         if (key.ends_with('/'))
@@ -73,7 +87,7 @@ void S3BrowserTab::open(const std::string& prefix) {
     prefix_ = prefix;
     entries_.clear();
     nextToken_.clear();
-    selected_ = -1;
+    selection_.Clear();
     list();
 }
 
@@ -135,29 +149,167 @@ void S3BrowserTab::download(const Entry& entry) {
           });
 }
 
-void S3BrowserTab::confirmDelete(const Entry& entry) {
-    const std::string what = entry.folder
-                                 ? std::format("the folder '{}' and everything in it", entry.key)
-                                 : std::format("'{}'", entry.key);
+std::optional<S3BrowserTab::Clip>& S3BrowserTab::clipboard() {
+    static std::optional<Clip> clip; // ui thread only
+    return clip;
+}
+
+std::vector<S3BrowserTab::Entry> S3BrowserTab::selectedEntries() {
+    std::vector<Entry> out;
+    void* it = nullptr;
+    ImGuiID i = 0;
+    while (selection_.GetNextSelectedItem(&it, &i)) {
+        if (i < entries_.size())
+            out.push_back(entries_[i]);
+    }
+    // listing order, not the order of clicks
+    std::ranges::sort(out, [](const Entry& a, const Entry& b) { return a.key < b.key; });
+    return out;
+}
+
+void S3BrowserTab::copySelection(bool cut) {
+    auto entries = selectedEntries();
+    if (entries.empty())
+        return;
+    status_ = std::format("{} {} item{}", cut ? "Cut" : "Copied", entries.size(),
+                          entries.size() == 1 ? "" : "s");
+    statusIsError_ = false;
+    clipboard() = Clip{client_, bucket_, std::move(entries), cut};
+}
+
+void S3BrowserTab::paste() {
+    auto& clip = clipboard();
+    if (!clip || op_.isRunning())
+        return;
+    // CopyObject is server-side: both ends need the same endpoint and keys
+    if (clip->client != client_) {
+        status_ = "Paste works within one connection";
+        statusIsError_ = true;
+        return;
+    }
+    // plan the target keys here, where the folder's names are known
+    std::set<std::string> taken;
+    for (const auto& e : entries_)
+        taken.insert(e.key);
+    struct Step {
+        std::string src, dst;
+        bool folder;
+    };
+    std::vector<Step> steps;
+    for (const auto& e : clip->entries) {
+        std::string name = baseName(e.key);
+        std::string dst = prefix_ + name + (e.folder ? "/" : "");
+        const bool samePlace = clip->bucket == bucket_ && dst == e.key;
+        if (samePlace && clip->cut)
+            continue; // moving onto itself
+        if (!samePlace && e.folder && clip->bucket == bucket_ && dst.starts_with(e.key)) {
+            status_ = std::format("Can't paste '{}' into itself", name);
+            statusIsError_ = true;
+            return;
+        }
+        if (samePlace) {
+            // a copy next to the original: "a copy.txt", "a copy 2.txt"
+            const auto dot = e.folder ? std::string::npos : name.rfind('.');
+            const std::string stem =
+                dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
+            const std::string ext = stem.size() == name.size() ? "" : name.substr(stem.size());
+            for (int n = 1;; ++n) {
+                dst = prefix_ + stem + (n == 1 ? " copy" : std::format(" copy {}", n)) + ext +
+                      (e.folder ? "/" : "");
+                if (!taken.contains(dst))
+                    break;
+            }
+        }
+        taken.insert(dst);
+        steps.push_back({e.key, dst, e.folder});
+    }
+    const bool cut = clip->cut;
+    const std::string srcBucket = clip->bucket;
+    if (cut)
+        clip.reset(); // a move happens once
+    if (steps.empty())
+        return;
+    runOp(std::format("{} {} item{}", cut ? "Moving" : "Copying", steps.size(),
+                      steps.size() == 1 ? "" : "s"),
+          [client = client_, srcBucket, bucket = bucket_, steps, cut, cancel = cancel_] {
+              OpResult r;
+              int objects = 0;
+              for (const auto& s : steps) {
+                  if (cancel->load())
+                      break;
+                  if (s.folder) {
+                      objects += client->copyPrefix(srcBucket, s.src, bucket, s.dst);
+                      if (cut)
+                          client->deletePrefix(srcBucket, s.src);
+                  } else {
+                      client->copyObject(srcBucket, s.src, bucket, s.dst);
+                      ++objects;
+                      if (cut)
+                          client->deleteObject(srcBucket, s.src);
+                  }
+              }
+              r.message = std::format("{} {} object{}", cut ? "Moved" : "Copied", objects,
+                                      objects == 1 ? "" : "s");
+              r.reload = true;
+              return r;
+          });
+}
+
+void S3BrowserTab::confirmDelete(std::vector<Entry> entries) {
+    if (entries.empty())
+        return;
+    std::string what;
+    if (entries.size() > 1)
+        what = std::format("{} items (folders with everything in them)", entries.size());
+    else if (entries[0].folder)
+        what = std::format("the folder '{}' and everything in it", entries[0].key);
+    else
+        what = std::format("'{}'", entries[0].key);
     Alert::show("Delete", std::format("Delete {}? This cannot be undone.", what),
                 {{"Cancel", [] {}, AlertButton::Style::Cancel},
-                 {"Delete", [pending = pendingDelete_, entry] { *pending = entry; },
+                 {"Delete", [pending = pendingDelete_, entries] { *pending = entries; },
                   AlertButton::Style::Destructive}});
 }
 
-void S3BrowserTab::deleteEntry(const Entry& entry) {
-    runOp("Deleting " + baseName(entry.key), [client = client_, bucket = bucket_, entry] {
+void S3BrowserTab::deleteEntries(std::vector<Entry> entries) {
+    const std::string label = entries.size() == 1
+                                  ? "Deleting " + baseName(entries[0].key)
+                                  : std::format("Deleting {} items", entries.size());
+    runOp(label, [client = client_, bucket = bucket_, entries = std::move(entries)] {
         OpResult r;
-        if (entry.folder) {
-            const int n = client->deletePrefix(bucket, entry.key);
-            r.message = std::format("Deleted {} objects", n);
-        } else {
-            client->deleteObject(bucket, entry.key);
-            r.message = "Deleted " + entry.key;
+        int n = 0;
+        for (const auto& e : entries) {
+            if (e.folder) {
+                n += client->deletePrefix(bucket, e.key);
+            } else {
+                client->deleteObject(bucket, e.key);
+                ++n;
+            }
         }
+        r.message = std::format("Deleted {} object{}", n, n == 1 ? "" : "s");
         r.reload = true;
         return r;
     });
+}
+
+void S3BrowserTab::handleShortcuts() {
+    const auto& io = ImGui::GetIO();
+    if (io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup) ||
+        !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+        return;
+    const bool mod = io.KeyCtrl || io.KeySuper;
+    if (op_.isRunning())
+        return;
+    if (mod && ImGui::IsKeyPressed(ImGuiKey_C, false))
+        copySelection(false);
+    if (mod && ImGui::IsKeyPressed(ImGuiKey_X, false))
+        copySelection(true);
+    if (mod && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        paste();
+    // delete, or cmd+backspace as in finder
+    if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) ||
+        (mod && ImGui::IsKeyPressed(ImGuiKey_Backspace, false)))
+        confirmDelete(selectedEntries());
 }
 
 void S3BrowserTab::copyLink(const Entry& entry, unsigned seconds) {
@@ -190,7 +342,7 @@ void S3BrowserTab::render() {
         }
         if (!r.append) {
             entries_.clear();
-            selected_ = -1;
+            selection_.Clear();
         }
         for (auto& p : r.listing.prefixes)
             entries_.push_back({std::move(p), true, 0, {}});
@@ -222,10 +374,11 @@ void S3BrowserTab::render() {
     });
 
     if (pendingDelete_->has_value()) {
-        deleteEntry(**pendingDelete_);
+        deleteEntries(std::move(**pendingDelete_));
         pendingDelete_->reset();
     }
 
+    handleShortcuts();
     renderToolbar();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
@@ -263,6 +416,45 @@ void S3BrowserTab::renderToolbar() {
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Upload a file here");
+
+    // copy, cut, paste, delete: on the selection, pasted into this folder
+    const bool none = selection_.Size == 0;
+    const bool busy = op_.isRunning();
+    const auto& clip = clipboard();
+#ifdef __APPLE__
+    const char* mod = "Cmd";
+#else
+    const char* mod = "Ctrl";
+#endif
+    struct Action {
+        const char* icon;
+        bool enabled;
+        std::string tip;
+        std::function<void()> run;
+    };
+    const Action actions[] = {
+        {ICON_FA_COPY, !none, std::format("Copy ({}+C)", mod), [this] { copySelection(false); }},
+        {ICON_FA_SCISSORS, !none, std::format("Cut ({}+X)", mod), [this] { copySelection(true); }},
+        {ICON_FA_PASTE, clip && !busy,
+         clip ? std::format("Paste {} item{} here ({}+V)", clip->entries.size(),
+                            clip->entries.size() == 1 ? "" : "s", mod)
+              : std::string("Paste (copy or cut something first)"),
+         [this] { paste(); }},
+        {ICON_FA_TRASH_CAN, !none && !busy, "Delete", [this] { confirmDelete(selectedEntries()); }},
+    };
+    ImGui::SameLine(0, Theme::Spacing::L);
+    for (size_t a = 0; a < std::size(actions); ++a) {
+        if (a > 0)
+            ImGui::SameLine(0, Theme::Spacing::XS);
+        ImGui::PushID(static_cast<int>(a));
+        ImGui::BeginDisabled(!actions[a].enabled);
+        if (UIUtils::IconButton(actions[a].icon))
+            actions[a].run();
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", actions[a].tip.c_str());
+        ImGui::PopID();
+    }
 
     if (!prefix_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::L);
@@ -342,12 +534,13 @@ void S3BrowserTab::renderTable() {
     }
 
     constexpr ImGuiTableFlags flags = ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
-                                      ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_RowBg |
-                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable;
-    if (!ImGui::BeginTable("##s3_objects", 3, flags))
+                                      ImGuiTableFlags_NoBordersInBody | ImGuiTableFlags_ScrollY |
+                                      ImGuiTableFlags_Resizable;
+    if (!ImGui::BeginTable("##s3_objects", 4, flags))
         return;
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 90.0f);
     ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 100.0f);
     ImGui::TableSetupColumn("Last modified", ImGuiTableColumnFlags_WidthFixed, 170.0f);
     ImGui::TableHeadersRow();
@@ -355,9 +548,18 @@ void S3BrowserTab::renderTable() {
     // a selectable reaches half the item spacing past itself: 2x cell padding fills the row
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                         ImVec2(Theme::Spacing::M, ImGui::GetStyle().CellPadding.y * 2));
+    // drag across rows (or from the empty space below) to box-select
+    auto* ms = ImGui::BeginMultiSelect(ImGuiMultiSelectFlags_BoxSelect1d |
+                                           ImGuiMultiSelectFlags_ClearOnEscape |
+                                           ImGuiMultiSelectFlags_ClearOnClickVoid,
+                                       selection_.Size, static_cast<int>(entries_.size()));
+    selection_.ApplyRequests(ms);
     std::optional<std::string> navigate;
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(entries_.size()));
+    if (ms->RangeSrcItem != -1)
+        clipper.IncludeItemByIndex(
+            static_cast<int>(ms->RangeSrcItem)); // keep the shift anchor alive
     while (clipper.Step()) {
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
             const Entry& e = entries_[i];
@@ -366,10 +568,10 @@ void S3BrowserTab::renderTable() {
             ImGui::PushID(i);
             const std::string label =
                 std::format("{} {}", e.folder ? ICON_FA_FOLDER : ICON_FA_FILE, baseName(e.key));
-            if (ImGui::Selectable(label.c_str(), selected_ == i,
+            ImGui::SetNextItemSelectionUserData(i);
+            if (ImGui::Selectable(label.c_str(), selection_.Contains(static_cast<ImGuiID>(i)),
                                   ImGuiSelectableFlags_SpanAllColumns |
                                       ImGuiSelectableFlags_AllowDoubleClick)) {
-                selected_ = i;
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     if (e.folder)
                         navigate = e.key;
@@ -378,10 +580,11 @@ void S3BrowserTab::renderTable() {
                 }
             }
             if (UIUtils::BeginContextMenu("##s3_entry_menu")) {
-                selected_ = i;
                 renderEntryMenu(e, navigate);
                 ImGui::EndPopup();
             }
+            ImGui::TableNextColumn();
+            ImGui::TextColored(colors.subtext0, "%s", fileType(e.folder, e.key).c_str());
             ImGui::TableNextColumn();
             if (!e.folder)
                 ImGui::TextUnformatted(humanSize(e.size).c_str());
@@ -390,6 +593,7 @@ void S3BrowserTab::renderTable() {
             ImGui::PopID();
         }
     }
+    selection_.ApplyRequests(ImGui::EndMultiSelect());
     ImGui::PopStyleVar();
 
     if (!nextToken_.empty()) {
@@ -433,8 +637,20 @@ void S3BrowserTab::renderEntryMenu(const Entry& entry, std::optional<std::string
     if (ImGui::MenuItem("Copy Key"))
         ImGui::SetClipboardText(entry.key.c_str());
     ImGui::Separator();
-    if (ImGui::MenuItem(entry.folder ? "Delete Folder..." : "Delete...", nullptr, false, !busy))
-        confirmDelete(entry);
+    // these act on the whole selection
+    const size_t n = static_cast<size_t>(selection_.Size);
+    const std::string items = n > 1 ? std::format(" {} Items", n) : "";
+    if (ImGui::MenuItem(("Copy" + items).c_str()))
+        copySelection(false);
+    if (ImGui::MenuItem(("Cut" + items).c_str()))
+        copySelection(true);
+    if (ImGui::MenuItem("Paste Here", nullptr, false, clipboard().has_value() && !busy))
+        paste();
+    ImGui::Separator();
+    if (ImGui::MenuItem(n > 1 ? std::format("Delete {} Items...", n).c_str()
+                              : (entry.folder ? "Delete Folder..." : "Delete..."),
+                        nullptr, false, !busy))
+        confirmDelete(selectedEntries());
     ImGui::PopStyleVar();
 }
 
@@ -446,6 +662,8 @@ void S3BrowserTab::renderStatusBar() {
     const int files = static_cast<int>(entries_.size()) - folders;
     std::string text = std::format("{} folders · {} files{}", folders, files,
                                    nextToken_.empty() ? "" : " (more not loaded)");
+    if (selection_.Size > 0)
+        text += std::format(" · {} selected", selection_.Size);
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(colors.subtext0, "%s", text.c_str());
     if (!status_.empty()) {

@@ -56,6 +56,8 @@ struct DatabaseConnectionInfo : dearsql::ConnectionInfo {
  * - Basic getters/setters
  * - Schema loading patterns (tables, views, sequences)
  */
+class IDatabaseNode;
+
 class DatabaseInterface : public std::enable_shared_from_this<DatabaseInterface> {
 public:
     virtual ~DatabaseInterface() = default;
@@ -114,6 +116,12 @@ public:
     }
 
     virtual void refreshDatabaseNames() {}
+
+    // the nodes the sidebar has opened (schemas, not their database, where it has them); the
+    // tables they have loaded are what open quickly searches
+    virtual std::vector<IDatabaseNode*> loadedNodes() {
+        return {};
+    }
 
     // Connection status
     [[nodiscard]] virtual bool isConnected() const {

@@ -2,6 +2,7 @@
 
 #include "app_state.hpp"
 #include "database/connection_url.hpp"
+#include "database/s3.hpp"
 #include "license/license_manager.hpp"
 #include <dearsql/factory.hpp>
 #include <filesystem>
@@ -22,8 +23,11 @@ bool CliConnections::loadSaved(std::string& error) {
     }
     std::lock_guard lock(mutex_);
     for (auto& saved : state.getSavedConnections()) {
-        // object storage is gui-only: the terminal modes are database tools
-        if (saved.connectionInfo.type == DatabaseType::S3 || find(saved.connectionInfo.name))
+        if (saved.connectionInfo.type == DatabaseType::S3) {
+            s3_.push_back(std::move(saved.connectionInfo));
+            continue;
+        }
+        if (find(saved.connectionInfo.name))
             continue;
         auto e = std::make_unique<Entry>();
         e->info = std::move(saved.connectionInfo);
@@ -133,6 +137,19 @@ std::shared_ptr<dearsql::IConnection> CliConnections::connection(const std::stri
     return e ? e->conn : nullptr;
 }
 
+std::shared_ptr<const S3Client> CliConnections::s3(const std::string& name) {
+    std::lock_guard lock(mutex_);
+    for (const auto& info : s3_) {
+        if (info.name != name)
+            continue;
+        auto& client = s3Clients_[name];
+        if (!client)
+            client = std::make_shared<const S3Client>(S3Database::configFor(info));
+        return client;
+    }
+    return nullptr;
+}
+
 std::string CliConnections::save(const std::string& name, std::string& error) {
     std::lock_guard lock(mutex_);
     auto* e = find(name);
@@ -151,8 +168,7 @@ std::string CliConnections::save(const std::string& name, std::string& error) {
     // the stored license, as LicenseManager::loadStoredLicense reads it (that needs the gui)
     const bool pro = !state.getSetting("license_key", "").empty() &&
                      state.getSetting("license_status", "") == "active";
-    if (!pro &&
-        state.getConnectionsForWorkspace(workspace).size() >= kFreeConnectionLimit) {
+    if (!pro && state.getConnectionsForWorkspace(workspace).size() >= kFreeConnectionLimit) {
         error = std::format("not saved: the free tier keeps {} connections", kFreeConnectionLimit);
         return "";
     }

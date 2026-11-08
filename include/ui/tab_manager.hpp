@@ -97,6 +97,8 @@ public:
 
     // UI rendering
     void renderTabs();
+    // cmd/ctrl+p; drawn even with no tabs open
+    void renderOpenQuickly();
     static void renderEmptyState();
 
     // run after the tab render loop finishes. anything that adds or removes a tab
@@ -126,6 +128,8 @@ private:
     std::vector<std::uint64_t> recentTabs_;
     int switcherIndex_ = -1;
     ImGuiKeyChord switcherNext_ = 0, switcherPrev_ = 0;
-
+    // cmd/ctrl+p: fuzzy jump to a loaded table or view
+    char openQuicklyQuery_[256] = {};
+    int openQuicklyIndex_ = 0;
     std::string generateSQLEditorName() const;
 };

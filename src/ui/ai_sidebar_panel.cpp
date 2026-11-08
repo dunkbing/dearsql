@@ -18,6 +18,7 @@
 #include "database/oracle/oracle_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "themes.hpp"
@@ -37,12 +38,33 @@
 #include <format>
 #include <iomanip>
 #include <mutex>
+#include <regex>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
 using json = nlohmann::json;
 
 namespace {
+    // session/load replays the injected intro, schema and chip blocks as user text; keep only what
+    // the user typed
+    std::string stripInjectedContext(std::string s) {
+        static const std::regex intro(R"(You are helping with a [\s\S]*?not open\.)");
+        static const std::regex ctx(R"re(<context ref="(dearsql://[^"]*)">[\s\S]*?</context>)re");
+        s = std::regex_replace(s, intro, "");
+        std::vector<std::string> refs{
+            "dearsql://schema"}; // always known, even if its <context> block is missing
+        for (std::sregex_iterator it(s.begin(), s.end(), ctx), end; it != end; ++it) {
+            refs.push_back((*it)[1].str());
+        }
+        s = std::regex_replace(s, ctx, "");
+        for (const auto& ref : refs) {
+            for (auto p = s.find(ref); p != std::string::npos; p = s.find(ref, p)) {
+                s.erase(p, ref.size());
+            }
+        }
+        const auto b = s.find_first_not_of(" \t\n\r");
+        return b == std::string::npos ? "" : s.substr(b, s.find_last_not_of(" \t\n\r") - b + 1);
+    }
     struct ApiModelOption {
         const char* label;
         const char* model;
@@ -557,11 +579,17 @@ void AISidebarPanel::syncContext() {
     // publish every saved connection so the agent can see, and open, closed ones
     std::vector<McpConnectionInfo> connections;
     for (const auto& db : Application::getInstance().getDatabases()) {
-        // object storage has no database tools
-        if (!db || db->getConnectionInfo().type == DatabaseType::S3) {
+        if (!db) {
             continue;
         }
         const auto info = db->getConnectionInfo();
+        // object storage: the S3 tools, on the connection's client
+        if (info.type == DatabaseType::S3) {
+            auto s3db = std::dynamic_pointer_cast<S3Database>(db);
+            connections.push_back(
+                {info.name, "s3", db->isConnected(), nullptr, s3db ? s3db->client() : nullptr});
+            continue;
+        }
         connections.push_back({info.name, databaseTypeToString(info.type), db->isConnected(),
                                db->isConnected() ? db->libConnection() : nullptr});
     }
@@ -1083,8 +1111,10 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::UserMessageDelta:
             if (items_.empty() || items_.back().kind != Item::Kind::User) {
                 items_.push_back({.kind = Item::Kind::User});
+                replayUserRaw_.clear();
             }
-            items_.back().text += ev.text;
+            replayUserRaw_ += ev.text;
+            items_.back().text = stripInjectedContext(replayUserRaw_);
             scrollToBottom_ = true;
             break;
         case AcpEvent::Type::ThoughtDelta:
@@ -1279,7 +1309,9 @@ void AISidebarPanel::render() {
     // the footer is the spacing imgui adds after the list, the input box itself, and a
     // margin below it -- under-reserving here is what clipped the input's bottom edge.
     const float inputH = computeInputHeight();
-    const float chipsHeight = contextChipsHeight(ImGui::GetContentRegionAvail().x);
+    // chips and input are inset by M on each side (renderInputArea)
+    const float chipsHeight =
+        contextChipsHeight(ImGui::GetContentRegionAvail().x - Theme::Spacing::M * 2.0f);
     const float footerHeight =
         ImGui::GetStyle().ItemSpacing.y + chipsHeight + inputH + INPUT_BOTTOM_MARGIN;
     const float availHeight =
@@ -1324,7 +1356,7 @@ void AISidebarPanel::render() {
     ImGui::EndChild();
 
     // pinned context sits above the input box rather than inside its border
-    renderContextChips(ImGui::GetContentRegionAvail().x);
+    renderContextChips(ImGui::GetContentRegionAvail().x - Theme::Spacing::M * 2.0f);
     renderInputArea();
 }
 
@@ -2156,6 +2188,7 @@ void AISidebarPanel::renderContextChips(float availWidth) {
     if (selectedContext_.empty()) {
         return;
     }
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::M); // in line with the input
     const auto& colors = Application::getInstance().getCurrentColors();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const float chipH = chipHeight();
@@ -2235,9 +2268,12 @@ void AISidebarPanel::renderInputArea() {
                         ImVec2(INPUT_CONTAINER_PAD_X, INPUT_CONTAINER_PAD_Y));
 
     ImVec2 inputRectMin{};
-    float inputWidth = 0.0f;
+    // inset like the transcript and the pickers, not edge to edge
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::M);
+    const float boxWidth = ImGui::GetContentRegionAvail().x - Theme::Spacing::M;
+    const ImVec2 boxMin = ImGui::GetCursorScreenPos();
 
-    if (ImGui::BeginChild("##ai_side_input", ImVec2(-1, containerHeight),
+    if (ImGui::BeginChild("##ai_side_input", ImVec2(boxWidth, containerHeight),
                           ImGuiChildFlags_Borders)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
@@ -2266,7 +2302,6 @@ void AISidebarPanel::renderInputArea() {
                 ImGuiInputTextFlags_CallbackCompletion,
             sidebarInputCallbackThunk, this);
         inputRectMin = ImGui::GetItemRectMin();
-        inputWidth = ImGui::GetItemRectSize().x;
 
         // InputTextMultiline has no hint variant, so draw the placeholder ourselves
         if (inputBuf_[0] == '\0') {
@@ -2322,5 +2357,5 @@ void AISidebarPanel::renderInputArea() {
     ImGui::PopStyleVar(3); // ChildRounding, ChildBorderSize, WindowPadding
     ImGui::PopStyleColor(2);
 
-    renderMentionPopupAt(inputRectMin.x, inputRectMin.y - Theme::Spacing::S, inputWidth);
+    renderMentionPopupAt(boxMin.x, boxMin.y - Theme::Spacing::S, boxWidth);
 }

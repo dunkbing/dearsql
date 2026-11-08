@@ -26,11 +26,22 @@ namespace dearsql {
         // --- Public API ---
         void SetText(const std::string& text);
         [[nodiscard]] std::string GetText() const;
+        // the highlight, brought up to date (tests)
+        const std::vector<ImU32>& GetColors() {
+            if (highlightDirty_) {
+                rehighlight();
+                highlightDirty_ = false;
+            }
+            return colors_;
+        }
         [[nodiscard]] bool HasSelection() const {
             return selectionActive_ && selectionAnchor_ != cursorIndex_;
         }
         [[nodiscard]] std::string GetSelectedText() const {
             return getSelectedText();
+        }
+        [[nodiscard]] int GetCursorIndex() const {
+            return cursorIndex_;
         }
         void SetPlaceholder(const std::string& text);
         void Render(const char* label, ImVec2 size, bool border = false);
@@ -81,6 +92,23 @@ namespace dearsql {
         void SetCompletionKeywords(const std::vector<std::string>& keywords);
         void SetCompletionFilter(CompletionFilter filter);
         void SetCompletionProvider(CompletionProvider provider);
+
+        // runnable statements: a play icon in the gutter on each range's first line;
+        // hovering outlines the range, clicking hands its byte offsets to onRun
+        using RangeProvider =
+            std::function<std::vector<std::pair<size_t, size_t>>(std::string_view content)>;
+        using RunCallback = std::function<void(size_t begin, size_t end)>;
+        void SetRunnableRanges(RangeProvider provider, RunCallback onRun);
+
+        // a wavy underline under the token at a byte offset, the message on hover; edits
+        // clear it (the offset would point at the wrong text)
+        void SetErrorMarker(size_t offset, std::string message);
+        void ClearErrorMarker() {
+            errorOffset_ = -1;
+        }
+        [[nodiscard]] int GetErrorOffset() const {
+            return errorOffset_; // -1: none
+        }
         [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
 
         // Theme
@@ -100,6 +128,9 @@ namespace dearsql {
             ImU32 currentLineNumber;
             ImU32 currentLineBackground;
             ImU32 lineNumberBackground;
+            ImU32 run = IM_COL32(166, 227, 161, 255);
+            ImU32 error = IM_COL32(243, 139, 168, 255);
+            bool operator==(const Palette&) const = default;
         };
 
         void SetPalette(const Palette& palette);
@@ -173,7 +204,7 @@ namespace dearsql {
         std::function<void()> submitCallback_;
 
         // --- Palette ---
-        Palette palette_;
+        Palette palette_{};
 
         // --- Undo/Redo ---
         struct Snapshot {
@@ -188,6 +219,17 @@ namespace dearsql {
         std::vector<CompletionItem> completionItems_;
         CompletionFilter completionFilter_;
         CompletionProvider completionProvider_;
+        RangeProvider rangeProvider_;
+        RunCallback onRun_;
+        std::vector<std::pair<size_t, size_t>> runRanges_;
+        bool runRangesDirty_ = true;
+        double runRangesEditTime_ = 0.0;
+        int hoveredRun_ = -1; // last frame's, so the click is not also a text click
+        ImVec2 textAreaMin_{}, textAreaMax_{};
+        void renderRunButtons(int startLine, int endLine);
+        int errorOffset_ = -1;
+        std::string errorMessage_;
+        void renderErrorMarker(ImDrawList* drawList);
         int autocompleteReplaceStart_ = -1; // provider range, -1 when unset
         int autocompleteReplaceEnd_ = -1;
         std::vector<CompletionItem> filteredCompletions_;
@@ -202,6 +244,7 @@ namespace dearsql {
         TSTree* tsTree_ = nullptr;
         TSQuery* tsQuery_ = nullptr;
         std::string tsPreviousContent_;
+        std::vector<ImU32> tsPreviousColors_; // colors_ as of tsPreviousContent_
         bool highlightDirty_ = true;
 
         // --- Content manipulation ---
@@ -284,7 +327,10 @@ namespace dearsql {
 
         // --- Helpers ---
         float getCharWidth(const char* start, const char* end) const;
-        float getCursorScreenX() const;
+        float getCursorScreenX() const {
+            return getScreenX(cursorIndex_);
+        }
+        float getScreenX(int pos) const; // on pos's line
     };
 
 } // namespace dearsql

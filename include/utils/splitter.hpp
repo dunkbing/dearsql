@@ -5,11 +5,12 @@
 
 namespace UIUtils {
 
-    // horizontal drag handle that controls a vertical split ratio
+    // invisible drag handle right above the lower pane: its top border is what you grab,
+    // lit while hovered or dragged
     // returns true if position changed
     inline bool Splitter(const char* id, float* position, float availableHeight, float minSize1,
                          float minSize2) {
-        constexpr float hoverThickness = 6.0f;
+        constexpr float hoverThickness = 4.0f;
 
         ImGui::InvisibleButton(id, ImVec2(-1, hoverThickness));
 
@@ -39,13 +40,13 @@ namespace UIUtils {
             }
         }
 
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 pos = ImGui::GetItemRectMin();
-        const ImVec2 size = ImGui::GetItemRectSize();
-        const float centerY = pos.y + size.y / 2.0f;
-        const ImU32 color = (hovered || held) ? ImGui::GetColorU32(ImGuiCol_SeparatorHovered)
-                                              : ImGui::GetColorU32(ImGuiCol_Separator);
-        drawList->AddLine(ImVec2(pos.x, centerY), ImVec2(pos.x + size.x, centerY), color, 2.0f);
+        if (hovered || held) {
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const ImVec2 max = ImGui::GetItemRectMax();
+            ImGui::GetWindowDrawList()->AddLine(
+                ImVec2(min.x, max.y - 1.0f), ImVec2(max.x, max.y - 1.0f),
+                ImGui::GetColorU32(ImGuiCol_SeparatorHovered), 2.0f);
+        }
 
         return changed;
     }

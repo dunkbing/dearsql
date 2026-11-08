@@ -1,7 +1,10 @@
 #include "ui/text_editor.hpp"
+#include "IconsFontAwesome6.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <format>
 
 namespace dearsql {
 
@@ -28,9 +31,11 @@ namespace dearsql {
           lastSnapshotContent_(std::move(other.lastSnapshotContent_)),
           completionItems_(std::move(other.completionItems_)),
           completionFilter_(std::move(other.completionFilter_)),
-          completionProvider_(std::move(other.completionProvider_)), language_(other.language_),
-          tsParser_(other.tsParser_), tsTree_(other.tsTree_), tsQuery_(other.tsQuery_),
-          tsPreviousContent_(std::move(other.tsPreviousContent_)),
+          completionProvider_(std::move(other.completionProvider_)),
+          rangeProvider_(std::move(other.rangeProvider_)), onRun_(std::move(other.onRun_)),
+          language_(other.language_), tsParser_(other.tsParser_), tsTree_(other.tsTree_),
+          tsQuery_(other.tsQuery_), tsPreviousContent_(std::move(other.tsPreviousContent_)),
+          tsPreviousColors_(std::move(other.tsPreviousColors_)),
           highlightDirty_(other.highlightDirty_) {
         other.tsParser_ = nullptr;
         other.tsTree_ = nullptr;
@@ -51,11 +56,15 @@ namespace dearsql {
             completionItems_ = std::move(other.completionItems_);
             completionFilter_ = std::move(other.completionFilter_);
             completionProvider_ = std::move(other.completionProvider_);
+            rangeProvider_ = std::move(other.rangeProvider_);
+            onRun_ = std::move(other.onRun_);
+            runRangesDirty_ = true;
             language_ = other.language_;
             tsParser_ = other.tsParser_;
             tsTree_ = other.tsTree_;
             tsQuery_ = other.tsQuery_;
             tsPreviousContent_ = std::move(other.tsPreviousContent_);
+            tsPreviousColors_ = std::move(other.tsPreviousColors_);
             highlightDirty_ = other.highlightDirty_;
             other.tsParser_ = nullptr;
             other.tsTree_ = nullptr;
@@ -136,6 +145,12 @@ namespace dearsql {
 
     void TextEditor::SetCompletionProvider(CompletionProvider provider) {
         completionProvider_ = std::move(provider);
+    }
+
+    void TextEditor::SetRunnableRanges(RangeProvider provider, RunCallback onRun) {
+        rangeProvider_ = std::move(provider);
+        onRun_ = std::move(onRun);
+        runRangesDirty_ = true;
     }
 
     const std::vector<std::string>& TextEditor::GetDefaultCompletionKeywords() {
@@ -298,7 +313,11 @@ namespace dearsql {
     }
 
     void TextEditor::SetPalette(const Palette& palette) {
+        // callers set it every frame to follow the theme: only a real change rehighlights
+        if (palette == palette_)
+            return;
         palette_ = palette;
+        tsPreviousColors_.clear(); // every color changes
         highlightDirty_ = true;
     }
 
@@ -374,11 +393,14 @@ namespace dearsql {
         p.type = toImU32(colors.yellow);
         p.operator_ = toImU32(colors.teal);
         p.cursor = toImU32(colors.text);
-        p.selection = toImU32Alpha(colors.surface2, 120);
+        p.selection =
+            toImU32Alpha(colors.blue, 90); // accent: a grey surface vanishes on the background
         p.lineNumber = toImU32(colors.overlay2);
         p.currentLineNumber = toImU32(colors.text);
         p.currentLineBackground = toImU32(colors.surface0);
         p.lineNumberBackground = toImU32(colors.base);
+        p.run = toImU32(colors.green);
+        p.error = toImU32(colors.red);
         return p;
     }
 
@@ -434,9 +456,28 @@ namespace dearsql {
             int maxLine = static_cast<int>(lineStarts_.size());
             char buf[16];
             snprintf(buf, sizeof(buf), "%d", readOnly_ ? maxLine : std::max(maxLine, 999));
-            lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 20.0f;
+            lineNumberWidth_ = ImGui::CalcTextSize(buf).x + 14.0f;
+            if (rangeProvider_) {
+                lineNumberWidth_ += ImGui::GetFontSize() + 6.0f; // the play icons
+            }
         } else {
             lineNumberWidth_ = 0.0f;
+        }
+
+        // every edit marks the highlight dirty: the statements may have moved too
+        if (rangeProvider_ && (highlightDirty_ || runRangesDirty_)) {
+            // big scripts (dumps): no icons while typing, one split after a pause, so a
+            // stale range is never clickable
+            const double now = ImGui::GetTime();
+            if (highlightDirty_)
+                runRangesEditTime_ = now;
+            if (content_.size() < 256 * 1024 || now - runRangesEditTime_ > 0.3) {
+                runRanges_ = rangeProvider_(content_);
+                runRangesDirty_ = false;
+            } else {
+                runRanges_.clear();
+                runRangesDirty_ = true;
+            }
         }
 
         // Rehighlight if needed
@@ -488,9 +529,9 @@ namespace dearsql {
         // --- Line numbers panel ---
         ImVec2 lineNumbersScreenPos = ImGui::GetCursorScreenPos();
         if (showLineNumbers_) {
-            ImGui::BeginChild("##line_nums", ImVec2(lineNumberWidth_, -1), false,
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-            ImGui::EndChild();
+            // space only: numbers and play icons are drawn after the text area, which
+            // knows the scroll. not a child window, which would sit over the icons
+            ImGui::Dummy(ImVec2(lineNumberWidth_, ImGui::GetContentRegionAvail().y));
             ImGui::SameLine(0, 0);
         }
 
@@ -529,9 +570,12 @@ namespace dearsql {
 
         scrollX_ = ImGui::GetScrollX();
         scrollY_ = ImGui::GetScrollY();
+        textAreaMin_ = ImGui::GetWindowPos();
+        textAreaMax_ = ImVec2(textAreaMin_.x + ImGui::GetWindowWidth(),
+                              textAreaMin_.y + ImGui::GetWindowHeight());
 
         textOrigin_ = ImGui::GetCursorScreenPos();
-        textOrigin_.x += 8.0f; // left margin
+        textOrigin_.x += 2.0f; // left margin: the current-line highlight starts at the text
         textOrigin_.y += 2.0f; // top margin
 
         // Compute visible line range
@@ -548,6 +592,17 @@ namespace dearsql {
         renderFindHighlights(drawList, startLine, endLine);
         renderSelection(drawList, startLine, endLine);
         renderText(drawList, startLine, endLine);
+        // outline the statement whose play icon is hovered (last frame: the icons are
+        // drawn after this child), on top of the current-line highlight
+        if (hoveredRun_ >= 0 && hoveredRun_ < static_cast<int>(runRanges_.size())) {
+            const auto [begin, end] = runRanges_[hoveredRun_];
+            const float top = textOrigin_.y + getLineFromPos(static_cast<int>(begin)) * lineHeight_;
+            const float bottom =
+                textOrigin_.y + (getLineFromPos(static_cast<int>(end)) + 1) * lineHeight_;
+            drawList->AddRect(ImVec2(textAreaMin_.x + 1.0f, top),
+                              ImVec2(textAreaMax_.x - 1.0f, bottom), palette_.run, 3.0f, 0, 1.5f);
+        }
+        renderErrorMarker(drawList);
         if (content_.empty() && !placeholder_.empty()) {
             const ImU32 placeholderColor = (palette_.text & 0x00FFFFFF) | 0x60000000;
             const float x = textOrigin_.x;
@@ -579,6 +634,7 @@ namespace dearsql {
         // Render line numbers (after text area so we have scroll position)
         if (showLineNumbers_) {
             renderLineNumbers(ImGui::GetWindowDrawList(), startLine, endLine);
+            renderRunButtons(startLine, endLine);
         }
 
         // Render autocomplete popup
@@ -606,11 +662,101 @@ namespace dearsql {
             snprintf(buf, sizeof(buf), "%d", i + 1);
 
             float textW = ImGui::CalcTextSize(buf).x;
-            float x = textOrigin_.x - 18.0f - textW;
+            float x = textOrigin_.x - 10.0f - textW;
 
             ImU32 color =
                 (i == currentLine && !readOnly_) ? palette_.currentLineNumber : palette_.lineNumber;
             drawList->AddText(ImVec2(x, y), color, buf);
+        }
+    }
+
+    void TextEditor::SetErrorMarker(size_t offset, std::string message) {
+        errorOffset_ = static_cast<int>(std::min(offset, content_.size()));
+        errorMessage_ = std::move(message);
+    }
+
+    void TextEditor::renderErrorMarker(ImDrawList* drawList) {
+        if (errorOffset_ < 0 || errorOffset_ > static_cast<int>(content_.size())) {
+            return;
+        }
+        auto word = [&](int i) {
+            const auto c = static_cast<unsigned char>(content_[i]);
+            return std::isalnum(c) || c == '_' || c >= 0x80;
+        };
+        auto blank = [&](int i) { return std::isspace(static_cast<unsigned char>(content_[i])); };
+        const int size = static_cast<int>(content_.size());
+        int b = errorOffset_;
+        // at the end or on a gap ('unexpected end'): mark the token before it
+        while (b > 0 && (b == size || blank(b))) {
+            --b;
+        }
+        if (b >= size || blank(b)) {
+            return;
+        }
+        int e = b + 1;
+        if (word(b)) {
+            while (b > 0 && word(b - 1)) {
+                --b;
+            }
+            while (e < size && word(e)) {
+                ++e;
+            }
+        }
+        const int line = getLineFromPos(b);
+        const float x0 = getScreenX(b);
+        const float x1 = std::max(getScreenX(e), x0 + 6.0f);
+        const float top = textOrigin_.y + line * lineHeight_;
+        const float y = top + lineHeight_; // just under the glyphs
+        // a zigzag, as editors draw it
+        constexpr float step = 2.5f;
+        ImVec2 points[256];
+        int n = 0;
+        for (float x = x0; x < x1 && n < 255; x += step, ++n) {
+            points[n] = ImVec2(x, y + ((n & 1) ? -1.2f : 0.8f));
+        }
+        points[n++] = ImVec2(x1, y);
+        drawList->AddPolyline(points, n, palette_.error, ImDrawFlags_None, 1.2f);
+        if (ImGui::IsWindowHovered() &&
+            ImGui::IsMouseHoveringRect(ImVec2(x0, top), ImVec2(x1, top + lineHeight_))) {
+            ImGui::SetTooltip("%s", errorMessage_.c_str());
+        }
+    }
+
+    void TextEditor::renderRunButtons(int startLine, int endLine) {
+        hoveredRun_ = -1;
+        if (!rangeProvider_) {
+            return;
+        }
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const float iconX = textAreaMin_.x - lineNumberWidth_ + 6.0f; // the gutter's left edge
+        const float iconW = ImGui::GetFontSize();
+        for (size_t r = 0; r < runRanges_.size(); ++r) {
+            const auto [begin, end] = runRanges_[r];
+            const int line = getLineFromPos(static_cast<int>(begin));
+            if (line < startLine || line > endLine) {
+                continue;
+            }
+            const float y = textOrigin_.y + line * lineHeight_;
+            const ImVec2 hitMin(iconX - 3.0f, y);
+            const ImVec2 hitMax(iconX + iconW + 3.0f, y + lineHeight_);
+            // a real item, so tests can click it by id (##run_<n>)
+            const ImVec2 cursor = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(hitMin);
+            const bool clicked = ImGui::InvisibleButton(std::format("##run_{}", r).c_str(),
+                                                        ImVec2(hitMax.x - hitMin.x, lineHeight_));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::SetCursorScreenPos(cursor);
+            // dimmed until hovered, so a long script is not a column of bright icons
+            const ImU32 color = hovered ? palette_.run : (palette_.run & 0x00FFFFFF) | 0x99000000;
+            drawList->AddText(ImVec2(iconX, y), color, ICON_FA_PLAY);
+            if (!hovered) {
+                continue;
+            }
+            hoveredRun_ = static_cast<int>(r);
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            if (clicked && onRun_) {
+                onRun_(begin, end);
+            }
         }
     }
 
@@ -753,13 +899,13 @@ namespace dearsql {
 
     // --- Cursor helpers ---
 
-    float TextEditor::getCursorScreenX() const {
-        int line = getLineFromPos(cursorIndex_);
+    float TextEditor::getScreenX(int pos) const {
+        int line = getLineFromPos(pos);
         int lineStart = lineStarts_[line];
         float spaceWidth = ImGui::CalcTextSize(" ").x;
         float x = textOrigin_.x;
 
-        for (int i = lineStart; i < cursorIndex_ && i < static_cast<int>(content_.size()); ++i) {
+        for (int i = lineStart; i < pos && i < static_cast<int>(content_.size()); ++i) {
             if (content_[i] == '\t') {
                 int col = static_cast<int>((x - textOrigin_.x) / spaceWidth);
                 int nextTab = ((col / tabSize_) + 1) * tabSize_;

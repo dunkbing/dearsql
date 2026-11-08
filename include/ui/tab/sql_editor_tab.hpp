@@ -3,12 +3,19 @@
 #include "app_state.hpp"
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
+#include "ui/json_rows_view.hpp"
+#include "ui/result_chart.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
+#include <array>
 #include <chrono>
 #include <dearsql/completion.hpp>
+#include <dearsql/explain.hpp>
+#include <dearsql/syntax.hpp>
 #include <functional>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 // Forward declarations
@@ -47,6 +54,15 @@ public:
     [[nodiscard]] IDatabaseNode* getDatabaseNode() const {
         return node_;
     }
+    [[nodiscard]] const std::optional<dearsql::Plan>& getPlan() const {
+        return plan_;
+    }
+    [[nodiscard]] const QueryResult& getQueryResult() const {
+        return queryResult;
+    }
+    [[nodiscard]] const dearsql::TextEditor& getEditor() const {
+        return sqlEditor;
+    }
 
     // Script file association
     void loadFromScript(const SqlScript& script);
@@ -80,12 +96,52 @@ private:
     // Async query execution state
     AsyncOperation<QueryResult> queryExecutionOp_;
 
+    // query plan: the explain in flight, then its parsed result (shown instead of rows)
+    struct PendingExplain {
+        DatabaseType type;
+        bool analyze;
+    };
+    std::optional<PendingExplain> pendingExplain_;
+    std::optional<dearsql::Plan> plan_;
+    mutable bool planRaw_ = false;
+    mutable int resultView_ = 0; // 0 data, 1 json, 2 chart
+    mutable JsonRowsView jsonView_;
+    mutable ResultChart chart_;
+
+public:
+    [[nodiscard]] ResultChart& chart() const {
+        return chart_;
+    }
+    [[nodiscard]] const JsonRowsView& jsonView() const {
+        return jsonView_;
+    }
+
+private:
+    bool explainAnalyze_ = false;
+    void explainStatement();
+    void showError(std::string message);
+
     // Splitter state for resizing between editor and results
     float splitterPosition = 0.4f;
     float totalContentHeight = 0.0f;
 
     // Helper methods for async execution
-    void startQueryExecutionAsync(const std::string& query);
+    // asks for :name values first when the text has any; runQueryNow takes it from there
+    void startQueryExecutionAsync(const std::string& query,
+                                  std::optional<PendingExplain> explain = std::nullopt);
+    void runQueryNow(const std::string& query, std::optional<PendingExplain> explain);
+
+    // query parameters: the query waiting on the prompt, and the values typed so far (kept
+    // per tab, so a re-run starts from them)
+    struct ParamPrompt {
+        std::string query;
+        std::vector<std::string> names;
+        std::optional<PendingExplain> explain;
+        int focus = 0; // the field to focus next frame, -1 none
+    };
+    std::optional<ParamPrompt> paramPrompt_;
+    std::map<std::string, std::array<char, 512>> paramValues_;
+    void renderParamPrompt();
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
 
@@ -101,6 +157,7 @@ private:
                              const std::vector<std::string>& dbNames,
                              const std::function<void(const std::string&)>& onSelect);
     void renderToolbar();
+    float toolbarWidth_ = 0.0f;
     void renderQueryResults() const;
     void renderServerMessages() const;
     void renderSingleResult(const StatementResult& r, size_t index) const;
@@ -115,6 +172,7 @@ private:
     void formatSQL();
     void scheduleSyntaxCheck();
     void updateSyntaxDiagnostics();
+    void showSyntaxError(const std::optional<dearsql::SyntaxError>& error);
 
     // Autocomplete: dearsql::complete over a catalog snapshot of the loaded nodes
     void updateCompletionCatalog();
@@ -137,6 +195,8 @@ private:
     SyntaxDiagnostic syntaxDiagnostic_;
     float syntaxCheckDelay_ = 0.0f;
     bool syntaxCheckPending_ = false;
+    // sql server and cockroachdb check on the server: the text sent, and what came back
+    AsyncOperation<std::pair<std::string, std::optional<dearsql::SyntaxError>>> serverSyntaxOp_;
 
     // Deferred database switch (PostgreSQL: waiting for schemas to load)
     std::string pendingDatabaseSwitch_;

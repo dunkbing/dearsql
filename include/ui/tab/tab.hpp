@@ -51,6 +51,11 @@ public:
     [[nodiscard]] virtual bool hasUnsavedChanges() const {
         return false;
     }
+    // a tab with its own bottom bar (pagination, status, buttons) gets the full height; the
+    // rest stop Theme::BottomBarHeight() short, where the fps counter sits
+    [[nodiscard]] virtual bool hasBottomBar() const {
+        return false;
+    }
 
     // Virtual method for rendering tab content
     virtual void render() = 0;

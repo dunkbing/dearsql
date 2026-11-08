@@ -134,6 +134,7 @@ bool MacOSMetalBackend::initializeImGui() {
 }
 
 void MacOSMetalBackend::beginFrame(ImVec4 clearColor) {
+    ((CAMetalLayer*)metalLayer_).displaySyncEnabled = vsync;
     id<MTLTexture> texture = nil;
     if (capture.frames > 0) {
         int w = 0, h = 0;

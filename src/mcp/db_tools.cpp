@@ -1,10 +1,16 @@
 #include "mcp/db_tools.hpp"
 
+#include "database/s3_client.hpp"
+
 #include "mcp/fuzzy.hpp"
 #include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <cstring>
+#include <dearsql/completion.hpp>
+#include <dearsql/explain.hpp>
+#include <dearsql/findings.hpp>
 #include <format>
+#include <numeric>
 #include <regex>
 #include <set>
 
@@ -239,13 +245,20 @@ namespace mcp {
                "or listing everything.\n"
                "- describe_table: columns, types, keys, indexes and foreign keys of one table. "
                "Call it before writing a query that joins or filters on that table.\n"
+               "- explain_query: the plan of a statement with warnings (full scans, repeated "
+               "scans, "
+               "big sorts). Use it when a query is slow or before suggesting an index.\n"
+               "- review_indexes: foreign keys with no index and indexes another covers, from "
+               "the schema alone. explain_finding <code> explains any [code] in a result.\n"
                "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
                "SQLite), or a read-only command on "
                "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
                "- list_tables: the whole map (tables and views with column counts and sizes), "
                "paged. Use when search_schema is not enough.\n"
                "- list_connections: the user's saved connections. Naming one in any tool opens "
-               "it; connect opens one explicitly.\n\n"
+               "it; connect opens one explicitly.\n"
+               "- list_objects / read_object: S3 object storage connections (type s3): "
+               "buckets, folders and files, and the start of a file as text.\n\n"
                "## Rules\n"
                "1. Never guess table or column names: search_schema, then describe_table.\n"
                "2. Put LIMIT (TOP on SQL Server) on exploratory queries; aggregate in SQL "
@@ -257,7 +270,7 @@ namespace mcp {
                "the next page instead of re-running with OFFSET.\n";
     }
 
-    json Server::tools(bool allowWrites, bool canSaveConnections) {
+    json Server::tools(bool allowWrites, bool canSaveConnections, bool s3) {
         json maxResults = {{"type", "integer"}, {"description", "Max results (default 20)."}};
         json cursor = {{"type", "string"},
                        {"description", "Cursor from a previous result, for the next page."}};
@@ -289,6 +302,34 @@ namespace mcp {
                                     "at 30 KB of text, and at most 1000 rows are fetched."}}},
                                  {"cursor", cursor}}),
                      {"sql"}),
+             toolDef("explain_query",
+                     "The query plan of one statement as an indented tree (rows, cost, scan and "
+                     "join conditions), plus warnings from fixed rules: full scans a filter mostly "
+                     "throws away, full scans repeated per outer row, big or spilled sorts, "
+                     "row estimates off by 10x. Plans only, nothing runs unless analyze is set. "
+                     "PostgreSQL, MySQL 8 and SQLite. Use it before suggesting an index.",
+                     withTarget({{"sql", {{"type", "string"}}},
+                                 {"analyze",
+                                  {{"type", "boolean"},
+                                   {"description",
+                                    "Run the statement for actual rows and times (EXPLAIN "
+                                    "ANALYZE). Read-only statements only; it takes as long as "
+                                    "the query."}}}}),
+                     {"sql"}),
+             toolDef(
+                 "review_indexes",
+                 "Index checks from the schema alone: foreign keys with no index, and indexes "
+                 "another index already covers. Each finding has a code (explain_finding) and "
+                 "a statement to consider. Any SQL database.",
+                 withTarget({{"table",
+                              {{"type", "string"},
+                               {"description", "One table; default every table (up to 200)."}}}})),
+             toolDef("explain_finding",
+                     "What a finding code from explain_query or review_indexes means, how to "
+                     "confirm it, the usual fix and when to leave it. Quote it to the user rather "
+                     "than improvising.",
+                     {{"code", {{"type", "string"}, {"description", "e.g. unindexed-fk"}}}},
+                     {"code"}),
              toolDef("list_tables",
                      "Every table and view with column count and size, paged. Prefer "
                      "search_schema when you know roughly what you want.",
@@ -301,6 +342,68 @@ namespace mcp {
                      "Open one of the user's saved connections by name, or a connection URL or "
                      "database file path (the `dearsql connect` command also saves it).",
                      {{"name", {{"type", "string"}}}}, {"name"})});
+        const json s3conn = {{"type", "string"},
+                             {"description", "S3 connection name. Default: the selected or only "
+                                             "S3 connection."}};
+        const json bucket = {{"type", "string"}};
+        const json key = {{"type", "string"}, {"description", "Object key; a folder ends in '/'."}};
+        if (s3) { // only for hosts that have S3 connections
+            tools.push_back(
+                toolDef("list_objects",
+                        "S3 object storage: buckets (no bucket given), or the folders and "
+                        "files under a prefix of one bucket, one level, paged.",
+                        {{"connection", s3conn},
+                         {"bucket", bucket},
+                         {"prefix", {{"type", "string"}, {"description", "e.g. \"logs/2026/\""}}},
+                         {"cursor", cursor}}));
+            tools.push_back(
+                toolDef("read_object",
+                        "S3 object storage: the start of a file as text (CSV, JSON, logs...).",
+                        {{"connection", s3conn},
+                         {"bucket", bucket},
+                         {"key", key},
+                         {"maxBytes",
+                          {{"type", "integer"}, {"description", "Default 16384, max 1048576."}}}},
+                        {"bucket", "key"}));
+            if (allowWrites) {
+                auto write = [&](const char* name, const char* description, json props,
+                                 std::vector<std::string> required, bool destructive) {
+                    auto def = toolDef(name, description, std::move(props), std::move(required));
+                    def["annotations"]["readOnlyHint"] = false;
+                    def["annotations"]["destructiveHint"] = destructive;
+                    tools.push_back(std::move(def));
+                };
+                write(
+                    "copy_object",
+                    "S3 object storage: copy (or move) a file, or a folder with everything in it, "
+                    "within one connection. Overwrites the target.",
+                    {{"connection", s3conn},
+                     {"bucket", bucket},
+                     {"key", key},
+                     {"toBucket",
+                      {{"type", "string"}, {"description", "Default: the same bucket."}}},
+                     {"toKey", key},
+                     {"move", {{"type", "boolean"}, {"description", "Delete the source after."}}}},
+                    {"bucket", "key", "toKey"}, true);
+                write("delete_object",
+                      "S3 object storage: delete a file, or a folder (key ending '/') with "
+                      "everything in it.",
+                      {{"connection", s3conn}, {"bucket", bucket}, {"key", key}}, {"bucket", "key"},
+                      true);
+                write("upload_object", "S3 object storage: upload a local file.",
+                      {{"connection", s3conn},
+                       {"path", {{"type", "string"}, {"description", "Local file."}}},
+                       {"bucket", bucket},
+                       {"key", key}},
+                      {"path", "bucket", "key"}, true);
+                write("download_object", "S3 object storage: save a file to a local path.",
+                      {{"connection", s3conn},
+                       {"bucket", bucket},
+                       {"key", key},
+                       {"path", {{"type", "string"}, {"description", "Local file to write."}}}},
+                      {"bucket", "key", "path"}, true); // may overwrite a local file
+            }
+        }
         if (allowWrites) {
             auto def =
                 toolDef("execute_sql",
@@ -329,6 +432,39 @@ namespace mcp {
         return tools;
     }
 
+    const std::vector<Server::Prompt>& Server::prompts() {
+        static const std::vector<Prompt> all = {
+            {"diagnose-slow-query", "Find out why a query is slow and what would fix it",
+             json::array(
+                 {{{"name", "sql"}, {"description", "The slow statement"}, {"required", true}},
+                  {{"name", "connection"},
+                   {"description", "Saved connection; default: the selected one"}}}),
+             "Find out why this query is slow on connection {connection}, without changing "
+             "anything:\n\n{sql}\n\n"
+             "1. explain_query it. If it is read-only and the user is fine waiting for it, "
+             "explain_query again with analyze for real row counts and times.\n"
+             "2. For each [code] in the warnings, explain_finding the code and do what its "
+             "\"How to confirm\" says (describe_table, count rows with run_query).\n"
+             "3. review_indexes on the tables involved.\n"
+             "4. Report: the step that costs the most, the evidence, and the smallest fix "
+             "(usually one CREATE INDEX or a rewrite), with the exact statement. Say what you "
+             "could not confirm. Do not run the fix."},
+            {"review-schema", "Check a database's indexes and foreign keys",
+             json::array({{{"name", "connection"},
+                           {"description", "Saved connection; default: the selected one"}},
+                          {{"name", "database"}, {"description", "Database or db.schema"}}}),
+             "Review the indexes of database {database} on connection {connection}, without "
+             "changing anything.\n\n"
+             "1. review_indexes.\n"
+             "2. explain_finding each code that comes back, and check the findings worth "
+             "acting on (table sizes from list_tables, how the columns are used).\n"
+             "3. Report a short prioritized list: what to add or drop, why, the statement, and "
+             "what to check first. Group the rest as low priority. Do not run anything that "
+             "changes the schema."},
+        };
+        return all;
+    }
+
     json Server::handle(const json& req) {
         if (!req.contains("id"))
             return nullptr; // notification
@@ -339,7 +475,7 @@ namespace mcp {
         if (method == "initialize") {
             res["result"] = {
                 {"protocolVersion", params.value("protocolVersion", "2025-03-26")},
-                {"capabilities", {{"tools", json::object()}}},
+                {"capabilities", {{"tools", json::object()}, {"prompts", json::object()}}},
                 {"serverInfo", {{"name", "dearsql"}, {"version", "1.0"}}},
                 {"instructions", std::string(instructions()) +
                                      (allowWrites_ ? "\nWrites are enabled: execute_sql runs "
@@ -349,7 +485,40 @@ namespace mcp {
         } else if (method == "ping") {
             res["result"] = json::object();
         } else if (method == "tools/list") {
-            res["result"] = {{"tools", tools(allowWrites_, host_.canSaveConnections())}};
+            res["result"] = {
+                {"tools", tools(allowWrites_, host_.canSaveConnections(),
+                                std::ranges::any_of(host_.connections(), [](const auto& c) {
+                                    return c.type == "s3";
+                                }))}};
+        } else if (method == "prompts/list") {
+            json list = json::array();
+            for (const auto& p : prompts())
+                list.push_back(
+                    {{"name", p.name}, {"description", p.description}, {"arguments", p.arguments}});
+            res["result"] = {{"prompts", list}};
+        } else if (method == "prompts/get") {
+            const std::string name = params.value("name", "");
+            const json args = params.value("arguments", json::object());
+            const auto& all = prompts();
+            const auto it = std::ranges::find(all, name, &Prompt::name);
+            if (it == all.end()) {
+                res["error"] = {{"code", -32602}, {"message", "Unknown prompt: " + name}};
+            } else {
+                // {name} in the text becomes the argument
+                std::string text = it->text;
+                for (const auto& a : it->arguments) {
+                    const std::string key = a["name"];
+                    const std::string value = str(args, {key.c_str()});
+                    const std::string with = value.empty() ? "(not given)" : value;
+                    for (size_t at = 0; (at = text.find("{" + key + "}", at)) != std::string::npos;
+                         at += with.size())
+                        text.replace(at, key.size() + 2, with);
+                }
+                res["result"] = {
+                    {"description", it->description},
+                    {"messages", json::array({{{"role", "user"},
+                                               {"content", {{"type", "text"}, {"text", text}}}}})}};
+            }
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -408,6 +577,16 @@ namespace mcp {
                 return textResult(runQuery(args, true));
             if (name == "run_query")
                 return textResult(runQuery(args));
+            if (name == "explain_query")
+                return textResult(explainQuery(args));
+            if (name == "review_indexes")
+                return textResult(reviewIndexes(args));
+            if (name == "explain_finding")
+                return textResult(explainFinding(args));
+            if (name == "list_objects" || name == "read_object" ||
+                (allowWrites_ && (name == "copy_object" || name == "delete_object" ||
+                                  name == "upload_object" || name == "download_object")))
+                return textResult(s3Tool(name, args));
             return textResult("Unknown tool: " + name, true);
         } catch (const ToolError& e) {
             return textResult(e.what(), true);
@@ -428,7 +607,7 @@ namespace mcp {
         if (conn.empty()) {
             std::vector<std::string> open;
             for (const auto& c : conns) {
-                if (c.open)
+                if (c.open && c.type != "s3")
                     open.push_back(c.name);
             }
             if (open.size() == 1) {
@@ -1084,6 +1263,303 @@ namespace mcp {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }
         return out;
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::s3Tool(const std::string& name, const json& args) {
+        // the named S3 connection, else the selected one, else the only one
+        std::vector<std::string> s3;
+        for (const auto& c : host_.connections()) {
+            if (c.type == "s3")
+                s3.push_back(c.name);
+        }
+        std::string conn = str(args, {"connection", "conn"});
+        if (!conn.empty()) {
+            conn = findConnection(conn);
+        } else if (const auto f = host_.focus().first; std::ranges::find(s3, f) != s3.end()) {
+            conn = f;
+        } else if (s3.size() == 1) {
+            conn = s3[0];
+        } else {
+            throw ToolError(s3.empty() ? "No S3 connections are saved in DearSQL."
+                                       : "Pass connection; S3 connections: " +
+                                             std::accumulate(std::next(s3.begin()), s3.end(), s3[0],
+                                                             [](std::string a, const auto& b) {
+                                                                 return a + ", " + b;
+                                                             }));
+        }
+        auto client = host_.s3(conn);
+        if (!client && std::ranges::find(s3, conn) != s3.end()) {
+            // a saved S3 connection that is not open yet
+            if (auto err = host_.connect(conn); !err.empty())
+                throw ToolError("Could not open " + conn + ": " + err);
+            client = host_.s3(conn);
+        }
+        if (!client)
+            throw ToolError("'" + conn + "' is not an S3 connection. Call list_connections.");
+
+        const std::string bucket = str(args, {"bucket"});
+        const std::string key = str(args, {"key", "object", "path_in_bucket"});
+        auto need = [](const std::string& v, const char* what) {
+            if (v.empty())
+                throw ToolError(std::string("Missing '") + what + "'.");
+        };
+
+        if (name == "list_objects") {
+            std::string out;
+            if (bucket.empty()) {
+                for (const auto& b : client->listBuckets())
+                    out += std::format("{}  {}\n", b.name, b.created);
+                return out.empty() ? "No buckets." : out;
+            }
+            const std::string prefix = str(args, {"prefix", "folder", "path"});
+            const auto page = client->listObjects(bucket, prefix, str(args, {"cursor"}));
+            for (const auto& p : page.prefixes)
+                out += p + "\n";
+            for (const auto& o : page.objects)
+                out += std::format("{}  {} B  {}\n", o.key, o.size, o.lastModified);
+            if (out.empty())
+                out = "Nothing under '" + prefix + "'.\n";
+            if (!page.nextToken.empty())
+                out += "cursor: " + page.nextToken + "\n";
+            return out;
+        }
+        need(bucket, "bucket");
+        need(key, "key");
+        if (name == "read_object") {
+            const auto max =
+                static_cast<size_t>(num(args, {"maxBytes", "max_bytes"}, 16384, 1, 1 << 20));
+            const std::string data = client->readHead(bucket, key, max);
+            if (data.find('\0') != std::string::npos)
+                return std::format("Binary file; first {} bytes not shown.", data.size());
+            return data.size() == max ? data + std::format("\n[stopped at {} bytes]", max) : data;
+        }
+        // writes (to the bucket, or a local file for download): the user sees them first
+        std::string what;
+        const std::string toBucket = str(args, {"toBucket", "to_bucket"}).empty()
+                                         ? bucket
+                                         : str(args, {"toBucket", "to_bucket"});
+        const std::string toKey = str(args, {"toKey", "to_key", "to"});
+        const auto mv = args.find("move");
+        const bool move =
+            mv != args.end() && (mv->is_boolean() ? mv->get<bool>() : mv->dump() == "\"true\"");
+        const std::string path = str(args, {"path", "file", "to"});
+        if (name == "copy_object") {
+            need(toKey, "toKey");
+            if (key.ends_with('/') != toKey.ends_with('/'))
+                throw ToolError("key and toKey must both be folders (ending '/') or both files.");
+            // a move deletes the source after copying: never onto or inside itself
+            if (move && toBucket == bucket &&
+                (toKey == key || (key.ends_with('/') && toKey.starts_with(key))))
+                throw ToolError("Can't move a folder or file into itself.");
+            what = std::format("{} s3://{}/{} to s3://{}/{}", move ? "move" : "copy", bucket, key,
+                               toBucket, toKey);
+        } else if (name == "download_object") {
+            need(path, "path");
+            what = std::format("download s3://{}/{} to {}", bucket, key, path);
+        } else if (name == "delete_object") {
+            what = std::format("delete s3://{}/{}{}", bucket, key,
+                               key.ends_with('/') ? " and everything in it" : "");
+        } else {
+            need(path, "path");
+            what = std::format("upload {} to s3://{}/{}", path, bucket, key);
+        }
+        if (auto why = host_.approveWrite(conn, what); !why.empty())
+            throw ToolError(why);
+
+        if (name == "copy_object") {
+            int n = 1;
+            if (key.ends_with('/'))
+                n = client->copyPrefix(bucket, key, toBucket, toKey);
+            else
+                client->copyObject(bucket, key, toBucket, toKey);
+            if (move) {
+                if (key.ends_with('/'))
+                    client->deletePrefix(bucket, key);
+                else
+                    client->deleteObject(bucket, key);
+            }
+            return std::format("{} {} object{}.", move ? "Moved" : "Copied", n, n == 1 ? "" : "s");
+        }
+        if (name == "delete_object") {
+            if (!key.ends_with('/')) {
+                client->deleteObject(bucket, key);
+                return "Deleted " + key + ".";
+            }
+            const int n = client->deletePrefix(bucket, key);
+            return std::format("Deleted {} object{}.", n, n == 1 ? "" : "s");
+        }
+        if (name == "download_object") {
+            client->download(bucket, key, path);
+            return "Saved " + path;
+        }
+        client->upload(bucket, key, path);
+        return "Uploaded " + key + ".";
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::explainQuery(const json& args) {
+        const std::string sql = str(args, {"sql", "query", "statement"});
+        if (sql.empty())
+            throw ToolError("Missing 'sql'.");
+        const auto a = args.find("analyze");
+        const bool analyze =
+            a != args.end() && (a->is_boolean() ? a->get<bool>() : a->dump() == "\"true\"");
+        auto target = resolve(args);
+        const auto type = target.db->type();
+        // EXPLAIN only covers the first statement; anything after it would just run, so
+        // only that statement goes to the server. mysql runs /*! */ comments: refused
+        const auto ranges = dearsql::statementRanges(sql, type);
+        if (ranges.size() != 1 || sql.find("/*!") != std::string::npos)
+            throw ToolError("Pass one statement.");
+        const std::string statement =
+            sql.substr(ranges[0].first, ranges[0].second - ranges[0].first);
+        if (analyze && !SqlGuard::isReadOnly(statement))
+            throw ToolError("analyze runs the statement, so only for read-only ones. Leave it "
+                            "off to see the plan of a change.");
+        if (analyze && !dearsql::supportsExplainAnalyze(type))
+            throw ToolError("This database has no EXPLAIN ANALYZE; leave analyze off.");
+        const auto explain = dearsql::explainSql(type, statement, analyze);
+        if (!explain)
+            throw ToolError("Query plans are supported on PostgreSQL, MySQL 8 and SQLite.");
+        const auto result = target.db->execute(*explain, 0);
+        if (!result.success())
+            throw ToolError("Error: " + result.errorMessage());
+        const auto plan = result.statements.empty()
+                              ? std::nullopt
+                              : dearsql::parsePlan(type, result.statements.back(), analyze);
+        if (!plan)
+            throw ToolError("Could not read the plan (MySQL needs 8.0.16+).");
+
+        const auto warnings = dearsql::reviewPlan(*plan);
+        auto num = [](double v) {
+            return v == static_cast<double>(static_cast<long long>(v))
+                       ? std::format("{}", static_cast<long long>(v))
+                       : std::format("{:.2f}", v);
+        };
+        std::string out;
+        int lines = 0;
+        auto walk = [&](auto&& self, const dearsql::PlanNode& n, int depth) -> void {
+            if (++lines > 300) {
+                if (lines == 301)
+                    out += "(plan cut at 300 nodes)\n";
+                return;
+            }
+            const bool flagged =
+                std::ranges::any_of(warnings, [&](const auto& w) { return w.node == &n; });
+            out += std::string(static_cast<size_t>(depth) * 2, ' ') + (flagged ? "! " : "- ") +
+                   n.operation;
+            if (!n.detail.empty())
+                out += " " + n.detail;
+            if (n.estimatedRows)
+                out += "  rows~" + num(*n.estimatedRows);
+            if (n.actualRows)
+                out += " actual " + num(*n.actualRows);
+            if (n.loops && *n.loops != 1)
+                out += " x" + num(*n.loops) + " loops";
+            if (n.cost)
+                out += "  cost " + num(*n.cost);
+            if (n.selfTimeMs)
+                out += std::format("  {:.3f} ms", *n.selfTimeMs);
+            // the conditions an agent needs to pick an index; the rest stays out
+            for (const auto& [k, v] : n.properties) {
+                if (k.find("Cond") != std::string::npos || k.find("Filter") != std::string::npos ||
+                    k == "Sort Key" || k == "Group Key")
+                    out += "  " + k + ": " + v;
+            }
+            out += "\n";
+            for (const auto& c : n.children)
+                self(self, c, depth + 1);
+        };
+        walk(walk, plan->root, 0);
+        if (plan->executionTimeMs)
+            out += std::format("Execution {:.3f} ms\n", *plan->executionTimeMs);
+        if (warnings.empty()) {
+            out += "No warnings from the plan rules.";
+        } else {
+            out += "\nWarnings (rule-based hints; ! marks the node):\n";
+            for (const auto& w : warnings)
+                out += "- [" + w.code + "] " + w.message + "\n";
+            out += "explain_finding <code> says how to confirm each one.";
+        }
+        return out;
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::reviewIndexes(const json& args) {
+        auto target = resolve(args);
+        const std::string only = str(args, {"table", "name"});
+        std::vector<const dearsql::Table*> picked;
+        for (const auto& t : catalog(target).tables) {
+            if (only.empty() || lower(t.name) == lower(only) || lower(qualified(t)) == lower(only))
+                picked.push_back(&t);
+        }
+        if (!only.empty() && picked.empty())
+            throw ToolError("No table '" + only + "' in " + where(target) + ". Try search_schema.");
+        constexpr size_t MAX_TABLES = 200;
+        const bool cut = picked.size() > MAX_TABLES;
+        if (cut)
+            picked.resize(MAX_TABLES);
+        // indexes only come from describeTable: one call per table, on its schema
+        std::vector<dearsql::Table> tables;
+        std::string failed;
+        for (const auto* t : picked) {
+            const std::string n = qualified(*t);
+            try {
+                auto handle = target.db;
+                if (!t->schema.empty() && hasSchemas(handle->type()))
+                    if (auto s = handle->schema(t->schema))
+                        handle = s;
+                auto full = handle->describeTable(t->name);
+                if (full.schema.empty())
+                    full.schema = t->schema;
+                tables.push_back(std::move(full));
+            } catch (const std::exception& e) {
+                if (!only.empty())
+                    throw ToolError(std::string("Error: ") + e.what());
+                failed += (failed.empty() ? "" : ", ") + n;
+            }
+        }
+        const auto findings = dearsql::reviewIndexes(tables);
+        std::string out;
+        for (const auto& f : findings) {
+            out += "- [" + f.code + "] " + f.message + "\n";
+            if (!f.suggestion.empty())
+                out += "  consider: " + f.suggestion + "\n";
+        }
+        if (findings.empty())
+            out = std::format("No index findings in {} table{}.\n", tables.size(),
+                              tables.size() == 1 ? "" : "s");
+        else
+            out += "explain_finding <code> says how to confirm each one; nothing was changed.\n";
+        if (cut)
+            out += std::format("Checked the first {} tables; pass table for others.\n", MAX_TABLES);
+        if (!failed.empty())
+            out += "Could not describe: " + failed + "\n";
+        return out;
+    }
+
+    std::string Server::explainFinding(const json& args) {
+        const std::string code = str(args, {"code", "finding", "name"});
+        const auto* d = dearsql::findingDoc(code);
+        if (!d) {
+            std::string codes;
+            for (const auto& doc : dearsql::findingDocs())
+                codes += (codes.empty() ? "" : ", ") + std::string(doc.code);
+            throw ToolError("Unknown code '" + code + "'. Codes: " + codes);
+        }
+        return std::format("{}: {}\n\nWhat it means: {}\nHow to confirm: {}\nUsual fix: {}\n"
+                           "When to leave it: {}",
+                           d->code, d->title, d->meaning, d->check, d->fix, d->ignore);
     }
 
 } // namespace mcp

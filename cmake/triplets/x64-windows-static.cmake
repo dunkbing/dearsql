@@ -13,7 +13,9 @@ if(PORT STREQUAL "duckdb")
     set(VCPKG_CXX_FLAGS_RELEASE /O1)
 endif()
 
-# ci builds only release (half the build time and cache); local debug builds need both
+# ci builds only release (half the build time and cache); local debug builds need both.
+# passthrough hashes the value into the abi, so the two modes never share a package
+list(APPEND VCPKG_ENV_PASSTHROUGH DEARSQL_VCPKG_RELEASE_ONLY)
 if(DEFINED ENV{DEARSQL_VCPKG_RELEASE_ONLY})
     set(VCPKG_BUILD_TYPE release)
 endif()

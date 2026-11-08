@@ -9,7 +9,8 @@ on:
 permissions:
   contents: write
 
-# release-only vcpkg packages (cmake/triplets): the triplet sees the variable through keep_env_vars
+# release-only vcpkg packages (cmake/triplets): keep_env_vars lets the triplet see it,
+# the triplet hashes it into the abi (VCPKG_ENV_PASSTHROUGH)
 env:
   DEARSQL_VCPKG_RELEASE_ONLY: "1"
   VCPKG_KEEP_ENV_VARS: DEARSQL_VCPKG_RELEASE_ONLY

@@ -5,11 +5,13 @@
 #include "database/db.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
+#include <array>
 #include <chrono>
 #include <dearsql/completion.hpp>
 #include <dearsql/explain.hpp>
 #include <dearsql/syntax.hpp>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -109,7 +111,22 @@ private:
     float totalContentHeight = 0.0f;
 
     // Helper methods for async execution
-    void startQueryExecutionAsync(const std::string& query);
+    // asks for :name values first when the text has any; runQueryNow takes it from there
+    void startQueryExecutionAsync(const std::string& query,
+                                  std::optional<PendingExplain> explain = std::nullopt);
+    void runQueryNow(const std::string& query, std::optional<PendingExplain> explain);
+
+    // query parameters: the query waiting on the prompt, and the values typed so far (kept
+    // per tab, so a re-run starts from them)
+    struct ParamPrompt {
+        std::string query;
+        std::vector<std::string> names;
+        std::optional<PendingExplain> explain;
+        int focus = 0; // the field to focus next frame, -1 none
+    };
+    std::optional<ParamPrompt> paramPrompt_;
+    std::map<std::string, std::array<char, 512>> paramValues_;
+    void renderParamPrompt();
     void checkQueryExecutionStatus();
     void cancelQueryExecution();
 

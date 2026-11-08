@@ -347,4 +347,37 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // :name placeholders ask for values, then run with them as literals
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Query parameters prompt");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select :a as x, ':not_me' as y, :b as z, :a + 1 as w");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->Yield(2);
+        ctx->SetRef("//$FOCUSED");
+        ctx->ItemInputValue("##param_a", "7");
+        IM_CHECK(ctx->ItemInfo("##param_not_me", ImGuiTestOpFlags_NoError).ID == 0);
+        IM_CHECK(tab->getQueryResult().empty());  // enter in :a moved on, ran nothing
+        ctx->ItemInputValue("##param_b", "it's"); // enter in the last field runs
+        for (int i = 0; i < 300 && tab->getQueryResult().empty(); ++i) {
+            ctx->Yield();
+        }
+        const auto& result = tab->getQueryResult();
+        IM_CHECK_SILENT(result.size() == 1u && !result[0].tableData.empty());
+        IM_CHECK(result[0].tableData[0] == (std::vector<std::string>{"7", ":not_me", "it's", "8"}));
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

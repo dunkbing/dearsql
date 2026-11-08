@@ -444,4 +444,32 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(10);
         holdForScreenshot(ctx);
     };
+
+    // :name placeholders prompt for their values before the query runs
+    t = IM_REGISTER_TEST(engine, "Docs", "sql-parameters");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        connectEverything(ctx);
+        const auto db = firstDbWithTables(ctx);
+        if (!db) {
+            ctx->LogError("no connected database with tables");
+            return;
+        }
+        auto* node = dynamic_cast<IDatabaseNode*>(db.get());
+        const auto& tables = node->getTables();
+        const auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+            Application::getInstance().getTabManager()->createSQLEditorTab("", node));
+        tab->setQuery(std::format("select *\nfrom {}\nwhere rowid >= :from_id\n  and rowid < "
+                                  ":from_id + :page_size;",
+                                  tables[0].name));
+        expandInSidebar(ctx, db);
+        ctx->Yield(10);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/" ICON_FA_PLAY " Run");
+        ctx->Yield(3);
+        ctx->SetRef("//$FOCUSED");
+        ctx->ItemInputValue("##param_from_id", "100");
+        ctx->KeyChars("25");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
 }

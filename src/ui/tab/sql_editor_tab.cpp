@@ -174,6 +174,7 @@ void SQLEditorTab::render() {
 
     checkQueryExecutionStatus();
     updateSyntaxDiagnostics();
+    renderParamPrompt();
 
     // Cmd+S / Ctrl+S save shortcut — flag here, execute after editor text is synced below
     const bool wantSave = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) &&
@@ -836,14 +837,27 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
     }
 }
 
-void SQLEditorTab::startQueryExecutionAsync(const std::string& query) {
+void SQLEditorTab::startQueryExecutionAsync(const std::string& query,
+                                            std::optional<PendingExplain> explain) {
+    if (queryExecutionOp_.isRunning() || paramPrompt_) {
+        return;
+    }
+    const auto type = node_ ? node_->getDatabaseType() : DatabaseType::POSTGRESQL;
+    if (auto names = dearsql::queryParameters(query, type); !names.empty()) {
+        paramPrompt_ = ParamPrompt{query, std::move(names), explain};
+        return;
+    }
+    runQueryNow(query, explain);
+}
+
+void SQLEditorTab::runQueryNow(const std::string& query, std::optional<PendingExplain> explain) {
     if (queryExecutionOp_.isRunning()) {
         return;
     }
 
     queryError.clear();
     lastQueryDuration = std::chrono::milliseconds{0};
-    pendingExplain_.reset();
+    pendingExplain_ = explain;
     plan_.reset();
 
     syncBoundNodePointer();
@@ -927,10 +941,7 @@ void SQLEditorTab::explainStatement() {
         showError("Put the cursor in a statement to explain.");
         return;
     }
-    startQueryExecutionAsync(*sql);
-    if (queryExecutionOp_.isRunning()) {
-        pendingExplain_ = PendingExplain{type, analyze};
-    }
+    startQueryExecutionAsync(*sql, PendingExplain{type, analyze});
 }
 
 void SQLEditorTab::bindNode(IDatabaseNode* node) {
@@ -1621,4 +1632,69 @@ void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
+}
+
+void SQLEditorTab::renderParamPrompt() {
+    if (!paramPrompt_) {
+        return;
+    }
+    constexpr const char* popupId = "Query parameters###query_params";
+    if (!ImGui::IsPopupOpen(popupId)) {
+        ImGui::OpenPopup(popupId);
+    }
+    ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        return;
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+    bool run = false;
+    float labelWidth = 0.0f;
+    for (const auto& name : paramPrompt_->names) {
+        labelWidth = std::max(labelWidth, ImGui::CalcTextSize((":" + name).c_str()).x);
+    }
+    for (size_t i = 0; i < paramPrompt_->names.size(); ++i) {
+        const auto& name = paramPrompt_->names[i];
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted((":" + name).c_str());
+        ImGui::SameLine(labelWidth + Theme::Spacing::L * 2);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (static_cast<int>(i) == paramPrompt_->focus) {
+            ImGui::SetKeyboardFocusHere();
+            paramPrompt_->focus = -1;
+        }
+        auto& buf = paramValues_[name];
+        if (ImGui::InputText(std::format("##param_{}", name).c_str(), buf.data(), buf.size(),
+                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+            // enter moves on, and runs from the last field
+            if (i + 1 < paramPrompt_->names.size()) {
+                paramPrompt_->focus = static_cast<int>(i + 1);
+            } else {
+                run = true;
+            }
+        }
+    }
+    const auto& colors = Application::getInstance().getCurrentColors();
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::TextWrapped("Numbers and NULL go in as typed, anything else as a quoted string.");
+    ImGui::PopStyleColor();
+
+    run |= UIUtils::Button("Run###param_run", UIUtils::ButtonVariant::Primary);
+    ImGui::SameLine();
+    const bool cancel =
+        ImGui::Button("Cancel###param_cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    ImGui::PopStyleVar();
+    if (run || cancel) {
+        auto prompt = std::move(*paramPrompt_);
+        paramPrompt_.reset();
+        ImGui::CloseCurrentPopup();
+        if (run) {
+            std::map<std::string, std::string> values;
+            for (const auto& name : prompt.names) {
+                values[name] = paramValues_[name].data();
+            }
+            const auto type = node_ ? node_->getDatabaseType() : DatabaseType::POSTGRESQL;
+            runQueryNow(dearsql::bindParameters(prompt.query, type, values), prompt.explain);
+        }
+    }
+    ImGui::EndPopup();
 }

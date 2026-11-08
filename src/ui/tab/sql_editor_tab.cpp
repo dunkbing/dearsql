@@ -626,10 +626,25 @@ void SQLEditorTab::renderToolbar() {
     if (syntaxDiagnostic_.active) {
         ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        const std::string inlineMessage =
+        std::string inlineMessage =
             std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
+        // capped, or a long server message pushes run off the line; full text on hover
+        constexpr float kMaxWidth = 320.0f;
+        const bool clipped = ImGui::CalcTextSize(inlineMessage.c_str()).x > kMaxWidth;
+        while (inlineMessage.size() > 4 &&
+               ImGui::CalcTextSize((inlineMessage + "...").c_str()).x > kMaxWidth) {
+            inlineMessage.pop_back();
+            while ((inlineMessage.back() & 0xC0) == 0x80) // whole utf-8 characters
+                inlineMessage.pop_back();
+            if (static_cast<unsigned char>(inlineMessage.back()) >= 0xC0)
+                inlineMessage.pop_back();
+        }
+        if (clipped)
+            inlineMessage += "...";
         ImGui::TextUnformatted(inlineMessage.c_str());
         ImGui::PopStyleColor();
+        if (clipped && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", syntaxDiagnostic_.message.c_str());
         ImGui::SameLine(0, Theme::Spacing::L);
     }
 

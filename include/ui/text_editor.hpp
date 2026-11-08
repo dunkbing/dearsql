@@ -223,6 +223,7 @@ namespace dearsql {
         RunCallback onRun_;
         std::vector<std::pair<size_t, size_t>> runRanges_;
         bool runRangesDirty_ = true;
+        double runRangesEditTime_ = 0.0;
         int hoveredRun_ = -1; // last frame's, so the click is not also a text click
         ImVec2 textAreaMin_{}, textAreaMax_{};
         void renderRunButtons(int startLine, int endLine);

@@ -6,6 +6,7 @@
 #include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <cstring>
+#include <dearsql/completion.hpp>
 #include <dearsql/explain.hpp>
 #include <dearsql/findings.hpp>
 #include <format>
@@ -400,7 +401,7 @@ namespace mcp {
                        {"bucket", bucket},
                        {"key", key},
                        {"path", {{"type", "string"}, {"description", "Local file to write."}}}},
-                      {"bucket", "key", "path"}, false);
+                      {"bucket", "key", "path"}, true); // may overwrite a local file
             }
         }
         if (allowWrites) {
@@ -606,7 +607,7 @@ namespace mcp {
         if (conn.empty()) {
             std::vector<std::string> open;
             for (const auto& c : conns) {
-                if (c.open)
+                if (c.open && c.type != "s3")
                     open.push_back(c.name);
             }
             if (open.size() == 1) {
@@ -1336,14 +1337,7 @@ namespace mcp {
                 return std::format("Binary file; first {} bytes not shown.", data.size());
             return data.size() == max ? data + std::format("\n[stopped at {} bytes]", max) : data;
         }
-        if (name == "download_object") {
-            const std::string path = str(args, {"path", "file", "to"});
-            need(path, "path");
-            client->download(bucket, key, path);
-            return "Saved " + path;
-        }
-
-        // writes to the bucket: the user sees them first in the app
+        // writes (to the bucket, or a local file for download): the user sees them first
         std::string what;
         const std::string toBucket = str(args, {"toBucket", "to_bucket"}).empty()
                                          ? bucket
@@ -1352,13 +1346,20 @@ namespace mcp {
         const auto mv = args.find("move");
         const bool move =
             mv != args.end() && (mv->is_boolean() ? mv->get<bool>() : mv->dump() == "\"true\"");
-        const std::string path = str(args, {"path", "file"});
+        const std::string path = str(args, {"path", "file", "to"});
         if (name == "copy_object") {
             need(toKey, "toKey");
             if (key.ends_with('/') != toKey.ends_with('/'))
                 throw ToolError("key and toKey must both be folders (ending '/') or both files.");
+            // a move deletes the source after copying: never onto or inside itself
+            if (move && toBucket == bucket &&
+                (toKey == key || (key.ends_with('/') && toKey.starts_with(key))))
+                throw ToolError("Can't move a folder or file into itself.");
             what = std::format("{} s3://{}/{} to s3://{}/{}", move ? "move" : "copy", bucket, key,
                                toBucket, toKey);
+        } else if (name == "download_object") {
+            need(path, "path");
+            what = std::format("download s3://{}/{} to {}", bucket, key, path);
         } else if (name == "delete_object") {
             what = std::format("delete s3://{}/{}{}", bucket, key,
                                key.ends_with('/') ? " and everything in it" : "");
@@ -1391,6 +1392,10 @@ namespace mcp {
             const int n = client->deletePrefix(bucket, key);
             return std::format("Deleted {} object{}.", n, n == 1 ? "" : "s");
         }
+        if (name == "download_object") {
+            client->download(bucket, key, path);
+            return "Saved " + path;
+        }
         client->upload(bucket, key, path);
         return "Uploaded " + key + ".";
     }
@@ -1408,6 +1413,9 @@ namespace mcp {
             a != args.end() && (a->is_boolean() ? a->get<bool>() : a->dump() == "\"true\"");
         auto target = resolve(args);
         const auto type = target.db->type();
+        // EXPLAIN only covers the first statement; anything after it would just run
+        if (dearsql::statementRanges(sql, type).size() > 1)
+            throw ToolError("Pass one statement.");
         if (analyze && !SqlGuard::isReadOnly(sql))
             throw ToolError("analyze runs the statement, so only for read-only ones. Leave it "
                             "off to see the plan of a change.");

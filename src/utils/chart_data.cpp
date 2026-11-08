@@ -215,7 +215,8 @@ namespace chart {
         }
         if (d.numericX) {
             std::ranges::stable_sort(order, [](const std::string& a, const std::string& b) {
-                return parseNumber(a).value_or(kNaN) < parseNumber(b).value_or(kNaN);
+                // NaN breaks the ordering: non-numbers (NULL) sort last
+                return parseNumber(a).value_or(INFINITY) < parseNumber(b).value_or(INFINITY);
             });
         }
         for (const auto& key : order) {

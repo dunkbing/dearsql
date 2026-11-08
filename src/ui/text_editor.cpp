@@ -466,8 +466,18 @@ namespace dearsql {
 
         // every edit marks the highlight dirty: the statements may have moved too
         if (rangeProvider_ && (highlightDirty_ || runRangesDirty_)) {
-            runRanges_ = rangeProvider_(content_);
-            runRangesDirty_ = false;
+            // big scripts (dumps): no icons while typing, one split after a pause, so a
+            // stale range is never clickable
+            const double now = ImGui::GetTime();
+            if (highlightDirty_)
+                runRangesEditTime_ = now;
+            if (content_.size() < 256 * 1024 || now - runRangesEditTime_ > 0.3) {
+                runRanges_ = rangeProvider_(content_);
+                runRangesDirty_ = false;
+            } else {
+                runRanges_.clear();
+                runRangesDirty_ = true;
+            }
         }
 
         // Rehighlight if needed

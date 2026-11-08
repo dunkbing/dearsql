@@ -360,3 +360,11 @@ TEST_F(McpToolsTest, PromptsListAndFillTheirArguments) {
         {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "prompts/get"}, {"params", {{"name", "x"}}}});
     EXPECT_TRUE(bad.contains("error"));
 }
+
+TEST_F(McpToolsTest, ExplainRefusesASecondStatement) {
+    // EXPLAIN covers only the first statement: the DROP would run
+    auto [text, err] = call("explain_query", {{"sql", "SELECT 1; DROP TABLE orders"}});
+    EXPECT_TRUE(err) << text;
+    auto [rows, err2] = call("run_query", {{"sql", "SELECT COUNT(*) FROM orders"}});
+    EXPECT_FALSE(err2) << rows;
+}

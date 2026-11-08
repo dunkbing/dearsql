@@ -42,6 +42,10 @@ public:
         sqlEditor.SetText(query);
         scheduleSyntaxCheck();
     }
+    // runs the whole text, as the Run button does with no selection
+    void run() {
+        startQueryExecutionAsync(sqlQuery);
+    }
     [[nodiscard]] const std::string& getSelectedSchemaName() const {
         return selectedSchemaName;
     }

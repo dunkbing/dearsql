@@ -238,6 +238,7 @@ set(APP_SOURCES
     src/ai/acp_agents.cpp
     src/ai/acp_registry.cpp
     src/utils/db_mcp_server.cpp
+    src/ui/schema_compare.cpp
     src/mcp/db_tools.cpp
     src/cli/cli.cpp
     src/cli/completion_catalog.cpp

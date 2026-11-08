@@ -51,6 +51,8 @@ DearSQL gives an agent your saved connections (credentials stay encrypted in Dea
 | `explain_query` | the query plan plus warnings: full scans a filter mostly discards, scans repeated per join row, spilled sorts, bad estimates |
 | `review_indexes` | foreign keys with no index, indexes another one covers |
 | `explain_finding` | what a warning code means, how to confirm it, the usual fix |
+| `profile_table` | per column: nulls, distinct values, min and max, the common values |
+| `diff_schema` | the statements that would make one database's schema match another's |
 | `execute_sql` | a change, approved by you first (`--allow-writes` over MCP) |
 | `list_objects`, `read_object`, ... | S3 buckets and files |
 

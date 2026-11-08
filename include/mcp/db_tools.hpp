@@ -130,6 +130,12 @@ namespace mcp {
         std::string explainQuery(const nlohmann::json& args);
         std::string reviewIndexes(const nlohmann::json& args);
         std::string explainFinding(const nlohmann::json& args);
+        std::string profileTable(const nlohmann::json& args);
+        std::string diffSchema(const nlohmann::json& args);
+        // describeTable of every catalog table (or just `only`), at most 200; note gets what
+        // was cut or failed
+        std::vector<dearsql::Table> describeTables(const Target& target, const std::string& only,
+                                                   std::string& note);
         // list_objects, read_object and, with writes, copy/delete/upload/download_object
         std::string s3Tool(const std::string& name, const nlohmann::json& args);
 

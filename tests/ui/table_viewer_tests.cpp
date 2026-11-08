@@ -6,6 +6,7 @@
 #include "database/postgresql.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
+#include "ui/schema_compare.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -43,6 +44,49 @@ namespace {
 
 void RegisterTableViewerTests(ImGuiTestEngine* engine) {
     ImGuiTest* t = nullptr;
+
+    // profile columns runs its query in a new editor; compare opens the diff unrun
+    t = IM_REGISTER_TEST(engine, "Schema", "Profile and compare open scripts");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto prod = makeFkDatabase();
+        auto dev = makeFkDatabase();
+        IM_CHECK_SILENT(prod && dev);
+        dev->executeQuery("ALTER TABLE parent ADD COLUMN note TEXT");
+        for (auto& db : {prod, dev}) {
+            db->startTablesLoadAsync(true);
+            for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+                db->checkLoadingStatus();
+                ctx->Yield();
+            }
+            app.addDatabase(db);
+        }
+        auto* tabs = app.getTabManager();
+
+        SchemaCompare::openProfile(prod.get(), *findTable(prod->getTables(), "parent"));
+        auto profile = std::dynamic_pointer_cast<SQLEditorTab>(tabs->getTabs().back());
+        IM_CHECK_SILENT(profile != nullptr);
+        for (int i = 0; i < 200 && profile->getQueryResult().statements.empty(); ++i)
+            ctx->Yield();
+        IM_CHECK_SILENT(!profile->getQueryResult().statements.empty());
+        const auto& rows = profile->getQueryResult().statements[0].tableData;
+        IM_CHECK_EQ(rows.size(), 2u);             // id, label
+        IM_CHECK_STR_EQ(rows[0][3].c_str(), "3"); // distinct ids
+
+        const size_t before = tabs->getTabCount();
+        SchemaCompare::compare(prod.get(), dev.get());
+        for (int i = 0; i < 300 && tabs->getTabCount() == before; ++i)
+            ctx->Yield();
+        auto diff = std::dynamic_pointer_cast<SQLEditorTab>(tabs->getTabs().back());
+        IM_CHECK_SILENT(diff != nullptr && diff != profile);
+        IM_CHECK(diff->getQuery().find("ALTER TABLE \"parent\" ADD COLUMN \"note\" TEXT;") !=
+                 std::string::npos);
+        IM_CHECK(diff->getQueryResult().statements.empty()); // nothing ran
+
+        tabs->closeAllTabs();
+        app.removeDatabase(prod);
+        app.removeDatabase(dev);
+    };
 
     // regression: following a foreign key opens a tab from inside another tab's
     // render. renderTabs() holds an iterator into `tabs` while rendering, so

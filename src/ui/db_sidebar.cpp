@@ -1,3 +1,4 @@
+#include "ui/schema_compare.hpp"
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
@@ -883,6 +884,8 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                 if (!isCsv && ImGui::MenuItem("Show Diagram")) {
                     Application::getInstance().getTabManager()->createDiagramTab(sqliteDb);
                 }
+                if (!isCsv)
+                    SchemaCompare::renderMenu(sqliteDb);
                 if (!isCsv) {
                     ImGui::Separator(); // csv: next section is empty, its separator follows
                 }

@@ -1,3 +1,4 @@
+#include "ui/schema_compare.hpp"
 #include "ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
@@ -365,6 +366,10 @@ void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, cons
                                               DatabaseType dbType) {
     if (ImGui::MenuItem(ICON_FA_COPY " Copy DDL", nullptr, false, !copyDdlOp_.isRunning()))
         startCopyDdl(provider, table);
+    if (auto* node = dynamic_cast<IDatabaseNode*>(provider);
+        node && ImGui::MenuItem(ICON_FA_CHART_SIMPLE " Profile Columns", nullptr, false,
+                                 !table.columns.empty()))
+        SchemaCompare::openProfile(node, table);
     TableExporter::renderExportMenu(
         [&](ExportFormat format) { startTableExport(provider, {&table}, format, dbType); },
         !tableExportOp_.isRunning());
@@ -1892,6 +1897,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
         if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(schemaData);
         }
+        SchemaCompare::renderMenu(schemaData);
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaData->startTablesLoadAsync(true);
             schemaData->startViewsLoadAsync(true);
@@ -2218,6 +2224,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
         if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(dbData);
         }
+        SchemaCompare::renderMenu(dbData);
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);
@@ -3125,6 +3132,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
         if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(dbData);
         }
+        SchemaCompare::renderMenu(dbData);
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);
@@ -3192,6 +3200,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
         if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(schemaData);
         }
+        SchemaCompare::renderMenu(schemaData);
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             schemaData->startTablesLoadAsync(true);
             schemaData->startViewsLoadAsync(true);
@@ -3654,6 +3663,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
         if (ImGui::MenuItem(SHOW_DIAGRAM_LABEL)) {
             app.getTabManager()->createDiagramTab(dbData);
         }
+        SchemaCompare::renderMenu(dbData);
         if (ImGui::MenuItem(REFRESH_LABEL)) {
             dbData->startTablesLoadAsync(true);
             dbData->startViewsLoadAsync(true);

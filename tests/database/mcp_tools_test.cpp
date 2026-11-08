@@ -125,7 +125,7 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_NE(init["result"]["instructions"].get<std::string>().find("search_schema"),
               std::string::npos);
     auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
-    EXPECT_EQ(list["result"]["tools"].size(), 9u);
+    EXPECT_EQ(list["result"]["tools"].size(), 11u);
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
@@ -182,9 +182,9 @@ TEST_F(McpToolsTest, ConnectToAnUnknownUrlSaysWhy) {
 
 TEST_F(McpToolsTest, WritesOnlyWithAllowWrites) {
     auto listed = [](mcp::Server& s) {
-        return s.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}})
-                   .dump()
-                   .find("execute_sql") != std::string::npos;
+        const auto tools =
+            s.handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}})["result"]["tools"];
+        return std::ranges::any_of(tools, [](const auto& t) { return t["name"] == "execute_sql"; });
     };
     EXPECT_FALSE(listed(*server));
     EXPECT_TRUE(call("execute_sql", {{"sql", "DELETE FROM users"}}).second);
@@ -370,4 +370,68 @@ TEST_F(McpToolsTest, ExplainRefusesASecondStatement) {
     EXPECT_TRUE(err3) << text3;
     auto [rows, err2] = call("run_query", {{"sql", "SELECT COUNT(*) FROM orders"}});
     EXPECT_FALSE(err2) << rows;
+}
+
+TEST_F(McpToolsTest, ProfileShowsNullsDistinctAndCommonValues) {
+    ASSERT_TRUE(
+        conn->database()
+            ->execute("INSERT INTO orders (user_id, total) VALUES (1, 5), (1, 5), (2, 7);", 0)
+            .success());
+    auto [text, err] = call("profile_table", {{"table", "orders"}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("orders: 3 rows."), std::string::npos) << text;
+    EXPECT_NE(text.find("- total REAL: 0% null, 2 distinct, 5.0 .. 7.0; top: 5.0 (2), 7.0 (1)"),
+              std::string::npos)
+        << text;
+    auto [users, err2] = call("profile_table", {{"table", "users"}, {"sample", 100}});
+    EXPECT_NE(users.find("first 100 rows (not a random sample"), std::string::npos) << users;
+    EXPECT_NE(users.find("- created_at TEXT: 100% null"), std::string::npos) << users;
+}
+
+namespace {
+    class TwoConnectionHost : public mcp::Host {
+    public:
+        std::map<std::string, std::shared_ptr<dearsql::IConnection>> conns;
+        std::vector<mcp::ConnectionEntry> connections() override {
+            std::vector<mcp::ConnectionEntry> out;
+            for (const auto& [name, c] : conns)
+                out.push_back({name, "sqlite", true});
+            return out;
+        }
+        std::string connect(const std::string&) override {
+            return "";
+        }
+        std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override {
+            return conns.contains(name) ? conns[name] : nullptr;
+        }
+    };
+} // namespace
+
+TEST_F(McpToolsTest, DiffSchemaListsWhatWouldMakeOneMatchTheOther) {
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = ":memory:";
+    auto dev = dearsql::makeConnection(info);
+    ASSERT_TRUE(dev->open().first);
+    ASSERT_TRUE(dev->database()
+                    ->execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL, "
+                              "created_at TEXT, name TEXT);"
+                              "CREATE INDEX idx_users_email ON users (email);",
+                              0)
+                    .success());
+    TwoConnectionHost two;
+    two.conns = {{"shop", conn}, {"dev", dev}};
+    mcp::Server s(two);
+    auto r = s.callTool("diff_schema", {{"connection", "shop"}, {"otherConnection", "dev"}});
+    const std::string text = r["content"][0]["text"];
+    ASSERT_FALSE(r["isError"].get<bool>()) << text;
+    EXPECT_NE(text.find("ALTER TABLE \"users\" ADD COLUMN \"name\" TEXT;"), std::string::npos)
+        << text;
+    EXPECT_NE(text.find("CREATE INDEX \"idx_users_email\" ON \"users\" (\"email\");"),
+              std::string::npos)
+        << text;
+    EXPECT_NE(text.find("DROP TABLE \"orders\";"), std::string::npos) << text;
+    EXPECT_NE(text.find("Nothing was run"), std::string::npos) << text;
+    // shop still has its tables
+    EXPECT_TRUE(conn->database()->execute("SELECT * FROM orders", 0).success());
 }

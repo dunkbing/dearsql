@@ -10,7 +10,10 @@
 
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#include <cstdio>
+#include <format>
 #include <string>
+#include <vector>
 
 namespace {
     // docs screenshots: a frame rendered offscreen at a set scale, saved as png
@@ -20,6 +23,15 @@ namespace {
         int frames = 0; // two: the first bakes the fonts at the new density
         id<MTLTexture> target = nil;
     } capture;
+
+    // ui test videos: every frame offscreen, piped raw to ffmpeg
+    struct Recording {
+        FILE* pipe = nullptr;
+        float scale = 1;
+        NSUInteger w = 0, h = 0;
+        id<MTLTexture> target = nil;
+        std::vector<uint8_t> buf;
+    } rec;
 
     void savePng(id<MTLTexture> tex, const std::string& path) {
         const size_t w = tex.width, h = tex.height;
@@ -55,6 +67,30 @@ void requestFrameCapture(const char* path, float scale) {
 
 bool frameCapturePending() {
     return capture.frames > 0;
+}
+
+bool startRecording(const char* path, float scale, int width, int height) {
+    rec.scale = scale;
+    rec.w = static_cast<NSUInteger>(width * scale);
+    rec.h = static_cast<NSUInteger>(height * scale);
+    rec.buf.resize(rec.w * rec.h * 4);
+    // wall-clock stamps: the video runs as fast as the app did, no faster
+    const std::string cmd =
+        std::format("ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgra -s {}x{} "
+                    "-use_wallclock_as_timestamps 1 "
+                    "-i - -fps_mode cfr -r 60 -c:v h264_videotoolbox -b:v 12M -pix_fmt yuv420p "
+                    "-movflags +faststart '{}'",
+                    rec.w, rec.h, path);
+    rec.pipe = popen(cmd.c_str(), "w");
+    return rec.pipe != nullptr;
+}
+
+void stopRecording() {
+    if (rec.pipe) {
+        pclose(rec.pipe);
+        rec.pipe = nullptr;
+        rec.target = nil;
+    }
 }
 
 // Pass-through views: hitTest returns nil so all events reach GLFW's content view.
@@ -154,6 +190,20 @@ void MacOSMetalBackend::beginFrame(ImVec4 clearColor) {
         texture = capture.target;
         clearColor.w = 1; // no vibrancy behind a png
         currentDrawable_ = nil;
+    } else if (rec.pipe) {
+        if (!rec.target) {
+            MTLTextureDescriptor* d =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                   width:rec.w
+                                                                  height:rec.h
+                                                               mipmapped:NO];
+            d.usage = MTLTextureUsageRenderTarget;
+            d.storageMode = MTLStorageModeShared;
+            rec.target = [(id<MTLDevice>)metalDevice_ newTextureWithDescriptor:d];
+        }
+        texture = rec.target;
+        clearColor.w = 1;
+        currentDrawable_ = nil;
     } else {
         id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer_ nextDrawable];
         currentDrawable_ = drawable;
@@ -178,6 +228,8 @@ void MacOSMetalBackend::beginFrame(ImVec4 clearColor) {
     ImGui_ImplGlfw_NewFrame();
     if (capture.frames > 0) {
         ImGui::GetIO().DisplayFramebufferScale = ImVec2(capture.scale, capture.scale);
+    } else if (rec.pipe) {
+        ImGui::GetIO().DisplayFramebufferScale = ImVec2(rec.scale, rec.scale);
     }
 }
 
@@ -197,6 +249,13 @@ void MacOSMetalBackend::renderDrawData(ImDrawData* drawData) {
         [(id<MTLCommandBuffer>)currentCommandBuffer_ waitUntilCompleted];
         savePng(capture.target, capture.path);
         capture.target = nil;
+    } else if (currentDrawable_ == nil && rec.pipe) {
+        [(id<MTLCommandBuffer>)currentCommandBuffer_ waitUntilCompleted];
+        [rec.target getBytes:rec.buf.data()
+                 bytesPerRow:rec.w * 4
+                  fromRegion:MTLRegionMake2D(0, 0, rec.w, rec.h)
+                 mipmapLevel:0];
+        fwrite(rec.buf.data(), 1, rec.buf.size(), rec.pipe);
     }
 }
 

@@ -435,3 +435,23 @@ TEST_F(McpToolsTest, DiffSchemaListsWhatWouldMakeOneMatchTheOther) {
     // shop still has its tables
     EXPECT_TRUE(conn->database()->execute("SELECT * FROM orders", 0).success());
 }
+
+// a cut list would leave tables out, and the diff would offer to drop them
+TEST_F(McpToolsTest, DiffSchemaRefusesAnIncompleteSide) {
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = ":memory:";
+    auto big = dearsql::makeConnection(info);
+    ASSERT_TRUE(big->open().first);
+    std::string ddl;
+    for (int i = 0; i < 201; ++i)
+        ddl += std::format("CREATE TABLE t{} (id INTEGER PRIMARY KEY);", i);
+    ASSERT_TRUE(big->database()->execute(ddl, 0).success());
+    TwoConnectionHost two;
+    two.conns = {{"shop", conn}, {"big", big}};
+    mcp::Server s(two);
+    auto r = s.callTool("diff_schema", {{"connection", "shop"}, {"otherConnection", "big"}});
+    const std::string text = r["content"][0]["text"];
+    EXPECT_TRUE(r["isError"].get<bool>()) << text;
+    EXPECT_EQ(text.find("DROP TABLE"), std::string::npos) << text;
+}

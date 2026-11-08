@@ -6,6 +6,7 @@
 #include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <cstring>
+#include <dearsql/explain.hpp>
 #include <format>
 #include <numeric>
 #include <regex>
@@ -242,6 +243,9 @@ namespace mcp {
                "or listing everything.\n"
                "- describe_table: columns, types, keys, indexes and foreign keys of one table. "
                "Call it before writing a query that joins or filters on that table.\n"
+               "- explain_query: the plan of a statement with warnings (full scans, repeated "
+               "scans, "
+               "big sorts). Use it when a query is slow or before suggesting an index.\n"
                "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
                "SQLite), or a read-only command on "
                "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
@@ -293,6 +297,20 @@ namespace mcp {
                                     "Rows per page (default 50, max 500). A page also stops "
                                     "at 30 KB of text, and at most 1000 rows are fetched."}}},
                                  {"cursor", cursor}}),
+                     {"sql"}),
+             toolDef("explain_query",
+                     "The query plan of one statement as an indented tree (rows, cost, scan and "
+                     "join conditions), plus warnings from fixed rules: full scans a filter mostly "
+                     "throws away, full scans repeated per outer row, big or spilled sorts, "
+                     "row estimates off by 10x. Plans only, nothing runs unless analyze is set. "
+                     "PostgreSQL, MySQL 8 and SQLite. Use it before suggesting an index.",
+                     withTarget({{"sql", {{"type", "string"}}},
+                                 {"analyze",
+                                  {{"type", "boolean"},
+                                   {"description",
+                                    "Run the statement for actual rows and times (EXPLAIN "
+                                    "ANALYZE). Read-only statements only; it takes as long as "
+                                    "the query."}}}}),
                      {"sql"}),
              toolDef("list_tables",
                      "Every table and view with column count and size, paged. Prefer "
@@ -479,6 +497,8 @@ namespace mcp {
                 return textResult(runQuery(args, true));
             if (name == "run_query")
                 return textResult(runQuery(args));
+            if (name == "explain_query")
+                return textResult(explainQuery(args));
             if (name == "list_objects" || name == "read_object" ||
                 (allowWrites_ && (name == "copy_object" || name == "delete_object" ||
                                   name == "upload_object" || name == "download_object")))
@@ -1284,6 +1304,89 @@ namespace mcp {
         }
         client->upload(bucket, key, path);
         return "Uploaded " + key + ".";
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::explainQuery(const json& args) {
+        const std::string sql = str(args, {"sql", "query", "statement"});
+        if (sql.empty())
+            throw ToolError("Missing 'sql'.");
+        const auto a = args.find("analyze");
+        const bool analyze =
+            a != args.end() && (a->is_boolean() ? a->get<bool>() : a->dump() == "\"true\"");
+        auto target = resolve(args);
+        const auto type = target.db->type();
+        if (analyze && !SqlGuard::isReadOnly(sql))
+            throw ToolError("analyze runs the statement, so only for read-only ones. Leave it "
+                            "off to see the plan of a change.");
+        if (analyze && !dearsql::supportsExplainAnalyze(type))
+            throw ToolError("This database has no EXPLAIN ANALYZE; leave analyze off.");
+        const auto explain = dearsql::explainSql(type, sql, analyze);
+        if (!explain)
+            throw ToolError("Query plans are supported on PostgreSQL, MySQL 8 and SQLite.");
+        const auto result = target.db->execute(*explain, 0);
+        if (!result.success())
+            throw ToolError("Error: " + result.errorMessage());
+        const auto plan = result.statements.empty()
+                              ? std::nullopt
+                              : dearsql::parsePlan(type, result.statements.back(), analyze);
+        if (!plan)
+            throw ToolError("Could not read the plan (MySQL needs 8.0.16+).");
+
+        const auto warnings = dearsql::reviewPlan(*plan);
+        auto num = [](double v) {
+            return v == static_cast<double>(static_cast<long long>(v))
+                       ? std::format("{}", static_cast<long long>(v))
+                       : std::format("{:.2f}", v);
+        };
+        std::string out;
+        int lines = 0;
+        auto walk = [&](auto&& self, const dearsql::PlanNode& n, int depth) -> void {
+            if (++lines > 300) {
+                if (lines == 301)
+                    out += "(plan cut at 300 nodes)\n";
+                return;
+            }
+            const bool flagged =
+                std::ranges::any_of(warnings, [&](const auto& w) { return w.node == &n; });
+            out += std::string(static_cast<size_t>(depth) * 2, ' ') + (flagged ? "! " : "- ") +
+                   n.operation;
+            if (!n.detail.empty())
+                out += " " + n.detail;
+            if (n.estimatedRows)
+                out += "  rows~" + num(*n.estimatedRows);
+            if (n.actualRows)
+                out += " actual " + num(*n.actualRows);
+            if (n.loops && *n.loops != 1)
+                out += " x" + num(*n.loops) + " loops";
+            if (n.cost)
+                out += "  cost " + num(*n.cost);
+            if (n.selfTimeMs)
+                out += std::format("  {:.3f} ms", *n.selfTimeMs);
+            // the conditions an agent needs to pick an index; the rest stays out
+            for (const auto& [k, v] : n.properties) {
+                if (k.find("Cond") != std::string::npos || k.find("Filter") != std::string::npos ||
+                    k == "Sort Key" || k == "Group Key")
+                    out += "  " + k + ": " + v;
+            }
+            out += "\n";
+            for (const auto& c : n.children)
+                self(self, c, depth + 1);
+        };
+        walk(walk, plan->root, 0);
+        if (plan->executionTimeMs)
+            out += std::format("Execution {:.3f} ms\n", *plan->executionTimeMs);
+        if (warnings.empty()) {
+            out += "No warnings from the plan rules.";
+        } else {
+            out += "\nWarnings (rule-based hints; ! marks the node):\n";
+            for (const auto& w : warnings)
+                out += "- " + w.message + "\n";
+        }
+        return out;
     }
 
 } // namespace mcp

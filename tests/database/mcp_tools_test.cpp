@@ -125,7 +125,7 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_NE(init["result"]["instructions"].get<std::string>().find("search_schema"),
               std::string::npos);
     auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
-    EXPECT_EQ(list["result"]["tools"].size(), 6u);
+    EXPECT_EQ(list["result"]["tools"].size(), 7u);
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
@@ -310,4 +310,21 @@ TEST(McpCursors, SameSqlOnTwoConnectionsKeepsItsOwnRows) {
     // a's cursor with b named: b's query from the start
     EXPECT_NE(text({{"connection", "b"}, {"sql", sql}, {"cursor", cursor}}).find("b1"),
               std::string::npos);
+}
+
+TEST_F(McpToolsTest, ExplainShowsThePlanAndWarnsAboutRepeatedScans) {
+    // neither side has an index on the join columns
+    auto [text, err] =
+        call("explain_query",
+             {{"sql", "SELECT * FROM users u JOIN orders o ON o.total = u.created_at"}});
+    EXPECT_FALSE(err) << text;
+    EXPECT_NE(text.find("SCAN"), std::string::npos) << text;
+    EXPECT_NE(text.find("Warnings"), std::string::npos) << text;
+
+    auto [quiet, err2] = call("explain_query", {{"sql", "SELECT * FROM users WHERE id = 3"}});
+    EXPECT_NE(quiet.find("No warnings"), std::string::npos) << quiet;
+
+    auto [refused, isErr] =
+        call("explain_query", {{"sql", "DELETE FROM users"}, {"analyze", true}});
+    EXPECT_TRUE(isErr) << refused;
 }

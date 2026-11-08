@@ -119,6 +119,7 @@ namespace mcp {
         std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
         std::string runQuery(const nlohmann::json& args, bool write = false);
+        std::string explainQuery(const nlohmann::json& args);
         // list_objects, read_object and, with writes, copy/delete/upload/download_object
         std::string s3Tool(const std::string& name, const nlohmann::json& args);
 

@@ -5,7 +5,6 @@
 #include "database/file_database.hpp"
 #include "database/postgresql.hpp"
 #include "database/s3.hpp"
-#include "ui/tab/s3_browser_tab.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -13,6 +12,7 @@
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/settings_dialog.hpp"
+#include "ui/tab/s3_browser_tab.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -316,12 +316,21 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->SetRef(tab->getWindowName().c_str());
         for (int i = 0; i < 300 && !ctx->ItemExists("**/" ICON_FA_FILE " customers.csv"); ++i)
             ctx->Yield();
+        const auto s3tab = std::static_pointer_cast<S3BrowserTab>(tab);
+        // drag from one row to another box-selects the rows between
+        ctx->MouseMove("**/" ICON_FA_FILE " README.md");
+        ctx->MouseDown();
+        ctx->MouseMove("**/" ICON_FA_FILE " orders-2026-06.parquet",
+                       ImGuiTestOpFlags_NoCheckHoveredId);
+        ctx->MouseUp();
+        IM_CHECK_EQ(s3tab->selectedCount(), 3u);
         ctx->ItemClick("**/" ICON_FA_FILE " customers.csv");
+        IM_CHECK_EQ(s3tab->selectedCount(), 1u);
         ctx->KeyDown(ImGuiMod_Ctrl); // a second file joins the selection
         ctx->ItemClick("**/" ICON_FA_FILE " products.json");
         ctx->KeyUp(ImGuiMod_Ctrl);
         ctx->Yield(5);
-        IM_CHECK_EQ(std::static_pointer_cast<S3BrowserTab>(tab)->selectedCount(), 2u);
+        IM_CHECK_EQ(s3tab->selectedCount(), 2u);
         holdForScreenshot(ctx);
     };
 
@@ -569,12 +578,11 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         app.addDatabase(db);
         const auto editor = std::dynamic_pointer_cast<SQLEditorTab>(
             app.getTabManager()->createSQLEditorTab("", db.get()));
-        editor->setQuery(
-            "with sales(month, revenue, cost) as (values\n"
-            "  ('Jan', 4200, 2600), ('Feb', 5100, 2900), ('Mar', 6300, 3100),\n"
-            "  ('Apr', 5800, 3300), ('May', 7200, 3600), ('Jun', 8100, 3900),\n"
-            "  ('Jul', 7600, 4000), ('Aug', 8800, 4200), ('Sep', 9400, 4300))\n"
-            "select * from sales;");
+        editor->setQuery("with sales(month, revenue, cost) as (values\n"
+                         "  ('Jan', 4200, 2600), ('Feb', 5100, 2900), ('Mar', 6300, 3100),\n"
+                         "  ('Apr', 5800, 3300), ('May', 7200, 3600), ('Jun', 8100, 3900),\n"
+                         "  ('Jul', 7600, 4000), ('Aug', 8800, 4200), ('Sep', 9400, 4300))\n"
+                         "select * from sales;");
         ctx->Yield(10);
         ctx->SetRef(editor->getWindowName().c_str());
         ctx->ItemClick("**/Run");

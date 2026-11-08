@@ -87,8 +87,7 @@ void S3BrowserTab::open(const std::string& prefix) {
     prefix_ = prefix;
     entries_.clear();
     nextToken_.clear();
-    selection_.clear();
-    anchor_ = -1;
+    selection_.Clear();
     list();
 }
 
@@ -155,12 +154,16 @@ std::optional<S3BrowserTab::Clip>& S3BrowserTab::clipboard() {
     return clip;
 }
 
-std::vector<S3BrowserTab::Entry> S3BrowserTab::selectedEntries() const {
+std::vector<S3BrowserTab::Entry> S3BrowserTab::selectedEntries() {
     std::vector<Entry> out;
-    for (int i : selection_) {
-        if (i >= 0 && i < static_cast<int>(entries_.size()))
+    void* it = nullptr;
+    ImGuiID i = 0;
+    while (selection_.GetNextSelectedItem(&it, &i)) {
+        if (i < entries_.size())
             out.push_back(entries_[i]);
     }
+    // listing order, not the order of clicks
+    std::ranges::sort(out, [](const Entry& a, const Entry& b) { return a.key < b.key; });
     return out;
 }
 
@@ -289,37 +292,12 @@ void S3BrowserTab::deleteEntries(std::vector<Entry> entries) {
     });
 }
 
-void S3BrowserTab::clickRow(int i) {
-    const auto& io = ImGui::GetIO();
-    // imgui swaps cmd and ctrl on macos, so cmd arrives as KeyCtrl
-    const bool toggle = io.KeyCtrl || io.KeySuper;
-    if (io.KeyShift && anchor_ >= 0) {
-        if (!toggle)
-            selection_.clear();
-        for (int k = std::min(anchor_, i); k <= std::max(anchor_, i); ++k)
-            selection_.insert(k);
-        return;
-    }
-    if (toggle) {
-        if (!selection_.erase(i))
-            selection_.insert(i);
-    } else {
-        selection_ = {i};
-    }
-    anchor_ = i;
-}
-
 void S3BrowserTab::handleShortcuts() {
     const auto& io = ImGui::GetIO();
     if (io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup) ||
         !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
         return;
     const bool mod = io.KeyCtrl || io.KeySuper;
-    if (mod && ImGui::IsKeyPressed(ImGuiKey_A, false)) {
-        selection_.clear();
-        for (int i = 0; i < static_cast<int>(entries_.size()); ++i)
-            selection_.insert(i);
-    }
     if (op_.isRunning())
         return;
     if (mod && ImGui::IsKeyPressed(ImGuiKey_C, false))
@@ -364,8 +342,7 @@ void S3BrowserTab::render() {
         }
         if (!r.append) {
             entries_.clear();
-            selection_.clear();
-            anchor_ = -1;
+            selection_.Clear();
         }
         for (auto& p : r.listing.prefixes)
             entries_.push_back({std::move(p), true, 0, {}});
@@ -441,7 +418,7 @@ void S3BrowserTab::renderToolbar() {
         ImGui::SetTooltip("Upload a file here");
 
     // copy, cut, paste, delete: on the selection, pasted into this folder
-    const bool none = selection_.empty();
+    const bool none = selection_.Size == 0;
     const bool busy = op_.isRunning();
     const auto& clip = clipboard();
 #ifdef __APPLE__
@@ -571,9 +548,18 @@ void S3BrowserTab::renderTable() {
     // a selectable reaches half the item spacing past itself: 2x cell padding fills the row
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                         ImVec2(Theme::Spacing::M, ImGui::GetStyle().CellPadding.y * 2));
+    // drag across rows (or from the empty space below) to box-select
+    auto* ms = ImGui::BeginMultiSelect(ImGuiMultiSelectFlags_BoxSelect1d |
+                                           ImGuiMultiSelectFlags_ClearOnEscape |
+                                           ImGuiMultiSelectFlags_ClearOnClickVoid,
+                                       selection_.Size, static_cast<int>(entries_.size()));
+    selection_.ApplyRequests(ms);
     std::optional<std::string> navigate;
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(entries_.size()));
+    if (ms->RangeSrcItem != -1)
+        clipper.IncludeItemByIndex(
+            static_cast<int>(ms->RangeSrcItem)); // keep the shift anchor alive
     while (clipper.Step()) {
         for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
             const Entry& e = entries_[i];
@@ -582,10 +568,10 @@ void S3BrowserTab::renderTable() {
             ImGui::PushID(i);
             const std::string label =
                 std::format("{} {}", e.folder ? ICON_FA_FOLDER : ICON_FA_FILE, baseName(e.key));
-            if (ImGui::Selectable(label.c_str(), selection_.contains(i),
+            ImGui::SetNextItemSelectionUserData(i);
+            if (ImGui::Selectable(label.c_str(), selection_.Contains(static_cast<ImGuiID>(i)),
                                   ImGuiSelectableFlags_SpanAllColumns |
                                       ImGuiSelectableFlags_AllowDoubleClick)) {
-                clickRow(i);
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     if (e.folder)
                         navigate = e.key;
@@ -594,8 +580,6 @@ void S3BrowserTab::renderTable() {
                 }
             }
             if (UIUtils::BeginContextMenu("##s3_entry_menu")) {
-                if (!selection_.contains(i)) // right-click outside the selection picks the row
-                    selection_ = {i}, anchor_ = i;
                 renderEntryMenu(e, navigate);
                 ImGui::EndPopup();
             }
@@ -609,6 +593,7 @@ void S3BrowserTab::renderTable() {
             ImGui::PopID();
         }
     }
+    selection_.ApplyRequests(ImGui::EndMultiSelect());
     ImGui::PopStyleVar();
 
     if (!nextToken_.empty()) {
@@ -653,7 +638,7 @@ void S3BrowserTab::renderEntryMenu(const Entry& entry, std::optional<std::string
         ImGui::SetClipboardText(entry.key.c_str());
     ImGui::Separator();
     // these act on the whole selection
-    const size_t n = selection_.size();
+    const size_t n = static_cast<size_t>(selection_.Size);
     const std::string items = n > 1 ? std::format(" {} Items", n) : "";
     if (ImGui::MenuItem(("Copy" + items).c_str()))
         copySelection(false);
@@ -677,8 +662,8 @@ void S3BrowserTab::renderStatusBar() {
     const int files = static_cast<int>(entries_.size()) - folders;
     std::string text = std::format("{} folders · {} files{}", folders, files,
                                    nextToken_.empty() ? "" : " (more not loaded)");
-    if (!selection_.empty())
-        text += std::format(" · {} selected", selection_.size());
+    if (selection_.Size > 0)
+        text += std::format(" · {} selected", selection_.Size);
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(colors.subtext0, "%s", text.c_str());
     if (!status_.empty()) {

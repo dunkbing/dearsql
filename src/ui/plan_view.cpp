@@ -1,5 +1,6 @@
 #include "ui/plan_view.hpp"
 
+#include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui.h"
 #include "themes.hpp"
@@ -30,7 +31,7 @@ namespace {
     }
 
     void row(const dearsql::PlanNode& n, const dearsql::Plan& plan, double totalMs, bool numbers,
-             int& id) {
+             const std::vector<dearsql::PlanWarning>& warnings, int& id) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -53,6 +54,14 @@ namespace {
         if (!n.detail.empty()) {
             ImGui::SameLine(0, Theme::Spacing::M);
             ImGui::TextColored(colors.overlay1, "%s", n.detail.c_str());
+        }
+        for (const auto& w : warnings) {
+            if (w.node != &n)
+                continue;
+            ImGui::SameLine(0, Theme::Spacing::M);
+            ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", w.message.c_str());
         }
 
         if (numbers) {
@@ -103,7 +112,7 @@ namespace {
         }
         if (open && !n.children.empty()) {
             for (const auto& child : n.children) {
-                row(child, plan, totalMs, numbers, id);
+                row(child, plan, totalMs, numbers, warnings, id);
             }
             ImGui::TreePop();
         }
@@ -128,6 +137,18 @@ void PlanView::render(const dearsql::Plan& plan, bool& showRaw) {
                                   ImGuiInputTextFlags_ReadOnly);
         return;
     }
+
+    // fixed rules over the tree: hints, so the user can judge
+    const auto warnings = dearsql::reviewPlan(plan);
+    for (const auto& w : warnings) {
+        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(w.message.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    if (!warnings.empty())
+        ImGui::Spacing();
 
     const bool numbers = hasNumbers(plan.root);
     const int columns = !numbers ? 1 : plan.analyzed ? 5 : 3;
@@ -154,6 +175,6 @@ void PlanView::render(const dearsql::Plan& plan, bool& showRaw) {
     ImGui::TableHeadersRow();
     const double totalMs = plan.executionTimeMs.value_or(plan.root.totalTimeMs.value_or(0.0));
     int id = 0;
-    row(plan.root, plan, totalMs, numbers, id);
+    row(plan.root, plan, totalMs, numbers, warnings, id);
     ImGui::EndTable();
 }

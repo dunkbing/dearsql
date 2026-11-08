@@ -1,6 +1,6 @@
 ---
 name: dearsql
-description: Work with the user's databases (PostgreSQL, MySQL, SQLite, DuckDB, SQL Server, Oracle, MongoDB, Redis, Cassandra...) and S3 storage through DearSQL's saved connections. Use when the user asks about their data, a schema, a slow query, missing or duplicate indexes, or files in an S3 bucket. Not for editing application code that merely contains SQL.
+description: Work with the user's databases (PostgreSQL, MySQL, SQLite, DuckDB, SQL Server, Oracle, MongoDB, Redis, Cassandra...) and S3 storage through DearSQL's saved connections. Use when the user asks about their data, a schema, a slow query, missing or duplicate indexes, differences between two databases, or files in an S3 bucket. Not for editing application code that merely contains SQL.
 ---
 
 # DearSQL
@@ -19,6 +19,7 @@ DearSQL is the user's SQL client. Its saved connections (credentials encrypted, 
 2. `search_schema` with 1-3 words ("invoice total", typos fine) before writing any SQL. Never guess table or column names.
 3. `describe_table` before a join or filter: types, keys, indexes, foreign keys in and out.
 4. `run_query` for one read-only statement. Put LIMIT (TOP on SQL Server) on exploration, aggregate in SQL instead of paging rows, and pass the `cursor` a result ends with to get the next page.
+5. `profile_table` before filtering on data you haven't seen: per column the null %, distinct count, min and max, and the common values of low-cardinality columns (first 100,000 rows, one bounded query).
 
 ## Slow queries and indexes
 
@@ -26,6 +27,10 @@ DearSQL is the user's SQL client. Its saved connections (credentials encrypted, 
 - `review_indexes` checks the schema for foreign keys with no index (`[unindexed-fk]`) and indexes another one covers (`[redundant-index]`), with a statement to consider. One table with `table`, or all of them (up to 200).
 - `explain_finding <code>` gives the fixed explanation: what it means, how to confirm, the usual fix, when to leave it. Quote it rather than improvising.
 - The warnings are rule-based hints, not verdicts. Confirm before recommending: check row counts, how the table is queried, and that an index isn't needed by a constraint. Present `CREATE INDEX` / `DROP INDEX` to the user; on a big production table mention `CREATE INDEX CONCURRENTLY` (PostgreSQL) or an online DDL.
+
+## Comparing schemas
+
+- `diff_schema` compares two databases (`otherConnection`, `otherDatabase`; dev against prod, or two schemas) and lists the statements that would make the first match the second: creates first, drops last, views left out. Nothing runs. Show the script, point out the drops (they lose data), and apply only what the user picks, through `execute_sql`.
 
 ## Changes
 

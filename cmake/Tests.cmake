@@ -107,6 +107,7 @@ add_executable(
     external/libdearsql/tests/completion_tests.cpp
     external/libdearsql/tests/delete_impact_tests.cpp
     external/libdearsql/tests/explain_tests.cpp
+    external/libdearsql/tests/schema_tools_tests.cpp
     external/libdearsql/tests/syntax_tests.cpp
     src/ui/text_editor_format.cpp
     src/utils/mysql_dump_splitter.cpp

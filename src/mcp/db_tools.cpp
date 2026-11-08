@@ -9,10 +9,13 @@
 #include <dearsql/completion.hpp>
 #include <dearsql/explain.hpp>
 #include <dearsql/findings.hpp>
+#include <dearsql/profile.hpp>
+#include <dearsql/schema_diff.hpp>
 #include <format>
 #include <numeric>
 #include <regex>
 #include <set>
+#include <sstream>
 
 using json = nlohmann::json;
 
@@ -250,6 +253,10 @@ namespace mcp {
                "big sorts). Use it when a query is slow or before suggesting an index.\n"
                "- review_indexes: foreign keys with no index and indexes another covers, from "
                "the schema alone. explain_finding <code> explains any [code] in a result.\n"
+               "- profile_table: null %, distinct counts, min/max and common values per column "
+               "(first 100,000 rows). Use it to see what the data looks like before filtering.\n"
+               "- diff_schema: statements that would make one database's tables, columns, "
+               "indexes and foreign keys match another's (dev vs prod). Nothing runs.\n"
                "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
                "SQLite), or a read-only command on "
                "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
@@ -324,6 +331,30 @@ namespace mcp {
                  withTarget({{"table",
                               {{"type", "string"},
                                {"description", "One table; default every table (up to 200)."}}}})),
+             toolDef(
+                 "profile_table",
+                 "Per column of one table: null %, distinct values, min and max, and the "
+                 "most common values of low-cardinality columns, over the first rows (100,000 "
+                 "by default, not a random sample) in one bounded query. Use it to learn what "
+                 "the data looks like before writing filters or joins.",
+                 withTarget({{"table", {{"type", "string"}}},
+                             {"sample",
+                              {{"type", "integer"},
+                               {"description", "Rows to read (default 100000, max 1000000)."}}}}),
+                 {"table"}),
+             toolDef("diff_schema",
+                     "Compare two databases' tables, columns, indexes and foreign keys (views are "
+                     "left out) and list the statements that would make the first match the "
+                     "second, creates first and drops last. Nothing runs: show them to the user; "
+                     "a change goes through execute_sql. Both sides must speak the same SQL "
+                     "dialect.",
+                     withTarget(
+                         {{"otherConnection",
+                           {{"type", "string"},
+                            {"description", "The reference side; default: the same connection."}}},
+                          {"otherDatabase",
+                           {{"type", "string"},
+                            {"description", "The reference database (db.schema allowed)."}}}})),
              toolDef("explain_finding",
                      "What a finding code from explain_query or review_indexes means, how to "
                      "confirm it, the usual fix and when to leave it. Quote it to the user rather "
@@ -583,6 +614,10 @@ namespace mcp {
                 return textResult(reviewIndexes(args));
             if (name == "explain_finding")
                 return textResult(explainFinding(args));
+            if (name == "profile_table")
+                return textResult(profileTable(args));
+            if (name == "diff_schema")
+                return textResult(diffSchema(args));
             if (name == "list_objects" || name == "read_object" ||
                 (allowWrites_ && (name == "copy_object" || name == "delete_object" ||
                                   name == "upload_object" || name == "download_object")))
@@ -1495,9 +1530,8 @@ namespace mcp {
 
 namespace mcp {
 
-    std::string Server::reviewIndexes(const json& args) {
-        auto target = resolve(args);
-        const std::string only = str(args, {"table", "name"});
+    std::vector<dearsql::Table> Server::describeTables(const Target& target,
+                                                       const std::string& only, std::string& note) {
         std::vector<const dearsql::Table*> picked;
         for (const auto& t : catalog(target).tables) {
             if (only.empty() || lower(t.name) == lower(only) || lower(qualified(t)) == lower(only))
@@ -1529,7 +1563,19 @@ namespace mcp {
                 failed += (failed.empty() ? "" : ", ") + n;
             }
         }
-        const auto findings = dearsql::reviewIndexes(tables);
+        if (cut)
+            note +=
+                std::format("Checked the first {} tables; pass table for others.\n", MAX_TABLES);
+        if (!failed.empty())
+            note += "Could not describe: " + failed + "\n";
+        return tables;
+    }
+
+    std::string Server::reviewIndexes(const json& args) {
+        auto target = resolve(args);
+        std::string note;
+        const auto tables = describeTables(target, str(args, {"table", "name"}), note);
+        const auto findings = dearsql::reviewIndexes(tables, target.db->type());
         std::string out;
         for (const auto& f : findings) {
             out += "- [" + f.code + "] " + f.message + "\n";
@@ -1541,10 +1587,135 @@ namespace mcp {
                               tables.size() == 1 ? "" : "s");
         else
             out += "explain_finding <code> says how to confirm each one; nothing was changed.\n";
-        if (cut)
-            out += std::format("Checked the first {} tables; pass table for others.\n", MAX_TABLES);
-        if (!failed.empty())
-            out += "Could not describe: " + failed + "\n";
+        return out + note;
+    }
+
+    std::string Server::diffSchema(const json& args) {
+        auto from = resolve(args);
+        json otherArgs = {{"database", str(args, {"otherDatabase", "other_database", "to"})}};
+        if (const auto c = str(args, {"otherConnection", "other_connection"}); !c.empty())
+            otherArgs["connection"] = c;
+        else
+            otherArgs["connection"] = from.connection;
+        auto to = resolve(otherArgs);
+        if (to.connection == from.connection && to.database == from.database)
+            throw ToolError("Both sides are " + where(from) +
+                            "; pass otherDatabase (and "
+                            "otherConnection for another server).");
+        if (!dearsql::sameDialect(from.db->type(), to.db->type()))
+            throw ToolError("These speak different SQL dialects, so their types and DDL do "
+                            "not compare. Compare two databases of the same engine.");
+        std::string note;
+        const auto fromTables = describeTables(from, "", note);
+        const auto toTables = describeTables(to, "", note);
+        // a table left out would read as missing and come back as a DROP TABLE
+        if (!note.empty())
+            throw ToolError("Can't compare an incomplete schema, it would suggest dropping "
+                            "tables that exist.\n" +
+                            note);
+        // new tables go where from's tables are
+        std::string schema = fromTables.empty() ? "" : fromTables.front().schema;
+        if (schema.empty() && hasSchemas(from.db->type()) &&
+            from.database.find('.') != std::string::npos)
+            schema = from.database.substr(from.database.find('.') + 1);
+        const auto changes = dearsql::diffSchemas(fromTables, toTables, from.db->type(), schema);
+        if (changes.empty())
+            return std::format("{} matches {}: same tables, columns, indexes and foreign keys "
+                               "(views not compared).\n{}",
+                               where(from), where(to), note);
+        std::string out =
+            std::format("To make {} match {} ({} change{}, views not compared):\n\n", where(from),
+                        where(to), changes.size(), changes.size() == 1 ? "" : "s");
+        for (const auto& c : changes) {
+            out += "- " + c.message + "\n";
+            std::istringstream lines(c.sql);
+            for (std::string line; std::getline(lines, line);)
+                out += "    " + line + "\n";
+        }
+        out += "\nNothing was run. Show these to the user; drops lose data. A change goes "
+               "through execute_sql.\n";
+        return out + note;
+    }
+
+    std::string Server::profileTable(const json& args) {
+        auto target = resolve(args);
+        const std::string name = str(args, {"table", "name"});
+        if (name.empty())
+            throw ToolError("Missing 'table'.");
+        const auto& cat = catalog(target);
+        const dearsql::Table* table = nullptr;
+        for (const auto* list : {&cat.tables, &cat.views}) {
+            for (const auto& t : *list) {
+                if (lower(t.name) == lower(name) || lower(qualified(t)) == lower(name))
+                    table = &t;
+            }
+        }
+        if (!table)
+            throw ToolError("No table '" + name + "' in " + where(target) + ". Try search_schema.");
+        const auto type = target.db->type();
+        const int sample =
+            static_cast<int>(num(args, {"sample", "rows", "limit"}, 100000, 100, 1000000));
+        const auto sql = dearsql::profileSql(type, *table, sample);
+        if (!sql)
+            throw ToolError("Profiling needs a SQL database.");
+        const auto result = target.db->execute(*sql, 0);
+        if (!result.success() || result.statements.empty())
+            throw ToolError("Error: " + result.errorMessage());
+        const auto profile = dearsql::parseProfile(type, *table, result.statements.back(), sample);
+        if (!profile)
+            throw ToolError("Could not read the profile.");
+
+        auto cut = [](std::string v) {
+            for (auto& ch : v)
+                if (ch == '\n' || ch == '\r')
+                    ch = ' ';
+            return v.size() > 40 ? v.substr(0, 37) + "..." : v;
+        };
+        std::string out =
+            profile->sampled
+                ? std::format("{}: first {} rows (not a random sample; the table has more).\n",
+                              qualified(*table), profile->rows)
+                : std::format("{}: {} rows.\n", qualified(*table), profile->rows);
+        int topQueries = 0;
+        for (const auto& c : profile->columns) {
+            const double nullPct =
+                profile->rows ? 100.0 * (profile->rows - c.nonNull) / profile->rows : 0.0;
+            out += std::format("- {} {}: {:.0f}% null", c.column, c.type, nullPct);
+            if (c.distinct >= 0)
+                out += std::format(", {} distinct", c.distinct);
+            if (c.hasMinMax && c.nonNull > 0)
+                out += std::format(", {} .. {}", cut(c.min), cut(c.max));
+            // the common values, where there are few of them (at most 10 columns)
+            // (not when every value is unique: each would count 1)
+            const bool few = c.distinct > 0 && c.distinct < c.nonNull &&
+                             (c.distinct <= 20 || c.distinct * 2 < c.nonNull);
+            const auto* col = &*std::ranges::find(table->columns, c.column, &dearsql::Column::name);
+            if (few && topQueries < 10) {
+                if (const auto top = dearsql::topValuesSql(type, *table, *col, 5, sample)) {
+                    ++topQueries;
+                    const auto r = target.db->execute(*top, 0);
+                    if (r.success() && !r.statements.empty()) {
+                        std::string list;
+                        for (const auto& row : r.statements.back().tableData) {
+                            if (row.size() < 2)
+                                continue;
+                            const std::string v =
+                                dearsql::isNullSentinel(row[0]) ? "NULL"
+                                : dearsql::isBoolSentinel(row[0])
+                                    ? (dearsql::boolSentinelValue(row[0]) ? "true" : "false")
+                                    : cut(row[0]);
+                            list += (list.empty() ? "" : ", ") + v + " (" + row[1] + ")";
+                        }
+                        if (!list.empty())
+                            out += "; top: " + list;
+                    }
+                }
+            }
+            out += "\n";
+        }
+        if (table->columns.size() > profile->columns.size())
+            out += std::format("Profiled the first {} of {} columns.\n", profile->columns.size(),
+                               table->columns.size());
         return out;
     }
 

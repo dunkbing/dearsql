@@ -12,6 +12,7 @@
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/markdown_text.hpp"
@@ -950,6 +951,7 @@ void Application::renderMainUI() {
     if (tabManager) {
         tabManager->tickChatTabs();
     }
+    SchemaCompare::poll();
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);

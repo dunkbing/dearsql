@@ -240,7 +240,6 @@ namespace Theme {
         return THEMES[0];
     }
 
-
     namespace CornerRadius {
         constexpr float XSMALL = 2.0f;
         constexpr float SMALL = 4.0f;
@@ -267,7 +266,8 @@ namespace Theme {
         style.FrameBorderSize = 1.0f;
         style.TabBorderSize = 0.0f;
         style.TabBarOverlineSize = 0.0f;
-        style.DockingSeparatorSize = 1.0f; // the sidebar handle: hover padding keeps it easy to grab
+        style.DockingSeparatorSize =
+            1.0f; // the sidebar handle: hover padding keeps it easy to grab
 
         style.WindowRounding = 0.0f;
         style.ChildRounding = 0.0f;
@@ -392,6 +392,11 @@ namespace Theme {
             return false;
         }
     } // namespace ConnectionPalette
+
+    // the table viewer's pagination strip; tabs without a bottom bar leave it free too
+    inline float BottomBarHeight() {
+        return ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+    }
 
     namespace Spacing {
         constexpr float XS = 2.0f;

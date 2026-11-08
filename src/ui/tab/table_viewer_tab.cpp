@@ -10,8 +10,8 @@
 #include "themes.hpp"
 #include "ui/query_history.hpp"
 #include "utils/button.hpp"
-#include "utils/spinner.hpp"
 #include "utils/menu.hpp"
+#include "utils/spinner.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -224,8 +224,7 @@ void TableViewerTab::render() {
     }
 
     // Reserve space for bottom controls (pagination + action buttons)
-    const float bottomControlsHeight =
-        ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+    const float bottomControlsHeight = Theme::BottomBarHeight();
     const float availableHeight = ImGui::GetContentRegionAvail().y - bottomControlsHeight;
 
     // Horizontal layout: table area | panel content (when open) | toggle strip (always)
@@ -1524,8 +1523,8 @@ void TableViewerTab::renderDdlTab() {
         ImGui::PopTextWrapPos();
         return;
     }
-    ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
-        Application::getInstance().getCurrentColors()));
+    ddlEditor_.SetPalette(
+        dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
     ddlEditor_.Render("##ddl_editor", ImVec2(-1, -1), false);
 }
 

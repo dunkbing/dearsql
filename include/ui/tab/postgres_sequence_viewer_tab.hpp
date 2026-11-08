@@ -13,6 +13,9 @@ class PostgresSchemaNode;
 
 class PostgresSequenceViewerTab final : public Tab {
 public:
+    [[nodiscard]] bool hasBottomBar() const override {
+        return true;
+    }
     PostgresSequenceViewerTab(PostgresSchemaNode* schema, std::string sequenceName);
     ~PostgresSequenceViewerTab() override;
 

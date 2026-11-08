@@ -956,8 +956,8 @@ void Application::renderMainUI() {
 
     maybeRemindToUpgrade();
 
-    // frames per second, bottom right, above everything
-    {
+    // frames per second, bottom right, above everything (not in docs screenshots)
+    if (!std::getenv("DEARSQL_SHOT_DIR")) {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
         const std::string fps = std::format("{:.0f} FPS", ImGui::GetIO().Framerate);
         const ImVec2 size = ImGui::CalcTextSize(fps.c_str());

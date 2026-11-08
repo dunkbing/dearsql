@@ -14,6 +14,9 @@ class IDatabaseNode;
 
 class TableViewerTab final : public Tab {
 public:
+    [[nodiscard]] bool hasBottomBar() const override {
+        return true;
+    }
     TableViewerTab(const std::string& name, std::string databasePath, Table table,
                    IDatabaseNode* node);
     ~TableViewerTab() override;

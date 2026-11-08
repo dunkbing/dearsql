@@ -387,6 +387,14 @@ void TabManager::renderTabs() {
             if (tabFont) {
                 ImGui::PushFont(tabFont);
             }
+            if (!tab->hasBottomBar()) {
+                // everything sized "to the rest" stops short of the bottom strip; both
+                // rects are rebuilt at each Begin
+                ImGuiWindow* w = ImGui::GetCurrentWindow();
+                const float inset = Theme::BottomBarHeight();
+                w->ContentRegionRect.Max.y -= inset;
+                w->WorkRect.Max.y -= inset;
+            }
             tab->render();
             if (tabFont) {
                 ImGui::PopFont();

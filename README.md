@@ -18,14 +18,12 @@
 
 ## Features
 
-- SQLite, DuckDB, PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, MongoDB, Redis and more
+- SQLite, DuckDB, PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, MongoDB, Redis, Cassandra and more, plus S3-compatible object storage
 - Cross-platform: macOS (Metal), Linux (GTK4 + OpenGL), Windows (DirectX 11)
-- Database browser: Sidebar for exploring schemas, tables, and structure
-- Native file dialogs for SQLite files
-- Native alert/confirm dialogs per platform
-- Saves and restores previous database connections
-- Run SQL queries with formatted results display
-- Query history
+- Schema browser, editable data grid, SQL editor with completion and syntax checks, charts, JSON view
+- Query plans (Explain / Analyze) with warnings for full scans, repeated scans, big sorts and bad estimates
+- AI agents in the app (Claude Code, Codex, Gemini CLI, Cursor) that read your schema and run queries, writing only after you approve
+- Terminal client, MCP server and language server from the same binary
 
 ## Command line
 
@@ -40,11 +38,45 @@ dearsql query "SELECT ..."   # the same tools as commands: search, describe, que
 
 ![dearsql --tui](assets/tui.png)
 
-A connection is a saved name, a URL, or a SQLite/DuckDB/CSV file. For agents:
+A connection is a saved name, a URL, or a SQLite/DuckDB/CSV file.
+
+## For coding agents
+
+DearSQL gives an agent your saved connections (credentials stay encrypted in DearSQL, SSH tunnels included) as tools, with compact text results ([docs](https://dearsql.dev/docs/ai-database-tools)):
+
+| Tool | |
+|---|---|
+| `search_schema`, `describe_table`, `list_tables` | find tables and columns (fuzzy, typo-tolerant), then keys, indexes and foreign keys |
+| `run_query` | one read-only statement, paged with a cursor |
+| `explain_query` | the query plan plus warnings: full scans a filter mostly discards, scans repeated per join row, spilled sorts, bad estimates |
+| `review_indexes` | foreign keys with no index, indexes another one covers |
+| `explain_finding` | what a warning code means, how to confirm it, the usual fix |
+| `execute_sql` | a change, approved by you first (`--allow-writes` over MCP) |
+| `list_objects`, `read_object`, ... | S3 buckets and files |
+
+The `dearsql` command has to be on your PATH: **Settings → Command Line → Install 'dearsql' Command** in the app, or the install script below.
+
+**Claude Code**: the plugin registers the MCP server and adds a skill that teaches the workflow (search before writing SQL, explain before suggesting an index, approve every write):
+
+```
+/plugin install dearsql --marketplace dunkbing/dearsql
+```
+
+or only the MCP server: `claude mcp add dearsql -- dearsql --mcp`.
+
+**Codex**: add the server to `~/.codex/config.toml` and the skill to `~/.agents/skills`:
+
+```toml
+[mcp_servers.dearsql]
+command = "dearsql"
+args = ["--mcp"]
+```
 
 ```sh
-claude mcp add dearsql -- dearsql --mcp
+mkdir -p ~/.agents/skills/dearsql && curl -fsSL https://raw.githubusercontent.com/dunkbing/dearsql/main/plugins/dearsql/skills/dearsql/SKILL.md -o ~/.agents/skills/dearsql/SKILL.md
 ```
+
+**Anything else**: any MCP client can run `dearsql --mcp` over stdio, and an agent with a shell can use the same tools as commands (`dearsql tools` lists them). The skill in [`plugins/dearsql/skills/dearsql/SKILL.md`](plugins/dearsql/skills/dearsql/SKILL.md) works as a prompt for any of them.
 
 ## Installation
 

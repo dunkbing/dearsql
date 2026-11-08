@@ -125,7 +125,7 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_NE(init["result"]["instructions"].get<std::string>().find("search_schema"),
               std::string::npos);
     auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
-    EXPECT_EQ(list["result"]["tools"].size(), 7u);
+    EXPECT_EQ(list["result"]["tools"].size(), 9u);
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
@@ -327,4 +327,19 @@ TEST_F(McpToolsTest, ExplainShowsThePlanAndWarnsAboutRepeatedScans) {
     auto [refused, isErr] =
         call("explain_query", {{"sql", "DELETE FROM users"}, {"analyze", true}});
     EXPECT_TRUE(isErr) << refused;
+}
+
+TEST_F(McpToolsTest, ReviewIndexesFindsTheUnindexedForeignKeyAndExplainsIt) {
+    auto [text, err] = call("review_indexes", nlohmann::json::object());
+    EXPECT_FALSE(err) << text;
+    EXPECT_NE(text.find("[unindexed-fk] orders (user_id) references users"), std::string::npos)
+        << text;
+    EXPECT_NE(text.find("CREATE INDEX idx_orders_user_id ON orders (user_id);"), std::string::npos)
+        << text;
+    auto [doc, docErr] = call("explain_finding", {{"code", "unindexed-fk"}});
+    EXPECT_FALSE(docErr);
+    EXPECT_NE(doc.find("How to confirm:"), std::string::npos) << doc;
+    EXPECT_TRUE(call("explain_finding", {{"code", "bogus"}}).second);
+    auto [one, oneErr] = call("review_indexes", {{"table", "users"}});
+    EXPECT_NE(one.find("No index findings in 1 table."), std::string::npos) << one;
 }

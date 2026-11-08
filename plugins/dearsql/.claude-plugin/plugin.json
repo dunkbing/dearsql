@@ -1,0 +1,9 @@
+{
+  "name": "dearsql",
+  "version": "1.0.0",
+  "description": "Your DearSQL connections as agent tools: schema search, read-only queries, query plans with index warnings, index review, S3 storage",
+  "author": { "name": "dunkbing" },
+  "homepage": "https://dearsql.dev/docs/ai-database-tools",
+  "repository": "https://github.com/dunkbing/dearsql",
+  "license": "FSL-1.1-ALv2"
+}

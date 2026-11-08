@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <dearsql/explain.hpp>
+#include <dearsql/findings.hpp>
 #include <format>
 #include <numeric>
 #include <regex>
@@ -246,6 +247,8 @@ namespace mcp {
                "- explain_query: the plan of a statement with warnings (full scans, repeated "
                "scans, "
                "big sorts). Use it when a query is slow or before suggesting an index.\n"
+               "- review_indexes: foreign keys with no index and indexes another covers, from "
+               "the schema alone. explain_finding <code> explains any [code] in a result.\n"
                "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
                "SQLite), or a read-only command on "
                "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
@@ -312,6 +315,20 @@ namespace mcp {
                                     "ANALYZE). Read-only statements only; it takes as long as "
                                     "the query."}}}}),
                      {"sql"}),
+             toolDef(
+                 "review_indexes",
+                 "Index checks from the schema alone: foreign keys with no index, and indexes "
+                 "another index already covers. Each finding has a code (explain_finding) and "
+                 "a statement to consider. Any SQL database.",
+                 withTarget({{"table",
+                              {{"type", "string"},
+                               {"description", "One table; default every table (up to 200)."}}}})),
+             toolDef("explain_finding",
+                     "What a finding code from explain_query or review_indexes means, how to "
+                     "confirm it, the usual fix and when to leave it. Quote it to the user rather "
+                     "than improvising.",
+                     {{"code", {{"type", "string"}, {"description", "e.g. unindexed-fk"}}}},
+                     {"code"}),
              toolDef("list_tables",
                      "Every table and view with column count and size, paged. Prefer "
                      "search_schema when you know roughly what you want.",
@@ -499,6 +516,10 @@ namespace mcp {
                 return textResult(runQuery(args));
             if (name == "explain_query")
                 return textResult(explainQuery(args));
+            if (name == "review_indexes")
+                return textResult(reviewIndexes(args));
+            if (name == "explain_finding")
+                return textResult(explainFinding(args));
             if (name == "list_objects" || name == "read_object" ||
                 (allowWrites_ && (name == "copy_object" || name == "delete_object" ||
                                   name == "upload_object" || name == "download_object")))
@@ -1384,9 +1405,81 @@ namespace mcp {
         } else {
             out += "\nWarnings (rule-based hints; ! marks the node):\n";
             for (const auto& w : warnings)
-                out += "- " + w.message + "\n";
+                out += "- [" + w.code + "] " + w.message + "\n";
+            out += "explain_finding <code> says how to confirm each one.";
         }
         return out;
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::reviewIndexes(const json& args) {
+        auto target = resolve(args);
+        const std::string only = str(args, {"table", "name"});
+        std::vector<const dearsql::Table*> picked;
+        for (const auto& t : catalog(target).tables) {
+            if (only.empty() || lower(t.name) == lower(only) || lower(qualified(t)) == lower(only))
+                picked.push_back(&t);
+        }
+        if (!only.empty() && picked.empty())
+            throw ToolError("No table '" + only + "' in " + where(target) + ". Try search_schema.");
+        constexpr size_t MAX_TABLES = 200;
+        const bool cut = picked.size() > MAX_TABLES;
+        if (cut)
+            picked.resize(MAX_TABLES);
+        // indexes only come from describeTable: one call per table, on its schema
+        std::vector<dearsql::Table> tables;
+        std::string failed;
+        for (const auto* t : picked) {
+            const std::string n = qualified(*t);
+            try {
+                auto handle = target.db;
+                if (!t->schema.empty() && hasSchemas(handle->type()))
+                    if (auto s = handle->schema(t->schema))
+                        handle = s;
+                auto full = handle->describeTable(t->name);
+                if (full.schema.empty())
+                    full.schema = t->schema;
+                tables.push_back(std::move(full));
+            } catch (const std::exception& e) {
+                if (!only.empty())
+                    throw ToolError(std::string("Error: ") + e.what());
+                failed += (failed.empty() ? "" : ", ") + n;
+            }
+        }
+        const auto findings = dearsql::reviewIndexes(tables);
+        std::string out;
+        for (const auto& f : findings) {
+            out += "- [" + f.code + "] " + f.message + "\n";
+            if (!f.suggestion.empty())
+                out += "  consider: " + f.suggestion + "\n";
+        }
+        if (findings.empty())
+            out = std::format("No index findings in {} table{}.\n", tables.size(),
+                              tables.size() == 1 ? "" : "s");
+        else
+            out += "explain_finding <code> says how to confirm each one; nothing was changed.\n";
+        if (cut)
+            out += std::format("Checked the first {} tables; pass table for others.\n", MAX_TABLES);
+        if (!failed.empty())
+            out += "Could not describe: " + failed + "\n";
+        return out;
+    }
+
+    std::string Server::explainFinding(const json& args) {
+        const std::string code = str(args, {"code", "finding", "name"});
+        const auto* d = dearsql::findingDoc(code);
+        if (!d) {
+            std::string codes;
+            for (const auto& doc : dearsql::findingDocs())
+                codes += (codes.empty() ? "" : ", ") + std::string(doc.code);
+            throw ToolError("Unknown code '" + code + "'. Codes: " + codes);
+        }
+        return std::format("{}: {}\n\nWhat it means: {}\nHow to confirm: {}\nUsual fix: {}\n"
+                           "When to leave it: {}",
+                           d->code, d->title, d->meaning, d->check, d->fix, d->ignore);
     }
 
 } // namespace mcp

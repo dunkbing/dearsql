@@ -396,11 +396,22 @@ void AcpClient::requestPermission(const acp::PermissionRequest& req) {
 }
 
 void AcpClient::agentStderr(const std::string& line) {
-    spdlog::debug("ACP agent stderr: {}", line);
+    spdlog::info("ACP agent stderr: {}", line);
+    std::lock_guard lock(stateMutex_);
+    stderrTail_.push_back(line);
+    if (stderrTail_.size() > 12)
+        stderrTail_.erase(stderrTail_.begin());
 }
 
 void AcpClient::agentExited() {
     sessionReady_ = false;
     turnActive_ = false;
-    pushEvent({.type = AcpEvent::Type::Exited});
+    std::string tail;
+    {
+        std::lock_guard lock(stateMutex_);
+        for (const auto& line : stderrTail_)
+            tail += (tail.empty() ? "" : "\n") + line;
+        stderrTail_.clear();
+    }
+    pushEvent({.type = AcpEvent::Type::Exited, .text = std::move(tail)});
 }

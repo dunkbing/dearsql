@@ -288,17 +288,10 @@ std::vector<std::string> AISidebarPanel::currentInvocation(std::string& missingR
         if (auto inv = AcpAgents::resolveInvocation(*def)) {
             return *inv;
         }
-        std::string tried = def->runCmd.empty() ? "" : "`" + def->runCmd.front() + "`";
-        for (const auto& runner : AcpAgents::runners()) {
-            const bool usable = runner.python ? !def->pyPackage.empty() : !def->npmPackage.empty();
-            if (usable) {
-                tried += (tried.empty() ? "" : ", ") + ("`" + runner.tool + "`");
-            }
-        }
-        missingReason = tried.empty()
-                            ? std::format("{} is not installed.", def->name)
-                            : std::format("{} is not installed (looked for {} on your PATH).",
-                                          def->name, tried);
+        missingReason = def->npmPackage.empty() ? std::format("{} is not installed.", def->name)
+                                                : std::format("{} runs on Bun, which DearSQL "
+                                                              "downloads the first time.",
+                                                              def->name);
         return {};
     }
     missingReason = "No agent selected.";
@@ -1072,25 +1065,6 @@ AISidebarPanel::Item* AISidebarPanel::findToolItem(const std::string& toolId) {
 }
 
 void AISidebarPanel::pollAcp() {
-    // installer finished?
-    if (installer_.check()) {
-        const auto& res = installer_.lastResult();
-        if (res.success) {
-            items_.push_back({.kind = Item::Kind::Info, .text = "Install finished."});
-            agentMissing_ = false;
-            if (!pendingPromptBlocks_.empty()) {
-                queueOrSendAcp(std::exchange(pendingPromptBlocks_, json::array()));
-            }
-        } else {
-            std::string tail = res.output.empty() ? res.errorMessage : res.output;
-            if (tail.size() > 1200) {
-                tail = "..." + tail.substr(tail.size() - 1200);
-            }
-            items_.push_back({.kind = Item::Kind::Error, .text = "Install failed:\n" + tail});
-        }
-        scrollToBottom_ = true;
-    }
-
     if (!acp_) {
         return;
     }
@@ -1208,6 +1182,8 @@ void AISidebarPanel::pollAcp() {
             break;
         }
         case AcpEvent::Type::Exited:
+            if (!ev.text.empty()) // why it died, as the agent put it
+                items_.push_back({.kind = Item::Kind::Error, .text = ev.text});
             items_.push_back(
                 {.kind = Item::Kind::Info, .text = "Agent exited. Next message restarts it."});
             agentGone = true;
@@ -1530,21 +1506,10 @@ void AISidebarPanel::renderInstallCard() {
         ImGui::PopTextWrapPos();
 
         if (def) {
-            if (installer_.isRunning()) {
-                UIUtils::Spinner("##install_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
-                ImGui::SameLine(0, Theme::Spacing::S);
-                ImGui::TextColored(colors.subtext0, "Installing...");
-            } else if (const AcpInstallOption* install = AcpAgents::resolveInstall(*def)) {
-                if (UIUtils::SmallButton(
-                        std::format("Install with {}##ai_install", install->label).c_str())) {
-                    installer_.start(install->command);
-                }
-                ImGui::SameLine(0, Theme::Spacing::S);
-                ImGui::TextColored(colors.subtext0, "runs: %s", install->command.c_str());
-            } else if (!def->registryId.empty()) {
+            if (!def->registryId.empty()) {
                 renderRegistryDownload(*def);
             } else {
-                // no runtime anywhere: fetch the managed bun without asking
+                // npm agents always run on the managed bun: fetch it without asking
                 if (!bunDownloadStarted_ && !registry_.isBusy()) {
                     bunDownloadStarted_ = true;
                     registry_.startInstallBun();
@@ -1552,14 +1517,12 @@ void AISidebarPanel::renderInstallCard() {
                 ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
                 if (registry_.isBusy()) {
                     ImGui::TextColored(colors.subtext0,
-                                       "No JavaScript runtime was found, so DearSQL is downloading "
-                                       "Bun v%s (about 25 MB) into ~/.dearsql/agents to run this "
-                                       "agent.",
+                                       "DearSQL is downloading Bun v%s (about 25 MB, once) into "
+                                       "~/.dearsql/agents to run this agent.",
                                        AcpRegistry::BUN_VERSION);
                 } else {
                     ImGui::TextColored(colors.subtext0,
-                                       "This agent ships as an npm package and no JavaScript "
-                                       "runtime was found.");
+                                       "Could not download Bun, which runs this agent.");
                     if (UIUtils::SmallButton("Retry Bun download##ai_install_bun")) {
                         registry_.startInstallBun();
                     }

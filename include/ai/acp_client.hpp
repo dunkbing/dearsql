@@ -51,7 +51,7 @@ struct AcpEvent {
         AuthRequired, // authMethods = what the agent accepts; answer with authenticate()
         TurnEnded,    // text = stopReason
         Error,        // text = message
-        Exited,       // agent process died
+        Exited,       // agent process died; text = its last stderr lines
     };
     Type type{};
     std::string text;
@@ -131,6 +131,7 @@ private:
     std::unique_ptr<acp::Connection> conn_;
     std::mutex stateMutex_; // guards events_, sessionId_
     std::vector<AcpEvent> events_;
+    std::vector<std::string> stderrTail_; // last lines, shown when the agent dies
     std::string sessionId_;
     std::string resumeSessionId_;
     std::string cwd_;

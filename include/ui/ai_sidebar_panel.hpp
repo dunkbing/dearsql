@@ -181,7 +181,6 @@ private:
     std::string registryDownloadFor_; // agent id whose binary download was kicked off
 
     std::unique_ptr<AcpClient> acp_;
-    AcpAgentInstaller installer_;
     int currentSessionId_ = 0;    // ai_sessions row, 0 until the first turn is saved
     std::string resumeSessionId_; // acp session to load on the next agent start
     bool wasBusy_ = false;        // saves the session on the busy → idle edge

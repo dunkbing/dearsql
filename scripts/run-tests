@@ -17,6 +17,7 @@ CASSANDRA_CONTAINER="dearsql-cassandra-test"
 S3_CONTAINER="dearsql-s3-test"
 COCKROACH_CONTAINER="dearsql-cockroach-test"
 TIDB_CONTAINER="dearsql-tidb-test"
+SCYLLA_CONTAINER="dearsql-scylla-test"
 SSH_CONTAINER="dearsql-ssh-test"
 
 # Docker images
@@ -29,6 +30,7 @@ S3_IMAGE="versity/versitygw:latest"
 # wire-compatible engines: the postgres and mysql suites run against them too
 COCKROACH_IMAGE="cockroachdb/cockroach:latest"
 TIDB_IMAGE="pingcap/tidb:latest"
+SCYLLA_IMAGE="scylladb/scylla:latest"
 MSSQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
 # xe 21 is x86-only and fails under emulation on arm64 (ORA-00442); 23ai free has arm64
 if [[ "$(uname -m)" == "arm64" || "$(uname -m)" == "aarch64" ]]; then
@@ -56,6 +58,7 @@ CASSANDRA_PORT="${CASSANDRA_PORT:-59042}"
 S3_PORT="${S3_PORT:-59000}"
 COCKROACH_PORT="${COCKROACH_PORT:-56257}"
 TIDB_PORT="${TIDB_PORT:-54000}"
+SCYLLA_PORT="${SCYLLA_PORT:-59043}"
 SSH_PORT="${SSH_PORT:-52222}"
 
 # TLS cert directory
@@ -320,6 +323,7 @@ all_ports_open() {
     port_open 127.0.0.1 "$S3_PORT" &&
     port_open 127.0.0.1 "$COCKROACH_PORT" &&
     port_open 127.0.0.1 "$TIDB_PORT" &&
+    port_open 127.0.0.1 "$SCYLLA_PORT" &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$REDIS_TLS_PORT"; } &&
     { [[ ! -d "$CERT_DIR" ]] || port_open 127.0.0.1 "$SSH_PORT"; } &&
     ssh_test_environment_ready
@@ -488,6 +492,12 @@ setup_containers() {
         sh -c "grep -q 'Starting listening for CQL clients' /var/log/cassandra/system.log 2>/dev/null \
             || grep -q 'Starting listening for CQL clients' /opt/cassandra/logs/system.log 2>/dev/null"
 
+    # ── ScyllaDB (cql, one small shard) ──
+    start_or_create "$SCYLLA_CONTAINER" \
+        -p "127.0.0.1:${SCYLLA_PORT}:9042" \
+        "$SCYLLA_IMAGE" --smp 1 --memory 750M --overprovisioned 1 --developer-mode 1
+    wait_for_command "ScyllaDB" 300 docker_cmd exec "$SCYLLA_CONTAINER" cqlsh -e "SELECT now() FROM system.local"
+
     # ── SSH server (for tunnel tests, same network as PostgreSQL) ──
     if $has_certs; then
         # build minimal SSH image with the test public key baked in
@@ -568,17 +578,20 @@ echo "Cassandra:   $DEARSQL_TEST_CASSANDRA_HOST:$DEARSQL_TEST_CASSANDRA_PORT"
 echo "S3:          $DEARSQL_TEST_S3_ENDPOINT"
 echo "CockroachDB: 127.0.0.1:$COCKROACH_PORT"
 echo "TiDB:        127.0.0.1:$TIDB_PORT"
+echo "ScyllaDB:    127.0.0.1:$SCYLLA_PORT"
 echo "SSH:         $DEARSQL_TEST_SSH_HOST:$DEARSQL_TEST_SSH_PORT"
 echo "CA cert:     ${DEARSQL_TEST_CA_CERT:-<not available>}"
 echo ""
 
 cd "$BUILD_DIR"
 ./database_tests "$@"
-# the postgres and mysql suites again on the compatible engines (no tls there)
+# the postgres, mysql and cassandra suites again on the compatible engines (no tls there)
 DEARSQL_TEST_PG_TYPE=cockroachdb DEARSQL_TEST_PG_PORT="$COCKROACH_PORT" \
     DEARSQL_TEST_PG_DB=defaultdb DEARSQL_TEST_PG_USER=root DEARSQL_TEST_PG_PASSWORD= \
     ./database_tests --gtest_filter='Postgres*-PostgresSSL*' "$@"
 DEARSQL_TEST_MYSQL_TYPE=tidb DEARSQL_TEST_MYSQL_PORT="$TIDB_PORT" \
     DEARSQL_TEST_MYSQL_DB=test DEARSQL_TEST_MYSQL_USER=root DEARSQL_TEST_MYSQL_PASSWORD= \
     ./database_tests --gtest_filter='MySQL*-MySQLSSL*' "$@"
+DEARSQL_TEST_CASSANDRA_TYPE=scylladb DEARSQL_TEST_CASSANDRA_PORT="$SCYLLA_PORT" \
+    ./database_tests --gtest_filter='Cassandra*' "$@"
 ./sql_format_tests "$@"

@@ -52,6 +52,7 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
         return make<PostgresDatabase>(info);
 
     case DatabaseType::CASSANDRA:
+    case DatabaseType::SCYLLADB:
         return make<CassandraDatabase>(info);
 
     case DatabaseType::DUCKDB:

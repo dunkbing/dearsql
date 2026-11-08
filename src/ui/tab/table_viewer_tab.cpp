@@ -240,16 +240,23 @@ void TableViewerTab::render() {
         if (dataLoadOp.isRunning()) {
             ImGui::Text("Loading table data...");
         } else if (!table_.columns.empty() && !tableData.empty()) {
-            // Update table renderer with current data
-            tableRenderer->setColumns(table_.columns);
-            tableRenderer->setData(tableData);
-            tableRenderer->setCellEditedStatus(editedCells);
-            tableRenderer->setRowsPendingDelete(rowsPendingDelete);
-            tableRenderer->setSelectedCell(selectedRow, selectedCol);
-            tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
-            tableRenderer->setSortColumn(sortColumn, sortDirection);
+            if (dataView_ == 1) {
+                std::vector<std::string> names;
+                for (const auto& c : table_.columns)
+                    names.push_back(c.name);
+                jsonView_.render("##table_json", names, tableData);
+            } else {
+                // Update table renderer with current data
+                tableRenderer->setColumns(table_.columns);
+                tableRenderer->setData(tableData);
+                tableRenderer->setCellEditedStatus(editedCells);
+                tableRenderer->setRowsPendingDelete(rowsPendingDelete);
+                tableRenderer->setSelectedCell(selectedRow, selectedCol);
+                tableRenderer->setRowNumberOffset(currentPage * rowsPerPage);
+                tableRenderer->setSortColumn(sortColumn, sortDirection);
 
-            tableRenderer->render("TableData");
+                tableRenderer->render("TableData");
+            }
         } else {
             if (!currentFilter.empty()) {
                 ImGui::Text("No rows match the filter: %s", currentFilter.c_str());
@@ -277,6 +284,20 @@ void TableViewerTab::render() {
 
     // Pagination controls at the bottom
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+
+    // data / json on the left, paging on the right (width from last frame)
+    if (UIUtils::SegmentedTabs("##data_view", {"Data", "JSON"}, &dataView_)) {
+        jsonView_.invalidate(); // edits since the last look
+    }
+    if (dataLoadOp.isRunning()) {
+        ImGui::SameLine(0, Theme::Spacing::M);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Loading...");
+    }
+    ImGui::SameLine();
+    const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), lineEnd - paginationWidth_));
+    const float paginationStart = ImGui::GetCursorScreenPos().x;
 
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
@@ -362,12 +383,9 @@ void TableViewerTab::render() {
         }
         UIUtils::EndSelect();
     }
-
-    // Show loading indicator
-    if (dataLoadOp.isRunning()) {
-        ImGui::SameLine();
-        ImGui::Text("Loading...");
-    }
+    ImGui::SameLine(0, 0);
+    paginationWidth_ = ImGui::GetCursorScreenPos().x - paginationStart;
+    ImGui::NewLine();
 
     // Check async SQL execution status
     checkSQLExecutionStatus();

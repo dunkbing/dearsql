@@ -169,3 +169,21 @@ TEST_F(TableTransferTest, DdlExportPutsReferencedTablesFirst) {
     const std::string sql{std::istreambuf_iterator<char>(file), {}};
     EXPECT_LT(sql.find("CREATE TABLE parent"), sql.find("CREATE TABLE child")) << sql;
 }
+
+// json view: null and booleans typed, numbers only when they print back the same
+TEST(TableExporterJson, RowsToJson) {
+    const std::string json = TableExporter::rowsToJson(
+        {"id", "zip", "big", "name", "gone", "ok"},
+        {{"7", "007", "1e5", "a\"b", std::string(NULL_SENTINEL), std::string(BOOL_TRUE_SENTINEL)},
+         {"-2.5", "0", "12345678901234567890123", "", "x", std::string(BOOL_FALSE_SENTINEL)}});
+    EXPECT_NE(json.find("\"id\": 7,"), std::string::npos) << json;
+    EXPECT_NE(json.find("\"zip\": \"007\""), std::string::npos) << json;
+    EXPECT_NE(json.find("\"big\": \"1e5\""), std::string::npos) << json;
+    EXPECT_NE(json.find("\"name\": \"a\\\"b\""), std::string::npos) << json;
+    EXPECT_NE(json.find("\"gone\": null"), std::string::npos) << json;
+    EXPECT_NE(json.find("\"ok\": true"), std::string::npos) << json;
+    EXPECT_NE(json.find("\"id\": -2.5"), std::string::npos) << json;
+    EXPECT_NE(json.find("\"zip\": 0,"), std::string::npos) << json;
+    EXPECT_NE(json.find("\"big\": \"12345678901234567890123\""), std::string::npos) << json;
+    EXPECT_NE(json.find("\"ok\": false"), std::string::npos) << json;
+}

@@ -2,6 +2,7 @@
 
 #include "database/async_helper.hpp"
 #include "ui/auto_complete_input.hpp"
+#include "ui/json_rows_view.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
 #include "ui/text_editor.hpp"
@@ -130,6 +131,16 @@ private:
 
     // Table renderer
     std::unique_ptr<TableRenderer> tableRenderer;
+    int dataView_ = 0; // 0 grid, 1 json
+    JsonRowsView jsonView_;
+
+public:
+    [[nodiscard]] const JsonRowsView& jsonView() const {
+        return jsonView_;
+    }
+
+private:
+    float paginationWidth_ = 0.0f;
 
     // Filter functionality
     char filterBuffer[512] = {0};

@@ -822,37 +822,41 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
         return;
     }
 
-    // the grid, then "347 rows  0.53 ms" under it
-    {
-        float tableHeight = std::max(
-            ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing(), 50.0f);
-
-        TableRenderer::Config config;
-        config.allowEditing = false;
-        config.showRowNumbers = false;
-        config.minHeight = tableHeight;
-
-        TableRenderer tableRenderer(config);
-        tableRenderer.setColumns(r.columnNames);
-        tableRenderer.setData(r.tableData);
-
-        std::string tableId = "QueryResults_" + std::to_string(index);
-        // the grid fills what it is given, so give it all but the status line
-
-        if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, tableHeight))) {
-
+    // the grid (or its json), then the view tabs and "347 rows  0.53 ms" under it
+    const float footer = ImGui::GetFrameHeight() + Theme::Spacing::S;
+    const float gridHeight = std::max(ImGui::GetContentRegionAvail().y - footer, 50.0f);
+    const std::string tableId = "QueryResults_" + std::to_string(index);
+    if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, gridHeight))) {
+        if (resultView_ == 1) {
+            jsonView_.render("##result_json", r.columnNames, r.tableData);
+        } else {
+            TableRenderer::Config config;
+            config.allowEditing = false;
+            config.showRowNumbers = false;
+            TableRenderer tableRenderer(config);
+            tableRenderer.setColumns(r.columnNames);
+            tableRenderer.setData(r.tableData);
             tableRenderer.render(tableId.c_str());
-
         }
+    }
+    ImGui::EndChild();
 
-        ImGui::EndChild();
-    }
-    ImGui::Text("%zu %s%s", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows",
-                took.c_str());
-    if (static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS) {
-        ImGui::SameLine();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    UIUtils::SegmentedTabs("##result_view", {"Data", "JSON"}, &resultView_);
+
+    const std::string status =
+        std::format("{} {}{}", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows", took);
+    const bool limited = static_cast<int>(r.tableData.size()) >= MAX_QUERY_ROWS;
+    float width = ImGui::CalcTextSize(status.c_str()).x;
+    if (limited)
+        width += ImGui::CalcTextSize(LABEL_ROW_LIMIT).x + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - width));
+    ImGui::AlignTextToFramePadding();
+    if (limited) {
         ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", LABEL_ROW_LIMIT);
+        ImGui::SameLine();
     }
+    ImGui::TextUnformatted(status.c_str());
 }
 
 void SQLEditorTab::startQueryExecutionAsync(const std::string& query,

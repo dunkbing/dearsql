@@ -3,6 +3,7 @@
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <nfd.h>
@@ -10,6 +11,20 @@
 #include <spdlog/spdlog.h>
 
 namespace {
+    // a cell as json: the export and the json view share it
+    nlohmann::ordered_json jsonValue(const std::string& v) {
+        if (isNullSentinel(v))
+            return nullptr;
+        if (isBoolSentinel(v))
+            return boolSentinelValue(v);
+        // a number only when it prints back unchanged: "007", "1e5" and huge ids stay text
+        if (!v.empty() && (std::isdigit(static_cast<unsigned char>(v[0])) || v[0] == '-')) {
+            auto n = nlohmann::ordered_json::parse(v, nullptr, false);
+            if (n.is_number() && n.dump() == v)
+                return n;
+        }
+        return v;
+    }
 
     constexpr int BATCH_SIZE = 10000;
 
@@ -216,12 +231,7 @@ namespace {
                     first = false;
                     nlohmann::ordered_json obj;
                     for (size_t i = 0; i < columns.size() && i < row.size(); ++i) {
-                        if (isNullSentinel(row[i]))
-                            obj[columns[i]] = nullptr;
-                        else if (isBoolSentinel(row[i]))
-                            obj[columns[i]] = boolSentinelValue(row[i]);
-                        else
-                            obj[columns[i]] = row[i];
+                        obj[columns[i]] = jsonValue(row[i]);
                     }
                     file << "  " << obj.dump();
                 });
@@ -439,3 +449,16 @@ namespace TableExporter {
     }
 
 } // namespace TableExporter
+
+std::string TableExporter::rowsToJson(const std::vector<std::string>& columns,
+                                      const std::vector<std::vector<std::string>>& rows) {
+    auto out = nlohmann::ordered_json::array();
+    for (const auto& row : rows) {
+        nlohmann::ordered_json obj = nlohmann::ordered_json::object();
+        for (size_t i = 0; i < columns.size() && i < row.size(); ++i)
+            obj[columns[i]] = jsonValue(row[i]);
+        out.push_back(std::move(obj));
+    }
+    // replace: a cell that is not valid utf-8 must not throw
+    return out.dump(2, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
+}

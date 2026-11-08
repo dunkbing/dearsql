@@ -133,3 +133,31 @@ bool UIUtils::IconLabelButton(const char* icon, const char* label, ButtonVariant
     ImGui::PopStyleVar(3);
     return clicked;
 }
+
+bool UIUtils::SegmentedTabs(const char* id, std::initializer_list<const char*> labels,
+                            int* current) {
+    const auto& colors = Application::getInstance().getCurrentColors();
+    bool changed = false;
+    ImGui::PushID(id);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, Theme::CornerRadius::SMALL);
+    int i = 0;
+    for (const char* label : labels) {
+        if (i > 0)
+            ImGui::SameLine(0, Theme::Spacing::XS);
+        const bool selected = *current == i;
+        ImGui::PushStyleColor(ImGuiCol_Button, selected ? colors.surface1 : ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? colors.surface1 : colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_Text, selected ? colors.text : colors.subtext0);
+        if (ImGui::Button(label) && !selected) {
+            *current = i;
+            changed = true;
+        }
+        ImGui::PopStyleColor(4);
+        ++i;
+    }
+    ImGui::PopStyleVar(2);
+    ImGui::PopID();
+    return changed;
+}

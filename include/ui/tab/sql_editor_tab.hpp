@@ -3,6 +3,7 @@
 #include "app_state.hpp"
 #include "database/async_helper.hpp"
 #include "database/db.hpp"
+#include "ui/json_rows_view.hpp"
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
 #include <array>
@@ -102,6 +103,15 @@ private:
     std::optional<PendingExplain> pendingExplain_;
     std::optional<dearsql::Plan> plan_;
     mutable bool planRaw_ = false;
+    mutable int resultView_ = 0; // 0 data, 1 json
+    mutable JsonRowsView jsonView_;
+
+public:
+    [[nodiscard]] const JsonRowsView& jsonView() const {
+        return jsonView_;
+    }
+
+private:
     bool explainAnalyze_ = false;
     void explainStatement();
     void showError(std::string message);

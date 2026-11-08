@@ -348,6 +348,54 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // data / json tabs under the results and under a table
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Results JSON view");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 1 as a, null as b");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        ctx->ItemClick("**/Run");
+        for (int i = 0; i < 300 && tab->getQueryResult().empty(); ++i) {
+            ctx->Yield();
+        }
+        ctx->Yield(2);
+        IM_CHECK(!tab->jsonView().visible());
+        ctx->ItemClick("**/JSON");
+        ctx->Yield(2);
+        IM_CHECK(tab->jsonView().visible());
+        IM_CHECK(tab->jsonView().text().find("\"b\": null") != std::string::npos);
+        ctx->ItemClick("**/Data");
+
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const Table* child = findTable(db->getTables(), "child");
+        IM_CHECK_SILENT(child != nullptr);
+        const auto viewer = tabs->createTableViewerTab(db.get(), *child);
+        ctx->Yield(40);
+        ctx->SetRef(viewer->getWindowName().c_str());
+        ctx->ItemClick("**/JSON");
+        ctx->Yield(2);
+        const auto* viewerTab = dynamic_cast<TableViewerTab*>(viewer.get());
+        IM_CHECK_SILENT(viewerTab != nullptr);
+        IM_CHECK(viewerTab->jsonView().visible());
+        IM_CHECK(viewerTab->jsonView().text().starts_with("[\n  {"));
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // :name placeholders ask for values, then run with them as literals
     t = IM_REGISTER_TEST(engine, "SQLEditor", "Query parameters prompt");
     t->TestFunc = [](ImGuiTestContext* ctx) {

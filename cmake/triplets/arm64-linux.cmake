@@ -12,3 +12,8 @@ if(PORT STREQUAL "duckdb")
     # duckdb appends -O3 to the release flags, then CXX_EXTRA
     set(VCPKG_CMAKE_CONFIGURE_OPTIONS_RELEASE -DCXX_EXTRA=-Os)
 endif()
+
+# ci builds only release (half the build time and cache); local debug builds need both
+if(DEFINED ENV{DEARSQL_VCPKG_RELEASE_ONLY})
+    set(VCPKG_BUILD_TYPE release)
+endif()

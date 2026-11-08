@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+# release-only vcpkg packages (cmake/triplets): the triplet sees the variable through keep_env_vars
+env:
+  DEARSQL_VCPKG_RELEASE_ONLY: "1"
+  VCPKG_KEEP_ENV_VARS: DEARSQL_VCPKG_RELEASE_ONLY
+
 jobs:
   build:
     runs-on: windows-2022
@@ -29,6 +34,19 @@ jobs:
         run: choco install gperf --version=3.1 -y --no-progress
 
       - name: Setup vcpkg
+        id: vcpkg
+        continue-on-error: true # a github download hiccup; retried below
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "db23990c5a6e2953bf1eb8c86e9a64c73d5b1fa7"
+
+      - name: Wait before retrying vcpkg
+        if: steps.vcpkg.outcome == 'failure'
+        run: sleep 60
+        shell: bash
+
+      - name: Setup vcpkg (retry)
+        if: steps.vcpkg.outcome == 'failure'
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: "db23990c5a6e2953bf1eb8c86e9a64c73d5b1fa7"

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include "database/s3_client.hpp"
 #include "database/ssh_tunnel.hpp"
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -37,8 +39,15 @@ public:
     // "" on success, else the error
     std::string open(const std::string& name);
     std::shared_ptr<dearsql::IConnection> connection(const std::string& name);
+    // saved S3 connections: not database connections, so kept apart from entries()
+    [[nodiscard]] const std::vector<DatabaseConnectionInfo>& s3Connections() const {
+        return s3_;
+    }
+    std::shared_ptr<const S3Client> s3(const std::string& name);
 
 private:
     std::vector<std::unique_ptr<Entry>> entries_;
+    std::vector<DatabaseConnectionInfo> s3_;
+    std::map<std::string, std::shared_ptr<const S3Client>> s3Clients_;
     std::recursive_mutex mutex_;
 };

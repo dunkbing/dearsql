@@ -5,6 +5,7 @@
 #include "database/file_database.hpp"
 #include "database/postgresql.hpp"
 #include "database/s3.hpp"
+#include "ui/tab/s3_browser_tab.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -316,7 +317,11 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         for (int i = 0; i < 300 && !ctx->ItemExists("**/" ICON_FA_FILE " customers.csv"); ++i)
             ctx->Yield();
         ctx->ItemClick("**/" ICON_FA_FILE " customers.csv");
+        ctx->KeyDown(ImGuiMod_Ctrl); // a second file joins the selection
+        ctx->ItemClick("**/" ICON_FA_FILE " products.json");
+        ctx->KeyUp(ImGuiMod_Ctrl);
         ctx->Yield(5);
+        IM_CHECK_EQ(std::static_pointer_cast<S3BrowserTab>(tab)->selectedCount(), 2u);
         holdForScreenshot(ctx);
     };
 

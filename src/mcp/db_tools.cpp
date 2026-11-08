@@ -1,10 +1,13 @@
 #include "mcp/db_tools.hpp"
 
+#include "database/s3_client.hpp"
+
 #include "mcp/fuzzy.hpp"
 #include "utils/sql_guard.hpp"
 #include <algorithm>
 #include <cstring>
 #include <format>
+#include <numeric>
 #include <regex>
 #include <set>
 
@@ -245,7 +248,9 @@ namespace mcp {
                "- list_tables: the whole map (tables and views with column counts and sizes), "
                "paged. Use when search_schema is not enough.\n"
                "- list_connections: the user's saved connections. Naming one in any tool opens "
-               "it; connect opens one explicitly.\n\n"
+               "it; connect opens one explicitly.\n"
+               "- list_objects / read_object: S3 object storage connections (type s3): "
+               "buckets, folders and files, and the start of a file as text.\n\n"
                "## Rules\n"
                "1. Never guess table or column names: search_schema, then describe_table.\n"
                "2. Put LIMIT (TOP on SQL Server) on exploratory queries; aggregate in SQL "
@@ -257,7 +262,7 @@ namespace mcp {
                "the next page instead of re-running with OFFSET.\n";
     }
 
-    json Server::tools(bool allowWrites, bool canSaveConnections) {
+    json Server::tools(bool allowWrites, bool canSaveConnections, bool s3) {
         json maxResults = {{"type", "integer"}, {"description", "Max results (default 20)."}};
         json cursor = {{"type", "string"},
                        {"description", "Cursor from a previous result, for the next page."}};
@@ -301,6 +306,68 @@ namespace mcp {
                      "Open one of the user's saved connections by name, or a connection URL or "
                      "database file path (the `dearsql connect` command also saves it).",
                      {{"name", {{"type", "string"}}}}, {"name"})});
+        const json s3conn = {{"type", "string"},
+                             {"description", "S3 connection name. Default: the selected or only "
+                                             "S3 connection."}};
+        const json bucket = {{"type", "string"}};
+        const json key = {{"type", "string"}, {"description", "Object key; a folder ends in '/'."}};
+        if (s3) { // only for hosts that have S3 connections
+            tools.push_back(
+                toolDef("list_objects",
+                        "S3 object storage: buckets (no bucket given), or the folders and "
+                        "files under a prefix of one bucket, one level, paged.",
+                        {{"connection", s3conn},
+                         {"bucket", bucket},
+                         {"prefix", {{"type", "string"}, {"description", "e.g. \"logs/2026/\""}}},
+                         {"cursor", cursor}}));
+            tools.push_back(
+                toolDef("read_object",
+                        "S3 object storage: the start of a file as text (CSV, JSON, logs...).",
+                        {{"connection", s3conn},
+                         {"bucket", bucket},
+                         {"key", key},
+                         {"maxBytes",
+                          {{"type", "integer"}, {"description", "Default 16384, max 1048576."}}}},
+                        {"bucket", "key"}));
+            if (allowWrites) {
+                auto write = [&](const char* name, const char* description, json props,
+                                 std::vector<std::string> required, bool destructive) {
+                    auto def = toolDef(name, description, std::move(props), std::move(required));
+                    def["annotations"]["readOnlyHint"] = false;
+                    def["annotations"]["destructiveHint"] = destructive;
+                    tools.push_back(std::move(def));
+                };
+                write(
+                    "copy_object",
+                    "S3 object storage: copy (or move) a file, or a folder with everything in it, "
+                    "within one connection. Overwrites the target.",
+                    {{"connection", s3conn},
+                     {"bucket", bucket},
+                     {"key", key},
+                     {"toBucket",
+                      {{"type", "string"}, {"description", "Default: the same bucket."}}},
+                     {"toKey", key},
+                     {"move", {{"type", "boolean"}, {"description", "Delete the source after."}}}},
+                    {"bucket", "key", "toKey"}, true);
+                write("delete_object",
+                      "S3 object storage: delete a file, or a folder (key ending '/') with "
+                      "everything in it.",
+                      {{"connection", s3conn}, {"bucket", bucket}, {"key", key}}, {"bucket", "key"},
+                      true);
+                write("upload_object", "S3 object storage: upload a local file.",
+                      {{"connection", s3conn},
+                       {"path", {{"type", "string"}, {"description", "Local file."}}},
+                       {"bucket", bucket},
+                       {"key", key}},
+                      {"path", "bucket", "key"}, true);
+                write("download_object", "S3 object storage: save a file to a local path.",
+                      {{"connection", s3conn},
+                       {"bucket", bucket},
+                       {"key", key},
+                       {"path", {{"type", "string"}, {"description", "Local file to write."}}}},
+                      {"bucket", "key", "path"}, false);
+            }
+        }
         if (allowWrites) {
             auto def =
                 toolDef("execute_sql",
@@ -349,7 +416,11 @@ namespace mcp {
         } else if (method == "ping") {
             res["result"] = json::object();
         } else if (method == "tools/list") {
-            res["result"] = {{"tools", tools(allowWrites_, host_.canSaveConnections())}};
+            res["result"] = {
+                {"tools", tools(allowWrites_, host_.canSaveConnections(),
+                                std::ranges::any_of(host_.connections(), [](const auto& c) {
+                                    return c.type == "s3";
+                                }))}};
         } else if (method == "tools/call") {
             res["result"] =
                 callTool(params.value("name", ""), params.value("arguments", json::object()));
@@ -408,6 +479,10 @@ namespace mcp {
                 return textResult(runQuery(args, true));
             if (name == "run_query")
                 return textResult(runQuery(args));
+            if (name == "list_objects" || name == "read_object" ||
+                (allowWrites_ && (name == "copy_object" || name == "delete_object" ||
+                                  name == "upload_object" || name == "download_object")))
+                return textResult(s3Tool(name, args));
             return textResult("Unknown tool: " + name, true);
         } catch (const ToolError& e) {
             return textResult(e.what(), true);
@@ -1084,6 +1159,131 @@ namespace mcp {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }
         return out;
+    }
+
+} // namespace mcp
+
+namespace mcp {
+
+    std::string Server::s3Tool(const std::string& name, const json& args) {
+        // the named S3 connection, else the selected one, else the only one
+        std::vector<std::string> s3;
+        for (const auto& c : host_.connections()) {
+            if (c.type == "s3")
+                s3.push_back(c.name);
+        }
+        std::string conn = str(args, {"connection", "conn"});
+        if (!conn.empty()) {
+            conn = findConnection(conn);
+        } else if (const auto f = host_.focus().first; std::ranges::find(s3, f) != s3.end()) {
+            conn = f;
+        } else if (s3.size() == 1) {
+            conn = s3[0];
+        } else {
+            throw ToolError(s3.empty() ? "No S3 connections are saved in DearSQL."
+                                       : "Pass connection; S3 connections: " +
+                                             std::accumulate(std::next(s3.begin()), s3.end(), s3[0],
+                                                             [](std::string a, const auto& b) {
+                                                                 return a + ", " + b;
+                                                             }));
+        }
+        const auto client = host_.s3(conn);
+        if (!client)
+            throw ToolError("'" + conn + "' is not an S3 connection. Call list_connections.");
+
+        const std::string bucket = str(args, {"bucket"});
+        const std::string key = str(args, {"key", "object", "path_in_bucket"});
+        auto need = [](const std::string& v, const char* what) {
+            if (v.empty())
+                throw ToolError(std::string("Missing '") + what + "'.");
+        };
+
+        if (name == "list_objects") {
+            std::string out;
+            if (bucket.empty()) {
+                for (const auto& b : client->listBuckets())
+                    out += std::format("{}  {}\n", b.name, b.created);
+                return out.empty() ? "No buckets." : out;
+            }
+            const std::string prefix = str(args, {"prefix", "folder", "path"});
+            const auto page = client->listObjects(bucket, prefix, str(args, {"cursor"}));
+            for (const auto& p : page.prefixes)
+                out += p + "\n";
+            for (const auto& o : page.objects)
+                out += std::format("{}  {} B  {}\n", o.key, o.size, o.lastModified);
+            if (out.empty())
+                out = "Nothing under '" + prefix + "'.\n";
+            if (!page.nextToken.empty())
+                out += "cursor: " + page.nextToken + "\n";
+            return out;
+        }
+        need(bucket, "bucket");
+        need(key, "key");
+        if (name == "read_object") {
+            const auto max =
+                static_cast<size_t>(num(args, {"maxBytes", "max_bytes"}, 16384, 1, 1 << 20));
+            const std::string data = client->readHead(bucket, key, max);
+            if (data.find('\0') != std::string::npos)
+                return std::format("Binary file; first {} bytes not shown.", data.size());
+            return data.size() == max ? data + std::format("\n[stopped at {} bytes]", max) : data;
+        }
+        if (name == "download_object") {
+            const std::string path = str(args, {"path", "file", "to"});
+            need(path, "path");
+            client->download(bucket, key, path);
+            return "Saved " + path;
+        }
+
+        // writes to the bucket: the user sees them first in the app
+        std::string what;
+        const std::string toBucket = str(args, {"toBucket", "to_bucket"}).empty()
+                                         ? bucket
+                                         : str(args, {"toBucket", "to_bucket"});
+        const std::string toKey = str(args, {"toKey", "to_key", "to"});
+        const auto mv = args.find("move");
+        const bool move =
+            mv != args.end() && (mv->is_boolean() ? mv->get<bool>() : mv->dump() == "\"true\"");
+        const std::string path = str(args, {"path", "file"});
+        if (name == "copy_object") {
+            need(toKey, "toKey");
+            if (key.ends_with('/') != toKey.ends_with('/'))
+                throw ToolError("key and toKey must both be folders (ending '/') or both files.");
+            what = std::format("{} s3://{}/{} to s3://{}/{}", move ? "move" : "copy", bucket, key,
+                               toBucket, toKey);
+        } else if (name == "delete_object") {
+            what = std::format("delete s3://{}/{}{}", bucket, key,
+                               key.ends_with('/') ? " and everything in it" : "");
+        } else {
+            need(path, "path");
+            what = std::format("upload {} to s3://{}/{}", path, bucket, key);
+        }
+        if (auto why = host_.approveWrite(conn, what); !why.empty())
+            throw ToolError(why);
+
+        if (name == "copy_object") {
+            int n = 1;
+            if (key.ends_with('/'))
+                n = client->copyPrefix(bucket, key, toBucket, toKey);
+            else
+                client->copyObject(bucket, key, toBucket, toKey);
+            if (move) {
+                if (key.ends_with('/'))
+                    client->deletePrefix(bucket, key);
+                else
+                    client->deleteObject(bucket, key);
+            }
+            return std::format("{} {} object{}.", move ? "Moved" : "Copied", n, n == 1 ? "" : "s");
+        }
+        if (name == "delete_object") {
+            if (!key.ends_with('/')) {
+                client->deleteObject(bucket, key);
+                return "Deleted " + key + ".";
+            }
+            const int n = client->deletePrefix(bucket, key);
+            return std::format("Deleted {} object{}.", n, n == 1 ? "" : "s");
+        }
+        client->upload(bucket, key, path);
+        return "Uploaded " + key + ".";
     }
 
 } // namespace mcp

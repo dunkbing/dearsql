@@ -61,7 +61,16 @@ public:
     // multipart for big files
     void upload(const std::string& bucket, const std::string& key, const std::string& path,
                 const Progress& progress = {}) const;
+    // the first maxBytes of an object
+    [[nodiscard]] std::string readHead(const std::string& bucket, const std::string& key,
+                                       std::size_t maxBytes) const;
     void deleteObject(const std::string& bucket, const std::string& key) const;
+    // server-side copy; the bytes never pass through here
+    void copyObject(const std::string& srcBucket, const std::string& srcKey,
+                    const std::string& dstBucket, const std::string& dstKey) const;
+    // every object under srcPrefix to the same path under dstPrefix; returns the count
+    int copyPrefix(const std::string& srcBucket, const std::string& srcPrefix,
+                   const std::string& dstBucket, const std::string& dstPrefix) const;
     // every object under prefix (a "folder"); returns how many went
     int deletePrefix(const std::string& bucket, const std::string& prefix) const;
 

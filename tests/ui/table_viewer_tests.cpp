@@ -3,12 +3,14 @@
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
 #include "database/postgres/postgres_database_node.hpp"
+#include "database/postgresql.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <algorithm>
+#include <chrono>
 #include <memory>
 
 namespace {
@@ -249,6 +251,99 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         IM_CHECK_EQ(tab->getEditor().GetErrorOffset(), -1);
 
         tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
+    // issue 53: a postgres schema with ~1000 tables and views must load and draw quickly.
+    // needs DEARSQL_TEST_PG_* and DEARSQL_TEST_PG_BIG_DB (a database with that many objects)
+    t = IM_REGISTER_TEST(engine, "Sidebar", "Large postgres schema");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const char* host = std::getenv("DEARSQL_TEST_PG_HOST");
+        const char* bigDb = std::getenv("DEARSQL_TEST_PG_BIG_DB");
+        if (!host || !bigDb) {
+            return; // skipped
+        }
+        auto env = [](const char* name, const char* fallback) {
+            const char* v = std::getenv(name);
+            return std::string(v ? v : fallback);
+        };
+        DatabaseConnectionInfo info;
+        info.name = "big";
+        info.type = DatabaseType::POSTGRESQL;
+        info.host = host;
+        info.port = std::stoi(env("DEARSQL_TEST_PG_PORT", "5432"));
+        info.database = bigDb;
+        info.username = env("DEARSQL_TEST_PG_USER", "postgres");
+        info.password = env("DEARSQL_TEST_PG_PASSWORD", "");
+        auto db = std::make_shared<PostgresDatabase>(info);
+        IM_CHECK_SILENT(db->connect().first);
+        auto& app = Application::getInstance();
+        app.addDatabase(db);
+        using Clock = std::chrono::steady_clock;
+        auto ms = [](Clock::time_point a) {
+            return std::chrono::duration<double, std::milli>(Clock::now() - a).count();
+        };
+
+        ctx->SetRef("Databases");
+        ctx->ItemOpen(std::format("**/###db_{:p}", static_cast<const void*>(db.get())).c_str());
+        auto* node = dynamic_cast<PostgresDatabaseNode*>(db->getDatabaseData(bigDb));
+        IM_CHECK_SILENT(node != nullptr);
+        ctx->ItemOpen(
+            std::format("**/###db_{}_{:p}", node->name, static_cast<void*>(node)).c_str());
+        for (int i = 0; i < 600 && !node->schemasLoaded; ++i) {
+            ctx->Yield();
+        }
+        PostgresSchemaNode* schema = nullptr;
+        for (auto& s : node->schemas) {
+            if (s->name == "public") {
+                schema = s.get();
+            }
+        }
+        IM_CHECK_SILENT(schema != nullptr);
+        ctx->ItemOpen(
+            std::format("**/###schema_{}_{:p}", schema->name, static_cast<void*>(schema)).c_str());
+        ctx->Yield(3);
+        auto frameMs = [&] {
+            const auto start = Clock::now();
+            ctx->Yield(60);
+            return ms(start) / 60.0;
+        };
+        const double closedFrame = frameMs();
+
+        const auto loadStart = Clock::now();
+        ctx->ItemOpen(
+            std::format("**/###tables_{}_{:p}", schema->name, static_cast<void*>(&schema->tables))
+                .c_str());
+        ctx->ItemOpen(
+            std::format("**/###views_{}_{:p}", schema->name, static_cast<void*>(&schema->views))
+                .c_str());
+        for (int i = 0; i < 3000 && (!schema->tablesLoaded || !schema->viewsLoaded); ++i) {
+            ctx->Yield();
+        }
+        const double loadMs = ms(loadStart);
+        const double openFrame = frameMs();
+        ctx->LogInfo("tables %zu views %zu: load %.0f ms, frame %.2f ms closed, %.2f ms open",
+                     schema->tables.size(), schema->views.size(), loadMs, closedFrame, openFrame);
+        fprintf(stderr,
+                "issue53: tables %zu views %zu: load %.0f ms, frame %.2f ms closed, %.2f ms open\n",
+                schema->tables.size(), schema->views.size(), loadMs, closedFrame, openFrame);
+        IM_CHECK(schema->tables.size() >= 789u);
+
+        // skipped rows keep their height: scrolled to the bottom, the last view is on screen
+        const auto tablesItem = ctx->ItemInfo(
+            std::format("**/###tables_{}_{:p}", schema->name, static_cast<void*>(&schema->tables))
+                .c_str());
+        IM_CHECK_SILENT(tablesItem.Window != nullptr);
+        ctx->ScrollToBottom(tablesItem.Window->ID);
+        ctx->Yield(3);
+        const Table& last = schema->views.back();
+        const auto lastItem = ctx->ItemInfo(
+            std::format("**/###view_{}_{:p}", last.name, static_cast<const void*>(&last)).c_str(),
+            ImGuiTestOpFlags_NoError);
+        IM_CHECK(lastItem.ID != 0);
+
+        app.getTabManager()->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
         ctx->Yield();
     };

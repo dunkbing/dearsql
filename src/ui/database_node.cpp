@@ -641,6 +641,17 @@ void DatabaseHierarchy::renderMultiSelectMenuContent(
     }
 }
 
+bool DatabaseHierarchy::skipOffscreenRow(const std::string& nodeId) {
+    const float height = ImGui::GetFrameHeight(); // a FramePadding tree node
+    if (ImGui::IsRectVisible(ImVec2(1.0f, height)))
+        return false;
+    // the same id TreeNodeEx("<label>###<nodeId>") gets: the hash restarts at "###"
+    if (ImGui::TreeNodeGetOpen(ImGui::GetID(("###" + nodeId).c_str())))
+        return false;
+    ImGui::Dummy(ImVec2(0.0f, height));
+    return true;
+}
+
 bool DatabaseHierarchy::renderTreeNodeWithIcon(const std::string& label, const std::string& nodeId,
                                                const std::string& icon, const ImU32 iconColor,
                                                const ImGuiTreeNodeFlags flags) {
@@ -2407,6 +2418,8 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
 
     const std::string tableNodeId =
         std::format("pg_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(tableNodeId))
+        return;
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
     renderDdlSpinner(ddlKey(schemaNode, table.name), table.name);
@@ -2706,6 +2719,8 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    if (skipOffscreenRow(viewNodeId))
+        return;
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
     renderDdlSpinner(ddlKey(schemaData, view.name), view.name);
@@ -2764,6 +2779,8 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
 
     const std::string tableNodeId =
         std::format("mysql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(tableNodeId))
+        return;
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
     renderDdlSpinner(ddlKey(dbData, table.name), table.name);
@@ -3041,6 +3058,8 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    if (skipOffscreenRow(viewNodeId))
+        return;
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
@@ -3332,6 +3351,8 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
 
     const std::string tableNodeId =
         std::format("mssql_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(tableNodeId))
+        return;
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
     renderDdlSpinner(ddlKey(schemaData, table.name), table.name);
@@ -3580,6 +3601,8 @@ void DatabaseHierarchy::renderMSSQLViewNode(Table& view, MSSQLSchemaNode* schema
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    if (skipOffscreenRow(viewNodeId))
+        return;
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
@@ -3801,6 +3824,8 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
 
     const std::string tableNodeId =
         std::format("oracle_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(tableNodeId))
+        return;
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
     renderDdlSpinner(ddlKey(dbData, table.name), table.name);
@@ -4047,6 +4072,8 @@ void DatabaseHierarchy::renderOracleViewNode(Table& view, OracleDatabaseNode* db
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    if (skipOffscreenRow(viewNodeId))
+        return;
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
@@ -4339,6 +4366,8 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
 
     const std::string tableNodeId =
         std::format("sqlite_table_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(tableNodeId))
+        return;
     const bool tableOpen = renderTreeNodeWithIcon(table.name, tableNodeId, ICON_FK_TABLE,
                                                   ImGui::GetColorU32(colors.green), tableFlags);
     renderDdlSpinner(ddlKey(sqliteDb, table.name), table.name);
@@ -4778,6 +4807,8 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, FileDatabase* sqliteDb
 
     const std::string viewNodeId =
         std::format("view_{}_{:p}", view.name, static_cast<void*>(&view));
+    if (skipOffscreenRow(viewNodeId))
+        return;
     const std::string viewLabel = std::format("   {}###{}", view.name, viewNodeId);
     ImGui::TreeNodeEx(viewLabel.c_str(), viewFlags);
 
@@ -4946,6 +4977,8 @@ void DatabaseHierarchy::renderCassandraTableNode(Table& table, CassandraDatabase
 
     const std::string nodeId =
         std::format("cass_tbl_{}_{:p}", table.name, static_cast<const void*>(&table));
+    if (skipOffscreenRow(nodeId))
+        return;
     const bool isOpen = renderTreeNodeWithIcon(table.name, nodeId, ICON_FK_TABLE,
                                                ImGui::GetColorU32(colors.green), flags);
     renderDdlSpinner(ddlKey(dbData, table.name), table.name);
@@ -5022,6 +5055,8 @@ void DatabaseHierarchy::renderCassandraViewNode(Table& view, CassandraDatabaseNo
 
     const std::string nodeId =
         std::format("cass_view_{}_{:p}", view.name, static_cast<const void*>(&view));
+    if (skipOffscreenRow(nodeId))
+        return;
     const bool isOpen = renderTreeNodeWithIcon(view.name, nodeId, ICON_FK_EYE,
                                                ImGui::GetColorU32(colors.teal), flags);
 

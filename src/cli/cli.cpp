@@ -196,8 +196,10 @@ or let it run commands:
         std::string quoted = "'";
         for (char c : target.string())
             quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
-        const std::string cmd =
-            "curl -fsSL https://dearsql.dev/install.sh | DEARSQL_TARGET=" + quoted + "' sh";
+        // fetched first: a failed download piped to sh would run nothing and exit 0
+        const std::string cmd = "s=$(curl -fsSL https://dearsql.dev/install.sh) && printf '%s\\n' "
+                                "\"$s\" | DEARSQL_TARGET=" +
+                                quoted + "' sh";
 #endif
         return std::system(cmd.c_str()) == 0 ? 0 : 1;
     }

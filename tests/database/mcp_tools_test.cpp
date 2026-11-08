@@ -365,6 +365,9 @@ TEST_F(McpToolsTest, ExplainRefusesASecondStatement) {
     // EXPLAIN covers only the first statement: the DROP would run
     auto [text, err] = call("explain_query", {{"sql", "SELECT 1; DROP TABLE orders"}});
     EXPECT_TRUE(err) << text;
+    auto [text3, err3] =
+        call("explain_query", {{"sql", "SELECT 1; /*!50000 DROP TABLE orders */"}});
+    EXPECT_TRUE(err3) << text3;
     auto [rows, err2] = call("run_query", {{"sql", "SELECT COUNT(*) FROM orders"}});
     EXPECT_FALSE(err2) << rows;
 }

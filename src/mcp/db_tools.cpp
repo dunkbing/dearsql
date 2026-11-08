@@ -1413,15 +1413,19 @@ namespace mcp {
             a != args.end() && (a->is_boolean() ? a->get<bool>() : a->dump() == "\"true\"");
         auto target = resolve(args);
         const auto type = target.db->type();
-        // EXPLAIN only covers the first statement; anything after it would just run
-        if (dearsql::statementRanges(sql, type).size() > 1)
+        // EXPLAIN only covers the first statement; anything after it would just run, so
+        // only that statement goes to the server. mysql runs /*! */ comments: refused
+        const auto ranges = dearsql::statementRanges(sql, type);
+        if (ranges.size() != 1 || sql.find("/*!") != std::string::npos)
             throw ToolError("Pass one statement.");
-        if (analyze && !SqlGuard::isReadOnly(sql))
+        const std::string statement =
+            sql.substr(ranges[0].first, ranges[0].second - ranges[0].first);
+        if (analyze && !SqlGuard::isReadOnly(statement))
             throw ToolError("analyze runs the statement, so only for read-only ones. Leave it "
                             "off to see the plan of a change.");
         if (analyze && !dearsql::supportsExplainAnalyze(type))
             throw ToolError("This database has no EXPLAIN ANALYZE; leave analyze off.");
-        const auto explain = dearsql::explainSql(type, sql, analyze);
+        const auto explain = dearsql::explainSql(type, statement, analyze);
         if (!explain)
             throw ToolError("Query plans are supported on PostgreSQL, MySQL 8 and SQLite.");
         const auto result = target.db->execute(*explain, 0);

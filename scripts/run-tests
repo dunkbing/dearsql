@@ -305,7 +305,7 @@ setup_tls_certs() {
 
     # remove old containers so they get recreated with TLS mounts
     echo "Recreating containers with TLS support..."
-    for name in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MONGODB_CONTAINER"; do
+    for name in "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MONGODB_CONTAINER" "$SCYLLA_CONTAINER"; do
         docker_cmd rm -f "$name" 2>/dev/null || true
     done
     docker_cmd rm -f "$SSH_CONTAINER" 2>/dev/null || true
@@ -497,6 +497,11 @@ setup_containers() {
     # ── ScyllaDB (cql, one small shard; tls on 9142 when certs exist) ──
     # map options go as repeated key=value: the entrypoint splits on spaces
     if $has_certs; then
+        # one from before tls (no 9142 mapping) would never pick the flags up
+        if docker_cmd ps -a --format '{{.Names}}' | grep -Fxq "$SCYLLA_CONTAINER" &&
+            ! docker_cmd port "$SCYLLA_CONTAINER" 9142 >/dev/null 2>&1; then
+            docker_cmd rm -f "$SCYLLA_CONTAINER" >/dev/null
+        fi
         start_or_create "$SCYLLA_CONTAINER" \
             -v "$CERT_DIR:/certs:ro" \
             -p "127.0.0.1:${SCYLLA_PORT}:9042" \

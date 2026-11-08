@@ -1354,8 +1354,15 @@ void TableViewerTab::renderRightPanel(float panelWidth, float availableHeight) {
             ImGui::SetCursorPos(ImVec2(0, 0));
         }
 
-        if (ImGui::BeginTabBar("##panel_tabs")) {
-            if (ImGui::BeginTabItem("Value")) {
+        // tabs touch; imgui lays them out in the first BeginTabItem, so keep it pushed till then
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing,
+                            ImVec2(0.0f, ImGui::GetStyle().ItemInnerSpacing.y));
+        if (!ImGui::BeginTabBar("##panel_tabs")) {
+            ImGui::PopStyleVar();
+        } else {
+            const bool valueOpen = ImGui::BeginTabItem("Value");
+            ImGui::PopStyleVar();
+            if (valueOpen) {
                 activeRightPanelTab = 0;
                 renderValueTab();
                 ImGui::EndTabItem();
@@ -1539,11 +1546,16 @@ void TableViewerTab::renderDdlTab() {
         ImGui::TextColored(colors.subtext0, "Reading DDL...");
         return;
     }
-    if (ImGui::SmallButton(ICON_FA_COPY " Copy"))
+    // same buttons as the settings dialog
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
+    if (UIUtils::IconLabelButton(ICON_FA_COPY, "Copy"))
         ImGui::SetClipboardText(ddlEditor_.GetText().c_str());
-    ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_FA_ROTATE " Refresh"))
+    ImGui::SameLine(0, Theme::Spacing::M);
+    if (UIUtils::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
         startDdlLoad();
+    ImGui::PopStyleVar();
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
     if (!ddlError_.empty()) {
         ImGui::PushTextWrapPos();
         ImGui::TextColored(colors.red, "%s", ddlError_.c_str());

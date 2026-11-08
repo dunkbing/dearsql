@@ -1619,7 +1619,11 @@ void TableViewerTab::startProfileLoad() {
                 continue;
             for (const auto& row : top.statements.back().tableData)
                 if (row.size() >= 2)
-                    v.top[c.column].emplace_back(isNullSentinel(row[0]) ? "NULL" : row[0], row[1]);
+                    v.top[c.column].emplace_back(isNullSentinel(row[0])      ? "NULL"
+                                                 : !isBoolSentinel(row[0])   ? row[0]
+                                                 : boolSentinelValue(row[0]) ? "true"
+                                                                             : "false",
+                                                 row[1]);
         }
         return v;
     });

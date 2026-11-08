@@ -8,6 +8,8 @@ namespace CliCommand {
 
     // the app can install it itself (macOS, Linux); Windows' installer owns PATH
     bool supported();
+    // this executable, resolved: the AppImage itself on Linux; "" on Windows
+    std::string executable();
     // /usr/local/bin/dearsql on macOS, ~/.local/bin/dearsql on Linux, or $DEARSQL_CLI_LINK
     std::string linkPath();
     // the link exists and points at this executable

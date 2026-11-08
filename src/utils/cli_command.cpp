@@ -72,6 +72,10 @@ namespace {
 
 namespace CliCommand {
 
+    std::string executable() {
+        return target().string();
+    }
+
     bool supported() {
 #if defined(__APPLE__) || defined(__linux__)
         return true;

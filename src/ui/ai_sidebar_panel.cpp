@@ -6,7 +6,6 @@
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
 #include "database/connection_url.hpp"
-#include "database/s3.hpp"
 #include "database/database_node.hpp"
 #include "database/file_database.hpp"
 #include "database/mongodb.hpp"
@@ -19,6 +18,7 @@
 #include "database/oracle/oracle_database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "database/postgresql.hpp"
+#include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "themes.hpp"
@@ -38,12 +38,33 @@
 #include <format>
 #include <iomanip>
 #include <mutex>
+#include <regex>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
 using json = nlohmann::json;
 
 namespace {
+    // session/load replays the injected intro, schema and chip blocks as user text; keep only what
+    // the user typed
+    std::string stripInjectedContext(std::string s) {
+        static const std::regex intro(R"(You are helping with a [\s\S]*?not open\.)");
+        static const std::regex ctx(R"re(<context ref="(dearsql://[^"]*)">[\s\S]*?</context>)re");
+        s = std::regex_replace(s, intro, "");
+        std::vector<std::string> refs{
+            "dearsql://schema"}; // always known, even if its <context> block is missing
+        for (std::sregex_iterator it(s.begin(), s.end(), ctx), end; it != end; ++it) {
+            refs.push_back((*it)[1].str());
+        }
+        s = std::regex_replace(s, ctx, "");
+        for (const auto& ref : refs) {
+            for (auto p = s.find(ref); p != std::string::npos; p = s.find(ref, p)) {
+                s.erase(p, ref.size());
+            }
+        }
+        const auto b = s.find_first_not_of(" \t\n\r");
+        return b == std::string::npos ? "" : s.substr(b, s.find_last_not_of(" \t\n\r") - b + 1);
+    }
     struct ApiModelOption {
         const char* label;
         const char* model;
@@ -565,8 +586,8 @@ void AISidebarPanel::syncContext() {
         // object storage: the S3 tools, on the connection's client
         if (info.type == DatabaseType::S3) {
             auto s3db = std::dynamic_pointer_cast<S3Database>(db);
-            connections.push_back({info.name, "s3", db->isConnected(), nullptr,
-                                   s3db ? s3db->client() : nullptr});
+            connections.push_back(
+                {info.name, "s3", db->isConnected(), nullptr, s3db ? s3db->client() : nullptr});
             continue;
         }
         connections.push_back({info.name, databaseTypeToString(info.type), db->isConnected(),
@@ -1090,8 +1111,10 @@ void AISidebarPanel::pollAcp() {
         case AcpEvent::Type::UserMessageDelta:
             if (items_.empty() || items_.back().kind != Item::Kind::User) {
                 items_.push_back({.kind = Item::Kind::User});
+                replayUserRaw_.clear();
             }
-            items_.back().text += ev.text;
+            replayUserRaw_ += ev.text;
+            items_.back().text = stripInjectedContext(replayUserRaw_);
             scrollToBottom_ = true;
             break;
         case AcpEvent::Type::ThoughtDelta:

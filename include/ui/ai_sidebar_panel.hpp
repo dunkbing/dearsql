@@ -182,9 +182,9 @@ private:
 
     std::unique_ptr<AcpClient> acp_;
     AcpAgentInstaller installer_;
-    int currentSessionId_ = 0;           // ai_sessions row, 0 until the first turn is saved
-    std::string resumeSessionId_;        // acp session to load on the next agent start
-    bool wasBusy_ = false;               // saves the session on the busy → idle edge
+    int currentSessionId_ = 0;    // ai_sessions row, 0 until the first turn is saved
+    std::string resumeSessionId_; // acp session to load on the next agent start
+    bool wasBusy_ = false;        // saves the session on the busy → idle edge
     bool agentMissing_ = false;
     std::string agentMissingReason_;
     nlohmann::json pendingPromptBlocks_ = nlohmann::json::array(); // queued until session ready
@@ -201,6 +201,7 @@ private:
 
     std::shared_ptr<DatabaseInterface> db_; // the connection this chat belongs to
     bool sentSchemaContext_ = false;
+    std::string replayUserRaw_; // unstripped text of the user message being replayed
     // picker entries: dearsql's own commands plus whatever the agent published via
     // available_commands_update. namespaced like toad's /toad: so ours cannot collide
     // with an agent command such as /clear or /compact.

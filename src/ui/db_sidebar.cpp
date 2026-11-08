@@ -914,8 +914,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
 
         if (db->isConnected()) {
             auto dbType = db->getConnectionInfo().type;
-            if (dearsql::isPostgresFamily(dbType) ||
-                dearsql::isMySQLFamily(dbType) ||
+            if (dearsql::isPostgresFamily(dbType) || dearsql::isMySQLFamily(dbType) ||
                 dbType == DatabaseType::MSSQL) {
                 if (ImGui::MenuItem("Create New Database")) {
                     CreateDatabaseDialog::instance().show(&app, db);
@@ -1004,6 +1003,22 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
         ImVec2(min.x + ImGui::GetTreeNodeToLabelSpacing(),
                min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f),
         ImGui::GetColorU32(colors.purple), ICON_FA_COMMENTS);
+    const auto newChat = [&] {
+        app.getTabManager()->createAIChatTab(db);
+        if (!db->isConnected() && !db->isConnecting()) {
+            db->startConnectionAsync(); // the agent's tools need the connection open
+        }
+    };
+    // New on the header's menu too, so it works with no chats yet
+    if (UIUtils::BeginContextMenu()) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+        if (ImGui::MenuItem("New")) {
+            newChat();
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndPopup();
+    }
     if (!open) {
         return;
     }
@@ -1062,6 +1077,9 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
         if (UIUtils::BeginContextMenu()) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            if (ImGui::MenuItem("New")) {
+                newChat();
+            }
             if (ImGui::MenuItem("Open")) {
                 app.getTabManager()->createAIChatTab(db, &session);
             }

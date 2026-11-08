@@ -851,6 +851,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
         saveDialogEditor_.SetReadOnly(false);
         saveDialogEditor_.SetText(combined);
         saveDialogEditor_.SetFocus();
+        startDeleteImpact();
 
         ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Always);
         ImGui::OpenPopup("Confirm Save Changes");
@@ -875,6 +876,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
         ImGui::TextUnformatted("Review and edit the SQL before executing.");
         ImGui::PopStyleColor();
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
+        renderDeleteImpact();
 
         // Editor area
         const float footerH = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M * 2;
@@ -925,6 +927,8 @@ void TableViewerTab::showSaveConfirmationDialog() {
             if (UIUtils::Button(ICON_FA_XMARK " Cancel")) {
                 showSaveDialog = false;
                 pendingUpdateSQL.clear();
+                deleteImpactOp_.detach(); // its counts are for this dialog only
+                deleteImpact_.reset();
                 dialogOpened = false;
             }
         }
@@ -934,6 +938,8 @@ void TableViewerTab::showSaveConfirmationDialog() {
     } else if (!ImGui::IsPopupOpen("Confirm Save Changes")) {
         showSaveDialog = false;
         pendingUpdateSQL.clear();
+        deleteImpactOp_.detach(); // its counts are for this dialog only
+        deleteImpact_.reset();
         dialogOpened = false;
     }
 
@@ -948,6 +954,8 @@ void TableViewerTab::checkSQLExecutionStatus() {
         if (success) {
             showSaveDialog = false;
             pendingUpdateSQL.clear();
+            deleteImpactOp_.detach(); // its counts are for this dialog only
+            deleteImpact_.reset();
             dialogOpened = false;
             refreshData();
         } else {
@@ -1606,4 +1614,138 @@ void TableViewerTab::renderMetadataTab() {
 
         ImGui::EndTable();
     }
+}
+
+// the rows the pending deletes reach through foreign keys, counted off the ui thread. the
+// effects and their queries come from the loaded catalog; only the counts hit the server
+void TableViewerTab::startDeleteImpact() {
+    deleteImpact_.reset();
+    std::string where;
+    for (size_t row = 0; row < rowsPendingDelete.size() && row < originalData.size(); ++row) {
+        if (rowsPendingDelete[row]) {
+            if (const std::string w = buildRowWhere(originalData[row]); !w.empty())
+                where += (where.empty() ? "(" : " OR (") + w + ")";
+        }
+    }
+    if (where.empty() || !node_)
+        return;
+    const auto type = node_->getDatabaseType();
+    const auto& tables = node_->getTables();
+    const std::string name = table_.name.substr(table_.name.find('.') + 1);
+    const auto root = std::ranges::find(tables, name, &Table::name);
+    auto effects =
+        dearsql::deleteEffects(type, tables, root != tables.end() ? *root : table_, where);
+    if (effects.empty())
+        return;
+    deleteImpactOp_.start(
+        [node = node_, keep = keepOwnerAlive(node_), type, effects = std::move(effects)] {
+            DeleteImpact impact;
+            if (type == DatabaseType::SQLITE) {
+                const auto r = node->executeQuery("PRAGMA foreign_keys");
+                impact.enforced = !(r.success() && !r.empty() && !r[0].tableData.empty() &&
+                                    r[0].tableData[0][0] == "0");
+            }
+            for (const auto& effect : effects) {
+                DeleteImpact::Row row{effect};
+                const auto r = node->executeQuery(effect.countSql);
+                if (r.success() && !r.empty() && !r[0].tableData.empty() &&
+                    !r[0].tableData[0].empty()) {
+                    try {
+                        row.count = std::stoll(r[0].tableData[0][0]);
+                    } catch (const std::exception&) {
+                        row.error = "unexpected count";
+                    }
+                } else {
+                    row.error = r.errorMessage();
+                }
+                impact.rows.push_back(std::move(row));
+            }
+            return impact;
+        });
+}
+
+void TableViewerTab::renderDeleteImpact() {
+    deleteImpactOp_.check([this](DeleteImpact impact) { deleteImpact_ = std::move(impact); });
+    const auto& colors = Application::getInstance().getCurrentColors();
+    if (deleteImpactOp_.isRunning()) {
+        UIUtils::Spinner("##impact_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        ImGui::SameLine(0, Theme::Spacing::S);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::TextUnformatted("Checking the rows that reference these...");
+        ImGui::PopStyleColor();
+        ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
+        return;
+    }
+    if (!deleteImpact_) {
+        return;
+    }
+    const auto& impact = *deleteImpact_;
+    bool any = false;
+    if (!impact.enforced) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.yellow);
+        ImGui::TextWrapped("Foreign keys are off on this SQLite connection (PRAGMA foreign_keys), "
+                           "so nothing below is cascaded or blocked: those rows are left "
+                           "pointing at the deleted ones.");
+        ImGui::PopStyleColor();
+    }
+    // what fails the delete first, then what it deletes (nearest first), then what it updates
+    auto rank = [](const dearsql::DeleteEffect& e) {
+        return e.action == "CASCADE" ? 1 : e.action.starts_with("SET") ? 2 : 0;
+    };
+    auto rows = impact.rows;
+    std::ranges::stable_sort(rows, [&](const DeleteImpact::Row& a, const DeleteImpact::Row& b) {
+        return std::pair(rank(a.effect), a.effect.depth) <
+               std::pair(rank(b.effect), b.effect.depth);
+    });
+    for (const auto& row : rows) {
+        const auto& e = row.effect;
+        if (!row.error.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::TextWrapped("Could not count the rows in %s: %s", e.table.c_str(),
+                               row.error.c_str());
+            ImGui::PopStyleColor();
+            continue;
+        }
+        if (row.count <= 0) {
+            continue;
+        }
+        any = true;
+        // through a cascade, two paths into one table count its rows twice: "up to"
+        const std::string n = std::format("{}{} {}", e.depth > 1 ? "up to " : "", row.count,
+                                          row.count == 1 ? "row" : "rows");
+        const std::string via =
+            e.depth > 1 ? std::format(" (via {})",
+                                      e.path.substr(e.path.find(" > ") + 3,
+                                                    e.path.rfind(" > ") - e.path.find(" > ") - 3))
+                        : "";
+        const bool one = row.count == 1;
+        std::string text;
+        ImVec4 color = colors.text;
+        const char* icon = ICON_FA_TRASH_CAN;
+        if (!impact.enforced) {
+            text = std::format("{} in {} still {} at them ({})", n, e.table,
+                               one ? "points" : "point", e.columns);
+            icon = ICON_FA_LINK;
+        } else if (e.action == "CASCADE") {
+            text = std::format("{} in {} deleted too{}", n, e.table, via);
+        } else if (e.action == "SET NULL" || e.action == "SET DEFAULT") {
+            text = std::format("{} in {} {} {} set to {}{}", n, e.table, one ? "gets" : "get",
+                               e.columns, e.action == "SET NULL" ? "NULL" : "its default", via);
+            icon = ICON_FA_PEN;
+        } else {
+            text = std::format("{} in {} still {} them ({}): the delete will fail{}", n, e.table,
+                               one ? "references" : "reference", e.action, via);
+            color = colors.red;
+            icon = ICON_FA_TRIANGLE_EXCLAMATION;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextWrapped("%s  %s", icon, text.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (!any && impact.enforced) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::TextUnformatted("No other rows reference the deleted ones.");
+        ImGui::PopStyleColor();
+    }
+    ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
 }

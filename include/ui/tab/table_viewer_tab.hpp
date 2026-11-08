@@ -5,7 +5,9 @@
 #include "ui/tab/tab.hpp"
 #include "ui/table_renderer.hpp"
 #include "ui/text_editor.hpp"
+#include <dearsql/delete_impact.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,21 @@ public:
     void showSaveConfirmationDialog();
     void checkSQLExecutionStatus();
 
+    // delete preview: what the pending deletes do to the rows referencing them, counted when
+    // the save dialog opens
+    struct DeleteImpact {
+        struct Row {
+            dearsql::DeleteEffect effect;
+            long long count = -1;
+            std::string error;
+        };
+        std::vector<Row> rows;
+        bool enforced = true; // false: sqlite with foreign_keys off
+    };
+    [[nodiscard]] const std::optional<DeleteImpact>& deleteImpact() const {
+        return deleteImpact_;
+    }
+
 private:
     [[nodiscard]] const ForeignKey* foreignKeyForColumn(int col) const;
     void followForeignKey(int row, int col);
@@ -105,6 +122,11 @@ private:
 
     // Async SQL execution state
     AsyncOperation<std::pair<bool, std::string>> sqlExecutionOp;
+
+    AsyncOperation<DeleteImpact> deleteImpactOp_;
+    std::optional<DeleteImpact> deleteImpact_;
+    void startDeleteImpact();
+    void renderDeleteImpact();
 
     // Table renderer
     std::unique_ptr<TableRenderer> tableRenderer;

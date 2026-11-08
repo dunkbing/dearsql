@@ -13,6 +13,7 @@
 #include "ui/connection_dialog.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
 #include <algorithm>
 #include <chrono>
@@ -487,6 +488,63 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_P);
         ctx->Yield(2);
         ctx->KeyChars("inv");
+        ctx->Yield(10);
+        holdForScreenshot(ctx);
+    };
+
+    // saving a delete previews what foreign keys do to the rows referencing it
+    t = IM_REGISTER_TEST(engine, "Docs", "delete-preview");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "shop.db";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first) {
+            ctx->LogError("no sqlite");
+            return;
+        }
+        for (const char* sql : {
+                 "PRAGMA foreign_keys = ON",
+                 "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT)",
+                 "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE CASCADE, total REAL)",
+                 "CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER "
+                 "REFERENCES orders(id) ON DELETE CASCADE, sku TEXT)",
+                 "CREATE TABLE reviews (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE SET NULL, body TEXT)",
+                 "CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id), amount REAL)",
+                 "INSERT INTO customers VALUES (1, 'Ada', 'ada@example.com'), "
+                 "(2, 'Grace', 'grace@example.com'), (3, 'Linus', 'linus@example.com')",
+                 "INSERT INTO orders VALUES (10, 1, 42.0), (11, 1, 18.5), (12, 1, 7.0), "
+                 "(13, 2, 99.0)",
+                 "INSERT INTO order_items VALUES (100, 10, 'A-1'), (101, 10, 'B-2'), "
+                 "(102, 11, 'C-3'), (103, 12, 'A-1'), (104, 12, 'D-4'), (105, 13, 'E-5')",
+                 "INSERT INTO reviews VALUES (1, 1, 'Great'), (2, 1, 'Fine')",
+                 "INSERT INTO invoices VALUES (1, 1, 42.0)",
+             })
+            db->executeQuery(sql);
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const auto& tables = db->getTables();
+        const auto customers = std::ranges::find(tables, std::string("customers"), &Table::name);
+        if (customers == tables.end()) {
+            ctx->LogError("no customers table");
+            return;
+        }
+        app.addDatabase(db);
+        const auto tab = std::dynamic_pointer_cast<TableViewerTab>(
+            app.getTabManager()->createTableViewerTab(db.get(), *customers));
+        ctx->Yield(40);
+        tab->deleteRows({0});
+        tab->saveChanges();
+        for (int i = 0; i < 200 && !tab->deleteImpact(); ++i)
+            ctx->Yield();
         ctx->Yield(10);
         holdForScreenshot(ctx);
     };

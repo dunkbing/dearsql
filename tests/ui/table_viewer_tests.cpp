@@ -501,4 +501,89 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         app.removeDatabase(db);
         ctx->Yield();
     };
+
+    // saving deletes previews what foreign keys do to the referencing rows, and the counts
+    // are what the delete then does
+    t = IM_REGISTER_TEST(engine, "TableViewer", "Delete preview counts referencing rows");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "ImpactDB";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        IM_CHECK_SILENT(db->connect().first);
+        for (const char* sql : {
+                 "PRAGMA foreign_keys = ON",
+                 "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT)",
+                 "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE CASCADE)",
+                 "CREATE TABLE notes (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id) ON DELETE SET NULL)",
+                 "CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER "
+                 "REFERENCES customers(id))",
+                 "INSERT INTO customers VALUES (1, 'a'), (2, 'b')",
+                 "INSERT INTO orders VALUES (10, 1), (11, 1), (12, 2)",
+                 "INSERT INTO notes VALUES (1, 1)",
+                 "INSERT INTO invoices VALUES (1, 2)",
+             })
+            db->executeQuery(sql);
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const Table* customers = findTable(db->getTables(), "customers");
+        IM_CHECK_SILENT(customers != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab = std::dynamic_pointer_cast<TableViewerTab>(
+            tabs->createTableViewerTab(db.get(), *customers));
+        IM_CHECK_SILENT(tab != nullptr);
+        ctx->Yield(40);
+
+        auto preview = [&](int row) -> const TableViewerTab::DeleteImpact* {
+            tab->deleteRows({row});
+            tab->saveChanges();
+            for (int i = 0; i < 200 && !tab->deleteImpact(); ++i)
+                ctx->Yield();
+            return tab->deleteImpact() ? &*tab->deleteImpact() : nullptr;
+        };
+        auto countFor = [](const TableViewerTab::DeleteImpact& impact, const std::string& table) {
+            for (const auto& r : impact.rows)
+                if (r.effect.table == table)
+                    return r.count;
+            return -2LL;
+        };
+
+        // customer 1: two orders cascade, one note is set to null, nothing blocks
+        const auto* impact = preview(0);
+        IM_CHECK_SILENT(impact != nullptr);
+        IM_CHECK(impact->enforced);
+        IM_CHECK(countFor(*impact, "orders") == 2);
+        IM_CHECK(countFor(*impact, "notes") == 1);
+        IM_CHECK(countFor(*impact, "invoices") == 0);
+        ctx->ItemClick("//Confirm Save Changes/**/" ICON_FA_PLAY " Execute");
+        for (int i = 0; i < 100 && tab->deleteImpact(); ++i)
+            ctx->Yield(); // the dialog closes once the delete ran
+        const auto left = [&](const char* sql) {
+            const auto r = db->executeQuery(sql);
+            return r.success() && !r.empty() ? r[0].tableData[0][0] : std::string("?");
+        };
+        IM_CHECK_STR_EQ(left("SELECT COUNT(*) FROM orders").c_str(), "1");
+        IM_CHECK_STR_EQ(left("SELECT COUNT(*) FROM notes WHERE customer_id IS NULL").c_str(), "1");
+        ctx->Yield(40); // the reload after saving
+
+        // customer 2: its invoice blocks the delete
+        impact = preview(0);
+        IM_CHECK_SILENT(impact != nullptr);
+        IM_CHECK(countFor(*impact, "invoices") == 1);
+        for (const auto& r : impact->rows)
+            if (r.effect.table == "invoices")
+                IM_CHECK_STR_EQ(r.effect.action.c_str(), "NO ACTION");
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
 }

@@ -192,9 +192,10 @@ namespace {
 void TitleBarView::render(Application& app) {
     const auto& colors = app.getCurrentColors();
     const auto bar = mydear::BeginTitleBar();
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::XS, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::S, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
     const float rowY = ImGui::GetCursorScreenPos().y;
+    ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + Theme::Spacing::S, rowY));
 
     if (barButton("###sidebar", "sidebar.left", "Toggle Sidebar"))
         app.setSidebarVisible(!app.isSidebarVisible());
@@ -212,8 +213,8 @@ void TitleBarView::render(Application& app) {
     const float side = ImGui::GetFrameHeight();
     const float gearW = wanted("###settings", side);
     const float wsW = wanted("###workspace", ImGui::CalcTextSize(wsName.c_str()).x + side * 2);
-    const float right = bar.pos.x + bar.size.x - bar.rightInset - Theme::Spacing::M;
-    const float wsX = right - gearW - Theme::Spacing::XS - wsW;
+    const float right = bar.pos.x + bar.size.x - bar.rightInset - Theme::Spacing::L;
+    const float wsX = right - gearW - Theme::Spacing::S - wsW;
 
     // title, centred, unless it would run into the buttons
 #ifdef NDEBUG

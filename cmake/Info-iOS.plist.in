@@ -31,6 +31,9 @@
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
+    <!-- trackpad and mouse clicks come as pointer touches, with the right button -->
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIRequiresFullScreen</key>

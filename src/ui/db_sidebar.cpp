@@ -1,4 +1,3 @@
-#include "ui/schema_compare.hpp"
 #include "ui/db_sidebar.hpp"
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
@@ -24,6 +23,7 @@
 #include "ui/env_tag.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
+#include "ui/schema_compare.hpp"
 #include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/menu.hpp"
@@ -93,7 +93,11 @@ void DatabaseSidebarNew::renderEmpty() {
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
     ImGui::TextWrapped("No databases connected");
     ImGui::Spacing();
+#ifdef DEARSQL_MOBILE
+    ImGui::TextWrapped("Long-press here to add a new database connection");
+#else
     ImGui::TextWrapped("Right-click here to add a new database connection");
+#endif
     ImGui::PopStyleColor();
 
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {

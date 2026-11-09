@@ -37,6 +37,36 @@ namespace {
                                            "CockroachDB", "S3 Storage", "ScyllaDB"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
 
+    // the library leaves out backends whose driver it lacks (the ipad build has no postgres...)
+    bool typeAvailable(DatabaseType type) {
+        switch (type) {
+#ifndef DEARSQL_HAS_POSTGRES
+        case DatabaseType::POSTGRESQL:
+        case DatabaseType::REDSHIFT:
+        case DatabaseType::COCKROACHDB:
+#endif
+#ifndef DEARSQL_HAS_MONGODB
+        case DatabaseType::MONGODB:
+#endif
+#ifndef DEARSQL_HAS_MSSQL
+        case DatabaseType::MSSQL:
+#endif
+#ifndef DEARSQL_HAS_ORACLE
+        case DatabaseType::ORACLE:
+#endif
+#ifndef DEARSQL_HAS_CASSANDRA
+        case DatabaseType::CASSANDRA:
+        case DatabaseType::SCYLLADB:
+#endif
+#ifndef DEARSQL_HAS_DUCKDB
+        case DatabaseType::DUCKDB:
+#endif
+            return false;
+        default:
+            return true;
+        }
+    }
+
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
         std::strncpy(dst, src.c_str(), dstSize - 1);
         dst[dstSize - 1] = '\0';
@@ -782,7 +812,10 @@ void ConnectionDialog::renderTypeRow() {
 
     ImGui::BeginDisabled(editingConnectionId_ != -1);
     ImGui::SetNextItemWidth(180.0f);
-    if (UIUtils::Select("##conn_type", &typeIdx_, kTypeLabels, kTypeCount)) {
+    const char* labels[kTypeCount];
+    for (int i = 0; i < kTypeCount; ++i)
+        labels[i] = typeAvailable(static_cast<DatabaseType>(i)) ? kTypeLabels[i] : "";
+    if (UIUtils::Select("##conn_type", &typeIdx_, labels, kTypeCount)) {
         applyTypeDefaults(selectedType());
         rebuildUrlFromForm();
     }

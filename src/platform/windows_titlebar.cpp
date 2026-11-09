@@ -6,7 +6,6 @@
 #include "mydear/title_bar.hpp"
 #include "platform/alert.hpp"
 #include "platform/titlebar.hpp"
-#include "platform/updater.hpp"
 #include "themes.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/title_bar.hpp"

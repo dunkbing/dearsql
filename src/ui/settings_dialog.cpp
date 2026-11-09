@@ -5,7 +5,7 @@
 #include "imgui.h"
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
-#include "platform/updater.hpp"
+#include "mydear/updater.hpp"
 #include "themes.hpp"
 #include "utils/cli_command.hpp"
 #include "utils/master_secret.hpp"
@@ -180,7 +180,7 @@ void SettingsDialog::render() {
     }
     ImGui::SameLine();
     if (mydear::Button("Check for Updates...")) {
-        checkForUpdates();
+        mydear::updater::Check();
     }
     ImGui::SameLine();
     if (onReportBug && mydear::Button("Report Bug...")) {

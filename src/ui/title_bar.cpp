@@ -6,8 +6,8 @@
 #include "mydear/button.hpp"
 #include "mydear/native_view.hpp"
 #include "mydear/title_bar.hpp"
+#include "mydear/updater.hpp"
 #include "platform/alert.hpp"
-#include "platform/updater.hpp"
 #include "themes.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/settings_dialog.hpp"
@@ -232,15 +232,13 @@ void TitleBarView::render(Application& app) {
     if (barButton("###connect", glyph("plus", ICON_FA_PLUS), "New Connection") &&
         app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
-#ifdef __linux__
-    // no updater ui of its own here: the bar offers the update
-    if (isUpdateAvailable()) {
+    // linux only: sparkle and winsparkle prompt by themselves
+    if (mydear::updater::Available()) {
         ImGui::SameLine();
-        const std::string tip = "Update available: v" + getLatestVersion();
+        const std::string tip = "Update available: v" + mydear::updater::LatestVersion();
         if (barButton("###update", ICON_FA_CIRCLE_ARROW_UP, tip.c_str()))
-            checkForUpdates();
+            mydear::updater::Check();
     }
-#endif
     const float leftEnd = ImGui::GetItemRectMax().x;
 
     // right side, laid out from the end

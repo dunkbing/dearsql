@@ -154,6 +154,16 @@ if(NOT IOS)
 endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
+# the updater frameworks mydear drives (linux: httplib, found above)
+if(APPLE AND NOT IOS)
+    include(cmake/Sparkle.cmake)
+    set(MYDEAR_SPARKLE_FRAMEWORK "${SPARKLE_FRAMEWORK_PATH}" CACHE PATH "" FORCE)
+elseif(WIN32)
+    include(cmake/WinSparkle.cmake)
+endif()
+if(NOT IOS)
+    set(MYDEAR_UPDATER ON CACHE BOOL "" FORCE)
+endif()
 # ui toolkit: themes, widgets, embedded fonts and images (own repo)
 set(MYDEAR_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
 add_subdirectory(external/mydear)
@@ -169,14 +179,6 @@ if(LINUX)
     find_package(X11 REQUIRED)
 elseif(NOT IOS)
     find_package(glfw3 CONFIG REQUIRED)
-endif()
-
-if(APPLE AND NOT IOS)
-    include(cmake/Sparkle.cmake)
-endif()
-
-if(WIN32)
-    include(cmake/WinSparkle.cmake)
 endif()
 
 include(cmake/TreeSitterGrammars.cmake)
@@ -285,13 +287,11 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_titlebar.mm src/platform/macos_bar_buttons.mm
                             src/ui/title_bar.cpp)
     set_source_files_properties(src/platform/macos_bar_buttons.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
-    list(APPEND APP_SOURCES src/platform/macos_updater.mm)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
     list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/shell_platform.cpp src/platform/linux_titlebar.cpp
                             src/ui/title_bar.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
     list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
     list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
 elseif(WIN32)
@@ -300,7 +300,6 @@ elseif(WIN32)
         src/platform/shell_platform.cpp
         src/platform/windows_titlebar.cpp
         src/ui/title_bar.cpp
-        src/platform/windows_updater.cpp
         src/platform/windows_alert.cpp
         src/platform/windows_input_dialog.cpp
         assets/app.rc
@@ -378,12 +377,6 @@ if(LINUX)
     )
 endif()
 
-if(APPLE)
-    target_include_directories(
-        ${PROJECT_NAME}
-        PRIVATE "${SPARKLE_FRAMEWORK_PATH}/Headers"
-    )
-endif()
 
 target_link_libraries(
     ${PROJECT_NAME}
@@ -427,7 +420,6 @@ if(APPLE)
             ${SECURITY_LIBRARY}
             "-framework CoreData"
     )
-    target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
 elseif(LINUX)
     target_link_libraries(
         ${PROJECT_NAME}

@@ -18,7 +18,7 @@
 #include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 
-#include "platform/updater.hpp"
+#include "mydear/updater.hpp"
 
 #if defined(DEARSQL_MOBILE)
 #include "platform/ios_platform.hpp"
@@ -182,7 +182,12 @@ bool Application::initialize() {
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
-    initializeUpdater();
+    // dearsql.dev publishes the appcast (macos, windows) and the manifest (linux)
+    mydear::updater::Start({.appName = "DearSQL",
+                            .version = APP_VERSION,
+                            .appcastUrl = "https://dearsql.dev/appcast.xml",
+                            .publicKey = SPARKLE_ED_PUBLIC_KEY,
+                            .manifestUrl = "https://dearsql.dev/api/version.json"});
 
     restorePreviousConnections();
 
@@ -274,7 +279,7 @@ void Application::cleanup() {
     FileDialog::cleanup();
     spdlog::debug("File dialog cleaned up");
 
-    cleanupUpdater();
+    mydear::updater::Stop();
 
     MarkdownText::shutdown(); // its textures need the backend
 
@@ -903,8 +908,6 @@ void Application::renderMainUI() {
     CreateDatabaseDialog::instance().render();
     SettingsDialog::instance().render();
     AISettingsDialog::instance().render();
-
-    pollUpdater();
 
     maybeRemindToUpgrade();
 

@@ -4,7 +4,6 @@
 
 #include "platform/alert.hpp"
 #include "platform/ios_platform.hpp"
-#include "platform/updater.hpp"
 #include "ui/input_dialog.hpp"
 #include "utils/cli_command.hpp"
 #include "utils/file_dialog.hpp"
@@ -104,18 +103,6 @@ void InputDialog::show(const std::string& title, const std::string& label,
                                                          onConfirm, onCancel, validator);
                                  }]];
     [topController() presentViewController:alert animated:YES completion:nil];
-}
-
-// the app store updates the app
-void initializeUpdater() {}
-void checkForUpdates() {}
-void pollUpdater() {}
-void cleanupUpdater() {}
-bool isUpdateAvailable() {
-    return false;
-}
-std::string getLatestVersion() {
-    return {};
 }
 
 // no terminal on ipad

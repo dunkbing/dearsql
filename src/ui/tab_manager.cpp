@@ -12,7 +12,9 @@
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
+#ifdef DEARSQL_HAS_MONGODB
 #include "ui/tab/mongo_editor_tab.hpp"
+#endif
 #include "ui/tab/postgres_sequence_viewer_tab.hpp"
 #include "ui/tab/redis_editor_tab.hpp"
 #include "ui/tab/redis_key_viewer_tab.hpp"
@@ -69,8 +71,10 @@ namespace {
             return t->getDatabaseNode();
         if (auto* t = dynamic_cast<const DiagramTab*>(&tab))
             return t->getDatabaseNode();
+#ifdef DEARSQL_HAS_MONGODB
         if (auto* t = dynamic_cast<const MongoEditorTab*>(&tab))
             return t->getDatabaseNode();
+#endif
         if (auto* t = dynamic_cast<const PostgresSequenceViewerTab*>(&tab))
             return t->getDatabaseNode();
         if (auto* t = dynamic_cast<const RoutineViewerTab*>(&tab))
@@ -512,9 +516,13 @@ std::shared_ptr<Tab> TabManager::createMongoEditorTab(MongoDBDatabaseNode* node)
         tabName = baseName + " (" + std::to_string(count) + ")";
     }
 
+#ifdef DEARSQL_HAS_MONGODB
     auto tab = std::make_shared<MongoEditorTab>(tabName, node);
     registerOpenedTab(tab);
     return tab;
+#else
+    return nullptr;
+#endif
 }
 
 std::shared_ptr<Tab> TabManager::createRedisCommandEditorTab(RedisDatabase* db) {

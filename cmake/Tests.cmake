@@ -45,6 +45,7 @@ add_executable(
     src/database/ssh_config_parser.cpp
     src/utils/table_exporter.cpp
     src/utils/table_importer.cpp
+    src/utils/file_dialog.cpp
     tests/database/credential_migration_test.cpp
     src/app_state.cpp
     src/utils/crypto.cpp

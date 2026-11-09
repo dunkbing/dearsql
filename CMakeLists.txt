@@ -9,7 +9,15 @@ else()
           CACHE STRING "vcpkg toolchain")
 endif()
 
-if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # ipad: pass -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator (or arm64-ios)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET
+        "17.0"
+        CACHE STRING
+        "Minimum iPadOS version"
+        FORCE
+    )
+elseif(NOT DEFINED VCPKG_TARGET_TRIPLET)
     if(APPLE)
         execute_process(
             COMMAND uname -m
@@ -62,7 +70,7 @@ if(NOT DEFINED VCPKG_TARGET_TRIPLET)
     endif()
 endif()
 
-if(APPLE)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_OSX_DEPLOYMENT_TARGET
         "14.0"
         CACHE STRING
@@ -101,7 +109,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(APPLE)
     # jthread, stop_token require experimental libc++ on Apple
     add_compile_options(-fexperimental-library)
-    add_link_options(-fexperimental-library)
+    if(NOT IOS) # the ios sdk has no libc++experimental; the headers are enough
+        add_link_options(-fexperimental-library)
+    endif()
 endif()
 
 include(cmake/AppMetadata.cmake)
@@ -119,23 +129,27 @@ configure_file(
 )
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(DuckDB CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(httplib CONFIG REQUIRED)
+find_package(unofficial-tree-sitter CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 find_package(unofficial-libmariadb CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
 find_package(hiredis_ssl CONFIG REQUIRED)
-find_package(mongocxx CONFIG REQUIRED)
-find_package(bsoncxx CONFIG REQUIRED)
-find_package(GTest CONFIG REQUIRED)
-find_package(httplib CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
-find_package(unofficial-tree-sitter CONFIG REQUIRED)
-find_package(nfd CONFIG REQUIRED)
-find_package(sentry CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
-find_package(ftxui CONFIG REQUIRED)
+# ipad: no postgres (the libpq port needs system()), mongodb (its c driver) or duckdb yet, and no file dialogs,
+# crash reports, terminal ui or tests
+if(NOT IOS)
+    find_package(PostgreSQL REQUIRED)
+    find_package(mongocxx CONFIG REQUIRED)
+    find_package(bsoncxx CONFIG REQUIRED)
+    find_package(DuckDB CONFIG REQUIRED)
+    find_package(GTest CONFIG REQUIRED)
+    find_package(nfd CONFIG REQUIRED)
+    find_package(sentry CONFIG REQUIRED)
+    find_package(ftxui CONFIG REQUIRED)
+endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
 
@@ -148,11 +162,11 @@ if(LINUX)
     # optional: master secret storage via secret service (file fallback otherwise)
     pkg_check_modules(LIBSECRET libsecret-1)
     find_package(X11 REQUIRED)
-else()
+elseif(NOT IOS)
     find_package(glfw3 CONFIG REQUIRED)
 endif()
 
-if(APPLE)
+if(APPLE AND NOT IOS)
     include(cmake/Sparkle.cmake)
 endif()
 
@@ -257,6 +271,10 @@ set(APP_SOURCES
 )
 
 list(APPEND APP_SOURCES src/application.cpp)
+if(IOS)
+    include(cmake/IOS.cmake)
+    return()
+endif()
 if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
     list(APPEND APP_SOURCES src/platform/metal_backend.mm)

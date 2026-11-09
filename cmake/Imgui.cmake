@@ -7,6 +7,8 @@ set(IMGUI_SOURCES
 
 if(LINUX)
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
+elseif(IOS)
+  # ios: touch and keys come from the uikit view, no glfw
 else()
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
 endif()
@@ -22,7 +24,9 @@ if(APPLE)
   find_library(METAL_LIBRARY Metal REQUIRED)
   find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
   find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
-  find_library(APPKIT_LIBRARY AppKit REQUIRED)
+  if(NOT IOS)
+    find_library(APPKIT_LIBRARY AppKit REQUIRED)
+  endif()
   find_library(SECURITY_LIBRARY Security REQUIRED)
 
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)

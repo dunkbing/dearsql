@@ -12,15 +12,17 @@
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
-#include "ui/schema_compare.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/markdown_text.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 
 #include "platform/updater.hpp"
 
-#if defined(__APPLE__)
+#if defined(DEARSQL_MOBILE)
+#include "platform/ios_platform.hpp"
+#elif defined(__APPLE__)
 #include "platform/macos_platform.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
@@ -72,7 +74,10 @@ namespace {
     // open the pro purchase page in the user's browser
     void openPurchaseUrl() {
         const std::string url = PURCHASE_URL;
-#if defined(__APPLE__)
+#if defined(DEARSQL_MOBILE)
+        // ponytail: no purchase link on ipad yet; the stores want in-app purchases
+        (void)url;
+#elif defined(__APPLE__)
         std::system(("open \"" + url + "\"").c_str());
 #elif defined(_WIN32)
         std::system(("start \"\" \"" + url + "\"").c_str());
@@ -145,7 +150,14 @@ bool Application::initialize() {
     spdlog::info("ImGui version: {}", IMGUI_VERSION);
     spdlog::info("Starting {}...", APP_NAME);
 
-#ifdef __APPLE__
+#if defined(DEARSQL_MOBILE)
+    // uikit owns the window and the loop (ios_platform.mm); only imgui to set up here
+    platform_ = std::make_unique<IOSPlatform>(this);
+    setupImGuiContext();
+    if (!platform_->initializeImGuiBackend()) {
+        return false;
+    }
+#elif defined(__APPLE__)
     platform_ = std::make_unique<MacOSPlatform>(this);
     if (!initializeGLFW()) {
         return false;
@@ -262,6 +274,8 @@ void Application::run() {
 #if defined(__linux__)
     auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
     linuxPlatform->runMainLoop();
+#elif defined(DEARSQL_MOBILE)
+    // uikit runs the loop: the view calls renderFrame() each display refresh
 #else
     double lastInteractionTime = glfwGetTime();
     bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
@@ -398,7 +412,7 @@ void Application::cleanup() {
     ImGui::DestroyContext();
     spdlog::debug("ImGui context destroyed");
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     if (window) {
         glfwDestroyWindow(window);
     }
@@ -580,14 +594,14 @@ void Application::restorePreviousConnections() {
                   currentWorkspaceId, elapsedMs);
 }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 bool Application::initializeGLFW() {
     if (!glfwInit()) {
         spdlog::error("Failed to initialize GLFW");
         return false;
     }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
@@ -618,7 +632,7 @@ void Application::setupImGuiContext() const {
     Theme::ApplyNativeTheme(theme_->colors);
 }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 bool Application::initializeImGui() const {
     setupImGuiContext();
 

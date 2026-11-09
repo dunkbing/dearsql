@@ -3,9 +3,9 @@
 #include "database/sql_builder.hpp"
 #include "utils/mysql_session_reset.hpp"
 
+#include "utils/file_dialog.hpp"
 #include <cstddef>
 #include <fstream>
-#include <nfd.h>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
@@ -216,19 +216,7 @@ namespace {
 namespace MysqlDumpExport {
 
     std::string promptForSqlDumpDestination(const std::string& defaultName) {
-        constexpr nfdfilteritem_t filterItem[1] = {{"SQL Dump", "sql"}};
-        nfdchar_t* outPath = nullptr;
-        const nfdresult_t dialog = NFD_SaveDialog(
-            &outPath, filterItem, 1, nullptr, defaultName.empty() ? nullptr : defaultName.c_str());
-        if (dialog != NFD_OKAY) {
-            if (dialog == NFD_ERROR) {
-                spdlog::error("File dialog error: {}", NFD_GetError());
-            }
-            return {};
-        }
-        std::string path(outPath);
-        NFD_FreePath(outPath);
-        return path;
+        return FileDialog::saveFile(defaultName, "SQL Dump", "sql");
     }
 
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,

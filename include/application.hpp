@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 #include <GLFW/glfw3.h>
 #endif
 
@@ -105,7 +105,7 @@ public:
     [[nodiscard]] bool canAddWorkspace() const;
 
     // Window reference (GLFW only on macOS/Windows)
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     [[nodiscard]] GLFWwindow* getWindow() const {
         return window;
     }
@@ -149,7 +149,7 @@ private:
     ~Application() = default;
 
     // Core components
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
     std::unique_ptr<TabManager> tabManager;
@@ -180,7 +180,7 @@ private:
 
     // Private helper methods
     void setupImGuiContext() const;
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     bool initializeGLFW();
     bool initializeImGui() const;
 #endif

@@ -1,10 +1,10 @@
 #include "utils/table_importer.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
+#include "utils/file_dialog.hpp"
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <nfd.h>
 #include <spdlog/spdlog.h>
 
 namespace {
@@ -63,16 +63,9 @@ namespace {
 namespace TableImporter {
 
     std::optional<std::string> chooseCsvFile() {
-        nfdfilteritem_t filter = {"CSV Files", "csv"};
-        nfdchar_t* outPath = nullptr;
-        const nfdresult_t result = NFD_OpenDialog(&outPath, &filter, 1, nullptr);
-        if (result != NFD_OKAY) {
-            if (result == NFD_ERROR)
-                spdlog::error("File dialog error: {}", NFD_GetError());
+        std::string path = FileDialog::openCSVFile();
+        if (path.empty())
             return std::nullopt;
-        }
-        std::string path(outPath);
-        NFD_FreePath(outPath);
         return path;
     }
 

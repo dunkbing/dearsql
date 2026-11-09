@@ -53,3 +53,4 @@ WixToolset.*.dll
 *.wixobj
 
 SECRETS
+build-ios/

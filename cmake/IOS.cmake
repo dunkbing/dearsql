@@ -1,0 +1,64 @@
+# ipad build: the desktop sources minus what iOS can't run (subprocesses, the
+# terminal modes, system ssh, sparkle, sentry) and the backends without a driver here.
+# configure with -DCMAKE_SYSTEM_NAME=iOS -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator
+set(IOS_SOURCES ${APP_SOURCES})
+list(FILTER IOS_SOURCES EXCLUDE REGEX
+     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|file_dialog\\.cpp|cli_command|/mongodb/|tab/mongo_")
+list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm src/platform/posix_ssh_tunnel.cpp
+     src/utils/file_dialog_mobile.cpp)
+include(cmake/EmbedResources.cmake)
+embed_fonts()
+embed_images()
+list(APPEND IOS_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
+
+add_executable(${PROJECT_NAME} MACOSX_BUNDLE ${IOS_SOURCES} ${IMGUI_SOURCES}
+                                             ${IMGUI_NODE_EDITOR_SOURCES})
+target_compile_definitions(${PROJECT_NAME} PRIVATE DEARSQL_MOBILE)
+set_source_files_properties(src/platform/ios_platform.mm src/platform/ios_dialogs.mm
+                            PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+
+add_subdirectory(external/acp-cpp)
+add_library(imgui INTERFACE)
+target_include_directories(imgui INTERFACE external/imgui)
+set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    include
+    external/imgui
+    external/imgui/backends
+    external/imgui-node-editor
+    external/imgui-node-editor/external/stb_image
+    external/IconFontCppHeaders
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/include)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    unofficial::sqlite3::sqlite3
+    nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    dearsql::dearsql
+    httplib::httplib
+    imgui_rich_md
+    acp::acp
+    miniocpp::miniocpp
+    unofficial::tree-sitter::tree-sitter
+    tree-sitter-sql-grammar
+    tree-sitter-json-grammar
+    spdlog::spdlog
+    "-framework UIKit"
+    "-framework Metal"
+    "-framework MetalKit"
+    "-framework QuartzCore"
+    "-framework Foundation"
+    "-framework CoreGraphics"
+    "-framework CFNetwork"
+    "-framework Security"
+    "-framework GameController")
+
+configure_file(cmake/Info-iOS.plist.in ${CMAKE_BINARY_DIR}/Info-iOS.plist @ONLY)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info-iOS.plist
+    OUTPUT_NAME "${APP_NAME}"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "2")

@@ -1,6 +1,8 @@
 #pragma once
 
+#ifndef DEARSQL_MOBILE
 #include <sentry.h>
+#endif
 #include <spdlog/spdlog.h>
 #include <string>
 
@@ -9,15 +11,18 @@ namespace SentryUtils {
     inline void addBreadcrumb(const char* category, const char* message,
                               const char* level = "info") {
         spdlog::debug("[{}] {} ({})", category, message, level);
+#ifndef DEARSQL_MOBILE // no crash reports on ipad yet
         sentry_value_t crumb = sentry_value_new_breadcrumb("default", message);
         sentry_value_set_by_key(crumb, "category", sentry_value_new_string(category));
         sentry_value_set_by_key(crumb, "level", sentry_value_new_string(level));
         sentry_add_breadcrumb(crumb);
+#endif
     }
 
     inline void addBreadcrumb(const char* category, const char* message, const char* key,
                               const std::string& value, const char* level = "info") {
         spdlog::debug("[{}] {} ({}) {}={}", category, message, level, key, value);
+#ifndef DEARSQL_MOBILE
         sentry_value_t crumb = sentry_value_new_breadcrumb("default", message);
         sentry_value_set_by_key(crumb, "category", sentry_value_new_string(category));
         sentry_value_set_by_key(crumb, "level", sentry_value_new_string(level));
@@ -25,6 +30,7 @@ namespace SentryUtils {
         sentry_value_set_by_key(data, key, sentry_value_new_string(value.c_str()));
         sentry_value_set_by_key(crumb, "data", data);
         sentry_add_breadcrumb(crumb);
+#endif
     }
 
 } // namespace SentryUtils

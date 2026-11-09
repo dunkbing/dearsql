@@ -4,6 +4,9 @@
 
 class Application;
 
+// tag of the imgui view (the file picker pauses it)
+inline constexpr long kDearSQLViewTag = 0xDEA5;
+
 // ipad: a uikit scene with one MTKView; the view's draw callback runs renderFrame()
 class IOSPlatform : public PlatformInterface {
 public:

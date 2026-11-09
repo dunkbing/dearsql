@@ -160,7 +160,7 @@ private:
                              const std::string& currentName,
                              const std::vector<std::string>& dbNames,
                              const std::function<void(const std::string&)>& onSelect);
-    void renderToolbar();
+    void renderToolbar(bool narrow);
     float toolbarWidth_ = 0.0f;
     void renderQueryResults() const;
     void renderServerMessages() const;

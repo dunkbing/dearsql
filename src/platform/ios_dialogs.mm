@@ -3,6 +3,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "platform/alert.hpp"
+#include "platform/ios_platform.hpp"
 #include "platform/updater.hpp"
 #include "ui/input_dialog.hpp"
 #include "utils/cli_command.hpp"
@@ -202,8 +203,7 @@ namespace {
         UIViewController* top = topController();
         if (!top)
             return {};
-        UIViewController* root = top.view.window.rootViewController;
-        MTKView* view = [root.view isKindOfClass:MTKView.class] ? (MTKView*)root.view : nil;
+        MTKView* view = (MTKView*)[top.view.window viewWithTag:kDearSQLViewTag];
         UIDocumentPickerViewController* picker =
             [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:NO];
         DearSQLPickerDelegate* delegate = [DearSQLPickerDelegate new];

@@ -279,12 +279,14 @@ namespace {
 
 // ---- the controller: owns the view, starts the app, draws each frame ----
 
-@interface DearSQLViewController : UIViewController <MTKViewDelegate, UIGestureRecognizerDelegate>
+@interface DearSQLViewController
+    : UIViewController <MTKViewDelegate, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate>
 @end
 
 @implementation DearSQLViewController {
     UIPanGestureRecognizer* pan_;
     UILongPressGestureRecognizer* longPress_;
+    UIEditMenuInteraction* editMenu_;
     UIBarButtonItem* sidebarItem_;
     UIBarButtonItem* newItem_;
     UIButton* workspaceButton_;
@@ -549,6 +551,8 @@ namespace {
                                                                action:@selector(longPress:)];
     longPress_.delegate = self;
     [view addGestureRecognizer:longPress_];
+    editMenu_ = [[UIEditMenuInteraction alloc] initWithDelegate:self];
+    [view addInteraction:editMenu_];
     // the imgui view keeps clear of the notch in landscape
     UIView* container = [[UIView alloc] initWithFrame:UIScreen.mainScreen.bounds];
     view.translatesAutoresizingMaskIntoConstraints = NO;
@@ -561,6 +565,7 @@ namespace {
     ]];
     self.view = container;
     gView = view;
+    view.tag = kDearSQLViewTag;
     gQueue = [view.device newCommandQueue];
 
     if (!Application::getInstance().initialize())
@@ -650,9 +655,47 @@ namespace {
     if (gTouch == Touch::Pressed)
         releaseAway();
     gTouch = Touch::None;
-    touchAt([g locationInView:gView]);
-    io.AddMouseButtonEvent(1, true);
-    io.AddMouseButtonEvent(1, false);
+    const CGPoint p = [g locationInView:gView];
+    touchAt(p);
+    // a few frames for imgui to report what is under the finger: text gets the edit menu,
+    // anything else a right click
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+          ImGuiIO& io = ImGui::GetIO();
+          if (ImGui::GetMouseCursor() != ImGuiMouseCursor_TextInput) {
+              io.AddMouseButtonEvent(1, true);
+              io.AddMouseButtonEvent(1, false);
+              return;
+          }
+          if (!io.WantTextInput) { // focus the field first
+              io.AddMouseButtonEvent(0, true);
+              io.AddMouseButtonEvent(0, false);
+          }
+          [editMenu_ presentEditMenuWithConfiguration:[UIEditMenuConfiguration
+                                                          configurationWithIdentifier:nil
+                                                                          sourcePoint:p]];
+        });
+}
+- (UIMenu*)editMenuInteraction:(UIEditMenuInteraction*)interaction
+          menuForConfiguration:(UIEditMenuConfiguration*)configuration
+              suggestedActions:(NSArray<UIMenuElement*>*)suggested {
+    auto item = [](NSString* title, ImGuiKey key) {
+        return [UIAction actionWithTitle:title
+                                   image:nil
+                              identifier:nil
+                                 handler:^(UIAction*) {
+                                   ImGuiIO& io = ImGui::GetIO();
+                                   io.AddKeyEvent(ImGuiMod_Super, true);
+                                   tapKey(key);
+                                   io.AddKeyEvent(ImGuiMod_Super, false);
+                                 }];
+    };
+    NSMutableArray* items =
+        [NSMutableArray arrayWithArray:@[ item(@"Cut", ImGuiKey_X), item(@"Copy", ImGuiKey_C) ]];
+    if (UIPasteboard.generalPasteboard.hasStrings)
+        [items addObject:item(@"Paste", ImGuiKey_V)];
+    [items addObject:item(@"Select All", ImGuiKey_A)];
+    return [UIMenu menuWithChildren:items];
 }
 - (void)drawInMTKView:(MTKView*)view {
     Application::getInstance().getPlatform()->renderFrame();

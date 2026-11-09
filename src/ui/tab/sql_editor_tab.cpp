@@ -560,7 +560,11 @@ void SQLEditorTab::renderConnectionInfoOracle() {
 }
 
 void SQLEditorTab::renderConnectionInfoSQLite() {
-    ImGui::Text("Database: %s", node_->getFullPath().c_str());
+    const std::string path = node_->getFullPath();
+    // narrow: the file name, not the whole path
+    ImGui::Text("Database: %s", ImGui::GetContentRegionAvail().x < 560.0f
+                                    ? std::filesystem::path(path).filename().string().c_str()
+                                    : path.c_str());
 }
 
 void SQLEditorTab::renderDatabaseCombo(const std::string& host, const char* label,
@@ -619,11 +623,15 @@ void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
     }
 }
 
-void SQLEditorTab::renderToolbar() {
+void SQLEditorTab::renderToolbar(const bool narrow) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     // before the buttons, so they stay put when it appears
-    if (syntaxDiagnostic_.active) {
+    if (syntaxDiagnostic_.active && narrow) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+        ImGui::SameLine(0, Theme::Spacing::M);
+    } else if (syntaxDiagnostic_.active) {
         ImGui::AlignTextToFramePadding();
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
         std::string inlineMessage =
@@ -666,12 +674,31 @@ void SQLEditorTab::renderToolbar() {
             }
         }
         ImGui::SameLine(0, Theme::Spacing::M);
+        const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
+        const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
+        if (narrow) {
+            if (UIUtils::BeginMenuPopup("##sql_more_menu")) {
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                    ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+                if (ImGui::MenuItem(ICON_FA_ALIGN_LEFT "  Format"))
+                    formatSQL();
+                if (ImGui::MenuItem(ICON_FA_DIAGRAM_PROJECT "  Explain", nullptr, false,
+                                    canExplain))
+                    explainStatement();
+                if (canExplain && dearsql::supportsExplainAnalyze(type))
+                    ImGui::MenuItem("Analyze", nullptr, &explainAnalyze_);
+                ImGui::PopStyleVar();
+                ImGui::EndPopup();
+            }
+            // the button last: the header measures the toolbar by the last item
+            if (UIUtils::IconButton(ICON_FA_ELLIPSIS "##sql_more"))
+                ImGui::OpenPopup("##sql_more_menu");
+            return;
+        }
         if (UIUtils::IconLabelButton(ICON_FA_ALIGN_LEFT, "Format")) {
             formatSQL();
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
-        const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
         ImGui::BeginDisabled(!canExplain);
         if (UIUtils::IconLabelButton(ICON_FA_DIAGRAM_PROJECT, "Explain")) {
             explainStatement();
@@ -1525,6 +1552,7 @@ void SQLEditorTab::loadFromScript(const SqlScript& script) {
 
 void SQLEditorTab::renderScriptHeader() {
     const auto& colors = Application::getInstance().getCurrentColors();
+    const bool narrow = ImGui::GetContentRegionAvail().x < 560.0f;
     // same button height as the settings dialog
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
     ImGui::AlignTextToFramePadding();
@@ -1624,7 +1652,7 @@ void SQLEditorTab::renderScriptHeader() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(ICON_FA_CIRCLE "  unsaved");
             ImGui::PopStyleColor();
-        } else if (!filePath_.empty()) {
+        } else if (!filePath_.empty() && !narrow) {
             ImGui::SameLine(0, Theme::Spacing::S);
             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
             ImGui::TextUnformatted(filePath_.c_str());
@@ -1637,7 +1665,7 @@ void SQLEditorTab::renderScriptHeader() {
     const float lineEnd = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), lineEnd - toolbarWidth_));
     const float toolbarStart = ImGui::GetCursorScreenPos().x;
-    renderToolbar();
+    renderToolbar(narrow);
     toolbarWidth_ = ImGui::GetItemRectMax().x - toolbarStart;
     ImGui::PopStyleVar();
 

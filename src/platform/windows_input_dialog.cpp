@@ -1,7 +1,6 @@
 #if defined(_WIN32)
 
 #include "application.hpp"
-#include "platform/windows_platform.hpp"
 #include "ui/input_dialog.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -132,11 +131,8 @@ void InputDialog::show(const std::string& title, const std::string& label,
                        ValidatorCallback validator) {
     registerInputDialogClass();
 
-    HWND parent = nullptr;
-    auto* platform = dynamic_cast<WindowsPlatform*>(Application::getInstance().getPlatform());
-    if (platform) {
-        parent = platform->getHWND();
-    }
+    GLFWwindow* window = Application::getInstance().getWindow();
+    HWND parent = window ? glfwGetWin32Window(window) : nullptr;
 
     // calculate layout
     bool hasLabel = !label.empty();

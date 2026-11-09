@@ -9,10 +9,7 @@ if(LINUX)
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 elseif(IOS)
   # ios: touch and keys come from the uikit view, no glfw
-elseif(NOT APPLE)
-  # macos: mydear compiles the glfw and metal backends
-  list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
-endif()
+endif() # macos and windows: mydear compiles the glfw, metal and dx11 backends
 
 set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
@@ -33,11 +30,7 @@ if(APPLE)
 elseif(LINUX)
   # no extra imgui sources needed for GTK4+OpenGL
 elseif(WIN32)
-  list(
-        APPEND IMGUI_SOURCES
-        external/imgui/backends/imgui_impl_dx11.cpp
-        external/imgui/backends/imgui_impl_win32.cpp
-    )
+  # mydear compiles the glfw and dx11 backends
 else()
   find_package(OpenGL REQUIRED)
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)

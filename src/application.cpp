@@ -22,12 +22,10 @@
 
 #if defined(DEARSQL_MOBILE)
 #include "platform/ios_platform.hpp"
-#elif defined(__APPLE__)
-#include "platform/macos_platform.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
-#elif defined(_WIN32)
-#include "platform/windows_platform.hpp"
+#else
+#include "platform/shell_platform.hpp"
 #endif
 
 #include "themes.hpp"
@@ -67,9 +65,6 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 2.0; // time after last activity before idling
-    constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
-    constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
 
     // open the pro purchase page in the user's browser
     void openPurchaseUrl() {
@@ -101,49 +96,6 @@ namespace {
                     {{"Get Pro", [] { openPurchaseUrl(); }},
                      {"Later", nullptr, AlertButton::Style::Cancel}});
     }
-
-    bool isImGuiUserActive() {
-        ImGuiIO& io = ImGui::GetIO();
-
-        if (ImGui::IsAnyItemActive() || ImGui::IsAnyItemFocused() || ImGui::IsAnyItemHovered()) {
-            return true;
-        }
-
-        if (ImGuiContext* ctx = ImGui::GetCurrentContext()) {
-            if (ctx->MovingWindow != nullptr || ctx->DragDropActive) {
-                return true;
-            }
-
-            if (ctx->LastActiveId != 0 && ctx->LastActiveIdTimer < 0.05f) {
-                return true;
-            }
-        }
-
-        const ImVec2 mouseDelta = io.MouseDelta;
-        if (mouseDelta.x != 0.0f || mouseDelta.y != 0.0f || io.MouseWheel != 0.0f ||
-            io.MouseWheelH != 0.0f) {
-            return true;
-        }
-
-        for (bool down : io.MouseDown) {
-            if (down) {
-                return true;
-            }
-        }
-
-        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
-            const ImGuiKeyData* keyData = ImGui::GetKeyData(static_cast<ImGuiKey>(key));
-            if (keyData != nullptr && (keyData->Down || keyData->DownDuration == 0.0f)) {
-                return true;
-            }
-        }
-
-        if (io.InputQueueCharacters.Size > 0) {
-            return true;
-        }
-
-        return false;
-    }
 } // namespace
 
 bool Application::initialize() {
@@ -155,19 +107,6 @@ bool Application::initialize() {
     if (!shell_.create(mydear::Config{}, *this))
         return false;
     platform_ = std::make_unique<IOSPlatform>(this, shell_);
-#elif defined(__APPLE__)
-    mydear::Config config;
-#ifdef NDEBUG
-    config.title = APP_NAME;
-#endif
-    config.width = 1600;
-    config.height = 1000;
-    config.titleBar = true; // ui/title_bar.cpp, under the traffic lights
-    config.titleBarHeight = 36;
-    if (!shell_.create(config, *this))
-        return false;
-    window = shell_.glfwWindow();
-    platform_ = std::make_unique<MacOSPlatform>(this, shell_);
 #elif defined(__linux__)
     platform_ = std::make_unique<LinuxPlatform>(this);
     auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
@@ -176,18 +115,23 @@ bool Application::initialize() {
     }
     setupImGuiContext();
     platform_->setupTitlebar();
-#elif defined(_WIN32)
-    platform_ = std::make_unique<WindowsPlatform>(this);
-    if (!initializeGLFW()) {
+#else
+    mydear::Config config;
+#ifdef NDEBUG
+    config.title = APP_NAME;
+#endif
+    config.width = 1600;
+    config.height = 1000;
+    config.titleBar = true; // ui/title_bar.cpp, beside the os window buttons
+#ifdef __APPLE__
+    config.titleBarHeight = 36; // points
+#else
+    config.titleBarHeight = 32; // pixels: windows' own caption height
+#endif
+    if (!shell_.create(config, *this))
         return false;
-    }
-    if (!platform_->initializePlatform(window)) {
-        spdlog::error("Failed to initialize platform");
-        return false;
-    }
-    if (!initializeImGui()) {
-        return false;
-    }
+    window = shell_.glfwWindow();
+    platform_ = std::make_unique<ShellPlatform>(this, shell_);
 #endif
 
     if (!FileDialog::initialize()) {
@@ -239,7 +183,7 @@ bool Application::initialize() {
         maxFps_ = 120;
     }
     platform_->setVSync(vsync_);
-#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+#if !defined(__linux__) && !defined(DEARSQL_MOBILE)
     shell_.setMaxFps(maxFps_);
 #endif
 
@@ -279,69 +223,8 @@ void Application::run() {
     linuxPlatform->runMainLoop();
 #elif defined(DEARSQL_MOBILE)
     // uikit runs the loop: the view calls renderFrame() each display refresh
-#elif defined(__APPLE__)
-    shell_.run();
 #else
-    double lastInteractionTime = glfwGetTime();
-    bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-    while (!glfwWindowShouldClose(window)) {
-        if (isShutdownRequested()) {
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-        }
-        const double frameStart = glfwGetTime();
-        const double timeSinceInteraction = frameStart - lastInteractionTime;
-        const bool windowFocusedAtFrameStart = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        const bool hadAsyncWork = AsyncOperationControl::wantsFrames();
-
-        double waitTimeout = 0.0;
-        const bool idleBecauseUnfocused = !windowFocusedAtFrameStart && !hadAsyncWork;
-        const bool idleBecauseInactive = windowFocusedAtFrameStart &&
-                                         (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
-                                         !hadAsyncWork;
-        if (idleBecauseUnfocused) {
-            waitTimeout = kMaximumWaitSeconds;
-        } else if (idleBecauseInactive) {
-            const double idleTime =
-                std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
-            waitTimeout = std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
-        }
-
-        if (waitTimeout > 0.0) {
-            glfwWaitEventsTimeout(waitTimeout);
-        } else {
-            glfwPollEvents();
-        }
-
-        const bool windowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        if (windowFocused && !lastWindowFocused) {
-            lastInteractionTime = glfwGetTime();
-        }
-        lastWindowFocused = windowFocused;
-
-        const bool hasAsyncWork = AsyncOperationControl::wantsFrames();
-
-        // never call renderFrame() when unfocused: CAMetalLayer::nextDrawable blocks
-        // when the window is backgrounded, causing sluggish app switches
-        if (!windowFocused) {
-            continue;
-        }
-
-        platform_->renderFrame();
-
-        // without vsync nothing paces the loop: sleep out the rest of the frame
-        if (!vsync_ && maxFps_ > 0) {
-            const double left = frameStart + 1.0 / maxFps_ - glfwGetTime();
-            if (left > 0)
-                std::this_thread::sleep_for(std::chrono::duration<double>(left));
-        }
-
-        const bool userActive = isImGuiUserActive();
-
-        bool keepAnimating = userActive || hasAsyncWork;
-        if (keepAnimating) {
-            lastInteractionTime = glfwGetTime();
-        }
-    }
+    shell_.run();
 #endif
 }
 
@@ -414,21 +297,14 @@ void Application::cleanup() {
         platform_.reset();
     }
 
-#if defined(__APPLE__)
+#if defined(__linux__)
+    ImGui::DestroyContext();
+    spdlog::debug("ImGui context destroyed");
+#else
     shell_.destroy(); // backends, imgui context, window
 #ifndef DEARSQL_MOBILE
     window = nullptr;
 #endif
-#else
-    ImGui::DestroyContext();
-    spdlog::debug("ImGui context destroyed");
-#endif
-
-#if defined(_WIN32)
-    if (window) {
-        glfwDestroyWindow(window);
-    }
-    glfwTerminate();
 #endif
 
     spdlog::debug("Application cleanup completed");
@@ -470,7 +346,7 @@ void Application::setVSync(const bool on) {
 
 void Application::setMaxFps(const int fps) {
     maxFps_ = std::max(0, fps);
-#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+#if !defined(__linux__) && !defined(DEARSQL_MOBILE)
     shell_.setMaxFps(maxFps_);
 #endif
     if (appState)
@@ -662,34 +538,6 @@ void Application::restorePreviousConnections() {
                   currentWorkspaceId, elapsedMs);
 }
 
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-bool Application::initializeGLFW() {
-    if (!glfwInit()) {
-        spdlog::error("Failed to initialize GLFW");
-        return false;
-    }
-
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#endif
-
-#ifdef NDEBUG
-    const auto title = APP_NAME;
-#else
-    const auto title = "";
-#endif
-    window = glfwCreateWindow(1600, 1000, title, nullptr, nullptr);
-    if (!window) {
-        spdlog::error("Failed to create GLFW window");
-        glfwTerminate();
-        return false;
-    }
-
-    spdlog::info("GLFW window created successfully");
-    return true;
-}
-#endif
-
 void Application::setupImGuiContext() const {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -699,25 +547,6 @@ void Application::setupImGuiContext() const {
     ImGui::StyleColorsDark();
     Theme::ApplyNativeTheme(theme_->colors);
 }
-
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-bool Application::initializeImGui() const {
-    setupImGuiContext();
-
-    if (!platform_->initializeImGuiBackend()) {
-        spdlog::error("Failed to initialize ImGui backend");
-        return false;
-    }
-
-#ifdef __APPLE__
-    spdlog::info("ImGui initialized with Metal backend");
-#elif defined(_WIN32)
-    spdlog::info("ImGui initialized with DirectX 11 backend");
-#endif
-
-    return true;
-}
-#endif
 
 void Application::setCurrentWorkspace(const int workspaceId) {
     spdlog::debug("setCurrentWorkspace({}) current={}", workspaceId, currentWorkspaceId);

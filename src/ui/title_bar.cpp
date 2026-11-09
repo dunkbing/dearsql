@@ -18,8 +18,21 @@
 namespace {
     ImVec2 gPopupPos; // under the workspace button
 
-    std::unordered_map<ImGuiID, bool> gClicks;  // set by the native buttons' actions
     std::unordered_map<ImGuiID, float> gWidths; // what each button wanted last frame
+
+    // the button's glyph: an sf symbol for the native macos button, an icon font glyph elsewhere
+    constexpr const char* glyph(const char* sfSymbol, const char* faIcon) {
+#ifdef __APPLE__
+        (void)faIcon;
+        return sfSymbol;
+#else
+        (void)sfSymbol;
+        return faIcon;
+#endif
+    }
+
+#ifdef __APPLE__
+    std::unordered_map<ImGuiID, bool> gClicks; // set by the native buttons' actions
 
     // a native NSButton (an sf symbol, optional title) placed in the imgui bar. a real click
     // reaches the NSButton; the test engine's click reaches the imgui item under it
@@ -45,6 +58,21 @@ namespace {
                 TitleBarView::updateNativeButton(view, title, ImGui::GetColorU32(ImGuiCol_Text));
         return std::exchange(clicked, false) || pressed;
     }
+#else
+    // a flat imgui button: the icon, or the title with the icon after it
+    bool barButton(const char* id, const char* icon, const char* tooltip,
+                   const char* title = nullptr) {
+        const std::string label =
+            (title ? std::string(title) + "  " + icon : std::string(icon)) + id;
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        const bool clicked = ImGui::Button(label.c_str());
+        ImGui::PopStyleColor();
+        gWidths[ImGui::GetItemID()] = ImGui::GetItemRectSize().x;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s", tooltip);
+        return clicked;
+    }
+#endif
 
     void renderWorkspacePopup(Application& app) {
         const auto& colors = app.getCurrentColors();
@@ -197,10 +225,11 @@ void TitleBarView::render(Application& app) {
     const float rowY = ImGui::GetCursorScreenPos().y;
     ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + Theme::Spacing::S, rowY));
 
-    if (barButton("###sidebar", "sidebar.left", "Toggle Sidebar"))
+    if (barButton("###sidebar", glyph("sidebar.left", ICON_FA_BARS), "Toggle Sidebar"))
         app.setSidebarVisible(!app.isSidebarVisible());
     ImGui::SameLine();
-    if (barButton("###connect", "plus", "New Connection") && app.getDatabaseSidebar())
+    if (barButton("###connect", glyph("plus", ICON_FA_PLUS), "New Connection") &&
+        app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
     const float leftEnd = ImGui::GetItemRectMax().x;
 
@@ -230,13 +259,14 @@ void TitleBarView::render(Application& app) {
             ImGui::GetColorU32(colors.subtext1), title);
 
     ImGui::SetCursorScreenPos(ImVec2(wsX, rowY));
-    if (barButton("###workspace", "chevron.down", "Workspace", wsName.c_str())) {
+    if (barButton("###workspace", glyph("chevron.down", ICON_FA_CHEVRON_DOWN), "Workspace",
+                  wsName.c_str())) {
         ImGui::OpenPopup("##WorkspacePopup");
         gPopupPos = ImVec2(wsX, bar.pos.y + bar.size.y);
     }
     renderWorkspacePopup(app);
     ImGui::SameLine();
-    if (barButton("###settings", "gearshape", "Settings"))
+    if (barButton("###settings", glyph("gearshape", ICON_FA_GEAR), "Settings"))
         SettingsDialog::instance().open();
 
     ImGui::PopStyleVar(2);

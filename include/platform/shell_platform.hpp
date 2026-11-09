@@ -5,13 +5,20 @@
 #include "platform_interface.hpp"
 #include <memory>
 
+#if defined(_WIN32)
+using ShellTitlebar = WindowsTitlebar;
+#else
+using ShellTitlebar = MacOSTitlebar;
+#endif
+
 class Application;
 
-// macos: mydear owns the window, metal and the loop; this adds the toolbar title bar
-class MacOSPlatform final : public PlatformInterface {
+// macos and windows: mydear owns the window, the graphics backend and the loop; this adds
+// the title bar (ui/title_bar.cpp in mydear's strip) and the native dialogs behind it
+class ShellPlatform final : public PlatformInterface {
 public:
-    MacOSPlatform(Application* app, mydear::App& shell);
-    ~MacOSPlatform() override;
+    ShellPlatform(Application* app, mydear::App& shell);
+    ~ShellPlatform() override;
 
     bool initializePlatform(GLFWwindow*) override {
         return true;
@@ -43,5 +50,5 @@ public:
 private:
     Application* app_;
     mydear::App& shell_;
-    std::unique_ptr<MacOSTitlebar> titlebar_;
+    std::unique_ptr<ShellTitlebar> titlebar_;
 };

@@ -140,56 +140,22 @@ public:
     WindowsTitlebar(Application* app, GLFWwindow* window);
 
     void setup() override;
+    // the shared imgui bar (ui/title_bar.hpp) in mydear's title bar strip
     void render() override;
-    void renderPopups() override;
-    void updateWorkspaceDropdown() override {} // reads app state directly each frame
-    void applyTheme(bool isDark) override;
-    float getHeight() const override {
-        return 32.0f;
-    }
+    void renderPopups() override {}
+    void updateWorkspaceDropdown() override {} // the bar reads app state each frame
+    void applyTheme(bool) override {}          // mydear follows the theme (dwm dark mode)
+    float getHeight() const override;
+    // the content runs under the bar
     float getClientAreaTopInset() const override {
         return getHeight();
     }
 
-    // Called from WndProc for custom hit testing
-    LRESULT hitTest(HWND hWnd, LPARAM lParam) const;
-
-    // maximize button lives in the non-client area (HTMAXBUTTON), so hover state
-    // comes from WM_NCMOUSEMOVE instead of ImGui
-    void setMaxButtonHovered(bool hovered) {
-        maxButtonHovered_ = hovered;
-    }
-
-    // True when the theme changed this frame (platform should re-apply DWM colour)
-    bool themeChanged() const {
-        return themeChanged_;
-    }
-    void clearThemeChanged() {
-        themeChanged_ = false;
-    }
-
     void showLicenseDialog();
-    void showCreateWorkspaceDialog();
 
 private:
-    void applyTitlebarTheme();
-    int getTitlebarHeightPixels() const;
-    int getResizeBorderWidth() const;
-
     Application* app_ = nullptr;
     GLFWwindow* window_ = nullptr;
-
-    bool lastAppliedDarkTheme_ = true;
-    bool themeChanged_ = false;
-    bool titlebarWidgetHovered_ = false;
-    bool maxButtonHovered_ = false;
-
-    bool openWorkspacePopup_ = false;
-    ImVec2 workspacePopupPos_ = {};
-
-    // Interactive regions in screen coords — used by hitTest()
-    float interactiveLeftEnd_ = 0.0f;
-    float interactiveRightStart_ = 0.0f;
 };
 
 #endif

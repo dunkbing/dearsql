@@ -281,7 +281,7 @@ if(IOS)
     return()
 endif()
 if(APPLE)
-    list(APPEND APP_SOURCES src/platform/macos_platform.mm)
+    list(APPEND APP_SOURCES src/platform/shell_platform.cpp)
     list(APPEND APP_SOURCES src/platform/macos_titlebar.mm src/platform/macos_bar_buttons.mm
                             src/ui/title_bar.cpp)
     set_source_files_properties(src/platform/macos_bar_buttons.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
@@ -298,9 +298,9 @@ elseif(LINUX)
 elseif(WIN32)
     list(
         APPEND APP_SOURCES
-        src/platform/windows_platform.cpp
-        src/platform/dx11_backend.cpp
+        src/platform/shell_platform.cpp
         src/platform/windows_titlebar.cpp
+        src/ui/title_bar.cpp
         src/platform/windows_updater.cpp
         src/platform/windows_alert.cpp
         src/platform/windows_input_dialog.cpp

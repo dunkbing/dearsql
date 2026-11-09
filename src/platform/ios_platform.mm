@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "platform/ios_platform.hpp"
+#include "themes.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
@@ -20,7 +21,7 @@
 
 namespace {
     MTKView* gView = nil;
-    UINavigationController* gNav = nil; // holds the bar above the view
+    UINavigationController* gNav = nil;
     id<MTLCommandQueue> gQueue = nil;
     CFTimeInterval gLastTime = 0;
     CGFloat gKeyboardInset = 0; // how much of the view the soft keyboard covers
@@ -289,7 +290,7 @@ namespace {
     UIButton* workspaceButton_;
 }
 
-// ---- the bar: sidebar (wide layout only), new connection, workspace menu, settings ----
+// ---- the bar ----
 
 - (void)setupBar {
     sidebarItem_ = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"sidebar.left"]
@@ -297,7 +298,6 @@ namespace {
                                                    target:self
                                                    action:@selector(toggleSidebar)];
     sidebarItem_.accessibilityLabel = @"Toggle Sidebar";
-    // "+ New": a bar item shows either its image or its title, a button shows both
     __weak DearSQLViewController* weakSelf = self;
     UIButtonConfiguration* newConfig = UIButtonConfiguration.plainButtonConfiguration;
     newConfig.image = [UIImage systemImageNamed:@"plus"];
@@ -319,7 +319,6 @@ namespace {
     settings.accessibilityLabel = @"Settings";
     self.navigationItem.rightBarButtonItem = settings;
 
-    // the title: the current workspace, a pull-down rebuilt each time it opens
     UIButtonConfiguration* config = UIButtonConfiguration.plainButtonConfiguration;
     config.image =
         [UIImage systemImageNamed:@"chevron.down"
@@ -345,7 +344,6 @@ namespace {
     [self updateBar];
 }
 
-// the sidebar button only means something when the sidebar is beside the tabs
 - (void)updateBar {
     // ponytail: same width test as Application::renderMainUI's compact layout
     const bool compact = gView.bounds.size.width < 700;
@@ -508,7 +506,6 @@ namespace {
     SettingsDialog::instance().open();
 }
 
-// hardware keyboard: hold ⌘ on an ipad to see them
 - (NSArray<UIKeyCommand*>*)keyCommands {
     UIKeyCommand* add = [UIKeyCommand commandWithTitle:@"New Connection"
                                                  image:nil
@@ -552,8 +549,7 @@ namespace {
                                                                action:@selector(longPress:)];
     longPress_.delegate = self;
     [view addGestureRecognizer:longPress_];
-    // the container fills the screen below the bar; the imgui view keeps clear of the
-    // notch in landscape (side safe area), and the bottom inset stays its own concern
+    // the imgui view keeps clear of the notch in landscape
     UIView* container = [[UIView alloc] initWithFrame:UIScreen.mainScreen.bounds];
     view.translatesAutoresizingMaskIntoConstraints = NO;
     [container addSubview:view];
@@ -591,6 +587,7 @@ namespace {
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.edgesForExtendedLayout = UIRectEdgeNone; // imgui y = 0 is below the bar, for dialogs too
     [self setupBar];
     [NSNotificationCenter.defaultCenter addObserver:self
                                            selector:@selector(keyboardFrame:)
@@ -777,9 +774,12 @@ static void showRequestedTabs() {
                     tab->setQuery(part.substr(4));
                     tab->run();
                 }
+            } else if (part == "dialog:connection") {
+                ConnectionDialog::instance().show(&app);
+            } else if (part == "dialog:settings") {
+                SettingsDialog::instance().open();
             }
         }
-        app.setShowFps(false);
         show.clear();
         return;
     }
@@ -802,12 +802,14 @@ void IOSPlatform::renderFrame() {
         MTLRenderPassDescriptor* pass = gView.currentRenderPassDescriptor;
         if (!pass)
             return;
-        const auto& base = app_->getCurrentColors().base;
+        const ImVec4 base = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
         pass.colorAttachments[0].clearColor = MTLClearColorMake(base.x, base.y, base.z, 1);
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 
         id<MTLCommandBuffer> commands = [gQueue commandBuffer];
         id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:pass];
+        // ponytail: sideways only, vertical padding would mis-pick adjacent rows
+        ImGui::GetStyle().TouchExtraPadding = ImVec2(Theme::Spacing::S, 0.0f);
         ImGui_ImplMetal_NewFrame(pass);
         ImGui::NewFrame();
         app_->renderMainUI();
@@ -842,7 +844,6 @@ ImTextureID IOSPlatform::createTextureFromRGBA(const uint8_t* pixels, int width,
     return (ImTextureID)(intptr_t)(__bridge_retained void*)texture;
 }
 
-// the bar takes the theme's colours (application initialize and every theme change call this)
 void IOSPlatform::applyTheme(const bool dark) {
     if (!gNav)
         return;

@@ -656,7 +656,10 @@ void ConnectionDialog::render() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 pos(viewport->GetCenter().x, viewport->Pos.y + viewport->Size.y * 0.05f);
     ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(kDialogWidth, 0.0f), ImVec2(kDialogWidth, FLT_MAX));
+    const ImVec2 room = UIUtils::DialogRoom();
+    const float width = std::min(kDialogWidth, room.x);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f),
+                                        ImVec2(width, room.y - viewport->Size.y * 0.05f));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);

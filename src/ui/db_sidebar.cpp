@@ -95,7 +95,6 @@ void DatabaseSidebarNew::renderEmpty() {
     ImGui::Spacing();
 #ifdef DEARSQL_MOBILE
     ImGui::PopStyleColor();
-    // touch has no hover hint for a long press: show the action itself
     if (UIUtils::IconLabelButton(ICON_FA_PLUS, "Add Connection", UIUtils::ButtonVariant::Primary))
         showConnectionDialog();
 #else

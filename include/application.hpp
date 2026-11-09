@@ -164,7 +164,7 @@ private:
     // Application state
     const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
     float fontScale_ = 1.0f;
-    bool showFps_ = true;
+    bool showFps_ = false;
     bool vsync_ = true;
     int maxFps_ = 120;
     bool sidebarVisible = true;

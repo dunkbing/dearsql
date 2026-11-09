@@ -1472,7 +1472,7 @@ void DatabaseHierarchy::renderImportPreview() {
 
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(760.0f, 520.0f)), ImGuiCond_Appearing);
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);

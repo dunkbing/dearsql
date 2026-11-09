@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/select.hpp"
 #include <cfloat>
 #include <cstring>
@@ -77,8 +78,10 @@ void AISettingsDialog::render() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Appearing);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f), ImVec2(460.0f, FLT_MAX));
+    const ImVec2 room = UIUtils::DialogRoom();
+    const float width = std::min(460.0f, room.x);
+    ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, room.y));
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);

@@ -1694,7 +1694,8 @@ void SQLEditorTab::renderParamPrompt() {
     if (!ImGui::IsPopupOpen(popupId)) {
         ImGui::OpenPopup(popupId);
     }
-    ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(440.0f, 0.0f)), ImGuiCond_Appearing);
+    UIUtils::CapToScreen();
     if (!ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         return;
     }

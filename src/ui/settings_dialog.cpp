@@ -45,7 +45,8 @@ void SettingsDialog::render() {
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     center.y -= 10.0f;
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(620.0f, 0.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(620.0f, 0.0f)), ImGuiCond_Appearing);
+    UIUtils::CapToScreen();
 
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -100,7 +101,7 @@ void SettingsDialog::render() {
     if (bool on = app.showFps(); ImGui::Checkbox("Show frame rate", &on)) {
         app.setShowFps(on);
     }
-#ifndef __linux__ // gtk paces frames to the display itself
+#if !defined(__linux__) && !defined(DEARSQL_MOBILE) // gtk and uikit pace frames to the display
     ImGui::SameLine(0.0f, Theme::Spacing::XL);
     if (bool on = app.vsync(); ImGui::Checkbox("VSync", &on)) {
         app.setVSync(on);
@@ -143,6 +144,7 @@ void SettingsDialog::render() {
             "dearsql --tui: terminal client   dearsql --mcp: tools for coding agents");
     }
 
+#ifndef DEARSQL_MOBILE
     if (MasterSecret::keychainSupported()) {
         ImGui::SeparatorText("Security");
 #if defined(__APPLE__)
@@ -168,7 +170,9 @@ void SettingsDialog::render() {
             "readable only by you. The %s may ask before letting DearSQL read it.",
             store);
     }
+#endif
 
+#ifndef DEARSQL_MOBILE
     // --- Actions ---
     ImGui::SeparatorText("About");
     if (onManageLicense && UIUtils::Button("Manage License...")) {
@@ -182,6 +186,7 @@ void SettingsDialog::render() {
     if (onReportBug && UIUtils::Button("Report Bug...")) {
         onReportBug();
     }
+#endif
 
     // esc closes, unless a field, dropdown or a dialog on top has it
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive() &&

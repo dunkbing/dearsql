@@ -231,7 +231,7 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-    showFps_ = appState->getSetting("show_fps", "1") == "1";
+    showFps_ = appState->getSetting("show_fps", "0") == "1";
     vsync_ = appState->getSetting("vsync", "1") == "1";
     try {
         maxFps_ = std::max(0, std::stoi(appState->getSetting("max_fps", "120")));

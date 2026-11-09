@@ -32,6 +32,8 @@
         <false/>
     </dict>
     <!-- trackpad and mouse clicks come as pointer touches, with the right button -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>DearSQL connects to the database servers you add, including ones on your local network.</string>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UILaunchScreen</key>

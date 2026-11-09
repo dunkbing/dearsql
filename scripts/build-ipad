@@ -1,0 +1,41 @@
+#!/bin/bash
+# build, sign and (optionally) install DearSQL on a real iPad
+#   DEARSQL_IOS_PROFILE=<.mobileprovision covering io.gitlab.dunkbing.dearsql and the device>
+#   [DEVICE=<udid or name from `xcrun devicectl list devices`>] ./scripts/build-ipad
+# development signing only: no icloud yet (a wildcard team profile can't carry it)
+set -e
+cd "$(dirname "$0")/.."
+: "${DEARSQL_IOS_PROFILE:?set DEARSQL_IOS_PROFILE to a development .mobileprovision}"
+BUILD_DIR=build-ios-device
+APP="$BUILD_DIR/DearSQL.app"
+
+if [ ! -f "$BUILD_DIR/build.ninja" ]; then
+    lockf -k /tmp/dearsql-build.lock cmake -S . -B "$BUILD_DIR" -G Ninja -DCMAKE_SYSTEM_NAME=iOS \
+        -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DVCPKG_TARGET_TRIPLET=arm64-ios -DDEARSQL_LIB_BUILD_TESTS=OFF
+fi
+lockf -k /tmp/dearsql-build.lock cmake --build "$BUILD_DIR" --target dearsql
+
+# sign with the profile's identity and entitlements
+PLIST="$(mktemp)"
+security cms -D -i "$DEARSQL_IOS_PROFILE" > "$PLIST"
+TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$PLIST")
+ENTITLEMENTS="$BUILD_DIR/device.entitlements"
+cat > "$ENTITLEMENTS" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>application-identifier</key><string>$TEAM.io.gitlab.dunkbing.dearsql</string>
+    <key>com.apple.developer.team-identifier</key><string>$TEAM</string>
+    <key>get-task-allow</key><true/>
+</dict></plist>
+PL
+rm -f "$PLIST"
+cp "$DEARSQL_IOS_PROFILE" "$APP/embedded.mobileprovision"
+codesign --force --sign "Apple Development" --entitlements "$ENTITLEMENTS" --timestamp=none "$APP"
+codesign --verify --verbose=1 "$APP"
+
+if [ -n "$DEVICE" ]; then
+    xcrun devicectl device install app --device "$DEVICE" "$APP"
+    xcrun devicectl device process launch --device "$DEVICE" io.gitlab.dunkbing.dearsql
+fi

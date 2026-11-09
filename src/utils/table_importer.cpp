@@ -1,7 +1,6 @@
 #include "utils/table_importer.hpp"
 #include "database/ddl_utils.hpp"
 #include "database/sql_builder.hpp"
-#include "utils/file_dialog.hpp"
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -61,13 +60,6 @@ namespace {
 } // namespace
 
 namespace TableImporter {
-
-    std::optional<std::string> chooseCsvFile() {
-        std::string path = FileDialog::openCSVFile();
-        if (path.empty())
-            return std::nullopt;
-        return path;
-    }
 
     Result importCsv(IDatabaseNode* node, const std::string& tableName, const std::string& path,
                      Progress& progress) {

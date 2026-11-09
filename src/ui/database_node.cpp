@@ -408,15 +408,19 @@ void DatabaseHierarchy::startCopyDdl(ITableDataProvider* provider, const Table& 
         [provider, table, keep = keepOwnerAlive(node)] { return provider->getTableDdl(table); });
 }
 
-void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName) {
+void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName,
+                                       const std::string& path) {
     if (!node || csvImportOp_.isRunning())
         return;
-    auto path = TableImporter::chooseCsvFile();
-    if (!path)
+    if (path.empty()) {
+        // ponytail: node and this held raw; the ios picker covers the app meanwhile
+        FileDialog::openCSVFile(
+            [this, node, tableName](const std::string& p) { startCsvImport(node, tableName, p); });
         return;
+    }
     auto* libNode = dynamic_cast<LibDatabaseNode*>(node);
     csvImportProgress_ = std::make_shared<TableImporter::Progress>();
-    csvImportOp_.start([node, tableName, path = std::move(*path), progress = csvImportProgress_,
+    csvImportOp_.start([node, tableName, path, progress = csvImportProgress_,
                         pin = libNode ? libNode->pin() : nullptr,
                         keep = keepOwnerAlive(node)]() mutable {
         auto result = TableImporter::importCsv(node, tableName, path, *progress);
@@ -1381,13 +1385,13 @@ void DatabaseHierarchy::processDumpOperations() {
     renderExportProgress();
 }
 
-void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
+void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData, const std::string& path) {
     if (!dbData || importOp_.isRunning()) {
         return;
     }
-
-    const std::string path = MysqlDumpImport::promptForSqlDump();
     if (path.empty()) {
+        FileDialog::openFile(
+            [this, dbData](const std::string& p) { startSqlDumpImport(dbData, p); });
         return;
     }
 
@@ -1814,13 +1818,14 @@ void DatabaseHierarchy::startPostgresBackup(PostgresDatabaseNode* dbData,
 
 void DatabaseHierarchy::startPostgresRestore(PostgresDatabaseNode* dbData,
                                              const bool cleanBeforeRestore,
-                                             const bool createDatabase) {
+                                             const bool createDatabase, const std::string& path) {
     if (!dbData || !dbData->parentDb || postgresToolOp_.isRunning()) {
         return;
     }
-
-    const std::string path = FileDialog::openPostgresBackupFile();
     if (path.empty()) {
+        FileDialog::openPostgresBackupFile([=, this](const std::string& p) {
+            startPostgresRestore(dbData, cleanBeforeRestore, createDatabase, p);
+        });
         return;
     }
 

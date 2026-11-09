@@ -30,10 +30,6 @@ namespace MysqlDumpImport {
         std::string path;
     };
 
-    // Opens a native file picker. Must be called on the UI thread. Returns an
-    // empty string if the user cancelled.
-    std::string promptForSqlDump();
-
     // Runs a dump against the node. Safe to call from a worker thread: it holds
     // one pooled connection for the whole run and never touches the UI.
     //

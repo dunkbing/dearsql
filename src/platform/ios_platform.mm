@@ -644,9 +644,9 @@ namespace {
     [g setTranslation:CGPointZero inView:gView];
     if (g.numberOfTouches > 0)
         touchAt([g locationInView:gView]); // scroll the window under the finger
-    // imgui scrolls 5 lines per wheel step: this keeps the content under the finger
-    const float step = 5.0f * std::max(ImGui::GetFontSize(), 1.0f);
-    ImGui::GetIO().AddMouseWheelEvent(d.x / step, d.y / step);
+    // a wheel step scrolls 2 font sizes sideways, 5 down: the content stays under the finger
+    const float font = std::max(ImGui::GetFontSize(), 1.0f);
+    ImGui::GetIO().AddMouseWheelEvent(d.x / (2.0f * font), d.y / (5.0f * font));
 }
 - (void)longPress:(UILongPressGestureRecognizer*)g {
     if (g.state != UIGestureRecognizerStateBegan)

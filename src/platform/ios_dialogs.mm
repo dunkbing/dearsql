@@ -140,18 +140,16 @@ namespace CliCommand {
 // ---- file dialogs: the document picker ----
 
 @interface DearSQLPickerDelegate : NSObject <UIDocumentPickerDelegate>
-@property(nonatomic) BOOL done;
-@property(nonatomic, strong) NSURL* url;
+@property(nonatomic, copy) void (^done)(NSURL*);
 @end
 
 @implementation DearSQLPickerDelegate
 - (void)documentPicker:(UIDocumentPickerViewController*)picker
     didPickDocumentsAtURLs:(NSArray<NSURL*>*)urls {
-    self.url = urls.firstObject;
-    self.done = YES;
+    self.done(urls.firstObject);
 }
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController*)picker {
-    self.done = YES;
+    self.done(nil);
 }
 @end
 
@@ -197,34 +195,12 @@ namespace {
         return url ? std::string(url.path.UTF8String) : std::string();
     }
 
-    // ponytail: a modal loop, as NSOpenPanel runs on the mac, since every caller wants the
-    // path back at once. drawing pauses meanwhile (we are inside a frame)
-    std::string pick(NSArray<UTType*>* types, NSURL* into) {
-        UIViewController* top = topController();
-        if (!top)
-            return {};
-        MTKView* view = (MTKView*)[top.view.window viewWithTag:kDearSQLViewTag];
-        UIDocumentPickerViewController* picker =
-            [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:NO];
-        DearSQLPickerDelegate* delegate = [DearSQLPickerDelegate new];
-        picker.delegate = delegate;
-        const BOOL wasPaused = view.paused;
-        view.paused = YES;
-        [top presentViewController:picker animated:YES completion:nil];
-        while (!delegate.done)
-            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
-        view.paused = wasPaused;
-        [view becomeFirstResponder];
-
-        NSURL* url = delegate.url;
-        if (!url)
-            return {};
-        // a file of ours opens in place
+    // a file of ours as it is, anything else copied in: sqlite needs to create its journal
+    // next to the database, and access to a picked file does not cover its folder
+    std::string localCopy(NSURL* url, NSURL* into) {
         NSString* container = NSHomeDirectory().stringByStandardizingPath;
         if ([url.path.stringByStandardizingPath hasPrefix:container])
             return path(url);
-        // anything else is copied in: sqlite needs to create its journal next to the
-        // database, and access to a picked file does not cover its folder
         const BOOL scoped = [url startAccessingSecurityScopedResource];
         NSURL* copy = freeURL(into, url.lastPathComponent);
         NSError* error = nil;
@@ -237,6 +213,27 @@ namespace {
         }
         return path(copy);
     }
+
+    DearSQLPickerDelegate* gPicking = nil; // the picker holds its delegate weakly
+
+    void pick(NSArray<UTType*>* types, NSURL* into, FileDialog::Done done) {
+        UIViewController* top = topController();
+        if (!top)
+            return;
+        UIDocumentPickerViewController* picker =
+            [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:NO];
+        gPicking = [DearSQLPickerDelegate new];
+        gPicking.done = ^(NSURL* url) {
+          gPicking = nil;
+          [[top.view.window viewWithTag:kDearSQLViewTag] becomeFirstResponder];
+          if (!url)
+              return;
+          if (const std::string file = localCopy(url, into); !file.empty())
+              done(file);
+        };
+        picker.delegate = gPicking;
+        [top presentViewController:picker animated:YES completion:nil];
+    }
 } // namespace
 
 bool FileDialog::isInitialized = true;
@@ -247,27 +244,20 @@ bool FileDialog::initialize() {
 
 void FileDialog::cleanup() {}
 
-std::shared_ptr<DatabaseInterface> FileDialog::openDatabaseFile(DatabaseType type) {
-    const std::string file = pick(@[ UTTypeData ], documents());
-    if (file.empty())
-        return nullptr;
-    DatabaseConnectionInfo info;
-    info.type = type;
-    info.name = std::filesystem::path(file).filename().string();
-    info.path = file;
-    return DatabaseFactory::createDatabase(info);
+void FileDialog::openDatabaseFile(DatabaseType, Done done) {
+    pick(@[ UTTypeData ], documents(), std::move(done));
 }
 
-std::string FileDialog::openFile() {
-    return pick(@[ UTTypeItem ], imported());
+void FileDialog::openFile(Done done) {
+    pick(@[ UTTypeItem ], imported(), std::move(done));
 }
 
-std::string FileDialog::openCSVFile() {
-    return pick(@[ UTTypeCommaSeparatedText, UTTypePlainText ], documents());
+void FileDialog::openCSVFile(Done done) {
+    pick(@[ UTTypeCommaSeparatedText, UTTypePlainText ], documents(), std::move(done));
 }
 
-std::string FileDialog::openPostgresBackupFile() {
-    return pick(@[ UTTypeItem ], imported());
+void FileDialog::openPostgresBackupFile(Done done) {
+    pick(@[ UTTypeItem ], imported(), std::move(done));
 }
 
 // saving needs no dialog: the file lands in documents, which the files app shows

@@ -18,6 +18,7 @@
 #include <cfloat>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <iterator>
 #include <unordered_set>
@@ -730,7 +731,7 @@ void ConnectionDialog::render() {
 
     ImGui::EndDisabled();
 
-    if (formChanged)
+    if (formChanged || std::exchange(pickedFile_, false))
         rebuildUrlFromForm();
 
     ImGui::Separator();
@@ -860,14 +861,14 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
                                             sizeof(sqlitePathBuf_));
     ImGui::SameLine();
     if (UIUtils::Button("Browse...##sqlite")) {
-        auto db = FileDialog::openDatabaseFile(selectedType());
-        if (auto fileDb = std::dynamic_pointer_cast<FileDatabase>(db)) {
-            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), fileDb->getPath());
+        FileDialog::openDatabaseFile(selectedType(), [this](const std::string& path) {
+            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), path);
             if (nameBuf_[0] == '\0' || std::strcmp(nameBuf_, "Untitled connection") == 0) {
-                copyToBuf(nameBuf_, sizeof(nameBuf_), fileDb->getConnectionInfo().name);
+                copyToBuf(nameBuf_, sizeof(nameBuf_),
+                          std::filesystem::path(path).filename().string());
             }
-            formChanged = true;
-        }
+            pickedFile_ = true;
+        });
     }
 }
 
@@ -974,11 +975,14 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
         ImGui::SameLine();
         if (UIUtils::Button("Browse...##cacert")) {
             // oracle wallets are directories; other backends take a cert file
-            std::string path = isOracleWallet ? FileDialog::pickFolder() : FileDialog::openFile();
-            if (!path.empty()) {
+            auto picked = [this](const std::string& path) {
                 copyToBuf(sslCACertPathBuf_, sizeof(sslCACertPathBuf_), path);
-                formChanged = true;
-            }
+                pickedFile_ = true;
+            };
+            if (!isOracleWallet)
+                FileDialog::openFile(picked);
+            else if (const std::string dir = FileDialog::pickFolder(); !dir.empty())
+                picked(dir);
         }
     }
 
@@ -1058,11 +1062,10 @@ void ConnectionDialog::renderSshFields(bool& formChanged) {
                                                 sizeof(sshKeyPathBuf_));
         ImGui::SameLine();
         if (UIUtils::Button("Browse...##sshkey")) {
-            std::string path = FileDialog::openFile();
-            if (!path.empty()) {
+            FileDialog::openFile([this](const std::string& path) {
                 copyToBuf(sshKeyPathBuf_, sizeof(sshKeyPathBuf_), path);
-                formChanged = true;
-            }
+                pickedFile_ = true;
+            });
         }
 
         fieldLabel("Passphrase");

@@ -115,10 +115,8 @@ void DatabaseSidebarNew::renderEmpty() {
         }
         ImGui::Separator();
         if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
-            const std::string path = FileDialog::openCSVFile();
-            if (!path.empty()) {
-                Application::getInstance().openFile(path);
-            }
+            FileDialog::openCSVFile(
+                [](const std::string& path) { Application::getInstance().openFile(path); });
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();
@@ -281,10 +279,8 @@ void DatabaseSidebarNew::renderStructure() {
         }
         ImGui::Separator();
         if (ImGui::MenuItem(ICON_FA_FILE_CSV " Open CSV File...")) {
-            const std::string path = FileDialog::openCSVFile();
-            if (!path.empty()) {
-                Application::getInstance().openFile(path);
-            }
+            FileDialog::openCSVFile(
+                [](const std::string& path) { Application::getInstance().openFile(path); });
         }
         ImGui::PopStyleVar();
         ImGui::EndPopup();

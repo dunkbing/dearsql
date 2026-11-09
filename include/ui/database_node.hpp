@@ -165,7 +165,9 @@ private:
     std::shared_ptr<TableImporter::Progress> csvImportProgress_;
     void startTableExport(ITableDataProvider* provider, const std::vector<const Table*>& tables,
                           ExportFormat format, DatabaseType dbType);
-    void startCsvImport(IDatabaseNode* node, const std::string& tableName);
+    // the import starters open a picker when given no path, then run again with the pick
+    void startCsvImport(IDatabaseNode* node, const std::string& tableName,
+                        const std::string& path = {});
     void renderTableExportMenu(ITableDataProvider* provider, const Table& table,
                                DatabaseType dbType);
     void renderTableImportMenu(IDatabaseNode* node, const std::string& tableName);
@@ -217,7 +219,7 @@ private:
     void renderImportProgress();
     void renderImportPreview();
     void beginSqlDumpImport();
-    void startSqlDumpImport(MySQLDatabaseNode* dbData);
+    void startSqlDumpImport(MySQLDatabaseNode* dbData, const std::string& path = {});
     void checkExportStatus();
     void renderExportProgress();
     void startSqlDumpExport(MySQLDatabaseNode* dbData);
@@ -225,7 +227,7 @@ private:
     void startPostgresBackup(PostgresDatabaseNode* dbData, PostgresBackupFormat format,
                              bool includeCreateDatabase, bool noOwner);
     void startPostgresRestore(PostgresDatabaseNode* dbData, bool cleanBeforeRestore,
-                              bool createDatabase);
+                              bool createDatabase, const std::string& path = {});
 
     // Database-specific renderers
     void renderPostgresDatabaseNode(PostgresDatabaseNode* dbData);

@@ -28,9 +28,6 @@ namespace TableImporter {
         long long failed = 0;
     };
 
-    // UI thread: the file dialog; nullopt when the user backs out
-    std::optional<std::string> chooseCsvFile();
-
     // any thread. rows go in multi-row INSERT batches where the dialect has them; a
     // batch that fails is retried row by row so one bad row only loses itself.
     // there is no wrapping transaction: rows already in stay in on cancel

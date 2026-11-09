@@ -8,7 +8,7 @@
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
-#include "platform/graphics_backend.hpp"
+#include "mydear/app.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/schema_compare.hpp"
@@ -37,8 +37,8 @@ namespace {
         // DEARSQL_SHOT_DIR: render offscreen at 2x into <dir>/<name>.png, crisp on any display
         if (const char* dir = std::getenv("DEARSQL_SHOT_DIR")) {
             ctx->Yield(30); // let hover and popups settle
-            requestFrameCapture(std::format("{}/{}.png", dir, ctx->Test->Name).c_str(), 2);
-            while (frameCapturePending()) {
+            mydear::requestFrameCapture(std::format("{}/{}.png", dir, ctx->Test->Name).c_str(), 2);
+            while (mydear::frameCapturePending()) {
                 ctx->Yield();
             }
             return;
@@ -758,8 +758,8 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         app.setSidebarVisible(true);
         if (const char* record = std::getenv("DEARSQL_RECORD")) {
             const ImVec2 size = ImGui::GetIO().DisplaySize;
-            if (!startRecording(record, 1920.0f / size.x, static_cast<int>(size.x),
-                                static_cast<int>(size.y)))
+            if (!mydear::startRecording(record, 1920.0f / size.x, static_cast<int>(size.x),
+                                        static_cast<int>(size.y)))
                 ctx->LogError("could not start ffmpeg");
         }
         loadTables(ctx, *db);

@@ -9,7 +9,8 @@ if(LINUX)
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)
 elseif(IOS)
   # ios: touch and keys come from the uikit view, no glfw
-else()
+elseif(NOT APPLE)
+  # macos: mydear compiles the glfw and metal backends
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_glfw.cpp)
 endif()
 
@@ -29,7 +30,9 @@ if(APPLE)
   endif()
   find_library(SECURITY_LIBRARY Security REQUIRED)
 
-  list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
+  if(IOS)
+    list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
+  endif()
 elseif(LINUX)
   # no extra imgui sources needed for GTK4+OpenGL
 elseif(WIN32)

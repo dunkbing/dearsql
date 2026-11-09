@@ -3,7 +3,7 @@
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "imgui_te_ui.h"
-#include "platform/graphics_backend.hpp"
+#include "mydear/app.hpp"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     }
 
     ImGuiTestEngine_Stop(engine);
-    stopRecording(); // before cleanup: its fast exit would drop the tail of the video
+    mydear::stopRecording(); // before cleanup: its fast exit would drop the tail of the video
 
     ImGuiTestEngineResultSummary summary;
     ImGuiTestEngine_GetResultSummary(engine, &summary);

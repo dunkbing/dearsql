@@ -2,6 +2,7 @@
 
 #include "app_state.hpp"
 #include "imgui.h"
+#include "mydear/app.hpp"
 #include "platform/platform_interface.hpp"
 #include "themes.hpp"
 #include "ui/db_sidebar.hpp"
@@ -15,7 +16,8 @@
 #include <GLFW/glfw3.h>
 #endif
 
-class Application {
+// the app is mydear's delegate: mydear owns the window, backend and loop (macos so far)
+class Application : public mydear::Delegate {
 public:
     static Application& getInstance();
 
@@ -84,7 +86,13 @@ public:
     void dockTabToCenter(const std::string& tabName) const;
 
     // Open a file by path — routes to the right handler by extension
-    void openFile(const std::string& path);
+    void openFile(const std::string& path) override;
+
+    // mydear::Delegate
+    void setup() override;
+    void frame() override;
+    bool wantsFrames() override;
+    bool shouldQuit() override;
 
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {
@@ -149,11 +157,14 @@ public:
 
 private:
     Application() = default;
-    ~Application() = default;
+    ~Application() override = default;
 
     // Core components
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
+#endif
+#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+    mydear::App shell_; // window, metal, imgui backends, frame loop
 #endif
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;

@@ -158,17 +158,16 @@ bool Application::initialize() {
         return false;
     }
 #elif defined(__APPLE__)
-    platform_ = std::make_unique<MacOSPlatform>(this);
-    if (!initializeGLFW()) {
+    mydear::Config config;
+#ifdef NDEBUG
+    config.title = APP_NAME;
+#endif
+    config.width = 1600;
+    config.height = 1000;
+    if (!shell_.create(config, *this))
         return false;
-    }
-    if (!platform_->initializePlatform(window)) {
-        spdlog::error("Failed to initialize platform");
-        return false;
-    }
-    if (!initializeImGui()) {
-        return false;
-    }
+    window = shell_.glfwWindow();
+    platform_ = std::make_unique<MacOSPlatform>(this, shell_);
 #elif defined(__linux__)
     platform_ = std::make_unique<LinuxPlatform>(this);
     auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
@@ -240,6 +239,9 @@ bool Application::initialize() {
         maxFps_ = 120;
     }
     platform_->setVSync(vsync_);
+#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+    shell_.setMaxFps(maxFps_);
+#endif
 
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
@@ -277,6 +279,8 @@ void Application::run() {
     linuxPlatform->runMainLoop();
 #elif defined(DEARSQL_MOBILE)
     // uikit runs the loop: the view calls renderFrame() each display refresh
+#elif defined(__APPLE__)
+    shell_.run();
 #else
     double lastInteractionTime = glfwGetTime();
     bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
@@ -410,10 +414,15 @@ void Application::cleanup() {
         platform_.reset();
     }
 
+#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+    shell_.destroy(); // backends, imgui context, window
+    window = nullptr;
+#else
     ImGui::DestroyContext();
     spdlog::debug("ImGui context destroyed");
+#endif
 
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
+#if defined(_WIN32)
     if (window) {
         glfwDestroyWindow(window);
     }
@@ -459,8 +468,28 @@ void Application::setVSync(const bool on) {
 
 void Application::setMaxFps(const int fps) {
     maxFps_ = std::max(0, fps);
+#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+    shell_.setMaxFps(maxFps_);
+#endif
     if (appState)
         appState->setSetting("max_fps", std::to_string(maxFps_));
+}
+
+void Application::setup() {
+    fonts::setup();
+}
+
+void Application::frame() {
+    platform_->renderChrome();
+    renderMainUI();
+}
+
+bool Application::wantsFrames() {
+    return AsyncOperationControl::wantsFrames();
+}
+
+bool Application::shouldQuit() {
+    return isShutdownRequested();
 }
 
 bool Application::hasPendingAsyncWork() const {

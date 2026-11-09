@@ -21,6 +21,8 @@ public:
     virtual void onSidebarToggleClicked() = 0;
     virtual void cleanup() = 0;
     virtual void renderFrame() = 0;
+    // native chrome drawn inside the frame, before the app's ui (macos title bar)
+    virtual void renderChrome() {}
     virtual void shutdownImGui() = 0;
     virtual void updateWorkspaceDropdown() {}
     virtual void applyTheme(bool isDark) = 0;

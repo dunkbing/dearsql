@@ -63,54 +63,7 @@ private:
     int fbHeight_ = 720;
 };
 
-// ---- macOS: Metal via CAMetalLayer (GLFW window) ----
-#elif defined(__APPLE__)
-
-#include <GLFW/glfw3.h>
-
-class MacOSMetalBackend final : public IGraphicsBackend {
-public:
-    explicit MacOSMetalBackend(GLFWwindow* window);
-
-    bool initializeImGui() override;
-    // beginFrame acquires the drawable and stores frame-local Metal objects
-    void beginFrame(ImVec4 clearColor) override;
-    void renderDrawData(ImDrawData* drawData) override;
-    void present() override;
-    void onResize(int width, int height) override {}
-    void shutdown() override;
-    void getFramebufferSize(int& width, int& height) override;
-    ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;
-
-    bool vsync = true;
-
-#ifdef __OBJC__
-    id metalDevice_ = nullptr;
-    id metalCommandQueue_ = nullptr;
-    id metalLayer_ = nullptr;
-    // per-frame objects — valid between beginFrame() and present()
-    id currentDrawable_ = nullptr;
-    id currentCommandBuffer_ = nullptr;
-    id currentRenderEncoder_ = nullptr;
-#else
-    void* metalDevice_ = nullptr;
-    void* metalCommandQueue_ = nullptr;
-    void* metalLayer_ = nullptr;
-    void* currentDrawable_ = nullptr;
-    void* currentCommandBuffer_ = nullptr;
-    void* currentRenderEncoder_ = nullptr;
-#endif
-
-private:
-    GLFWwindow* window_ = nullptr;
-};
-
-// docs screenshots: render the next frame offscreen at `scale` and save it as a png
-void requestFrameCapture(const char* path, float scale);
-bool frameCapturePending();
-// ui test videos: every frame from here on, at `scale`, piped to ffmpeg as an mp4
-bool startRecording(const char* path, float scale, int width, int height);
-void stopRecording();
+// ---- macOS: mydear (external/mydear) owns the metal backend ----
 
 // ---- Windows: Direct3D 11 via GLFW/HWND ----
 #elif defined(_WIN32)

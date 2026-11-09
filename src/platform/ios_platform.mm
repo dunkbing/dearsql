@@ -7,6 +7,8 @@
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "platform/ios_platform.hpp"
+#include "ui/connection_dialog.hpp"
+#include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
 
@@ -18,6 +20,7 @@
 
 namespace {
     MTKView* gView = nil;
+    UINavigationController* gNav = nil; // holds the bar above the view
     id<MTLCommandQueue> gQueue = nil;
     CFTimeInterval gLastTime = 0;
     CGFloat gKeyboardInset = 0; // how much of the view the soft keyboard covers
@@ -281,6 +284,254 @@ namespace {
 @implementation DearSQLViewController {
     UIPanGestureRecognizer* pan_;
     UILongPressGestureRecognizer* longPress_;
+    UIBarButtonItem* sidebarItem_;
+    UIBarButtonItem* newItem_;
+    UIButton* workspaceButton_;
+}
+
+// ---- the bar: sidebar (wide layout only), new connection, workspace menu, settings ----
+
+- (void)setupBar {
+    sidebarItem_ = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"sidebar.left"]
+                                                    style:UIBarButtonItemStylePlain
+                                                   target:self
+                                                   action:@selector(toggleSidebar)];
+    sidebarItem_.accessibilityLabel = @"Toggle Sidebar";
+    // "+ New": a bar item shows either its image or its title, a button shows both
+    __weak DearSQLViewController* weakSelf = self;
+    UIButtonConfiguration* newConfig = UIButtonConfiguration.plainButtonConfiguration;
+    newConfig.image = [UIImage systemImageNamed:@"plus"];
+    newConfig.title = @"New";
+    newConfig.imagePadding = 4;
+    newConfig.contentInsets = NSDirectionalEdgeInsetsZero;
+    UIButton* newButton =
+        [UIButton buttonWithConfiguration:newConfig
+                            primaryAction:[UIAction actionWithHandler:^(UIAction*) {
+                              [weakSelf newConnection];
+                            }]];
+    newButton.accessibilityLabel = @"New Connection";
+    newItem_ = [[UIBarButtonItem alloc] initWithCustomView:newButton];
+    UIBarButtonItem* settings =
+        [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
+                                         style:UIBarButtonItemStylePlain
+                                        target:self
+                                        action:@selector(openSettings)];
+    settings.accessibilityLabel = @"Settings";
+    self.navigationItem.rightBarButtonItem = settings;
+
+    // the title: the current workspace, a pull-down rebuilt each time it opens
+    UIButtonConfiguration* config = UIButtonConfiguration.plainButtonConfiguration;
+    config.image =
+        [UIImage systemImageNamed:@"chevron.down"
+                withConfiguration:[UIImageSymbolConfiguration
+                                      configurationWithTextStyle:UIFontTextStyleCaption1
+                                                           scale:UIImageSymbolScaleSmall]];
+    config.imagePlacement = NSDirectionalRectEdgeTrailing;
+    config.imagePadding = 4;
+    config.titleTextAttributesTransformer = ^(NSDictionary* attrs) {
+      NSMutableDictionary* a = [attrs mutableCopy];
+      a[NSFontAttributeName] = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+      return a;
+    };
+    workspaceButton_ = [UIButton buttonWithConfiguration:config primaryAction:nil];
+    workspaceButton_.showsMenuAsPrimaryAction = YES;
+    workspaceButton_.accessibilityHint = @"Switch, create, rename or delete workspaces";
+    workspaceButton_.menu = [UIMenu
+        menuWithChildren:@[ [UIDeferredMenuElement
+                             elementWithUncachedProvider:^(void (^done)(NSArray<UIMenuElement*>*)) {
+                               done([weakSelf workspaceMenu]);
+                             }] ]];
+    self.navigationItem.titleView = workspaceButton_;
+    [self updateBar];
+}
+
+// the sidebar button only means something when the sidebar is beside the tabs
+- (void)updateBar {
+    // ponytail: same width test as Application::renderMainUI's compact layout
+    const bool compact = gView.bounds.size.width < 700;
+    NSArray* left = compact ? @[ newItem_ ] : @[ sidebarItem_, newItem_ ];
+    if (![self.navigationItem.leftBarButtonItems isEqualToArray:left])
+        self.navigationItem.leftBarButtonItems = left;
+
+    auto& app = Application::getInstance();
+    std::string name = "Workspace";
+    for (const auto& ws : app.getWorkspaces())
+        if (ws.id == app.getCurrentWorkspaceId())
+            name = ws.name;
+    UIButtonConfiguration* config = workspaceButton_.configuration;
+    config.title = @(name.c_str());
+    workspaceButton_.configuration = config;
+    [workspaceButton_ sizeToFit];
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self updateBar]; // rotation, split view, slide over
+}
+
+- (NSArray<UIMenuElement*>*)workspaceMenu {
+    auto& app = Application::getInstance();
+    const auto workspaces = app.getWorkspaces();
+    const int current = app.getCurrentWorkspaceId();
+    __weak DearSQLViewController* weakSelf = self;
+
+    NSMutableArray* switching = [NSMutableArray array];
+    NSString* currentName = @"";
+    for (const auto& ws : workspaces) {
+        const int wsId = ws.id;
+        NSString* name = @(ws.name.c_str());
+        if (wsId == current)
+            currentName = name;
+        UIAction* a = [UIAction actionWithTitle:name
+                                          image:nil
+                                     identifier:nil
+                                        handler:^(UIAction*) {
+                                          Application::getInstance().setCurrentWorkspace(wsId);
+                                          [weakSelf updateBar];
+                                        }];
+        a.state = wsId == current ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [switching addObject:a];
+    }
+
+    NSMutableArray* manage = [NSMutableArray array];
+    [manage addObject:[UIAction
+                          actionWithTitle:@"New Workspace…"
+                                    image:[UIImage systemImageNamed:@"plus.rectangle.on.rectangle"]
+                               identifier:nil
+                                  handler:^(UIAction*) {
+                                    [weakSelf askName:@"New Workspace"
+                                                 text:@""
+                                               action:@"Create"
+                                                 done:^(NSString* n) {
+                                                   Application::getInstance().createWorkspace(
+                                                       n.UTF8String);
+                                                 }];
+                                  }]];
+    [manage
+        addObject:[UIAction actionWithTitle:[NSString stringWithFormat:@"Rename “%@”…", currentName]
+                                      image:[UIImage systemImageNamed:@"pencil"]
+                                 identifier:nil
+                                    handler:^(UIAction*) {
+                                      [weakSelf askName:@"Rename Workspace"
+                                                   text:currentName
+                                                 action:@"Rename"
+                                                   done:^(NSString* n) {
+                                                     Application::getInstance().renameWorkspace(
+                                                         current, n.UTF8String);
+                                                   }];
+                                    }]];
+    if (current != 1) { // Default can't be deleted
+        UIAction* del =
+            [UIAction actionWithTitle:[NSString stringWithFormat:@"Delete “%@”", currentName]
+                                image:[UIImage systemImageNamed:@"trash"]
+                           identifier:nil
+                              handler:^(UIAction*) {
+                                [weakSelf confirmDeleteWorkspace:current name:currentName];
+                              }];
+        del.attributes = UIMenuElementAttributesDestructive;
+        [manage addObject:del];
+    }
+    return @[
+        [UIMenu menuWithTitle:@""
+                        image:nil
+                   identifier:nil
+                      options:UIMenuOptionsDisplayInline
+                     children:switching],
+        [UIMenu menuWithTitle:@""
+                        image:nil
+                   identifier:nil
+                      options:UIMenuOptionsDisplayInline
+                     children:manage],
+    ];
+}
+
+- (void)askName:(NSString*)title
+           text:(NSString*)text
+         action:(NSString*)action
+           done:(void (^)(NSString*))done {
+    UIAlertController* alert =
+        [UIAlertController alertControllerWithTitle:title
+                                            message:nil
+                                     preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField* field) {
+      field.text = text;
+      field.placeholder = @"Workspace name";
+      field.autocapitalizationType = UITextAutocapitalizationTypeWords;
+      field.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    __weak UIAlertController* weakAlert = alert;
+    __weak DearSQLViewController* weakSelf = self;
+    UIAlertAction* ok = [UIAlertAction
+        actionWithTitle:action
+                  style:UIAlertActionStyleDefault
+                handler:^(UIAlertAction*) {
+                  NSString* name = [weakAlert.textFields.firstObject.text
+                      stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+                  if (name.length > 0) {
+                      done(name);
+                      [weakSelf updateBar];
+                  }
+                }];
+    [alert addAction:ok];
+    alert.preferredAction = ok;
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)confirmDeleteWorkspace:(int)wsId name:(NSString*)name {
+    UIAlertController* alert = [UIAlertController
+        alertControllerWithTitle:[NSString stringWithFormat:@"Delete “%@”?", name]
+                         message:@"Its connections move to the Default workspace."
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    __weak DearSQLViewController* weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"Delete"
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction*) {
+                                              Application::getInstance().deleteWorkspace(wsId);
+                                              [weakSelf updateBar];
+                                            }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)toggleSidebar {
+    auto& app = Application::getInstance();
+    app.setSidebarVisible(!app.isSidebarVisible());
+}
+- (void)newConnection {
+    ConnectionDialog::instance().show(&Application::getInstance());
+}
+- (void)openSettings {
+    SettingsDialog::instance().open();
+}
+
+// hardware keyboard: hold ⌘ on an ipad to see them
+- (NSArray<UIKeyCommand*>*)keyCommands {
+    UIKeyCommand* add = [UIKeyCommand commandWithTitle:@"New Connection"
+                                                 image:nil
+                                                action:@selector(newConnection)
+                                                 input:@"n"
+                                         modifierFlags:UIKeyModifierCommand
+                                          propertyList:nil];
+    UIKeyCommand* settings = [UIKeyCommand commandWithTitle:@"Settings"
+                                                      image:nil
+                                                     action:@selector(openSettings)
+                                                      input:@","
+                                              modifierFlags:UIKeyModifierCommand
+                                               propertyList:nil];
+    UIKeyCommand* sidebar =
+        [UIKeyCommand commandWithTitle:@"Toggle Sidebar"
+                                 image:nil
+                                action:@selector(toggleSidebar)
+                                 input:@"s"
+                         modifierFlags:UIKeyModifierCommand | UIKeyModifierControl
+                          propertyList:nil];
+    for (UIKeyCommand* c in @[ add, settings, sidebar ])
+        c.wantsPriorityOverSystemBehavior = YES;
+    return @[ add, settings, sidebar ];
 }
 - (void)loadView {
     DearSQLView* view = [[DearSQLView alloc] initWithFrame:UIScreen.mainScreen.bounds
@@ -301,7 +552,18 @@ namespace {
                                                                action:@selector(longPress:)];
     longPress_.delegate = self;
     [view addGestureRecognizer:longPress_];
-    self.view = view;
+    // the container fills the screen below the bar; the imgui view keeps clear of the
+    // notch in landscape (side safe area), and the bottom inset stays its own concern
+    UIView* container = [[UIView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    view.translatesAutoresizingMaskIntoConstraints = NO;
+    [container addSubview:view];
+    [NSLayoutConstraint activateConstraints:@[
+        [view.topAnchor constraintEqualToAnchor:container.topAnchor],
+        [view.bottomAnchor constraintEqualToAnchor:container.bottomAnchor],
+        [view.leadingAnchor constraintEqualToAnchor:container.safeAreaLayoutGuide.leadingAnchor],
+        [view.trailingAnchor constraintEqualToAnchor:container.safeAreaLayoutGuide.trailingAnchor],
+    ]];
+    self.view = container;
     gView = view;
     gQueue = [view.device newCommandQueue];
 
@@ -325,10 +587,11 @@ namespace {
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self.view becomeFirstResponder];
+    [gView becomeFirstResponder];
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
+    [self setupBar];
     [NSNotificationCenter.defaultCenter addObserver:self
                                            selector:@selector(keyboardFrame:)
                                                name:UIKeyboardWillChangeFrameNotification
@@ -345,13 +608,12 @@ namespace {
         return;
     }
     const CGRect screen = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
-    const CGRect local = [self.view convertRect:screen
-                            fromCoordinateSpace:self.view.window.screen.coordinateSpace];
-    const CGRect covered = CGRectIntersection(self.view.bounds, local);
-    gKeyboardInset =
-        CGRectIsNull(covered) || CGRectGetMaxY(covered) < CGRectGetMaxY(self.view.bounds)
-            ? 0
-            : covered.size.height;
+    const CGRect local = [gView convertRect:screen
+                        fromCoordinateSpace:gView.window.screen.coordinateSpace];
+    const CGRect covered = CGRectIntersection(gView.bounds, local);
+    gKeyboardInset = CGRectIsNull(covered) || CGRectGetMaxY(covered) < CGRectGetMaxY(gView.bounds)
+                         ? 0
+                         : covered.size.height;
 }
 // gestures are for fingers; a trackpad click or drag is a mouse
 - (BOOL)gestureRecognizer:(UIGestureRecognizer*)g shouldReceiveTouch:(UITouch*)touch {
@@ -367,19 +629,19 @@ namespace {
     gTouch = Touch::Pressed;
     touchAt(gTouchStart);
     ImGui::GetIO().AddMouseButtonEvent(0, true);
-    touchAt([g locationInView:self.view]);
+    touchAt([g locationInView:gView]);
     return NO;
 }
 - (void)hover:(UIHoverGestureRecognizer*)g {
-    const CGPoint p = [g locationInView:self.view];
+    const CGPoint p = [g locationInView:gView];
     ImGui::GetIO().AddMouseSourceEvent(ImGuiMouseSource_Mouse);
     ImGui::GetIO().AddMousePosEvent(p.x, p.y);
 }
 - (void)pan:(UIPanGestureRecognizer*)g {
-    const CGPoint d = [g translationInView:self.view];
-    [g setTranslation:CGPointZero inView:self.view];
+    const CGPoint d = [g translationInView:gView];
+    [g setTranslation:CGPointZero inView:gView];
     if (g.numberOfTouches > 0)
-        touchAt([g locationInView:self.view]); // scroll the window under the finger
+        touchAt([g locationInView:gView]); // scroll the window under the finger
     // imgui scrolls 5 lines per wheel step: this keeps the content under the finger
     const float step = 5.0f * std::max(ImGui::GetFontSize(), 1.0f);
     ImGui::GetIO().AddMouseWheelEvent(d.x / step, d.y / step);
@@ -391,7 +653,7 @@ namespace {
     if (gTouch == Touch::Pressed)
         releaseAway();
     gTouch = Touch::None;
-    touchAt([g locationInView:self.view]);
+    touchAt([g locationInView:gView]);
     io.AddMouseButtonEvent(1, true);
     io.AddMouseButtonEvent(1, false);
 }
@@ -423,8 +685,17 @@ namespace {
     willConnectToSession:(UISceneSession*)session
                  options:(UISceneConnectionOptions*)options {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
-    self.window.rootViewController = [[DearSQLViewController alloc] init];
+    gNav = [[UINavigationController alloc]
+        initWithRootViewController:[[DearSQLViewController alloc] init]];
+    self.window.rootViewController = gNav;
     [self.window makeKeyAndVisible];
+    // ponytail: screenshots in landscape, as simctl cannot rotate a simulator
+    if (getenv("DEARSQL_LANDSCAPE"))
+        [(UIWindowScene*)scene
+            requestGeometryUpdateWithPreferences:
+                [[UIWindowSceneGeometryPreferencesIOS alloc]
+                    initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscapeRight]
+                                    errorHandler:nil];
 }
 @end
 
@@ -569,4 +840,27 @@ ImTextureID IOSPlatform::createTextureFromRGBA(const uint8_t* pixels, int width,
                bytesPerRow:width * 4];
     // imgui holds the id, not a reference: keep the texture alive with the app
     return (ImTextureID)(intptr_t)(__bridge_retained void*)texture;
+}
+
+// the bar takes the theme's colours (application initialize and every theme change call this)
+void IOSPlatform::applyTheme(const bool dark) {
+    if (!gNav)
+        return;
+    const auto& c = app_->getCurrentColors();
+    auto color = [](const ImVec4& v) {
+        return [UIColor colorWithRed:v.x green:v.y blue:v.z alpha:v.w];
+    };
+    UINavigationBarAppearance* look = [[UINavigationBarAppearance alloc] init];
+    [look configureWithOpaqueBackground];
+    look.backgroundColor = color(c.mantle);
+    look.shadowColor = color(c.surface0);
+    look.titleTextAttributes = @{NSForegroundColorAttributeName : color(c.text)};
+    UINavigationBar* bar = gNav.navigationBar;
+    bar.standardAppearance = look;
+    bar.compactAppearance = look;
+    bar.scrollEdgeAppearance = look;
+    bar.compactScrollEdgeAppearance = look;
+    bar.tintColor = color(c.text);
+    gNav.view.backgroundColor = color(c.base); // beside the notch in landscape
+    gNav.overrideUserInterfaceStyle = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
 }

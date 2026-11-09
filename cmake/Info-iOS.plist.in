@@ -53,10 +53,11 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
-    <!-- iphone: portrait until the side safe-area insets (notch) are handled -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <!-- icons compiled from assets/ios/Assets.xcassets by actool (cmake/IOS.cmake) -->
     <key>CFBundleIcons</key>

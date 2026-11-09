@@ -21,7 +21,7 @@ public:
     void cleanup() override {}
     void renderFrame() override;
     void shutdownImGui() override;
-    void applyTheme(bool) override {}
+    void applyTheme(bool dark) override; // the navigation bar
     // the status bar / safe area at the top of the screen
     [[nodiscard]] float getClientAreaTopInset() const override;
     ImTextureID createTextureFromRGBA(const uint8_t* pixels, int width, int height) override;

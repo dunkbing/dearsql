@@ -94,11 +94,14 @@ void DatabaseSidebarNew::renderEmpty() {
     ImGui::TextWrapped("No databases connected");
     ImGui::Spacing();
 #ifdef DEARSQL_MOBILE
-    ImGui::TextWrapped("Long-press here to add a new database connection");
+    ImGui::PopStyleColor();
+    // touch has no hover hint for a long press: show the action itself
+    if (UIUtils::IconLabelButton(ICON_FA_PLUS, "Add Connection", UIUtils::ButtonVariant::Primary))
+        showConnectionDialog();
 #else
     ImGui::TextWrapped("Right-click here to add a new database connection");
-#endif
     ImGui::PopStyleColor();
+#endif
 
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         ImGui::OpenPopup("AddDatabasePopup");

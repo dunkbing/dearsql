@@ -151,12 +151,10 @@ bool Application::initialize() {
     spdlog::info("Starting {}...", APP_NAME);
 
 #if defined(DEARSQL_MOBILE)
-    // uikit owns the window and the loop (ios_platform.mm); only imgui to set up here
-    platform_ = std::make_unique<IOSPlatform>(this);
-    setupImGuiContext();
-    if (!platform_->initializeImGuiBackend()) {
+    // mydear runs uikit; we are inside the root controller's loadView, the view exists
+    if (!shell_.create(mydear::Config{}, *this))
         return false;
-    }
+    platform_ = std::make_unique<IOSPlatform>(this, shell_);
 #elif defined(__APPLE__)
     mydear::Config config;
 #ifdef NDEBUG
@@ -415,9 +413,11 @@ void Application::cleanup() {
         platform_.reset();
     }
 
-#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
+#if defined(__APPLE__)
     shell_.destroy(); // backends, imgui context, window
+#ifndef DEARSQL_MOBILE
     window = nullptr;
+#endif
 #else
     ImGui::DestroyContext();
     spdlog::debug("ImGui context destroyed");

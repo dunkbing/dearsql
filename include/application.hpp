@@ -16,7 +16,7 @@
 #include <GLFW/glfw3.h>
 #endif
 
-// the app is mydear's delegate: mydear owns the window, backend and loop (macos so far)
+// the app is mydear's delegate: mydear owns the window, backend and loop (macos and ios so far)
 class Application : public mydear::Delegate {
 public:
     static Application& getInstance();
@@ -163,8 +163,8 @@ private:
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
-#if defined(__APPLE__) && !defined(DEARSQL_MOBILE)
-    mydear::App shell_; // window, metal, imgui backends, frame loop
+#if defined(__APPLE__)
+    mydear::App shell_; // window or uikit view, metal, imgui backends, frame loop
 #endif
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;

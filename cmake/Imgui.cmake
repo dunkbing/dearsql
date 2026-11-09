@@ -30,9 +30,6 @@ if(APPLE)
   endif()
   find_library(SECURITY_LIBRARY Security REQUIRED)
 
-  if(IOS)
-    list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_metal.mm)
-  endif()
 elseif(LINUX)
   # no extra imgui sources needed for GTK4+OpenGL
 elseif(WIN32)

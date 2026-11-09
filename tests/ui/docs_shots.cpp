@@ -704,4 +704,130 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         ctx->Yield(10);
         holdForScreenshot(ctx);
     };
+
+    // the video opener (DEARSQL_RECORD): a million orders, paged, filtered and grouped
+    t = IM_REGISTER_TEST(engine, "Docs", "showcase");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        DatabaseConnectionInfo info;
+        info.type = DatabaseType::SQLITE;
+        info.name = "warehouse";
+        info.path = ":memory:";
+        auto db = std::make_shared<FileDatabase>(info);
+        if (!db->connect().first)
+            return;
+        for (const char* sql :
+             {"CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT, country "
+              "TEXT, city TEXT, tier TEXT, signed_up TEXT, lifetime_value REAL)",
+              "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000) "
+              "INSERT INTO customers SELECT i, "
+              "json_extract('[\"Ada\",\"Grace\",\"Linus\",\"Margaret\",\"Alan\","
+              "\"Barbara\",\"Dennis\",\"Frances\",\"Ken\",\"Radia\"]', '$[' || (i % 10) || ']') "
+              "|| ' ' || json_extract('[\"Lovelace\",\"Hopper\",\"Torvalds\","
+              "\"Hamilton\",\"Turing\",\"Liskov\",\"Ritchie\",\"Allen\",\"Thompson\","
+              "\"Perlman\"]', '$[' || ((i / 10) % 10) || ']'), "
+              "'user' || i || '@example.com', "
+              "json_extract('[\"Japan\",\"Germany\",\"Brazil\",\"Vietnam\","
+              "\"Canada\",\"France\",\"India\",\"Kenya\"]', '$[' || ((i * 7) % 8) || ']'), "
+              "json_extract('[\"Tokyo\",\"Berlin\",\"Sao Paulo\",\"Hanoi\","
+              "\"Toronto\",\"Paris\",\"Mumbai\",\"Nairobi\"]', '$[' || ((i * 7) % 8) || ']'), "
+              "CASE i % 4 WHEN 0 THEN 'gold' WHEN 1 THEN 'silver' ELSE 'bronze' END, "
+              "date('2019-01-01', '+' || ((i * 13) % 2500) || ' days'), "
+              "round((i * 7919) % 500000 / 100.0, 2) FROM n",
+              "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, product TEXT, "
+              "category TEXT, status TEXT, quantity INTEGER, unit_price REAL, discount REAL, "
+              "total REAL, currency TEXT, country TEXT, created_at TEXT, shipped_at TEXT)",
+              "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < "
+              "1000000) INSERT INTO orders SELECT i, 1 + (i * 7919) % 100000, "
+              "'SKU-' || printf('%05d', (i * 31) % 5000), "
+              "json_extract('[\"books\",\"games\",\"garden\",\"kitchen\","
+              "\"music\",\"outdoor\",\"tools\",\"toys\"]', '$[' || ((i * 13) % 8) || ']'), "
+              "CASE i % 10 WHEN 0 THEN 'refunded' WHEN 1 THEN 'pending' WHEN 2 THEN 'shipped' "
+              "ELSE 'delivered' END, 1 + i % 9, round(5 + (i * 104729) % 49500 / 100.0, 2), "
+              "CASE WHEN i % 7 = 0 THEN 0.1 ELSE 0 END, "
+              "round((1 + i % 9) * (5 + (i * 104729) % 49500 / 100.0) * "
+              "(CASE WHEN i % 7 = 0 THEN 0.9 ELSE 1 END), 2), "
+              "CASE (i * 7) % 3 WHEN 0 THEN 'USD' WHEN 1 THEN 'EUR' ELSE 'JPY' END, "
+              "json_extract('[\"Japan\",\"Germany\",\"Brazil\",\"Vietnam\","
+              "\"Canada\",\"France\",\"India\",\"Kenya\"]', '$[' || ((i * 11) % 8) || ']'), "
+              "datetime('2024-01-01', '+' || ((i * 37) % 31536000) || ' seconds'), "
+              "datetime('2024-01-03', '+' || ((i * 37) % 31536000) || ' seconds') FROM n",
+              "CREATE INDEX orders_customer ON orders (customer_id)"})
+            db->executeQuery(sql);
+        auto& app = Application::getInstance();
+        app.addDatabase(db);
+        app.setSidebarVisible(true);
+        if (const char* record = std::getenv("DEARSQL_RECORD")) {
+            const ImVec2 size = ImGui::GetIO().DisplaySize;
+            if (!startRecording(record, 1920.0f / size.x, static_cast<int>(size.x),
+                                static_cast<int>(size.y)))
+                ctx->LogError("could not start ffmpeg");
+        }
+        loadTables(ctx, *db);
+        expandInSidebar(ctx, db);
+
+        // watch it: real mouse moves and scrolls, not teleports
+        const auto speed = ctx->EngineIO->ConfigRunSpeed;
+        ctx->EngineIO->ConfigRunSpeed = ImGuiTestRunSpeed_Normal;
+        auto* tabs = app.getTabManager();
+        const auto& tables = db->getTables();
+        const auto orders =
+            std::ranges::find_if(tables, [](auto& t) { return t.name == "orders"; });
+        if (orders == tables.end()) {
+            ctx->LogError("no orders table");
+            return;
+        }
+        auto tab = tabs->createTableViewerTab(db.get(), *orders);
+        ctx->Yield(30);
+        ctx->SetRef(tab->getWindowName().c_str());
+        for (int i = 0; i < 600 && !ctx->ItemExists("**/>>"); ++i)
+            ctx->Yield();
+        ctx->MouseMoveToPos(ctx->GetWindowByRef("")->Rect().GetCenter());
+        for (int i = 0; i < 40; ++i) {
+            ctx->MouseWheelY(-4.0f);
+            ctx->Yield(2);
+        }
+        for (int i = 0; i < 6; ++i) {
+            ctx->ItemClick("**/>");
+            ctx->Yield(6);
+        }
+        ctx->ItemClick("**/>>");
+        ctx->Yield(20);
+        ctx->ItemClick("**/##filter");
+        ctx->KeyCharsAppend("total > 4000 AND country = 'Japan' AND status = 'delivered'");
+        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->Yield(40);
+        for (int i = 0; i < 20; ++i) {
+            ctx->MouseWheelY(-4.0f);
+            ctx->Yield(2);
+        }
+
+        const auto customers =
+            std::ranges::find_if(tables, [](auto& t) { return t.name == "customers"; });
+        auto ctab = tabs->createTableViewerTab(db.get(), *customers);
+        ctx->Yield(30);
+        ctx->SetRef(ctab->getWindowName().c_str());
+        ctx->MouseMoveToPos(ctx->GetWindowByRef("")->Rect().GetCenter());
+        for (int i = 0; i < 20; ++i) {
+            ctx->MouseWheelY(-4.0f);
+            ctx->Yield(2);
+        }
+
+        // a group-by over the million rows, then its chart
+        const auto etab = tabs->createSQLEditorTab("", db.get());
+        std::dynamic_pointer_cast<SQLEditorTab>(etab)->setQuery(
+            "-- revenue per category, over 1,000,000 orders\n"
+            "SELECT category, count(*) AS orders, round(sum(total)) AS revenue,\n"
+            "       round(avg(total), 2) AS avg_order\n"
+            "FROM orders\nWHERE status <> 'refunded'\nGROUP BY category\nORDER BY revenue DESC;");
+        ctx->Yield(10);
+        ctx->SetRef(etab->getWindowName().c_str());
+        ctx->ItemClick("**/Run");
+        for (int i = 0; i < 600 && !ctx->ItemExists("**/Chart"); ++i)
+            ctx->Yield();
+        ctx->Yield(60); // the grid, before the chart
+        ctx->ItemClick("**/Chart");
+        ctx->MouseMoveToPos(ctx->GetWindowByRef("")->Rect().GetCenter());
+        ctx->Yield(150);
+        ctx->EngineIO->ConfigRunSpeed = speed;
+    };
 }

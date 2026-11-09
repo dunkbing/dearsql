@@ -3,6 +3,7 @@
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "imgui_te_ui.h"
+#include "platform/graphics_backend.hpp"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -80,6 +81,13 @@ int main(int argc, char** argv) {
     RegisterCsvEditorTests(engine);
     RegisterDocsShots(engine);
 
+    // DEARSQL_RECORD=out.mp4: a video of the run. the showcase (big tables) goes first and
+    // starts the recording once its data is built
+    if (std::getenv("DEARSQL_RECORD") != nullptr) {
+        ImGui::GetIO().MouseDrawCursor = true;
+        ImGuiTestEngine_QueueTests(engine, ImGuiTestGroup_Tests, "showcase");
+    }
+
     if (headless) {
         // the filter is a substring match on name and category, not a path.
         // Docs entries only hold a state for screenshots, so skip them by default.
@@ -102,6 +110,7 @@ int main(int argc, char** argv) {
     }
 
     ImGuiTestEngine_Stop(engine);
+    stopRecording(); // before cleanup: its fast exit would drop the tail of the video
 
     ImGuiTestEngineResultSummary summary;
     ImGuiTestEngine_GetResultSummary(engine, &summary);

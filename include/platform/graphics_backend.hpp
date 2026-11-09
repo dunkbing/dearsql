@@ -108,6 +108,9 @@ private:
 // docs screenshots: render the next frame offscreen at `scale` and save it as a png
 void requestFrameCapture(const char* path, float scale);
 bool frameCapturePending();
+// ui test videos: every frame from here on, at `scale`, piped to ffmpeg as an mp4
+bool startRecording(const char* path, float scale, int width, int height);
+void stopRecording();
 
 // ---- Windows: Direct3D 11 via GLFW/HWND ----
 #elif defined(_WIN32)

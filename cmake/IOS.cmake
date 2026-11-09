@@ -79,4 +79,6 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             --minimum-deployment-target 17.0 --app-icon AppIcon
             --target-device iphone --target-device ipad
             --output-partial-info-plist ${CMAKE_BINARY_DIR}/actool-partial.plist
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/assets/ios/PrivacyInfo.xcprivacy
+            $<TARGET_BUNDLE_DIR:${PROJECT_NAME}>/PrivacyInfo.xcprivacy
     VERBATIM)

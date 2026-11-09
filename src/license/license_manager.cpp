@@ -34,6 +34,9 @@ LicenseManager& LicenseManager::instance() {
 }
 
 bool LicenseManager::hasValidLicense() const {
+#ifdef DEARSQL_MOBILE
+    return true; // the ios app is free and unlimited: no outside checkout in an app store app
+#endif
     std::lock_guard lock(licenseMutex_);
     return currentLicense.valid && currentLicense.status == "active";
 }

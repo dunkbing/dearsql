@@ -2,7 +2,9 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "config.hpp"
+#include "imgui_internal.h"
 #include "mydear/button.hpp"
+#include "mydear/native_view.hpp"
 #include "mydear/title_bar.hpp"
 #include "platform/alert.hpp"
 #include "themes.hpp"
@@ -10,18 +12,38 @@
 #include "ui/settings_dialog.hpp"
 #include <algorithm>
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 namespace {
     ImVec2 gPopupPos; // under the workspace button
 
-    // a flat toolbar button: no fill until hovered
-    bool barButton(const char* label, const char* tooltip, const ImVec2& size = ImVec2(0, 0)) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        const bool clicked = ImGui::Button(label, size);
-        ImGui::PopStyleColor();
-        if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
-            ImGui::SetTooltip("%s", tooltip);
-        return clicked;
+    std::unordered_map<ImGuiID, bool> gClicks;  // set by the native buttons' actions
+    std::unordered_map<ImGuiID, float> gWidths; // what each button wanted last frame
+
+    // a native NSButton (an sf symbol, optional title) placed in the imgui bar. a real click
+    // reaches the NSButton; the test engine's click reaches the imgui item under it
+    bool barButton(const char* id, const char* symbol, const char* tooltip,
+                   const char* title = nullptr) {
+        const ImGuiID key = ImGui::GetID(id);
+        bool& clicked = gClicks[key];
+        const float side = ImGui::GetFrameHeight();
+        const auto known = gWidths.find(key);
+        const float width = known != gWidths.end()
+                                ? std::max(side, known->second)
+                                : side + (title ? ImGui::CalcTextSize(title).x + side : 0);
+        void* view = mydear::NativeView(id, ImVec2(width, side), [&] {
+            return TitleBarView::makeNativeButton(symbol, tooltip, &clicked);
+        });
+        bool hovered = false, held = false;
+        const bool pressed = ImGui::ButtonBehavior(
+            ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()), key, &hovered, &held);
+        [[maybe_unused]] ImGuiContext& g = *GImGui; // the test engine finds items by label
+        IMGUI_TEST_ENGINE_ITEM_INFO(key, id, ImGuiItemStatusFlags_None);
+        if (view)
+            gWidths[key] =
+                TitleBarView::updateNativeButton(view, title, ImGui::GetColorU32(ImGuiCol_Text));
+        return std::exchange(clicked, false) || pressed;
     }
 
     void renderWorkspacePopup(Application& app) {
@@ -174,27 +196,22 @@ void TitleBarView::render(Application& app) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
     const float rowY = ImGui::GetCursorScreenPos().y;
 
-    if (barButton(ICON_FA_BARS "###sidebar", "Toggle Sidebar"))
+    if (barButton("###sidebar", "sidebar.left", "Toggle Sidebar"))
         app.setSidebarVisible(!app.isSidebarVisible());
     ImGui::SameLine();
-    // fa6's plus is the ascii '+', drawn by the text font at text size: draw it instead
-    const float side = ImGui::GetFrameHeight();
-    if (barButton("###connect", "New Connection", ImVec2(side, side)) && app.getDatabaseSidebar())
+    if (barButton("###connect", "plus", "New Connection") && app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
-    {
-        const ImVec2 c((ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x) * 0.5f,
-                       (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f);
-        const ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
-        ImGui::GetWindowDrawList()->AddLine({c.x - 5, c.y}, {c.x + 5, c.y}, col, 1.5f);
-        ImGui::GetWindowDrawList()->AddLine({c.x, c.y - 5}, {c.x, c.y + 5}, col, 1.5f);
-    }
     const float leftEnd = ImGui::GetItemRectMax().x;
 
     // right side, laid out from the end
-    const std::string wsLabel = app.getCurrentWorkspaceName() + "  " ICON_FA_CHEVRON_DOWN;
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float gearW = ImGui::CalcTextSize(ICON_FA_GEAR).x + style.FramePadding.x * 2;
-    const float wsW = ImGui::CalcTextSize(wsLabel.c_str()).x + style.FramePadding.x * 2;
+    const std::string wsName = app.getCurrentWorkspaceName();
+    const auto wanted = [](const char* id, float fallback) {
+        const auto it = gWidths.find(ImGui::GetID(id));
+        return it != gWidths.end() ? std::max(ImGui::GetFrameHeight(), it->second) : fallback;
+    };
+    const float side = ImGui::GetFrameHeight();
+    const float gearW = wanted("###settings", side);
+    const float wsW = wanted("###workspace", ImGui::CalcTextSize(wsName.c_str()).x + side * 2);
     const float right = bar.pos.x + bar.size.x - bar.rightInset - Theme::Spacing::M;
     const float wsX = right - gearW - Theme::Spacing::XS - wsW;
 
@@ -212,13 +229,13 @@ void TitleBarView::render(Application& app) {
             ImGui::GetColorU32(colors.subtext1), title);
 
     ImGui::SetCursorScreenPos(ImVec2(wsX, rowY));
-    if (barButton((wsLabel + "###workspace").c_str(), "Workspace")) {
+    if (barButton("###workspace", "chevron.down", "Workspace", wsName.c_str())) {
         ImGui::OpenPopup("##WorkspacePopup");
         gPopupPos = ImVec2(wsX, bar.pos.y + bar.size.y);
     }
     renderWorkspacePopup(app);
     ImGui::SameLine();
-    if (barButton(ICON_FA_GEAR "###settings", "Settings"))
+    if (barButton("###settings", "gearshape", "Settings"))
         SettingsDialog::instance().open();
 
     ImGui::PopStyleVar(2);

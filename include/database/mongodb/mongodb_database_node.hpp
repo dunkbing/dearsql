@@ -24,7 +24,7 @@ public:
 protected:
     dearsql::DatabasePtr openHandle() override;
     [[nodiscard]] std::string fullNamePrefix() const override;
-    // the driver's mongocxx::pool is already thread-safe
+    // the c driver's client pool is already thread-safe
     [[nodiscard]] size_t poolSize() const override {
         return 0;
     }

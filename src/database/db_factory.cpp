@@ -34,10 +34,8 @@ DatabaseFactory::createDatabase(const DatabaseConnectionInfo& info) {
     case DatabaseType::REDIS:
         return make<RedisDatabase>(info);
 
-#ifdef DEARSQL_HAS_MONGODB // no mongo driver on ipad
     case DatabaseType::MONGODB:
         return make<MongoDBDatabase>(info);
-#endif
 
     case DatabaseType::MARIADB:
     case DatabaseType::TIDB:

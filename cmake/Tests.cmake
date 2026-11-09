@@ -69,8 +69,6 @@ target_link_libraries(
         unofficial::libmariadb
         hiredis::hiredis
         hiredis::hiredis_ssl
-        $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
-        $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         dearsql::dearsql
         miniocpp::miniocpp
         libssh2::libssh2

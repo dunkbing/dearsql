@@ -29,10 +29,7 @@
         "ssl"
       ]
     },
-    {
-      "name": "mongo-cxx-driver",
-      "platform": "!ios"
-    },
+    "mongo-c-driver",
     {
       "name": "libuv",
       "platform": "!ios"

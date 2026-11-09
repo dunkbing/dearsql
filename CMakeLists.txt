@@ -144,10 +144,8 @@ find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
 find_package(libssh2 CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED) # ios: libpq from the cmake/ports overlay
-# ipad: no mongodb (its c driver) or duckdb yet, and no file dialogs, crash reports, terminal ui or tests
+# ipad: no duckdb yet, and no file dialogs, crash reports, terminal ui or tests
 if(NOT IOS)
-    find_package(mongocxx CONFIG REQUIRED)
-    find_package(bsoncxx CONFIG REQUIRED)
     find_package(DuckDB CONFIG REQUIRED)
     find_package(GTest CONFIG REQUIRED)
     find_package(nfd CONFIG REQUIRED)
@@ -394,8 +392,6 @@ target_link_libraries(
         unofficial::libmariadb
         hiredis::hiredis
         hiredis::hiredis_ssl
-        $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
-        $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         nfd::nfd
         OpenSSL::SSL
         OpenSSL::Crypto

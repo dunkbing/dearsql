@@ -15,6 +15,9 @@
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/spinner.hpp"
 #include "platform/alert.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
@@ -24,10 +27,7 @@
 #include "ui/input_dialog.hpp"
 #include "ui/query_history.hpp"
 #include "ui/schema_compare.hpp"
-#include "utils/button.hpp"
 #include "utils/file_dialog.hpp"
-#include "utils/menu.hpp"
-#include "utils/spinner.hpp"
 #include "utils/texture_manager.hpp"
 #include <algorithm>
 #include <chrono>
@@ -95,7 +95,7 @@ void DatabaseSidebarNew::renderEmpty() {
     ImGui::Spacing();
 #ifdef DEARSQL_MOBILE
     ImGui::PopStyleColor();
-    if (UIUtils::IconLabelButton(ICON_FA_PLUS, "Add Connection", UIUtils::ButtonVariant::Primary))
+    if (mydear::IconLabelButton(ICON_FA_PLUS, "Add Connection", mydear::ButtonVariant::Primary))
         showConnectionDialog();
 #else
     ImGui::TextWrapped("Right-click here to add a new database connection");
@@ -106,7 +106,7 @@ void DatabaseSidebarNew::renderEmpty() {
         ImGui::OpenPopup("AddDatabasePopup");
     }
 
-    if (UIUtils::BeginMenuPopup("AddDatabasePopup")) {
+    if (mydear::BeginMenuPopup("AddDatabasePopup")) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
@@ -271,7 +271,7 @@ void DatabaseSidebarNew::renderStructure() {
         ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ImGui::IsAnyItemHovered()) {
         ImGui::OpenPopup("SidebarContextMenu");
     }
-    if (UIUtils::BeginMenuPopup("SidebarContextMenu")) {
+    if (mydear::BeginMenuPopup("SidebarContextMenu")) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add Database Connection")) {
@@ -356,7 +356,7 @@ void DatabaseSidebarNew::renderHistory() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
-        UIUtils::SmallButton(typeLabel.c_str(), UIUtils::ButtonVariant::Custom);
+        mydear::SmallButton(typeLabel.c_str(), mydear::ButtonVariant::Custom);
         ImGui::PopStyleColor(4);
 
         ImGui::SameLine();
@@ -381,7 +381,7 @@ void DatabaseSidebarNew::renderHistory() {
             ImGui::EndTooltip();
         }
 
-        if (UIUtils::BeginContextMenu("history_entry_menu")) {
+        if (mydear::BeginContextMenu("history_entry_menu")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Copy to clipboard")) {
@@ -533,8 +533,8 @@ void DatabaseSidebarNew::renderHistoryPanel() {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
-        if (UIUtils::IconButton(ICON_FA_TRASH_CAN "##clear_history",
-                                UIUtils::ButtonVariant::Danger)) {
+        if (mydear::IconButton(ICON_FA_TRASH_CAN "##clear_history",
+                               mydear::ButtonVariant::Danger)) {
             history.clear();
         }
         ImGui::PopStyleVar();
@@ -634,8 +634,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     if (showSpinner) {
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
-        UIUtils::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
-                                ImGui::GetColorU32(colors.peach));
+        mydear::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
+                               ImGui::GetColorU32(colors.peach));
     } else if (dearsql::isCsvPath(connectionInfo.path)) {
         ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.green),
                                             ICON_FA_FILE_CSV);
@@ -781,7 +781,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                                                     countStr.c_str());
             }
 
-            if (UIUtils::BeginMenuPopup(popupId.c_str())) {
+            if (mydear::BeginMenuPopup(popupId.c_str())) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 std::sort(dbNames.begin(), dbNames.end());
@@ -808,7 +808,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Connecting...");
             ImGui::SameLine(0, Theme::Spacing::S);
-            UIUtils::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            mydear::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
@@ -828,8 +828,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::Text("  %s", oracleClientInstaller_.getStatusMessage().c_str());
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    UIUtils::Spinner("##oracle_install_spinner", 6.0f, 2,
-                                     ImGui::GetColorU32(colors.peach));
+                    mydear::Spinner("##oracle_install_spinner", 6.0f, 2,
+                                    ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (oracleClientInstaller_.getStatus() ==
                            OracleClientInstaller::Status::Done) {
@@ -860,7 +860,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
         return;
     }
 
-    if (UIUtils::BeginContextMenu(nullptr)) {
+    if (mydear::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
 
@@ -1017,7 +1017,7 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
         }
     };
     // New on the header's menu too, so it works with no chats yet
-    if (UIUtils::BeginContextMenu()) {
+    if (mydear::BeginContextMenu()) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("New")) {
@@ -1081,7 +1081,7 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", session.title.c_str());
         }
-        if (UIUtils::BeginContextMenu()) {
+        if (mydear::BeginContextMenu()) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("New")) {

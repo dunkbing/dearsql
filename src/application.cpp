@@ -220,6 +220,7 @@ bool Application::initialize() {
 
     const std::string themeStr = appState->getSetting("theme", "dark");
     theme_ = &Theme::themeById(themeStr);
+    Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
     platform_->applyTheme(theme_->dark);
 
@@ -424,6 +425,7 @@ void Application::cleanup() {
 
 void Application::setTheme(const std::string_view id) {
     theme_ = &Theme::themeById(id);
+    Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
     if (platform_) {
         platform_->applyTheme(theme_->dark);

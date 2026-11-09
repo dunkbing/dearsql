@@ -2,7 +2,7 @@
 
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
-#include "embedded_fonts.hpp"
+#include "mydear/embedded.hpp"
 #include <filesystem>
 #include <imgui.h>
 #include <span>

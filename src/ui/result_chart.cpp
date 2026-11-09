@@ -2,8 +2,8 @@
 
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
+#include "mydear/menu.hpp"
 #include "themes.hpp"
-#include "utils/menu.hpp"
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -138,14 +138,14 @@ void ResultChart::renderControls() {
     };
 
     ImGui::SetNextItemWidth(110.0f);
-    if (UIUtils::BeginSelect("##chart_kind", chart::kindName(settings_.kind))) {
+    if (mydear::BeginSelect("##chart_kind", chart::kindName(settings_.kind))) {
         for (auto kind : kKinds) {
             if (ImGui::Selectable(chart::kindName(kind), kind == settings_.kind)) {
                 settings_.kind = kind;
                 dirty_ = true;
             }
         }
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
 
     ImGui::SameLine(0, Theme::Spacing::L);
@@ -154,7 +154,7 @@ void ResultChart::renderControls() {
                                   ? columns_[settings_.x]
                                   : "Row number";
     ImGui::SetNextItemWidth(160.0f);
-    if (UIUtils::BeginSelect("##chart_x", xName.c_str())) {
+    if (mydear::BeginSelect("##chart_x", xName.c_str())) {
         if (ImGui::Selectable("Row number", settings_.x < 0)) {
             settings_.x = -1;
             dirty_ = true;
@@ -166,7 +166,7 @@ void ResultChart::renderControls() {
                 dirty_ = true;
             }
         }
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
 
     ImGui::SameLine(0, Theme::Spacing::L);
@@ -177,7 +177,7 @@ void ResultChart::renderControls() {
             yNames += (yNames.empty() ? "" : ", ") + columns_[y];
     }
     ImGui::SetNextItemWidth(200.0f);
-    if (UIUtils::BeginSelect("##chart_y", yNames.empty() ? "None" : yNames.c_str())) {
+    if (mydear::BeginSelect("##chart_y", yNames.empty() ? "None" : yNames.c_str())) {
         bool any = false;
         for (int c = 0; c < static_cast<int>(columns_.size()); ++c) {
             if (c >= static_cast<int>(numeric_.size()) || !numeric_[c])
@@ -195,20 +195,20 @@ void ResultChart::renderControls() {
         }
         if (!any)
             ImGui::TextDisabled("No numeric columns");
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
 
     ImGui::SameLine(0, Theme::Spacing::L);
     label("Group by X");
     ImGui::SetNextItemWidth(110.0f);
-    if (UIUtils::BeginSelect("##chart_agg", chart::aggName(settings_.agg))) {
+    if (mydear::BeginSelect("##chart_agg", chart::aggName(settings_.agg))) {
         for (auto agg : kAggs) {
             if (ImGui::Selectable(chart::aggName(agg), agg == settings_.agg)) {
                 settings_.agg = agg;
                 dirty_ = true;
             }
         }
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
     ImGui::PopStyleVar(2);
 }

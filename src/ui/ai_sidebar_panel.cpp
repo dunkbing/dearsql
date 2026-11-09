@@ -1,5 +1,5 @@
 #include "ui/ai_sidebar_panel.hpp"
-#include "utils/menu.hpp"
+#include "mydear/menu.hpp"
 
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
@@ -21,13 +21,13 @@
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "mydear/button.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/markdown_text.hpp"
 #include "utils/app_paths.hpp"
-#include "utils/button.hpp"
 #include "utils/reaper.hpp"
-#include "utils/spinner.hpp"
 #include <acp/log.hpp>
 #include <algorithm>
 #include <cctype>
@@ -1338,7 +1338,7 @@ void AISidebarPanel::render() {
             ImGui::SetCursorPos(ImVec2((availW - textSize.x - spinnerW) * 0.5f,
                                        (ImGui::GetContentRegionAvail().y - textSize.y) * 0.5f));
             if (!warming.empty()) {
-                UIUtils::Spinner("##ai_warmup", spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+                mydear::Spinner("##ai_warmup", spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::SameLine(0, Theme::Spacing::S);
                 ImGui::AlignTextToFramePadding();
             }
@@ -1441,7 +1441,7 @@ void AISidebarPanel::renderHeader() {
     }
 
     ImGui::SetNextItemWidth(backendW);
-    if (UIUtils::BeginSelect("##ai_backend", currentLabel)) {
+    if (mydear::BeginSelect("##ai_backend", currentLabel)) {
         for (int i = 0; i < static_cast<int>(cat.size()); ++i) {
             if (ImGui::Selectable(cat[static_cast<size_t>(i)].name.c_str(), backendIndex_ == i)) {
                 switchBackend(i);
@@ -1450,25 +1450,25 @@ void AISidebarPanel::renderHeader() {
         if (ImGui::Selectable("API key", backendIndex_ == apiIndex)) {
             switchBackend(apiIndex);
         }
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
 
     // the model picker shares the row with the backend picker
     if (isApi) {
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::SetNextItemWidth(modelW);
-        if (UIUtils::BeginSelect("##ai_api_model", API_MODELS[apiModelIndex_].label)) {
+        if (mydear::BeginSelect("##ai_api_model", API_MODELS[apiModelIndex_].label)) {
             for (int i = 0; i < API_MODEL_COUNT; ++i) {
                 if (ImGui::Selectable(API_MODELS[i].label, apiModelIndex_ == i)) {
                     apiModelIndex_ = i;
                 }
             }
-            UIUtils::EndSelect();
+            mydear::EndSelect();
         }
     } else if (agentModelOption) {
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::SetNextItemWidth(modelW);
-        if (UIUtils::BeginSelect("##acp_model", agentModelLabel.c_str())) {
+        if (mydear::BeginSelect("##acp_model", agentModelLabel.c_str())) {
             const std::string current = agentModelOption->currentValue.is_string()
                                             ? agentModelOption->currentValue.get<std::string>()
                                             : std::string{};
@@ -1484,14 +1484,14 @@ void AISidebarPanel::renderHeader() {
                     ImGui::SetTooltip("%s", option.description.c_str());
                 }
             }
-            UIUtils::EndSelect();
+            mydear::EndSelect();
         }
     }
     // api keys and the agent database toggle live in the same dialog, so every backend
     // gets the gear
     ImGui::SameLine(0, Theme::Spacing::S);
     ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
-    if (UIUtils::IconButton(ICON_FA_GEAR "###ai_settings")) {
+    if (mydear::IconButton(ICON_FA_GEAR "###ai_settings")) {
         // open on the vendor behind the selected backend
         const std::string id = backendId();
         const bool google =
@@ -1517,7 +1517,7 @@ namespace {
     // what an agent needs is being downloaded (bun, a registry binary): no details
     void renderSettingUp(const std::string& name) {
         const auto& colors = Application::getInstance().getCurrentColors();
-        UIUtils::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.subtext0));
+        mydear::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.subtext0));
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::TextColored(colors.subtext0, "Setting up %s...", name.c_str());
     }
@@ -1529,7 +1529,7 @@ namespace {
         ImGui::TextColored(colors.red, "Could not set up %s.%s%s", name.c_str(),
                            error.empty() ? "" : " ", error.c_str());
         ImGui::PopTextWrapPos();
-        if (UIUtils::SmallButton("Retry##ai_setup_retry"))
+        if (mydear::SmallButton("Retry##ai_setup_retry"))
             retry();
     }
 } // namespace
@@ -1639,7 +1639,7 @@ void AISidebarPanel::renderMessages() {
         ImGui::Spacing();
         // the list has no left padding; the arc's stroke would clip at the edge
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::S);
-        UIUtils::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (const std::string warming = agentStartingLabel(); !warming.empty()) {
             ImGui::SameLine();
             ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "%s",
@@ -1686,7 +1686,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         const bool running = item.toolStatus == "pending" || item.toolStatus == "in_progress";
         const bool failed = item.toolStatus == "failed";
         if (running) {
-            UIUtils::Spinner("##tool_spin", 5.0f, 2, ImGui::GetColorU32(colors.peach));
+            mydear::Spinner("##tool_spin", 5.0f, 2, ImGui::GetColorU32(colors.peach));
         } else {
             ImGui::TextColored(failed ? colors.red : colors.green,
                                failed ? ICON_FA_XMARK : ICON_FA_CHECK);
@@ -1742,9 +1742,9 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 }
                 const auto& opt = item.permission.options[i];
                 const bool allow = opt.kind.starts_with("allow");
-                if (UIUtils::SmallButton(std::format("{}##perm{}", opt.name, i).c_str(),
-                                         allow ? UIUtils::ButtonVariant::Primary
-                                               : UIUtils::ButtonVariant::Danger)) {
+                if (mydear::SmallButton(std::format("{}##perm{}", opt.name, i).c_str(),
+                                        allow ? mydear::ButtonVariant::Primary
+                                              : mydear::ButtonVariant::Danger)) {
                     acp_->respondPermission(item.permission.rpcId, opt.optionId);
                     item.permissionAnswered = true;
                     item.permissionChoice = opt.name;
@@ -1775,18 +1775,18 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                                item.permissionChoice.empty() ? "Expired"
                                                              : item.permissionChoice.c_str());
         } else {
-            if (UIUtils::SmallButton(write ? "Run##approve" : "Save##approve",
-                                     UIUtils::ButtonVariant::Primary)) {
+            if (mydear::SmallButton(write ? "Run##approve" : "Save##approve",
+                                    mydear::ButtonVariant::Primary)) {
                 answerApproval(item, true);
             } else {
                 if (write && !isProduction(request->connection)) {
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    if (UIUtils::SmallButton("Allow for this chat##approve"))
+                    if (mydear::SmallButton("Allow for this chat##approve"))
                         answerApproval(item, true, true);
                 }
                 if (item.approval) {
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    if (UIUtils::SmallButton("Reject##approve", UIUtils::ButtonVariant::Danger))
+                    if (mydear::SmallButton("Reject##approve", mydear::ButtonVariant::Danger))
                         answerApproval(item, false);
                 }
             }
@@ -1801,8 +1801,8 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
             if (item.terminalSignIn && acp_) {
                 ImGui::TextColored(colors.subtext0,
                                    "Finish signing in in the Terminal window, then continue.");
-                if (UIUtils::SmallButton("Continue##auth_continue",
-                                         UIUtils::ButtonVariant::Primary)) {
+                if (mydear::SmallButton("Continue##auth_continue",
+                                        mydear::ButtonVariant::Primary)) {
                     item.terminalSignIn = false;
                     acp_->retrySession();
                 }
@@ -1814,8 +1814,8 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                     ImGui::SameLine(0, Theme::Spacing::S);
                 }
                 const auto& m = item.authMethods[i];
-                if (UIUtils::SmallButton(std::format("{}##auth{}", m.name, i).c_str(),
-                                         UIUtils::ButtonVariant::Primary)) {
+                if (mydear::SmallButton(std::format("{}##auth{}", m.name, i).c_str(),
+                                        mydear::ButtonVariant::Primary)) {
                     picked = &m;
                 }
                 if (!m.description.empty() && ImGui::IsItemHovered()) {
@@ -2359,8 +2359,8 @@ void AISidebarPanel::renderInputArea() {
         ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - sendBtnWidth, rowY));
 
         if (isBusy()) {
-            if (UIUtils::IconButton(ICON_FA_STOP, UIUtils::ButtonVariant::Danger,
-                                    ImVec2(sendBtnWidth, controlsHeight))) {
+            if (mydear::IconButton(ICON_FA_STOP, mydear::ButtonVariant::Danger,
+                                   ImVec2(sendBtnWidth, controlsHeight))) {
                 if (acp_) {
                     acp_->cancelTurn();
                     pendingPromptBlocks_ = json::array();
@@ -2369,8 +2369,8 @@ void AISidebarPanel::renderInputArea() {
                 apiClient_->cancel();
             }
         } else {
-            if (UIUtils::IconButton(ICON_FA_ARROW_UP, UIUtils::ButtonVariant::Primary,
-                                    ImVec2(sendBtnWidth, controlsHeight))) {
+            if (mydear::IconButton(ICON_FA_ARROW_UP, mydear::ButtonVariant::Primary,
+                                   ImVec2(sendBtnWidth, controlsHeight))) {
                 sendMessage();
             }
         }

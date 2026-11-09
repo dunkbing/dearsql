@@ -1,11 +1,7 @@
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#include "stb_image.h"
-
-#include "embedded_images.hpp"
-#include "platform/platform_interface.hpp"
 #include "utils/texture_manager.hpp"
+#include "mydear/embedded.hpp"
+#include "mydear/image.hpp"
+#include "platform/platform_interface.hpp"
 #include <spdlog/spdlog.h>
 
 TextureManager& TextureManager::instance() {
@@ -61,19 +57,11 @@ ImTextureID TextureManager::loadFromEmbedded(PlatformInterface* platform, const 
         return ImTextureID{};
     }
 
-    int w = 0, h = 0, channels = 0;
-    unsigned char* pixels =
-        stbi_load_from_memory(img->data, static_cast<int>(img->size), &w, &h, &channels, 4);
-    if (!pixels) {
-        spdlog::error("failed to decode image '{}'", name);
-        return ImTextureID{};
-    }
-
-    ImTextureID tex = platform->createTextureFromRGBA(pixels, w, h);
-    stbi_image_free(pixels);
-
-    if (tex != ImTextureID{}) {
-        spdlog::debug("loaded icon '{}' ({}x{})", name, w, h);
-    }
+    const ImTextureID tex =
+        mydear::LoadTexture(img->data, img->size, [platform](const uint8_t* rgba, int w, int h) {
+            return platform->createTextureFromRGBA(rgba, w, h);
+        });
+    if (tex == ImTextureID{})
+        spdlog::error("failed to load image '{}'", name);
     return tex;
 }

@@ -5,11 +5,11 @@
 #include "database/postgresql.hpp"
 #include "database/query_executor.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/select.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
-#include "utils/menu.hpp"
-#include "utils/select.hpp"
-#include "utils/spinner.hpp"
 #include <cfloat>
 #include <cstring>
 #include <spdlog/spdlog.h>
@@ -42,12 +42,12 @@ namespace {
             currentIdx = 0;
         const char* preview = items.empty() ? "" : items[static_cast<size_t>(currentIdx)].c_str();
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (UIUtils::BeginSelect(id, preview)) {
+        if (mydear::BeginSelect(id, preview)) {
             for (int i = 0; i < static_cast<int>(items.size()); i++) {
                 if (ImGui::Selectable(items[static_cast<size_t>(i)].c_str(), i == currentIdx))
                     currentIdx = i;
             }
-            UIUtils::EndSelect();
+            mydear::EndSelect();
         }
     }
 } // namespace
@@ -331,7 +331,7 @@ void CreateDatabaseDialog::render() {
 
         fieldLabel("Encoding");
         ImGui::SetNextItemWidth(-FLT_MIN);
-        UIUtils::Select("##createdb_encoding", &encodingIdx_, kEncodings, kEncodingCount);
+        mydear::Select("##createdb_encoding", &encodingIdx_, kEncodings, kEncodingCount);
 
         if (!crdb) {
             ImGui::BeginDisabled(loadingOptions_);
@@ -342,7 +342,7 @@ void CreateDatabaseDialog::render() {
     } else {
         fieldLabel("Charset");
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (UIUtils::Select("##createdb_charset", &charsetIdx_, kCharsets, kCharsetCount))
+        if (mydear::Select("##createdb_charset", &charsetIdx_, kCharsets, kCharsetCount))
             rebuildCollations();
 
         if (!collations_.empty()) {
@@ -362,7 +362,7 @@ void CreateDatabaseDialog::render() {
     // status row
     const auto& colors = Application::getInstance().getCurrentColors();
     if (busy) {
-        UIUtils::Spinner("##createdb_spinner", 7.0f, 3, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##createdb_spinner", 7.0f, 3, ImGui::GetColorU32(ImGuiCol_Text));
         ImGui::SameLine();
     }
     if (!statusText_.empty()) {
@@ -379,12 +379,12 @@ void CreateDatabaseDialog::render() {
     ImGui::SetCursorPosX(rightEdge - kButtonW * 2 - Theme::Spacing::M);
 
     bool cancelClicked =
-        UIUtils::Button("Cancel##createdb", UIUtils::ButtonVariant::Secondary, ImVec2(kButtonW, 0));
+        mydear::Button("Cancel##createdb", mydear::ButtonVariant::Secondary, ImVec2(kButtonW, 0));
     ImGui::SameLine();
 
     bool createClicked = false;
     ImGui::BeginDisabled(busy);
-    if (UIUtils::Button("Create##createdb", UIUtils::ButtonVariant::Primary, ImVec2(kButtonW, 0)))
+    if (mydear::Button("Create##createdb", mydear::ButtonVariant::Primary, ImVec2(kButtonW, 0)))
         createClicked = true;
     if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
         ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))

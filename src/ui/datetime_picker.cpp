@@ -1,8 +1,8 @@
 #include "ui/datetime_picker.hpp"
 #include "application.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -279,10 +279,10 @@ namespace DateTimePicker {
             }
 
             ImGui::PushID(d);
-            if (UIUtils::Button(std::to_string(d).c_str(),
-                                isSel ? UIUtils::ButtonVariant::Secondary
-                                      : UIUtils::ButtonVariant::Custom,
-                                ImVec2(CELL_W, rowH))) {
+            if (mydear::Button(std::to_string(d).c_str(),
+                               isSel ? mydear::ButtonVariant::Secondary
+                                     : mydear::ButtonVariant::Custom,
+                               ImVec2(CELL_W, rowH))) {
                 state.date.tm_mday = d;
                 result.changed = true;
                 if (!hasTime) {

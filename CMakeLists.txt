@@ -154,6 +154,9 @@ if(NOT IOS)
 endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
+# ui toolkit: themes, widgets, embedded fonts and images (own repo)
+set(MYDEAR_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
+add_subdirectory(external/mydear)
 
 enable_testing()
 
@@ -182,8 +185,6 @@ include(cmake/Imgui.cmake)
 set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
-    src/embedded_images.cpp
-    src/embedded_fonts.cpp
     src/ui/fonts.cpp
     src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
@@ -241,10 +242,6 @@ set(APP_SOURCES
     src/utils/table_exporter.cpp
     src/utils/chart_data.cpp
     src/utils/table_importer.cpp
-    src/utils/button.cpp
-    src/utils/select.cpp
-    src/utils/toggle_button.cpp
-    src/utils/spinner.cpp
     src/utils/crypto.cpp
     src/utils/master_secret.cpp
     src/utils/sentry_init.cpp
@@ -310,9 +307,8 @@ elseif(WIN32)
     )
 endif()
 
-include(cmake/EmbedResources.cmake)
-embed_fonts()
-embed_images()
+mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 
 list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
@@ -350,7 +346,7 @@ add_subdirectory(external/acp-cpp)
 # chat markdown. it links a target named imgui; ours is compiled into each executable, so headers only
 add_library(imgui INTERFACE)
 target_include_directories(imgui INTERFACE external/imgui)
-set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # texture_manager.cpp has it
+set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # mydear has it
 add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
 
 target_include_directories(
@@ -404,6 +400,7 @@ target_link_libraries(
         OpenSSL::Crypto
         sentry::sentry
         dearsql::dearsql
+        mydear::mydear
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp

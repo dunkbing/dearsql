@@ -3,12 +3,12 @@
 #include "app_state.hpp"
 #include "application.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
 #include "platform/updater.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
 #include "utils/cli_command.hpp"
 #include "utils/master_secret.hpp"
-#include "utils/menu.hpp"
 
 #include <cfloat>
 #include <format>
@@ -45,8 +45,8 @@ void SettingsDialog::render() {
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     center.y -= 10.0f;
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(620.0f, 0.0f)), ImGuiCond_Appearing);
-    UIUtils::CapToScreen();
+    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(620.0f, 0.0f)), ImGuiCond_Appearing);
+    mydear::CapToScreen();
 
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -70,7 +70,7 @@ void SettingsDialog::render() {
     ImGui::TextUnformatted("Theme");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f);
-    if (UIUtils::BeginSelect("##theme", app.getTheme().name)) {
+    if (mydear::BeginSelect("##theme", app.getTheme().name)) {
         for (const auto& theme : Theme::THEMES) {
             const bool selected = &theme == &app.getTheme();
             if (ImGui::Selectable(theme.name, selected))
@@ -78,21 +78,21 @@ void SettingsDialog::render() {
             if (selected)
                 ImGui::SetItemDefaultFocus();
         }
-        UIUtils::EndSelect();
+        mydear::EndSelect();
     }
 
     float scale = app.getFontScale();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Font Size");
     ImGui::SameLine();
-    if (UIUtils::Button("A-")) {
+    if (mydear::Button("A-")) {
         app.setFontScale(scale - 0.1f);
     }
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::Text("%d%%", static_cast<int>(scale * 100));
     ImGui::SameLine();
-    if (UIUtils::Button("A+")) {
+    if (mydear::Button("A+")) {
         app.setFontScale(scale + 0.1f);
     }
 
@@ -117,13 +117,13 @@ void SettingsDialog::render() {
         ImGui::TextUnformatted("Frame Rate Limit");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140.0f);
-        if (UIUtils::BeginSelect("##max_fps", label(app.maxFps()).c_str())) {
+        if (mydear::BeginSelect("##max_fps", label(app.maxFps()).c_str())) {
             for (const int fps : kLimits) {
                 if (ImGui::Selectable(label(fps).c_str(), fps == app.maxFps())) {
                     app.setMaxFps(fps);
                 }
             }
-            UIUtils::EndSelect();
+            mydear::EndSelect();
         }
     }
 #endif
@@ -132,7 +132,7 @@ void SettingsDialog::render() {
         ImGui::SeparatorText("Command Line");
         if (cliInstalled_) {
             ImGui::TextUnformatted(("dearsql is installed at " + CliCommand::linkPath()).c_str());
-        } else if (UIUtils::Button("Install 'dearsql' Command")) {
+        } else if (mydear::Button("Install 'dearsql' Command")) {
             cliStatus_ = CliCommand::install();
             cliInstalled_ = cliStatus_.empty();
         }
@@ -175,15 +175,15 @@ void SettingsDialog::render() {
 #ifndef DEARSQL_MOBILE
     // --- Actions ---
     ImGui::SeparatorText("About");
-    if (onManageLicense && UIUtils::Button("Manage License...")) {
+    if (onManageLicense && mydear::Button("Manage License...")) {
         onManageLicense();
     }
     ImGui::SameLine();
-    if (UIUtils::Button("Check for Updates...")) {
+    if (mydear::Button("Check for Updates...")) {
         checkForUpdates();
     }
     ImGui::SameLine();
-    if (onReportBug && UIUtils::Button("Report Bug...")) {
+    if (onReportBug && mydear::Button("Report Bug...")) {
         onReportBug();
     }
 #endif

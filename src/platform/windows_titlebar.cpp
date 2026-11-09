@@ -3,13 +3,13 @@
 #include "application.hpp"
 #include "config.hpp"
 #include "license/license_manager.hpp"
+#include "mydear/button.hpp"
 #include "platform/alert.hpp"
 #include "platform/titlebar.hpp"
 #include "platform/updater.hpp"
 #include "themes.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/settings_dialog.hpp"
-#include "utils/button.hpp"
 
 #include "IconsFontAwesome6.h"
 
@@ -477,8 +477,8 @@ void WindowsTitlebar::renderPopups() {
                 const float actionY = rowMin.y + (rowHeight - actionBtnSize) * 0.5f;
 
                 ImGui::SetCursorScreenPos({actionX, actionY});
-                if (UIUtils::IconButton(ICON_FA_PENCIL "##edit", UIUtils::ButtonVariant::Secondary,
-                                        {actionBtnSize, actionBtnSize})) {
+                if (mydear::IconButton(ICON_FA_PENCIL "##edit", mydear::ButtonVariant::Secondary,
+                                       {actionBtnSize, actionBtnSize})) {
                     const int wsId = ws.id;
                     const std::string wsName = ws.name;
                     ImGui::CloseCurrentPopup();
@@ -494,8 +494,8 @@ void WindowsTitlebar::renderPopups() {
                     ImGui::SetTooltip("Rename");
 
                 ImGui::SetCursorScreenPos({actionX + actionBtnSize + actionGap, actionY});
-                if (UIUtils::IconButton(ICON_FA_TRASH "##del", UIUtils::ButtonVariant::Danger,
-                                        {actionBtnSize, actionBtnSize})) {
+                if (mydear::IconButton(ICON_FA_TRASH "##del", mydear::ButtonVariant::Danger,
+                                       {actionBtnSize, actionBtnSize})) {
                     const int wsId = ws.id;
                     ImGui::CloseCurrentPopup();
                     Alert::show(

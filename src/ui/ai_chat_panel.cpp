@@ -2,12 +2,12 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/markdown_text.hpp"
-#include "utils/button.hpp"
-#include "utils/spinner.hpp"
-#include "utils/menu.hpp"
 #include <format>
 
 namespace {
@@ -64,11 +64,11 @@ void AIChatPanel::render() {
                      ImGui::CalcTextSize(LABEL_CLEAR_CHAT).x +
                      ImGui::GetStyle().FramePadding.x * 4 + ImGui::GetStyle().ItemSpacing.x;
     ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - btnWidth);
-    if (UIUtils::SmallButton(LABEL_SETTINGS)) {
+    if (mydear::SmallButton(LABEL_SETTINGS)) {
         AISettingsDialog::instance().show();
     }
     ImGui::SameLine();
-    if (UIUtils::SmallButton(LABEL_CLEAR_CHAT)) {
+    if (mydear::SmallButton(LABEL_CLEAR_CHAT)) {
         chatState_->cancelAsyncPrompt();
         if (client_->isStreaming()) {
             client_->cancel();
@@ -115,7 +115,7 @@ void AIChatPanel::renderMessages() {
 
     if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
         ImGui::Spacing();
-        UIUtils::Spinner("##ai_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##ai_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (chatState_->isBuildingPrompt()) {
             ImGui::SameLine();
             ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0,
@@ -206,7 +206,8 @@ void AIChatPanel::renderInputArea() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::S));
         ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
-        if (UIUtils::BeginSelect("##ai_model", modelPreview.c_str(), ImGuiComboFlags_NoArrowButton)) {
+        if (mydear::BeginSelect("##ai_model", modelPreview.c_str(),
+                                ImGuiComboFlags_NoArrowButton)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::S));
             for (int i = 0; i < MODEL_COUNT; ++i) {
@@ -220,7 +221,7 @@ void AIChatPanel::renderInputArea() {
                 }
             }
             ImGui::PopStyleVar();
-            UIUtils::EndSelect();
+            mydear::EndSelect();
         }
         ImGui::PopStyleColor();
         ImGui::PopStyleVar(2);
@@ -233,14 +234,14 @@ void AIChatPanel::renderInputArea() {
                         rowRightPadding);
 
         if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
-            if (UIUtils::IconButton(ICON_FA_STOP, UIUtils::ButtonVariant::Danger,
-                                    ImVec2(sendBtnWidth, 0))) {
+            if (mydear::IconButton(ICON_FA_STOP, mydear::ButtonVariant::Danger,
+                                   ImVec2(sendBtnWidth, 0))) {
                 chatState_->cancelAsyncPrompt();
                 client_->cancel();
             }
         } else {
-            if (UIUtils::IconButton(ICON_FA_ARROW_UP, UIUtils::ButtonVariant::Primary,
-                                    ImVec2(sendBtnWidth, 0)) ||
+            if (mydear::IconButton(ICON_FA_ARROW_UP, mydear::ButtonVariant::Primary,
+                                   ImVec2(sendBtnWidth, 0)) ||
                 submitted) {
                 sendMessage();
             }

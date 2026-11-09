@@ -5,9 +5,9 @@
 #include "database/database_node.hpp"
 #include "database/db_interface.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
-#include "utils/spinner.hpp"
 #include <format>
 
 static std::string makeTabName(const Routine& routine) {
@@ -75,7 +75,7 @@ void RoutineViewerTab::render() {
         const float cy = ImGui::GetWindowPos().y + ImGui::GetCursorPosY() + available.y * 0.5f;
         constexpr float r = 10.0f;
         ImGui::SetCursorScreenPos(ImVec2(cx - r, cy - r - Theme::Spacing::M));
-        UIUtils::Spinner("##routine_loading", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##routine_loading", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
         const char* msg = "Loading definition...";
         const float tw = ImGui::CalcTextSize(msg).x;
         ImGui::SetCursorScreenPos(ImVec2(cx - tw * 0.5f, cy + r + Theme::Spacing::S));
@@ -104,7 +104,7 @@ void RoutineViewerTab::renderToolbar() {
     if (saving)
         ImGui::BeginDisabled();
 
-    if (UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary)) {
+    if (mydear::Button(ICON_FA_FLOPPY_DISK " Save", mydear::ButtonVariant::Primary)) {
         saveDefinitionAsync();
     }
 
@@ -113,7 +113,7 @@ void RoutineViewerTab::renderToolbar() {
 
     if (saving) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        UIUtils::Spinner("##routine_saving", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##routine_saving", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::TextUnformatted("Saving...");
     } else if (saveFeedbackTimer_ > 0.0f) {

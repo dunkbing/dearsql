@@ -1,6 +1,6 @@
 #!/bin/bash
-# build, sign and install or upload DearSQL for iPad/iPhone
-#   DEARSQL_IOS_PROFILE=<.mobileprovision for io.gitlab.dunkbing.dearsql> ./scripts/build-ipad
+# build, sign and install or upload DearSQL for iOS (iPad and iPhone)
+#   DEARSQL_IOS_PROFILE=<.mobileprovision for io.gitlab.dunkbing.dearsql> ./scripts/build-ios
 # a development profile signs for its devices ([DEVICE=<udid or name>] installs and launches);
 # an app store profile signs for distribution, writes build-ios-device/DearSQL.ipa and uploads it
 # with asc ([VERSION=1.0], NO_UPLOAD=1 to stop at the .ipa)

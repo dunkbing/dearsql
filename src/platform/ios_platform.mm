@@ -126,11 +126,140 @@ namespace {
     UIView* gNoKeyboard = nil; // an empty input view: first responder, no keyboard
 } // namespace
 
-@interface DearSQLView : MTKView <UIKeyInput>
+// UITextInput over a document of one position: it exists for the keyboard's hold-space
+// trackpad, whose floating cursor turns into arrow keys. imgui keeps the real text
+// ponytail: no positions, so no loupe or selection handles; those need the real text here
+@interface DearSQLTextPosition : UITextPosition
+@end
+@implementation DearSQLTextPosition
+@end
+
+@interface DearSQLTextRange : UITextRange
+@end
+@implementation DearSQLTextRange
+- (UITextPosition*)start {
+    static DearSQLTextPosition* p = [DearSQLTextPosition new];
+    return p;
+}
+- (UITextPosition*)end {
+    return self.start;
+}
+- (BOOL)isEmpty {
+    return YES;
+}
+@end
+
+namespace {
+    DearSQLTextRange* gRange = [DearSQLTextRange new];
+    CGPoint gCursor; // floating cursor, as far as arrows have moved it
+    int gMarked = 0; // characters of an ime composition already sent
+} // namespace
+
+@interface DearSQLView : MTKView <UITextInput>
 @property(nonatomic) BOOL keyboardWanted;
 @end
 
 @implementation DearSQLView
+@synthesize inputDelegate, markedTextStyle;
+- (UITextRange*)selectedTextRange {
+    return gRange;
+}
+- (void)setSelectedTextRange:(UITextRange*)range {
+}
+- (UITextRange*)markedTextRange {
+    return nil;
+}
+// a composition replaces what it sent last time
+- (void)setMarkedText:(NSString*)text selectedRange:(NSRange)range {
+    for (; gMarked > 0; --gMarked)
+        tapKey(ImGuiKey_Backspace);
+    ImGui::GetIO().AddInputCharactersUTF8(text.UTF8String);
+    gMarked = (int)text.length;
+}
+- (void)unmarkText {
+    gMarked = 0;
+}
+- (NSString*)textInRange:(UITextRange*)range {
+    return @"";
+}
+- (void)replaceRange:(UITextRange*)range withText:(NSString*)text {
+    [self insertText:text];
+}
+- (UITextPosition*)beginningOfDocument {
+    return gRange.start;
+}
+- (UITextPosition*)endOfDocument {
+    return gRange.start;
+}
+- (UITextRange*)textRangeFromPosition:(UITextPosition*)from toPosition:(UITextPosition*)to {
+    return gRange;
+}
+- (UITextPosition*)positionFromPosition:(UITextPosition*)position offset:(NSInteger)offset {
+    return offset ? nil : position;
+}
+- (UITextPosition*)positionFromPosition:(UITextPosition*)position
+                            inDirection:(UITextLayoutDirection)direction
+                                 offset:(NSInteger)offset {
+    return offset ? nil : position;
+}
+- (NSComparisonResult)comparePosition:(UITextPosition*)a toPosition:(UITextPosition*)b {
+    return NSOrderedSame;
+}
+- (NSInteger)offsetFromPosition:(UITextPosition*)from toPosition:(UITextPosition*)to {
+    return 0;
+}
+- (id<UITextInputTokenizer>)tokenizer {
+    return [[UITextInputStringTokenizer alloc] initWithTextInput:self];
+}
+- (UITextPosition*)positionWithinRange:(UITextRange*)range
+                   farthestInDirection:(UITextLayoutDirection)direction {
+    return gRange.start;
+}
+- (UITextRange*)characterRangeByExtendingPosition:(UITextPosition*)position
+                                      inDirection:(UITextLayoutDirection)direction {
+    return gRange;
+}
+- (NSWritingDirection)baseWritingDirectionForPosition:(UITextPosition*)position
+                                          inDirection:(UITextStorageDirection)direction {
+    return NSWritingDirectionLeftToRight;
+}
+- (void)setBaseWritingDirection:(NSWritingDirection)direction forRange:(UITextRange*)range {
+}
+- (CGRect)firstRectForRange:(UITextRange*)range {
+    return CGRectZero;
+}
+- (CGRect)caretRectForPosition:(UITextPosition*)position {
+    return CGRectZero;
+}
+- (NSArray<UITextSelectionRect*>*)selectionRectsForRange:(UITextRange*)range {
+    return @[];
+}
+- (UITextPosition*)closestPositionToPoint:(CGPoint)point {
+    return gRange.start;
+}
+- (UITextPosition*)closestPositionToPoint:(CGPoint)point withinRange:(UITextRange*)range {
+    return gRange.start;
+}
+- (UITextRange*)characterRangeAtPoint:(CGPoint)point {
+    return gRange;
+}
+- (void)beginFloatingCursorAtPoint:(CGPoint)point {
+    gCursor = point;
+}
+// an arrow per character width or line the finger travels
+- (void)updateFloatingCursorAtPoint:(CGPoint)point {
+    const float w = ImGui::GetFontSize() * 0.6f, h = ImGui::GetTextLineHeightWithSpacing();
+    for (; point.x - gCursor.x >= w; gCursor.x += w)
+        tapKey(ImGuiKey_RightArrow);
+    for (; gCursor.x - point.x >= w; gCursor.x -= w)
+        tapKey(ImGuiKey_LeftArrow);
+    for (; point.y - gCursor.y >= h; gCursor.y += h)
+        tapKey(ImGuiKey_DownArrow);
+    for (; gCursor.y - point.y >= h; gCursor.y -= h)
+        tapKey(ImGuiKey_UpArrow);
+}
+- (void)endFloatingCursor {
+}
 - (BOOL)canBecomeFirstResponder {
     return YES; // always: hardware keys and shortcuts arrive even with no text field active
 }
@@ -651,6 +780,7 @@ namespace {
 - (void)longPress:(UILongPressGestureRecognizer*)g {
     if (g.state != UIGestureRecognizerStateBegan)
         return;
+    [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred];
     ImGuiIO& io = ImGui::GetIO();
     if (gTouch == Touch::Pressed)
         releaseAway();

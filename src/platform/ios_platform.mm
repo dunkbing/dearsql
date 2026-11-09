@@ -3,9 +3,12 @@
 
 #include "application.hpp"
 #include "database/connection_url.hpp"
+#include "database/file_database.hpp"
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "platform/ios_platform.hpp"
+#include "ui/tab/sql_editor_tab.hpp"
+#include "ui/tab_manager.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -472,12 +475,54 @@ float IOSPlatform::getClientAreaTopInset() const {
     return gView ? static_cast<float>(gView.safeAreaInsets.top) : 0.0f;
 }
 
+// ponytail: for app store screenshots, as nothing can tap the simulator here.
+// DEARSQL_SHOW="table:orders|sql:SELECT ..." opens those tabs on the first file database
+// once its tables are loaded
+static void showRequestedTabs() {
+    static std::string show = getenv("DEARSQL_SHOW") ?: "";
+    if (show.empty())
+        return;
+    auto& app = Application::getInstance();
+    for (const auto& db : app.getDatabases()) {
+        auto* file = dynamic_cast<FileDatabase*>(db.get());
+        if (!file)
+            continue;
+        file->checkLoadingStatus();
+        if (!file->areTablesLoaded()) {
+            if (!file->isLoadingTables())
+                file->startTablesLoadAsync();
+            return;
+        }
+        std::string rest = show + "|";
+        for (size_t at; (at = rest.find('|')) != std::string::npos; rest.erase(0, at + 1)) {
+            const std::string part = rest.substr(0, at);
+            if (part.starts_with("table:")) {
+                for (const auto& table : file->getTables())
+                    if (table.name == part.substr(6))
+                        app.getTabManager()->createTableViewerTab(file, table);
+            } else if (part.starts_with("sql:")) {
+                if (auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+                        app.getTabManager()->createSQLEditorTab("Query", file))) {
+                    tab->setQuery(part.substr(4));
+                    tab->run();
+                }
+            }
+        }
+        app.setShowFps(false);
+        show.clear();
+        return;
+    }
+}
+
 void IOSPlatform::renderFrame() {
     @autoreleasepool {
         ImGuiIO& io = ImGui::GetIO();
         const CGSize size = gView.bounds.size;
         const CGFloat scale = gView.contentScaleFactor;
-        io.DisplaySize = ImVec2(size.width, std::max<CGFloat>(size.height - gKeyboardInset, 1));
+        io.DisplaySize =
+            ImVec2(size.width,
+                   std::max<CGFloat>(
+                       size.height - std::max(gKeyboardInset, gView.safeAreaInsets.bottom), 1));
         io.DisplayFramebufferScale = ImVec2(scale, scale);
         const CFTimeInterval now = CACurrentMediaTime();
         io.DeltaTime = gLastTime > 0 ? static_cast<float>(now - gLastTime) : 1.0f / 60.0f;
@@ -495,6 +540,7 @@ void IOSPlatform::renderFrame() {
         ImGui_ImplMetal_NewFrame(pass);
         ImGui::NewFrame();
         app_->renderMainUI();
+        showRequestedTabs();
         ImGui::Render();
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commands, encoder);
         [encoder endEncoding];

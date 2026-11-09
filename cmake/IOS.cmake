@@ -65,4 +65,18 @@ configure_file(cmake/Info-iOS.plist.in ${CMAKE_BINARY_DIR}/Info-iOS.plist @ONLY)
 set_target_properties(${PROJECT_NAME} PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info-iOS.plist
     OUTPUT_NAME "${APP_NAME}"
-    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "2")
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+
+# app icon: compile the asset catalog into the bundle (Assets.car + the small pngs)
+if(CMAKE_OSX_SYSROOT MATCHES "simulator")
+    set(ACTOOL_PLATFORM iphonesimulator)
+else()
+    set(ACTOOL_PLATFORM iphoneos)
+endif()
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND xcrun actool ${CMAKE_SOURCE_DIR}/assets/ios/Assets.xcassets
+            --compile $<TARGET_BUNDLE_DIR:${PROJECT_NAME}> --platform ${ACTOOL_PLATFORM}
+            --minimum-deployment-target 17.0 --app-icon AppIcon
+            --target-device iphone --target-device ipad
+            --output-partial-info-plist ${CMAKE_BINARY_DIR}/actool-partial.plist
+    VERBATIM)

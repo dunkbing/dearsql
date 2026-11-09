@@ -24,6 +24,7 @@
     <string>17.0</string>
     <key>UIDeviceFamily</key>
     <array>
+        <integer>1</integer>
         <integer>2</integer>
     </array>
     <key>UIApplicationSceneManifest</key>
@@ -31,9 +32,9 @@
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
-    <!-- trackpad and mouse clicks come as pointer touches, with the right button -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>DearSQL connects to the database servers you add, including ones on your local network.</string>
+    <!-- trackpad and mouse clicks come as pointer touches, with the right button -->
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UILaunchScreen</key>
@@ -47,6 +48,32 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <!-- iphone: portrait until the side safe-area insets (notch) are handled -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+    <!-- icons compiled from assets/ios/Assets.xcassets by actool (cmake/IOS.cmake) -->
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array><string>AppIcon60x60</string></array>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+        </dict>
+    </dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array><string>AppIcon60x60</string><string>AppIcon76x76</string></array>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+        </dict>
+    </dict>
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>

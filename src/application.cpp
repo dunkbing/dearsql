@@ -861,7 +861,16 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         }
     };
 
-    if (sidebarVisible) {
+    if (compactLayout_) {
+        // one full-width tab bar: Databases first, then the workspace or the open tabs
+        ImGui::DockBuilderDockWindow("Databases", dockSpaceId);
+        const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
+        ImGui::DockBuilderDockWindow(wsTitle.c_str(), dockSpaceId);
+        dockTabs(dockSpaceId);
+        leftDockId = 0;
+        centerDockId = dockSpaceId; // new tabs dock here too
+        rightDockId = 0;
+    } else if (sidebarVisible) {
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, kSidebarWidth, &leftDockId,
                                     &centerDockId);
 
@@ -884,7 +893,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         dockTabs(dockSpaceId);
 
         leftDockId = 0;
-        centerDockId = 0;
+        centerDockId = dockSpaceId; // GetID("MyDockSpace") outside the host window misses
         rightDockId = 0;
     }
 
@@ -917,6 +926,15 @@ static void drawDockTabSeparators(ImGuiDockNode* node) {
 void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
+#ifdef DEARSQL_MOBILE
+    if (const bool compact = viewport->Size.x < 700.0f; compact != compactLayout_) {
+        compactLayout_ = compact;
+        dockingLayoutInitialized = false;
+    }
+    if (compactLayout_) {
+        sidebarVisible = true; // it is a tab, so always there
+    }
+#endif
     if (sidebarVisibleLastFrame_ != sidebarVisible) {
         if (tabManager) {
             tabManager->preserveFocusedTabForLayoutRebuild();
@@ -979,7 +997,9 @@ void Application::renderMainUI() {
         ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-        ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+        if (!compactLayout_) {
+            ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+        }
         ImGui::Begin("Databases", nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar);

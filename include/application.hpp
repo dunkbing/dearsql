@@ -170,6 +170,8 @@ private:
     bool sidebarVisible = true;
     // previous frame's value: a change means the dock layout has to be rebuilt
     bool sidebarVisibleLastFrame_ = true;
+    // phone-width screens: the sidebar is a tab next to the open tabs, not a split
+    bool compactLayout_ = false;
     ImGuiID leftDockId = 0;
     ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;

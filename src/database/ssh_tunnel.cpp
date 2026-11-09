@@ -255,6 +255,7 @@ struct SSHTunnel::Impl {
         Socket client;
         LIBSSH2_CHANNEL* channel;
         std::string toRemote; // read from the client, not yet taken by the channel
+        std::string toClient; // read from the channel, not yet taken by the client
         bool done = false;
     };
 
@@ -316,7 +317,9 @@ struct SSHTunnel::Impl {
                 fds[1].events |= POLLOUT;
             for (size_t i = 0; i < channels.size(); ++i) {
                 fds[2 + i].fd = channels[i].client;
-                fds[2 + i].events = channels[i].toRemote.empty() ? POLLIN : 0;
+                fds[2 + i].events =
+                    static_cast<short>((channels[i].toRemote.empty() ? POLLIN : 0) |
+                                       (channels[i].toClient.empty() ? 0 : POLLOUT));
             }
             // data libssh2 already buffered for a channel shows on no socket: go round
             // again at once while anything moved
@@ -329,7 +332,7 @@ struct SSHTunnel::Impl {
 
             if (fds[0].revents & POLLIN) {
                 if (Socket client = accept(listener, nullptr, nullptr); client != kNoSocket) {
-                    setBlocking(client, true);
+                    setBlocking(client, false); // a slow client must not stall the others
                     noSigPipe(client);
                     if (LIBSSH2_CHANNEL* ch = openChannel())
                         channels.push_back({client, ch});
@@ -344,7 +347,7 @@ struct SSHTunnel::Impl {
                     const auto n = recv(c.client, buf.data(), static_cast<int>(buf.size()), 0);
                     if (n > 0)
                         c.toRemote.assign(buf.data(), static_cast<size_t>(n));
-                    else
+                    else if (!(n < 0 && wouldBlock()))
                         c.done = true; // the database client hung up
                 }
                 while (!c.done && !c.toRemote.empty()) {
@@ -359,7 +362,23 @@ struct SSHTunnel::Impl {
                     c.toRemote.erase(0, static_cast<size_t>(w));
                     busy = true;
                 }
-                while (!c.done) {
+                // the channel is read only once the client took the last chunk, so a
+                // client that stops reading backs up its own channel's window only
+                for (;;) {
+                    while (!c.done && !c.toClient.empty()) {
+                        const auto s = send(c.client, c.toClient.data(),
+                                            static_cast<int>(c.toClient.size()), kSendFlags);
+                        if (s < 0 && wouldBlock())
+                            break;
+                        if (s <= 0) {
+                            c.done = true;
+                            break;
+                        }
+                        c.toClient.erase(0, static_cast<size_t>(s));
+                        busy = true;
+                    }
+                    if (c.done || !c.toClient.empty())
+                        break;
                     const auto r = libssh2_channel_read(c.channel, buf.data(), buf.size());
                     if (r == LIBSSH2_ERROR_EAGAIN)
                         break;
@@ -367,18 +386,10 @@ struct SSHTunnel::Impl {
                         c.done = r < 0 || libssh2_channel_eof(c.channel);
                         break;
                     }
+                    c.toClient.assign(buf.data(), static_cast<size_t>(r));
                     busy = true;
-                    for (long long sent = 0; sent < r;) {
-                        const auto s = send(c.client, buf.data() + sent, static_cast<int>(r - sent),
-                                            kSendFlags);
-                        if (s <= 0) {
-                            c.done = true;
-                            break;
-                        }
-                        sent += s;
-                    }
                 }
-                if (!c.done && libssh2_channel_eof(c.channel))
+                if (!c.done && c.toClient.empty() && libssh2_channel_eof(c.channel))
                     c.done = true;
             }
             for (auto it = channels.begin(); it != channels.end();) {

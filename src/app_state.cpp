@@ -1564,12 +1564,18 @@ int AppState::localId(const std::string& kind, const std::string& uuid) const {
 std::string AppState::uuidFor(const std::string& kind, const int localId) const {
     if (kind == "workspace" && localId == 1)
         return kDefaultWorkspaceUuid;
-    return scalar(db_, "SELECT uuid FROM sync_ids WHERE kind = ? AND local_id = ?",
+    return scalar(db_,
+                  "SELECT uuid FROM sync_ids WHERE kind = ? AND local_id = ? "
+                  "AND uuid NOT LIKE 'retired:%'",
                   {kind, std::to_string(localId)});
 }
 
 void AppState::forgetLocal(const std::string& kind, const int localId) const {
-    scalar(db_, "DELETE FROM sync_ids WHERE kind = ? AND local_id = ?",
+    // retire, not delete: the row keeps MAX(local_id), so the id (and the scripts and chats
+    // still pointing at it) never goes to a new connection
+    scalar(db_,
+           "UPDATE OR REPLACE sync_ids SET uuid = 'retired:' || uuid "
+           "WHERE kind = ? AND local_id = ? AND uuid NOT LIKE 'retired:%'",
            {kind, std::to_string(localId)});
 }
 

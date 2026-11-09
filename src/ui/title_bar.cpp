@@ -73,6 +73,41 @@ namespace {
             ImGui::SetTooltip("%s", tooltip);
         return clicked;
     }
+
+    // drawn like the macos sf symbols: the icon font has no sidebar.left, and its plus reads
+    // small at the bar's text size
+    void sidebarIcon(ImDrawList* dl, ImVec2 c, float s, ImU32 col) {
+        const float w = s * 0.62f, h = s * 0.48f, t = std::max(1.0f, s / 18);
+        const ImVec2 a(c.x - w / 2, c.y - h / 2), b(c.x + w / 2, c.y + h / 2);
+        dl->AddRect(a, b, col, s * 0.1f, 0, t * 1.4f);
+        const float divider = a.x + w * 0.36f;
+        dl->AddLine(ImVec2(divider, a.y), ImVec2(divider, b.y), col, t * 1.4f);
+        for (int i = 0; i < 3; ++i) { // the pane's rows
+            const float y = a.y + h * (0.3f + 0.2f * i);
+            dl->AddLine(ImVec2(a.x + w * 0.1f, y), ImVec2(divider - w * 0.1f, y), col, t);
+        }
+    }
+
+    void plusIcon(ImDrawList* dl, ImVec2 c, float s, ImU32 col) {
+        const float r = s * 0.3f, t = std::max(1.5f, s / 11);
+        dl->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), col, t);
+        dl->AddLine(ImVec2(c.x, c.y - r), ImVec2(c.x, c.y + r), col, t);
+    }
+
+    // a flat square button with a drawn icon
+    bool iconButton(const char* id, void (*draw)(ImDrawList*, ImVec2, float, ImU32),
+                    const char* tooltip) {
+        const float side = ImGui::GetFrameHeight();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        const bool clicked = ImGui::Button(id, ImVec2(side, side));
+        ImGui::PopStyleColor();
+        const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+        draw(ImGui::GetWindowDrawList(), ImVec2((min.x + max.x) / 2, (min.y + max.y) / 2), side,
+             ImGui::GetColorU32(ImGuiCol_Text));
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+            ImGui::SetTooltip("%s", tooltip);
+        return clicked;
+    }
 #endif
 
     void renderWorkspacePopup(Application& app) {
@@ -226,11 +261,18 @@ void TitleBarView::render(Application& app) {
     const float rowY = ImGui::GetCursorScreenPos().y;
     ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + Theme::Spacing::S, rowY));
 
-    if (barButton("###sidebar", glyph("sidebar.left", ICON_FA_BARS), "Toggle Sidebar"))
-        app.setSidebarVisible(!app.isSidebarVisible());
+#ifdef __APPLE__
+    const bool toggleSidebar = barButton("###sidebar", "sidebar.left", "Toggle Sidebar");
     ImGui::SameLine();
-    if (barButton("###connect", glyph("plus", ICON_FA_PLUS), "New Connection") &&
-        app.getDatabaseSidebar())
+    const bool newConnection = barButton("###connect", "plus", "New Connection");
+#else
+    const bool toggleSidebar = iconButton("###sidebar", sidebarIcon, "Toggle Sidebar");
+    ImGui::SameLine();
+    const bool newConnection = iconButton("###connect", plusIcon, "New Connection");
+#endif
+    if (toggleSidebar)
+        app.setSidebarVisible(!app.isSidebarVisible());
+    if (newConnection && app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
     // linux only: sparkle and winsparkle prompt by themselves
     if (mydear::updater::Available()) {

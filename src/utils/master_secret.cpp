@@ -314,6 +314,11 @@ namespace MasterSecret {
         if (*synced == secret)
             return "";
         std::string previous = secret;
+        // the pre-sync rows and connections-before-sync.db stay sealed with the old key
+        if (const fs::path keep = fs::path(keyFilePath()) += ".before-sync"; !fs::exists(keep)) {
+            std::ofstream(keep) << previous;
+            fs::permissions(keep, fs::perms::owner_read | fs::perms::owner_write);
+        }
         secret = *synced;
         // the local copy follows, so the terminal modes use the same key
         gUseKeychain ? keystoreWrite(secret) : writeFile(secret);

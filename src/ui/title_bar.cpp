@@ -174,12 +174,12 @@ void TitleBarView::render(Application& app) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
     const float rowY = ImGui::GetCursorScreenPos().y;
 
-    if (barButton(ICON_FA_BARS "##sidebar", "Toggle Sidebar"))
+    if (barButton(ICON_FA_BARS "###sidebar", "Toggle Sidebar"))
         app.setSidebarVisible(!app.isSidebarVisible());
     ImGui::SameLine();
     // fa6's plus is the ascii '+', drawn by the text font at text size: draw it instead
     const float side = ImGui::GetFrameHeight();
-    if (barButton("##connect", "New Connection", ImVec2(side, side)) && app.getDatabaseSidebar())
+    if (barButton("###connect", "New Connection", ImVec2(side, side)) && app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
     {
         const ImVec2 c((ImGui::GetItemRectMin().x + ImGui::GetItemRectMax().x) * 0.5f,
@@ -212,13 +212,13 @@ void TitleBarView::render(Application& app) {
             ImGui::GetColorU32(colors.subtext1), title);
 
     ImGui::SetCursorScreenPos(ImVec2(wsX, rowY));
-    if (barButton((wsLabel + "##workspace").c_str(), "Workspace")) {
+    if (barButton((wsLabel + "###workspace").c_str(), "Workspace")) {
         ImGui::OpenPopup("##WorkspacePopup");
         gPopupPos = ImVec2(wsX, bar.pos.y + bar.size.y);
     }
     renderWorkspacePopup(app);
     ImGui::SameLine();
-    if (barButton(ICON_FA_GEAR "##settings", "Settings"))
+    if (barButton(ICON_FA_GEAR "###settings", "Settings"))
         SettingsDialog::instance().open();
 
     ImGui::PopStyleVar(2);

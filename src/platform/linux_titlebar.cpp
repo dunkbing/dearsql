@@ -764,7 +764,7 @@ void LinuxTitlebar::onAddConnection(GtkButton*, gpointer userData) {
         return;
     if (!self->app_->canAddConnection()) {
         Alert::show("Connection Limit Reached",
-                    "Free tier is limited to 3 connections. Activate a license to add more.");
+                    "You have reached the free tier's connection limit. Activate a license to add more.");
         return;
     }
     ConnectionDialog::instance().show(self->app_);

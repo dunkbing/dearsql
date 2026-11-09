@@ -831,6 +831,9 @@ void Application::refreshWorkspaceConnections() {
 }
 
 void Application::dockTabToCenter(const std::string& tabName) const {
+    // before the first frame (a file opened at launch) setupDockingLayout docks it
+    if (centerDockId == 0 && !ImGui::GetCurrentContext()->CurrentWindow)
+        return;
     const ImGuiID dockId = centerDockId != 0 ? centerDockId : ImGui::GetID("MyDockSpace");
     ImGui::DockBuilderDockWindow(tabName.c_str(), dockId);
 }

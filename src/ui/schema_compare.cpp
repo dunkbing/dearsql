@@ -5,7 +5,7 @@
 #include "database/file_database.hpp"
 #include "database/lib_database_node.hpp"
 #include "mydear/menu.hpp"
-#include "platform/alert.hpp"
+#include "ui/alert.hpp"
 #include "themes.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"

@@ -7,8 +7,8 @@
 #include "mydear/native_view.hpp"
 #include "mydear/title_bar.hpp"
 #include "mydear/updater.hpp"
-#include "platform/alert.hpp"
 #include "themes.hpp"
+#include "ui/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/settings_dialog.hpp"
 #include <algorithm>
@@ -33,31 +33,14 @@ namespace {
     }
 
 #ifdef __APPLE__
-    std::unordered_map<ImGuiID, bool> gClicks; // set by the native buttons' actions
-
-    // a native NSButton (an sf symbol, optional title) placed in the imgui bar. a real click
-    // reaches the NSButton; the test engine's click reaches the imgui item under it
+    // mydear's NSButton with an sf symbol
     bool barButton(const char* id, const char* symbol, const char* tooltip,
                    const char* title = nullptr) {
-        const ImGuiID key = ImGui::GetID(id);
-        bool& clicked = gClicks[key];
-        const float side = ImGui::GetFrameHeight();
-        const auto known = gWidths.find(key);
-        const float width = known != gWidths.end()
-                                ? std::max(side, known->second)
-                                : side + (title ? ImGui::CalcTextSize(title).x + side : 0);
-        void* view = mydear::NativeView(id, ImVec2(width, side), [&] {
-            return TitleBarView::makeNativeButton(symbol, tooltip, &clicked);
-        });
-        bool hovered = false, held = false;
-        const bool pressed = ImGui::ButtonBehavior(
-            ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()), key, &hovered, &held);
+        const bool clicked = mydear::NativeButton(id, symbol, tooltip, title);
         [[maybe_unused]] ImGuiContext& g = *GImGui; // the test engine finds items by label
-        IMGUI_TEST_ENGINE_ITEM_INFO(key, id, ImGuiItemStatusFlags_None);
-        if (view)
-            gWidths[key] =
-                TitleBarView::updateNativeButton(view, title, ImGui::GetColorU32(ImGuiCol_Text));
-        return std::exchange(clicked, false) || pressed;
+        IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), id, ImGuiItemStatusFlags_None);
+        gWidths[ImGui::GetItemID()] = ImGui::GetItemRectSize().x;
+        return clicked;
     }
 #else
     // a flat imgui button: the icon, or the title with the icon after it

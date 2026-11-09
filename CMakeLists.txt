@@ -269,6 +269,7 @@ set(APP_SOURCES
     src/ui/connection_dialog.cpp
     src/ui/create_database_dialog.cpp
     src/ui/settings_dialog.cpp
+    src/ui/alert.cpp
     src/license/license_manager.cpp
 )
 
@@ -283,21 +284,8 @@ if(IOS)
     return()
 endif()
 list(APPEND APP_SOURCES src/ui/title_bar.cpp)
-if(APPLE)
-    list(APPEND APP_SOURCES src/platform/macos_bar_buttons.mm)
-    set_source_files_properties(src/platform/macos_bar_buttons.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
-    list(APPEND APP_SOURCES src/platform/macos_alert.mm)
-    list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
-elseif(LINUX)
-    list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
-elseif(WIN32)
-    list(
-        APPEND APP_SOURCES
-        src/platform/windows_alert.cpp
-        src/platform/windows_input_dialog.cpp
-        assets/app.rc
-    )
+if(WIN32)
+    list(APPEND APP_SOURCES assets/app.rc)
 endif()
 
 mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)

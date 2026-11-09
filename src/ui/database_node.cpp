@@ -16,7 +16,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "mydear/menu.hpp"
-#include "platform/alert.hpp"
+#include "ui/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/schema_compare.hpp"
 #include "ui/tab/sql_editor_tab.hpp"

@@ -10,8 +10,8 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "license/license_manager.hpp"
-#include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/alert.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/markdown_text.hpp"
@@ -343,6 +343,7 @@ void Application::frame() {
     TitleBarView::render(*this); // in mydear's title bar strip
 #endif
     renderMainUI();
+    Alert::render(); // last: over every other window and popup
 }
 
 bool Application::wantsFrames() {

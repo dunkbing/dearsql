@@ -5,7 +5,7 @@
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
 #include "mydear/spinner.hpp"
-#include "platform/alert.hpp"
+#include "ui/alert.hpp"
 #include "themes.hpp"
 #include "utils/file_dialog.hpp"
 #include <algorithm>

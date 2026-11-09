@@ -18,7 +18,7 @@
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
 #include "mydear/spinner.hpp"
-#include "platform/alert.hpp"
+#include "ui/alert.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"

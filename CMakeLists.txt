@@ -144,9 +144,9 @@ find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
 find_package(libssh2 CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED) # ios: libpq from the cmake/ports overlay
-find_package(DuckDB CONFIG REQUIRED)
-# ipad: no file dialogs, crash reports, terminal ui or tests
+# ipad: no duckdb yet, and no file dialogs, crash reports, terminal ui or tests
 if(NOT IOS)
+    find_package(DuckDB CONFIG REQUIRED)
     find_package(GTest CONFIG REQUIRED)
     find_package(nfd CONFIG REQUIRED)
     find_package(sentry CONFIG REQUIRED)

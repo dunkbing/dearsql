@@ -63,7 +63,10 @@
       "platform": "!ios"
     },
     "spdlog",
-    "duckdb",
+    {
+      "name": "duckdb",
+      "platform": "!ios"
+    },
     {
       "name": "ftxui",
       "platform": "!ios"

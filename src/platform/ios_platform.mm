@@ -902,6 +902,7 @@ int main(int argc, char* argv[]) {
     @autoreleasepool {
         // ~/.dearsql lands in the container's Library: its root is read-only on a device
         setenv("HOME", [NSHomeDirectory() stringByAppendingPathComponent:@"Library"].UTF8String, 1);
+        setenv("DEARSQL_CONTAINER", NSHomeDirectory().UTF8String, 1); // saved paths re-root here
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(DearSQLAppDelegate.class));
     }
 }

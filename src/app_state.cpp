@@ -27,6 +27,21 @@ namespace fs = std::filesystem;
 
 namespace {
 
+    // ios moves the app container on every install: point saved files at the current one
+    void relocate(DatabaseConnectionInfo& i) {
+#ifdef DEARSQL_MOBILE
+        const char* home = std::getenv("DEARSQL_CONTAINER");
+        for (std::string* p : {&i.path, &i.sslCACertPath, &i.ssh.privateKeyPath}) {
+            const auto at = p->find("/Data/Application/");
+            const auto end = at == std::string::npos ? at : p->find('/', at + 18);
+            if (home && end != std::string::npos)
+                *p = home + p->substr(end);
+        }
+#else
+        (void)i;
+#endif
+    }
+
     // RAII wrapper for sqlite3_stmt
     struct StmtDeleter {
         void operator()(sqlite3_stmt* stmt) const {
@@ -216,6 +231,7 @@ namespace {
             conn.connectionInfo.ssh.password = encryptedSshPassword;
         }
 
+        relocate(conn.connectionInfo);
         return true;
     }
 
@@ -1640,6 +1656,7 @@ std::vector<SavedConnection> AppState::storedConnections(const int workspaceId) 
             unsealCredentials(creds, i, baseSecretForVersion(creds.value("keyVersion", 0)));
         c.id = localId("connection", r.uuid);
         c.lastUsed = localLastUsed("connection", c.id);
+        relocate(c.connectionInfo);
         out.push_back(std::move(c));
     }
     std::ranges::stable_sort(out, std::greater{}, &SavedConnection::lastUsed);

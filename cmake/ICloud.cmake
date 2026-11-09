@@ -19,6 +19,8 @@ function(dearsql_icloud target)
     else()
         set(APP_ID_KEY "com.apple.application-identifier")
         set(APS_KEY "com.apple.developer.aps-environment")
+        # developer id apps name the cloudkit environment themselves
+        set(ENV_ENTRY "<key>com.apple.developer.icloud-container-environment</key><string>Production</string>")
     endif()
     file(WRITE ${CMAKE_BINARY_DIR}/DearSQL.entitlements "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
@@ -29,6 +31,7 @@ function(dearsql_icloud target)
     <key>com.apple.developer.icloud-container-identifiers</key><array><string>${DEARSQL_ICLOUD_CONTAINER}</string></array>
     <key>com.apple.developer.icloud-services</key><array><string>CloudKit</string></array>
     <key>${APS_KEY}</key><string>production</string>
+    ${ENV_ENTRY}
     <key>keychain-access-groups</key><array><string>${APP_ID}</string></array>
 </dict>
 </plist>

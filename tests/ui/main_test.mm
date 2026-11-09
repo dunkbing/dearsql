@@ -98,10 +98,9 @@ int main(int argc, char** argv) {
     // Drive the platform's own frame instead of hand-rolling one: on macOS the
     // frame is a Metal pass (drawable, encoder, backend NewFrame) that the app
     // owns, and renderFrame() is what calls renderMainUI().
-    PlatformInterface* platform = app.getPlatform();
     while (!glfwWindowShouldClose(app.getWindow())) {
         glfwPollEvents();
-        platform->renderFrame();
+        app.shell().renderFrame();
         ImGuiTestEngine_PostSwap(engine);
 
         if (headless && ImGuiTestEngine_IsTestQueueEmpty(engine)) {

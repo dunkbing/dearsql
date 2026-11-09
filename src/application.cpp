@@ -23,7 +23,8 @@
 #if defined(DEARSQL_MOBILE)
 #include "platform/ios_platform.hpp"
 #else
-#include "platform/shell_platform.hpp"
+#include "mydear/title_bar.hpp"
+#include "ui/title_bar.hpp"
 #endif
 
 #include "themes.hpp"
@@ -104,7 +105,7 @@ bool Application::initialize() {
     // mydear runs uikit; we are inside the root controller's loadView, the view exists
     if (!shell_.create(mydear::Config{}, *this))
         return false;
-    platform_ = std::make_unique<IOSPlatform>(this, shell_);
+    ios::attach(shell_);
 #else
     mydear::Config config;
 #ifdef NDEBUG
@@ -123,7 +124,6 @@ bool Application::initialize() {
 #ifndef __linux__
     window = shell_.glfwWindow();
 #endif
-    platform_ = std::make_unique<ShellPlatform>(this, shell_);
 #endif
 
     if (!FileDialog::initialize()) {
@@ -157,7 +157,9 @@ bool Application::initialize() {
     theme_ = &Theme::themeById(themeStr);
     Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-    platform_->applyTheme(theme_->dark);
+#ifdef DEARSQL_MOBILE
+    ios::applyTheme(theme_->dark);
+#endif
 
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
     try {
@@ -174,7 +176,7 @@ bool Application::initialize() {
     } catch (const std::exception&) {
         maxFps_ = 120;
     }
-    platform_->setVSync(vsync_);
+    shell_.setVSync(vsync_);
 #ifndef DEARSQL_MOBILE
     shell_.setMaxFps(maxFps_);
 #endif
@@ -193,10 +195,6 @@ bool Application::initialize() {
 
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
-
-    platform_->setupTitlebar();
-
-    platform_->updateWorkspaceDropdown();
 
 #ifdef __APPLE__
     spdlog::info("Application initialized successfully (with Metal backend)");
@@ -283,12 +281,6 @@ void Application::cleanup() {
 
     MarkdownText::shutdown(); // its textures need the backend
 
-    if (platform_) {
-        platform_->shutdownImGui();
-        platform_->cleanup();
-        platform_.reset();
-    }
-
     shell_.destroy(); // backends, imgui context, window
 #if !defined(DEARSQL_MOBILE) && !defined(__linux__)
     window = nullptr;
@@ -301,9 +293,9 @@ void Application::setTheme(const std::string_view id) {
     theme_ = &Theme::themeById(id);
     Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-    if (platform_) {
-        platform_->applyTheme(theme_->dark);
-    }
+#ifdef DEARSQL_MOBILE
+    ios::applyTheme(theme_->dark);
+#endif
     if (appState) {
         appState->setSetting("theme", theme_->id);
     }
@@ -326,7 +318,7 @@ void Application::setShowFps(const bool on) {
 
 void Application::setVSync(const bool on) {
     vsync_ = on;
-    platform_->setVSync(on);
+    shell_.setVSync(on);
     if (appState)
         appState->setSetting("vsync", on ? "1" : "0");
 }
@@ -345,7 +337,11 @@ void Application::setup() {
 }
 
 void Application::frame() {
-    platform_->renderChrome();
+#ifdef DEARSQL_MOBILE
+    ios::renderChrome();
+#else
+    TitleBarView::render(*this); // in mydear's title bar strip
+#endif
     renderMainUI();
 }
 
@@ -601,9 +597,6 @@ int Application::createWorkspace(const std::string& name, const std::string& des
         setCurrentWorkspace(newWorkspaceId);
         spdlog::debug("createWorkspace: after setCurrentWorkspace, currentId={}",
                       currentWorkspaceId);
-        platform_->updateWorkspaceDropdown();
-        spdlog::debug("createWorkspace: after updateWorkspaceDropdown, currentId={}",
-                      currentWorkspaceId);
     }
 
     return newWorkspaceId;
@@ -645,10 +638,7 @@ bool Application::deleteWorkspace(const int workspaceId) {
 bool Application::renameWorkspace(const int workspaceId, const std::string& name) {
     if (!appState || name.empty())
         return false;
-    bool success = appState->renameWorkspace(workspaceId, name);
-    if (success)
-        platform_->updateWorkspaceDropdown();
-    return success;
+    return appState->renameWorkspace(workspaceId, name);
 }
 
 void Application::refreshWorkspaceConnections() {
@@ -786,7 +776,11 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         sidebarVisibleLastFrame_ = sidebarVisible;
     }
-    const float topInset = platform_ ? platform_->getClientAreaTopInset() : 0.0f;
+#ifdef DEARSQL_MOBILE
+    const float topInset = ios::topInset(shell_);
+#else
+    const float topInset = mydear::TitleBarHeight(); // the content runs under the bar
+#endif
     const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);
     const ImVec2 dockSize(viewport->Size.x, std::max(0.0f, viewport->Size.y - topInset));
     ImGui::SetNextWindowPos(dockPos);
@@ -1000,21 +994,6 @@ void Application::openFile(const std::string& rawPath) {
     if (isCsv)
         tabManager->createCsvEditorTab(path);
 }
-
-#ifdef __APPLE__
-void Application::onSidebarToggleClicked() const {
-    if (platform_) {
-        platform_->onSidebarToggleClicked();
-    }
-}
-
-float Application::getTitlebarHeight() const {
-    if (platform_) {
-        return platform_->getTitlebarHeight();
-    }
-    return 0.0f;
-}
-#endif
 
 float Application::fpsCounterWidth() const {
     if (!showFps_ || std::getenv("DEARSQL_SHOT_DIR")) {

@@ -2,7 +2,9 @@
 
 #include "app_state.hpp"
 #include "application.hpp"
+#include "config.hpp"
 #include "imgui.h"
+#include "license/license_manager.hpp"
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
 #include "mydear/updater.hpp"
@@ -175,28 +177,125 @@ void SettingsDialog::render() {
 #ifndef DEARSQL_MOBILE
     // --- Actions ---
     ImGui::SeparatorText("About");
-    if (onManageLicense && mydear::Button("Manage License...")) {
-        onManageLicense();
+    if (mydear::Button("Manage License...")) {
+        licenseOpen_ = true;
+        licenseStatus_.clear();
+        ImGui::OpenPopup("Manage License");
     }
     ImGui::SameLine();
     if (mydear::Button("Check for Updates...")) {
         mydear::updater::Check();
     }
     ImGui::SameLine();
-    if (onReportBug && mydear::Button("Report Bug...")) {
-        onReportBug();
+    if (mydear::Button("Report Bug...")) {
+        ImGui::GetPlatformIO().Platform_OpenInShellFn(
+            ImGui::GetCurrentContext(),
+            "https://github.com/dunkbing/dearsql/issues/new?labels=bug&title=%5BBug%5D");
     }
 #endif
 
     // esc closes, unless a field, dropdown or a dialog on top has it
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive() &&
-        ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        !licenseOpen_ && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         open_ = false;
         ImGui::CloseCurrentPopup();
     }
+    renderLicense(); // after: its esc must not reach the settings
 
     ImGui::PopStyleVar(2); // ItemSpacing, FramePadding
     ImGui::EndPopup();
     ImGui::PopStyleColor(); // Border
     ImGui::PopStyleVar(2);  // WindowBorderSize, WindowRounding
+}
+
+void SettingsDialog::renderLicense() {
+    auto& manager = LicenseManager::instance();
+    const auto& colors = Application::getInstance().getCurrentColors();
+
+    // the worker's answer, picked up on the ui thread
+    if (const auto result = licenseResult_) { // a copy: reset below must not free the locked mutex
+        std::lock_guard lock(result->mutex);
+        if (result->done) {
+            licenseError_ = !result->error.empty();
+            licenseStatus_ = result->error;
+            if (!licenseError_)
+                licenseKey_[0] = '\0';
+            licenseResult_.reset();
+        }
+    }
+    // a request from the button: the callback only fills a shared result
+    auto start = [this](bool activating, auto&& request) {
+        auto result = std::make_shared<LicenseResult>();
+        licenseResult_ = result;
+        licenseError_ = false;
+        request([result, activating](const LicenseInfo& info) {
+            std::lock_guard lock(result->mutex);
+            result->error = info.error;
+            if (activating && !info.valid && result->error.empty())
+                result->error = "Activation failed";
+            result->done = true;
+        });
+    };
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(460.0f, 0.0f)), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopupModal("Manage License", &licenseOpen_,
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize))
+        return;
+
+    const bool busy = manager.isActivating() || licenseResult_;
+    if (manager.hasValidLicense()) {
+        const auto info = manager.getLicenseInfo();
+        std::string key = info.licenseKey;
+        if (key.size() > 8)
+            key = key.substr(0, 4) + "..." + key.substr(key.size() - 4);
+        ImGui::TextColored(colors.green, "License active");
+        ImGui::TextDisabled("Email");
+        ImGui::SameLine(110);
+        ImGui::TextUnformatted(info.customerEmail.empty() ? "N/A" : info.customerEmail.c_str());
+        ImGui::TextDisabled("Key");
+        ImGui::SameLine(110);
+        ImGui::TextUnformatted(key.c_str());
+        ImGui::TextDisabled("Device ID");
+        ImGui::SameLine(110);
+        ImGui::TextUnformatted(manager.getInstanceId().c_str());
+        ImGui::BeginDisabled(busy);
+        if (mydear::Button(busy ? "Deactivating..." : "Deactivate", mydear::ButtonVariant::Danger))
+            start(false, [&](auto done) { manager.deactivateLicense(done); });
+        ImGui::EndDisabled();
+    } else {
+        ImGui::TextUnformatted("Enter your license key to activate DearSQL:");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const bool enter =
+            ImGui::InputTextWithHint("##license_key", "XXXX-XXXX-XXXX-XXXX", licenseKey_,
+                                     sizeof(licenseKey_), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::TextDisabled("Device ID: %s", manager.getInstanceId().c_str());
+        ImGui::TextDisabled("Don't have a license?");
+        ImGui::SameLine();
+        ImGui::TextLinkOpenURL("Purchase one", PURCHASE_URL);
+        ImGui::BeginDisabled(busy);
+        if ((mydear::Button(busy ? "Activating..." : "Activate", mydear::ButtonVariant::Primary) ||
+             enter) &&
+            !busy) {
+            if (licenseKey_[0] == '\0') {
+                licenseError_ = true;
+                licenseStatus_ = "Please enter a license key";
+            } else {
+                const std::string key = licenseKey_;
+                start(true, [&](auto done) { manager.activateLicense(key, done); });
+            }
+        }
+        ImGui::EndDisabled();
+    }
+    if (!licenseStatus_.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(licenseError_ ? colors.red : colors.green, "%s", licenseStatus_.c_str());
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive()) {
+        licenseOpen_ = false;
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }

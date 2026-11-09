@@ -274,4 +274,25 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         ctx->Yield(3);
         IM_CHECK(!ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
     };
+
+    // manage license is an imgui modal over the settings; esc closes only it
+    t = IM_REGISTER_TEST(engine, "Settings", "License dialog");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
+        ctx->Yield(3);
+        ctx->ItemClick("//Settings/Manage License...");
+        ctx->Yield(3);
+        // AnyPopupId ignores the name, so look at the window
+        auto shown = [] {
+            const ImGuiWindow* w = ImGui::FindWindowByName("Manage License");
+            return w && w->WasActive;
+        };
+        IM_CHECK(shown());
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+        IM_CHECK(!shown());
+        IM_CHECK(ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+    };
 }

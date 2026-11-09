@@ -595,7 +595,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
     auto& texMgr = TextureManager::instance();
     if (!texturesLoaded_) {
-        texMgr.loadDatabaseIcons(app.getPlatform());
+        texMgr.loadDatabaseIcons(app.shell());
         texturesLoaded_ = true;
     }
 

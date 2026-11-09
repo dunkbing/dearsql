@@ -323,19 +323,15 @@ int main(int argc, char* argv[]) {
     }
 }
 
-// ---- IOSPlatform ----
+// ---- chrome ----
 
-IOSPlatform::IOSPlatform(Application* app, mydear::App& shell) : app_(app), shell_(shell) {
+void ios::attach(mydear::App& shell) {
     // the file picker gives the keyboard back to the imgui view by this tag
-    ((__bridge UIView*)shell_.nativeView()).tag = kDearSQLViewTag;
+    ((__bridge UIView*)shell.nativeView()).tag = kDearSQLViewTag;
 }
 
-void IOSPlatform::onSidebarToggleClicked() {
-    app_->setSidebarVisible(!app_->isSidebarVisible());
-}
-
-float IOSPlatform::getClientAreaTopInset() const {
-    UIView* view = (__bridge UIView*)shell_.nativeView();
+float ios::topInset(const mydear::App& shell) {
+    UIView* view = (__bridge UIView*)shell.nativeView();
     return view ? static_cast<float>(view.safeAreaInsets.top) : 0.0f;
 }
 
@@ -381,22 +377,14 @@ static void showRequestedTabs() {
     }
 }
 
-void IOSPlatform::renderFrame() {
-    shell_.renderFrame();
-}
-
-void IOSPlatform::renderChrome() {
+void ios::renderChrome() {
     showRequestedTabs();
 }
 
-ImTextureID IOSPlatform::createTextureFromRGBA(const uint8_t* pixels, int width, int height) {
-    return shell_.createTexture(pixels, width, height);
-}
-
-void IOSPlatform::applyTheme(const bool dark) {
+void ios::applyTheme(const bool dark) {
     if (!gNav)
         return;
-    const auto& c = app_->getCurrentColors();
+    const auto& c = Application::getInstance().getCurrentColors();
     auto color = [](const ImVec4& v) {
         return [UIColor colorWithRed:v.x green:v.y blue:v.z alpha:v.w];
     };

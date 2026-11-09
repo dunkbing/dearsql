@@ -3,12 +3,14 @@
 #include "app_state.hpp"
 #include "imgui.h"
 #include "mydear/app.hpp"
-#include "platform/platform_interface.hpp"
 #include "themes.hpp"
 #include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <memory>
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
+#include <GLFW/glfw3.h>
+#endif
 #include <unordered_map>
 #include <vector>
 
@@ -149,13 +151,9 @@ public:
     bool renameWorkspace(int workspaceId, const std::string& name);
     void refreshWorkspaceConnections();
 
-    // Platform-specific methods
-#ifdef __APPLE__
-    void onSidebarToggleClicked() const;
-    [[nodiscard]] float getTitlebarHeight() const;
-#endif
-    [[nodiscard]] PlatformInterface* getPlatform() const {
-        return platform_.get();
+    // window or uikit view, graphics, frame loop
+    [[nodiscard]] mydear::App& shell() {
+        return shell_;
     }
     [[nodiscard]] bool isShutdownRequested() const;
 
@@ -172,7 +170,6 @@ private:
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
-    std::unique_ptr<PlatformInterface> platform_;
 
     // Application state
     const Theme::ThemeDef* theme_ = &Theme::THEMES[0];

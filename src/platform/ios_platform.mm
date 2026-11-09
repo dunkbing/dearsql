@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <string>
 
 namespace {
@@ -125,6 +126,14 @@ namespace {
     }
 
     UIView* gNoKeyboard = nil; // an empty input view: first responder, no keyboard
+
+    CGPoint gFling; // points per second left from a flick
+
+    // a wheel step scrolls 2 font sizes sideways, 5 down: the content stays under the finger
+    void scrollBy(CGPoint d) {
+        const float font = std::max(ImGui::GetFontSize(), 1.0f);
+        ImGui::GetIO().AddMouseWheelEvent(d.x / (2.0f * font), d.y / (5.0f * font));
+    }
 } // namespace
 
 // UITextInput over a document of one position: it exists for the keyboard's hold-space
@@ -364,6 +373,7 @@ namespace {
         io.AddMouseButtonEvent((event.buttonMask & UIEventButtonMaskSecondary) ? 1 : 0, true);
         return;
     }
+    gFling = CGPointZero; // a touch stops a flick
     if (gTouch != Touch::None)
         return; // one finger drives the mouse
     gTouch = Touch::Pending;
@@ -774,9 +784,12 @@ namespace {
     [g setTranslation:CGPointZero inView:gView];
     if (g.numberOfTouches > 0)
         touchAt([g locationInView:gView]); // scroll the window under the finger
-    // a wheel step scrolls 2 font sizes sideways, 5 down: the content stays under the finger
-    const float font = std::max(ImGui::GetFontSize(), 1.0f);
-    ImGui::GetIO().AddMouseWheelEvent(d.x / (2.0f * font), d.y / (5.0f * font));
+    scrollBy(d);
+    static bool finger = false; // wheels and trackpads have no touches: no coasting
+    if (g.state == UIGestureRecognizerStateBegan)
+        finger = g.numberOfTouches > 0;
+    gFling =
+        g.state == UIGestureRecognizerStateEnded && finger ? [g velocityInView:gView] : CGPointZero;
 }
 - (void)longPress:(UILongPressGestureRecognizer*)g {
     if (g.state != UIGestureRecognizerStateBegan)
@@ -973,6 +986,12 @@ void IOSPlatform::renderFrame() {
         const CFTimeInterval now = CACurrentMediaTime();
         io.DeltaTime = gLastTime > 0 ? static_cast<float>(now - gLastTime) : 1.0f / 60.0f;
         gLastTime = now;
+        // the flick coasts on, slowing like a UIScrollView
+        if (std::hypot(gFling.x, gFling.y) > 20.0) {
+            scrollBy(CGPointMake(gFling.x * io.DeltaTime, gFling.y * io.DeltaTime));
+            const CGFloat decay = std::pow(0.998, io.DeltaTime * 1000.0);
+            gFling = CGPointMake(gFling.x * decay, gFling.y * decay);
+        }
 
         MTLRenderPassDescriptor* pass = gView.currentRenderPassDescriptor;
         if (!pass)

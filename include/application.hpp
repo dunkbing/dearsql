@@ -16,7 +16,7 @@
 #include <GLFW/glfw3.h>
 #endif
 
-// the app is mydear's delegate: mydear owns the window, backend and loop (all but linux so far)
+// the app is mydear's delegate: mydear owns the window, backend and loop
 class Application : public mydear::Delegate {
 public:
     static Application& getInstance();
@@ -115,6 +115,10 @@ public:
     [[nodiscard]] bool canAddConnection() const;
     [[nodiscard]] bool canAddWorkspace() const;
 
+    // the os window: NSWindow*, UIWindow*, HWND or GtkWindow*
+    [[nodiscard]] void* nativeWindow() const {
+        return shell_.nativeWindow();
+    }
     // Window reference (GLFW only on macOS/Windows)
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     [[nodiscard]] GLFWwindow* getWindow() const {
@@ -163,9 +167,7 @@ private:
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
-#if !defined(__linux__)
     mydear::App shell_; // window or uikit view, metal, imgui backends, frame loop
-#endif
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
@@ -196,7 +198,6 @@ private:
     int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods
-    void setupImGuiContext() const;
     void setupDockingLayout(ImGuiID dockSpaceId);
 
 public:

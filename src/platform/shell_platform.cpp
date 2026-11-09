@@ -9,7 +9,12 @@ ShellPlatform::~ShellPlatform() {
 }
 
 void ShellPlatform::setupTitlebar() {
+#ifdef __linux__
+    titlebar_ =
+        std::make_unique<ShellTitlebar>(app_, static_cast<GtkWidget*>(shell_.nativeWindow()));
+#else
     titlebar_ = std::make_unique<ShellTitlebar>(app_, shell_.glfwWindow());
+#endif
     titlebar_->setup();
 }
 

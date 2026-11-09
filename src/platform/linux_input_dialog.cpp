@@ -1,7 +1,6 @@
 #if defined(__linux__)
 
 #include "application.hpp"
-#include "platform/linux_platform.hpp"
 #include "ui/input_dialog.hpp"
 #include <gtk/gtk.h>
 
@@ -86,10 +85,8 @@ static gboolean showInputDialogIdle(gpointer userData) {
     auto* data = static_cast<DeferredInputData*>(userData);
 
     GtkWindow* parent = nullptr;
-    auto* platform = dynamic_cast<LinuxPlatform*>(Application::getInstance().getPlatform());
-    if (platform) {
-        parent = GTK_WINDOW(platform->getGtkWindow());
-    }
+    if (void* host = Application::getInstance().nativeWindow())
+        parent = GTK_WINDOW(host);
 
     GtkWidget* window = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(window), data->title.c_str());

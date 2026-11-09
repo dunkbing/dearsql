@@ -7,13 +7,15 @@
 
 #if defined(_WIN32)
 using ShellTitlebar = WindowsTitlebar;
+#elif defined(__linux__)
+using ShellTitlebar = LinuxTitlebar;
 #else
 using ShellTitlebar = MacOSTitlebar;
 #endif
 
 class Application;
 
-// macos and windows: mydear owns the window, the graphics backend and the loop; this adds
+// macos, windows and linux: mydear owns the window, the graphics backend and the loop; this adds
 // the title bar (ui/title_bar.cpp in mydear's strip) and the native dialogs behind it
 class ShellPlatform final : public PlatformInterface {
 public:

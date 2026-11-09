@@ -33,7 +33,7 @@ public:
     }
 };
 
-// ---- Linux: native GTK HeaderBar ----
+// ---- Linux: imgui bar, window buttons from gtk-decoration-layout (mydear) ----
 #if defined(__linux__)
 
 #include <gtk/gtk.h>
@@ -43,51 +43,24 @@ class LinuxTitlebar final : public ITitlebar {
 public:
     LinuxTitlebar(Application* app, GtkWidget* parentWindow);
 
-    // Called by the platform so the titlebar can call noteInteraction()
-    void setInteractionCallback(std::function<void()> cb) {
-        interactionCb_ = std::move(cb);
-    }
-
     void setup() override;
-    // Native GTK — no ImGui rendering needed
-    void render() override {}
+    // the shared imgui bar (ui/title_bar.hpp) in mydear's title bar strip
+    void render() override;
     void renderPopups() override {}
-    void updateWorkspaceDropdown() override;
+    void updateWorkspaceDropdown() override {} // the bar reads app state each frame
+    // gtk css for the native dialogs (mydear sets prefer-dark)
     void applyTheme(bool isDark) override;
-    float getHeight() const override {
-        return 0.0f;
-    }
-
-    // Expose for the platform to show/hide the update badge
-    GtkWidget* getUpdateButton() const {
-        return updateButton_;
-    }
-    GtkWidget* getHeaderBar() const {
-        return headerBar_;
+    float getHeight() const override;
+    // the content runs under the bar
+    float getClientAreaTopInset() const override {
+        return getHeight();
     }
 
     void showLicenseDialog();
-    void showCreateWorkspaceDialog();
-
-    // GTK signal callbacks (static — userData is LinuxTitlebar*)
-    static void onSidebarToggle(GtkButton*, gpointer);
-    static void onAddConnection(GtkButton*, gpointer);
 
 private:
     Application* app_ = nullptr;
     GtkWidget* parentWindow_ = nullptr;
-
-    GtkWidget* headerBar_ = nullptr;
-    GtkWidget* sidebarButton_ = nullptr;
-    GtkWidget* workspaceButton_ = nullptr;
-    GtkWidget* workspacePopover_ = nullptr;
-    GtkWidget* workspaceItemsBox_ = nullptr;
-    GtkWidget* addButton_ = nullptr;
-    GtkWidget* menuButton_ = nullptr;
-    GtkWidget* updateButton_ = nullptr;
-
-    std::vector<int> workspaceIdsByIndex_;
-    std::function<void()> interactionCb_;
 };
 
 // ---- macOS: imgui bar, native traffic lights (mydear) ----

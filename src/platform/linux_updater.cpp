@@ -4,7 +4,6 @@
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "platform/alert.hpp"
-#include "platform/linux_platform.hpp"
 #include "platform/updater.hpp"
 #include <spdlog/spdlog.h>
 
@@ -394,8 +393,8 @@ static gboolean updateProgressBar(gpointer) {
 }
 
 static void showProgressDialog() {
-    auto* platform = dynamic_cast<LinuxPlatform*>(Application::getInstance().getPlatform());
-    GtkWindow* parent = platform ? GTK_WINDOW(platform->getGtkWindow()) : nullptr;
+    void* host = Application::getInstance().nativeWindow();
+    GtkWindow* parent = host ? GTK_WINDOW(host) : nullptr;
 
     sProgressWindow = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(sProgressWindow), "Downloading Update");

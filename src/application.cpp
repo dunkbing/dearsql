@@ -22,8 +22,6 @@
 
 #if defined(DEARSQL_MOBILE)
 #include "platform/ios_platform.hpp"
-#elif defined(__linux__)
-#include "platform/linux_platform.hpp"
 #else
 #include "platform/shell_platform.hpp"
 #endif
@@ -107,14 +105,6 @@ bool Application::initialize() {
     if (!shell_.create(mydear::Config{}, *this))
         return false;
     platform_ = std::make_unique<IOSPlatform>(this, shell_);
-#elif defined(__linux__)
-    platform_ = std::make_unique<LinuxPlatform>(this);
-    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
-    if (!linuxPlatform->initializeGTK(nullptr, nullptr)) {
-        return false;
-    }
-    setupImGuiContext();
-    platform_->setupTitlebar();
 #else
     mydear::Config config;
 #ifdef NDEBUG
@@ -123,14 +113,16 @@ bool Application::initialize() {
     config.width = 1600;
     config.height = 1000;
     config.titleBar = true; // ui/title_bar.cpp, beside the os window buttons
-#ifdef __APPLE__
-    config.titleBarHeight = 36; // points
-#else
+#ifdef _WIN32
     config.titleBarHeight = 32; // pixels: windows' own caption height
+#else
+    config.titleBarHeight = 36; // points (gtk: logical pixels)
 #endif
     if (!shell_.create(config, *this))
         return false;
+#ifndef __linux__
     window = shell_.glfwWindow();
+#endif
     platform_ = std::make_unique<ShellPlatform>(this, shell_);
 #endif
 
@@ -183,7 +175,7 @@ bool Application::initialize() {
         maxFps_ = 120;
     }
     platform_->setVSync(vsync_);
-#if !defined(__linux__) && !defined(DEARSQL_MOBILE)
+#ifndef DEARSQL_MOBILE
     shell_.setMaxFps(maxFps_);
 #endif
 
@@ -197,9 +189,7 @@ bool Application::initialize() {
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
-#ifndef __linux__
     platform_->setupTitlebar();
-#endif
 
     platform_->updateWorkspaceDropdown();
 
@@ -218,10 +208,7 @@ bool Application::initialize() {
 }
 
 void Application::run() {
-#if defined(__linux__)
-    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
-    linuxPlatform->runMainLoop();
-#elif defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_MOBILE)
     // uikit runs the loop: the view calls renderFrame() each display refresh
 #else
     shell_.run();
@@ -297,14 +284,9 @@ void Application::cleanup() {
         platform_.reset();
     }
 
-#if defined(__linux__)
-    ImGui::DestroyContext();
-    spdlog::debug("ImGui context destroyed");
-#else
     shell_.destroy(); // backends, imgui context, window
-#ifndef DEARSQL_MOBILE
+#if !defined(DEARSQL_MOBILE) && !defined(__linux__)
     window = nullptr;
-#endif
 #endif
 
     spdlog::debug("Application cleanup completed");
@@ -346,7 +328,7 @@ void Application::setVSync(const bool on) {
 
 void Application::setMaxFps(const int fps) {
     maxFps_ = std::max(0, fps);
-#if !defined(__linux__) && !defined(DEARSQL_MOBILE)
+#ifndef DEARSQL_MOBILE
     shell_.setMaxFps(maxFps_);
 #endif
     if (appState)
@@ -536,16 +518,6 @@ void Application::restorePreviousConnections() {
                                .count();
     spdlog::debug("Restored {} connections for workspace {} in {} ms", restoredCount,
                   currentWorkspaceId, elapsedMs);
-}
-
-void Application::setupImGuiContext() const {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    fonts::setup();
-    ImGui::StyleColorsDark();
-    Theme::ApplyNativeTheme(theme_->colors);
 }
 
 void Application::setCurrentWorkspace(const int workspaceId) {

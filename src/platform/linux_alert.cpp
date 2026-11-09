@@ -2,7 +2,6 @@
 
 #include "application.hpp"
 #include "platform/alert.hpp"
-#include "platform/linux_platform.hpp"
 #include <gtk/gtk.h>
 #include <vector>
 
@@ -32,10 +31,8 @@ static gboolean showAlertIdle(gpointer userData) {
     auto* deferred = static_cast<DeferredAlertData*>(userData);
 
     GtkWindow* parent = nullptr;
-    auto* platform = dynamic_cast<LinuxPlatform*>(Application::getInstance().getPlatform());
-    if (platform) {
-        parent = GTK_WINDOW(platform->getGtkWindow());
-    }
+    if (void* host = Application::getInstance().nativeWindow())
+        parent = GTK_WINDOW(host);
 
     GtkWidget* dialog = gtk_message_dialog_new(parent, GTK_DIALOG_MODAL, GTK_MESSAGE_OTHER,
                                                GTK_BUTTONS_NONE, "%s", deferred->title.c_str());
@@ -118,10 +115,8 @@ static gboolean showAlertIdle(gpointer userData) {
     }
 
     GtkWindow* parent = nullptr;
-    auto* platform = dynamic_cast<LinuxPlatform*>(Application::getInstance().getPlatform());
-    if (platform) {
-        parent = GTK_WINDOW(platform->getGtkWindow());
-    }
+    if (void* host = Application::getInstance().nativeWindow())
+        parent = GTK_WINDOW(host);
 
     auto* cbData = new AlertCallbackData{std::move(deferred->buttons)};
     gtk_alert_dialog_choose(dialog, parent, nullptr, onAlertResponse, cbData);

@@ -3,13 +3,13 @@
 #include "application.hpp"
 #include "config.hpp"
 #include "license/license_manager.hpp"
+#include "mydear/title_bar.hpp"
 #include "platform/alert.hpp"
 #include "platform/titlebar.hpp"
 #include "platform/updater.hpp"
 #include "themes.hpp"
-#include "ui/connection_dialog.hpp"
-#include "ui/input_dialog.hpp"
 #include "ui/settings_dialog.hpp"
+#include "ui/title_bar.hpp"
 #include <format>
 #include <gtk/gtk.h>
 
@@ -19,99 +19,6 @@ LinuxTitlebar::LinuxTitlebar(Application* app, GtkWidget* parentWindow)
     : app_(app), parentWindow_(parentWindow) {}
 
 void LinuxTitlebar::setup() {
-    headerBar_ = gtk_header_bar_new();
-    gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(headerBar_), TRUE);
-
-    // sidebar toggle button
-    sidebarButton_ = gtk_button_new_from_icon_name("sidebar-show-symbolic");
-    gtk_widget_set_tooltip_text(sidebarButton_, "Toggle Sidebar");
-    g_signal_connect(sidebarButton_, "clicked", G_CALLBACK(onSidebarToggle), this);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(headerBar_), sidebarButton_);
-
-    // add connection button
-    addButton_ = gtk_button_new_from_icon_name("list-add-symbolic");
-    gtk_widget_set_tooltip_text(addButton_, "Add Database Connection");
-    g_signal_connect(addButton_, "clicked", G_CALLBACK(onAddConnection), this);
-    gtk_header_bar_pack_start(GTK_HEADER_BAR(headerBar_), addButton_);
-
-    // workspace popover button (packed later, after menu button)
-    workspaceButton_ = gtk_menu_button_new();
-    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(workspaceButton_), "view-grid-symbolic");
-    gtk_widget_set_tooltip_text(workspaceButton_, "Select Workspace");
-
-    workspacePopover_ = gtk_popover_new();
-    GtkWidget* wsBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start(wsBox, 8);
-    gtk_widget_set_margin_end(wsBox, 8);
-    gtk_widget_set_margin_top(wsBox, 8);
-    gtk_widget_set_margin_bottom(wsBox, 8);
-    gtk_widget_set_size_request(wsBox, 200, -1);
-
-    GtkWidget* wsLabel = gtk_label_new("Workspaces");
-    gtk_widget_set_halign(wsLabel, GTK_ALIGN_START);
-    gtk_widget_add_css_class(wsLabel, "dim-label");
-    gtk_box_append(GTK_BOX(wsBox), wsLabel);
-
-    workspaceItemsBox_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_append(GTK_BOX(wsBox), workspaceItemsBox_);
-
-    GtkWidget* wsSep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_append(GTK_BOX(wsBox), wsSep);
-
-    GtkWidget* newWsButton = gtk_button_new();
-    gtk_widget_add_css_class(newWsButton, "flat");
-    gtk_widget_set_halign(newWsButton, GTK_ALIGN_FILL);
-    {
-        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name("list-add-symbolic"));
-        GtkWidget* lbl = gtk_label_new("New Workspace...");
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_set_hexpand(lbl, TRUE);
-        gtk_box_append(GTK_BOX(box), lbl);
-        gtk_button_set_child(GTK_BUTTON(newWsButton), box);
-    }
-    g_signal_connect(newWsButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer userData) {
-                         auto* self = static_cast<LinuxTitlebar*>(userData);
-                         gtk_popover_popdown(GTK_POPOVER(self->workspacePopover_));
-                         if (!self->app_->canAddWorkspace()) {
-                             Alert::show("Workspace Limit Reached",
-                                         "Free tier is limited to 2 workspaces. "
-                                         "Activate a license to create more.");
-                             return;
-                         }
-                         self->showCreateWorkspaceDialog();
-                     }),
-                     this);
-    gtk_box_append(GTK_BOX(wsBox), newWsButton);
-
-    gtk_popover_set_child(GTK_POPOVER(workspacePopover_), wsBox);
-    gtk_menu_button_set_popover(GTK_MENU_BUTTON(workspaceButton_), workspacePopover_);
-
-    g_signal_connect(workspacePopover_, "show", G_CALLBACK(+[](GtkWidget*, gpointer userData) {
-                         auto* self = static_cast<LinuxTitlebar*>(userData);
-                         self->updateWorkspaceDropdown();
-                     }),
-                     this);
-
-    // main menu button — opens the shared ImGui settings dialog
-    menuButton_ = gtk_button_new_from_icon_name("open-menu-symbolic");
-    gtk_widget_set_tooltip_text(menuButton_, "Settings");
-    g_signal_connect(menuButton_, "clicked",
-                     G_CALLBACK(+[](GtkButton*, gpointer) { SettingsDialog::instance().open(); }),
-                     nullptr);
-
-    // update available button (initially hidden)
-    updateButton_ = gtk_button_new_from_icon_name("dialog-warning-symbolic");
-    gtk_widget_set_visible(updateButton_, FALSE);
-    g_signal_connect(updateButton_, "clicked",
-                     G_CALLBACK(+[](GtkButton*, gpointer) { checkForUpdates(); }), nullptr);
-
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), menuButton_);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), workspaceButton_);
-    gtk_header_bar_pack_end(GTK_HEADER_BAR(headerBar_), updateButton_);
-
-    gtk_window_set_titlebar(GTK_WINDOW(parentWindow_), headerBar_);
-
     // native-only actions the shared settings dialog can't do itself
     SettingsDialog::instance().onManageLicense = [this]() { showLicenseDialog(); };
     SettingsDialog::instance().onReportBug = [this]() {
@@ -129,161 +36,19 @@ void LinuxTitlebar::setup() {
     applyTheme(app_ ? app_->isDarkTheme() : false);
 }
 
-void LinuxTitlebar::updateWorkspaceDropdown() {
-    if (!workspaceItemsBox_ || !app_) {
-        return;
-    }
+void LinuxTitlebar::render() {
+    TitleBarView::render(*app_);
+}
 
-    // clear existing rows
-    GtkWidget* child = gtk_widget_get_first_child(workspaceItemsBox_);
-    while (child) {
-        GtkWidget* next = gtk_widget_get_next_sibling(child);
-        gtk_box_remove(GTK_BOX(workspaceItemsBox_), child);
-        child = next;
-    }
-    workspaceIdsByIndex_.clear();
-
-    auto workspaces = app_->getWorkspaces();
-    int currentWsId = app_->getCurrentWorkspaceId();
-
-    for (size_t i = 0; i < workspaces.size(); i++) {
-        workspaceIdsByIndex_.push_back(workspaces[i].id);
-        bool isCurrent = (workspaces[i].id == currentWsId);
-
-        GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_widget_set_margin_start(row, 4);
-        gtk_widget_set_margin_end(row, 4);
-        gtk_widget_set_margin_top(row, 2);
-        gtk_widget_set_margin_bottom(row, 2);
-
-        // checkmark for active workspace
-        GtkWidget* checkIcon = gtk_image_new_from_icon_name("object-select-symbolic");
-        gtk_widget_set_opacity(checkIcon, isCurrent ? 1.0 : 0.0);
-        gtk_box_append(GTK_BOX(row), checkIcon);
-
-        // workspace name button
-        GtkWidget* nameButton = gtk_button_new_with_label(workspaces[i].name.c_str());
-        gtk_widget_add_css_class(nameButton, "flat");
-        gtk_widget_set_hexpand(nameButton, TRUE);
-        gtk_widget_set_halign(nameButton, GTK_ALIGN_FILL);
-        g_object_set_data(G_OBJECT(nameButton), "ws_index", GINT_TO_POINTER(static_cast<int>(i)));
-        g_signal_connect(
-            nameButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer userData) {
-                auto* self = static_cast<LinuxTitlebar*>(userData);
-                if (self->interactionCb_)
-                    self->interactionCb_();
-                int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "ws_index"));
-                if (idx >= 0 && idx < static_cast<int>(self->workspaceIdsByIndex_.size())) {
-                    self->app_->setCurrentWorkspace(self->workspaceIdsByIndex_[idx]);
-                }
-                gtk_popover_popdown(GTK_POPOVER(self->workspacePopover_));
-            }),
-            this);
-        gtk_box_append(GTK_BOX(row), nameButton);
-
-        // edit button (visible on row hover)
-        GtkWidget* editButton = gtk_button_new_from_icon_name("document-edit-symbolic");
-        gtk_widget_add_css_class(editButton, "flat");
-        gtk_widget_add_css_class(editButton, "ws-action-btn");
-        gtk_widget_set_opacity(editButton, 0.0);
-        gtk_widget_set_tooltip_text(editButton, "Rename Workspace");
-        g_object_set_data(G_OBJECT(editButton), "ws_index", GINT_TO_POINTER(static_cast<int>(i)));
-
-        g_signal_connect(
-            editButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer userData) {
-                auto* self = static_cast<LinuxTitlebar*>(userData);
-                int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "ws_index"));
-                if (idx < 0 || idx >= static_cast<int>(self->workspaceIdsByIndex_.size()))
-                    return;
-                int wsId = self->workspaceIdsByIndex_[idx];
-                auto workspaces = self->app_->getWorkspaces();
-                std::string currentName;
-                for (const auto& ws : workspaces) {
-                    if (ws.id == wsId) {
-                        currentName = ws.name;
-                        break;
-                    }
-                }
-                gtk_popover_popdown(GTK_POPOVER(self->workspacePopover_));
-                InputDialog::show("Rename Workspace", "", currentName, "Rename",
-                                  [self, wsId](const std::string& newName) -> std::string {
-                                      if (newName.empty())
-                                          return "Name cannot be empty.";
-                                      if (self->app_)
-                                          self->app_->renameWorkspace(wsId, newName);
-                                      return "";
-                                  });
-            }),
-            this);
-        gtk_box_append(GTK_BOX(row), editButton);
-
-        // trash button (visible on row hover)
-        GtkWidget* trashButton = gtk_button_new_from_icon_name("user-trash-symbolic");
-        gtk_widget_add_css_class(trashButton, "flat");
-        gtk_widget_add_css_class(trashButton, "ws-trash-btn");
-        gtk_widget_set_opacity(trashButton, 0.0);
-        gtk_widget_set_tooltip_text(trashButton, "Delete Workspace");
-        g_object_set_data(G_OBJECT(trashButton), "ws_index", GINT_TO_POINTER(static_cast<int>(i)));
-
-        g_signal_connect(
-            trashButton, "clicked", G_CALLBACK(+[](GtkButton* btn, gpointer userData) {
-                auto* self = static_cast<LinuxTitlebar*>(userData);
-                int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "ws_index"));
-                if (idx < 0 || idx >= static_cast<int>(self->workspaceIdsByIndex_.size()))
-                    return;
-                int wsId = self->workspaceIdsByIndex_[idx];
-                gtk_popover_popdown(GTK_POPOVER(self->workspacePopover_));
-                Alert::show("Delete Workspace",
-                            "Are you sure you want to delete this workspace? "
-                            "All connections in this workspace will be removed.",
-                            {AlertButton{"Delete",
-                                         [self, wsId]() {
-                                             if (self->app_) {
-                                                 self->app_->deleteWorkspace(wsId);
-                                             }
-                                         },
-                                         AlertButton::Style::Destructive},
-                             AlertButton{"Cancel", {}, AlertButton::Style::Cancel}});
-            }),
-            this);
-        gtk_box_append(GTK_BOX(row), trashButton);
-
-        // hover controller to show/hide action buttons and highlight row
-        GtkEventController* motionCtrl = gtk_event_controller_motion_new();
-        g_object_set_data(G_OBJECT(motionCtrl), "edit_btn", editButton);
-        g_object_set_data(G_OBJECT(motionCtrl), "trash_btn", trashButton);
-        g_signal_connect(motionCtrl, "enter",
-                         G_CALLBACK(+[](GtkEventControllerMotion* ctrl, double, double, gpointer) {
-                             gtk_widget_set_opacity(
-                                 GTK_WIDGET(g_object_get_data(G_OBJECT(ctrl), "edit_btn")), 1.0);
-                             gtk_widget_set_opacity(
-                                 GTK_WIDGET(g_object_get_data(G_OBJECT(ctrl), "trash_btn")), 1.0);
-                         }),
-                         nullptr);
-        g_signal_connect(
-            motionCtrl, "leave", G_CALLBACK(+[](GtkEventControllerMotion* ctrl, gpointer) {
-                gtk_widget_set_opacity(GTK_WIDGET(g_object_get_data(G_OBJECT(ctrl), "edit_btn")),
-                                       0.0);
-                gtk_widget_set_opacity(GTK_WIDGET(g_object_get_data(G_OBJECT(ctrl), "trash_btn")),
-                                       0.0);
-            }),
-            nullptr);
-        gtk_widget_add_controller(row, motionCtrl);
-
-        gtk_box_append(GTK_BOX(workspaceItemsBox_), row);
-    }
-
-    // update the button label to show current workspace name
-    auto currentName = app_->getCurrentWorkspaceName();
-    gtk_menu_button_set_label(GTK_MENU_BUTTON(workspaceButton_), currentName.c_str());
+float LinuxTitlebar::getHeight() const {
+    return mydear::TitleBarHeight();
 }
 
 void LinuxTitlebar::applyTheme(bool isDark) {
     if (!parentWindow_)
         return;
 
-    GtkSettings* settings = gtk_settings_get_default();
-    g_object_set(settings, "gtk-application-prefer-dark-theme", isDark ? TRUE : FALSE, nullptr);
+    (void)isDark; // mydear sets prefer-dark from the theme
 
     static GtkCssProvider* themeProvider = nullptr;
     if (!themeProvider) {
@@ -673,101 +438,6 @@ void LinuxTitlebar::showLicenseDialog() {
 
     gtk_window_set_child(GTK_WINDOW(dialog), mainBox);
     gtk_window_present(GTK_WINDOW(dialog));
-}
-
-void LinuxTitlebar::showCreateWorkspaceDialog() {
-    GtkWidget* dialog = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(dialog), "Create New Workspace");
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(parentWindow_));
-    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
-    gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
-
-    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_margin_start(box, 24);
-    gtk_widget_set_margin_end(box, 24);
-    gtk_widget_set_margin_top(box, 24);
-    gtk_widget_set_margin_bottom(box, 24);
-
-    GtkWidget* label = gtk_label_new("Enter a name for the new workspace:");
-    gtk_widget_set_halign(label, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(box), label);
-
-    GtkWidget* entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Workspace name");
-    gtk_box_append(GTK_BOX(box), entry);
-
-    GtkWidget* buttonBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_halign(buttonBox, GTK_ALIGN_END);
-    gtk_widget_set_margin_top(buttonBox, 8);
-
-    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
-    GtkWidget* createButton = gtk_button_new_with_label("Create");
-    gtk_widget_add_css_class(createButton, "suggested-action");
-
-    gtk_box_append(GTK_BOX(buttonBox), cancelButton);
-    gtk_box_append(GTK_BOX(buttonBox), createButton);
-    gtk_box_append(GTK_BOX(box), buttonBox);
-
-    g_object_set_data(G_OBJECT(dialog), "entry", entry);
-    g_object_set_data(G_OBJECT(dialog), "titlebar", this);
-
-    g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                         auto* self = static_cast<LinuxTitlebar*>(
-                             g_object_get_data(G_OBJECT(dlg), "titlebar"));
-                         self->updateWorkspaceDropdown();
-                         gtk_window_destroy(GTK_WINDOW(dlg));
-                     }),
-                     dialog);
-
-    g_signal_connect(dialog, "close-request", G_CALLBACK(+[](GtkWindow* win, gpointer) -> gboolean {
-                         auto* self = static_cast<LinuxTitlebar*>(
-                             g_object_get_data(G_OBJECT(win), "titlebar"));
-                         self->updateWorkspaceDropdown();
-                         return FALSE;
-                     }),
-                     nullptr);
-
-    g_signal_connect(createButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer dlg) {
-                         auto* self = static_cast<LinuxTitlebar*>(
-                             g_object_get_data(G_OBJECT(dlg), "titlebar"));
-                         GtkWidget* entry = GTK_WIDGET(g_object_get_data(G_OBJECT(dlg), "entry"));
-
-                         const char* name = gtk_editable_get_text(GTK_EDITABLE(entry));
-                         if (name && strlen(name) > 0 && self->app_) {
-                             self->app_->createWorkspace(std::string(name));
-                         }
-                         gtk_window_destroy(GTK_WINDOW(dlg));
-                     }),
-                     dialog);
-
-    gtk_window_set_child(GTK_WINDOW(dialog), box);
-    gtk_window_present(GTK_WINDOW(dialog));
-}
-
-// ---- static callbacks ----
-
-void LinuxTitlebar::onSidebarToggle(GtkButton*, gpointer userData) {
-    auto* self = static_cast<LinuxTitlebar*>(userData);
-    if (self->interactionCb_)
-        self->interactionCb_();
-    if (self->app_) {
-        self->app_->setSidebarVisible(!self->app_->isSidebarVisible());
-    }
-}
-
-void LinuxTitlebar::onAddConnection(GtkButton*, gpointer userData) {
-    auto* self = static_cast<LinuxTitlebar*>(userData);
-    if (self->interactionCb_)
-        self->interactionCb_();
-    if (!self->app_)
-        return;
-    if (!self->app_->canAddConnection()) {
-        Alert::show("Connection Limit Reached",
-                    "You have reached the free tier's connection limit. Activate a license to add more.");
-        return;
-    }
-    ConnectionDialog::instance().show(self->app_);
 }
 
 #endif // defined(__linux__)

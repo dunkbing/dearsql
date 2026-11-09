@@ -74,18 +74,15 @@ namespace {
         return clicked;
     }
 
-    // drawn like the macos sf symbols: the icon font has no sidebar.left, and its plus reads
-    // small at the bar's text size
+    // drawn: the icon font has no sidebar icon, and its plus reads small at the bar's text size.
+    // a panel with a filled left pane, not a copy of the macos symbol
     void sidebarIcon(ImDrawList* dl, ImVec2 c, float s, ImU32 col) {
-        const float w = s * 0.62f, h = s * 0.48f, t = std::max(1.0f, s / 18);
+        const float w = s * 0.62f, h = s * 0.5f, t = std::max(1.0f, s / 13);
         const ImVec2 a(c.x - w / 2, c.y - h / 2), b(c.x + w / 2, c.y + h / 2);
-        dl->AddRect(a, b, col, s * 0.1f, 0, t * 1.4f);
-        const float divider = a.x + w * 0.36f;
-        dl->AddLine(ImVec2(divider, a.y), ImVec2(divider, b.y), col, t * 1.4f);
-        for (int i = 0; i < 3; ++i) { // the pane's rows
-            const float y = a.y + h * (0.3f + 0.2f * i);
-            dl->AddLine(ImVec2(a.x + w * 0.1f, y), ImVec2(divider - w * 0.1f, y), col, t);
-        }
+        const float round = s * 0.08f;
+        dl->AddRectFilled(a, ImVec2(a.x + w * 0.38f, b.y), col, round,
+                          ImDrawFlags_RoundCornersLeft);
+        dl->AddRect(a, b, col, round, 0, t);
     }
 
     void plusIcon(ImDrawList* dl, ImVec2 c, float s, ImU32 col) {

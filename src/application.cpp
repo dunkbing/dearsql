@@ -163,6 +163,7 @@ bool Application::initialize() {
     config.width = 1600;
     config.height = 1000;
     config.titleBar = true; // ui/title_bar.cpp, under the traffic lights
+    config.titleBarHeight = 36;
     if (!shell_.create(config, *this))
         return false;
     window = shell_.glfwWindow();

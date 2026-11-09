@@ -17,8 +17,7 @@
       "features": [
         "openssl"
       ],
-      "default-features": false,
-      "platform": "!ios"
+      "default-features": false
     },
     "openssl",
     {
@@ -77,6 +76,14 @@
     },
     {
       "name": "minio-cpp"
+    },
+    {
+      "name": "libssh2",
+      "default-features": false,
+      "features": [
+        "openssl",
+        "zlib"
+      ]
     }
   ]
 }

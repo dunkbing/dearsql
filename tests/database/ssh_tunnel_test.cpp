@@ -236,8 +236,8 @@ TEST_F(SSHTunnelTest, PassphraseProtectedKeyWithoutPassphraseFailsWithDetail) {
     auto [ok, err] = tunnel.start(ssh, config.pgRemoteHost, config.pgRemotePort);
     EXPECT_FALSE(ok);
     EXPECT_FALSE(tunnel.isRunning());
-    // error should carry ssh's stderr, not just the generic fallback
-    EXPECT_NE(err.find("Permission denied"), std::string::npos) << "error was: " << err;
+    // the auth failure is named, not a generic fallback
+    EXPECT_NE(err.find("SSH authentication failed"), std::string::npos) << "error was: " << err;
 }
 
 TEST_F(SSHTunnelTest, SSHTunnelClassStartsAndStops) {
@@ -259,6 +259,65 @@ TEST_F(SSHTunnelTest, SSHTunnelClassStartsAndStops) {
     EXPECT_TRUE(tunnel.isRunning());
     EXPECT_GT(tunnel.localPort(), 0);
 
+    tunnel.stop();
+    EXPECT_FALSE(tunnel.isRunning());
+}
+
+// pools open several connections through one tunnel: they share one ssh session, so
+// run them at once, with results big enough to fill the channel window
+TEST_F(SSHTunnelTest, OneTunnelCarriesConcurrentConnections) {
+    if (config.sshPassword.empty() && config.sshKeyPath.empty())
+        GTEST_SKIP() << "no SSH credentials (DEARSQL_TEST_SSH_PASSWORD or DEARSQL_TEST_SSH_KEY)";
+
+    SSHConfig ssh;
+    ssh.enabled = true;
+    ssh.host = config.sshHost;
+    ssh.port = config.sshPort;
+    ssh.username = config.sshUser;
+    if (!config.sshKeyPath.empty()) {
+        ssh.authMethod = SSHAuthMethod::PrivateKey;
+        ssh.privateKeyPath = config.sshKeyPath;
+    } else {
+        ssh.password = config.sshPassword;
+    }
+    SSHTunnel tunnel;
+    auto [started, startError] = tunnel.start(ssh, config.pgRemoteHost, config.pgRemotePort);
+    ASSERT_TRUE(started) << startError;
+
+    DatabaseConnectionInfo info;
+    info.type = DatabaseType::POSTGRESQL;
+    info.host = "127.0.0.1";
+    info.port = tunnel.localPort();
+    info.database = "postgres";
+    info.username = config.pgUser;
+    info.password = config.pgPassword;
+    info.sslmode = SslMode::Disable;
+
+    std::vector<std::string> results(3);
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < results.size(); ++i) {
+        threads.emplace_back([&, i] {
+            auto db = std::make_shared<PostgresDatabase>(info);
+            if (auto [ok, err] = db->connect(); !ok) {
+                results[i] = "connect: " + err;
+                return;
+            }
+            auto r = db->executeQuery(
+                "SELECT count(*), sum(length(md5(g::text))) FROM generate_series(1, 200000) g "
+                "CROSS JOIN pg_sleep(0.3)");
+            results[i] = r.success() && !r.empty() ? r[0].tableData[0][0] : r.errorMessage();
+            // and a wide result through the channel
+            auto wide = db->executeQuery("SELECT repeat('x', 1000) FROM generate_series(1, 2000)");
+            if (!wide.success() || wide.empty() || wide[0].tableData.size() != 2000)
+                results[i] = "wide: " + wide.errorMessage();
+            db->disconnect();
+        });
+    }
+    for (auto& t : threads)
+        t.join();
+    for (const auto& r : results)
+        EXPECT_EQ(r, "200000");
+    EXPECT_TRUE(tunnel.isRunning());
     tunnel.stop();
     EXPECT_FALSE(tunnel.isRunning());
 }

@@ -1,15 +1,17 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <utility>
 
 struct SSHConfig;
 
-// Manages a single SSH port-forward tunnel process.
-// Each DatabaseInterface instance owns one.
+// a local port forwarded over ssh (libssh2, in process): every connection to
+// 127.0.0.1:localPort() becomes a direct-tcpip channel to remoteHost:remotePort.
+// each DatabaseInterface instance owns one
 class SSHTunnel {
 public:
-    SSHTunnel() = default;
+    SSHTunnel(); // defined with Impl, in ssh_tunnel.cpp
     ~SSHTunnel();
 
     SSHTunnel(const SSHTunnel&) = delete;
@@ -38,18 +40,8 @@ public:
     }
 
 private:
-    static int findAvailablePort();
-    bool waitForPortReady(int port, int timeoutMs) const;
-
-#ifdef _WIN32
-    void* processHandle_ = nullptr; // HANDLE
-#else
-    std::string createAskPassScript(const std::string& secret) const;
-    void cleanupAskPassScript();
-
-    pid_t sshPid_ = -1;
-    std::string askPassPath_;
-#endif
+    struct Impl; // the libssh2 session and the thread forwarding its channels
+    std::unique_ptr<Impl> impl_;
     int localPort_ = 0;
     std::string remoteHost_;
     int remotePort_ = 0;

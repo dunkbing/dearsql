@@ -52,11 +52,7 @@ add_executable(
     src/utils/master_secret.cpp
 )
 
-if(WIN32)
-  target_sources(database_tests PRIVATE src/platform/windows_ssh_tunnel.cpp)
-else()
-  target_sources(database_tests PRIVATE src/platform/posix_ssh_tunnel.cpp)
-endif()
+target_sources(database_tests PRIVATE src/database/ssh_tunnel.cpp)
 
 target_include_directories(
     database_tests
@@ -77,6 +73,7 @@ target_link_libraries(
         $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         dearsql::dearsql
         miniocpp::miniocpp
+        libssh2::libssh2
         spdlog::spdlog
         OpenSSL::SSL
         OpenSSL::Crypto

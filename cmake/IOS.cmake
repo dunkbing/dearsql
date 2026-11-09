@@ -1,10 +1,10 @@
 # ipad build: the desktop sources minus what iOS can't run (subprocesses, the
-# terminal modes, system ssh, sparkle, sentry) and the backends without a driver here.
+# terminal modes, sparkle, sentry) and the backends without a driver here.
 # configure with -DCMAKE_SYSTEM_NAME=iOS -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator
 set(IOS_SOURCES ${APP_SOURCES})
 list(FILTER IOS_SOURCES EXCLUDE REGEX
      "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|file_dialog\\.cpp|cli_command|/mongodb/|tab/mongo_")
-list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm src/platform/posix_ssh_tunnel.cpp
+list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm
      src/utils/file_dialog_mobile.cpp)
 include(cmake/EmbedResources.cmake)
 embed_fonts()
@@ -43,6 +43,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui_rich_md
     acp::acp
     miniocpp::miniocpp
+    libssh2::libssh2
     unofficial::tree-sitter::tree-sitter
     tree-sitter-sql-grammar
     tree-sitter-json-grammar

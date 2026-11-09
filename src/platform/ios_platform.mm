@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 
 #include "application.hpp"
+#include "database/connection_url.hpp"
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "platform/ios_platform.hpp"
@@ -302,9 +303,19 @@ namespace {
 
     if (!Application::getInstance().initialize())
         spdlog::error("ios: application failed to initialize");
-    // like `dearsql <file>` on the desktop; the simulator passes SIMCTL_CHILD_DEARSQL_OPEN
-    if (const char* path = getenv("DEARSQL_OPEN"))
-        Application::getInstance().openFile(path);
+    // like `dearsql <file>` on the desktop; the simulator passes SIMCTL_CHILD_DEARSQL_OPEN.
+    // a connection url opens unsaved, for trying a server from the simulator
+    if (const char* open = getenv("DEARSQL_OPEN")) {
+        auto& app = Application::getInstance();
+        if (auto url = parseConnectionUrl(open); url.ok) {
+            auto db = DatabaseFactory::createDatabase(url.info);
+            app.addDatabase(db);
+            app.setSelectedDatabase(db);
+            db->startConnectionAsync();
+        } else {
+            app.openFile(open);
+        }
+    }
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];

@@ -1,4 +1,3 @@
-#include "ui/schema_compare.hpp"
 #include "ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
@@ -18,6 +17,7 @@
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -368,7 +368,7 @@ void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, cons
         startCopyDdl(provider, table);
     if (auto* node = dynamic_cast<IDatabaseNode*>(provider);
         node && ImGui::MenuItem(ICON_FA_CHART_SIMPLE " Profile Columns", nullptr, false,
-                                 !table.columns.empty()))
+                                !table.columns.empty()))
         SchemaCompare::openProfile(node, table);
     TableExporter::renderExportMenu(
         [&](ExportFormat format) { startTableExport(provider, {&table}, format, dbType); },
@@ -1354,8 +1354,7 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     const std::string dbName = *pendingDropDatabase_;
     pendingDropDatabase_.reset();
 
-    const char* noun =
-        isCassandraFamily(db->getConnectionInfo().type) ? "keyspace" : "database";
+    const char* noun = isCassandraFamily(db->getConnectionInfo().type) ? "keyspace" : "database";
 
     // the server round trip runs on a worker; the node leaves the tree when it lands
     startDatabaseDdl(
@@ -1727,6 +1726,10 @@ void DatabaseHierarchy::checkPostgresToolStatus() {
 }
 
 void DatabaseHierarchy::renderPostgresBackupRestoreMenus(PostgresDatabaseNode* dbData) {
+#ifdef DEARSQL_MOBILE
+    (void)dbData; // these run the pg_dump/pg_restore programs; the sql dump export/import stays
+    return;
+#endif
     if (!dbData || !dbData->parentDb) {
         return;
     }

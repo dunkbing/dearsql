@@ -85,6 +85,10 @@ set(VCPKG_OVERLAY_TRIPLETS
     ""
     FORCE
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # libpq with one ios fix (cmake/ports/libpq/portfile.cmake); desktop uses the stock port
+    set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/cmake/ports" CACHE STRING "" FORCE)
+endif()
 
 project(dearsql)
 
@@ -138,10 +142,10 @@ find_package(unofficial-libmariadb CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
 find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
-# ipad: no postgres (the libpq port needs system()), mongodb (its c driver) or duckdb yet, and no file dialogs,
-# crash reports, terminal ui or tests
+find_package(libssh2 CONFIG REQUIRED)
+find_package(PostgreSQL REQUIRED) # ios: libpq from the cmake/ports overlay
+# ipad: no mongodb (its c driver) or duckdb yet, and no file dialogs, crash reports, terminal ui or tests
 if(NOT IOS)
-    find_package(PostgreSQL REQUIRED)
     find_package(mongocxx CONFIG REQUIRED)
     find_package(bsoncxx CONFIG REQUIRED)
     find_package(DuckDB CONFIG REQUIRED)
@@ -201,6 +205,7 @@ set(APP_SOURCES
     src/database/lib_database_node.cpp
     src/database/connection_url.cpp
     src/database/ssh_config_parser.cpp
+    src/database/ssh_tunnel.cpp
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
     src/ui/datetime_picker.cpp
@@ -282,7 +287,6 @@ if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_updater.mm)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
     list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
-    list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
@@ -290,7 +294,6 @@ elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
     list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
     list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
-    list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(WIN32)
     list(
         APPEND APP_SOURCES
@@ -300,7 +303,6 @@ elseif(WIN32)
         src/platform/windows_updater.cpp
         src/platform/windows_alert.cpp
         src/platform/windows_input_dialog.cpp
-        src/platform/windows_ssh_tunnel.cpp
         assets/app.rc
     )
 endif()
@@ -402,6 +404,7 @@ target_link_libraries(
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp
+        libssh2::libssh2
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
         tree-sitter-json-grammar

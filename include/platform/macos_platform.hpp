@@ -21,6 +21,9 @@ public:
     }
     void setupTitlebar() override;
     float getTitlebarHeight() const override;
+    float getClientAreaTopInset() const override {
+        return titlebar_ ? titlebar_->getClientAreaTopInset() : 0.0f;
+    }
     void onSidebarToggleClicked() override;
     void cleanup() override;
     void renderFrame() override {

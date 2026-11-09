@@ -90,7 +90,7 @@ private:
     std::function<void()> interactionCb_;
 };
 
-// ---- macOS: native NSToolbar ----
+// ---- macOS: imgui bar, native traffic lights (mydear) ----
 #elif defined(__APPLE__)
 
 #include <GLFW/glfw3.h>
@@ -107,12 +107,15 @@ public:
     ~MacOSTitlebar() override;
 
     void setup() override;
-    void render() override {}
+    // the shared imgui bar (ui/title_bar.hpp) in mydear's title bar strip
+    void render() override;
     void renderPopups() override {}
-    void updateWorkspaceDropdown() override;
+    void updateWorkspaceDropdown() override {} // the bar reads app state each frame
     void applyTheme(bool isDark) override;
-    float getHeight() const override {
-        return 28.0f;
+    float getHeight() const override;
+    // the content runs under the bar
+    float getClientAreaTopInset() const override {
+        return getHeight();
     }
 
 private:

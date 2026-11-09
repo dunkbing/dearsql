@@ -36,6 +36,9 @@ public:
     bool render(const char* label, char* buffer, size_t bufferSize);
 
     void setKeywords(const std::vector<std::string>& keywords);
+    void setWidth(float width) {
+        config.width = width;
+    }
     void addKeywords(const std::vector<std::string>& keywords);
     void clearKeywords();
 

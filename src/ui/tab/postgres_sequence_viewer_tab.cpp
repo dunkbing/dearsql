@@ -8,6 +8,7 @@
 #include "imgui.h"
 #include "themes.hpp"
 #include "utils/button.hpp"
+#include "utils/menu.hpp"
 #include "utils/spinner.hpp"
 #include <cstdio>
 #include <cstring>
@@ -90,8 +91,8 @@ void PostgresSequenceViewerTab::render() {
     const auto& colors = app.getCurrentColors();
 
     if (!ddlEditorInitialized_) {
-        ddlEditor_.SetPalette(dearsql::TextEditor::FromTheme(
-            Application::getInstance().getCurrentColors()));
+        ddlEditor_.SetPalette(
+            dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
         ddlEditorInitialized_ = true;
     }
 
@@ -413,7 +414,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
         saveDialogEditor_.SetShowLineNumbers(true);
         saveDialogEditor_.SetText(combined);
 
-        ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
         ImGui::OpenPopup("Confirm Update Sequence");
         dialogOpened_ = true;
     }

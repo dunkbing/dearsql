@@ -93,7 +93,7 @@ private:
     void open(const std::string& prefix);
     void runOp(std::string label, std::function<OpResult()> work);
 
-    void upload();
+    void upload(const std::string& path = {}); // no path: pick one first
     void download(const Entry& entry);
     [[nodiscard]] std::vector<Entry> selectedEntries();
     void copySelection(bool cut);

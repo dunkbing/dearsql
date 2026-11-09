@@ -253,6 +253,10 @@ void CsvEditorTab::applyFilter() {
     filterOp_.start([path = filePath_, where, format, total]() {
         CsvFilterResult result;
         try {
+#ifndef DEARSQL_HAS_DUCKDB // ipad: the filter runs on duckdb
+            (void)path, (void)where, (void)format, (void)total;
+            result.error = "Filtering CSV files is not available here.";
+#else
             for (std::size_t r : dearsql::csvMatchingRows(path, where, format)) {
                 if (static_cast<int>(r) >= total) {
                     result.error = "DuckDB read more rows than the editor did, so the "
@@ -262,6 +266,7 @@ void CsvEditorTab::applyFilter() {
                 result.rows.push_back(static_cast<int>(r));
             }
             result.ok = true;
+#endif
         } catch (const std::exception& e) {
             result.error = e.what();
         }

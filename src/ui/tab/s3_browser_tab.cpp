@@ -118,10 +118,11 @@ static S3Client::Progress makeProgress(std::shared_ptr<std::atomic<double>> prog
     };
 }
 
-void S3BrowserTab::upload() {
-    const std::string path = FileDialog::openFile();
-    if (path.empty())
+void S3BrowserTab::upload(const std::string& path) {
+    if (path.empty()) {
+        FileDialog::openFile([this](const std::string& p) { upload(p); });
         return;
+    }
     const std::string key = prefix_ + std::filesystem::path(path).filename().string();
     runOp("Uploading " + baseName(key), [client = client_, bucket = bucket_, key, path,
                                          progress = makeProgress(progress_, cancel_)] {

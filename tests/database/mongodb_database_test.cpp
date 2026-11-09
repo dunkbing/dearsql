@@ -258,3 +258,66 @@ TEST_F(MongoDBDatabaseIntegrationTest, DropCollectionRemovesCollection) {
     ASSERT_FALSE(result.empty());
     EXPECT_TRUE(result[0].tableData.empty());
 }
+
+// pins the json and cell text for every bson type the ui shows
+TEST_F(MongoDBDatabaseIntegrationTest, JsonShapeOfEveryType) {
+    ASSERT_NE(database, nullptr);
+    const std::string doc =
+        R"({"_id": {"$oid": "65a1b2c3d4e5f60718293a4b"}, "s": "hi", "i": 7, "l": {"$numberLong": "5000000000"}, "f": 1.5, "g": 2.0, "dec": {"$numberDecimal": "1.25"}, "d": {"$date": {"$numberLong": "1700000000123"}}, "t": true, "n": null, "sub": {"a": 1, "b": [1, "x"]}, "arr": [1, "x", {"y": 2}], "bin": {"$binary": {"base64": "AQI=", "subType": "00"}}, "re": {"$regularExpression": {"pattern": "ab", "options": "i"}}, "ts": {"$timestamp": {"t": 1, "i": 2}}})";
+    auto ins = database->executeQuery(
+        std::format(R"({{"insert": "{}", "documents": [{}]}})", collectionName, doc));
+    ASSERT_TRUE(ins.success()) << ins.errorMessage();
+
+    auto find = database->executeQuery(
+        std::format(R"({{"database": "test", "collection": "{}", "command": "find"}})",
+                    collectionName),
+        100);
+    ASSERT_TRUE(find.success()) << find.errorMessage();
+    ASSERT_EQ(find[0].tableData.size(), 1u);
+    auto agg = database->executeQuery(
+        std::format(
+            R"({{"database": "test", "collection": "{}", "command": "aggregate", "pipeline": [{{"$project": {{"arr": 1}}}}]}})",
+            collectionName),
+        100);
+    ASSERT_TRUE(agg.success()) << agg.errorMessage();
+    ASSERT_EQ(agg[0].tableData.size(), 1u);
+
+    auto lib = database->libConnection()->database("test");
+    ASSERT_TRUE(lib);
+    dearsql::Table t = lib->describeTable(collectionName);
+    std::string types;
+    for (const auto& c : t.columns)
+        types += c.name + ":" + c.type + (c.isPrimaryKey ? "*" : "") + " ";
+    auto rows = lib->getTableData(t, 10, 0, "", "");
+    ASSERT_EQ(rows.size(), 1u);
+    std::string cells;
+    for (const auto& c : rows[0])
+        cells += c + "\n";
+
+    // legacy extended json, as before the move to the c driver
+    EXPECT_EQ(find[0].tableData[0][0], R"({ "_id" : { "$oid" : "65a1b2c3d4e5f60718293a4b" } })");
+    EXPECT_EQ(
+        find[0].tableData[0][1],
+        R"({ "_id" : { "$oid" : "65a1b2c3d4e5f60718293a4b" }, "s" : "hi", "i" : 7, "l" : 5000000000, "f" : 1.5, "g" : 2.0, "dec" : { "$numberDecimal" : "1.25" }, "d" : { "$date" : 1700000000123 }, "t" : true, "n" : null, "sub" : { "a" : 1, "b" : [ 1, "x" ] }, "arr" : [ 1, "x", { "y" : 2 } ], "bin" : { "$binary" : "AQI=", "$type" : "00" }, "re" : { "$regex" : "ab", "$options" : "i" }, "ts" : { "$timestamp" : { "t" : 1, "i" : 2 } } })");
+    EXPECT_EQ(
+        agg[0].tableData[0][0],
+        R"({ "_id" : { "$oid" : "65a1b2c3d4e5f60718293a4b" }, "arr" : [ 1, "x", { "y" : 2 } ] })");
+    EXPECT_EQ(types, "_id:objectId* arr:array bin:binary d:date dec:decimal128 f:double g:double "
+                     "i:int32 l:int64 n:null re:unknown s:string sub:object t:bool ts:unknown ");
+    EXPECT_EQ(cells, R"(65a1b2c3d4e5f60718293a4b
+[ 1, "x", { "y" : 2 } ]
+{ "v" : { "$binary" : "AQI=", "$type" : "00" } }
+2023-11-14 22:13:20
+1.25
+1.500000
+2.000000
+7
+5000000000
+dearsql__null
+{ "v" : { "$regex" : "ab", "$options" : "i" } }
+hi
+{ "a" : 1, "b" : [ 1, "x" ] }
+dearsql__bool_true
+{ "v" : { "$timestamp" : { "t" : 1, "i" : 2 } } }
+)");
+}

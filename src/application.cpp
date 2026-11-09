@@ -12,15 +12,17 @@
 #include "license/license_manager.hpp"
 #include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
-#include "ui/schema_compare.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/markdown_text.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 
 #include "platform/updater.hpp"
 
-#if defined(__APPLE__)
+#if defined(DEARSQL_MOBILE)
+#include "platform/ios_platform.hpp"
+#elif defined(__APPLE__)
 #include "platform/macos_platform.hpp"
 #elif defined(__linux__)
 #include "platform/linux_platform.hpp"
@@ -72,7 +74,10 @@ namespace {
     // open the pro purchase page in the user's browser
     void openPurchaseUrl() {
         const std::string url = PURCHASE_URL;
-#if defined(__APPLE__)
+#if defined(DEARSQL_MOBILE)
+        // ponytail: no purchase link on ipad yet; the stores want in-app purchases
+        (void)url;
+#elif defined(__APPLE__)
         std::system(("open \"" + url + "\"").c_str());
 #elif defined(_WIN32)
         std::system(("start \"\" \"" + url + "\"").c_str());
@@ -145,7 +150,14 @@ bool Application::initialize() {
     spdlog::info("ImGui version: {}", IMGUI_VERSION);
     spdlog::info("Starting {}...", APP_NAME);
 
-#ifdef __APPLE__
+#if defined(DEARSQL_MOBILE)
+    // uikit owns the window and the loop (ios_platform.mm); only imgui to set up here
+    platform_ = std::make_unique<IOSPlatform>(this);
+    setupImGuiContext();
+    if (!platform_->initializeImGuiBackend()) {
+        return false;
+    }
+#elif defined(__APPLE__)
     platform_ = std::make_unique<MacOSPlatform>(this);
     if (!initializeGLFW()) {
         return false;
@@ -194,7 +206,7 @@ bool Application::initialize() {
     fileDialog = std::make_unique<FileDialog>();
 
     appState = std::make_unique<AppState>();
-    if (!appState->initialize()) {
+    if (!appState->initialize(/*mirrorToICloud=*/true)) {
         std::cerr << "Failed to initialize app state" << std::endl;
         return false;
     }
@@ -219,7 +231,7 @@ bool Application::initialize() {
     }
     ImGui::GetStyle().FontScaleMain = fontScale_;
 
-    showFps_ = appState->getSetting("show_fps", "1") == "1";
+    showFps_ = appState->getSetting("show_fps", "0") == "1";
     vsync_ = appState->getSetting("vsync", "1") == "1";
     try {
         maxFps_ = std::max(0, std::stoi(appState->getSetting("max_fps", "120")));
@@ -262,6 +274,8 @@ void Application::run() {
 #if defined(__linux__)
     auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
     linuxPlatform->runMainLoop();
+#elif defined(DEARSQL_MOBILE)
+    // uikit runs the loop: the view calls renderFrame() each display refresh
 #else
     double lastInteractionTime = glfwGetTime();
     bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
@@ -398,7 +412,7 @@ void Application::cleanup() {
     ImGui::DestroyContext();
     spdlog::debug("ImGui context destroyed");
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     if (window) {
         glfwDestroyWindow(window);
     }
@@ -510,6 +524,41 @@ int Application::saveConnection(const SavedConnection& conn) {
     return appState->saveConnection(conn);
 }
 
+void Application::syncSavedConnections() {
+    // ponytail: only the current workspace; cached ones catch up when switched back to
+    const auto saved = appState->getConnectionsForWorkspace(currentWorkspaceId);
+    std::vector<std::shared_ptr<DatabaseInterface>> gone;
+    for (const auto& db : databases) {
+        if (db && db->getConnectionId() > 0 &&
+            std::ranges::none_of(
+                saved, [&](const SavedConnection& s) { return s.id == db->getConnectionId(); }))
+            gone.push_back(db);
+    }
+    for (const auto& db : gone) {
+        removeDatabase(db);
+    }
+    for (const auto& s : saved) {
+        const auto it = std::ranges::find_if(
+            databases, [&](const auto& db) { return db && db->getConnectionId() == s.id; });
+        if (it == databases.end()) {
+            if (auto db = DatabaseFactory::createDatabase(s.connectionInfo)) {
+                db->setConnectionId(s.id);
+                databases.push_back(db);
+            }
+            continue;
+        }
+        // ponytail: labels only; a synced host or password change shows after a relaunch
+        auto info = (*it)->getConnectionInfo();
+        if (info.name != s.connectionInfo.name || info.envTag != s.connectionInfo.envTag ||
+            info.color != s.connectionInfo.color) {
+            info.name = s.connectionInfo.name;
+            info.envTag = s.connectionInfo.envTag;
+            info.color = s.connectionInfo.color;
+            (*it)->setConnectionInfo(info);
+        }
+    }
+}
+
 void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
     if (!db) {
         return;
@@ -580,14 +629,14 @@ void Application::restorePreviousConnections() {
                   currentWorkspaceId, elapsedMs);
 }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 bool Application::initializeGLFW() {
     if (!glfwInit()) {
         spdlog::error("Failed to initialize GLFW");
         return false;
     }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #endif
 
@@ -618,7 +667,7 @@ void Application::setupImGuiContext() const {
     Theme::ApplyNativeTheme(theme_->colors);
 }
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 bool Application::initializeImGui() const {
     setupImGuiContext();
 
@@ -782,6 +831,9 @@ void Application::refreshWorkspaceConnections() {
 }
 
 void Application::dockTabToCenter(const std::string& tabName) const {
+    // before the first frame (a file opened at launch) setupDockingLayout docks it
+    if (centerDockId == 0 && !ImGui::GetCurrentContext()->CurrentWindow)
+        return;
     const ImGuiID dockId = centerDockId != 0 ? centerDockId : ImGui::GetID("MyDockSpace");
     ImGui::DockBuilderDockWindow(tabName.c_str(), dockId);
 }
@@ -812,7 +864,18 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         }
     };
 
-    if (sidebarVisible) {
+    if (compactLayout_) {
+        // one full-width tab bar: Databases first, then the workspace or the open tabs
+        ImGui::DockBuilderDockWindow("Databases", dockSpaceId);
+        const std::string wsTitle = getCurrentWorkspaceName() + "###workspace_main";
+        ImGui::DockBuilderDockWindow(wsTitle.c_str(), dockSpaceId);
+        dockTabs(dockSpaceId);
+        leftDockId = 0;
+        centerDockId = dockSpaceId; // new tabs dock here too
+        rightDockId = 0;
+        // the connection list, not an empty workspace tab
+        focusDatabases_ = !tabManager || tabManager->getTabs().empty() ? 2 : 0;
+    } else if (sidebarVisible) {
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, kSidebarWidth, &leftDockId,
                                     &centerDockId);
 
@@ -835,7 +898,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         dockTabs(dockSpaceId);
 
         leftDockId = 0;
-        centerDockId = 0;
+        centerDockId = dockSpaceId; // GetID("MyDockSpace") outside the host window misses
         rightDockId = 0;
     }
 
@@ -868,6 +931,15 @@ static void drawDockTabSeparators(ImGuiDockNode* node) {
 void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
+#ifdef DEARSQL_MOBILE
+    if (const bool compact = viewport->Size.x < 700.0f; compact != compactLayout_) {
+        compactLayout_ = compact;
+        dockingLayoutInitialized = false;
+    }
+    if (compactLayout_) {
+        sidebarVisible = true; // it is a tab, so always there
+    }
+#endif
     if (sidebarVisibleLastFrame_ != sidebarVisible) {
         if (tabManager) {
             tabManager->preserveFocusedTabForLayoutRebuild();
@@ -930,7 +1002,11 @@ void Application::renderMainUI() {
         ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
-        ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+        if (!compactLayout_) {
+            ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
+        }
+        if (focusDatabases_ > 0 && focusDatabases_--)
+            ImGui::SetNextWindowFocus();
         ImGui::Begin("Databases", nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar);
@@ -952,6 +1028,9 @@ void Application::renderMainUI() {
         tabManager->tickChatTabs();
     }
     SchemaCompare::poll();
+    if (appState && appState->takeRemoteChange()) {
+        syncSavedConnections();
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);

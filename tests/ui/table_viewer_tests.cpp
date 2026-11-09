@@ -689,6 +689,33 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // a click (a tap on ipad) on a suggestion inserts it
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Clicking a suggestion inserts it");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select * from ");
+        ctx->Yield(10);
+        ctx->KeyChars("pa");
+        ctx->Yield(10);
+        const ImVec2 row = tab->getEditor().AutocompleteRowPos(0);
+        IM_CHECK(row.x > 0.0f);
+        ctx->MouseMoveToPos(row);
+        ctx->MouseClick();
+        ctx->Yield(2);
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select * from parent");
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // saving deletes previews what foreign keys do to the referencing rows, and the counts
     // are what the delete then does
     t = IM_REGISTER_TEST(engine, "TableViewer", "Delete preview counts referencing rows");

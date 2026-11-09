@@ -72,6 +72,11 @@ namespace AcpAgents {
     } // namespace
 
     const std::vector<AgentDef>& catalog() {
+#ifdef DEARSQL_MOBILE
+        // ipad: agents are local processes, which ios does not allow; the api key chat stays
+        static const std::vector<AgentDef> none;
+        return none;
+#endif
         static const std::vector<AgentDef> defs = {
             {
                 "claude-code",

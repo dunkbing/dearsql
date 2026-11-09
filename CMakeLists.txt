@@ -9,7 +9,15 @@ else()
           CACHE STRING "vcpkg toolchain")
 endif()
 
-if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # ipad: pass -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator (or arm64-ios)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET
+        "17.0"
+        CACHE STRING
+        "Minimum iPadOS version"
+        FORCE
+    )
+elseif(NOT DEFINED VCPKG_TARGET_TRIPLET)
     if(APPLE)
         execute_process(
             COMMAND uname -m
@@ -62,7 +70,7 @@ if(NOT DEFINED VCPKG_TARGET_TRIPLET)
     endif()
 endif()
 
-if(APPLE)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_OSX_DEPLOYMENT_TARGET
         "14.0"
         CACHE STRING
@@ -77,6 +85,10 @@ set(VCPKG_OVERLAY_TRIPLETS
     ""
     FORCE
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # libpq with one ios fix (cmake/ports/libpq/portfile.cmake); desktop uses the stock port
+    set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/cmake/ports" CACHE STRING "" FORCE)
+endif()
 
 project(dearsql)
 
@@ -101,7 +113,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(APPLE)
     # jthread, stop_token require experimental libc++ on Apple
     add_compile_options(-fexperimental-library)
-    add_link_options(-fexperimental-library)
+    if(NOT IOS) # the ios sdk has no libc++experimental; the headers are enough
+        add_link_options(-fexperimental-library)
+    endif()
 endif()
 
 include(cmake/AppMetadata.cmake)
@@ -119,23 +133,25 @@ configure_file(
 )
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(DuckDB CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(httplib CONFIG REQUIRED)
+find_package(unofficial-tree-sitter CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 find_package(unofficial-libmariadb CONFIG REQUIRED)
 find_package(hiredis CONFIG REQUIRED)
 find_package(hiredis_ssl CONFIG REQUIRED)
-find_package(mongocxx CONFIG REQUIRED)
-find_package(bsoncxx CONFIG REQUIRED)
-find_package(GTest CONFIG REQUIRED)
-find_package(httplib CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
-find_package(unofficial-tree-sitter CONFIG REQUIRED)
-find_package(nfd CONFIG REQUIRED)
-find_package(sentry CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
-find_package(ftxui CONFIG REQUIRED)
+find_package(libssh2 CONFIG REQUIRED)
+find_package(PostgreSQL REQUIRED) # ios: libpq from the cmake/ports overlay
+# ipad: no duckdb yet, and no file dialogs, crash reports, terminal ui or tests
+if(NOT IOS)
+    find_package(DuckDB CONFIG REQUIRED)
+    find_package(GTest CONFIG REQUIRED)
+    find_package(nfd CONFIG REQUIRED)
+    find_package(sentry CONFIG REQUIRED)
+    find_package(ftxui CONFIG REQUIRED)
+endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
 
@@ -148,11 +164,11 @@ if(LINUX)
     # optional: master secret storage via secret service (file fallback otherwise)
     pkg_check_modules(LIBSECRET libsecret-1)
     find_package(X11 REQUIRED)
-else()
+elseif(NOT IOS)
     find_package(glfw3 CONFIG REQUIRED)
 endif()
 
-if(APPLE)
+if(APPLE AND NOT IOS)
     include(cmake/Sparkle.cmake)
 endif()
 
@@ -187,6 +203,7 @@ set(APP_SOURCES
     src/database/lib_database_node.cpp
     src/database/connection_url.cpp
     src/database/ssh_config_parser.cpp
+    src/database/ssh_tunnel.cpp
     src/ui/query_history.cpp
     src/ui/table_renderer.cpp
     src/ui/datetime_picker.cpp
@@ -258,13 +275,21 @@ set(APP_SOURCES
 
 list(APPEND APP_SOURCES src/application.cpp)
 if(APPLE)
+    # connections, workspaces and settings in core data, synced through icloud
+    list(APPEND APP_SOURCES src/utils/synced_store.mm)
+    set_source_files_properties(src/utils/synced_store.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+endif()
+if(IOS)
+    include(cmake/IOS.cmake)
+    return()
+endif()
+if(APPLE)
     list(APPEND APP_SOURCES src/platform/macos_platform.mm)
     list(APPEND APP_SOURCES src/platform/metal_backend.mm)
     list(APPEND APP_SOURCES src/platform/macos_titlebar.mm)
     list(APPEND APP_SOURCES src/platform/macos_updater.mm)
     list(APPEND APP_SOURCES src/platform/macos_alert.mm)
     list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
-    list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
     list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
@@ -272,7 +297,6 @@ elseif(LINUX)
     list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
     list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
     list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
-    list(APPEND APP_SOURCES src/platform/posix_ssh_tunnel.cpp)
 elseif(WIN32)
     list(
         APPEND APP_SOURCES
@@ -282,7 +306,6 @@ elseif(WIN32)
         src/platform/windows_updater.cpp
         src/platform/windows_alert.cpp
         src/platform/windows_input_dialog.cpp
-        src/platform/windows_ssh_tunnel.cpp
         assets/app.rc
     )
 endif()
@@ -299,6 +322,8 @@ add_executable(
     ${IMGUI_SOURCES}
     ${IMGUI_NODE_EDITOR_SOURCES}
 )
+include(cmake/ICloud.cmake)
+dearsql_icloud(${PROJECT_NAME})
 
 # hide console on release, keep main() entry point
 if(WIN32)
@@ -374,8 +399,6 @@ target_link_libraries(
         unofficial::libmariadb
         hiredis::hiredis
         hiredis::hiredis_ssl
-        $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
-        $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         nfd::nfd
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -384,6 +407,7 @@ target_link_libraries(
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp
+        libssh2::libssh2
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
         tree-sitter-json-grammar
@@ -404,6 +428,7 @@ if(APPLE)
             ${FOUNDATION_LIBRARY}
             ${APPKIT_LIBRARY}
             ${SECURITY_LIBRARY}
+            "-framework CoreData"
     )
     target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
 elseif(LINUX)

@@ -75,6 +75,7 @@ private:
     Application* app_ = nullptr;
     bool open_ = false;
     bool pendingOpen_ = false;
+    bool pickedFile_ = false; // a browse landed since the last frame
     bool closeRequested_ = false;
     // set when the dialog is dismissed mid-connect so the late result is discarded
     bool cancelled_ = false;

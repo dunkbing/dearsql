@@ -1,5 +1,6 @@
 #include "ui/text_editor.hpp"
 #include "IconsFontAwesome6.h"
+#include "imgui_internal.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -521,9 +522,17 @@ namespace dearsql {
         if (isFocused && !imguiWantsText) { // read-only still copies and moves the cursor
             handleKeyboardInput();
         }
+#ifdef DEARSQL_MOBILE
+        // asks for the soft keyboard the way imgui text fields do, minus WantTextInput, which
+        // would switch off the input handling above
+        if (isFocused && !readOnly_)
+            ImGui::GetCurrentContext()->PlatformImeData.WantVisible = true;
+#endif
         if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
             handleMouseInput();
+        } else if (autocompleteVisible_) {
+            handleMouseInput(); // the popup can hang past the editor
         }
 
         // --- Line numbers panel ---

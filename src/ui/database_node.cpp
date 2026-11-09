@@ -1,4 +1,3 @@
-#include "ui/schema_compare.hpp"
 #include "ui/database_node.hpp"
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
@@ -18,6 +17,7 @@
 #include "imgui_internal.h"
 #include "platform/alert.hpp"
 #include "ui/input_dialog.hpp"
+#include "ui/schema_compare.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -368,7 +368,7 @@ void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, cons
         startCopyDdl(provider, table);
     if (auto* node = dynamic_cast<IDatabaseNode*>(provider);
         node && ImGui::MenuItem(ICON_FA_CHART_SIMPLE " Profile Columns", nullptr, false,
-                                 !table.columns.empty()))
+                                !table.columns.empty()))
         SchemaCompare::openProfile(node, table);
     TableExporter::renderExportMenu(
         [&](ExportFormat format) { startTableExport(provider, {&table}, format, dbType); },
@@ -408,15 +408,19 @@ void DatabaseHierarchy::startCopyDdl(ITableDataProvider* provider, const Table& 
         [provider, table, keep = keepOwnerAlive(node)] { return provider->getTableDdl(table); });
 }
 
-void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName) {
+void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName,
+                                       const std::string& path) {
     if (!node || csvImportOp_.isRunning())
         return;
-    auto path = TableImporter::chooseCsvFile();
-    if (!path)
+    if (path.empty()) {
+        // ponytail: node and this held raw; the ios picker covers the app meanwhile
+        FileDialog::openCSVFile(
+            [this, node, tableName](const std::string& p) { startCsvImport(node, tableName, p); });
         return;
+    }
     auto* libNode = dynamic_cast<LibDatabaseNode*>(node);
     csvImportProgress_ = std::make_shared<TableImporter::Progress>();
-    csvImportOp_.start([node, tableName, path = std::move(*path), progress = csvImportProgress_,
+    csvImportOp_.start([node, tableName, path, progress = csvImportProgress_,
                         pin = libNode ? libNode->pin() : nullptr,
                         keep = keepOwnerAlive(node)]() mutable {
         auto result = TableImporter::importCsv(node, tableName, path, *progress);
@@ -1354,8 +1358,7 @@ void DatabaseHierarchy::processPendingDatabaseDrop() {
     const std::string dbName = *pendingDropDatabase_;
     pendingDropDatabase_.reset();
 
-    const char* noun =
-        isCassandraFamily(db->getConnectionInfo().type) ? "keyspace" : "database";
+    const char* noun = isCassandraFamily(db->getConnectionInfo().type) ? "keyspace" : "database";
 
     // the server round trip runs on a worker; the node leaves the tree when it lands
     startDatabaseDdl(
@@ -1382,13 +1385,13 @@ void DatabaseHierarchy::processDumpOperations() {
     renderExportProgress();
 }
 
-void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData) {
+void DatabaseHierarchy::startSqlDumpImport(MySQLDatabaseNode* dbData, const std::string& path) {
     if (!dbData || importOp_.isRunning()) {
         return;
     }
-
-    const std::string path = MysqlDumpImport::promptForSqlDump();
     if (path.empty()) {
+        FileDialog::openFile(
+            [this, dbData](const std::string& p) { startSqlDumpImport(dbData, p); });
         return;
     }
 
@@ -1473,7 +1476,7 @@ void DatabaseHierarchy::renderImportPreview() {
 
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(760.0f, 520.0f)), ImGuiCond_Appearing);
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -1727,6 +1730,10 @@ void DatabaseHierarchy::checkPostgresToolStatus() {
 }
 
 void DatabaseHierarchy::renderPostgresBackupRestoreMenus(PostgresDatabaseNode* dbData) {
+#ifdef DEARSQL_MOBILE
+    (void)dbData; // these run the pg_dump/pg_restore programs; the sql dump export/import stays
+    return;
+#endif
     if (!dbData || !dbData->parentDb) {
         return;
     }
@@ -1811,13 +1818,14 @@ void DatabaseHierarchy::startPostgresBackup(PostgresDatabaseNode* dbData,
 
 void DatabaseHierarchy::startPostgresRestore(PostgresDatabaseNode* dbData,
                                              const bool cleanBeforeRestore,
-                                             const bool createDatabase) {
+                                             const bool createDatabase, const std::string& path) {
     if (!dbData || !dbData->parentDb || postgresToolOp_.isRunning()) {
         return;
     }
-
-    const std::string path = FileDialog::openPostgresBackupFile();
     if (path.empty()) {
+        FileDialog::openPostgresBackupFile([=, this](const std::string& p) {
+            startPostgresRestore(dbData, cleanBeforeRestore, createDatabase, p);
+        });
         return;
     }
 

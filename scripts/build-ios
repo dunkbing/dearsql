@@ -1,0 +1,85 @@
+#!/bin/bash
+# build, sign and install or upload DearSQL for iOS (iPad and iPhone)
+#   DEARSQL_IOS_PROFILE=<.mobileprovision for io.gitlab.dunkbing.dearsql> ./scripts/build-ios
+# a development profile signs for its devices ([DEVICE=<udid or name>] installs and launches);
+# an app store profile signs for distribution, writes build-ios-device/DearSQL.ipa and uploads it
+# with asc ([VERSION=1.0], NO_UPLOAD=1 to stop at the .ipa)
+# no icloud yet: the profile needs the iCloud capability first
+set -e
+cd "$(dirname "$0")/.."
+: "${DEARSQL_IOS_PROFILE:?set DEARSQL_IOS_PROFILE to a .mobileprovision}"
+ASC_APP_ID=6832471320
+BUILD_DIR=build-ios-device
+APP="$BUILD_DIR/DearSQL.app"
+
+if [ ! -f "$BUILD_DIR/build.ninja" ]; then
+    lockf -k /tmp/dearsql-build.lock cmake -S . -B "$BUILD_DIR" -G Ninja -DCMAKE_SYSTEM_NAME=iOS \
+        -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DVCPKG_TARGET_TRIPLET=arm64-ios -DDEARSQL_LIB_BUILD_TESTS=OFF
+fi
+lockf -k /tmp/dearsql-build.lock cmake --build "$BUILD_DIR" --target dearsql
+
+PLIST="$(mktemp)"
+security cms -D -i "$DEARSQL_IOS_PROFILE" > "$PLIST"
+TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$PLIST")
+# app store profiles list no devices
+plutil -extract ProvisionedDevices raw "$PLIST" >/dev/null 2>&1 && STORE=0 || STORE=1
+
+# the profile's certificate whose private key is in the keychain
+IDENTITY=""
+IDS=$(security find-identity -v -p codesigning)
+for i in 0 1 2 3 4 5 6 7 8 9; do
+    CERT=$(plutil -extract "DeveloperCertificates.$i" raw "$PLIST" 2>/dev/null) || break
+    SHA=$(echo "$CERT" | base64 -d | shasum -a 1 | cut -d' ' -f1 | tr a-f A-F)
+    if echo "$IDS" | grep -q "$SHA"; then IDENTITY=$SHA; break; fi
+done
+[ -n "$IDENTITY" ] || { echo "no certificate of this profile has its private key in the keychain"; exit 1; }
+
+INFO="$APP/Info.plist"
+if [ "$STORE" = 1 ]; then
+    # what xcodebuild stamps into an archive; app store validation rejects bundles without them
+    SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+    SDK_BUILD=$(xcrun --sdk iphoneos --show-sdk-build-version)
+    XC=$(xcodebuild -version | awk 'NR==1{split($2,v,"."); printf "%d%d%d", v[1], v[2], v[3]}')
+    XC_BUILD=$(xcodebuild -version | awk 'NR==2{print $3}')
+    plutil -replace CFBundleShortVersionString -string "${VERSION:-1.0}" "$INFO"
+    plutil -replace CFBundleVersion -string "$(date +%Y%m%d%H%M)" "$INFO"
+    plutil -replace CFBundleSupportedPlatforms -json '["iPhoneOS"]' "$INFO"
+    plutil -replace DTPlatformName -string iphoneos "$INFO"
+    plutil -replace DTPlatformVersion -string "$SDK" "$INFO"
+    plutil -replace DTPlatformBuild -string "$SDK_BUILD" "$INFO"
+    plutil -replace DTSDKName -string "iphoneos$SDK" "$INFO"
+    plutil -replace DTSDKBuild -string "$SDK_BUILD" "$INFO"
+    plutil -replace DTXcode -string "$XC" "$INFO"
+    plutil -replace DTXcodeBuild -string "$XC_BUILD" "$INFO"
+    plutil -replace DTCompiler -string com.apple.compilers.llvm.clang.1_0 "$INFO"
+    plutil -replace BuildMachineOSBuild -string "$(sw_vers -buildVersion)" "$INFO"
+fi
+
+ENTITLEMENTS="$BUILD_DIR/device.entitlements"
+cat > "$ENTITLEMENTS" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>application-identifier</key><string>$TEAM.io.gitlab.dunkbing.dearsql</string>
+    <key>com.apple.developer.team-identifier</key><string>$TEAM</string>
+    <key>get-task-allow</key><$([ "$STORE" = 1 ] && echo false || echo true)/>
+$([ "$STORE" = 1 ] && echo '    <key>beta-reports-active</key><true/>')
+</dict></plist>
+PL
+rm -f "$PLIST"
+cp "$DEARSQL_IOS_PROFILE" "$APP/embedded.mobileprovision"
+codesign --force --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" \
+    $([ "$STORE" = 1 ] && echo --timestamp || echo --timestamp=none) "$APP"
+codesign --verify --verbose=1 "$APP"
+
+if [ "$STORE" = 1 ]; then
+    rm -rf "$BUILD_DIR/Payload" "$BUILD_DIR/DearSQL.ipa"
+    mkdir "$BUILD_DIR/Payload" && cp -R "$APP" "$BUILD_DIR/Payload/"
+    (cd "$BUILD_DIR" && zip -qry DearSQL.ipa Payload) && rm -rf "$BUILD_DIR/Payload"
+    echo "$BUILD_DIR/DearSQL.ipa: $(plutil -extract CFBundleShortVersionString raw "$INFO") ($(plutil -extract CFBundleVersion raw "$INFO"))"
+    [ -n "$NO_UPLOAD" ] || asc builds upload --app "$ASC_APP_ID" --ipa "$BUILD_DIR/DearSQL.ipa"
+elif [ -n "$DEVICE" ]; then
+    xcrun devicectl device install app --device "$DEVICE" "$APP"
+    xcrun devicectl device process launch --device "$DEVICE" io.gitlab.dunkbing.dearsql
+fi

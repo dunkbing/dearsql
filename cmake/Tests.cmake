@@ -45,17 +45,14 @@ add_executable(
     src/database/ssh_config_parser.cpp
     src/utils/table_exporter.cpp
     src/utils/table_importer.cpp
+    src/utils/file_dialog.cpp
     tests/database/credential_migration_test.cpp
     src/app_state.cpp
     src/utils/crypto.cpp
     src/utils/master_secret.cpp
 )
 
-if(WIN32)
-  target_sources(database_tests PRIVATE src/platform/windows_ssh_tunnel.cpp)
-else()
-  target_sources(database_tests PRIVATE src/platform/posix_ssh_tunnel.cpp)
-endif()
+target_sources(database_tests PRIVATE src/database/ssh_tunnel.cpp)
 
 target_include_directories(
     database_tests
@@ -72,10 +69,9 @@ target_link_libraries(
         unofficial::libmariadb
         hiredis::hiredis
         hiredis::hiredis_ssl
-        $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
-        $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
         dearsql::dearsql
         miniocpp::miniocpp
+        libssh2::libssh2
         spdlog::spdlog
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -84,7 +80,8 @@ target_link_libraries(
 
 # master secret keystore backends
 if(APPLE)
-  target_link_libraries(database_tests PRIVATE ${SECURITY_LIBRARY})
+  target_sources(database_tests PRIVATE src/utils/synced_store.mm)
+  target_link_libraries(database_tests PRIVATE ${SECURITY_LIBRARY} "-framework CoreData")
 elseif(WIN32)
   target_link_libraries(database_tests PRIVATE advapi32)
 elseif(LINUX AND LIBSECRET_FOUND)

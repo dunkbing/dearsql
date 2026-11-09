@@ -779,6 +779,14 @@ namespace dearsql {
     // --- Mouse Input ---
 
     void TextEditor::handleMouseInput() {
+        // a click on a suggestion picks it (the popup can hang outside the editor)
+        if (autocompleteVisible_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            ImGui::IsMouseHoveringRect(autocompleteMin_, autocompleteMax_, false)) {
+            const int row = int((ImGui::GetMousePos().y - autocompleteMin_.y) / autocompleteRow_);
+            autocompleteIndex_ = autocompleteScrollOffset_ + row;
+            applyAutoComplete();
+            return;
+        }
         if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
             return;
         // a press on a gutter play icon runs the statement; it is not a text click
@@ -1088,14 +1096,15 @@ namespace dearsql {
         int line = getLineFromPos(cursorIndex_);
         float cursorY = textOrigin_.y + (line + 1) * lineHeight_;
 
-        constexpr float popupWidth = 520.0f;
+        ImGuiViewport* viewport = ImGui::GetWindowViewport();
+        // a phone is narrower than the popup
+        const float popupWidth = viewport ? std::min(520.0f, viewport->Size.x) : 520.0f;
         constexpr float popupPadding = 6.0f;
         const int maxShow =
             std::min(static_cast<int>(filteredCompletions_.size()), kAutocompleteMaxVisible);
         const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
         const float popupHeight = popupPadding * 2.0f + rowHeight * maxShow;
 
-        ImGuiViewport* viewport = ImGui::GetWindowViewport();
         ImVec2 pos(cursorX, cursorY);
         if (viewport) {
             const ImVec2 vpMin = viewport->Pos;
@@ -1108,6 +1117,9 @@ namespace dearsql {
             viewport ? ImGui::GetForegroundDrawList(viewport) : ImGui::GetForegroundDrawList();
         const ImVec2 rectMin = pos;
         const ImVec2 rectMax(pos.x + popupWidth, pos.y + popupHeight);
+        autocompleteMin_ = ImVec2(rectMin.x, rectMin.y + popupPadding);
+        autocompleteMax_ = ImVec2(rectMax.x, rectMax.y - popupPadding);
+        autocompleteRow_ = rowHeight;
         drawList->AddRectFilled(rectMin, rectMax, palette_.background);
         drawList->AddRect(rectMin, rectMax, palette_.lineNumber);
 

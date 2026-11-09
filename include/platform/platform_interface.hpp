@@ -3,7 +3,7 @@
 #include "imgui.h"
 #include <cstdint>
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 #include <GLFW/glfw3.h>
 #else
 // Forward declare for Linux (uses GTK instead of GLFW)

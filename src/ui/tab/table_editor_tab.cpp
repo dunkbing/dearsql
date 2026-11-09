@@ -603,7 +603,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(700, 460), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(700, 460)), ImGuiCond_Appearing);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);

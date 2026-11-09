@@ -1,8 +1,11 @@
 #pragma once
 
 #include "database/db_interface.hpp"
+#include <memory>
+#include <mutex>
 #include <sqlite3.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // one assistant chat, under a connection. transcript is stored only for the api-key backend;
@@ -49,8 +52,13 @@ public:
     AppState();
     ~AppState();
 
-    // Initialize the app state database
-    bool initialize();
+    // open the state database. on apple, connections, workspaces and synced settings live
+    // in core data (SyncedStore); mirror: this process syncs it to icloud (the gui only)
+    bool initialize(bool mirrorToICloud = false);
+
+    // true once after another device or process changed connections, workspaces or
+    // settings: reload what you show (apple; always false elsewhere)
+    bool takeRemoteChange() const;
 
     // Every method on this class talks to SQLite. None of them are field
     // accessors, and the UI rebuilds every frame, so calling one from a render
@@ -111,4 +119,39 @@ private:
     void migrateCredentialKeys() const;
     bool updateSavedConnectionColumn(const char* column, const std::string& value,
                                      int connectionId) const;
+
+#ifdef __APPLE__
+    // app_state.cpp, under __APPLE__: the same calls over the synced store
+    std::unique_ptr<class SyncedStore> store_;
+    mutable std::mutex settingsMutex_;
+    mutable std::unordered_map<std::string, std::string> settingsCache_;
+    mutable bool settingsLoaded_ = false;
+    std::string deviceId_;
+
+    bool openSyncedStore(bool mirror);
+    void migrateToSyncedStore(const std::vector<SavedConnection>& legacy,
+                              const std::vector<Workspace>& legacyWorkspaces);
+    void resealConnections(const std::string& previousSecret) const;
+    void mapLocal(const std::string& kind, const std::string& uuid, int localId,
+                  const std::string& lastUsed) const;
+    int localId(const std::string& kind, const std::string& uuid) const;
+    std::string uuidFor(const std::string& kind, int localId) const;
+    void forgetLocal(const std::string& kind, int localId) const;
+    std::string localLastUsed(const std::string& kind, int localId) const;
+    void touchLocal(const std::string& kind, int localId) const;
+    std::string storedConnectionJson(const SavedConnection& c, const std::string& uuid) const;
+    std::vector<SavedConnection> storedConnections(int workspaceId) const;
+    int storeSaveConnection(const SavedConnection& c) const;
+    bool storeUpdateConnection(const SavedConnection& c) const;
+    bool storeEditConnection(int id, const char* field, const std::string& value) const;
+    bool storeDeleteConnection(int id) const;
+    std::vector<Workspace> storedWorkspaces() const;
+    int storeSaveWorkspace(const Workspace& w) const;
+    bool storeDeleteWorkspace(int id) const;
+    bool storeRenameWorkspace(int id, const std::string& name) const;
+    bool storeEnsureDefaultWorkspace() const;
+    static bool syncedSetting(const std::string& key);
+    bool storeSetSetting(const std::string& key, const std::string& value) const;
+    std::string storeGetSetting(const std::string& key, const std::string& defaultValue) const;
+#endif
 };

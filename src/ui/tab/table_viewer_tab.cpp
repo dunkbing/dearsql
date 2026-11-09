@@ -110,106 +110,141 @@ void TableViewerTab::render() {
         saveChanges();
     }
 
+    // narrow: buttons in a menu
+    const float barWidth = ImGui::GetContentRegionAvail().x;
+    const bool narrowBar = barWidth < 640.0f;
+
     // Filter input with auto-completion
-    if (filterAutoComplete &&
-        filterAutoComplete->render("##filter", filterBuffer, sizeof(filterBuffer))) {
-        applyFilter();
-    }
-
-    // Refresh, Save, Reject buttons next to filter
-    ImGui::SameLine(0, Theme::Spacing::M);
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (UIUtils::IconButton(ICON_FA_ARROWS_ROTATE)) {
-        refreshData();
-    }
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Refresh");
-    }
-
-    ImGui::SameLine();
-    if (hasChanges) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary)) {
-            saveChanges();
-        }
-        ImGui::PopStyleColor();
-    } else {
-        ImGui::BeginDisabled();
-        UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary);
-        ImGui::EndDisabled();
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Save");
-    }
-
-    ImGui::SameLine();
-    if (hasChanges) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger)) {
-            cancelChanges();
-        }
-        ImGui::PopStyleColor();
-    } else {
-        ImGui::BeginDisabled();
-        UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger);
-        ImGui::EndDisabled();
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Reject changes");
-    }
-
-    ImGui::SameLine();
-    if (readOnlyConnection_)
-        ImGui::BeginDisabled();
-    if (UIUtils::IconButton(ICON_FA_PLUS)) {
-        addRow();
-    }
-    if (readOnlyConnection_)
-        ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(readOnlyConnection_ ? "Connection is read-only" : "Add row");
+    if (filterAutoComplete) {
+        filterAutoComplete->setWidth(
+            narrowBar ? barWidth - ImGui::GetFrameHeight() - Theme::Spacing::M * 2 : 400.0f);
+        if (filterAutoComplete->render("##filter", filterBuffer, sizeof(filterBuffer)))
+            applyFilter();
     }
 
     const std::vector<int> selectedRows = tableRenderer->getSelectedRows();
     const bool hasRowSelected = !selectedRows.empty() && !readOnlyConnection_;
 
-    ImGui::SameLine();
-    if (!hasRowSelected)
-        ImGui::BeginDisabled();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (UIUtils::IconButton(ICON_FA_CLONE)) {
-        duplicateRow(selectedRow);
-    }
-    ImGui::PopStyleColor();
-    if (!hasRowSelected)
-        ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Duplicate row");
-    }
+    if (narrowBar) {
+        ImGui::SameLine(0, Theme::Spacing::M);
+        ImGui::PushStyleColor(ImGuiCol_Text, hasChanges ? colors.peach : colors.text);
+        if (UIUtils::IconButton(ICON_FA_ELLIPSIS))
+            ImGui::OpenPopup("##table_actions");
+        ImGui::PopStyleColor();
+        if (UIUtils::BeginMenuPopup("##table_actions")) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                                ImVec2(Theme::Spacing::M, Theme::Spacing::M));
+            if (ImGui::MenuItem(ICON_FA_ARROWS_ROTATE "  Refresh"))
+                refreshData();
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK "  Save Changes", nullptr, false, hasChanges))
+                saveChanges();
+            if (ImGui::MenuItem(ICON_FA_XMARK "  Reject Changes", nullptr, false, hasChanges))
+                cancelChanges();
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA_PLUS "  Add Row", nullptr, false, !readOnlyConnection_))
+                addRow();
+            if (ImGui::MenuItem(ICON_FA_CLONE "  Duplicate Row", nullptr, false, hasRowSelected))
+                duplicateRow(selectedRow);
+            if (ImGui::MenuItem(ICON_FA_TRASH_CAN "  Delete Selected Rows", nullptr, false,
+                                hasRowSelected))
+                deleteRows(selectedRows);
+            ImGui::PopStyleVar();
+            ImGui::EndPopup();
+        }
+    } else {
+        // Refresh, Save, Reject buttons next to filter
+        ImGui::SameLine(0, Theme::Spacing::M);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        if (UIUtils::IconButton(ICON_FA_ARROWS_ROTATE)) {
+            refreshData();
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Refresh");
+        }
 
-    ImGui::SameLine();
-    if (!hasRowSelected)
-        ImGui::BeginDisabled();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-    if (UIUtils::IconButton(ICON_FA_TRASH_CAN, UIUtils::ButtonVariant::Danger)) {
-        deleteRows(selectedRows);
-    }
-    ImGui::PopStyleColor();
-    if (!hasRowSelected)
-        ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Delete selected rows");
-    }
+        ImGui::SameLine();
+        if (hasChanges) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+            if (UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary)) {
+                saveChanges();
+            }
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::BeginDisabled();
+            UIUtils::IconButton(ICON_FA_FLOPPY_DISK, UIUtils::ButtonVariant::Primary);
+            ImGui::EndDisabled();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Save");
+        }
 
-    if (hasChanges) {
-        ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::TextColored(colors.peach, "Unsaved changes");
-    }
+        ImGui::SameLine();
+        if (hasChanges) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+            if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger)) {
+                cancelChanges();
+            }
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::BeginDisabled();
+            UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger);
+            ImGui::EndDisabled();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Reject changes");
+        }
 
-    if (readOnlyConnection_) {
-        ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::TextColored(colors.subtext0, ICON_FA_LOCK " Read-only");
+        ImGui::SameLine();
+        if (readOnlyConnection_)
+            ImGui::BeginDisabled();
+        if (UIUtils::IconButton(ICON_FA_PLUS)) {
+            addRow();
+        }
+        if (readOnlyConnection_)
+            ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(readOnlyConnection_ ? "Connection is read-only" : "Add row");
+        }
+
+        ImGui::SameLine();
+        if (!hasRowSelected)
+            ImGui::BeginDisabled();
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        if (UIUtils::IconButton(ICON_FA_CLONE)) {
+            duplicateRow(selectedRow);
+        }
+        ImGui::PopStyleColor();
+        if (!hasRowSelected)
+            ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Duplicate row");
+        }
+
+        ImGui::SameLine();
+        if (!hasRowSelected)
+            ImGui::BeginDisabled();
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        if (UIUtils::IconButton(ICON_FA_TRASH_CAN, UIUtils::ButtonVariant::Danger)) {
+            deleteRows(selectedRows);
+        }
+        ImGui::PopStyleColor();
+        if (!hasRowSelected)
+            ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Delete selected rows");
+        }
+
+        if (hasChanges) {
+            ImGui::SameLine(0, Theme::Spacing::L);
+            ImGui::TextColored(colors.peach, "Unsaved changes");
+        }
+
+        if (readOnlyConnection_) {
+            ImGui::SameLine(0, Theme::Spacing::L);
+            ImGui::TextColored(colors.subtext0, ICON_FA_LOCK " Read-only");
+        }
     }
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
@@ -292,6 +327,9 @@ void TableViewerTab::render() {
     // Pagination controls at the bottom
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
 
+    // narrow: no first/last or page size
+    const bool narrow = ImGui::GetContentRegionAvail().x < 560.0f;
+
     // data / json on the left, paging on the right (width from last frame)
     if (UIUtils::SegmentedTabs("##data_view", {"Data", "JSON", "Chart"}, &dataView_)) {
         jsonView_.invalidate(); // edits since the last look
@@ -311,10 +349,12 @@ void TableViewerTab::render() {
     const int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
 
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (UIUtils::IconButton("<<") && currentPage > 0) {
-        firstPage();
+    if (!narrow) {
+        if (UIUtils::IconButton("<<") && currentPage > 0) {
+            firstPage();
+        }
+        ImGui::SameLine();
     }
-    ImGui::SameLine();
 
     if (UIUtils::IconButton("<") && currentPage > 0) {
         previousPage();
@@ -322,73 +362,79 @@ void TableViewerTab::render() {
     ImGui::PopStyleColor();
     ImGui::SameLine(0, Theme::Spacing::M);
 
-    ImGui::Text("Page %d of %d (%d rows)", currentPage + 1, totalPages, totalRows);
+    if (narrow)
+        ImGui::Text("%d / %d", currentPage + 1, totalPages);
+    else
+        ImGui::Text("Page %d of %d (%d rows)", currentPage + 1, totalPages, totalRows);
     ImGui::SameLine(0, Theme::Spacing::M);
 
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
     if (UIUtils::IconButton(">") && currentPage < totalPages - 1) {
         nextPage();
     }
-    ImGui::SameLine();
-
-    if (UIUtils::IconButton(">>") && currentPage < totalPages - 1) {
-        lastPage();
+    if (!narrow) {
+        ImGui::SameLine();
+        if (UIUtils::IconButton(">>") && currentPage < totalPages - 1) {
+            lastPage();
+        }
     }
     ImGui::PopStyleColor();
 
     // Page size selector
-    ImGui::SameLine(0, Theme::Spacing::L);
-    ImGui::SetNextItemWidth(80.0f);
+    if (!narrow) {
+        ImGui::SameLine(0, Theme::Spacing::L);
+        ImGui::SetNextItemWidth(80.0f);
 
-    static const int pageSizeOptions[] = {10, 25, 50, 100, 200, 500};
-    static const char* pageSizeLabels[] = {"10", "25", "50", "100", "200", "500"};
-    int currentSizeIndex = -1;
+        static const int pageSizeOptions[] = {10, 25, 50, 100, 200, 500};
+        static const char* pageSizeLabels[] = {"10", "25", "50", "100", "200", "500"};
+        int currentSizeIndex = -1;
 
-    // Find current size in options
-    for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
-        if (pageSizeOptions[i] == rowsPerPage) {
-            currentSizeIndex = i;
-            break;
-        }
-    }
-
-    // Store the string to avoid dangling pointer
-    std::string customSizeLabel;
-    const char* currentSizeLabel;
-    if (currentSizeIndex >= 0) {
-        currentSizeLabel = pageSizeLabels[currentSizeIndex];
-    } else {
-        customSizeLabel = std::to_string(rowsPerPage);
-        currentSizeLabel = customSizeLabel.c_str();
-    }
-
-    if (UIUtils::BeginSelect("##pagesize", currentSizeLabel)) {
+        // Find current size in options
         for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
-            const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
-            if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
-                if (pageSizeOptions[i] != rowsPerPage) {
-                    // Calculate first row index with old page size
-                    const int oldRowsPerPage = rowsPerPage;
-                    const int firstRowOnCurrentPage = currentPage * oldRowsPerPage;
+            if (pageSizeOptions[i] == rowsPerPage) {
+                currentSizeIndex = i;
+                break;
+            }
+        }
 
-                    // Update to new page size
-                    rowsPerPage = pageSizeOptions[i];
+        // Store the string to avoid dangling pointer
+        std::string customSizeLabel;
+        const char* currentSizeLabel;
+        if (currentSizeIndex >= 0) {
+            currentSizeLabel = pageSizeLabels[currentSizeIndex];
+        } else {
+            customSizeLabel = std::to_string(rowsPerPage);
+            currentSizeLabel = customSizeLabel.c_str();
+        }
 
-                    // Calculate new page to stay on approximately the same data
-                    currentPage = firstRowOnCurrentPage / rowsPerPage;
+        if (UIUtils::BeginSelect("##pagesize", currentSizeLabel)) {
+            for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
+                const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
+                if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
+                    if (pageSizeOptions[i] != rowsPerPage) {
+                        // Calculate first row index with old page size
+                        const int oldRowsPerPage = rowsPerPage;
+                        const int firstRowOnCurrentPage = currentPage * oldRowsPerPage;
 
-                    // Reload data with new page size
-                    loadDataAsync();
+                        // Update to new page size
+                        rowsPerPage = pageSizeOptions[i];
+
+                        // Calculate new page to stay on approximately the same data
+                        currentPage = firstRowOnCurrentPage / rowsPerPage;
+
+                        // Reload data with new page size
+                        loadDataAsync();
+                    }
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
                 }
             }
-            if (isSelected) {
-                ImGui::SetItemDefaultFocus();
-            }
+            UIUtils::EndSelect();
         }
-        UIUtils::EndSelect();
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Rows per page");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Rows per page");
+        }
     }
     ImGui::SameLine(0, 0);
     paginationWidth_ = ImGui::GetCursorScreenPos().x - paginationStart;
@@ -878,7 +924,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
         saveDialogEditor_.SetFocus();
         startDeleteImpact();
 
-        ImGui::SetNextWindowSize(ImVec2(760, 520), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
         ImGui::OpenPopup("Confirm Save Changes");
         dialogOpened = true;
     }

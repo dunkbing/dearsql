@@ -53,3 +53,6 @@ WixToolset.*.dll
 *.wixobj
 
 SECRETS
+build-ios/
+*.provisionprofile
+build-ios-device/

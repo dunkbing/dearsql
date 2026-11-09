@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <nfd.h>
 #include <optional>
 #include <spdlog/spdlog.h>
 
@@ -19,21 +18,6 @@ namespace {
 } // namespace
 
 namespace MysqlDumpImport {
-
-    std::string promptForSqlDump() {
-        constexpr nfdfilteritem_t filterItem[2] = {{"SQL Dump", "sql"}, {"All Files", "*"}};
-        nfdchar_t* outPath = nullptr;
-        const nfdresult_t dialog = NFD_OpenDialog(&outPath, filterItem, 2, nullptr);
-        if (dialog != NFD_OKAY) {
-            if (dialog == NFD_ERROR) {
-                spdlog::error("File dialog error: {}", NFD_GetError());
-            }
-            return {};
-        }
-        std::string path(outPath);
-        NFD_FreePath(outPath);
-        return path;
-    }
 
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken) {

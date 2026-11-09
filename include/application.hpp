@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
 #include <GLFW/glfw3.h>
 #endif
 
@@ -95,6 +95,9 @@ public:
     }
     void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
     void removeDatabase(const std::shared_ptr<DatabaseInterface>& db);
+    // another device or process changed the saved connections: add, drop and rename
+    // sidebar rows to match, leaving open connections alone
+    void syncSavedConnections();
     void restorePreviousConnections();
     [[nodiscard]] std::size_t findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const;
 
@@ -105,7 +108,7 @@ public:
     [[nodiscard]] bool canAddWorkspace() const;
 
     // Window reference (GLFW only on macOS/Windows)
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     [[nodiscard]] GLFWwindow* getWindow() const {
         return window;
     }
@@ -149,7 +152,7 @@ private:
     ~Application() = default;
 
     // Core components
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
     std::unique_ptr<TabManager> tabManager;
@@ -161,12 +164,15 @@ private:
     // Application state
     const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
     float fontScale_ = 1.0f;
-    bool showFps_ = true;
+    bool showFps_ = false;
     bool vsync_ = true;
     int maxFps_ = 120;
     bool sidebarVisible = true;
     // previous frame's value: a change means the dock layout has to be rebuilt
     bool sidebarVisibleLastFrame_ = true;
+    // phone-width screens: the sidebar is a tab next to the open tabs, not a split
+    bool compactLayout_ = false;
+    int focusDatabases_ = 0; // frames left: a window appearing on the first frame takes focus
     ImGuiID leftDockId = 0;
     ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;
@@ -180,7 +186,7 @@ private:
 
     // Private helper methods
     void setupImGuiContext() const;
-#if defined(__APPLE__) || defined(_WIN32)
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     bool initializeGLFW();
     bool initializeImGui() const;
 #endif

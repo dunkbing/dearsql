@@ -20,23 +20,34 @@
       "default-features": false
     },
     "openssl",
-    "libmariadb",
+    {
+      "name": "libmariadb"
+    },
     {
       "name": "hiredis",
       "features": [
         "ssl"
       ]
     },
-    "mongo-cxx-driver",
-    "libuv",
+    "mongo-c-driver",
+    {
+      "name": "libuv",
+      "platform": "!ios"
+    },
     "zlib",
     "cpp-httplib",
     "tree-sitter",
-    "gtest",
-    "nativefiledialog-extended",
+    {
+      "name": "gtest",
+      "platform": "!ios"
+    },
+    {
+      "name": "nativefiledialog-extended",
+      "platform": "!ios"
+    },
     {
       "name": "glfw3",
-      "platform": "!linux"
+      "platform": "!linux & !ios"
     },
     {
       "name": "sentry-native",
@@ -44,12 +55,32 @@
         "backend",
         "transport",
         "compression"
-      ]
+      ],
+      "platform": "!ios"
     },
-    "libiconv",
+    {
+      "name": "libiconv",
+      "platform": "!ios"
+    },
     "spdlog",
-    "duckdb",
-    "ftxui",
-    "minio-cpp"
+    {
+      "name": "duckdb",
+      "platform": "!ios"
+    },
+    {
+      "name": "ftxui",
+      "platform": "!ios"
+    },
+    {
+      "name": "minio-cpp"
+    },
+    {
+      "name": "libssh2",
+      "default-features": false,
+      "features": [
+        "openssl",
+        "zlib"
+      ]
+    }
   ]
 }

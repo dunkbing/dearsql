@@ -7,7 +7,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#ifndef DEARSQL_MOBILE
 #include <nfd.h>
+#endif
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -105,6 +107,7 @@ namespace {
         return "'" + ddl_utils::escapeSingleQuotes(value) + "'";
     }
 
+#ifndef DEARSQL_MOBILE
     constexpr std::string_view PORTAL_CANCEL_MSG = "response code 2";
 
     bool isPortalCancel() {
@@ -169,6 +172,15 @@ namespace {
         }
         return "";
     }
+#else
+    // ipad: no save dialog until the document picker is wired up
+    std::string showFolderDialog() {
+        return "";
+    }
+    std::string showSaveDialog(ExportFormat, const std::string&) {
+        return "";
+    }
+#endif
 
     const char* extensionOf(ExportFormat format) {
         switch (format) {

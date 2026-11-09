@@ -240,11 +240,92 @@ namespace {
 
 } // namespace
 
-namespace MasterSecret {
-    const std::string& get() {
-        // the value never changes for a run; moveToKeychain only moves where it lives
-        static const std::string secret = load();
+#if defined(__APPLE__) && defined(DEARSQL_ICLOUD_CONTAINER)
+namespace {
+    // the copy icloud keychain syncs between the user's devices (a synchronizable item
+    // needs the data protection keychain, so a signed build with keychain-access-groups)
+    CFMutableDictionaryRef syncedQuery() {
+        CFMutableDictionaryRef q = CFDictionaryCreateMutable(
+            nullptr, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(q, kSecClass, kSecClassGenericPassword);
+        CFDictionarySetValue(q, kSecAttrService, CFSTR("DearSQL"));
+        CFDictionarySetValue(q, kSecAttrAccount, CFSTR("master-secret-icloud"));
+        CFDictionarySetValue(q, kSecAttrSynchronizable, kCFBooleanTrue);
+        CFDictionarySetValue(q, kSecUseDataProtectionKeychain, kCFBooleanTrue);
+        return q;
+    }
+
+    std::optional<std::string> syncedRead() {
+        CFMutableDictionaryRef q = syncedQuery();
+        CFDictionarySetValue(q, kSecReturnData, kCFBooleanTrue);
+        CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+        CFTypeRef result = nullptr;
+        const OSStatus status = SecItemCopyMatching(q, &result);
+        CFRelease(q);
+        if (status == errSecItemNotFound)
+            return "";
+        if (status != errSecSuccess || !result) {
+            spdlog::warn("icloud keychain read failed (status {})", static_cast<int>(status));
+            return std::nullopt;
+        }
+        const auto data = static_cast<CFDataRef>(result);
+        std::string secret(reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
+                           static_cast<size_t>(CFDataGetLength(data)));
+        CFRelease(result);
         return secret;
+    }
+
+    bool syncedWrite(const std::string& secret) {
+        CFMutableDictionaryRef q = syncedQuery();
+        CFDataRef data =
+            CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(secret.data()), secret.size());
+        CFDictionarySetValue(q, kSecValueData, data);
+        const OSStatus status = SecItemAdd(q, nullptr);
+        CFRelease(data);
+        CFRelease(q);
+        if (status != errSecSuccess)
+            spdlog::warn("icloud keychain write failed (status {})", static_cast<int>(status));
+        return status == errSecSuccess;
+    }
+} // namespace
+#endif
+
+namespace MasterSecret {
+    // fixed for a run, except that adoptICloudKey() may swap it once at startup
+    std::string& current() {
+        static std::string secret = load();
+        return secret;
+    }
+
+    const std::string& get() {
+        return current();
+    }
+
+    std::string adoptICloudKey() {
+#if defined(__APPLE__) && defined(DEARSQL_ICLOUD_CONTAINER)
+        std::string& secret = current();
+        const std::optional<std::string> synced = syncedRead();
+        if (!synced || secret.empty())
+            return ""; // no keychain (unsigned build): stay on the local key
+        if (synced->empty()) {
+            syncedWrite(secret); // the first device shares its key
+            return "";
+        }
+        if (*synced == secret)
+            return "";
+        std::string previous = secret;
+        // the pre-sync rows and connections-before-sync.db stay sealed with the old key
+        if (const fs::path keep = fs::path(keyFilePath()) += ".before-sync"; !fs::exists(keep)) {
+            std::ofstream(keep) << previous;
+            fs::permissions(keep, fs::perms::owner_read | fs::perms::owner_write);
+        }
+        secret = *synced;
+        // the local copy follows, so the terminal modes use the same key
+        gUseKeychain ? keystoreWrite(secret) : writeFile(secret);
+        return previous;
+#else
+        return "";
+#endif
     }
 
     bool keychainSupported() {

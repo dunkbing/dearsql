@@ -18,6 +18,7 @@
 #include <cfloat>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <iterator>
 #include <unordered_set>
@@ -36,6 +37,36 @@ namespace {
                                            "Redshift",    "Cassandra",  "DuckDB",  "TiDB",
                                            "CockroachDB", "S3 Storage", "ScyllaDB"};
     constexpr int kTypeCount = sizeof(kTypeLabels) / sizeof(kTypeLabels[0]);
+
+    // the library leaves out backends whose driver it lacks (the ipad build has no postgres...)
+    bool typeAvailable(DatabaseType type) {
+        switch (type) {
+#ifndef DEARSQL_HAS_POSTGRES
+        case DatabaseType::POSTGRESQL:
+        case DatabaseType::REDSHIFT:
+        case DatabaseType::COCKROACHDB:
+#endif
+#ifndef DEARSQL_HAS_MONGODB
+        case DatabaseType::MONGODB:
+#endif
+#ifndef DEARSQL_HAS_MSSQL
+        case DatabaseType::MSSQL:
+#endif
+#ifndef DEARSQL_HAS_ORACLE
+        case DatabaseType::ORACLE:
+#endif
+#ifndef DEARSQL_HAS_CASSANDRA
+        case DatabaseType::CASSANDRA:
+        case DatabaseType::SCYLLADB:
+#endif
+#ifndef DEARSQL_HAS_DUCKDB
+        case DatabaseType::DUCKDB:
+#endif
+            return false;
+        default:
+            return true;
+        }
+    }
 
     void copyToBuf(char* dst, size_t dstSize, const std::string& src) {
         std::strncpy(dst, src.c_str(), dstSize - 1);
@@ -626,7 +657,10 @@ void ConnectionDialog::render() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 pos(viewport->GetCenter().x, viewport->Pos.y + viewport->Size.y * 0.05f);
     ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(kDialogWidth, 0.0f), ImVec2(kDialogWidth, FLT_MAX));
+    const ImVec2 room = UIUtils::DialogRoom();
+    const float width = std::min(kDialogWidth, room.x);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f),
+                                        ImVec2(width, room.y - viewport->Size.y * 0.05f));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
@@ -697,7 +731,7 @@ void ConnectionDialog::render() {
 
     ImGui::EndDisabled();
 
-    if (formChanged)
+    if (formChanged || std::exchange(pickedFile_, false))
         rebuildUrlFromForm();
 
     ImGui::Separator();
@@ -782,7 +816,10 @@ void ConnectionDialog::renderTypeRow() {
 
     ImGui::BeginDisabled(editingConnectionId_ != -1);
     ImGui::SetNextItemWidth(180.0f);
-    if (UIUtils::Select("##conn_type", &typeIdx_, kTypeLabels, kTypeCount)) {
+    const char* labels[kTypeCount];
+    for (int i = 0; i < kTypeCount; ++i)
+        labels[i] = typeAvailable(static_cast<DatabaseType>(i)) ? kTypeLabels[i] : "";
+    if (UIUtils::Select("##conn_type", &typeIdx_, labels, kTypeCount)) {
         applyTypeDefaults(selectedType());
         rebuildUrlFromForm();
     }
@@ -824,14 +861,14 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
                                             sizeof(sqlitePathBuf_));
     ImGui::SameLine();
     if (UIUtils::Button("Browse...##sqlite")) {
-        auto db = FileDialog::openDatabaseFile(selectedType());
-        if (auto fileDb = std::dynamic_pointer_cast<FileDatabase>(db)) {
-            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), fileDb->getPath());
+        FileDialog::openDatabaseFile(selectedType(), [this](const std::string& path) {
+            copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), path);
             if (nameBuf_[0] == '\0' || std::strcmp(nameBuf_, "Untitled connection") == 0) {
-                copyToBuf(nameBuf_, sizeof(nameBuf_), fileDb->getConnectionInfo().name);
+                copyToBuf(nameBuf_, sizeof(nameBuf_),
+                          std::filesystem::path(path).filename().string());
             }
-            formChanged = true;
-        }
+            pickedFile_ = true;
+        });
     }
 }
 
@@ -938,11 +975,14 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
         ImGui::SameLine();
         if (UIUtils::Button("Browse...##cacert")) {
             // oracle wallets are directories; other backends take a cert file
-            std::string path = isOracleWallet ? FileDialog::pickFolder() : FileDialog::openFile();
-            if (!path.empty()) {
+            auto picked = [this](const std::string& path) {
                 copyToBuf(sslCACertPathBuf_, sizeof(sslCACertPathBuf_), path);
-                formChanged = true;
-            }
+                pickedFile_ = true;
+            };
+            if (!isOracleWallet)
+                FileDialog::openFile(picked);
+            else if (const std::string dir = FileDialog::pickFolder(); !dir.empty())
+                picked(dir);
         }
     }
 
@@ -1022,11 +1062,10 @@ void ConnectionDialog::renderSshFields(bool& formChanged) {
                                                 sizeof(sshKeyPathBuf_));
         ImGui::SameLine();
         if (UIUtils::Button("Browse...##sshkey")) {
-            std::string path = FileDialog::openFile();
-            if (!path.empty()) {
+            FileDialog::openFile([this](const std::string& path) {
                 copyToBuf(sshKeyPathBuf_, sizeof(sshKeyPathBuf_), path);
-                formChanged = true;
-            }
+                pickedFile_ = true;
+            });
         }
 
         fieldLabel("Passphrase");

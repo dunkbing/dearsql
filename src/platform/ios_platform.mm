@@ -308,6 +308,8 @@ namespace {
     if (const char* open = getenv("DEARSQL_OPEN")) {
         auto& app = Application::getInstance();
         if (auto url = parseConnectionUrl(open); url.ok) {
+            if (url.info.name.empty())
+                url.info.name = url.info.host + ":" + std::to_string(url.info.port);
             auto db = DatabaseFactory::createDatabase(url.info);
             app.addDatabase(db);
             app.setSelectedDatabase(db);

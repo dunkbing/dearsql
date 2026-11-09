@@ -307,7 +307,8 @@ TEST_F(SSHTunnelTest, OneTunnelCarriesConcurrentConnections) {
                 "CROSS JOIN pg_sleep(0.3)");
             results[i] = r.success() && !r.empty() ? r[0].tableData[0][0] : r.errorMessage();
             // and a wide result through the channel
-            auto wide = db->executeQuery("SELECT repeat('x', 1000) FROM generate_series(1, 2000)");
+            auto wide =
+                db->executeQuery("SELECT repeat('x', 1000) FROM generate_series(1, 2000)", 0);
             if (!wide.success() || wide.empty() || wide[0].tableData.size() != 2000)
                 results[i] = "wide: " + wide.errorMessage();
             db->disconnect();

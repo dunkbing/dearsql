@@ -870,7 +870,8 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         leftDockId = 0;
         centerDockId = dockSpaceId; // new tabs dock here too
         rightDockId = 0;
-        focusDatabases_ = databases.empty() ? 2 : 0; // so a new user sees Add Connection
+        // the connection list, not an empty workspace tab
+        focusDatabases_ = !tabManager || tabManager->getTabs().empty() ? 2 : 0;
     } else if (sidebarVisible) {
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, kSidebarWidth, &leftDockId,
                                     &centerDockId);

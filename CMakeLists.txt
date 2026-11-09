@@ -274,6 +274,11 @@ set(APP_SOURCES
 )
 
 list(APPEND APP_SOURCES src/application.cpp)
+if(APPLE)
+    # connections, workspaces and settings in core data, synced through icloud
+    list(APPEND APP_SOURCES src/utils/synced_store.mm)
+    set_source_files_properties(src/utils/synced_store.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+endif()
 if(IOS)
     include(cmake/IOS.cmake)
     return()
@@ -317,6 +322,8 @@ add_executable(
     ${IMGUI_SOURCES}
     ${IMGUI_NODE_EDITOR_SOURCES}
 )
+include(cmake/ICloud.cmake)
+dearsql_icloud(${PROJECT_NAME})
 
 # hide console on release, keep main() entry point
 if(WIN32)
@@ -421,6 +428,7 @@ if(APPLE)
             ${FOUNDATION_LIBRARY}
             ${APPKIT_LIBRARY}
             ${SECURITY_LIBRARY}
+            "-framework CoreData"
     )
     target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
 elseif(LINUX)

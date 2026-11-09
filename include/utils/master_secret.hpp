@@ -19,4 +19,9 @@ namespace MasterSecret {
     // saveSetting (undone if it fails), then deletes the old copy. empty on success,
     // else what went wrong
     std::string moveToKeychain(bool on, const std::function<bool()>& saveSetting);
+
+    // builds with an icloud container: use the key icloud keychain syncs between the
+    // user's devices (sharing ours when there is none yet). returns the key used until
+    // now when it changed, so records sealed with it can be re-sealed; else empty
+    std::string adoptICloudKey();
 } // namespace MasterSecret

@@ -52,7 +52,10 @@ echo "    No Homebrew dependencies - good!"
 # Sign with Developer ID
 echo ""
 echo "==> Signing with Developer ID..."
-codesign --force --deep --sign "$IDENTITY" --options runtime "$APP_PATH"
+# icloud sync builds (-DDEARSQL_TEAM_ID) also need the provisioning profile embedded
+ENTITLEMENTS=()
+[ -f "$BUILD_DIR/DearSQL.entitlements" ] && ENTITLEMENTS=(--entitlements "$BUILD_DIR/DearSQL.entitlements")
+codesign --force --deep --sign "$IDENTITY" --options runtime "${ENTITLEMENTS[@]}" "$APP_PATH"
 
 echo ""
 echo "==> Verifying signature..."

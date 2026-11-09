@@ -130,6 +130,49 @@ TEST(CredentialMigration, LegacyRowsAreReencryptedWithMasterKey) {
                      std::exception);
     }
 
+#ifdef __APPLE__
+    // apple: the rows moved to the core data store with their ids, so scripts and
+    // chats keyed by connection id stay linked; a second start doesn't migrate again
+    int encId = 0;
+    for (const auto& conn : conns) {
+        EXPECT_EQ(conn.connectionInfo.name == "enc" ? 1 : 2, conn.id);
+        if (conn.connectionInfo.name == "enc")
+            encId = conn.id;
+    }
+    SqlScript script;
+    script.name = "q";
+    script.filePath = (tmp / "q.sql").string();
+    script.connectionId = encId;
+    ASSERT_GT(state.saveScript(script), 0);
+    ASSERT_TRUE(state.setSetting("theme", "synced-theme"));
+
+    SavedConnection added;
+    added.connectionInfo.name = "added";
+    added.connectionInfo.type = DatabaseType::POSTGRESQL;
+    added.connectionInfo.password = "new-pw";
+    const int addedId = state.saveConnection(added);
+    EXPECT_EQ(3, addedId); // past every id the old table used
+    ASSERT_TRUE(state.renameConnection(encId, "renamed"));
+    {
+        AppState again;
+        ASSERT_TRUE(again.initialize());
+        const auto reloaded = again.getSavedConnections();
+        ASSERT_EQ(3u, reloaded.size());
+        for (const auto& conn : reloaded) {
+            if (conn.id == encId) {
+                EXPECT_EQ("renamed", conn.connectionInfo.name);
+                EXPECT_EQ("s3cret", conn.connectionInfo.password);
+            }
+            if (conn.id == addedId)
+                EXPECT_EQ("new-pw", conn.connectionInfo.password);
+        }
+        EXPECT_EQ(1u, again.getScriptsForConnection(encId).size());
+        EXPECT_EQ("synced-theme", again.getSetting("theme"));
+        EXPECT_EQ(1u, again.getWorkspaces().size());
+    }
+    EXPECT_TRUE(fs::exists(tmp / ".dearsql" / "connections-before-sync.db"));
+#endif
+
     setEnvVar("HOME", savedHome);
     setEnvVar("USERPROFILE", savedProfile);
     fs::remove_all(tmp);

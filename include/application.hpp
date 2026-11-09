@@ -95,6 +95,9 @@ public:
     }
     void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
     void removeDatabase(const std::shared_ptr<DatabaseInterface>& db);
+    // another device or process changed the saved connections: add, drop and rename
+    // sidebar rows to match, leaving open connections alone
+    void syncSavedConnections();
     void restorePreviousConnections();
     [[nodiscard]] std::size_t findDatabaseIndex(const std::shared_ptr<DatabaseInterface>& db) const;
 

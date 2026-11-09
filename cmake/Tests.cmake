@@ -80,7 +80,8 @@ target_link_libraries(
 
 # master secret keystore backends
 if(APPLE)
-  target_link_libraries(database_tests PRIVATE ${SECURITY_LIBRARY})
+  target_sources(database_tests PRIVATE src/utils/synced_store.mm)
+  target_link_libraries(database_tests PRIVATE ${SECURITY_LIBRARY} "-framework CoreData")
 elseif(WIN32)
   target_link_libraries(database_tests PRIVATE advapi32)
 elseif(LINUX AND LIBSECRET_FOUND)

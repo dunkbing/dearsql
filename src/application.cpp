@@ -206,7 +206,7 @@ bool Application::initialize() {
     fileDialog = std::make_unique<FileDialog>();
 
     appState = std::make_unique<AppState>();
-    if (!appState->initialize()) {
+    if (!appState->initialize(/*mirrorToICloud=*/true)) {
         std::cerr << "Failed to initialize app state" << std::endl;
         return false;
     }
@@ -522,6 +522,41 @@ int Application::saveConnection(const SavedConnection& conn) {
         return -2;
     }
     return appState->saveConnection(conn);
+}
+
+void Application::syncSavedConnections() {
+    // ponytail: only the current workspace; cached ones catch up when switched back to
+    const auto saved = appState->getConnectionsForWorkspace(currentWorkspaceId);
+    std::vector<std::shared_ptr<DatabaseInterface>> gone;
+    for (const auto& db : databases) {
+        if (db && db->getConnectionId() > 0 &&
+            std::ranges::none_of(
+                saved, [&](const SavedConnection& s) { return s.id == db->getConnectionId(); }))
+            gone.push_back(db);
+    }
+    for (const auto& db : gone) {
+        removeDatabase(db);
+    }
+    for (const auto& s : saved) {
+        const auto it = std::ranges::find_if(
+            databases, [&](const auto& db) { return db && db->getConnectionId() == s.id; });
+        if (it == databases.end()) {
+            if (auto db = DatabaseFactory::createDatabase(s.connectionInfo)) {
+                db->setConnectionId(s.id);
+                databases.push_back(db);
+            }
+            continue;
+        }
+        // ponytail: labels only; a synced host or password change shows after a relaunch
+        auto info = (*it)->getConnectionInfo();
+        if (info.name != s.connectionInfo.name || info.envTag != s.connectionInfo.envTag ||
+            info.color != s.connectionInfo.color) {
+            info.name = s.connectionInfo.name;
+            info.envTag = s.connectionInfo.envTag;
+            info.color = s.connectionInfo.color;
+            (*it)->setConnectionInfo(info);
+        }
+    }
 }
 
 void Application::removeDatabase(const std::shared_ptr<DatabaseInterface>& db) {
@@ -966,6 +1001,9 @@ void Application::renderMainUI() {
         tabManager->tickChatTabs();
     }
     SchemaCompare::poll();
+    if (appState && appState->takeRemoteChange()) {
+        syncSavedConnections();
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
     ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);

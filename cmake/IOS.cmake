@@ -13,6 +13,8 @@ list(APPEND IOS_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 add_executable(${PROJECT_NAME} MACOSX_BUNDLE ${IOS_SOURCES} ${IMGUI_SOURCES}
                                              ${IMGUI_NODE_EDITOR_SOURCES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE DEARSQL_MOBILE)
+include(cmake/ICloud.cmake)
+dearsql_icloud(${PROJECT_NAME})
 set_source_files_properties(src/platform/ios_platform.mm src/platform/ios_dialogs.mm
                             PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 
@@ -55,6 +57,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     "-framework CoreGraphics"
     "-framework CFNetwork"
     "-framework Security"
+    "-framework CoreData"
     "-framework GameController"
     "-framework UniformTypeIdentifiers")
 

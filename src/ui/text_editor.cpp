@@ -531,6 +531,8 @@ namespace dearsql {
         if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
             handleMouseInput();
+        } else if (autocompleteVisible_) {
+            handleMouseInput(); // the popup can hang past the editor
         }
 
         // --- Line numbers panel ---

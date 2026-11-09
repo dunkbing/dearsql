@@ -48,6 +48,12 @@ namespace dearsql {
         void SetFocus();
 
         // Autocomplete
+        // where suggestion row i was drawn (tests click it); nothing visible: (0,0)
+        ImVec2 AutocompleteRowPos(int i) const {
+            return autocompleteVisible_ ? ImVec2(autocompleteMin_.x + 40.0f,
+                                                 autocompleteMin_.y + autocompleteRow_ * (i + 0.5f))
+                                        : ImVec2();
+        }
         enum class CompletionKind : uint8_t {
             Keyword,
             Table,
@@ -237,6 +243,8 @@ namespace dearsql {
         bool autocompleteForced_ = false; // Ctrl+Space: show all items even with empty word
         int autocompleteIndex_ = 0;
         int autocompleteScrollOffset_ = 0;
+        ImVec2 autocompleteMin_, autocompleteMax_; // last drawn popup, for taps
+        float autocompleteRow_ = 0.0f;
         int autocompleteWordStart_ = 0;
 
         // --- Tree-sitter ---

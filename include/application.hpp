@@ -172,6 +172,7 @@ private:
     bool sidebarVisibleLastFrame_ = true;
     // phone-width screens: the sidebar is a tab next to the open tabs, not a split
     bool compactLayout_ = false;
+    int focusDatabases_ = 0; // frames left: a window appearing on the first frame takes focus
     ImGuiID leftDockId = 0;
     ImGuiID centerDockId = 0;
     ImGuiID rightDockId = 0;

@@ -870,6 +870,7 @@ void Application::setupDockingLayout(const ImGuiID dockSpaceId) {
         leftDockId = 0;
         centerDockId = dockSpaceId; // new tabs dock here too
         rightDockId = 0;
+        focusDatabases_ = databases.empty() ? 2 : 0; // so a new user sees Add Connection
     } else if (sidebarVisible) {
         ImGui::DockBuilderSplitNode(dockSpaceId, ImGuiDir_Left, kSidebarWidth, &leftDockId,
                                     &centerDockId);
@@ -1000,6 +1001,8 @@ void Application::renderMainUI() {
         if (!compactLayout_) {
             ImGui::SetNextWindowSizeConstraints(ImVec2(150, -1), ImVec2(500, -1));
         }
+        if (focusDatabases_ > 0 && focusDatabases_--)
+            ImGui::SetNextWindowFocus();
         ImGui::Begin("Databases", nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar);

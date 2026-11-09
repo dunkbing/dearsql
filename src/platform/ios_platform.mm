@@ -6,6 +6,7 @@
 #include "database/file_database.hpp"
 #include "imgui.h"
 #include "imgui_impl_metal.h"
+#include "imgui_internal.h"
 #include "platform/ios_platform.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
@@ -831,7 +832,8 @@ namespace {
     Application::getInstance().getPlatform()->renderFrame();
     // show the soft keyboard while a text field wants it
     DearSQLView* v = (DearSQLView*)view;
-    const BOOL want = ImGui::GetIO().WantTextInput;
+    const BOOL want =
+        ImGui::GetIO().WantTextInput || ImGui::GetCurrentContext()->PlatformImeData.WantVisible;
     if (want != v.keyboardWanted) {
         v.keyboardWanted = want;
         [v reloadInputViews];

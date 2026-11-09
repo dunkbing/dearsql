@@ -17,6 +17,7 @@ namespace {
     MTKView* gView = nil;
     id<MTLCommandQueue> gQueue = nil;
     CFTimeInterval gLastTime = 0;
+    CGFloat gKeyboardInset = 0; // how much of the view the soft keyboard covers
 } // namespace
 
 // ---- the view: touches, the ipad pointer and keys become imgui input ----
@@ -323,6 +324,32 @@ namespace {
     [super viewDidAppear:animated];
     [self.view becomeFirstResponder];
 }
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(keyboardFrame:)
+                                               name:UIKeyboardWillChangeFrameNotification
+                                             object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(keyboardFrame:)
+                                               name:UIKeyboardWillHideNotification
+                                             object:nil];
+}
+// the ui lays out above the keyboard (a floating or undocked one covers nothing)
+- (void)keyboardFrame:(NSNotification*)note {
+    if ([note.name isEqualToString:UIKeyboardWillHideNotification]) {
+        gKeyboardInset = 0;
+        return;
+    }
+    const CGRect screen = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    const CGRect local = [self.view convertRect:screen
+                            fromCoordinateSpace:self.view.window.screen.coordinateSpace];
+    const CGRect covered = CGRectIntersection(self.view.bounds, local);
+    gKeyboardInset =
+        CGRectIsNull(covered) || CGRectGetMaxY(covered) < CGRectGetMaxY(self.view.bounds)
+            ? 0
+            : covered.size.height;
+}
 // gestures are for fingers; a trackpad click or drag is a mouse
 - (BOOL)gestureRecognizer:(UIGestureRecognizer*)g shouldReceiveTouch:(UITouch*)touch {
     return touch.type == UITouchTypeDirect;
@@ -450,7 +477,7 @@ void IOSPlatform::renderFrame() {
         ImGuiIO& io = ImGui::GetIO();
         const CGSize size = gView.bounds.size;
         const CGFloat scale = gView.contentScaleFactor;
-        io.DisplaySize = ImVec2(size.width, size.height);
+        io.DisplaySize = ImVec2(size.width, std::max<CGFloat>(size.height - gKeyboardInset, 1));
         io.DisplayFramebufferScale = ImVec2(scale, scale);
         const CFTimeInterval now = CACurrentMediaTime();
         io.DeltaTime = gLastTime > 0 ? static_cast<float>(now - gLastTime) : 1.0f / 60.0f;

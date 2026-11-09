@@ -4,8 +4,7 @@
 set(IOS_SOURCES ${APP_SOURCES})
 list(FILTER IOS_SOURCES EXCLUDE REGEX
      "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|file_dialog\\.cpp|cli_command|/mongodb/|tab/mongo_")
-list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm
-     src/utils/file_dialog_mobile.cpp)
+list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm)
 include(cmake/EmbedResources.cmake)
 embed_fonts()
 embed_images()
@@ -56,7 +55,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     "-framework CoreGraphics"
     "-framework CFNetwork"
     "-framework Security"
-    "-framework GameController")
+    "-framework GameController"
+    "-framework UniformTypeIdentifiers")
 
 configure_file(cmake/Info-iOS.plist.in ${CMAKE_BINARY_DIR}/Info-iOS.plist @ONLY)
 set_target_properties(${PROJECT_NAME} PROPERTIES

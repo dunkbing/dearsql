@@ -36,7 +36,12 @@ mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
 # incremental: CMakeLists.txt sets the vcpkg toolchain itself, so the cache can stay
-cmake -DCMAKE_BUILD_TYPE=Release ..
+# icloud sync needs the developer id provisioning profile (app id with icloud + keychain
+# sharing); without one the build stays sync-off, since entitlements alone get it killed
+PROFILE="${DEARSQL_PROVISIONING_PROFILE:-$PROJECT_DIR/DearSQL.provisionprofile}"
+SYNC_TEAM=""
+[ -f "$PROFILE" ] && SYNC_TEAM="$TEAM_ID"
+cmake -DCMAKE_BUILD_TYPE=Release -DDEARSQL_TEAM_ID="$SYNC_TEAM" ..
 make -j$(sysctl -n hw.ncpu) dearsql
 
 # Verify no Homebrew references
@@ -54,6 +59,7 @@ echo ""
 echo "==> Signing with Developer ID..."
 # icloud sync builds (-DDEARSQL_TEAM_ID) also need the provisioning profile embedded
 ENTITLEMENTS=()
+[ -n "$SYNC_TEAM" ] && cp "$PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
 [ -f "$BUILD_DIR/DearSQL.entitlements" ] && ENTITLEMENTS=(--entitlements "$BUILD_DIR/DearSQL.entitlements")
 codesign --force --deep --sign "$IDENTITY" --options runtime "${ENTITLEMENTS[@]}" "$APP_PATH"
 

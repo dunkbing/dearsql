@@ -54,3 +54,4 @@ WixToolset.*.dll
 
 SECRETS
 build-ios/
+*.provisionprofile

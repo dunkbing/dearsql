@@ -8,6 +8,7 @@ set(DEARSQL_ICLOUD_CONTAINER "iCloud.io.gitlab.dunkbing.dearsql" CACHE STRING "c
 
 function(dearsql_icloud target)
     if(NOT APPLE OR DEARSQL_TEAM_ID STREQUAL "")
+        file(REMOVE ${CMAKE_BINARY_DIR}/DearSQL.entitlements)
         return()
     endif()
     target_compile_definitions(${target} PRIVATE DEARSQL_ICLOUD_CONTAINER="${DEARSQL_ICLOUD_CONTAINER}")

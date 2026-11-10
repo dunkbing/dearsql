@@ -3,7 +3,7 @@
 # configure with the ndk toolchain chainloaded by vcpkg (docs/ANDROID.md)
 set(ANDROID_SOURCES ${APP_SOURCES})
 list(FILTER ANDROID_SOURCES EXCLUDE REGEX
-     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|file_dialog\\.cpp|cli_command")
+     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
 list(APPEND ANDROID_SOURCES src/ui/title_bar.cpp src/platform/android_main.cpp
                             src/platform/android_dialogs.cpp)
 mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)

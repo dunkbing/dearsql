@@ -1569,18 +1569,15 @@ void DatabaseHierarchy::startSqlDumpExport(MySQLDatabaseNode* dbData) {
         return;
     }
 
-    const std::string path = MysqlDumpExport::promptForSqlDumpDestination(
-        std::format("{}_{}.sql", sanitizeBackupFileName(dbData->name), timestampForFileName()));
-    if (path.empty()) {
-        return;
-    }
-
-    exportProgress_ = std::make_shared<MysqlDumpExport::Progress>();
-    exportDbName_ = dbData->name;
-
-    exportOp_.startCancellable(
-        [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
-            return MysqlDumpExport::runSqlDump(dbData, path, *progress, stopToken);
+    FileDialog::saveFile(
+        std::format("{}_{}.sql", sanitizeBackupFileName(dbData->name), timestampForFileName()),
+        "SQL Dump", "sql", [this, dbData](const std::string& path) {
+            exportProgress_ = std::make_shared<MysqlDumpExport::Progress>();
+            exportDbName_ = dbData->name;
+            exportOp_.startCancellable(
+                [dbData, path, progress = exportProgress_](const std::stop_token& stopToken) {
+                    return MysqlDumpExport::runSqlDump(dbData, path, *progress, stopToken);
+                });
         });
 }
 
@@ -1795,23 +1792,21 @@ void DatabaseHierarchy::startPostgresBackup(PostgresDatabaseNode* dbData,
         return;
     }
 
-    const std::string path =
-        FileDialog::savePostgresBackupFile(defaultPostgresBackupName(dbData->name, format));
-    if (path.empty()) {
-        return;
-    }
-
-    auto info = dbData->parentDb->getConnectionInfo();
-    info.database = dbData->name;
-    PostgresBackupOptions options{info,   dbData->name,          std::filesystem::path(path),
-                                  format, includeCreateDatabase, noOwner};
-
-    postgresToolTitle_ = "Backup Database";
-    postgresToolRefreshDbName_.clear();
-    postgresToolRefreshDatabaseList_ = false;
-    postgresToolOp_.startCancellable([options = std::move(options)](std::stop_token stop) {
-        return PostgresBackupService::backupDatabase(options, stop);
-    });
+    FileDialog::savePostgresBackupFile(
+        defaultPostgresBackupName(dbData->name, format),
+        [this, dbData, format, includeCreateDatabase, noOwner](const std::string& path) {
+            auto info = dbData->parentDb->getConnectionInfo();
+            info.database = dbData->name;
+            PostgresBackupOptions options{
+                info,   dbData->name,          std::filesystem::path(path),
+                format, includeCreateDatabase, noOwner};
+            postgresToolTitle_ = "Backup Database";
+            postgresToolRefreshDbName_.clear();
+            postgresToolRefreshDatabaseList_ = false;
+            postgresToolOp_.startCancellable([options = std::move(options)](std::stop_token stop) {
+                return PostgresBackupService::backupDatabase(options, stop);
+            });
+        });
 }
 
 void DatabaseHierarchy::startPostgresRestore(PostgresDatabaseNode* dbData,

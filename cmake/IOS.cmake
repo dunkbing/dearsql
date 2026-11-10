@@ -3,7 +3,7 @@
 # configure with -DCMAKE_SYSTEM_NAME=iOS -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator
 set(IOS_SOURCES ${APP_SOURCES})
 list(FILTER IOS_SOURCES EXCLUDE REGEX
-     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|file_dialog\\.cpp|cli_command")
+     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
 list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm)
 mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
 mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)

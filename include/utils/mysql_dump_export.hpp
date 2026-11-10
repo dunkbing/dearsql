@@ -29,10 +29,6 @@ namespace MysqlDumpExport {
         std::string path;
     };
 
-    // Opens a native save dialog. Must be called on the UI thread. Returns an
-    // empty string if the user cancelled.
-    std::string promptForSqlDumpDestination(const std::string& defaultName);
-
     // Writes a mysqldump-compatible .sql dump of the whole database.
     //
     // Schema comes from SHOW CREATE TABLE/VIEW, so indexes, foreign keys,

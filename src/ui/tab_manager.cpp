@@ -9,7 +9,6 @@
 #include "imgui_internal.h"
 #include "mcp/fuzzy.hpp"
 #include "mydear/menu.hpp"
-#include "ui/fonts.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
@@ -385,10 +384,6 @@ void TabManager::renderTabs() {
         ImGui::PopID();
 
         if (beginOpen) {
-            ImFont* tabFont = fonts::tabFont();
-            if (tabFont) {
-                ImGui::PushFont(tabFont);
-            }
             if (!tab->hasBottomBar()) {
                 // everything sized "to the rest" stops short of the bottom strip; both
                 // rects are rebuilt at each Begin
@@ -398,9 +393,6 @@ void TabManager::renderTabs() {
                 w->WorkRect.Max.y -= inset;
             }
             tab->render();
-            if (tabFont) {
-                ImGui::PopFont();
-            }
         }
 
         ImGui::End();

@@ -981,8 +981,8 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
             };
             if (!isOracleWallet)
                 FileDialog::openFile(picked);
-            else if (const std::string dir = FileDialog::pickFolder(); !dir.empty())
-                picked(dir);
+            else
+                FileDialog::pickFolder(picked);
         }
     }
 

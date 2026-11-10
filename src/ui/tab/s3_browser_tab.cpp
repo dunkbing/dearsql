@@ -5,8 +5,8 @@
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
 #include "mydear/spinner.hpp"
-#include "ui/alert.hpp"
 #include "themes.hpp"
+#include "ui/alert.hpp"
 #include "utils/file_dialog.hpp"
 #include <algorithm>
 #include <filesystem>
@@ -137,17 +137,16 @@ void S3BrowserTab::upload(const std::string& path) {
 void S3BrowserTab::download(const Entry& entry) {
     if (entry.folder)
         return;
-    const std::string path = FileDialog::saveFile(baseName(entry.key), nullptr, nullptr);
-    if (path.empty())
-        return;
-    runOp("Downloading " + baseName(entry.key),
-          [client = client_, bucket = bucket_, key = entry.key, path,
-           progress = makeProgress(progress_, cancel_)] {
-              client->download(bucket, key, path, progress);
-              OpResult r;
-              r.message = "Saved " + path;
-              return r;
-          });
+    FileDialog::saveFile(
+        baseName(entry.key), nullptr, nullptr, [this, key = entry.key](const std::string& path) {
+            runOp("Downloading " + baseName(key), [client = client_, bucket = bucket_, key, path,
+                                                   progress = makeProgress(progress_, cancel_)] {
+                client->download(bucket, key, path, progress);
+                OpResult r;
+                r.message = "Saved " + path;
+                return r;
+            });
+        });
 }
 
 std::optional<S3BrowserTab::Clip>& S3BrowserTab::clipboard() {

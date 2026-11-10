@@ -124,11 +124,6 @@ bool Application::initialize() {
 #endif
 #endif
 
-    if (!FileDialog::initialize()) {
-        spdlog::error("Failed to initialize Native File Dialog");
-        return false;
-    }
-
     tabManager = std::make_unique<TabManager>();
     // a dropped database or schema closes its tabs before its node is freed
     retireNodeHook = [this](std::unique_ptr<IDatabaseNode> node) {
@@ -273,9 +268,6 @@ void Application::cleanup() {
     databaseSidebar.reset();
     fileDialog.reset();
     spdlog::debug("Components cleaned up");
-
-    FileDialog::cleanup();
-    spdlog::debug("File dialog cleaned up");
 
     mydear::updater::Stop();
 

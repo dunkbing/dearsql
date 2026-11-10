@@ -10,24 +10,21 @@
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
 #include "license/license_manager.hpp"
-#include "platform/alert.hpp"
 #include "ui/ai_settings_dialog.hpp"
+#include "ui/alert.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/markdown_text.hpp"
 #include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 
-#include "platform/updater.hpp"
+#include "mydear/updater.hpp"
 
-#if defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_IOS)
 #include "platform/ios_platform.hpp"
-#elif defined(__APPLE__)
-#include "platform/macos_platform.hpp"
-#elif defined(__linux__)
-#include "platform/linux_platform.hpp"
-#elif defined(_WIN32)
-#include "platform/windows_platform.hpp"
+#else
+#include "mydear/title_bar.hpp"
+#include "ui/title_bar.hpp"
 #endif
 
 #include "themes.hpp"
@@ -67,9 +64,6 @@ Application& Application::getInstance() {
 }
 
 namespace {
-    constexpr double kIdleActivationDelaySeconds = 2.0; // time after last activity before idling
-    constexpr double kMinimumWaitSeconds = 1.0 / 120.0; // keep responsive when active
-    constexpr double kMaximumWaitSeconds = 0.2;         // cap sleep to keep UI responsive
 
     // open the pro purchase page in the user's browser
     void openPurchaseUrl() {
@@ -101,100 +95,34 @@ namespace {
                     {{"Get Pro", [] { openPurchaseUrl(); }},
                      {"Later", nullptr, AlertButton::Style::Cancel}});
     }
-
-    bool isImGuiUserActive() {
-        ImGuiIO& io = ImGui::GetIO();
-
-        if (ImGui::IsAnyItemActive() || ImGui::IsAnyItemFocused() || ImGui::IsAnyItemHovered()) {
-            return true;
-        }
-
-        if (ImGuiContext* ctx = ImGui::GetCurrentContext()) {
-            if (ctx->MovingWindow != nullptr || ctx->DragDropActive) {
-                return true;
-            }
-
-            if (ctx->LastActiveId != 0 && ctx->LastActiveIdTimer < 0.05f) {
-                return true;
-            }
-        }
-
-        const ImVec2 mouseDelta = io.MouseDelta;
-        if (mouseDelta.x != 0.0f || mouseDelta.y != 0.0f || io.MouseWheel != 0.0f ||
-            io.MouseWheelH != 0.0f) {
-            return true;
-        }
-
-        for (bool down : io.MouseDown) {
-            if (down) {
-                return true;
-            }
-        }
-
-        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
-            const ImGuiKeyData* keyData = ImGui::GetKeyData(static_cast<ImGuiKey>(key));
-            if (keyData != nullptr && (keyData->Down || keyData->DownDuration == 0.0f)) {
-                return true;
-            }
-        }
-
-        if (io.InputQueueCharacters.Size > 0) {
-            return true;
-        }
-
-        return false;
-    }
 } // namespace
 
 bool Application::initialize() {
     spdlog::info("ImGui version: {}", IMGUI_VERSION);
     spdlog::info("Starting {}...", APP_NAME);
 
-#if defined(DEARSQL_MOBILE)
-    // uikit owns the window and the loop (ios_platform.mm); only imgui to set up here
-    platform_ = std::make_unique<IOSPlatform>(this);
-    setupImGuiContext();
-    if (!platform_->initializeImGuiBackend()) {
+#if defined(DEARSQL_IOS)
+    // mydear runs uikit; we are inside the root controller's loadView, the view exists
+    if (!shell_.create(mydear::Config{}, *this))
         return false;
-    }
-#elif defined(__APPLE__)
-    platform_ = std::make_unique<MacOSPlatform>(this);
-    if (!initializeGLFW()) {
-        return false;
-    }
-    if (!platform_->initializePlatform(window)) {
-        spdlog::error("Failed to initialize platform");
-        return false;
-    }
-    if (!initializeImGui()) {
-        return false;
-    }
-#elif defined(__linux__)
-    platform_ = std::make_unique<LinuxPlatform>(this);
-    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
-    if (!linuxPlatform->initializeGTK(nullptr, nullptr)) {
-        return false;
-    }
-    setupImGuiContext();
-    platform_->setupTitlebar();
-#elif defined(_WIN32)
-    platform_ = std::make_unique<WindowsPlatform>(this);
-    if (!initializeGLFW()) {
-        return false;
-    }
-    if (!platform_->initializePlatform(window)) {
-        spdlog::error("Failed to initialize platform");
-        return false;
-    }
-    if (!initializeImGui()) {
-        return false;
-    }
+    ios::attach(shell_);
+#else
+    mydear::Config config;
+#ifdef NDEBUG
+    config.title = APP_NAME;
 #endif
-
-    if (!FileDialog::initialize()) {
-        spdlog::error("Failed to initialize Native File Dialog");
+    config.width = 1600;
+    config.height = 1000;
+    config.titleBar = true; // ui/title_bar.cpp, beside the os window buttons
+#if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
+    config.titleBarHeight = 36; // points (gtk: logical pixels); elsewhere the platform's own
+#endif
+    if (!shell_.create(config, *this))
         return false;
-    }
+#ifndef __linux__
+    window = shell_.glfwWindow();
+#endif
+#endif
 
     tabManager = std::make_unique<TabManager>();
     // a dropped database or schema closes its tabs before its node is freed
@@ -220,8 +148,11 @@ bool Application::initialize() {
 
     const std::string themeStr = appState->getSetting("theme", "dark");
     theme_ = &Theme::themeById(themeStr);
+    Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-    platform_->applyTheme(theme_->dark);
+#ifdef DEARSQL_IOS
+    ios::applyTheme(theme_->dark);
+#endif
 
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
     try {
@@ -238,26 +169,30 @@ bool Application::initialize() {
     } catch (const std::exception&) {
         maxFps_ = 120;
     }
-    platform_->setVSync(vsync_);
+    shell_.setVSync(vsync_);
+#ifndef DEARSQL_MOBILE
+    shell_.setMaxFps(maxFps_);
+#endif
 
     LicenseManager::instance().loadStoredLicense();
     LicenseManager::instance().validateStoredLicense();
 
-    initializeUpdater();
+    // dearsql.dev publishes the appcast (macos, windows) and the manifest (linux)
+    mydear::updater::Start({.appName = "DearSQL",
+                            .version = APP_VERSION,
+                            .appcastUrl = "https://dearsql.dev/appcast.xml",
+                            .publicKey = SPARKLE_ED_PUBLIC_KEY,
+                            .manifestUrl = "https://dearsql.dev/api/version.json"});
 
     restorePreviousConnections();
 
     signal(SIGTERM, signal_handler);
     signal(SIGINT, signal_handler);
 
-#ifndef __linux__
-    platform_->setupTitlebar();
-#endif
-
-    platform_->updateWorkspaceDropdown();
-
 #ifdef __APPLE__
     spdlog::info("Application initialized successfully (with Metal backend)");
+#elif defined(__ANDROID__)
+    spdlog::info("Application initialized successfully (with OpenGL ES backend)");
 #elif defined(__linux__)
     spdlog::info("Application initialized successfully (with GTK4 + OpenGL backend)");
 #elif defined(_WIN32)
@@ -271,72 +206,10 @@ bool Application::initialize() {
 }
 
 void Application::run() {
-#if defined(__linux__)
-    auto* linuxPlatform = static_cast<LinuxPlatform*>(platform_.get());
-    linuxPlatform->runMainLoop();
-#elif defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_IOS)
     // uikit runs the loop: the view calls renderFrame() each display refresh
 #else
-    double lastInteractionTime = glfwGetTime();
-    bool lastWindowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-    while (!glfwWindowShouldClose(window)) {
-        if (isShutdownRequested()) {
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-        }
-        const double frameStart = glfwGetTime();
-        const double timeSinceInteraction = frameStart - lastInteractionTime;
-        const bool windowFocusedAtFrameStart = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        const bool hadAsyncWork = AsyncOperationControl::wantsFrames();
-
-        double waitTimeout = 0.0;
-        const bool idleBecauseUnfocused = !windowFocusedAtFrameStart && !hadAsyncWork;
-        const bool idleBecauseInactive = windowFocusedAtFrameStart &&
-                                         (timeSinceInteraction >= kIdleActivationDelaySeconds) &&
-                                         !hadAsyncWork;
-        if (idleBecauseUnfocused) {
-            waitTimeout = kMaximumWaitSeconds;
-        } else if (idleBecauseInactive) {
-            const double idleTime =
-                std::max(0.0, timeSinceInteraction - kIdleActivationDelaySeconds);
-            waitTimeout = std::clamp(idleTime, kMinimumWaitSeconds, kMaximumWaitSeconds);
-        }
-
-        if (waitTimeout > 0.0) {
-            glfwWaitEventsTimeout(waitTimeout);
-        } else {
-            glfwPollEvents();
-        }
-
-        const bool windowFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        if (windowFocused && !lastWindowFocused) {
-            lastInteractionTime = glfwGetTime();
-        }
-        lastWindowFocused = windowFocused;
-
-        const bool hasAsyncWork = AsyncOperationControl::wantsFrames();
-
-        // never call renderFrame() when unfocused: CAMetalLayer::nextDrawable blocks
-        // when the window is backgrounded, causing sluggish app switches
-        if (!windowFocused) {
-            continue;
-        }
-
-        platform_->renderFrame();
-
-        // without vsync nothing paces the loop: sleep out the rest of the frame
-        if (!vsync_ && maxFps_ > 0) {
-            const double left = frameStart + 1.0 / maxFps_ - glfwGetTime();
-            if (left > 0)
-                std::this_thread::sleep_for(std::chrono::duration<double>(left));
-        }
-
-        const bool userActive = isImGuiUserActive();
-
-        bool keepAnimating = userActive || hasAsyncWork;
-        if (keepAnimating) {
-            lastInteractionTime = glfwGetTime();
-        }
-    }
+    shell_.run();
 #endif
 }
 
@@ -396,27 +269,13 @@ void Application::cleanup() {
     fileDialog.reset();
     spdlog::debug("Components cleaned up");
 
-    FileDialog::cleanup();
-    spdlog::debug("File dialog cleaned up");
-
-    cleanupUpdater();
+    mydear::updater::Stop();
 
     MarkdownText::shutdown(); // its textures need the backend
 
-    if (platform_) {
-        platform_->shutdownImGui();
-        platform_->cleanup();
-        platform_.reset();
-    }
-
-    ImGui::DestroyContext();
-    spdlog::debug("ImGui context destroyed");
-
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-    if (window) {
-        glfwDestroyWindow(window);
-    }
-    glfwTerminate();
+    shell_.destroy(); // backends, imgui context, window
+#if !defined(DEARSQL_MOBILE) && !defined(__linux__)
+    window = nullptr;
 #endif
 
     spdlog::debug("Application cleanup completed");
@@ -424,10 +283,11 @@ void Application::cleanup() {
 
 void Application::setTheme(const std::string_view id) {
     theme_ = &Theme::themeById(id);
+    Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-    if (platform_) {
-        platform_->applyTheme(theme_->dark);
-    }
+#ifdef DEARSQL_IOS
+    ios::applyTheme(theme_->dark);
+#endif
     if (appState) {
         appState->setSetting("theme", theme_->id);
     }
@@ -450,15 +310,40 @@ void Application::setShowFps(const bool on) {
 
 void Application::setVSync(const bool on) {
     vsync_ = on;
-    platform_->setVSync(on);
+    shell_.setVSync(on);
     if (appState)
         appState->setSetting("vsync", on ? "1" : "0");
 }
 
 void Application::setMaxFps(const int fps) {
     maxFps_ = std::max(0, fps);
+#ifndef DEARSQL_MOBILE
+    shell_.setMaxFps(maxFps_);
+#endif
     if (appState)
         appState->setSetting("max_fps", std::to_string(maxFps_));
+}
+
+void Application::setup() {
+    fonts::setup();
+}
+
+void Application::frame() {
+#ifdef DEARSQL_IOS
+    ios::renderChrome();
+#else
+    TitleBarView::render(*this); // in mydear's title bar strip
+#endif
+    renderMainUI();
+    Alert::render(); // last: over every other window and popup
+}
+
+bool Application::wantsFrames() {
+    return AsyncOperationControl::wantsFrames();
+}
+
+bool Application::shouldQuit() {
+    return isShutdownRequested();
 }
 
 bool Application::hasPendingAsyncWork() const {
@@ -629,63 +514,6 @@ void Application::restorePreviousConnections() {
                   currentWorkspaceId, elapsedMs);
 }
 
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-bool Application::initializeGLFW() {
-    if (!glfwInit()) {
-        spdlog::error("Failed to initialize GLFW");
-        return false;
-    }
-
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-#endif
-
-#ifdef NDEBUG
-    const auto title = APP_NAME;
-#else
-    const auto title = "";
-#endif
-    window = glfwCreateWindow(1600, 1000, title, nullptr, nullptr);
-    if (!window) {
-        spdlog::error("Failed to create GLFW window");
-        glfwTerminate();
-        return false;
-    }
-
-    spdlog::info("GLFW window created successfully");
-    return true;
-}
-#endif
-
-void Application::setupImGuiContext() const {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    fonts::setup();
-    ImGui::StyleColorsDark();
-    Theme::ApplyNativeTheme(theme_->colors);
-}
-
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-bool Application::initializeImGui() const {
-    setupImGuiContext();
-
-    if (!platform_->initializeImGuiBackend()) {
-        spdlog::error("Failed to initialize ImGui backend");
-        return false;
-    }
-
-#ifdef __APPLE__
-    spdlog::info("ImGui initialized with Metal backend");
-#elif defined(_WIN32)
-    spdlog::info("ImGui initialized with DirectX 11 backend");
-#endif
-
-    return true;
-}
-#endif
-
 void Application::setCurrentWorkspace(const int workspaceId) {
     spdlog::debug("setCurrentWorkspace({}) current={}", workspaceId, currentWorkspaceId);
     if (currentWorkspaceId == workspaceId) {
@@ -762,9 +590,6 @@ int Application::createWorkspace(const std::string& name, const std::string& des
         setCurrentWorkspace(newWorkspaceId);
         spdlog::debug("createWorkspace: after setCurrentWorkspace, currentId={}",
                       currentWorkspaceId);
-        platform_->updateWorkspaceDropdown();
-        spdlog::debug("createWorkspace: after updateWorkspaceDropdown, currentId={}",
-                      currentWorkspaceId);
     }
 
     return newWorkspaceId;
@@ -806,10 +631,7 @@ bool Application::deleteWorkspace(const int workspaceId) {
 bool Application::renameWorkspace(const int workspaceId, const std::string& name) {
     if (!appState || name.empty())
         return false;
-    bool success = appState->renameWorkspace(workspaceId, name);
-    if (success)
-        platform_->updateWorkspaceDropdown();
-    return success;
+    return appState->renameWorkspace(workspaceId, name);
 }
 
 void Application::refreshWorkspaceConnections() {
@@ -932,7 +754,7 @@ void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
 #ifdef DEARSQL_MOBILE
-    if (const bool compact = viewport->Size.x < 700.0f; compact != compactLayout_) {
+    if (const bool compact = viewport->WorkSize.x < 700.0f; compact != compactLayout_) {
         compactLayout_ = compact;
         dockingLayoutInitialized = false;
     }
@@ -947,11 +769,11 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         sidebarVisibleLastFrame_ = sidebarVisible;
     }
-    const float topInset = platform_ ? platform_->getClientAreaTopInset() : 0.0f;
-    const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);
-    const ImVec2 dockSize(viewport->Size.x, std::max(0.0f, viewport->Size.y - topInset));
-    ImGui::SetNextWindowPos(dockPos);
-    ImGui::SetNextWindowSize(dockSize);
+    // clear of system bars and cutouts (mobile; the ios navigation bar is in the safe area),
+    // under the title bar (desktop, android)
+    const mydear::Rect content = mydear::ContentRect();
+    ImGui::SetNextWindowPos(content.pos);
+    ImGui::SetNextWindowSize(content.size);
     ImGui::SetNextWindowViewport(viewport->ID);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -1070,8 +892,6 @@ void Application::renderMainUI() {
     SettingsDialog::instance().render();
     AISettingsDialog::instance().render();
 
-    pollUpdater();
-
     maybeRemindToUpgrade();
 
     // frames per second, bottom right, above everything (not in docs screenshots)
@@ -1163,21 +983,6 @@ void Application::openFile(const std::string& rawPath) {
     if (isCsv)
         tabManager->createCsvEditorTab(path);
 }
-
-#ifdef __APPLE__
-void Application::onSidebarToggleClicked() const {
-    if (platform_) {
-        platform_->onSidebarToggleClicked();
-    }
-}
-
-float Application::getTitlebarHeight() const {
-    if (platform_) {
-        return platform_->getTitlebarHeight();
-    }
-    return 0.0f;
-}
-#endif
 
 float Application::fpsCounterWidth() const {
     if (!showFps_ || std::getenv("DEARSQL_SHOT_DIR")) {

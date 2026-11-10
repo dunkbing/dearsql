@@ -3,8 +3,8 @@
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
 #include <algorithm>
 #include <iostream>
 #include <ranges>
@@ -172,7 +172,7 @@ void DiagramTab::render() {
     ImGui::SameLine(0.0f, Theme::Spacing::L);
     ImGui::Checkbox("Show Foreign Keys", &showForeignKeys);
     ImGui::SameLine(0.0f, Theme::Spacing::L);
-    if (UIUtils::Button(ICON_FA_ARROWS_ROTATE " Refresh")) {
+    if (mydear::Button(ICON_FA_ARROWS_ROTATE " Refresh")) {
         schemaLoaded = false;
         loadDatabaseSchema();
     }

@@ -4,14 +4,14 @@
 #include "application.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/spinner.hpp"
+#include "mydear/splitter.hpp"
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
-#include "utils/button.hpp"
 #include "utils/sentry_utils.hpp"
-#include "utils/spinner.hpp"
-#include "utils/splitter.hpp"
 #include <algorithm>
 #include <chrono>
 #include <format>
@@ -90,8 +90,8 @@ void MongoEditorTab::render() {
         ImGui::EndChild();
 
         renderToolbar();
-        UIUtils::Splitter("##mongo_splitter", &splitterPosition_, totalContentHeight_, 100.0f,
-                          200.0f);
+        mydear::Splitter("##mongo_splitter", &splitterPosition_, totalContentHeight_, 100.0f,
+                         200.0f);
 
         if (ImGui::BeginChild("MongoResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -121,8 +121,8 @@ void MongoEditorTab::render() {
                 constexpr float spinnerRadius = 10.0f;
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
-                UIUtils::Spinner("##mongo_results_spinner", spinnerRadius, 2,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
+                mydear::Spinner("##mongo_results_spinner", spinnerRadius, 2,
+                                ImGui::GetColorU32(ImGuiCol_Text));
 
                 const char* loadingText = LABEL_RUNNING_QUERY;
                 ImVec2 textSize = ImGui::CalcTextSize(loadingText);
@@ -167,19 +167,19 @@ void MongoEditorTab::renderHeader() const {
 void MongoEditorTab::renderToolbar() {
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
+        mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(LABEL_CANCEL)) {
+        if (mydear::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
     } else {
-        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
+        if (mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary)) {
             startQueryExecutionAsync(query_);
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(ICON_FA_ALIGN_LEFT " Format")) {
+        if (mydear::Button(ICON_FA_ALIGN_LEFT " Format")) {
             formatJSON();
         }
     }
@@ -263,7 +263,6 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, tableHeight))) {
 
             tableRenderer.render(tableId.c_str());
-
         }
 
         ImGui::EndChild();

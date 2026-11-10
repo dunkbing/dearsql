@@ -86,6 +86,10 @@ public:
     [[nodiscard]] bool isSigningIn() const {
         return signingIn_;
     }
+    // the agent answered initialize. before that bun x may still be installing it
+    [[nodiscard]] bool isInitialized() const {
+        return initialized_;
+    }
     // session/new again, after a sign-in done outside the agent (a terminal login)
     void retrySession();
     [[nodiscard]] bool isTurnActive() const;
@@ -153,6 +157,7 @@ private:
     std::atomic<bool> sessionReady_{false};
     std::atomic<bool> turnActive_{false};
     std::atomic<bool> signingIn_{false};
+    std::atomic<bool> initialized_{false};
     // a sign-in restart: the old process stops here, off the ui thread, and tick()
     // starts the new one once it is gone. last member: joined before the rest go
     std::string restartMethod_;

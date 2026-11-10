@@ -3,7 +3,7 @@
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "imgui_te_ui.h"
-#include "platform/graphics_backend.hpp"
+#include "mydear/app.hpp"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -98,10 +98,9 @@ int main(int argc, char** argv) {
     // Drive the platform's own frame instead of hand-rolling one: on macOS the
     // frame is a Metal pass (drawable, encoder, backend NewFrame) that the app
     // owns, and renderFrame() is what calls renderMainUI().
-    PlatformInterface* platform = app.getPlatform();
     while (!glfwWindowShouldClose(app.getWindow())) {
         glfwPollEvents();
-        platform->renderFrame();
+        app.shell().renderFrame();
         ImGuiTestEngine_PostSwap(engine);
 
         if (headless && ImGuiTestEngine_IsTestQueueEmpty(engine)) {
@@ -110,7 +109,7 @@ int main(int argc, char** argv) {
     }
 
     ImGuiTestEngine_Stop(engine);
-    stopRecording(); // before cleanup: its fast exit would drop the tail of the video
+    mydear::stopRecording(); // before cleanup: its fast exit would drop the tail of the video
 
     ImGuiTestEngineResultSummary summary;
     ImGuiTestEngine_GetResultSummary(engine, &summary);

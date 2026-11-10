@@ -3,7 +3,6 @@
 #include "database/sql_builder.hpp"
 #include "utils/mysql_session_reset.hpp"
 
-#include "utils/file_dialog.hpp"
 #include <cstddef>
 #include <fstream>
 #include <optional>
@@ -214,10 +213,6 @@ namespace {
 } // namespace
 
 namespace MysqlDumpExport {
-
-    std::string promptForSqlDumpDestination(const std::string& defaultName) {
-        return FileDialog::saveFile(defaultName, "SQL Dump", "sql");
-    }
 
     Result runSqlDump(MySQLDatabaseNode* node, const std::string& path, Progress& progress,
                       const std::stop_token& stopToken) {

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 
 // shared ImGui settings dialog — opened by the "more" (hamburger) button on
@@ -12,13 +13,12 @@ public:
     void open();
     void render();
 
-    // platform-native actions wired up during titlebar setup
-    std::function<void()> onManageLicense;
-    std::function<void()> onReportBug;
-
 private:
     SettingsDialog();
     ~SettingsDialog();
+
+    // manage license, a modal over the settings
+    void renderLicense();
 
     bool open_ = false;
     bool pendingOpen_ = false;
@@ -27,4 +27,16 @@ private:
     bool cliInstalled_ = false;
     std::string cliStatus_;
     std::string keyStoreStatus_;
+
+    // the license dialog; activation answers on a worker thread
+    struct LicenseResult {
+        std::mutex mutex;
+        bool done = false;
+        std::string error;
+    };
+    bool licenseOpen_ = false;
+    char licenseKey_[128] = {};
+    std::string licenseStatus_;
+    bool licenseError_ = false;
+    std::shared_ptr<LicenseResult> licenseResult_;
 };

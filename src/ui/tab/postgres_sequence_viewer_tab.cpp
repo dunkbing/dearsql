@@ -6,10 +6,10 @@
 #include "database/database_node.hpp"
 #include "database/postgres/postgres_database_node.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
-#include "utils/menu.hpp"
-#include "utils/spinner.hpp"
 #include <cstdio>
 #include <cstring>
 #include <format>
@@ -99,7 +99,7 @@ void PostgresSequenceViewerTab::render() {
     if (fetchOp_.isRunning()) {
         ImGui::TextUnformatted("Loading...");
         ImGui::SameLine(0, Theme::Spacing::S);
-        UIUtils::Spinner("##pg_seq_loading", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##pg_seq_loading", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         return;
     }
 
@@ -264,13 +264,13 @@ void PostgresSequenceViewerTab::renderToolbar() {
 
     if (dirty) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary)) {
+        if (mydear::Button(ICON_FA_FLOPPY_DISK " Save", mydear::ButtonVariant::Primary)) {
             saveChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_FLOPPY_DISK " Save", UIUtils::ButtonVariant::Primary);
+        mydear::Button(ICON_FA_FLOPPY_DISK " Save", mydear::ButtonVariant::Primary);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -280,13 +280,13 @@ void PostgresSequenceViewerTab::renderToolbar() {
     ImGui::SameLine(0, Theme::Spacing::M);
     if (dirty) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (UIUtils::Button(ICON_FA_XMARK " Discard", UIUtils::ButtonVariant::Danger)) {
+        if (mydear::Button(ICON_FA_XMARK " Discard", mydear::ButtonVariant::Danger)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_XMARK " Discard", UIUtils::ButtonVariant::Danger);
+        mydear::Button(ICON_FA_XMARK " Discard", mydear::ButtonVariant::Danger);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -414,7 +414,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
         saveDialogEditor_.SetShowLineNumbers(true);
         saveDialogEditor_.SetText(combined);
 
-        ImGui::SetNextWindowSize(UIUtils::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
         ImGui::OpenPopup("Confirm Update Sequence");
         dialogOpened_ = true;
     }
@@ -451,17 +451,17 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
 
         if (sqlExecutionOp_.isRunning()) {
             ImGui::BeginDisabled();
-            UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary);
+            mydear::Button(ICON_FA_PLAY " Execute", mydear::ButtonVariant::Primary);
             ImGui::EndDisabled();
 
             ImGui::SameLine(0, Theme::Spacing::M);
-            UIUtils::Spinner("##pg_seq_exec_spinner", 7.0f, 2, ImGui::GetColorU32(colors.blue));
+            mydear::Spinner("##pg_seq_exec_spinner", 7.0f, 2, ImGui::GetColorU32(colors.blue));
             ImGui::SameLine(0, Theme::Spacing::S);
             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
             ImGui::TextUnformatted("Executing...");
             ImGui::PopStyleColor();
         } else {
-            if (UIUtils::Button(ICON_FA_PLAY " Execute", UIUtils::ButtonVariant::Primary)) {
+            if (mydear::Button(ICON_FA_PLAY " Execute", mydear::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
                 auto* schema = schema_;
                 sqlExecutionOp_.start([schema, keep = keepOwnerAlive(schema),
@@ -480,7 +480,7 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
 
             ImGui::SameLine(0, Theme::Spacing::M);
 
-            if (UIUtils::Button(ICON_FA_XMARK " Cancel")) {
+            if (mydear::Button(ICON_FA_XMARK " Cancel")) {
                 showSaveDialog_ = false;
                 pendingUpdateSQL_.clear();
                 dialogOpened_ = false;

@@ -1,11 +1,7 @@
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#include "stb_image.h"
-
-#include "embedded_images.hpp"
-#include "platform/platform_interface.hpp"
 #include "utils/texture_manager.hpp"
+#include "mydear/app.hpp"
+#include "mydear/embedded.hpp"
+#include "mydear/image.hpp"
 #include <spdlog/spdlog.h>
 
 TextureManager& TextureManager::instance() {
@@ -13,11 +9,7 @@ TextureManager& TextureManager::instance() {
     return mgr;
 }
 
-void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
-    if (!platform) {
-        return;
-    }
-
+void TextureManager::loadDatabaseIcons(mydear::App& shell) {
     struct IconMapping {
         DatabaseType type;
         const char* imageName;
@@ -42,7 +34,7 @@ void TextureManager::loadDatabaseIcons(PlatformInterface* platform) {
     };
 
     for (const auto& [type, name] : mappings) {
-        auto tex = loadFromEmbedded(platform, name);
+        auto tex = loadFromEmbedded(shell, name);
         if (tex != ImTextureID{}) {
             icons_[type] = tex;
         }
@@ -54,26 +46,18 @@ ImTextureID TextureManager::getIcon(DatabaseType type) const {
     return it != icons_.end() ? it->second : ImTextureID{};
 }
 
-ImTextureID TextureManager::loadFromEmbedded(PlatformInterface* platform, const char* name) {
+ImTextureID TextureManager::loadFromEmbedded(mydear::App& shell, const char* name) {
     const EmbeddedImage* img = findEmbeddedImage(name);
     if (!img) {
         spdlog::debug("no embedded image for '{}'", name);
         return ImTextureID{};
     }
 
-    int w = 0, h = 0, channels = 0;
-    unsigned char* pixels =
-        stbi_load_from_memory(img->data, static_cast<int>(img->size), &w, &h, &channels, 4);
-    if (!pixels) {
-        spdlog::error("failed to decode image '{}'", name);
-        return ImTextureID{};
-    }
-
-    ImTextureID tex = platform->createTextureFromRGBA(pixels, w, h);
-    stbi_image_free(pixels);
-
-    if (tex != ImTextureID{}) {
-        spdlog::debug("loaded icon '{}' ({}x{})", name, w, h);
-    }
+    const ImTextureID tex =
+        mydear::LoadTexture(img->data, img->size, [&shell](const uint8_t* rgba, int w, int h) {
+            return shell.createTexture(rgba, w, h);
+        });
+    if (tex == ImTextureID{})
+        spdlog::error("failed to load image '{}'", name);
     return tex;
 }

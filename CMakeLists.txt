@@ -92,7 +92,7 @@ endif()
 
 project(dearsql)
 
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     set(LINUX TRUE)
 endif()
 
@@ -110,10 +110,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(APPLE)
-    # jthread, stop_token require experimental libc++ on Apple
+if(APPLE OR ANDROID)
+    # jthread, stop_token require experimental libc++ on Apple and in the ndk
     add_compile_options(-fexperimental-library)
-    if(NOT IOS) # the ios sdk has no libc++experimental; the headers are enough
+    if(NOT IOS AND NOT ANDROID) # ios and the ndk: the headers are enough
         add_link_options(-fexperimental-library)
     endif()
 endif()
@@ -144,8 +144,12 @@ find_package(hiredis_ssl CONFIG REQUIRED)
 find_package(miniocpp CONFIG REQUIRED)
 find_package(libssh2 CONFIG REQUIRED)
 find_package(PostgreSQL REQUIRED) # ios: libpq from the cmake/ports overlay
-# ipad: no duckdb yet, and no file dialogs, crash reports, terminal ui or tests
-if(NOT IOS)
+# ipad and android: no duckdb yet, and no file dialogs, crash reports, terminal ui or tests
+if(ANDROID)
+    # shortcut: sql server, oracle and cassandra need their drivers cross-compiled first
+    set(DEARSQL_WITH_FREETDS OFF CACHE BOOL "" FORCE)
+    set(DEARSQL_WITH_VENDORED_DRIVERS OFF CACHE BOOL "" FORCE)
+elseif(NOT IOS)
     find_package(DuckDB CONFIG REQUIRED)
     find_package(GTest CONFIG REQUIRED)
     find_package(nfd CONFIG REQUIRED)
@@ -154,6 +158,19 @@ if(NOT IOS)
 endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
+# the updater frameworks mydear drives (linux: httplib, found above)
+if(APPLE AND NOT IOS)
+    include(cmake/Sparkle.cmake)
+    set(MYDEAR_SPARKLE_FRAMEWORK "${SPARKLE_FRAMEWORK_PATH}" CACHE PATH "" FORCE)
+elseif(WIN32)
+    include(cmake/WinSparkle.cmake)
+endif()
+if(NOT IOS AND NOT ANDROID)
+    set(MYDEAR_UPDATER ON CACHE BOOL "" FORCE)
+endif()
+# ui toolkit: themes, widgets, embedded fonts and images (own repo)
+set(MYDEAR_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
+add_subdirectory(external/mydear)
 
 enable_testing()
 
@@ -164,16 +181,8 @@ if(LINUX)
     # optional: master secret storage via secret service (file fallback otherwise)
     pkg_check_modules(LIBSECRET libsecret-1)
     find_package(X11 REQUIRED)
-elseif(NOT IOS)
+elseif(NOT IOS AND NOT ANDROID)
     find_package(glfw3 CONFIG REQUIRED)
-endif()
-
-if(APPLE AND NOT IOS)
-    include(cmake/Sparkle.cmake)
-endif()
-
-if(WIN32)
-    include(cmake/WinSparkle.cmake)
 endif()
 
 include(cmake/TreeSitterGrammars.cmake)
@@ -182,8 +191,6 @@ include(cmake/Imgui.cmake)
 set(APP_SOURCES
     src/main.cpp
     src/app_state.cpp
-    src/embedded_images.cpp
-    src/embedded_fonts.cpp
     src/ui/fonts.cpp
     src/database/file_database.cpp
     src/database/postgres/postgres_database_node.cpp
@@ -241,10 +248,6 @@ set(APP_SOURCES
     src/utils/table_exporter.cpp
     src/utils/chart_data.cpp
     src/utils/table_importer.cpp
-    src/utils/button.cpp
-    src/utils/select.cpp
-    src/utils/toggle_button.cpp
-    src/utils/spinner.cpp
     src/utils/crypto.cpp
     src/utils/master_secret.cpp
     src/utils/sentry_init.cpp
@@ -282,37 +285,17 @@ endif()
 if(IOS)
     include(cmake/IOS.cmake)
     return()
+elseif(ANDROID)
+    include(cmake/Android.cmake)
+    return()
 endif()
-if(APPLE)
-    list(APPEND APP_SOURCES src/platform/macos_platform.mm)
-    list(APPEND APP_SOURCES src/platform/metal_backend.mm)
-    list(APPEND APP_SOURCES src/platform/macos_titlebar.mm)
-    list(APPEND APP_SOURCES src/platform/macos_updater.mm)
-    list(APPEND APP_SOURCES src/platform/macos_alert.mm)
-    list(APPEND APP_SOURCES src/platform/macos_input_dialog.mm)
-elseif(LINUX)
-    list(APPEND APP_SOURCES src/platform/linux_platform.cpp)
-    list(APPEND APP_SOURCES src/platform/opengl_backend.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_titlebar.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_updater.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_alert.cpp)
-    list(APPEND APP_SOURCES src/platform/linux_input_dialog.cpp)
-elseif(WIN32)
-    list(
-        APPEND APP_SOURCES
-        src/platform/windows_platform.cpp
-        src/platform/dx11_backend.cpp
-        src/platform/windows_titlebar.cpp
-        src/platform/windows_updater.cpp
-        src/platform/windows_alert.cpp
-        src/platform/windows_input_dialog.cpp
-        assets/app.rc
-    )
+list(APPEND APP_SOURCES src/ui/title_bar.cpp)
+if(WIN32)
+    list(APPEND APP_SOURCES assets/app.rc)
 endif()
 
-include(cmake/EmbedResources.cmake)
-embed_fonts()
-embed_images()
+mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 
 list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
@@ -350,7 +333,7 @@ add_subdirectory(external/acp-cpp)
 # chat markdown. it links a target named imgui; ours is compiled into each executable, so headers only
 add_library(imgui INTERFACE)
 target_include_directories(imgui INTERFACE external/imgui)
-set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # texture_manager.cpp has it
+set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # mydear has it
 add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
 
 target_include_directories(
@@ -382,12 +365,6 @@ if(LINUX)
     )
 endif()
 
-if(APPLE)
-    target_include_directories(
-        ${PROJECT_NAME}
-        PRIVATE "${SPARKLE_FRAMEWORK_PATH}/Headers"
-    )
-endif()
 
 target_link_libraries(
     ${PROJECT_NAME}
@@ -404,6 +381,7 @@ target_link_libraries(
         OpenSSL::Crypto
         sentry::sentry
         dearsql::dearsql
+        mydear::mydear
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp
@@ -430,7 +408,6 @@ if(APPLE)
             ${SECURITY_LIBRARY}
             "-framework CoreData"
     )
-    target_link_libraries(${PROJECT_NAME} PRIVATE "${SPARKLE_FRAMEWORK_PATH}")
 elseif(LINUX)
     target_link_libraries(
         ${PROJECT_NAME}

@@ -172,6 +172,7 @@ private:
     bool agentWarmupDone_ = false;
     double agentStartedAt_ = 0.0; // ImGui time; drives the "no session yet" warning
     bool agentStartWarned_ = false;
+    bool agentInitialized_ = false; // last frame's isInitialized(), restarts the clock
 
     std::vector<AcpAgentDef> agentDefs_; // the catalog; the backend index addresses it
     // downloads happen by themselves the first time an agent needs one; a failure

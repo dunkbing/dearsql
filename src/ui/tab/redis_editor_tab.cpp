@@ -3,10 +3,10 @@
 #include "application.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/spinner.hpp"
+#include "mydear/splitter.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
-#include "utils/spinner.hpp"
-#include "utils/splitter.hpp"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -440,8 +440,8 @@ void RedisEditorTab::render() {
             ImGui::EndChild();
 
             renderToolbar();
-            UIUtils::Splitter("##redis_splitter", &splitterPosition_, totalContentHeight_, 60.0f,
-                              80.0f);
+            mydear::Splitter("##redis_splitter", &splitterPosition_, totalContentHeight_, 60.0f,
+                             80.0f);
 
             if (ImGui::BeginChild("RedisResults", ImVec2(-1, resultsHeight), true,
                                   ImGuiWindowFlags_NoScrollbar)) {
@@ -471,8 +471,8 @@ void RedisEditorTab::render() {
                     constexpr float spinnerRadius = 10.0f;
                     ImGui::SetCursorScreenPos(
                         ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
-                    UIUtils::Spinner("##redis_spinner", spinnerRadius, 2,
-                                     ImGui::GetColorU32(ImGuiCol_Text));
+                    mydear::Spinner("##redis_spinner", spinnerRadius, 2,
+                                    ImGui::GetColorU32(ImGuiCol_Text));
 
                     const char* loadingText = LABEL_RUNNING;
                     const ImVec2 textSize = ImGui::CalcTextSize(loadingText);
@@ -553,15 +553,15 @@ void RedisEditorTab::renderHeader() const {
 void RedisEditorTab::renderToolbar() {
     if (queryOp_.isRunning()) {
         ImGui::BeginDisabled();
-        UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary);
+        mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(ICON_FA_STOP " Cancel")) {
+        if (mydear::Button(ICON_FA_STOP " Cancel")) {
             queryOp_.cancel();
         }
     } else {
-        if (UIUtils::Button(ICON_FA_PLAY " Run", UIUtils::ButtonVariant::Primary)) {
+        if (mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary)) {
             command_ = editor_.GetText();
             startCommandExecutionAsync(command_);
         }
@@ -569,7 +569,7 @@ void RedisEditorTab::renderToolbar() {
 
     if (!resultHistory_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (UIUtils::Button(ICON_FA_TRASH_CAN " Clear", UIUtils::ButtonVariant::Danger)) {
+        if (mydear::Button(ICON_FA_TRASH_CAN " Clear", mydear::ButtonVariant::Danger)) {
             resultHistory_.clear();
         }
     }
@@ -645,15 +645,15 @@ void RedisEditorTab::renderResults() {
 
                 // re-run
                 ImGui::TableNextColumn();
-                if (UIUtils::IconButton(ICON_FA_PLAY, UIUtils::ButtonVariant::Secondary,
-                                        ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
+                if (mydear::IconButton(ICON_FA_PLAY, mydear::ButtonVariant::Secondary,
+                                       ImVec2(0.0f, 0.0f), mydear::ButtonSize::Small)) {
                     rerunCmd = entry.command;
                 }
 
                 // delete
                 ImGui::TableNextColumn();
-                if (UIUtils::IconButton(ICON_FA_XMARK, UIUtils::ButtonVariant::Danger,
-                                        ImVec2(0.0f, 0.0f), UIUtils::ButtonSize::Small)) {
+                if (mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger,
+                                       ImVec2(0.0f, 0.0f), mydear::ButtonSize::Small)) {
                     deleteIdx = idx;
                 }
 

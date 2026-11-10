@@ -70,6 +70,7 @@ target_link_libraries(
         hiredis::hiredis
         hiredis::hiredis_ssl
         dearsql::dearsql
+        mydear::mydear
         miniocpp::miniocpp
         libssh2::libssh2
         spdlog::spdlog
@@ -122,6 +123,7 @@ target_link_libraries(
     PRIVATE
         GTest::gtest_main
         dearsql::dearsql
+        mydear::mydear
         unofficial::tree-sitter::tree-sitter
         tree-sitter-sql-grammar
         nlohmann_json::nlohmann_json

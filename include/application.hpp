@@ -2,12 +2,15 @@
 
 #include "app_state.hpp"
 #include "imgui.h"
-#include "platform/platform_interface.hpp"
+#include "mydear/app.hpp"
 #include "themes.hpp"
 #include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"
 #include "utils/file_dialog.hpp"
 #include <memory>
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
+#include <GLFW/glfw3.h>
+#endif
 #include <unordered_map>
 #include <vector>
 
@@ -15,7 +18,8 @@
 #include <GLFW/glfw3.h>
 #endif
 
-class Application {
+// the app is mydear's delegate: mydear owns the window, backend and loop
+class Application : public mydear::Delegate {
 public:
     static Application& getInstance();
 
@@ -84,7 +88,13 @@ public:
     void dockTabToCenter(const std::string& tabName) const;
 
     // Open a file by path — routes to the right handler by extension
-    void openFile(const std::string& path);
+    void openFile(const std::string& path) override;
+
+    // mydear::Delegate
+    void setup() override;
+    void frame() override;
+    bool wantsFrames() override;
+    bool shouldQuit() override;
 
     // Database management
     std::vector<std::shared_ptr<DatabaseInterface>>& getDatabases() {
@@ -107,6 +117,10 @@ public:
     [[nodiscard]] bool canAddConnection() const;
     [[nodiscard]] bool canAddWorkspace() const;
 
+    // the os window: NSWindow*, UIWindow*, HWND or GtkWindow*
+    [[nodiscard]] void* nativeWindow() const {
+        return shell_.nativeWindow();
+    }
     // Window reference (GLFW only on macOS/Windows)
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     [[nodiscard]] GLFWwindow* getWindow() const {
@@ -137,29 +151,25 @@ public:
     bool renameWorkspace(int workspaceId, const std::string& name);
     void refreshWorkspaceConnections();
 
-    // Platform-specific methods
-#ifdef __APPLE__
-    void onSidebarToggleClicked() const;
-    [[nodiscard]] float getTitlebarHeight() const;
-#endif
-    [[nodiscard]] PlatformInterface* getPlatform() const {
-        return platform_.get();
+    // window or uikit view, graphics, frame loop
+    [[nodiscard]] mydear::App& shell() {
+        return shell_;
     }
     [[nodiscard]] bool isShutdownRequested() const;
 
 private:
     Application() = default;
-    ~Application() = default;
+    ~Application() override = default;
 
     // Core components
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
+    mydear::App shell_; // window or uikit view, metal, imgui backends, frame loop
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
     std::unique_ptr<AppState> appState;
-    std::unique_ptr<PlatformInterface> platform_;
 
     // Application state
     const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
@@ -185,11 +195,6 @@ private:
     int currentWorkspaceId = 1; // Default workspace
 
     // Private helper methods
-    void setupImGuiContext() const;
-#if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
-    bool initializeGLFW();
-    bool initializeImGui() const;
-#endif
     void setupDockingLayout(ImGuiID dockSpaceId);
 
 public:

@@ -1,6 +1,7 @@
 #include "ai/acp_client.hpp"
 #include "ai/acp_agents.hpp"
 #include "ai/acp_registry.hpp"
+#include "mydear/frames.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -58,6 +59,7 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
     authTried_ = false;
     preferredAuth_ = preferredAuthMethod;
     sessionRequested_ = false;
+    initialized_ = false;
     startParams_ = {argv, cwd, mcpUrl, mcpName, mcpToken, extraEnv};
 
     auto [conn, err] = acp::Connection::spawn(*this, argv, opts);
@@ -74,6 +76,7 @@ AcpClient::start(const std::vector<std::string>& argv, const std::string& cwd,
 }
 
 void AcpClient::onInitialized(const acp::Response& r) {
+    initialized_ = true;
     if (!r.ok()) {
         pushEvent({.type = AcpEvent::Type::Error, .text = r.error->describe()});
         return;
@@ -269,6 +272,7 @@ void AcpClient::onSessionOpened(const std::string& method, const acp::Response& 
     pushEvent({.type = AcpEvent::Type::ConfigOptions,
                .configOptions = acp::configOptionsFromJson(r.result)});
     sessionReady_ = true;
+    spdlog::info("ACP: {} ready", method);
     pushEvent({.type = AcpEvent::Type::SessionReady});
 }
 
@@ -355,6 +359,7 @@ std::vector<AcpEvent> AcpClient::drainEvents() {
 void AcpClient::pushEvent(AcpEvent ev) {
     std::lock_guard lock(stateMutex_);
     events_.push_back(std::move(ev));
+    mydear::requestFrames(); // reader thread: wake the idle loop to drain it
 }
 
 // ---------------------------------------------------------------- acp::Client

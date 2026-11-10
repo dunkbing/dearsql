@@ -3,8 +3,8 @@
 #include "application.hpp"
 #include "database/file_database.hpp"
 #include "imgui.h"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
-#include "utils/spinner.hpp"
 #include <cstdio>
 #include <format>
 #include <utility>
@@ -48,7 +48,7 @@ void SQLiteSequenceViewerTab::render() {
     if (fetchOp_.isRunning()) {
         ImGui::TextUnformatted("Loading...");
         ImGui::SameLine(0, Theme::Spacing::S);
-        UIUtils::Spinner("##sqlite_seq_loading", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
+        mydear::Spinner("##sqlite_seq_loading", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         return;
     }
 

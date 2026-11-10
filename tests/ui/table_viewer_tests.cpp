@@ -716,6 +716,52 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // the title bar is an imgui window: its buttons work and clicking one leaves keyboard
+    // focus in the editor
+    t = IM_REGISTER_TEST(engine, "TitleBar", "Buttons keep the editor focused");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 1");
+        ctx->Yield(10);
+        ctx->KeyChars("2");
+        ctx->Yield(2);
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 12");
+
+        // empty bar space (a drag or a double-click, in real life): typing still goes to the editor
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ctx->MouseMoveToPos(ImVec2(vp->Pos.x + vp->Size.x * 0.3f, vp->Pos.y + 14));
+        ctx->MouseClick();
+        ctx->Yield(5);
+        ctx->KeyChars("3");
+        ctx->Yield(2);
+        IM_CHECK_STR_EQ(tab->getEditor().GetText().c_str(), "select 123");
+
+        const bool sidebar = app.isSidebarVisible();
+        ctx->ItemClick("**/###sidebar");
+        ctx->Yield(5);
+        IM_CHECK(app.isSidebarVisible() != sidebar);
+        ctx->ItemClick("**/###sidebar");
+        ctx->Yield(5);
+        IM_CHECK(app.isSidebarVisible() == sidebar);
+
+        ctx->ItemClick("**/###workspace");
+        ctx->Yield(2);
+        IM_CHECK(ctx->UiContext->OpenPopupStack.Size > 0);
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(2);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // saving deletes previews what foreign keys do to the referencing rows, and the counts
     // are what the delete then does
     t = IM_REGISTER_TEST(engine, "TableViewer", "Delete preview counts referencing rows");

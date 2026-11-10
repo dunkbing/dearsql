@@ -2,12 +2,12 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui.h"
-#include "platform/alert.hpp"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/spinner.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
+#include "ui/alert.hpp"
 #include "utils/file_dialog.hpp"
-#include "utils/menu.hpp"
-#include "utils/spinner.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <format>
@@ -137,17 +137,16 @@ void S3BrowserTab::upload(const std::string& path) {
 void S3BrowserTab::download(const Entry& entry) {
     if (entry.folder)
         return;
-    const std::string path = FileDialog::saveFile(baseName(entry.key), nullptr, nullptr);
-    if (path.empty())
-        return;
-    runOp("Downloading " + baseName(entry.key),
-          [client = client_, bucket = bucket_, key = entry.key, path,
-           progress = makeProgress(progress_, cancel_)] {
-              client->download(bucket, key, path, progress);
-              OpResult r;
-              r.message = "Saved " + path;
-              return r;
-          });
+    FileDialog::saveFile(
+        baseName(entry.key), nullptr, nullptr, [this, key = entry.key](const std::string& path) {
+            runOp("Downloading " + baseName(key), [client = client_, bucket = bucket_, key, path,
+                                                   progress = makeProgress(progress_, cancel_)] {
+                client->download(bucket, key, path, progress);
+                OpResult r;
+                r.message = "Saved " + path;
+                return r;
+            });
+        });
 }
 
 std::optional<S3BrowserTab::Clip>& S3BrowserTab::clipboard() {
@@ -393,7 +392,7 @@ void S3BrowserTab::renderToolbar() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     ImGui::BeginDisabled(prefix_.empty() || listOp_.isRunning());
-    if (UIUtils::IconButton(ICON_FA_ARROW_UP)) {
+    if (mydear::IconButton(ICON_FA_ARROW_UP)) {
         std::string parent = prefix_.substr(0, prefix_.size() - 1);
         const auto slash = parent.rfind('/');
         open(slash == std::string::npos ? "" : parent.substr(0, slash + 1));
@@ -404,7 +403,7 @@ void S3BrowserTab::renderToolbar() {
 
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(listOp_.isRunning());
-    if (UIUtils::IconButton(ICON_FA_ARROWS_ROTATE))
+    if (mydear::IconButton(ICON_FA_ARROWS_ROTATE))
         open(prefix_);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -412,7 +411,7 @@ void S3BrowserTab::renderToolbar() {
 
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(op_.isRunning());
-    if (UIUtils::IconButton(ICON_FA_UPLOAD))
+    if (mydear::IconButton(ICON_FA_UPLOAD))
         upload();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -449,7 +448,7 @@ void S3BrowserTab::renderToolbar() {
             ImGui::SameLine(0, Theme::Spacing::XS);
         ImGui::PushID(static_cast<int>(a));
         ImGui::BeginDisabled(!actions[a].enabled);
-        if (UIUtils::IconButton(actions[a].icon))
+        if (mydear::IconButton(actions[a].icon))
             actions[a].run();
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -466,7 +465,7 @@ void S3BrowserTab::renderToolbar() {
 
     if (op_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        UIUtils::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        mydear::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.blue));
         ImGui::SameLine(0, Theme::Spacing::S);
         const double p = progress_->load();
         if (p >= 0)
@@ -476,7 +475,7 @@ void S3BrowserTab::renderToolbar() {
             ImGui::TextColored(colors.subtext0, "%s", opLabel_.c_str());
         if (p >= 0) {
             ImGui::SameLine(0, Theme::Spacing::S);
-            if (UIUtils::IconButton(ICON_FA_XMARK))
+            if (mydear::IconButton(ICON_FA_XMARK))
                 cancel_->store(true);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Cancel");
@@ -518,13 +517,13 @@ void S3BrowserTab::renderTable() {
 
     if (!listError_.empty()) {
         ImGui::TextColored(colors.red, "%s", listError_.c_str());
-        if (UIUtils::Button(ICON_FA_ARROWS_ROTATE " Retry"))
+        if (mydear::Button(ICON_FA_ARROWS_ROTATE " Retry"))
             list();
         return;
     }
     if (entries_.empty()) {
         if (listOp_.isRunning()) {
-            UIUtils::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
+            mydear::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::SameLine(0, Theme::Spacing::M);
             ImGui::TextColored(colors.subtext0, "Loading...");
         } else {
@@ -580,7 +579,7 @@ void S3BrowserTab::renderTable() {
                         download(e);
                 }
             }
-            if (UIUtils::BeginContextMenu("##s3_entry_menu")) {
+            if (mydear::BeginContextMenu("##s3_entry_menu")) {
                 renderEntryMenu(e, navigate);
                 ImGui::EndPopup();
             }
@@ -601,7 +600,7 @@ void S3BrowserTab::renderTable() {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::BeginDisabled(listOp_.isRunning());
-        if (UIUtils::Button("Load more"))
+        if (mydear::Button("Load more"))
             list(true);
         ImGui::EndDisabled();
     }
@@ -622,7 +621,7 @@ void S3BrowserTab::renderEntryMenu(const Entry& entry, std::optional<std::string
             download(entry);
         if (ImGui::MenuItem("Details", nullptr, false, !busy))
             showDetails(entry);
-        if (UIUtils::BeginSubMenu("Copy Share Link", !busy)) {
+        if (mydear::BeginSubMenu("Copy Share Link", !busy)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Valid for 1 hour"))
@@ -694,7 +693,7 @@ void S3BrowserTab::renderDetails() {
             ImGui::EndTable();
         }
         ImGui::Spacing();
-        if (UIUtils::Button("Close", UIUtils::ButtonVariant::Primary) ||
+        if (mydear::Button("Close", mydear::ButtonVariant::Primary) ||
             ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

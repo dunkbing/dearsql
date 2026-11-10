@@ -8,9 +8,9 @@
 #include "application.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
 #include "themes.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
-#include "utils/button.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -412,16 +412,15 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
 
     // subscribe / unsubscribe button
     if (subscribed) {
-        if (UIUtils::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", UIUtils::ButtonVariant::Danger)) {
+        if (mydear::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", mydear::ButtonVariant::Danger)) {
             unsubscribe();
         }
     } else if (connecting) {
         // connecting runs on a worker: it can be called off
-        if (UIUtils::Button(ICON_FA_XMARK " Cancel", UIUtils::ButtonVariant::Secondary))
+        if (mydear::Button(ICON_FA_XMARK " Cancel", mydear::ButtonVariant::Secondary))
             unsubscribe();
     } else {
-        if (UIUtils::Button(ICON_FA_TOWER_BROADCAST " Subscribe",
-                            UIUtils::ButtonVariant::Primary)) {
+        if (mydear::Button(ICON_FA_TOWER_BROADCAST " Subscribe", mydear::ButtonVariant::Primary)) {
             subscribe(patternBuf_);
         }
     }
@@ -429,7 +428,7 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     ImGui::SameLine(0, Theme::Spacing::S);
 
     // clear button
-    if (UIUtils::Button(ICON_FA_TRASH_CAN " Clear", UIUtils::ButtonVariant::Danger)) {
+    if (mydear::Button(ICON_FA_TRASH_CAN " Clear", mydear::ButtonVariant::Danger)) {
         displayMessages_.clear();
         sub_->total.store(0);
     }
@@ -517,7 +516,7 @@ void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
     if (!canPublish)
         ImGui::BeginDisabled();
 
-    if (UIUtils::Button("Publish", UIUtils::ButtonVariant::Primary, ImVec2(buttonWidth, 0)) ||
+    if (mydear::Button("Publish", mydear::ButtonVariant::Primary, ImVec2(buttonWidth, 0)) ||
         (enterPressed && canPublish)) {
         publish(publishChannelBuf_, publishMessageBuf_);
         publishMessageBuf_[0] = '\0';

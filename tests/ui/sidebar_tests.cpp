@@ -2,8 +2,10 @@
 #include "database/db_interface.hpp"
 #include "database/file_database.hpp"
 #include "imgui_te_context.h"
-#include "ui/settings_dialog.hpp"
 #include "imgui_te_engine.h"
+#include "ui/alert.hpp"
+#include "ui/input_dialog.hpp"
+#include "ui/settings_dialog.hpp"
 #include <format>
 
 // helper function to create a test database
@@ -273,5 +275,88 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         ctx->KeyPress(ImGuiKey_Escape);
         ctx->Yield(3);
         IM_CHECK(!ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
+    };
+
+    // manage license is an imgui modal over the settings; esc closes only it
+    t = IM_REGISTER_TEST(engine, "Settings", "License dialog");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
+        ctx->Yield(3);
+        ctx->ItemClick("//Settings/Manage License...");
+        ctx->Yield(3);
+        // AnyPopupId ignores the name, so look at the window
+        auto shown = [] {
+            const ImGuiWindow* w = ImGui::FindWindowByName("Manage License");
+            return w && w->WasActive;
+        };
+        IM_CHECK(shown());
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+        IM_CHECK(!shown());
+        IM_CHECK(ImGui::IsPopupOpen("Settings", ImGuiPopupFlags_AnyPopupId));
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+    };
+
+    // imgui alerts: buttons run their callback, return never picks a destructive one
+    t = IM_REGISTER_TEST(engine, "Alert", "Buttons and keys");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        static int pressed;
+        pressed = 0;
+        auto show = [] {
+            Alert::show("Drop it?", "Gone for good.",
+                        {{"Cancel", [] { pressed = 1; }, AlertButton::Style::Cancel},
+                         {"Drop", [] { pressed = 2; }, AlertButton::Style::Destructive}});
+        };
+        show();
+        ctx->Yield(3);
+        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->Yield(3);
+        IM_CHECK_EQ(pressed, 0);
+        ctx->ItemClick("//Drop it?###mydear_alert/Drop");
+        ctx->Yield(3);
+        IM_CHECK_EQ(pressed, 2);
+        show();
+        ctx->Yield(3);
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+        IM_CHECK_EQ(pressed, 1);
+    };
+
+    // an alert opened over settings stacks on it instead of closing it
+    t = IM_REGISTER_TEST(engine, "Alert", "Over settings");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        SettingsDialog::instance().open();
+        ctx->Yield(3);
+        Alert::show("Heads up");
+        ctx->Yield(3);
+        ctx->ItemClick("//Heads up###mydear_alert/OK");
+        ctx->Yield(3);
+        const ImGuiWindow* settings = ImGui::FindWindowByName("Settings");
+        IM_CHECK(settings && settings->WasActive);
+        ctx->KeyPress(ImGuiKey_Escape);
+        ctx->Yield(3);
+    };
+
+    // a validator error keeps the prompt open; a valid value confirms it
+    t = IM_REGISTER_TEST(engine, "Alert", "Input prompt");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        static std::string confirmed;
+        confirmed.clear();
+        InputDialog::show(
+            "Rename", "New name:", "", "Rename",
+            [](const std::string& v) {
+                confirmed = v;
+                return std::string();
+            },
+            nullptr, [](const std::string& v) { return v.empty() ? std::string("Required") : ""; });
+        ctx->Yield(3);
+        ctx->ItemClick("//Rename###mydear_alert/Rename");
+        ctx->Yield(3);
+        IM_CHECK(confirmed.empty());
+        // types and presses return, which confirms
+        ctx->ItemInputValue("//Rename###mydear_alert/##value", "orders");
+        ctx->Yield(3);
+        IM_CHECK_EQ(confirmed, std::string("orders"));
     };
 }

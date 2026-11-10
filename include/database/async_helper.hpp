@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mydear/frames.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -44,27 +45,12 @@ namespace AsyncOperationControl {
     }
 
     // work the app does not own (an agent process starting, a stream) still shows a
-    // spinner: drawing one asks for frames a little longer, so the loop never idles
-    // under visible progress
-    inline std::atomic<std::int64_t>& framesWantedUntilMs() {
-        static std::atomic<std::int64_t> until{0};
-        return until;
-    }
-
-    inline std::int64_t steadyNowMs() {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::steady_clock::now().time_since_epoch())
-            .count();
-    }
-
-    inline void requestFrames(std::chrono::milliseconds for_ = std::chrono::milliseconds(250)) {
-        framesWantedUntilMs().store(steadyNowMs() + for_.count(), std::memory_order_relaxed);
-    }
+    // spinner: drawing one asks for frames a little longer (mydear/frames.hpp)
+    using mydear::requestFrames;
 
     // what the frame loop checks: running tasks or anything visibly in progress
     inline bool wantsFrames() {
-        return hasRunningTasks() ||
-               steadyNowMs() < framesWantedUntilMs().load(std::memory_order_relaxed);
+        return hasRunningTasks() || mydear::framesRequested();
     }
 
     inline void resetCancelledTaskCount() {

@@ -8,7 +8,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "mcp/fuzzy.hpp"
-#include "ui/fonts.hpp"
+#include "mydear/menu.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
@@ -23,7 +23,6 @@
 #include "ui/tab/sqlite_sequence_viewer_tab.hpp"
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
-#include "utils/menu.hpp"
 #include <algorithm>
 #include <format>
 #include <iostream>
@@ -351,7 +350,7 @@ void TabManager::renderTabs() {
         }
         ImGui::PushID(windowName.c_str());
         ImGui::OpenPopupOnItemClick("TabContextMenu", ImGuiPopupFlags_MouseButtonRight);
-        if (UIUtils::BeginMenuPopup("TabContextMenu")) {
+        if (mydear::BeginMenuPopup("TabContextMenu")) {
             const bool hasOthers = tabs.size() > 1;
             const auto targetIt = std::ranges::find_if(
                 tabs, [tabId](const auto& t) { return t && t->getId() == tabId; });
@@ -385,10 +384,6 @@ void TabManager::renderTabs() {
         ImGui::PopID();
 
         if (beginOpen) {
-            ImFont* tabFont = fonts::tabFont();
-            if (tabFont) {
-                ImGui::PushFont(tabFont);
-            }
             if (!tab->hasBottomBar()) {
                 // everything sized "to the rest" stops short of the bottom strip; both
                 // rects are rebuilt at each Begin
@@ -398,9 +393,6 @@ void TabManager::renderTabs() {
                 w->WorkRect.Max.y -= inset;
             }
             tab->render();
-            if (tabFont) {
-                ImGui::PopFont();
-            }
         }
 
         ImGui::End();
@@ -846,7 +838,7 @@ void TabManager::renderTabSwitcher() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always,
                             ImVec2(0.5f, 0.5f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(UIUtils::kMenuPadding, UIUtils::kMenuPadding));
+                        ImVec2(mydear::kMenuPadding, mydear::kMenuPadding));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, style.PopupBorderSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, style.PopupRounding);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -877,7 +869,7 @@ void TabManager::renderOpenQuickly() {
     ImGui::SetNextWindowPos(ImVec2(vp->GetCenter().x, vp->WorkPos.y + vp->WorkSize.y * 0.15f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(std::min(640.0f, vp->WorkSize.x * 0.8f), 0.0f));
-    if (!UIUtils::BeginMenuPopup(popupId)) {
+    if (!mydear::BeginMenuPopup(popupId)) {
         return;
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));

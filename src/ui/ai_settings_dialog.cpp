@@ -2,10 +2,10 @@
 #include "ai/ai_client.hpp"
 #include "application.hpp"
 #include "imgui.h"
+#include "mydear/button.hpp"
+#include "mydear/menu.hpp"
+#include "mydear/select.hpp"
 #include "themes.hpp"
-#include "utils/button.hpp"
-#include "utils/menu.hpp"
-#include "utils/select.hpp"
 #include <cfloat>
 #include <cstring>
 
@@ -78,7 +78,7 @@ void AISettingsDialog::render() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    const ImVec2 room = UIUtils::DialogRoom();
+    const ImVec2 room = mydear::DialogRoom();
     const float width = std::min(460.0f, room.x);
     ImGui::SetNextWindowSize(ImVec2(width, 0.0f), ImGuiCond_Appearing);
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f), ImVec2(width, room.y));
@@ -111,7 +111,7 @@ void AISettingsDialog::render() {
         ImGui::Text("Provider");
         ImGui::SetNextItemWidth(-1);
         int previousProviderIndex = providerIndex_;
-        if (UIUtils::Select("##ai_provider", &providerIndex_, PROVIDER_LABELS, PROVIDER_COUNT) &&
+        if (mydear::Select("##ai_provider", &providerIndex_, PROVIDER_LABELS, PROVIDER_COUNT) &&
             providerIndex_ != previousProviderIndex) {
             auto* appState = Application::getInstance().getAppState();
             std::string apiKey = appState->getSetting(getSelectedProviderSettingKey(), "");
@@ -144,7 +144,7 @@ void AISettingsDialog::render() {
 
         // Save / Cancel
         float buttonWidth = (ImGui::GetContentRegionAvail().x - Theme::Spacing::M) * 0.5f;
-        if (UIUtils::Button("Save", UIUtils::ButtonVariant::Primary, ImVec2(buttonWidth, 0))) {
+        if (mydear::Button("Save", mydear::ButtonVariant::Primary, ImVec2(buttonWidth, 0))) {
             saveSettings();
             isDialogOpen_ = false;
             ImGui::CloseCurrentPopup();
@@ -152,7 +152,7 @@ void AISettingsDialog::render() {
 
         ImGui::SameLine();
 
-        if (UIUtils::Button("Cancel", UIUtils::ButtonVariant::Secondary, ImVec2(buttonWidth, 0))) {
+        if (mydear::Button("Cancel", mydear::ButtonVariant::Secondary, ImVec2(buttonWidth, 0))) {
             isDialogOpen_ = false;
             ImGui::CloseCurrentPopup();
         }

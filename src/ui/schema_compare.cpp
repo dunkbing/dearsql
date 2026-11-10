@@ -4,11 +4,11 @@
 #include "database/async_helper.hpp"
 #include "database/file_database.hpp"
 #include "database/lib_database_node.hpp"
-#include "platform/alert.hpp"
+#include "mydear/menu.hpp"
+#include "ui/alert.hpp"
 #include "themes.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
-#include "utils/menu.hpp"
 #include <dearsql/findings.hpp>
 #include <dearsql/profile.hpp>
 #include <dearsql/schema_diff.hpp>
@@ -164,7 +164,7 @@ namespace SchemaCompare {
         const bool busy = op().isRunning();
         if (ImGui::MenuItem(busy ? "Reviewing..." : "Review Indexes", nullptr, false, !busy))
             reviewIndexes(node);
-        if (!UIUtils::BeginSubMenu(busy ? "Comparing Schema..." : "Compare Schema With", !busy))
+        if (!mydear::BeginSubMenu(busy ? "Comparing Schema..." : "Compare Schema With", !busy))
             return;
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));

@@ -1,5 +1,5 @@
+#include "mydear/button.hpp"
 #include "ui/text_editor.hpp"
-#include "utils/button.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -1098,7 +1098,7 @@ namespace dearsql {
 
         ImGuiViewport* viewport = ImGui::GetWindowViewport();
         // a phone is narrower than the popup
-        const float popupWidth = viewport ? std::min(520.0f, viewport->Size.x) : 520.0f;
+        const float popupWidth = viewport ? std::min(520.0f, viewport->WorkSize.x) : 520.0f;
         constexpr float popupPadding = 6.0f;
         const int maxShow =
             std::min(static_cast<int>(filteredCompletions_.size()), kAutocompleteMaxVisible);
@@ -1107,8 +1107,8 @@ namespace dearsql {
 
         ImVec2 pos(cursorX, cursorY);
         if (viewport) {
-            const ImVec2 vpMin = viewport->Pos;
-            const ImVec2 vpMax(vpMin.x + viewport->Size.x, vpMin.y + viewport->Size.y);
+            const ImVec2 vpMin = viewport->WorkPos; // clear of a status bar
+            const ImVec2 vpMax(vpMin.x + viewport->WorkSize.x, vpMin.y + viewport->WorkSize.y);
             pos.x = std::clamp(pos.x, vpMin.x, vpMax.x - popupWidth);
             pos.y = std::clamp(pos.y, vpMin.y, vpMax.y - popupHeight);
         }
@@ -1483,7 +1483,7 @@ namespace dearsql {
             bool csChanged = false;
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findCaseSensitive_ ? palette_.selection : palette_.background);
-            if (UIUtils::SmallButton("Aa", UIUtils::ButtonVariant::Custom)) {
+            if (mydear::SmallButton("Aa", mydear::ButtonVariant::Custom)) {
                 findCaseSensitive_ = !findCaseSensitive_;
                 csChanged = true;
             }
@@ -1496,7 +1496,7 @@ namespace dearsql {
             // Whole word toggle
             ImGui::PushStyleColor(ImGuiCol_Button,
                                   findWholeWord_ ? palette_.selection : palette_.background);
-            if (UIUtils::SmallButton("W", UIUtils::ButtonVariant::Custom)) {
+            if (mydear::SmallButton("W", mydear::ButtonVariant::Custom)) {
                 findWholeWord_ = !findWholeWord_;
                 csChanged = true;
             }
@@ -1510,18 +1510,18 @@ namespace dearsql {
             ImGui::SameLine();
 
             // Prev / Next
-            if (UIUtils::SmallButton("<"))
+            if (mydear::SmallButton("<"))
                 findPrev();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Previous Match (Shift+F3)");
             ImGui::SameLine();
-            if (UIUtils::SmallButton(">"))
+            if (mydear::SmallButton(">"))
                 findNext();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Next Match (F3)");
 
             ImGui::SameLine();
-            if (UIUtils::SmallButton("x"))
+            if (mydear::SmallButton("x"))
                 closeFind();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Close (Escape)");
@@ -1539,12 +1539,12 @@ namespace dearsql {
             bool noMatches = findMatches_.empty();
             if (noMatches)
                 ImGui::BeginDisabled();
-            if (UIUtils::SmallButton("Replace"))
+            if (mydear::SmallButton("Replace"))
                 replaceOne();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Replace Next Match");
             ImGui::SameLine();
-            if (UIUtils::SmallButton("All"))
+            if (mydear::SmallButton("All"))
                 replaceAll();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip("Replace All Matches");

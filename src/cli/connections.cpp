@@ -4,6 +4,7 @@
 #include "database/connection_url.hpp"
 #include "database/s3.hpp"
 #include "license/license_manager.hpp"
+#include <algorithm>
 #include <dearsql/factory.hpp>
 #include <filesystem>
 #include <format>
@@ -24,6 +25,9 @@ bool CliConnections::loadSaved(std::string& error) {
     std::lock_guard lock(mutex_);
     for (auto& saved : state.getSavedConnections()) {
         if (saved.connectionInfo.type == DatabaseType::S3) {
+            if (std::ranges::any_of(
+                    s3_, [&](const auto& s) { return s.name == saved.connectionInfo.name; }))
+                continue; // re-read: already listed
             s3_.push_back(std::move(saved.connectionInfo));
             continue;
         }

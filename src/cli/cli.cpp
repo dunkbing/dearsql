@@ -21,6 +21,7 @@
 #include "mcp/db_tools.hpp"
 #include "utils/cli_command.hpp"
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -69,6 +70,7 @@ or let it run commands:
             : conns_(conns), focus_(std::move(focus)), saveOnConnect_(saveOnConnect) {}
 
         std::vector<mcp::ConnectionEntry> connections() override {
+            reloadSaved();
             std::vector<mcp::ConnectionEntry> out;
             for (auto* e : conns_.entries())
                 out.push_back(
@@ -81,6 +83,7 @@ or let it run commands:
             return conns_.open(name);
         }
         std::string add(const std::string& spec, std::string& error) override {
+            reloadSaved();
             return conns_.add(spec, error);
         }
         std::shared_ptr<dearsql::IConnection> connection(const std::string& name) override {
@@ -101,9 +104,20 @@ or let it run commands:
         }
 
     private:
+        // pick up connections saved after the server started (dearsql connect, the app)
+        void reloadSaved() {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastReload_ < std::chrono::seconds(2))
+                return;
+            lastReload_ = now;
+            std::string error;
+            conns_.loadSaved(error);
+        }
+
         CliConnections& conns_;
         std::string focus_;
         bool saveOnConnect_;
+        std::chrono::steady_clock::time_point lastReload_ = std::chrono::steady_clock::now();
     };
 
     // newline-delimited JSON-RPC, per the MCP stdio transport; stdout carries

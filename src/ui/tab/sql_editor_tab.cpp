@@ -561,8 +561,13 @@ void SQLEditorTab::renderConnectionInfoOracle() {
 
 void SQLEditorTab::renderConnectionInfoSQLite() {
     const std::string path = node_->getFullPath();
-    // narrow: the file name, not the whole path
-    ImGui::Text("Database: %s", ImGui::GetContentRegionAvail().x < 560.0f
+    // narrow, or mobile (a container path means nothing there): the file name, not the path
+#ifdef DEARSQL_MOBILE
+    constexpr bool mobile = true;
+#else
+    constexpr bool mobile = false;
+#endif
+    ImGui::Text("Database: %s", mobile || ImGui::GetContentRegionAvail().x < 560.0f
                                     ? std::filesystem::path(path).filename().string().c_str()
                                     : path.c_str());
 }

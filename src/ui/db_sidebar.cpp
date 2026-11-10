@@ -18,8 +18,8 @@
 #include "mydear/button.hpp"
 #include "mydear/menu.hpp"
 #include "mydear/spinner.hpp"
-#include "ui/alert.hpp"
 #include "themes.hpp"
+#include "ui/alert.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/create_database_dialog.hpp"
 #include "ui/database_node.hpp"
@@ -615,6 +615,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
             ImGui::GetColorU32(accent));
     }
 
+    if (DatabaseHierarchy::openTreesForShots)
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     const bool dbOpen = ImGui::TreeNodeEx(dbLabel.c_str(), dbFlags);
     const ImVec2 nodeMin = ImGui::GetItemRectMin();
     const ImVec2 nodeMax = ImGui::GetItemRectMax();

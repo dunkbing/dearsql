@@ -10,6 +10,7 @@
 #include "platform/ios_platform.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
+#include "ui/database_node.hpp"
 #include "ui/settings_dialog.hpp"
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
@@ -359,8 +360,19 @@ static void showRequestedTabs() {
                 if (auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
                         app.getTabManager()->createSQLEditorTab("Query", file))) {
                     tab->setQuery(part.substr(4));
+                    tab->skipFocus();
                     tab->run();
                 }
+            } else if (part.starts_with("chart:")) { // a query whose result opens on the chart
+                if (auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
+                        app.getTabManager()->createSQLEditorTab("Query", file))) {
+                    tab->setQuery(part.substr(6));
+                    tab->skipFocus();
+                    tab->run();
+                    tab->showChart();
+                }
+            } else if (part == "expand") {
+                DatabaseHierarchy::openTreesForShots = true;
             } else if (part == "dialog:connection") {
                 ConnectionDialog::instance().show(&app);
             } else if (part == "dialog:settings") {

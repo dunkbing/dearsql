@@ -273,7 +273,6 @@ set(APP_SOURCES
     src/ui/connection_dialog.cpp
     src/ui/create_database_dialog.cpp
     src/ui/settings_dialog.cpp
-    src/ui/alert.cpp
     src/license/license_manager.cpp
 )
 

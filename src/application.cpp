@@ -114,12 +114,8 @@ bool Application::initialize() {
     config.width = 1600;
     config.height = 1000;
     config.titleBar = true; // ui/title_bar.cpp, beside the os window buttons
-#ifdef _WIN32
-    config.titleBarHeight = 32; // pixels: windows' own caption height
-#elif defined(__ANDROID__)
-    config.titleBarHeight = 44; // dp: a finger's worth
-#else
-    config.titleBarHeight = 36; // points (gtk: logical pixels)
+#if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
+    config.titleBarHeight = 36; // points (gtk: logical pixels); elsewhere the platform's own
 #endif
     if (!shell_.create(config, *this))
         return false;
@@ -781,18 +777,11 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         sidebarVisibleLastFrame_ = sidebarVisible;
     }
-    // clear of system bars and cutouts (mobile), then under the title bar (desktop, android)
-    const ImVec4 safe = mydear::SafeArea();
-#ifdef DEARSQL_IOS
-    const float topInset = safe.y; // ios: the uikit navigation bar is in the safe area
-#else
-    const float topInset = safe.y + mydear::TitleBarHeight();
-#endif
-    const ImVec2 dockPos(viewport->Pos.x + safe.x, viewport->Pos.y + topInset);
-    const ImVec2 dockSize(std::max(0.0f, viewport->Size.x - safe.x - safe.z),
-                          std::max(0.0f, viewport->Size.y - topInset - safe.w));
-    ImGui::SetNextWindowPos(dockPos);
-    ImGui::SetNextWindowSize(dockSize);
+    // clear of system bars and cutouts (mobile; the ios navigation bar is in the safe area),
+    // under the title bar (desktop, android)
+    const mydear::Rect content = mydear::ContentRect();
+    ImGui::SetNextWindowPos(content.pos);
+    ImGui::SetNextWindowSize(content.size);
     ImGui::SetNextWindowViewport(viewport->ID);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);

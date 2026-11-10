@@ -78,6 +78,7 @@ $([ -n "$CONTAINER" ] && cat <<IC
     <key>com.apple.developer.icloud-container-identifiers</key><array><string>$CONTAINER</string></array>
     <key>com.apple.developer.icloud-services</key><array><string>CloudKit</string></array>
     <key>aps-environment</key><string>$APS</string>
+$([ "$STORE" = 1 ] && echo '    <key>com.apple.developer.icloud-container-environment</key><string>Production</string>')
     <key>keychain-access-groups</key><array><string>$TEAM.io.gitlab.dunkbing.dearsql</string></array>
 IC
 )

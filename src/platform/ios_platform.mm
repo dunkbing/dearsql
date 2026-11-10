@@ -330,11 +330,6 @@ void ios::attach(mydear::App& shell) {
     ((__bridge UIView*)shell.nativeView()).tag = kDearSQLViewTag;
 }
 
-float ios::topInset(const mydear::App& shell) {
-    UIView* view = (__bridge UIView*)shell.nativeView();
-    return view ? static_cast<float>(view.safeAreaInsets.top) : 0.0f;
-}
-
 // ponytail: for app store screenshots, as nothing can tap the simulator here.
 // DEARSQL_SHOW="table:orders|sql:SELECT ..." opens those tabs on the first file database
 // once its tables are loaded

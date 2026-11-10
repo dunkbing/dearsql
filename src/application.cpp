@@ -766,7 +766,7 @@ void Application::renderMainUI() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
 #ifdef DEARSQL_MOBILE
-    if (const bool compact = viewport->Size.x < 700.0f; compact != compactLayout_) {
+    if (const bool compact = viewport->WorkSize.x < 700.0f; compact != compactLayout_) {
         compactLayout_ = compact;
         dockingLayoutInitialized = false;
     }
@@ -781,13 +781,16 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         sidebarVisibleLastFrame_ = sidebarVisible;
     }
+    // clear of system bars and cutouts (mobile), then under the title bar (desktop, android)
+    const ImVec4 safe = mydear::SafeArea();
 #ifdef DEARSQL_IOS
-    const float topInset = ios::topInset(shell_);
+    const float topInset = safe.y; // ios: the uikit navigation bar is in the safe area
 #else
-    const float topInset = mydear::TitleBarHeight(); // the content runs under the bar
+    const float topInset = safe.y + mydear::TitleBarHeight();
 #endif
-    const ImVec2 dockPos(viewport->Pos.x, viewport->Pos.y + topInset);
-    const ImVec2 dockSize(viewport->Size.x, std::max(0.0f, viewport->Size.y - topInset));
+    const ImVec2 dockPos(viewport->Pos.x + safe.x, viewport->Pos.y + topInset);
+    const ImVec2 dockSize(std::max(0.0f, viewport->Size.x - safe.x - safe.z),
+                          std::max(0.0f, viewport->Size.y - topInset - safe.w));
     ImGui::SetNextWindowPos(dockPos);
     ImGui::SetNextWindowSize(dockSize);
     ImGui::SetNextWindowViewport(viewport->ID);

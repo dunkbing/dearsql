@@ -8,8 +8,7 @@ inline constexpr long kDearSQLViewTag = 0xDEA5;
 // ipad chrome around mydear's uikit view: the navigation bar, whose items live on
 // DearSQLViewController, and the DEARSQL_SHOW screenshot hooks
 namespace ios {
-    void attach(mydear::App& shell);          // tags the view
-    float topInset(const mydear::App& shell); // the status bar / safe area
-    void renderChrome();                      // DEARSQL_SHOW
-    void applyTheme(bool dark);               // the navigation bar
+    void attach(mydear::App& shell); // tags the view
+    void renderChrome();             // DEARSQL_SHOW
+    void applyTheme(bool dark);      // the navigation bar
 } // namespace ios

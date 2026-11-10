@@ -235,6 +235,8 @@ namespace {
     std::vector<std::string> g_acpWarnings;
 
     constexpr double AGENT_START_TIMEOUT_S = 30.0;
+    // before the agent answers: bun x installs an npm agent on its first start
+    constexpr double AGENT_INSTALL_TIMEOUT_S = 300.0;
 } // namespace
 
 AISidebarPanel::AISidebarPanel(std::shared_ptr<DatabaseInterface> db)
@@ -995,6 +997,7 @@ bool AISidebarPanel::ensureAgentStarted() {
     }
     agentStartedAt_ = ImGui::GetTime();
     agentStartWarned_ = false;
+    agentInitialized_ = false;
     return true;
 }
 
@@ -1250,19 +1253,28 @@ void AISidebarPanel::tick() {
             scrollToBottom_ = true;
         }
     }
-    // a browser sign-in can take minutes: the clock starts once it is done
-    if (acp_ && acp_->isSigningIn())
+    // a browser sign-in can take minutes: the clock starts once it is done. so can an install
+    // before the first answer: the clock starts again at the answer
+    const bool initialized = acp_ && acp_->isInitialized();
+    if ((acp_ && acp_->isSigningIn()) || initialized != agentInitialized_)
         agentStartedAt_ = ImGui::GetTime();
+    agentInitialized_ = initialized;
     // a spinner forever is the worst outcome; say what is going on
+    const double limit = initialized ? AGENT_START_TIMEOUT_S : AGENT_INSTALL_TIMEOUT_S;
     if (acp_ && acp_->isRunning() && !acp_->isSessionReady() && !agentStartWarned_ &&
-        ImGui::GetTime() - agentStartedAt_ > AGENT_START_TIMEOUT_S) {
+        ImGui::GetTime() - agentStartedAt_ > limit) {
         agentStartWarned_ = true;
-        std::string text =
-            std::format("The agent has not opened a session after {:.0f}s. It may be waiting for a "
-                        "sign-in in another window, or failing to start.",
-                        AGENT_START_TIMEOUT_S);
-        if (const AcpAgentDef* def = currentAgentDef()) {
-            text += "\n" + def->authHint;
+        std::string text;
+        if (!initialized) {
+            text = std::format("The agent has not answered after {:.0f}s. Its first start "
+                               "downloads it, which can take minutes on a slow connection.",
+                               limit);
+        } else {
+            text = std::format("The agent has not opened a session after {:.0f}s. It may be "
+                               "waiting for a sign-in in another window, or failing to start.",
+                               limit);
+            if (const AcpAgentDef* def = currentAgentDef())
+                text += "\n" + def->authHint;
         }
         items_.push_back({.kind = Item::Kind::Error, .text = std::move(text)});
         scrollToBottom_ = true;
@@ -1641,7 +1653,7 @@ void AISidebarPanel::renderMessages() {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Theme::Spacing::S);
         mydear::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (const std::string warming = agentStartingLabel(); !warming.empty()) {
-            ImGui::SameLine();
+            ImGui::SameLine(0, Theme::Spacing::S);
             ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "%s",
                                warming.c_str());
         }

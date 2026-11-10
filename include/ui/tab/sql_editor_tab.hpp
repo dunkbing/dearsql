@@ -116,6 +116,12 @@ public:
     [[nodiscard]] ResultChart& chart() const {
         return chart_;
     }
+    void showChart() {
+        resultView_ = 2;
+    }
+    void skipFocus() { // screenshots: no keyboard over the result
+        pendingEditorFocusFrames_ = 0;
+    }
     [[nodiscard]] const JsonRowsView& jsonView() const {
         return jsonView_;
     }

@@ -36,9 +36,6 @@
  */
 class DatabaseHierarchy {
 public:
-    // app store screenshots (DEARSQL_SHOW=expand): file databases and their tables open once
-    static inline bool openTreesForShots = false;
-
     explicit DatabaseHierarchy(std::shared_ptr<DatabaseInterface> dbInterface);
     ~DatabaseHierarchy();
 

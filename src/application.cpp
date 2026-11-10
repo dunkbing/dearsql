@@ -329,9 +329,7 @@ void Application::setup() {
 }
 
 void Application::frame() {
-#ifdef DEARSQL_IOS
-    ios::renderChrome();
-#else
+#ifndef DEARSQL_IOS
     TitleBarView::render(*this); // in mydear's title bar strip
 #endif
     renderMainUI();

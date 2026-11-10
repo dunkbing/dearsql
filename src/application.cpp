@@ -20,7 +20,7 @@
 
 #include "mydear/updater.hpp"
 
-#if defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_IOS)
 #include "platform/ios_platform.hpp"
 #else
 #include "mydear/title_bar.hpp"
@@ -101,7 +101,7 @@ bool Application::initialize() {
     spdlog::info("ImGui version: {}", IMGUI_VERSION);
     spdlog::info("Starting {}...", APP_NAME);
 
-#if defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_IOS)
     // mydear runs uikit; we are inside the root controller's loadView, the view exists
     if (!shell_.create(mydear::Config{}, *this))
         return false;
@@ -116,6 +116,8 @@ bool Application::initialize() {
     config.titleBar = true; // ui/title_bar.cpp, beside the os window buttons
 #ifdef _WIN32
     config.titleBarHeight = 32; // pixels: windows' own caption height
+#elif defined(__ANDROID__)
+    config.titleBarHeight = 44; // dp: a finger's worth
 #else
     config.titleBarHeight = 36; // points (gtk: logical pixels)
 #endif
@@ -157,7 +159,7 @@ bool Application::initialize() {
     theme_ = &Theme::themeById(themeStr);
     Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-#ifdef DEARSQL_MOBILE
+#ifdef DEARSQL_IOS
     ios::applyTheme(theme_->dark);
 #endif
 
@@ -198,6 +200,8 @@ bool Application::initialize() {
 
 #ifdef __APPLE__
     spdlog::info("Application initialized successfully (with Metal backend)");
+#elif defined(__ANDROID__)
+    spdlog::info("Application initialized successfully (with OpenGL ES backend)");
 #elif defined(__linux__)
     spdlog::info("Application initialized successfully (with GTK4 + OpenGL backend)");
 #elif defined(_WIN32)
@@ -211,7 +215,7 @@ bool Application::initialize() {
 }
 
 void Application::run() {
-#if defined(DEARSQL_MOBILE)
+#if defined(DEARSQL_IOS)
     // uikit runs the loop: the view calls renderFrame() each display refresh
 #else
     shell_.run();
@@ -293,7 +297,7 @@ void Application::setTheme(const std::string_view id) {
     theme_ = &Theme::themeById(id);
     Theme::Current() = theme_; // mydear widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
-#ifdef DEARSQL_MOBILE
+#ifdef DEARSQL_IOS
     ios::applyTheme(theme_->dark);
 #endif
     if (appState) {
@@ -337,7 +341,7 @@ void Application::setup() {
 }
 
 void Application::frame() {
-#ifdef DEARSQL_MOBILE
+#ifdef DEARSQL_IOS
     ios::renderChrome();
 #else
     TitleBarView::render(*this); // in mydear's title bar strip
@@ -777,7 +781,7 @@ void Application::renderMainUI() {
         dockingLayoutInitialized = false;
         sidebarVisibleLastFrame_ = sidebarVisible;
     }
-#ifdef DEARSQL_MOBILE
+#ifdef DEARSQL_IOS
     const float topInset = ios::topInset(shell_);
 #else
     const float topInset = mydear::TitleBarHeight(); // the content runs under the bar

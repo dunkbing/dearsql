@@ -32,22 +32,22 @@
     "mongo-c-driver",
     {
       "name": "libuv",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     "zlib",
     "cpp-httplib",
     "tree-sitter",
     {
       "name": "gtest",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     {
       "name": "nativefiledialog-extended",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     {
       "name": "glfw3",
-      "platform": "!linux & !ios"
+      "platform": "!linux & !ios & !android"
     },
     {
       "name": "sentry-native",
@@ -56,20 +56,20 @@
         "transport",
         "compression"
       ],
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     {
       "name": "libiconv",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     "spdlog",
     {
       "name": "duckdb",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     {
       "name": "ftxui",
-      "platform": "!ios"
+      "platform": "!ios & !android"
     },
     {
       "name": "minio-cpp"

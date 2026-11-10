@@ -23,7 +23,7 @@ if(APPLE)
   endif()
   find_library(SECURITY_LIBRARY Security REQUIRED)
 
-elseif(LINUX OR WIN32)
+elseif(LINUX OR WIN32 OR ANDROID)
   # mydear links gtk4 + epoxy or d3d11
 else()
   find_package(OpenGL REQUIRED)

@@ -56,3 +56,4 @@ SECRETS
 build-ios/
 *.provisionprofile
 build-ios-device/
+build-android/

@@ -3,17 +3,13 @@
 
 #include "application.hpp"
 #include "database/connection_url.hpp"
-#include "database/file_database.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "mydear/ios.h"
 #include "platform/ios_platform.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
-#include "ui/database_node.hpp"
 #include "ui/settings_dialog.hpp"
-#include "ui/tab/sql_editor_tab.hpp"
-#include "ui/tab_manager.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -50,7 +46,8 @@ namespace {
     newConfig.image = [UIImage systemImageNamed:@"plus"];
     newConfig.title = @"New";
     newConfig.imagePadding = 4;
-    newConfig.contentInsets = NSDirectionalEdgeInsetsZero;
+    newConfig.contentInsets =
+        NSDirectionalEdgeInsetsMake(0, 12, 0, 12); // room inside the bar capsule
     UIButton* newButton =
         [UIButton buttonWithConfiguration:newConfig
                             primaryAction:[UIAction actionWithHandler:^(UIAction*) {
@@ -303,16 +300,6 @@ namespace {
     self.navigationController.navigationBarHidden = NO;
     [self setupBar];
 }
-- (void)viewDidAppear:(BOOL)animated {
-    [super viewDidAppear:animated];
-    // ponytail: screenshots in landscape, as simctl cannot rotate a simulator
-    if (getenv("DEARSQL_LANDSCAPE"))
-        [self.view.window.windowScene
-            requestGeometryUpdateWithPreferences:
-                [[UIWindowSceneGeometryPreferencesIOS alloc]
-                    initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscapeRight]
-                                    errorHandler:nil];
-}
 @end
 
 int main(int argc, char* argv[]) {
@@ -329,63 +316,6 @@ int main(int argc, char* argv[]) {
 void ios::attach(mydear::App& shell) {
     // the file picker gives the keyboard back to the imgui view by this tag
     ((__bridge UIView*)shell.nativeView()).tag = kDearSQLViewTag;
-}
-
-// ponytail: for app store screenshots, as nothing can tap the simulator here.
-// DEARSQL_SHOW="table:orders|sql:SELECT ..." opens those tabs on the first file database
-// once its tables are loaded
-static void showRequestedTabs() {
-    static std::string show = getenv("DEARSQL_SHOW") ?: "";
-    if (show.empty())
-        return;
-    auto& app = Application::getInstance();
-    for (const auto& db : app.getDatabases()) {
-        auto* file = dynamic_cast<FileDatabase*>(db.get());
-        if (!file)
-            continue;
-        file->checkLoadingStatus();
-        if (!file->areTablesLoaded()) {
-            if (!file->isLoadingTables())
-                file->startTablesLoadAsync();
-            return;
-        }
-        std::string rest = show + "|";
-        for (size_t at; (at = rest.find('|')) != std::string::npos; rest.erase(0, at + 1)) {
-            const std::string part = rest.substr(0, at);
-            if (part.starts_with("table:")) {
-                for (const auto& table : file->getTables())
-                    if (table.name == part.substr(6))
-                        app.getTabManager()->createTableViewerTab(file, table);
-            } else if (part.starts_with("sql:")) {
-                if (auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
-                        app.getTabManager()->createSQLEditorTab("Query", file))) {
-                    tab->setQuery(part.substr(4));
-                    tab->skipFocus();
-                    tab->run();
-                }
-            } else if (part.starts_with("chart:")) { // a query whose result opens on the chart
-                if (auto tab = std::dynamic_pointer_cast<SQLEditorTab>(
-                        app.getTabManager()->createSQLEditorTab("Query", file))) {
-                    tab->setQuery(part.substr(6));
-                    tab->skipFocus();
-                    tab->run();
-                    tab->showChart();
-                }
-            } else if (part == "expand") {
-                DatabaseHierarchy::openTreesForShots = true;
-            } else if (part == "dialog:connection") {
-                ConnectionDialog::instance().show(&app);
-            } else if (part == "dialog:settings") {
-                SettingsDialog::instance().open();
-            }
-        }
-        show.clear();
-        return;
-    }
-}
-
-void ios::renderChrome() {
-    showRequestedTabs();
 }
 
 void ios::applyTheme(const bool dark) {

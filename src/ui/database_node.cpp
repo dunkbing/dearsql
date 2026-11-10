@@ -1090,8 +1090,6 @@ void DatabaseHierarchy::renderSQLiteNode() {
     {
         const std::string tablesNodeId =
             std::format("sqlite_tables_{:p}", static_cast<void*>(sqliteDb));
-        if (openTreesForShots)
-            ImGui::SetNextItemOpen(true, ImGuiCond_Once);
         const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
                                                        ImGui::GetColorU32(colors.green));
 

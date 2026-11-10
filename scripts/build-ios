@@ -25,8 +25,10 @@ if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
         -DVCPKG_TARGET_TRIPLET=arm64-ios -DDEARSQL_LIB_BUILD_TESTS=OFF
 fi
-# reconfigure only when icloud turns on or off: a configure re-checks every vcpkg port
-if [ "$(grep "^DEARSQL_TEAM_ID:" "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2)" != "$ICLOUD_TEAM" ]; then
+# reconfigure only when the team or container changes: a configure re-checks every vcpkg port
+cached() { grep "^$1:" "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2; }
+if [ "$(cached DEARSQL_TEAM_ID)" != "$ICLOUD_TEAM" ] ||
+    { [ -n "$CONTAINER" ] && [ "$(cached DEARSQL_ICLOUD_CONTAINER)" != "$CONTAINER" ]; }; then
     lockf -k /tmp/dearsql-build.lock cmake -S . -B "$BUILD_DIR" -DDEARSQL_TEAM_ID="$ICLOUD_TEAM" \
         $([ -n "$CONTAINER" ] && echo "-DDEARSQL_ICLOUD_CONTAINER=$CONTAINER")
 fi

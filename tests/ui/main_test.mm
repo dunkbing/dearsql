@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "frame_capture.hpp"
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -101,6 +102,7 @@ int main(int argc, char** argv) {
     while (!glfwWindowShouldClose(app.getWindow())) {
         glfwPollEvents();
         app.shell().renderFrame();
+        frame_capture::afterFrame(); // docs shots and videos: the frame drawn again offscreen
         ImGuiTestEngine_PostSwap(engine);
 
         if (headless && ImGuiTestEngine_IsTestQueueEmpty(engine)) {
@@ -109,7 +111,8 @@ int main(int argc, char** argv) {
     }
 
     ImGuiTestEngine_Stop(engine);
-    mydear::stopRecording(); // before cleanup: its fast exit would drop the tail of the video
+    frame_capture::stopRecording(); // before cleanup: its fast exit would drop the tail of the
+                                    // video
 
     ImGuiTestEngineResultSummary summary;
     ImGuiTestEngine_GetResultSummary(engine, &summary);

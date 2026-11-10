@@ -9,6 +9,7 @@
 #include "mydear/themes.hpp"
 #include "mydear/title_bar.hpp"
 
+#include <csignal>
 #include <cstdio>
 #include <format>
 #include <vector>
@@ -119,6 +120,7 @@ namespace frame_capture {
                         "-i - -fps_mode cfr -r 60 -c:v h264_videotoolbox -b:v 12M -pix_fmt yuv420p "
                         "-movflags +faststart '{}'",
                         rec.w, rec.h, path);
+        signal(SIGPIPE, SIG_IGN); // a dead encoder fails the write below instead of ending the run
         rec.pipe = popen(cmd.c_str(), "w");
         return rec.pipe != nullptr;
     }
@@ -145,7 +147,10 @@ namespace frame_capture {
                     bytesPerRow:rec.w * 4
                      fromRegion:MTLRegionMake2D(0, 0, rec.w, rec.h)
                     mipmapLevel:0];
-                fwrite(rec.buf.data(), 1, rec.buf.size(), rec.pipe);
+                if (fwrite(rec.buf.data(), 1, rec.buf.size(), rec.pipe) != rec.buf.size()) {
+                    std::fprintf(stderr, "recording: the encoder (ffmpeg) stopped, recording off\n");
+                    stopRecording();
+                }
             }
         }
     }

@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 #include <sys/system_properties.h>
 
+#include <cstdio>
 #include <cstdlib>
 
 void android_main(android_app* state) {
@@ -29,6 +30,8 @@ void android_main(android_app* state) {
         app.openFile(open);
     app.run();
     app.cleanup();
-    // shortcut: the app's singletons are done for; a relaunch gets a fresh process
-    std::exit(0);
+    // shortcut: the app's singletons are done for; a relaunch gets a fresh process. _Exit: static
+    // destructors racing android's own threads (hwui) abort the process on the way out
+    std::fflush(nullptr);
+    std::_Exit(0);
 }

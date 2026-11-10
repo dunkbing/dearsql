@@ -655,12 +655,12 @@ void ConnectionDialog::render() {
     // downward when a taller db type is picked (or ssh tunnel is expanded),
     // so anchoring the top high keeps the whole form on screen
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImVec2 pos(viewport->GetCenter().x, viewport->Pos.y + viewport->Size.y * 0.05f);
+    ImVec2 pos(viewport->GetWorkCenter().x, viewport->WorkPos.y + viewport->WorkSize.y * 0.05f);
     ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
     const ImVec2 room = mydear::DialogRoom();
     const float width = std::min(kDialogWidth, room.x);
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f),
-                                        ImVec2(width, room.y - viewport->Size.y * 0.05f));
+                                        ImVec2(width, room.y - viewport->WorkSize.y * 0.05f));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);

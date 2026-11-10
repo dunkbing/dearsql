@@ -148,7 +148,7 @@ namespace frame_capture {
                      fromRegion:MTLRegionMake2D(0, 0, rec.w, rec.h)
                     mipmapLevel:0];
                 if (fwrite(rec.buf.data(), 1, rec.buf.size(), rec.pipe) != rec.buf.size()) {
-                    std::fprintf(stderr, "recording: the encoder (ffmpeg) stopped, recording off\n");
+                    std::fprintf(stderr, "recording: ffmpeg stopped, recording off\n");
                     stopRecording();
                 }
             }

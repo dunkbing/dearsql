@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "mydear/button.hpp"
+#include "mydear/frames.hpp"
 #include "themes.hpp"
 #include "ui/input_dialog.hpp"
 
@@ -39,8 +40,11 @@ namespace {
     constexpr const char* kPopup = "###dearsql_alert";
 
     void push(Entry entry) {
-        std::lock_guard lock(gMutex);
-        gQueue.push_back(std::move(entry));
+        {
+            std::lock_guard lock(gMutex);
+            gQueue.push_back(std::move(entry));
+        }
+        mydear::requestFrames(); // may come from a worker while the loop sleeps
     }
 
     float buttonWidth(const std::string& text) {

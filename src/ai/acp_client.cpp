@@ -1,6 +1,7 @@
 #include "ai/acp_client.hpp"
 #include "ai/acp_agents.hpp"
 #include "ai/acp_registry.hpp"
+#include "mydear/frames.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -358,6 +359,7 @@ std::vector<AcpEvent> AcpClient::drainEvents() {
 void AcpClient::pushEvent(AcpEvent ev) {
     std::lock_guard lock(stateMutex_);
     events_.push_back(std::move(ev));
+    mydear::requestFrames(); // reader thread: wake the idle loop to drain it
 }
 
 // ---------------------------------------------------------------- acp::Client

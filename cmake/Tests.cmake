@@ -156,12 +156,16 @@ if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
         ${IMGUI_TE_DIR}/imgui_te_utils.cpp
         ${IMGUI_TE_DIR}/imgui_capture_tool.cpp
         tests/ui/main_test.mm
+        tests/ui/frame_capture.mm
         tests/ui/sidebar_tests.cpp
         tests/ui/ai_panel_tests.cpp
         tests/ui/table_viewer_tests.cpp
         tests/ui/csv_editor_tests.cpp
         tests/ui/docs_shots.cpp
     )
+
+    # its metal objects are owned by arc
+    set_source_files_properties(tests/ui/frame_capture.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 
     # the engine hooks into imgui through this define; both are compiled here
     target_compile_definitions(

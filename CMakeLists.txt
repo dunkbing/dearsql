@@ -225,7 +225,6 @@ set(APP_SOURCES
     src/ui/tab/table_editor_tab.cpp
     src/ui/tab/diagram_tab.cpp
     src/ui/text_editor.cpp
-    src/ui/text_editor_input.cpp
     src/ui/text_editor_highlight.cpp
     src/ui/text_editor_format.cpp
     src/ui/tab/csv_editor_tab.cpp
@@ -382,6 +381,7 @@ target_link_libraries(
         sentry::sentry
         dearsql::dearsql
         mydear::mydear
+        mydear::editor
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp

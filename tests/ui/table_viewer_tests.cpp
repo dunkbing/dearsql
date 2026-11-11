@@ -633,7 +633,7 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         for (int i = 0; i < 50; ++i)
             sql += "select a, 'x', 42 from t where b = 1; -- note\n";
         editor.SetText(sql);
-        (void)editor.GetColors();
+        (void)editor.GetTokens();
         const std::vector<std::pair<size_t, std::string>> inserts = {
             {120, "/*"},   // opens a comment to the end
             {900, "*/"},   // and closes it far below
@@ -648,14 +648,14 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
             editor.SetText(current);
             dearsql::TextEditor fresh;
             fresh.SetText(current);
-            IM_CHECK(editor.GetColors() == fresh.GetColors());
+            IM_CHECK(editor.GetTokens() == fresh.GetTokens());
         }
         auto current = editor.GetText();
         current.erase(100, 400); // a big delete
         editor.SetText(current);
         dearsql::TextEditor fresh;
         fresh.SetText(current);
-        IM_CHECK(editor.GetColors() == fresh.GetColors());
+        IM_CHECK(editor.GetTokens() == fresh.GetTokens());
     };
 
     // opt+backspace (ctrl elsewhere) deletes a word, cmd+backspace (ctrl+shift) to the line start

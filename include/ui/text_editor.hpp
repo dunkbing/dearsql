@@ -1,344 +1,59 @@
 #pragma once
-#include "imgui.h"
-#include "themes.hpp"
+#include "mydear/editor.hpp"
 #include <cstdint>
+#include <dearsql/completion.hpp>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-struct TSParser;
-struct TSTree;
-struct TSQuery;
-
 namespace dearsql {
 
-    class TextEditor {
+    // mydear's editor with this app's languages: tree-sitter for SQL and JSON, a lexer for
+    // Redis. new editors are SQL
+    class TextEditor : public mydear::TextEditor {
     public:
         TextEditor();
-        ~TextEditor();
 
-        TextEditor(const TextEditor&) = delete;
-        TextEditor& operator=(const TextEditor&) = delete;
-        TextEditor(TextEditor&&) noexcept;
-        TextEditor& operator=(TextEditor&&) noexcept;
+        enum class Language : uint8_t { SQL, Redis, JSON, PlainText };
+        // highlighting, the line comment, enter indent and (SQL) keyword completion
+        void SetLanguage(Language language);
 
-        // --- Public API ---
-        void SetText(const std::string& text);
-        [[nodiscard]] std::string GetText() const;
-        // the highlight, brought up to date (tests)
-        const std::vector<ImU32>& GetColors() {
-            if (highlightDirty_) {
-                rehighlight();
-                highlightDirty_ = false;
-            }
-            return colors_;
-        }
-        [[nodiscard]] bool HasSelection() const {
-            return selectionActive_ && selectionAnchor_ != cursorIndex_;
-        }
-        [[nodiscard]] std::string GetSelectedText() const {
-            return getSelectedText();
-        }
-        [[nodiscard]] int GetCursorIndex() const {
-            return cursorIndex_;
-        }
-        void SetPlaceholder(const std::string& text);
-        void Render(const char* label, ImVec2 size, bool border = false);
-        void SetFocus();
-
-        // Autocomplete
-        // where suggestion row i was drawn (tests click it); nothing visible: (0,0)
-        ImVec2 AutocompleteRowPos(int i) const {
-            return autocompleteVisible_ ? ImVec2(autocompleteMin_.x + 40.0f,
-                                                 autocompleteMin_.y + autocompleteRow_ * (i + 0.5f))
-                                        : ImVec2();
-        }
-        enum class CompletionKind : uint8_t {
-            Keyword,
-            Table,
-            Column,
-            View,
-            Sequence,
-            Function,
-            Schema,
-            Alias
-        };
-        struct CompletionItem {
-            std::string text;
-            std::string insertText;
-            std::string matchText;
-            std::string detailText;
-            std::vector<std::string> qualifiers;
-            CompletionKind kind = CompletionKind::Keyword;
-            CompletionItem() = default;
-            CompletionItem(std::string t, CompletionKind k)
-                : text(std::move(t)), insertText(text), matchText(text), kind(k) {}
-        };
-        struct CompletionRequest {
-            std::string_view content;
-            int cursorIndex = 0;
-            std::string_view currentWord;
-            std::vector<std::string> qualifierParts;
-            bool forced = false;
-        };
-        using CompletionFilter = std::function<std::vector<CompletionItem>(
-            const CompletionRequest&, const std::vector<CompletionItem>&)>;
-        // a provider computes the items and the range they replace itself (byte offsets);
-        // it takes over from the item list + filter when set
-        struct CompletionResponse {
-            std::vector<CompletionItem> items;
-            int replaceStart = 0;
-            int replaceEnd = 0;
-        };
-        using CompletionProvider = std::function<CompletionResponse(std::string_view content,
-                                                                    int cursorIndex, bool forced)>;
-        void SetCompletionItems(const std::vector<CompletionItem>& items);
-        void SetCompletionItems(std::vector<CompletionItem>&& items);
-        void SetCompletionKeywords(const std::vector<std::string>& keywords);
-        void SetCompletionFilter(CompletionFilter filter);
-        void SetCompletionProvider(CompletionProvider provider);
-
-        // runnable statements: a play icon in the gutter on each range's first line;
-        // hovering outlines the range, clicking hands its byte offsets to onRun
-        using RangeProvider =
-            std::function<std::vector<std::pair<size_t, size_t>>(std::string_view content)>;
-        using RunCallback = std::function<void(size_t begin, size_t end)>;
-        void SetRunnableRanges(RangeProvider provider, RunCallback onRun);
-
-        // a wavy underline under the token at a byte offset, the message on hover; edits
-        // clear it (the offset would point at the wrong text)
-        void SetErrorMarker(size_t offset, std::string message);
-        void ClearErrorMarker() {
-            errorOffset_ = -1;
-        }
-        [[nodiscard]] int GetErrorOffset() const {
-            return errorOffset_; // -1: none
-        }
-        [[nodiscard]] static const std::vector<std::string>& GetDefaultCompletionKeywords();
-
-        // Theme
-        struct Palette {
-            ImU32 background;
-            ImU32 text;
-            ImU32 keyword;
-            ImU32 string;
-            ImU32 number;
-            ImU32 comment;
-            ImU32 function;
-            ImU32 type;
-            ImU32 operator_;
-            ImU32 cursor;
-            ImU32 selection;
-            ImU32 lineNumber;
-            ImU32 currentLineNumber;
-            ImU32 currentLineBackground;
-            ImU32 lineNumberBackground;
-            ImU32 run = IM_COL32(166, 227, 161, 255);
-            ImU32 error = IM_COL32(243, 139, 168, 255);
-            bool operator==(const Palette&) const = default;
-        };
-
-        void SetPalette(const Palette& palette);
-        static Palette GetDarkPalette();
-        static Palette GetLightPalette();
-        static Palette FromTheme(const Theme::Colors& colors);
-
-        // formatting
         [[nodiscard]] static std::string FormatSQL(const std::string& sql);
         [[nodiscard]] static std::string FormatJSON(const std::string& json);
 
-        // Callbacks
-        void SetSubmitCallback(std::function<void()> cb);
-
-        // dirty flag — set on every user edit, cleared by SetText or ClearContentDirty
-        [[nodiscard]] bool IsContentDirty() const {
-            return contentDirty_;
-        }
-        void ClearContentDirty() {
-            contentDirty_ = false;
-        }
-
-        // Language / highlighting mode
-        enum class Language : uint8_t { SQL, Redis, JSON, PlainText };
-        void SetLanguage(Language lang);
-
-        // Options
-        void SetShowLineNumbers(bool show);
-        void SetTabSize(int size);
-        void SetReadOnly(bool readOnly);
+        // a completion row for a catalog kind: its letter and colour in the popup
+        [[nodiscard]] static CompletionItem Row(std::string text, CompletionKind kind);
 
     private:
-        // --- Content ---
-        std::string content_;
-        std::vector<ImU32> colors_;
-        std::vector<int> lineStarts_;
-
-        // --- Cursor ---
-        int cursorIndex_ = 0;
-        int preferredColumn_ = 0;
-        float cursorBlinkTimer_ = 0.0f;
-
-        // --- Selection ---
-        int selectionAnchor_ = 0;
-        bool selectionActive_ = false;
-        bool isDragging_ = false;
-
-        // --- Scroll ---
-        float scrollX_ = 0.0f;
-        float scrollY_ = 0.0f;
-        bool ensureCursorVisibleV_ = false;
-        bool ensureCursorVisibleH_ = false;
-
-        // --- Layout cache ---
-        float lineHeight_ = 0.0f;
-        float lineNumberWidth_ = 0.0f;
-        ImVec2 textOrigin_;
-        float cachedContentWidth_ = 0.0f;
-        bool contentWidthDirty_ = true;
-        bool contentDirty_ = false;
-
-        // --- Options ---
-        bool showLineNumbers_ = true;
-        int tabSize_ = 4;
-        bool readOnly_ = false;
-        bool focusRequested_ = false;
-        Language language_ = Language::SQL;
-        std::string placeholder_;
-
-        // --- Callbacks ---
-        std::function<void()> submitCallback_;
-
-        // --- Palette ---
-        Palette palette_{};
-
-        // --- Undo/Redo ---
-        struct Snapshot {
-            std::string content;
-            int cursorIndex;
-        };
-        std::vector<Snapshot> undoStack_;
-        std::vector<Snapshot> redoStack_;
-        std::string lastSnapshotContent_;
-
-        // --- Autocomplete ---
-        std::vector<CompletionItem> completionItems_;
-        CompletionFilter completionFilter_;
-        CompletionProvider completionProvider_;
-        RangeProvider rangeProvider_;
-        RunCallback onRun_;
-        std::vector<std::pair<size_t, size_t>> runRanges_;
-        bool runRangesDirty_ = true;
-        double runRangesEditTime_ = 0.0;
-        int hoveredRun_ = -1; // last frame's, so the click is not also a text click
-        ImVec2 textAreaMin_{}, textAreaMax_{};
-        void renderRunButtons(int startLine, int endLine);
-        int errorOffset_ = -1;
-        std::string errorMessage_;
-        void renderErrorMarker(ImDrawList* drawList);
-        int autocompleteReplaceStart_ = -1; // provider range, -1 when unset
-        int autocompleteReplaceEnd_ = -1;
-        std::vector<CompletionItem> filteredCompletions_;
-        bool autocompleteVisible_ = false;
-        bool autocompleteForced_ = false; // Ctrl+Space: show all items even with empty word
-        int autocompleteIndex_ = 0;
-        int autocompleteScrollOffset_ = 0;
-        ImVec2 autocompleteMin_, autocompleteMax_; // last drawn popup, for taps
-        float autocompleteRow_ = 0.0f;
-        int autocompleteWordStart_ = 0;
-
-        // --- Tree-sitter ---
-        TSParser* tsParser_ = nullptr;
-        TSTree* tsTree_ = nullptr;
-        TSQuery* tsQuery_ = nullptr;
-        std::string tsPreviousContent_;
-        std::vector<ImU32> tsPreviousColors_; // colors_ as of tsPreviousContent_
-        bool highlightDirty_ = true;
-
-        // --- Content manipulation ---
-        void rebuildLineStarts();
-        int getLineFromPos(int pos) const;
-        int getColumnFromPos(int pos) const;
-        int getPosFromLineColumn(int line, int column) const;
-        int getLineEnd(int line) const;
-
-        // --- Input handling (text_editor_input.cpp) ---
-        void handleKeyboardInput();
-        void handleCharacterInput();
-        void handleEnterKey();
-        void handleBackspaceKey();
-        void handleDeleteKey();
-        void handleTabKey();
-        void handleArrowKeys();
-        void handleHomeEnd();
-        void handleSelectAll();
-        void handleClipboard();
-        void handleUndoRedo();
-        void toggleLineComment();
-        void handleMouseInput();
-        int getCharIndexFromScreenPos(ImVec2 screenPos) const;
-        void handleDoubleClick(int charIndex);
-
-        // --- Selection helpers ---
-        int selectionStart() const;
-        int selectionEnd() const;
-        void deleteSelection();
-        std::string getSelectedText() const;
-        void clearSelection();
-
-        // --- Cursor helpers ---
-        void ensureCursorVisible();
-        void insertTextAtCursor(const std::string& text);
-        void pushUndoSnapshot();
-        bool isWordChar(char c) const;
-        int findWordStart(int pos) const;
-        int findWordEnd(int pos) const;
-
-        // --- Rendering (text_editor.cpp) ---
-        void renderLineNumbers(ImDrawList* drawList, int startLine, int endLine);
-        void renderText(ImDrawList* drawList, int startLine, int endLine);
-        void renderCursor(ImDrawList* drawList);
-        void renderSelection(ImDrawList* drawList, int startLine, int endLine);
-        void renderCurrentLineHighlight(ImDrawList* drawList);
-
-        // --- Autocomplete ---
-        void updateAutoComplete();
-        void renderAutoComplete();
-        void applyAutoComplete();
-        void dismissAutoComplete();
-        std::string getCurrentWord() const;
-
-        // --- Find/Replace ---
-        bool findVisible_ = false;
-        bool findFocusRequested_ = false;
-        char findBuf_[256] = {};
-        char replaceBuf_[256] = {};
-        bool findCaseSensitive_ = false;
-        bool findWholeWord_ = false;
-        std::vector<int> findMatches_;
-        int findCurrentMatch_ = -1;
-        void openFind();
-        void closeFind();
-        void performFind();
-        void findNext();
-        void findPrev();
-        void replaceOne();
-        void replaceAll();
-        void renderFindReplace();
-        void renderFindHighlights(ImDrawList* drawList, int startLine, int endLine);
-
-        // --- Tree-sitter (text_editor_highlight.cpp) ---
-        void initTreeSitter();
-        void cleanupTreeSitter();
-        void rehighlight();
-        void rehighlightRedis();
-
-        // --- Helpers ---
-        float getCharWidth(const char* start, const char* end) const;
-        float getCursorScreenX() const {
-            return getScreenX(cursorIndex_);
-        }
-        float getScreenX(int pos) const; // on pos's line
+        // tree-sitter or the redis lexer (text_editor_highlight.cpp); none for plain text
+        static Highlighter highlighterFor(Language language);
     };
+
+    // completion from a fixed list (redis commands, mongo operators and fields): the items
+    // matching the word before the cursor, prefix matches first; qualifiers ("db.coll")
+    // narrow them after a dot
+    struct ListCompletion {
+        std::string text;
+        std::string insertText; // empty: text
+        std::string matchText;  // empty: text
+        std::string detailText;
+        std::vector<std::string> qualifiers;
+        CompletionKind kind = CompletionKind::Keyword;
+        ListCompletion() = default;
+        ListCompletion(std::string t, CompletionKind k) : text(std::move(t)), kind(k) {}
+    };
+    struct ListCompletionRequest {
+        std::string_view content;
+        int cursorIndex = 0;
+        std::string_view currentWord;
+        std::vector<std::string> qualifierParts;
+        bool forced = false;
+    };
+    // replaces the built-in matching (redis matches arguments by position)
+    using ListCompletionFilter = std::function<std::vector<ListCompletion>(
+        const ListCompletionRequest&, const std::vector<ListCompletion>&)>;
+    [[nodiscard]] TextEditor::CompletionProvider listCompletions(std::vector<ListCompletion> items,
+                                                                 ListCompletionFilter filter = {});
 
 } // namespace dearsql

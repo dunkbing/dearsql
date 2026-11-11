@@ -47,9 +47,6 @@ namespace {
     constexpr const char* LABEL_NO_DATABASE_SELECTED = "No database selected";
     constexpr int MAX_QUERY_ROWS = 1000;
 
-    using CompletionItem = dearsql::TextEditor::CompletionItem;
-    using CompletionKind = dearsql::TextEditor::CompletionKind;
-
     void scheduleMetadataLoad(IDatabaseNode* node) {
         if (!node)
             return;
@@ -59,28 +56,6 @@ namespace {
             node->startTablesLoadAsync();
         if (!node->isViewsLoaded() && !node->isLoadingViews())
             node->startViewsLoadAsync();
-    }
-
-    CompletionKind toEditorKind(dearsql::CompletionKind kind) {
-        switch (kind) {
-        case dearsql::CompletionKind::Keyword:
-            return CompletionKind::Keyword;
-        case dearsql::CompletionKind::Function:
-            return CompletionKind::Function;
-        case dearsql::CompletionKind::Table:
-            return CompletionKind::Table;
-        case dearsql::CompletionKind::View:
-            return CompletionKind::View;
-        case dearsql::CompletionKind::Column:
-            return CompletionKind::Column;
-        case dearsql::CompletionKind::Schema:
-            return CompletionKind::Schema;
-        case dearsql::CompletionKind::Sequence:
-            return CompletionKind::Sequence;
-        case dearsql::CompletionKind::Alias:
-            return CompletionKind::Alias;
-        }
-        return CompletionKind::Keyword;
     }
 
     // right-aligned popup hint: owner + type for columns, schema for relations
@@ -1364,7 +1339,7 @@ dearsql::TextEditor::CompletionResponse SQLEditorTab::provideCompletions(std::st
     response.replaceEnd = static_cast<int>(result.replaceEnd);
     response.items.reserve(result.items.size());
     for (const auto& item : result.items) {
-        CompletionItem editorItem(item.label, toEditorKind(item.kind));
+        auto editorItem = dearsql::TextEditor::Row(item.label, item.kind);
         editorItem.insertText = item.insertText;
         editorItem.detailText = editorDetail(item);
         response.items.push_back(std::move(editorItem));

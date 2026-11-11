@@ -2,7 +2,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <format>
+#include <memory>
+#include <span>
 #include <spdlog/spdlog.h>
 #include <tree_sitter/api.h>
 #include <unordered_set>
@@ -329,473 +330,438 @@ namespace dearsql {
 (comment) @comment
 )scm";
 
-    void TextEditor::initTreeSitter() {
-        if (language_ == Language::Redis || language_ == Language::PlainText)
-            return;
+    namespace {
+        using Token = imshell::TextEditor::Token;
+        using Edit = imshell::TextEditor::Edit;
 
-        tsParser_ = ts_parser_new();
-
-        const TSLanguage* lang = nullptr;
-        const char* queryStr = nullptr;
-        size_t queryLen = 0;
-
-        if (language_ == Language::JSON) {
-            lang = tree_sitter_json();
-            queryStr = JSON_HIGHLIGHT_QUERY;
-            queryLen = strlen(JSON_HIGHLIGHT_QUERY);
-        } else {
-            lang = tree_sitter_sql();
-            queryStr = SQL_HIGHLIGHT_QUERY;
-            queryLen = strlen(SQL_HIGHLIGHT_QUERY);
+        const std::unordered_set<std::string>& redisCommands() {
+            static const std::unordered_set<std::string> REDIS_COMMANDS = {
+                "APPEND",
+                "AUTH",
+                "BGSAVE",
+                "BGREWRITEAOF",
+                "BITCOUNT",
+                "BITFIELD",
+                "BITOP",
+                "BITPOS",
+                "BLMOVE",
+                "BLMPOP",
+                "BLPOP",
+                "BRPOP",
+                "BZMPOP",
+                "BZPOPMAX",
+                "BZPOPMIN",
+                "CLIENT",
+                "CLUSTER",
+                "COMMAND",
+                "CONFIG",
+                "COPY",
+                "DEBUG",
+                "DBSIZE",
+                "DECR",
+                "DECRBY",
+                "DEL",
+                "DISCARD",
+                "DUMP",
+                "ECHO",
+                "EVAL",
+                "EVALSHA",
+                "EXEC",
+                "EXISTS",
+                "EXPIRE",
+                "EXPIREAT",
+                "EXPIRETIME",
+                "FLUSHALL",
+                "FLUSHDB",
+                "GEOADD",
+                "GEODIST",
+                "GEOHASH",
+                "GEOPOS",
+                "GEOSEARCH",
+                "GEOSEARCHSTORE",
+                "GET",
+                "GETBIT",
+                "GETDEL",
+                "GETEX",
+                "GETRANGE",
+                "GETSET",
+                "HDEL",
+                "HELLO",
+                "HEXISTS",
+                "HGET",
+                "HGETALL",
+                "HINCRBY",
+                "HINCRBYFLOAT",
+                "HKEYS",
+                "HLEN",
+                "HMGET",
+                "HMSET",
+                "HRANDFIELD",
+                "HSCAN",
+                "HSET",
+                "HSETNX",
+                "HSTRLEN",
+                "HVALS",
+                "INCR",
+                "INCRBY",
+                "INCRBYFLOAT",
+                "INFO",
+                "KEYS",
+                "LASTSAVE",
+                "LCS",
+                "LINDEX",
+                "LINSERT",
+                "LLEN",
+                "LMOVE",
+                "LMPOP",
+                "LPOP",
+                "LPOS",
+                "LPUSH",
+                "LPUSHX",
+                "LRANGE",
+                "LREM",
+                "LSET",
+                "LTRIM",
+                "MEMORY",
+                "MGET",
+                "MIGRATE",
+                "MODULE",
+                "MONITOR",
+                "MOVE",
+                "MSET",
+                "MSETNX",
+                "MULTI",
+                "OBJECT",
+                "PERSIST",
+                "PEXPIRE",
+                "PEXPIREAT",
+                "PEXPIRETIME",
+                "PFADD",
+                "PFCOUNT",
+                "PFMERGE",
+                "PING",
+                "PSETEX",
+                "PSUBSCRIBE",
+                "PTTL",
+                "PUBLISH",
+                "PUBSUB",
+                "PUNSUBSCRIBE",
+                "QUIT",
+                "RANDOMKEY",
+                "READONLY",
+                "READWRITE",
+                "RENAME",
+                "RENAMENX",
+                "REPLCONF",
+                "REPLICAOF",
+                "RESET",
+                "RESTORE",
+                "ROLE",
+                "RPOP",
+                "RPOPLPUSH",
+                "RPUSH",
+                "RPUSHX",
+                "SADD",
+                "SAVE",
+                "SCAN",
+                "SCARD",
+                "SCRIPT",
+                "SDIFF",
+                "SDIFFSTORE",
+                "SELECT",
+                "SET",
+                "SETBIT",
+                "SETEX",
+                "SETNX",
+                "SETRANGE",
+                "SINTER",
+                "SINTERCARD",
+                "SINTERSTORE",
+                "SLAVEOF",
+                "SLOWLOG",
+                "SMEMBERS",
+                "SMISMEMBER",
+                "SMOVE",
+                "SORT",
+                "SORT_RO",
+                "SPOP",
+                "SRANDMEMBER",
+                "SREM",
+                "SSCAN",
+                "STRLEN",
+                "SUBSCRIBE",
+                "SUNION",
+                "SUNIONSTORE",
+                "SWAPDB",
+                "SYNC",
+                "TIME",
+                "TTL",
+                "TYPE",
+                "UNLINK",
+                "UNSUBSCRIBE",
+                "UNWATCH",
+                "WAIT",
+                "WATCH",
+                "XACK",
+                "XADD",
+                "XAUTOCLAIM",
+                "XCLAIM",
+                "XDEL",
+                "XGROUP",
+                "XINFO",
+                "XLEN",
+                "XPENDING",
+                "XRANGE",
+                "XREAD",
+                "XREADGROUP",
+                "XREVRANGE",
+                "XSETID",
+                "XTRIM",
+                "ZADD",
+                "ZCARD",
+                "ZCOUNT",
+                "ZDIFF",
+                "ZDIFFSTORE",
+                "ZINCRBY",
+                "ZINTER",
+                "ZINTERCARD",
+                "ZINTERSTORE",
+                "ZLEXCOUNT",
+                "ZMPOP",
+                "ZMSCORE",
+                "ZPOPMAX",
+                "ZPOPMIN",
+                "ZRANDMEMBER",
+                "ZRANGE",
+                "ZRANGEBYLEX",
+                "ZRANGEBYSCORE",
+                "ZRANGESTORE",
+                "ZRANK",
+                "ZREM",
+                "ZREMRANGEBYLEX",
+                "ZREMRANGEBYSCORE",
+                "ZREMRANGEBYRANK",
+                "ZREVRANGE",
+                "ZREVRANGEBYLEX",
+                "ZREVRANGEBYSCORE",
+                "ZREVRANK",
+                "ZSCAN",
+                "ZSCORE",
+                "ZUNION",
+                "ZUNIONSTORE",
+                "LOLWUT",
+                "LATENCY",
+            };
+            return REDIS_COMMANDS;
         }
 
-        ts_parser_set_language(tsParser_, lang);
-
-        // Compile the highlight query
-        uint32_t errorOffset;
-        TSQueryError errorType;
-        tsQuery_ =
-            ts_query_new(lang, queryStr, static_cast<uint32_t>(queryLen), &errorOffset, &errorType);
-        if (!tsQuery_) {
-            spdlog::error(
-                std::format("Tree-sitter query compilation failed at offset {}, error type {}",
-                            errorOffset, static_cast<int>(errorType)));
+        // the whole text each time: redis scripts are short
+        void highlightRedis(std::string_view text, std::span<Token> tokens, const Edit&) {
+            std::fill(tokens.begin(), tokens.end(), Token::Text);
+            const size_t n = text.size();
+            size_t i = 0;
+            while (i < n) {
+                if (std::isspace(static_cast<unsigned char>(text[i]))) {
+                    ++i;
+                    continue;
+                }
+                // comment: # to end of line
+                if (text[i] == '#') {
+                    while (i < n && text[i] != '\n')
+                        tokens[i++] = Token::Comment;
+                    continue;
+                }
+                // string: single or double quoted
+                if (text[i] == '"' || text[i] == '\'') {
+                    const char q = text[i];
+                    tokens[i++] = Token::String;
+                    while (i < n && text[i] != q && text[i] != '\n') {
+                        if (text[i] == '\\' && i + 1 < n)
+                            tokens[i++] = Token::String;
+                        tokens[i++] = Token::String;
+                    }
+                    if (i < n && text[i] == q)
+                        tokens[i++] = Token::String;
+                    continue;
+                }
+                // number (including negative)
+                if (std::isdigit(static_cast<unsigned char>(text[i])) ||
+                    (text[i] == '-' && i + 1 < n &&
+                     std::isdigit(static_cast<unsigned char>(text[i + 1])))) {
+                    if (text[i] == '-')
+                        tokens[i++] = Token::Number;
+                    while (i < n &&
+                           (std::isdigit(static_cast<unsigned char>(text[i])) || text[i] == '.'))
+                        tokens[i++] = Token::Number;
+                    continue;
+                }
+                // word: command or identifier
+                if (std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_') {
+                    size_t j = i;
+                    while (j < n && (std::isalnum(static_cast<unsigned char>(text[j])) ||
+                                     text[j] == '_' || text[j] == ':' || text[j] == '.'))
+                        ++j;
+                    std::string upper(j - i, '\0');
+                    std::transform(
+                        text.begin() + static_cast<ptrdiff_t>(i),
+                        text.begin() + static_cast<ptrdiff_t>(j), upper.begin(),
+                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+                    if (redisCommands().count(upper))
+                        std::fill(tokens.begin() + static_cast<ptrdiff_t>(i),
+                                  tokens.begin() + static_cast<ptrdiff_t>(j), Token::Keyword);
+                    i = j;
+                    continue;
+                }
+                ++i;
+            }
         }
-    }
 
-    void TextEditor::cleanupTreeSitter() {
-        if (tsQuery_) {
-            ts_query_delete(tsQuery_);
-            tsQuery_ = nullptr;
+        // compiled once per grammar, shared by every editor (queries are immutable)
+        TSQuery* compileQuery(const TSLanguage* lang, const char* source) {
+            uint32_t errorOffset = 0;
+            TSQueryError errorType{};
+            TSQuery* query = ts_query_new(lang, source, static_cast<uint32_t>(strlen(source)),
+                                          &errorOffset, &errorType);
+            if (!query)
+                spdlog::error("tree-sitter query compilation failed at offset {}, error type {}",
+                              errorOffset, static_cast<int>(errorType));
+            return query;
         }
-        if (tsTree_) {
-            ts_tree_delete(tsTree_);
-            tsTree_ = nullptr;
-        }
-        if (tsParser_) {
-            ts_parser_delete(tsParser_);
-            tsParser_ = nullptr;
-        }
-    }
 
-    void TextEditor::rehighlightRedis() {
-        colors_.assign(content_.size(), palette_.text);
+        Token tokenFor(std::string_view capture) {
+            if (capture == "keyword")
+                return Token::Keyword;
+            if (capture == "string")
+                return Token::String;
+            if (capture == "number")
+                return Token::Number;
+            if (capture == "comment")
+                return Token::Comment;
+            if (capture == "function")
+                return Token::Function;
+            if (capture == "type")
+                return Token::Type;
+            if (capture == "operator")
+                return Token::Operator;
+            return Token::Text;
+        }
 
-        static const std::unordered_set<std::string> REDIS_COMMANDS = {
-            "APPEND",
-            "AUTH",
-            "BGSAVE",
-            "BGREWRITEAOF",
-            "BITCOUNT",
-            "BITFIELD",
-            "BITOP",
-            "BITPOS",
-            "BLMOVE",
-            "BLMPOP",
-            "BLPOP",
-            "BRPOP",
-            "BZMPOP",
-            "BZPOPMAX",
-            "BZPOPMIN",
-            "CLIENT",
-            "CLUSTER",
-            "COMMAND",
-            "CONFIG",
-            "COPY",
-            "DEBUG",
-            "DBSIZE",
-            "DECR",
-            "DECRBY",
-            "DEL",
-            "DISCARD",
-            "DUMP",
-            "ECHO",
-            "EVAL",
-            "EVALSHA",
-            "EXEC",
-            "EXISTS",
-            "EXPIRE",
-            "EXPIREAT",
-            "EXPIRETIME",
-            "FLUSHALL",
-            "FLUSHDB",
-            "GEOADD",
-            "GEODIST",
-            "GEOHASH",
-            "GEOPOS",
-            "GEOSEARCH",
-            "GEOSEARCHSTORE",
-            "GET",
-            "GETBIT",
-            "GETDEL",
-            "GETEX",
-            "GETRANGE",
-            "GETSET",
-            "HDEL",
-            "HELLO",
-            "HEXISTS",
-            "HGET",
-            "HGETALL",
-            "HINCRBY",
-            "HINCRBYFLOAT",
-            "HKEYS",
-            "HLEN",
-            "HMGET",
-            "HMSET",
-            "HRANDFIELD",
-            "HSCAN",
-            "HSET",
-            "HSETNX",
-            "HSTRLEN",
-            "HVALS",
-            "INCR",
-            "INCRBY",
-            "INCRBYFLOAT",
-            "INFO",
-            "KEYS",
-            "LASTSAVE",
-            "LCS",
-            "LINDEX",
-            "LINSERT",
-            "LLEN",
-            "LMOVE",
-            "LMPOP",
-            "LPOP",
-            "LPOS",
-            "LPUSH",
-            "LPUSHX",
-            "LRANGE",
-            "LREM",
-            "LSET",
-            "LTRIM",
-            "MEMORY",
-            "MGET",
-            "MIGRATE",
-            "MODULE",
-            "MONITOR",
-            "MOVE",
-            "MSET",
-            "MSETNX",
-            "MULTI",
-            "OBJECT",
-            "PERSIST",
-            "PEXPIRE",
-            "PEXPIREAT",
-            "PEXPIRETIME",
-            "PFADD",
-            "PFCOUNT",
-            "PFMERGE",
-            "PING",
-            "PSETEX",
-            "PSUBSCRIBE",
-            "PTTL",
-            "PUBLISH",
-            "PUBSUB",
-            "PUNSUBSCRIBE",
-            "QUIT",
-            "RANDOMKEY",
-            "READONLY",
-            "READWRITE",
-            "RENAME",
-            "RENAMENX",
-            "REPLCONF",
-            "REPLICAOF",
-            "RESET",
-            "RESTORE",
-            "ROLE",
-            "RPOP",
-            "RPOPLPUSH",
-            "RPUSH",
-            "RPUSHX",
-            "SADD",
-            "SAVE",
-            "SCAN",
-            "SCARD",
-            "SCRIPT",
-            "SDIFF",
-            "SDIFFSTORE",
-            "SELECT",
-            "SET",
-            "SETBIT",
-            "SETEX",
-            "SETNX",
-            "SETRANGE",
-            "SINTER",
-            "SINTERCARD",
-            "SINTERSTORE",
-            "SLAVEOF",
-            "SLOWLOG",
-            "SMEMBERS",
-            "SMISMEMBER",
-            "SMOVE",
-            "SORT",
-            "SORT_RO",
-            "SPOP",
-            "SRANDMEMBER",
-            "SREM",
-            "SSCAN",
-            "STRLEN",
-            "SUBSCRIBE",
-            "SUNION",
-            "SUNIONSTORE",
-            "SWAPDB",
-            "SYNC",
-            "TIME",
-            "TTL",
-            "TYPE",
-            "UNLINK",
-            "UNSUBSCRIBE",
-            "UNWATCH",
-            "WAIT",
-            "WATCH",
-            "XACK",
-            "XADD",
-            "XAUTOCLAIM",
-            "XCLAIM",
-            "XDEL",
-            "XGROUP",
-            "XINFO",
-            "XLEN",
-            "XPENDING",
-            "XRANGE",
-            "XREAD",
-            "XREADGROUP",
-            "XREVRANGE",
-            "XSETID",
-            "XTRIM",
-            "ZADD",
-            "ZCARD",
-            "ZCOUNT",
-            "ZDIFF",
-            "ZDIFFSTORE",
-            "ZINCRBY",
-            "ZINTER",
-            "ZINTERCARD",
-            "ZINTERSTORE",
-            "ZLEXCOUNT",
-            "ZMPOP",
-            "ZMSCORE",
-            "ZPOPMAX",
-            "ZPOPMIN",
-            "ZRANDMEMBER",
-            "ZRANGE",
-            "ZRANGEBYLEX",
-            "ZRANGEBYSCORE",
-            "ZRANGESTORE",
-            "ZRANK",
-            "ZREM",
-            "ZREMRANGEBYLEX",
-            "ZREMRANGEBYSCORE",
-            "ZREMRANGEBYRANK",
-            "ZREVRANGE",
-            "ZREVRANGEBYLEX",
-            "ZREVRANGEBYSCORE",
-            "ZREVRANK",
-            "ZSCAN",
-            "ZSCORE",
-            "ZUNION",
-            "ZUNIONSTORE",
-            "LOLWUT",
-            "LATENCY",
+        // one editor's parser and tree; the editor hands over each edit, so only the edited
+        // bytes and what the parse restructured (an opened comment or string reaches far) are
+        // recoloured, widened to whole lines
+        class TreeSitterHighlighter {
+        public:
+            TreeSitterHighlighter(const TSLanguage* lang, TSQuery* query)
+                : parser_(ts_parser_new()), query_(query) {
+                ts_parser_set_language(parser_, lang);
+            }
+            ~TreeSitterHighlighter() {
+                if (tree_)
+                    ts_tree_delete(tree_);
+                ts_parser_delete(parser_);
+            }
+            TreeSitterHighlighter(const TreeSitterHighlighter&) = delete;
+            TreeSitterHighlighter& operator=(const TreeSitterHighlighter&) = delete;
+
+            void operator()(std::string_view text, std::span<Token> tokens, const Edit& edit) {
+                if (!query_)
+                    return;
+                if (tree_ && edit.start == edit.oldEnd && edit.start == edit.newEnd)
+                    return; // the same text: the kept kinds stand
+                const bool full =
+                    !tree_ || (edit.start == 0 && edit.oldEnd == 0 && edit.newEnd == text.size());
+                if (tree_ && !full) {
+                    TSInputEdit e{};
+                    e.start_byte = static_cast<uint32_t>(edit.start);
+                    e.old_end_byte = static_cast<uint32_t>(edit.oldEnd);
+                    e.new_end_byte = static_cast<uint32_t>(edit.newEnd);
+                    e.start_point = {0, e.start_byte};
+                    e.old_end_point = {0, e.old_end_byte};
+                    e.new_end_point = {0, e.new_end_byte};
+                    ts_tree_edit(tree_, &e);
+                }
+                TSTree* parsed =
+                    ts_parser_parse_string(parser_, full ? nullptr : tree_, text.data(),
+                                           static_cast<uint32_t>(text.size()));
+                std::vector<std::pair<uint32_t, uint32_t>> ranges;
+                if (full || !parsed) {
+                    ranges.emplace_back(0, static_cast<uint32_t>(text.size()));
+                } else {
+                    ranges.emplace_back(edit.start, edit.newEnd);
+                    uint32_t count = 0;
+                    TSRange* changed = ts_tree_get_changed_ranges(tree_, parsed, &count);
+                    for (uint32_t i = 0; i < count; ++i)
+                        ranges.emplace_back(changed[i].start_byte, changed[i].end_byte);
+                    free(changed);
+                }
+                if (tree_)
+                    ts_tree_delete(tree_);
+                tree_ = parsed;
+                if (!tree_) {
+                    std::fill(tokens.begin(), tokens.end(), Token::Text);
+                    return;
+                }
+
+                TSQueryCursor* cursor = ts_query_cursor_new();
+                const auto size = static_cast<uint32_t>(text.size());
+                for (auto [from, to] : ranges) {
+                    while (from > 0 && text[from - 1] != '\n')
+                        --from;
+                    while (to < size && text[to] != '\n')
+                        ++to;
+                    std::fill(tokens.begin() + from, tokens.begin() + to, Token::Text);
+                    ts_query_cursor_set_byte_range(cursor, from, to);
+                    ts_query_cursor_exec(cursor, query_, ts_tree_root_node(tree_));
+                    TSQueryMatch match;
+                    while (ts_query_cursor_next_match(cursor, &match)) {
+                        for (uint32_t i = 0; i < match.capture_count; ++i) {
+                            uint32_t nameLen = 0;
+                            const char* name = ts_query_capture_name_for_id(
+                                query_, match.captures[i].index, &nameLen);
+                            const Token token = tokenFor(std::string_view(name, nameLen));
+                            const TSNode node = match.captures[i].node;
+                            // only inside the range: outside it the kept kinds stand
+                            const uint32_t a = std::max(ts_node_start_byte(node), from);
+                            const uint32_t b = std::min(ts_node_end_byte(node), to);
+                            for (uint32_t j = a; j < b; ++j)
+                                tokens[j] = token;
+                        }
+                    }
+                }
+                ts_query_cursor_delete(cursor);
+            }
+
+        private:
+            TSParser* parser_;
+            TSQuery* query_;
+            TSTree* tree_ = nullptr;
         };
 
-        const size_t n = content_.size();
-        size_t i = 0;
-
-        while (i < n) {
-            if (std::isspace(static_cast<unsigned char>(content_[i]))) {
-                ++i;
-                continue;
-            }
-
-            // comment: # to end of line
-            if (content_[i] == '#') {
-                while (i < n && content_[i] != '\n')
-                    colors_[i++] = palette_.comment;
-                continue;
-            }
-
-            // string: single or double quoted
-            if (content_[i] == '"' || content_[i] == '\'') {
-                const char q = content_[i];
-                colors_[i++] = palette_.string;
-                while (i < n && content_[i] != q && content_[i] != '\n') {
-                    if (content_[i] == '\\' && i + 1 < n)
-                        colors_[i++] = palette_.string;
-                    colors_[i++] = palette_.string;
-                }
-                if (i < n && content_[i] == q)
-                    colors_[i++] = palette_.string;
-                continue;
-            }
-
-            // number (including negative)
-            if (std::isdigit(static_cast<unsigned char>(content_[i])) ||
-                (content_[i] == '-' && i + 1 < n &&
-                 std::isdigit(static_cast<unsigned char>(content_[i + 1])))) {
-                if (content_[i] == '-')
-                    colors_[i++] = palette_.number;
-                while (i < n && (std::isdigit(static_cast<unsigned char>(content_[i])) ||
-                                 content_[i] == '.'))
-                    colors_[i++] = palette_.number;
-                continue;
-            }
-
-            // word: command or identifier
-            if (std::isalpha(static_cast<unsigned char>(content_[i])) || content_[i] == '_') {
-                size_t j = i;
-                while (j < n && (std::isalnum(static_cast<unsigned char>(content_[j])) ||
-                                 content_[j] == '_' || content_[j] == ':' || content_[j] == '.'))
-                    ++j;
-
-                std::string upper(j - i, '\0');
-                std::transform(content_.begin() + static_cast<ptrdiff_t>(i),
-                               content_.begin() + static_cast<ptrdiff_t>(j), upper.begin(),
-                               [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-
-                const ImU32 color = REDIS_COMMANDS.count(upper) ? palette_.keyword : palette_.text;
-                for (size_t k = i; k < j; ++k)
-                    colors_[k] = color;
-                i = j;
-                continue;
-            }
-
-            ++i;
+        imshell::TextEditor::Highlighter treeSitter(const TSLanguage* lang, TSQuery* query) {
+            // std::function copies its target: the parser lives behind a shared pointer
+            auto highlighter = std::make_shared<TreeSitterHighlighter>(lang, query);
+            return [highlighter](std::string_view text, std::span<Token> tokens, const Edit& edit) {
+                (*highlighter)(text, tokens, edit);
+            };
         }
-    }
+    } // namespace
 
-    void TextEditor::rehighlight() {
-        if (language_ == Language::Redis) {
-            rehighlightRedis();
-            return;
+    TextEditor::Highlighter TextEditor::highlighterFor(Language language) {
+        switch (language) {
+        case Language::SQL: {
+            static TSQuery* query = compileQuery(tree_sitter_sql(), SQL_HIGHLIGHT_QUERY);
+            return treeSitter(tree_sitter_sql(), query);
         }
-        if (language_ == Language::PlainText) {
-            colors_.assign(content_.size(), palette_.text);
-            return;
+        case Language::JSON: {
+            static TSQuery* query = compileQuery(tree_sitter_json(), JSON_HIGHLIGHT_QUERY);
+            return treeSitter(tree_sitter_json(), query);
         }
-
-        if (!tsParser_ || !tsQuery_ || content_.empty()) {
-            // Set all to default text color
-            colors_.assign(content_.size(), palette_.text);
-            return;
+        case Language::Redis:
+            return highlightRedis;
+        case Language::PlainText:
+            break;
         }
-
-        // Incremental parsing
-        const bool initialParse = tsPreviousContent_.empty();
-        size_t start = 0;
-        size_t oldEnd = tsPreviousContent_.size();
-        size_t newEnd = content_.size();
-
-        if (!initialParse && tsTree_) {
-            // Compute edit range
-            while (start < oldEnd && start < newEnd && tsPreviousContent_[start] == content_[start])
-                ++start;
-
-            while (oldEnd > start && newEnd > start &&
-                   tsPreviousContent_[oldEnd - 1] == content_[newEnd - 1]) {
-                --oldEnd;
-                --newEnd;
-            }
-
-            TSInputEdit edit;
-            edit.start_byte = static_cast<uint32_t>(start);
-            edit.old_end_byte = static_cast<uint32_t>(oldEnd);
-            edit.new_end_byte = static_cast<uint32_t>(newEnd);
-            edit.start_point = {0, static_cast<uint32_t>(start)};
-            edit.old_end_point = {0, static_cast<uint32_t>(oldEnd)};
-            edit.new_end_point = {0, static_cast<uint32_t>(newEnd)};
-            ts_tree_edit(tsTree_, &edit);
-        }
-
-        // Parse
-        TSTree* newTree =
-            ts_parser_parse_string(tsParser_, initialParse ? nullptr : tsTree_, content_.c_str(),
-                                   static_cast<uint32_t>(content_.size()));
-
-        // recolor only what changed: the edited bytes plus whatever the parse restructured
-        // (an opened comment or string reaches far), widened to whole lines. a first parse,
-        // or a palette change (which drops the saved colors), recolors everything
-        const bool full = initialParse || !tsTree_ || !newTree ||
-                          tsPreviousColors_.size() != tsPreviousContent_.size() ||
-                          (start == oldEnd && start == newEnd);
-        std::vector<std::pair<uint32_t, uint32_t>> ranges;
-        if (!full) {
-            ranges.emplace_back(start, newEnd);
-            uint32_t count = 0;
-            TSRange* changed = ts_tree_get_changed_ranges(tsTree_, newTree, &count);
-            for (uint32_t i = 0; i < count; ++i)
-                ranges.emplace_back(changed[i].start_byte, changed[i].end_byte);
-            free(changed);
-        }
-
-        if (tsTree_)
-            ts_tree_delete(tsTree_);
-        tsTree_ = newTree;
-        tsPreviousContent_ = content_;
-
-        if (!tsTree_) {
-            colors_.assign(content_.size(), palette_.text);
-            tsPreviousColors_.clear();
-            return;
-        }
-
-        if (full) {
-            colors_.assign(content_.size(), palette_.text);
-            ranges = {{0u, static_cast<uint32_t>(content_.size())}};
-        } else {
-            // the old colors, shifted past the edit
-            colors_.assign(tsPreviousColors_.begin(), tsPreviousColors_.begin() + start);
-            colors_.insert(colors_.end(), newEnd - start, palette_.text);
-            colors_.insert(colors_.end(), tsPreviousColors_.begin() + oldEnd,
-                           tsPreviousColors_.end());
-        }
-
-        TSQueryCursor* cursor = ts_query_cursor_new();
-        const auto size = static_cast<uint32_t>(content_.size());
-        for (auto [from, to] : ranges) {
-            while (from > 0 && content_[from - 1] != '\n')
-                --from;
-            while (to < size && content_[to] != '\n')
-                ++to;
-            std::fill(colors_.begin() + from, colors_.begin() + to, palette_.text);
-            ts_query_cursor_set_byte_range(cursor, from, to);
-            ts_query_cursor_exec(cursor, tsQuery_, ts_tree_root_node(tsTree_));
-
-            TSQueryMatch match;
-            while (ts_query_cursor_next_match(cursor, &match)) {
-                for (uint32_t i = 0; i < match.capture_count; ++i) {
-                    TSNode node = match.captures[i].node;
-                    uint32_t nameLen;
-                    const char* name =
-                        ts_query_capture_name_for_id(tsQuery_, match.captures[i].index, &nameLen);
-
-                    // Map capture name to palette color
-                    ImU32 color = palette_.text;
-                    if (strncmp(name, "keyword", nameLen) == 0)
-                        color = palette_.keyword;
-                    else if (strncmp(name, "string", nameLen) == 0)
-                        color = palette_.string;
-                    else if (strncmp(name, "number", nameLen) == 0)
-                        color = palette_.number;
-                    else if (strncmp(name, "comment", nameLen) == 0)
-                        color = palette_.comment;
-                    else if (strncmp(name, "function", nameLen) == 0)
-                        color = palette_.function;
-                    else if (strncmp(name, "type", nameLen) == 0)
-                        color = palette_.type;
-                    else if (strncmp(name, "operator", nameLen) == 0)
-                        color = palette_.operator_;
-
-                    // only inside the range: outside it the saved colors stand
-                    const uint32_t a = std::max(ts_node_start_byte(node), from);
-                    const uint32_t b = std::min(ts_node_end_byte(node), to);
-                    for (uint32_t j = a; j < b; ++j)
-                        colors_[j] = color;
-                }
-            }
-        }
-        ts_query_cursor_delete(cursor);
-        tsPreviousColors_ = colors_;
+        return nullptr;
     }
 
 } // namespace dearsql

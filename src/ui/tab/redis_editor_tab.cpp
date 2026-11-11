@@ -266,10 +266,10 @@ namespace {
         return tokens;
     }
 
-    std::vector<dearsql::TextEditor::CompletionItem>
-    filterRedisCompletions(const dearsql::TextEditor::CompletionRequest& request,
-                           const std::vector<dearsql::TextEditor::CompletionItem>& items) {
-        using CompletionItem = dearsql::TextEditor::CompletionItem;
+    std::vector<dearsql::ListCompletion>
+    filterRedisCompletions(const dearsql::ListCompletionRequest& request,
+                           const std::vector<dearsql::ListCompletion>& items) {
+        using CompletionItem = dearsql::ListCompletion;
 
         if (request.forced) {
             return items;
@@ -384,8 +384,11 @@ RedisEditorTab::RedisEditorTab(const std::string& name, RedisDatabase* db)
     : Tab(name, TabType::REDIS_EDITOR), db_(db), statusPanel_(db) {
     editor_.SetShowLineNumbers(false);
     editor_.SetLanguage(dearsql::TextEditor::Language::Redis);
-    editor_.SetCompletionKeywords(REDIS_COMPLETION_KEYWORDS);
-    editor_.SetCompletionFilter(filterRedisCompletions);
+    std::vector<dearsql::ListCompletion> commands;
+    for (const auto& command : REDIS_COMPLETION_KEYWORDS)
+        commands.emplace_back(command, dearsql::CompletionKind::Keyword);
+    editor_.SetCompletionProvider(
+        dearsql::listCompletions(std::move(commands), filterRedisCompletions));
     editor_.SetSubmitCallback([this] {
         command_ = editor_.GetText();
         startCommandExecutionAsync(command_);

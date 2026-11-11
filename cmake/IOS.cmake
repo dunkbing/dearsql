@@ -40,6 +40,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::Crypto
     dearsql::dearsql
     imshell::imshell
+    imshell::editor
     httplib::httplib
     imgui_rich_md
     acp::acp

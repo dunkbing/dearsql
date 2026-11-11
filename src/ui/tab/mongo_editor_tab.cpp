@@ -332,8 +332,8 @@ void MongoEditorTab::cancelQueryExecution() {
 }
 
 void MongoEditorTab::updateCompletionKeywords() {
-    using CI = dearsql::TextEditor::CompletionItem;
-    using CK = dearsql::TextEditor::CompletionKind;
+    using CI = dearsql::ListCompletion;
+    using CK = dearsql::CompletionKind;
 
     // MongoDB shell keywords and aggregation operators
     static const std::vector<std::string> mongoKeywords = {
@@ -468,7 +468,7 @@ void MongoEditorTab::updateCompletionKeywords() {
         std::ranges::unique(items, [](const CI& a, const CI& b) { return a.text == b.text; });
     items.erase(ret.begin(), ret.end());
 
-    editor_.SetCompletionItems(std::move(items));
+    editor_.SetCompletionProvider(dearsql::listCompletions(std::move(items)));
     completionKeywordsSet_ = true;
 }
 

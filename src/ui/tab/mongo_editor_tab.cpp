@@ -4,9 +4,9 @@
 #include "application.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/spinner.hpp"
-#include "mydear/splitter.hpp"
+#include "imshell/button.hpp"
+#include "imshell/spinner.hpp"
+#include "imshell/splitter.hpp"
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
@@ -90,7 +90,7 @@ void MongoEditorTab::render() {
         ImGui::EndChild();
 
         renderToolbar();
-        mydear::Splitter("##mongo_splitter", &splitterPosition_, totalContentHeight_, 100.0f,
+        imshell::Splitter("##mongo_splitter", &splitterPosition_, totalContentHeight_, 100.0f,
                          200.0f);
 
         if (ImGui::BeginChild("MongoResults", ImVec2(-1, resultsHeight), true,
@@ -121,7 +121,7 @@ void MongoEditorTab::render() {
                 constexpr float spinnerRadius = 10.0f;
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
-                mydear::Spinner("##mongo_results_spinner", spinnerRadius, 2,
+                imshell::Spinner("##mongo_results_spinner", spinnerRadius, 2,
                                 ImGui::GetColorU32(ImGuiCol_Text));
 
                 const char* loadingText = LABEL_RUNNING_QUERY;
@@ -167,19 +167,19 @@ void MongoEditorTab::renderHeader() const {
 void MongoEditorTab::renderToolbar() {
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary);
+        imshell::Button(ICON_FA_PLAY " Run", imshell::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (mydear::Button(LABEL_CANCEL)) {
+        if (imshell::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
     } else {
-        if (mydear::Button(ICON_FA_PLAY " Run", mydear::ButtonVariant::Primary)) {
+        if (imshell::Button(ICON_FA_PLAY " Run", imshell::ButtonVariant::Primary)) {
             startQueryExecutionAsync(query_);
         }
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (mydear::Button(ICON_FA_ALIGN_LEFT " Format")) {
+        if (imshell::Button(ICON_FA_ALIGN_LEFT " Format")) {
             formatJSON();
         }
     }

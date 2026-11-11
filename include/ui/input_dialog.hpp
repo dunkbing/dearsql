@@ -1,5 +1,5 @@
 #pragma once
 
-#include "mydear/alert.hpp"
+#include "imshell/alert.hpp"
 
-using mydear::InputDialog;
+using imshell::InputDialog;

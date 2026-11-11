@@ -9,7 +9,7 @@
 #include "imgui.h"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
-#include "mydear/app.hpp"
+#include "imshell/app.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/connection_dialog.hpp"
 #include "ui/schema_compare.hpp"

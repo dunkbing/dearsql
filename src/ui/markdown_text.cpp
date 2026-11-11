@@ -4,8 +4,8 @@
 #include "application.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "mydear/button.hpp"
-#include "mydear/embedded.hpp"
+#include "imshell/button.hpp"
+#include "imshell/embedded.hpp"
 #include "themes.hpp"
 #include "ui/text_editor.hpp"
 #include <algorithm>

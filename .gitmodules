@@ -30,6 +30,6 @@
 [submodule "external/imgui_rich_md"]
 	path = external/imgui_rich_md
 	url = https://github.com/pthom/imgui_rich_md
-[submodule "external/mydear"]
-	path = external/mydear
-	url = https://github.com/dunkbing/mydear.git
+[submodule "external/imshell"]
+	path = external/imshell
+	url = https://github.com/dunkbing/imshell.git

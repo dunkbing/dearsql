@@ -1,13 +1,13 @@
 # android build: the desktop sources minus what android can't run (subprocesses, the terminal
-# modes, sentry) as a shared library that NativeActivity loads, packed into an apk by mydear.
+# modes, sentry) as a shared library that NativeActivity loads, packed into an apk by imshell.
 # configure with the ndk toolchain chainloaded by vcpkg (docs/ANDROID.md)
 set(ANDROID_SOURCES ${APP_SOURCES})
 list(FILTER ANDROID_SOURCES EXCLUDE REGEX
      "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
 list(APPEND ANDROID_SOURCES src/ui/title_bar.cpp src/platform/android_main.cpp
                             src/platform/android_dialogs.cpp)
-mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
-mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
+imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+imshell_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 list(APPEND ANDROID_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
 add_library(${PROJECT_NAME} SHARED ${ANDROID_SOURCES} ${IMGUI_SOURCES} ${IMGUI_NODE_EDITOR_SOURCES})
@@ -35,8 +35,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     dearsql::dearsql
-    mydear::mydear
-    mydear::editor
+    imshell::imshell
+    imshell::editor
     httplib::httplib
     imgui_rich_md
     acp::acp
@@ -48,6 +48,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     spdlog::spdlog
     log)
 
-mydear_android_apk(${PROJECT_NAME} PACKAGE dev.dearsql.app LABEL "${APP_NAME}"
+imshell_android_apk(${PROJECT_NAME} PACKAGE dev.dearsql.app LABEL "${APP_NAME}"
                    VERSION ${APP_VERSION}
                    PERMISSIONS android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE)

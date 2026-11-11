@@ -8,7 +8,7 @@
 #include "application.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
+#include "imshell/button.hpp"
 #include "themes.hpp"
 #include "ui/tab/redis_pubsub_tab.hpp"
 #include <algorithm>
@@ -412,15 +412,15 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
 
     // subscribe / unsubscribe button
     if (subscribed) {
-        if (mydear::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", mydear::ButtonVariant::Danger)) {
+        if (imshell::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", imshell::ButtonVariant::Danger)) {
             unsubscribe();
         }
     } else if (connecting) {
         // connecting runs on a worker: it can be called off
-        if (mydear::Button(ICON_FA_XMARK " Cancel", mydear::ButtonVariant::Secondary))
+        if (imshell::Button(ICON_FA_XMARK " Cancel", imshell::ButtonVariant::Secondary))
             unsubscribe();
     } else {
-        if (mydear::Button(ICON_FA_TOWER_BROADCAST " Subscribe", mydear::ButtonVariant::Primary)) {
+        if (imshell::Button(ICON_FA_TOWER_BROADCAST " Subscribe", imshell::ButtonVariant::Primary)) {
             subscribe(patternBuf_);
         }
     }
@@ -428,7 +428,7 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     ImGui::SameLine(0, Theme::Spacing::S);
 
     // clear button
-    if (mydear::Button(ICON_FA_TRASH_CAN " Clear", mydear::ButtonVariant::Danger)) {
+    if (imshell::Button(ICON_FA_TRASH_CAN " Clear", imshell::ButtonVariant::Danger)) {
         displayMessages_.clear();
         sub_->total.store(0);
     }
@@ -516,7 +516,7 @@ void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
     if (!canPublish)
         ImGui::BeginDisabled();
 
-    if (mydear::Button("Publish", mydear::ButtonVariant::Primary, ImVec2(buttonWidth, 0)) ||
+    if (imshell::Button("Publish", imshell::ButtonVariant::Primary, ImVec2(buttonWidth, 0)) ||
         (enterPressed && canPublish)) {
         publish(publishChannelBuf_, publishMessageBuf_);
         publishMessageBuf_[0] = '\0';

@@ -2,7 +2,7 @@
 #import <Foundation/Foundation.h>
 
 #include "utils/synced_store.hpp"
-#include "mydear/frames.hpp"
+#include "imshell/frames.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -128,7 +128,7 @@ SyncedStore::SyncedStore(const std::string& file, const bool mirror)
                          queue:nil
                     usingBlock:^(NSNotification*) {
                       impl->remoteChange = true;
-                      mydear::requestFrames();
+                      imshell::requestFrames();
                     }];
         impl_->ok = true;
     }

@@ -313,7 +313,7 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         ctx->KeyPress(ImGuiKey_Enter);
         ctx->Yield(3);
         IM_CHECK_EQ(pressed, 0);
-        ctx->ItemClick("//Drop it?###mydear_alert/Drop");
+        ctx->ItemClick("//Drop it?###imshell_alert/Drop");
         ctx->Yield(3);
         IM_CHECK_EQ(pressed, 2);
         show();
@@ -330,7 +330,7 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
         ctx->Yield(3);
         Alert::show("Heads up");
         ctx->Yield(3);
-        ctx->ItemClick("//Heads up###mydear_alert/OK");
+        ctx->ItemClick("//Heads up###imshell_alert/OK");
         ctx->Yield(3);
         const ImGuiWindow* settings = ImGui::FindWindowByName("Settings");
         IM_CHECK(settings && settings->WasActive);
@@ -351,11 +351,11 @@ void RegisterSidebarTests(ImGuiTestEngine* engine) {
             },
             nullptr, [](const std::string& v) { return v.empty() ? std::string("Required") : ""; });
         ctx->Yield(3);
-        ctx->ItemClick("//Rename###mydear_alert/Rename");
+        ctx->ItemClick("//Rename###imshell_alert/Rename");
         ctx->Yield(3);
         IM_CHECK(confirmed.empty());
         // types and presses return, which confirms
-        ctx->ItemInputValue("//Rename###mydear_alert/##value", "orders");
+        ctx->ItemInputValue("//Rename###imshell_alert/##value", "orders");
         ctx->Yield(3);
         IM_CHECK_EQ(confirmed, std::string("orders"));
     };

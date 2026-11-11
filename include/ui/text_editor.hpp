@@ -1,5 +1,5 @@
 #pragma once
-#include "mydear/editor.hpp"
+#include "imshell/editor.hpp"
 #include <cstdint>
 #include <dearsql/completion.hpp>
 #include <functional>
@@ -9,9 +9,9 @@
 
 namespace dearsql {
 
-    // mydear's editor with this app's languages: tree-sitter for SQL and JSON, a lexer for
+    // imshell's editor with this app's languages: tree-sitter for SQL and JSON, a lexer for
     // Redis. new editors are SQL
-    class TextEditor : public mydear::TextEditor {
+    class TextEditor : public imshell::TextEditor {
     public:
         TextEditor();
 

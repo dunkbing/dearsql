@@ -2,9 +2,9 @@
 #include "IconsFontAwesome6.h"
 #include "application.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include "ui/alert.hpp"
 #include "utils/file_dialog.hpp"
@@ -392,7 +392,7 @@ void S3BrowserTab::renderToolbar() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     ImGui::BeginDisabled(prefix_.empty() || listOp_.isRunning());
-    if (mydear::IconButton(ICON_FA_ARROW_UP)) {
+    if (imshell::IconButton(ICON_FA_ARROW_UP)) {
         std::string parent = prefix_.substr(0, prefix_.size() - 1);
         const auto slash = parent.rfind('/');
         open(slash == std::string::npos ? "" : parent.substr(0, slash + 1));
@@ -403,7 +403,7 @@ void S3BrowserTab::renderToolbar() {
 
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(listOp_.isRunning());
-    if (mydear::IconButton(ICON_FA_ARROWS_ROTATE))
+    if (imshell::IconButton(ICON_FA_ARROWS_ROTATE))
         open(prefix_);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -411,7 +411,7 @@ void S3BrowserTab::renderToolbar() {
 
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(op_.isRunning());
-    if (mydear::IconButton(ICON_FA_UPLOAD))
+    if (imshell::IconButton(ICON_FA_UPLOAD))
         upload();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -448,7 +448,7 @@ void S3BrowserTab::renderToolbar() {
             ImGui::SameLine(0, Theme::Spacing::XS);
         ImGui::PushID(static_cast<int>(a));
         ImGui::BeginDisabled(!actions[a].enabled);
-        if (mydear::IconButton(actions[a].icon))
+        if (imshell::IconButton(actions[a].icon))
             actions[a].run();
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -465,7 +465,7 @@ void S3BrowserTab::renderToolbar() {
 
     if (op_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        mydear::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.blue));
         ImGui::SameLine(0, Theme::Spacing::S);
         const double p = progress_->load();
         if (p >= 0)
@@ -475,7 +475,7 @@ void S3BrowserTab::renderToolbar() {
             ImGui::TextColored(colors.subtext0, "%s", opLabel_.c_str());
         if (p >= 0) {
             ImGui::SameLine(0, Theme::Spacing::S);
-            if (mydear::IconButton(ICON_FA_XMARK))
+            if (imshell::IconButton(ICON_FA_XMARK))
                 cancel_->store(true);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Cancel");
@@ -517,13 +517,13 @@ void S3BrowserTab::renderTable() {
 
     if (!listError_.empty()) {
         ImGui::TextColored(colors.red, "%s", listError_.c_str());
-        if (mydear::Button(ICON_FA_ARROWS_ROTATE " Retry"))
+        if (imshell::Button(ICON_FA_ARROWS_ROTATE " Retry"))
             list();
         return;
     }
     if (entries_.empty()) {
         if (listOp_.isRunning()) {
-            mydear::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::SameLine(0, Theme::Spacing::M);
             ImGui::TextColored(colors.subtext0, "Loading...");
         } else {
@@ -579,7 +579,7 @@ void S3BrowserTab::renderTable() {
                         download(e);
                 }
             }
-            if (mydear::BeginContextMenu("##s3_entry_menu")) {
+            if (imshell::BeginContextMenu("##s3_entry_menu")) {
                 renderEntryMenu(e, navigate);
                 ImGui::EndPopup();
             }
@@ -600,7 +600,7 @@ void S3BrowserTab::renderTable() {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::BeginDisabled(listOp_.isRunning());
-        if (mydear::Button("Load more"))
+        if (imshell::Button("Load more"))
             list(true);
         ImGui::EndDisabled();
     }
@@ -621,7 +621,7 @@ void S3BrowserTab::renderEntryMenu(const Entry& entry, std::optional<std::string
             download(entry);
         if (ImGui::MenuItem("Details", nullptr, false, !busy))
             showDetails(entry);
-        if (mydear::BeginSubMenu("Copy Share Link", !busy)) {
+        if (imshell::BeginSubMenu("Copy Share Link", !busy)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Valid for 1 hour"))
@@ -693,7 +693,7 @@ void S3BrowserTab::renderDetails() {
             ImGui::EndTable();
         }
         ImGui::Spacing();
-        if (mydear::Button("Close", mydear::ButtonVariant::Primary) ||
+        if (imshell::Button("Close", imshell::ButtonVariant::Primary) ||
             ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

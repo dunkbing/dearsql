@@ -5,8 +5,8 @@ set(IOS_SOURCES ${APP_SOURCES})
 list(FILTER IOS_SOURCES EXCLUDE REGEX
      "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
 list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm)
-mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
-mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
+imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+imshell_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 list(APPEND IOS_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
 add_executable(${PROJECT_NAME} MACOSX_BUNDLE ${IOS_SOURCES} ${IMGUI_SOURCES}
@@ -39,8 +39,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     dearsql::dearsql
-    mydear::mydear
-    mydear::editor
+    imshell::imshell
+    imshell::editor
     httplib::httplib
     imgui_rich_md
     acp::acp

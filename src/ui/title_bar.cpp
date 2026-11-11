@@ -3,10 +3,10 @@
 #include "application.hpp"
 #include "config.hpp"
 #include "imgui_internal.h"
-#include "mydear/button.hpp"
-#include "mydear/native_view.hpp"
-#include "mydear/title_bar.hpp"
-#include "mydear/updater.hpp"
+#include "imshell/button.hpp"
+#include "imshell/native_view.hpp"
+#include "imshell/title_bar.hpp"
+#include "imshell/updater.hpp"
 #include "themes.hpp"
 #include "ui/alert.hpp"
 #include "ui/input_dialog.hpp"
@@ -33,10 +33,10 @@ namespace {
     }
 
 #ifdef __APPLE__
-    // mydear's NSButton with an sf symbol
+    // imshell's NSButton with an sf symbol
     bool barButton(const char* id, const char* symbol, const char* tooltip,
                    const char* title = nullptr) {
-        const bool clicked = mydear::NativeButton(id, symbol, tooltip, title);
+        const bool clicked = imshell::NativeButton(id, symbol, tooltip, title);
         [[maybe_unused]] ImGuiContext& g = *GImGui; // the test engine finds items by label
         IMGUI_TEST_ENGINE_ITEM_INFO(ImGui::GetItemID(), id, ImGuiItemStatusFlags_None);
         gWidths[ImGui::GetItemID()] = ImGui::GetItemRectSize().x;
@@ -172,8 +172,8 @@ namespace {
                     const float actionY = rowMin.y + (rowHeight - actionBtnSize) * 0.5f;
 
                     ImGui::SetCursorScreenPos({actionX, actionY});
-                    if (mydear::IconButton(ICON_FA_PENCIL "##edit",
-                                           mydear::ButtonVariant::Secondary,
+                    if (imshell::IconButton(ICON_FA_PENCIL "##edit",
+                                           imshell::ButtonVariant::Secondary,
                                            {actionBtnSize, actionBtnSize})) {
                         const int wsId = ws.id;
                         const std::string wsName = ws.name;
@@ -190,7 +190,7 @@ namespace {
                         ImGui::SetTooltip("Rename");
 
                     ImGui::SetCursorScreenPos({actionX + actionBtnSize + actionGap, actionY});
-                    if (mydear::IconButton(ICON_FA_TRASH "##del", mydear::ButtonVariant::Danger,
+                    if (imshell::IconButton(ICON_FA_TRASH "##del", imshell::ButtonVariant::Danger,
                                            {actionBtnSize, actionBtnSize})) {
                         const int wsId = ws.id;
                         ImGui::CloseCurrentPopup();
@@ -235,7 +235,7 @@ namespace {
 
 void TitleBarView::render(Application& app) {
     const auto& colors = app.getCurrentColors();
-    const auto bar = mydear::BeginTitleBar();
+    const auto bar = imshell::BeginTitleBar();
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::S, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
     const float rowY = ImGui::GetCursorScreenPos().y;
@@ -255,11 +255,11 @@ void TitleBarView::render(Application& app) {
     if (newConnection && app.getDatabaseSidebar())
         app.getDatabaseSidebar()->showConnectionDialog();
     // linux only: sparkle and winsparkle prompt by themselves
-    if (mydear::updater::Available()) {
+    if (imshell::updater::Available()) {
         ImGui::SameLine();
-        const std::string tip = "Update available: v" + mydear::updater::LatestVersion();
+        const std::string tip = "Update available: v" + imshell::updater::LatestVersion();
         if (barButton("###update", ICON_FA_CIRCLE_ARROW_UP, tip.c_str()))
-            mydear::updater::Check();
+            imshell::updater::Check();
     }
     const float leftEnd = ImGui::GetItemRectMax().x;
 
@@ -300,5 +300,5 @@ void TitleBarView::render(Application& app) {
         SettingsDialog::instance().open();
 
     ImGui::PopStyleVar(2);
-    mydear::EndTitleBar();
+    imshell::EndTitleBar();
 }

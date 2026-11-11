@@ -4,7 +4,7 @@
 #include <functional>
 #include <string>
 
-// the app's dialogs over mydear/file_dialog.hpp. done gets the path, never when cancelled:
+// the app's dialogs over imshell/file_dialog.hpp. done gets the path, never when cancelled:
 // at once on the desktop, later for an open on mobile, where the picker is not modal
 class FileDialog {
 public:

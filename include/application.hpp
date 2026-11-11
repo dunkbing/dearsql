@@ -2,7 +2,7 @@
 
 #include "app_state.hpp"
 #include "imgui.h"
-#include "mydear/app.hpp"
+#include "imshell/app.hpp"
 #include "themes.hpp"
 #include "ui/db_sidebar.hpp"
 #include "ui/tab_manager.hpp"
@@ -18,8 +18,8 @@
 #include <GLFW/glfw3.h>
 #endif
 
-// the app is mydear's delegate: mydear owns the window, backend and loop
-class Application : public mydear::Delegate {
+// the app is imshell's delegate: imshell owns the window, backend and loop
+class Application : public imshell::Delegate {
 public:
     static Application& getInstance();
 
@@ -90,7 +90,7 @@ public:
     // Open a file by path — routes to the right handler by extension
     void openFile(const std::string& path) override;
 
-    // mydear::Delegate
+    // imshell::Delegate
     void setup() override;
     void frame() override;
     bool wantsFrames() override;
@@ -152,7 +152,7 @@ public:
     void refreshWorkspaceConnections();
 
     // window or uikit view, graphics, frame loop
-    [[nodiscard]] mydear::App& shell() {
+    [[nodiscard]] imshell::App& shell() {
         return shell_;
     }
     [[nodiscard]] bool isShutdownRequested() const;
@@ -165,7 +165,7 @@ private:
 #if (defined(__APPLE__) || defined(_WIN32)) && !defined(DEARSQL_MOBILE)
     GLFWwindow* window = nullptr;
 #endif
-    mydear::App shell_; // window or uikit view, metal, imgui backends, frame loop
+    imshell::App shell_; // window or uikit view, metal, imgui backends, frame loop
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebarNew> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;

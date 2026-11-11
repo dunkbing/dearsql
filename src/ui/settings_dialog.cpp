@@ -5,9 +5,9 @@
 #include "config.hpp"
 #include "imgui.h"
 #include "license/license_manager.hpp"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/updater.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/updater.hpp"
 #include "themes.hpp"
 #include "utils/cli_command.hpp"
 #include "utils/master_secret.hpp"
@@ -47,8 +47,8 @@ void SettingsDialog::render() {
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     center.y -= 10.0f;
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(620.0f, 0.0f)), ImGuiCond_Appearing);
-    mydear::CapToScreen();
+    ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(620.0f, 0.0f)), ImGuiCond_Appearing);
+    imshell::CapToScreen();
 
     auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
@@ -72,7 +72,7 @@ void SettingsDialog::render() {
     ImGui::TextUnformatted("Theme");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f);
-    if (mydear::BeginSelect("##theme", app.getTheme().name)) {
+    if (imshell::BeginSelect("##theme", app.getTheme().name)) {
         for (const auto& theme : Theme::THEMES) {
             const bool selected = &theme == &app.getTheme();
             if (ImGui::Selectable(theme.name, selected))
@@ -80,21 +80,21 @@ void SettingsDialog::render() {
             if (selected)
                 ImGui::SetItemDefaultFocus();
         }
-        mydear::EndSelect();
+        imshell::EndSelect();
     }
 
     float scale = app.getFontScale();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Font Size");
     ImGui::SameLine();
-    if (mydear::Button("A-")) {
+    if (imshell::Button("A-")) {
         app.setFontScale(scale - 0.1f);
     }
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::Text("%d%%", static_cast<int>(scale * 100));
     ImGui::SameLine();
-    if (mydear::Button("A+")) {
+    if (imshell::Button("A+")) {
         app.setFontScale(scale + 0.1f);
     }
 
@@ -119,13 +119,13 @@ void SettingsDialog::render() {
         ImGui::TextUnformatted("Frame Rate Limit");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140.0f);
-        if (mydear::BeginSelect("##max_fps", label(app.maxFps()).c_str())) {
+        if (imshell::BeginSelect("##max_fps", label(app.maxFps()).c_str())) {
             for (const int fps : kLimits) {
                 if (ImGui::Selectable(label(fps).c_str(), fps == app.maxFps())) {
                     app.setMaxFps(fps);
                 }
             }
-            mydear::EndSelect();
+            imshell::EndSelect();
         }
     }
 #endif
@@ -134,7 +134,7 @@ void SettingsDialog::render() {
         ImGui::SeparatorText("Command Line");
         if (cliInstalled_) {
             ImGui::TextUnformatted(("dearsql is installed at " + CliCommand::linkPath()).c_str());
-        } else if (mydear::Button("Install 'dearsql' Command")) {
+        } else if (imshell::Button("Install 'dearsql' Command")) {
             cliStatus_ = CliCommand::install();
             cliInstalled_ = cliStatus_.empty();
         }
@@ -177,17 +177,17 @@ void SettingsDialog::render() {
 #ifndef DEARSQL_MOBILE
     // --- Actions ---
     ImGui::SeparatorText("About");
-    if (mydear::Button("Manage License...")) {
+    if (imshell::Button("Manage License...")) {
         licenseOpen_ = true;
         licenseStatus_.clear();
         ImGui::OpenPopup("Manage License");
     }
     ImGui::SameLine();
-    if (mydear::Button("Check for Updates...")) {
-        mydear::updater::Check();
+    if (imshell::Button("Check for Updates...")) {
+        imshell::updater::Check();
     }
     ImGui::SameLine();
-    if (mydear::Button("Report Bug...")) {
+    if (imshell::Button("Report Bug...")) {
         ImGui::GetPlatformIO().Platform_OpenInShellFn(
             ImGui::GetCurrentContext(),
             "https://github.com/dunkbing/dearsql/issues/new?labels=bug&title=%5BBug%5D");
@@ -239,7 +239,7 @@ void SettingsDialog::renderLicense() {
 
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(460.0f, 0.0f)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(460.0f, 0.0f)), ImGuiCond_Appearing);
     if (!ImGui::BeginPopupModal("Manage License", &licenseOpen_,
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize))
         return;
@@ -261,7 +261,7 @@ void SettingsDialog::renderLicense() {
         ImGui::SameLine(110);
         ImGui::TextUnformatted(manager.getInstanceId().c_str());
         ImGui::BeginDisabled(busy);
-        if (mydear::Button(busy ? "Deactivating..." : "Deactivate", mydear::ButtonVariant::Danger))
+        if (imshell::Button(busy ? "Deactivating..." : "Deactivate", imshell::ButtonVariant::Danger))
             start(false, [&](auto done) { manager.deactivateLicense(done); });
         ImGui::EndDisabled();
     } else {
@@ -275,7 +275,7 @@ void SettingsDialog::renderLicense() {
         ImGui::SameLine();
         ImGui::TextLinkOpenURL("Purchase one", PURCHASE_URL);
         ImGui::BeginDisabled(busy);
-        if ((mydear::Button(busy ? "Activating..." : "Activate", mydear::ButtonVariant::Primary) ||
+        if ((imshell::Button(busy ? "Activating..." : "Activate", imshell::ButtonVariant::Primary) ||
              enter) &&
             !busy) {
             if (licenseKey_[0] == '\0') {

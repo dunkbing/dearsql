@@ -2,7 +2,7 @@
 
 #include "database/database_node.hpp"
 #include "imgui.h"
-#include "mydear/menu.hpp"
+#include "imshell/menu.hpp"
 #include <atomic>
 #include <functional>
 #include <optional>
@@ -35,7 +35,7 @@ namespace TableImporter {
                      Progress& progress);
 
     inline void renderImportMenu(const std::function<void()>& onCsv, bool enabled = true) {
-        if (mydear::BeginSubMenu("Import", enabled)) {
+        if (imshell::BeginSubMenu("Import", enabled)) {
             if (ImGui::MenuItem("CSV"))
                 onCsv();
             ImGui::EndMenu();

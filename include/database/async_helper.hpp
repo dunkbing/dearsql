@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mydear/frames.hpp"
+#include "imshell/frames.hpp"
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -45,12 +45,12 @@ namespace AsyncOperationControl {
     }
 
     // work the app does not own (an agent process starting, a stream) still shows a
-    // spinner: drawing one asks for frames a little longer (mydear/frames.hpp)
-    using mydear::requestFrames;
+    // spinner: drawing one asks for frames a little longer (imshell/frames.hpp)
+    using imshell::requestFrames;
 
     // what the frame loop checks: running tasks or anything visibly in progress
     inline bool wantsFrames() {
-        return hasRunningTasks() || mydear::framesRequested();
+        return hasRunningTasks() || imshell::framesRequested();
     }
 
     inline void resetCancelledTaskCount() {

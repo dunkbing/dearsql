@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace mydear {
+namespace imshell {
     class App;
 }
 
@@ -14,7 +14,7 @@ public:
     static TextureManager& instance();
 
     // load all database icon textures from embedded images
-    void loadDatabaseIcons(mydear::App& shell);
+    void loadDatabaseIcons(imshell::App& shell);
 
     // get the texture for a database type, returns nullptr if not loaded
     [[nodiscard]] ImTextureID getIcon(DatabaseType type) const;
@@ -27,7 +27,7 @@ public:
 private:
     TextureManager() = default;
 
-    ImTextureID loadFromEmbedded(mydear::App& shell, const char* name);
+    ImTextureID loadFromEmbedded(imshell::App& shell, const char* name);
 
     std::unordered_map<DatabaseType, ImTextureID> icons_;
     float iconSize_ = 14.0f;

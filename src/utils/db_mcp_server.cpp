@@ -1,5 +1,5 @@
 #include "utils/db_mcp_server.hpp"
-#include "mydear/frames.hpp"
+#include "imshell/frames.hpp"
 
 #include <chrono>
 #include <format>
@@ -173,7 +173,7 @@ std::string DbMcpServer::connect(const std::string& name) {
     connectTaken_ = false;
     connectDone_ = false;
     connectRequest_ = name;
-    mydear::requestFrames(); // the ui thread performs the connect
+    imshell::requestFrames(); // the ui thread performs the connect
 
     const bool finished = connectCv_.wait_for(lock, std::chrono::seconds(60),
                                               [this] { return connectDone_ || stopping_; });
@@ -206,7 +206,7 @@ std::pair<bool, std::string> DbMcpServer::askUi(UiRequest::Kind kind, const std:
         std::lock_guard lock(uiMutex_);
         uiRequests_.push_back(request);
     }
-    mydear::requestFrames(); // the ui thread turns it into an approval
+    imshell::requestFrames(); // the ui thread turns it into an approval
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
     // the ui thread claims settled before it acts, so after a timeout a late click
     // does nothing, and once it has claimed it the answer is on its way

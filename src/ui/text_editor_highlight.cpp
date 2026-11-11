@@ -331,8 +331,8 @@ namespace dearsql {
 )scm";
 
     namespace {
-        using Token = mydear::TextEditor::Token;
-        using Edit = mydear::TextEditor::Edit;
+        using Token = imshell::TextEditor::Token;
+        using Edit = imshell::TextEditor::Edit;
 
         const std::unordered_set<std::string>& redisCommands() {
             static const std::unordered_set<std::string> REDIS_COMMANDS = {
@@ -737,7 +737,7 @@ namespace dearsql {
             TSTree* tree_ = nullptr;
         };
 
-        mydear::TextEditor::Highlighter treeSitter(const TSLanguage* lang, TSQuery* query) {
+        imshell::TextEditor::Highlighter treeSitter(const TSLanguage* lang, TSQuery* query) {
             // std::function copies its target: the parser lives behind a shared pointer
             auto highlighter = std::make_shared<TreeSitterHighlighter>(lang, query);
             return [highlighter](std::string_view text, std::span<Token> tokens, const Edit& edit) {

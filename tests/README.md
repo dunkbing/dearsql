@@ -116,7 +116,7 @@ IM_CHECK_NE(a, b);
 
 For more details on ImGui Test Engine API:
 - [Official Wiki](https://github.com/ocornut/imgui_test_engine/wiki)
-- See `external/imgui_test_engine/docs/` for documentation
+- See `external/imshell/external/imgui_test_engine/docs/` for documentation
 
 ## Current Test Coverage
 

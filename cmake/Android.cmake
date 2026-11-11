@@ -10,21 +10,15 @@ imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
 imshell_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 list(APPEND ANDROID_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
-add_library(${PROJECT_NAME} SHARED ${ANDROID_SOURCES} ${IMGUI_SOURCES} ${IMGUI_NODE_EDITOR_SOURCES})
+add_library(${PROJECT_NAME} SHARED ${ANDROID_SOURCES} ${IMGUI_SOURCES})
 target_compile_definitions(${PROJECT_NAME} PRIVATE DEARSQL_MOBILE)
 
 add_subdirectory(external/acp-cpp)
-add_library(imgui INTERFACE)
-target_include_directories(imgui INTERFACE external/imgui)
-set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE)
-add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     include
-    external/imgui
-    external/imgui/backends
-    external/imgui-node-editor
-    external/imgui-node-editor/external/stb_image
+    ${IMSHELL_IMGUI_DIR}
+    ${IMSHELL_IMGUI_DIR}/backends
     external/IconFontCppHeaders
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/include)
@@ -38,7 +32,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imshell::imshell
     imshell::editor
     httplib::httplib
-    imgui_rich_md
+    imshell::markdown
+    imshell::node_editor
     acp::acp
     miniocpp::miniocpp
     libssh2::libssh2

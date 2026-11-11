@@ -56,7 +56,7 @@ target_sources(database_tests PRIVATE src/database/ssh_tunnel.cpp)
 
 target_include_directories(
     database_tests
-    PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include external/imgui
+    PRIVATE include tests/database ${CMAKE_BINARY_DIR}/include ${IMSHELL_IMGUI_DIR}
 )
 
 target_link_libraries(
@@ -115,7 +115,7 @@ add_executable(
 
 target_include_directories(
     sql_format_tests
-    PRIVATE include external/imgui
+    PRIVATE include ${IMSHELL_IMGUI_DIR}
 )
 
 target_link_libraries(
@@ -136,7 +136,7 @@ add_test(NAME sql_format_tests COMMAND sql_format_tests)
 # Links the whole application (minus its main) so tests can click actual
 # widgets by id instead of poking at internals.
 # ---------------------------------------------------------------------------
-set(IMGUI_TE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui_test_engine/imgui_test_engine)
+set(IMGUI_TE_DIR ${IMSHELL_TEST_ENGINE_DIR})
 
 if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
     set(UI_TEST_APP_SOURCES ${APP_SOURCES})
@@ -146,7 +146,6 @@ if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
         ui_tests
         ${UI_TEST_APP_SOURCES}
         ${IMGUI_SOURCES}
-        ${IMGUI_NODE_EDITOR_SOURCES}
         ${IMGUI_TE_DIR}/imgui_te_context.cpp
         ${IMGUI_TE_DIR}/imgui_te_coroutine.cpp
         ${IMGUI_TE_DIR}/imgui_te_engine.cpp

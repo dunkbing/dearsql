@@ -4,6 +4,7 @@
 #include "database/database_node.hpp"
 #include "imgui.h"
 #include "imshell/button.hpp"
+#include "imshell/node_editor.hpp"
 #include "themes.hpp"
 #include <algorithm>
 #include <iostream>
@@ -101,29 +102,8 @@ void DiagramTab::initializeEditor() {
     }
 
     ax::NodeEditor::SetCurrentEditor(editorContext);
-    auto& style = ax::NodeEditor::GetStyle();
-    style.NodeRounding = Theme::CornerRadius::MEDIUM;
-    style.NodeBorderWidth = 1.0f;
-    style.HoveredNodeBorderWidth = 2.0f;
-    style.SelectedNodeBorderWidth = 2.0f;
-    style.NodePadding = ImVec4(0, 0, 0, Theme::Spacing::M);
+    imshell::NodeEditor::ApplyStyle();
     ax::NodeEditor::SetCurrentEditor(nullptr);
-}
-
-// node editor ships a hardcoded dark palette; re-sync it from the app theme every frame
-static void applyEditorTheme(const Theme::Colors& c) {
-    auto& s = ax::NodeEditor::GetStyle();
-    auto a = [](ImVec4 v, float alpha) { return ImVec4(v.x, v.y, v.z, alpha); };
-    s.Colors[ax::NodeEditor::StyleColor_Bg] = c.mantle;
-    s.Colors[ax::NodeEditor::StyleColor_Grid] = a(c.overlay0, 0.35f);
-    s.Colors[ax::NodeEditor::StyleColor_NodeBg] = c.surface0;
-    s.Colors[ax::NodeEditor::StyleColor_NodeBorder] = c.overlay0;
-    s.Colors[ax::NodeEditor::StyleColor_HovNodeBorder] = c.overlay2;
-    s.Colors[ax::NodeEditor::StyleColor_SelNodeBorder] = c.blue;
-    s.Colors[ax::NodeEditor::StyleColor_NodeSelRect] = a(c.blue, 0.15f);
-    s.Colors[ax::NodeEditor::StyleColor_NodeSelRectBorder] = a(c.blue, 0.6f);
-    s.Colors[ax::NodeEditor::StyleColor_PinRect] = ImVec4(0, 0, 0, 0);
-    s.Colors[ax::NodeEditor::StyleColor_PinRectBorder] = ImVec4(0, 0, 0, 0);
 }
 
 void DiagramTab::render() {
@@ -188,7 +168,7 @@ void DiagramTab::render() {
     }
 
     ax::NodeEditor::SetCurrentEditor(editorContext);
-    applyEditorTheme(themeColors);
+    imshell::NodeEditor::ApplyColors(); // its own palette is a fixed dark one
 
     handleZoomShortcuts();
 

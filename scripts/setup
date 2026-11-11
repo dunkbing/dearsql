@@ -93,7 +93,7 @@ download_sqlite() {
 
 # Initialize submodules
 init_submodules() {
-    if [ ! -f "$PROJECT_DIR/external/imgui/imgui.cpp" ]; then
+    if [ ! -f "$PROJECT_DIR/external/imshell/external/imgui/imgui.cpp" ]; then
         echo "Initializing git submodules..."
         cd "$PROJECT_DIR"
         git submodule update --init --recursive

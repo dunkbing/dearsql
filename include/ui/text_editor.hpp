@@ -25,8 +25,8 @@ namespace dearsql {
         // a completion row for a catalog kind: its letter and colour in the popup
         [[nodiscard]] static CompletionItem Row(std::string text, CompletionKind kind);
 
-    private:
-        // tree-sitter or the redis lexer (text_editor_highlight.cpp); none for plain text
+        // tree-sitter or the redis lexer (text_editor_highlight.cpp); none for plain text. also
+        // the chat's code blocks
         static Highlighter highlighterFor(Language language);
     };
 

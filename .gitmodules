@@ -1,16 +1,6 @@
-[submodule "external/imgui"]
-	path = external/imgui
-	url = https://github.com/ocornut/imgui.git
-	branch = docking
 [submodule "external/IconFontCppHeaders"]
 	path = external/IconFontCppHeaders
 	url = https://github.com/juliettef/IconFontCppHeaders.git
-[submodule "external/imgui-node-editor"]
-	path = external/imgui-node-editor
-	url = https://github.com/dunkbing/imgui-node-editor.git
-[submodule "external/imgui_test_engine"]
-	path = external/imgui_test_engine
-	url = https://github.com/ocornut/imgui_test_engine.git
 [submodule "external/tree-sitter-sql"]
 	path = external/tree-sitter-sql
 	url = https://github.com/DerekStride/tree-sitter-sql.git
@@ -27,9 +17,6 @@
 [submodule "external/libdearsql"]
 	path = external/libdearsql
 	url = https://github.com/dunkbing/libdearsql.git
-[submodule "external/imgui_rich_md"]
-	path = external/imgui_rich_md
-	url = https://github.com/pthom/imgui_rich_md
 [submodule "external/imshell"]
 	path = external/imshell
 	url = https://github.com/dunkbing/imshell.git

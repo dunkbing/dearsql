@@ -169,7 +169,8 @@ if(NOT IOS AND NOT ANDROID)
     set(IMSHELL_UPDATER ON CACHE BOOL "" FORCE)
 endif()
 # ui toolkit: themes, widgets, embedded fonts and images (own repo)
-set(IMSHELL_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
+# imgui and its libraries come from imshell's submodules (forced: older caches point elsewhere)
+set(IMSHELL_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imshell/external/imgui CACHE PATH "" FORCE)
 add_subdirectory(external/imshell)
 
 enable_testing()
@@ -302,7 +303,6 @@ add_executable(
     ${PROJECT_NAME}
     ${APP_SOURCES}
     ${IMGUI_SOURCES}
-    ${IMGUI_NODE_EDITOR_SOURCES}
 )
 include(cmake/ICloud.cmake)
 dearsql_icloud(${PROJECT_NAME})
@@ -329,20 +329,13 @@ endif()
 
 add_subdirectory(external/acp-cpp)
 
-# chat markdown. it links a target named imgui; ours is compiled into each executable, so headers only
-add_library(imgui INTERFACE)
-target_include_directories(imgui INTERFACE external/imgui)
-set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # imshell has it
-add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
 
 target_include_directories(
     ${PROJECT_NAME}
     PRIVATE
         include
-        external/imgui
-        external/imgui/backends
-        external/imgui-node-editor
-        external/imgui-node-editor/external/stb_image
+        ${IMSHELL_IMGUI_DIR}
+        ${IMSHELL_IMGUI_DIR}/backends
         external/IconFontCppHeaders
         ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}/include
@@ -383,7 +376,8 @@ target_link_libraries(
         imshell::imshell
         imshell::editor
         httplib::httplib
-        imgui_rich_md
+        imshell::markdown
+        imshell::node_editor
         miniocpp::miniocpp
         libssh2::libssh2
         unofficial::tree-sitter::tree-sitter

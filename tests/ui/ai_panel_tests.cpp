@@ -131,7 +131,7 @@ void RegisterCodeBlockTests(ImGuiTestEngine* engine) {
     t->TestFunc = [](ImGuiTestContext* ctx) {
         ctx->Yield(2);
         ImGui::SetClipboardText("");
-        ctx->ItemClick("**/###md_cp_c_0"); // the first code block
+        ctx->ItemClick("**/###copy"); // the first code block's copy button
         IM_CHECK_STR_EQ(ImGui::GetClipboardText(),
                         "SELECT id, name\nFROM users -- all\nWHERE id = 42;");
     };

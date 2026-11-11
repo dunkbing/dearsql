@@ -3,9 +3,8 @@
 #include <functional>
 #include <string>
 
-// chat markdown through imgui_rich_md: inline styles, links, tables, mermaid, and text
-// that can be selected and copied. code blocks are ours: highlighted and selectable,
-// with line numbers and copy / Insert icons.
+// chat markdown through imshell::Markdown (imgui_rich_md) with this app's fonts, highlighting
+// and an Insert button on sql code blocks
 namespace MarkdownText {
     using InsertSqlCallback = std::function<void(const std::string&)>;
 

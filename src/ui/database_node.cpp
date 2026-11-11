@@ -15,7 +15,7 @@
 #include "database/s3.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "mydear/menu.hpp"
+#include "imshell/menu.hpp"
 #include "ui/alert.hpp"
 #include "ui/input_dialog.hpp"
 #include "ui/schema_compare.hpp"
@@ -23,8 +23,8 @@
 #include "ui/tab/table_editor_tab.hpp"
 #include "ui/tab_manager.hpp"
 
-#include "mydear/button.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/spinner.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/table_exporter.hpp"
 #include "utils/table_importer.hpp"
@@ -252,7 +252,7 @@ namespace {
                                       ImGui::GetStyle().FramePadding.x * 2.0f + Theme::Spacing::M;
             ImGui::SetCursorPosX(contentStartX + contentWidth - cancelWidth);
             ImGui::BeginDisabled(cancelling);
-            cancelPressed = mydear::Button("Cancel", mydear::ButtonVariant::Secondary,
+            cancelPressed = imshell::Button("Cancel", imshell::ButtonVariant::Secondary,
                                            ImVec2(cancelWidth, 0.0f));
             ImGui::EndDisabled();
         }
@@ -357,7 +357,7 @@ void DatabaseHierarchy::renderDdlSpinner(const std::string& key, const std::stri
                              ImGui::CalcTextSize(std::format("   {}", label).c_str()).x;
     const ImVec2 centre(labelRight + Theme::Spacing::M + radius,
                         itemMin.y + ImGui::GetItemRectSize().y * 0.5f);
-    mydear::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, radius, 2,
+    imshell::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, radius, 2,
                            ImGui::GetColorU32(Application::getInstance().getCurrentColors().peach));
 }
 
@@ -588,7 +588,7 @@ void DatabaseHierarchy::renderSchemaFilterBadge(const std::string& dbName,
                                             countStr.c_str());
     }
 
-    if (mydear::BeginMenuPopup(popupId.c_str())) {
+    if (imshell::BeginMenuPopup(popupId.c_str())) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         std::sort(schemaNames.begin(), schemaNames.end());
@@ -748,7 +748,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (pgDb->areDatabasesLoaded()) {
             // check deferred sql editor open
@@ -787,7 +787,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (mysqlDb->areDatabasesLoaded()) {
             const auto& databases = mysqlDb->getDatabaseDataMap() | std::views::values;
@@ -814,7 +814,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (mongoDb->areDatabasesLoaded()) {
             const auto& databases = mongoDb->getDatabaseDataMap() | std::views::values;
@@ -839,7 +839,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_dbs_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (mssqlDb->areDatabasesLoaded()) {
             const auto& databases = mssqlDb->getDatabaseDataMap() | std::views::values;
@@ -864,7 +864,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_keyspaces_spinner", 6.0f, 2,
+            imshell::Spinner("##loading_keyspaces_spinner", 6.0f, 2,
                             ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (cassDb->areDatabasesLoaded()) {
@@ -890,7 +890,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_schemas_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_schemas_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (oracleDb->areDatabasesLoaded()) {
             const auto& schemas = oracleDb->getDatabaseDataMap() | std::views::values;
@@ -953,7 +953,7 @@ void DatabaseHierarchy::renderRootNode() {
                     redisDb.get());
             }
 
-            if (mydear::BeginContextMenu(cmdId.c_str())) {
+            if (imshell::BeginContextMenu(cmdId.c_str())) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem("Open Command Editor")) {
@@ -986,7 +986,7 @@ void DatabaseHierarchy::renderRootNode() {
                 Application::getInstance().getTabManager()->createRedisPubSubTab(redisDb.get());
             }
 
-            if (mydear::BeginContextMenu(pubsubId.c_str())) {
+            if (imshell::BeginContextMenu(pubsubId.c_str())) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem("Open Pub/Sub")) {
@@ -1012,7 +1012,7 @@ void DatabaseHierarchy::renderRootNode() {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::Text("  Loading databases...");
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_redis_dbs", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_redis_dbs", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
             return;
         }
@@ -1059,7 +1059,7 @@ void DatabaseHierarchy::renderRootNode() {
                 }
 
                 // Context menu for database node
-                if (mydear::BeginContextMenu(dbNodeId.c_str())) {
+                if (imshell::BeginContextMenu(dbNodeId.c_str())) {
                     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                         ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                     if (ImGui::MenuItem("Browse Keys")) {
@@ -1094,7 +1094,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                                                        ImGui::GetColorU32(colors.green));
 
         // Context menu for Tables node
-        if (mydear::BeginContextMenu(nullptr)) {
+        if (imshell::BeginContextMenu(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
@@ -1117,7 +1117,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                imshell::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else if (sqliteDb->tablesLoaded) {
                 auto& tables = const_cast<std::vector<Table>&>(
@@ -1144,7 +1144,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                                                       ImGui::GetColorU32(colors.teal));
 
         // Context menu for Views node
-        if (mydear::BeginContextMenu(nullptr)) {
+        if (imshell::BeginContextMenu(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -1164,7 +1164,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                imshell::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else {
                 auto& views = const_cast<std::vector<Table>&>(
@@ -1190,7 +1190,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
         const bool seqOpen = renderTreeNodeWithIcon(
             "Sequences", seqNodeId, ICON_FK_SORT_NUMERIC_ASC, ImGui::GetColorU32(colors.purple));
 
-        if (mydear::BeginContextMenu(nullptr)) {
+        if (imshell::BeginContextMenu(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -1210,7 +1210,7 @@ void DatabaseHierarchy::renderSQLiteNode() {
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner("##loading_sqlite_sequences", 6.0f, 2,
+                imshell::Spinner("##loading_sqlite_sequences", 6.0f, 2,
                                 ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else if (sqliteDb->sequencesLoaded) {
@@ -1277,7 +1277,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -1333,7 +1333,7 @@ void DatabaseHierarchy::renderPostgresDatabaseNode(PostgresDatabaseNode* dbData)
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (dbData->schemasLoaded) {
             // Render each schema
@@ -1474,7 +1474,7 @@ void DatabaseHierarchy::renderImportPreview() {
 
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(760.0f, 520.0f)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(760.0f, 520.0f)), ImGuiCond_Appearing);
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -1521,12 +1521,12 @@ void DatabaseHierarchy::renderImportPreview() {
 
     constexpr float buttonWidth = 120.0f;
     ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - buttonWidth * 2.0f - Theme::Spacing::M);
-    if (mydear::Button("Cancel", mydear::ButtonVariant::Secondary, ImVec2(buttonWidth, 0.0f))) {
+    if (imshell::Button("Cancel", imshell::ButtonVariant::Secondary, ImVec2(buttonWidth, 0.0f))) {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine(0.0f, Theme::Spacing::M);
 
-    if (mydear::Button("Import", mydear::ButtonVariant::Danger, ImVec2(buttonWidth, 0.0f))) {
+    if (imshell::Button("Import", imshell::ButtonVariant::Danger, ImVec2(buttonWidth, 0.0f))) {
         beginSqlDumpImport();
         ImGui::CloseCurrentPopup();
     }
@@ -1740,7 +1740,7 @@ void DatabaseHierarchy::renderPostgresBackupRestoreMenus(PostgresDatabaseNode* d
     }
 
     const bool toolBusy = postgresToolOp_.isRunning();
-    if (mydear::BeginSubMenu(BACKUP_LABEL, !toolBusy)) {
+    if (imshell::BeginSubMenu(BACKUP_LABEL, !toolBusy)) {
         if (ImGui::MenuItem("Custom Archive (.dump)")) {
             startPostgresBackup(dbData, PostgresBackupFormat::Custom, false, false);
         }
@@ -1765,7 +1765,7 @@ void DatabaseHierarchy::renderPostgresBackupRestoreMenus(PostgresDatabaseNode* d
         ImGui::SetTooltip("A PostgreSQL backup or restore is already running");
     }
 
-    if (mydear::BeginSubMenu(RESTORE_LABEL, !toolBusy)) {
+    if (imshell::BeginSubMenu(RESTORE_LABEL, !toolBusy)) {
         if (ImGui::MenuItem("Into This Database")) {
             startPostgresRestore(dbData, false, false);
         }
@@ -1888,7 +1888,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
     renderDdlSpinner(ddlKey(schemaData, ""), schemaData->name);
 
     // Context menu for schema
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -1948,7 +1948,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                                                            ImGui::GetColorU32(colors.green));
 
             // Context menu for Tables node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
@@ -1971,7 +1971,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->tablesLoaded) {
                     if (schemaData->tables.empty()) {
@@ -1996,7 +1996,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                                                           ImGui::GetColorU32(colors.teal));
 
             // Context menu for Views node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2016,7 +2016,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->viewsLoaded) {
                     if (schemaData->views.empty()) {
@@ -2043,7 +2043,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                                        ImGui::GetColorU32(colors.lavender));
 
             // Context menu for Materialized Views node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2064,7 +2064,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_matviews", 6.0f, 2,
+                    imshell::Spinner("##loading_matviews", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->materializedViewsLoaded) {
@@ -2091,7 +2091,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                                        ImGui::GetColorU32(colors.purple));
 
             // Context menu for Sequences node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2111,7 +2111,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_sequences", 6.0f, 2,
+                    imshell::Spinner("##loading_sequences", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->sequencesLoaded) {
@@ -2157,7 +2157,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
             const bool routineOpen = renderTreeNodeWithIcon("Routines", routineNodeId, ICON_FA_CODE,
                                                             ImGui::GetColorU32(colors.yellow));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2177,7 +2177,7 @@ void DatabaseHierarchy::renderPostgresSchemaNode(const PostgresDatabaseNode* dbD
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_routines", 6.0f, 2,
+                    imshell::Spinner("##loading_routines", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->routinesLoaded) {
@@ -2216,7 +2216,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -2231,7 +2231,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             dbData->startViewsLoadAsync(true);
         }
         const bool importBusy = importOp_.isRunning();
-        if (mydear::BeginSubMenu("Import", !importBusy)) {
+        if (imshell::BeginSubMenu("Import", !importBusy)) {
             if (ImGui::MenuItem("SQL Dump")) {
                 startSqlDumpImport(dbData);
             }
@@ -2240,7 +2240,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             ImGui::SetTooltip("An import is already running");
         }
         const bool exportBusy = exportOp_.isRunning();
-        if (mydear::BeginSubMenu("Export", !exportBusy)) {
+        if (imshell::BeginSubMenu("Export", !exportBusy)) {
             if (ImGui::MenuItem("SQL Dump")) {
                 startSqlDumpExport(dbData);
             }
@@ -2282,7 +2282,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                                                            ImGui::GetColorU32(colors.green));
 
             // Context menu for Tables node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
@@ -2305,7 +2305,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->tablesLoaded) {
                     if (dbData->tables.empty()) {
@@ -2330,7 +2330,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                                                           ImGui::GetColorU32(colors.teal));
 
             // Context menu for Views node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2350,7 +2350,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->viewsLoaded) {
                     if (dbData->views.empty()) {
@@ -2374,7 +2374,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
             const bool routineOpen = renderTreeNodeWithIcon("Routines", routineNodeId, ICON_FA_CODE,
                                                             ImGui::GetColorU32(colors.yellow));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -2394,7 +2394,7 @@ void DatabaseHierarchy::renderMySQLDatabaseNode(MySQLDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_routines", 6.0f, 2,
+                    imshell::Spinner("##loading_routines", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->routinesLoaded) {
@@ -2466,7 +2466,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
         ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
 
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        mydear::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
+        imshell::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
                         ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
@@ -2479,7 +2479,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
@@ -2585,7 +2585,7 @@ void DatabaseHierarchy::renderTableNode(Table& table, PostgresSchemaNode* schema
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column
-                    if (mydear::BeginContextMenu(columnNodeId.c_str())) {
+                    if (imshell::BeginContextMenu(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
@@ -2746,7 +2746,7 @@ void DatabaseHierarchy::renderViewNode(Table& view, PostgresSchemaNode* schemaDa
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -2809,7 +2809,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
         ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
 
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        mydear::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
+        imshell::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
                         ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
@@ -2822,7 +2822,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
@@ -2926,7 +2926,7 @@ void DatabaseHierarchy::renderMySQLTableNode(Table& table, MySQLDatabaseNode* db
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column (MySQL)
-                    if (mydear::BeginContextMenu(columnNodeId.c_str())) {
+                    if (imshell::BeginContextMenu(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
@@ -3084,7 +3084,7 @@ void DatabaseHierarchy::renderMySQLViewNode(Table& view, MySQLDatabaseNode* dbDa
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -3124,7 +3124,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
     }
 
     // context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -3164,7 +3164,7 @@ void DatabaseHierarchy::renderMSSQLDatabaseNode(MSSQLDatabaseNode* dbData) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
             ImGui::TextUnformatted(LOADING_LABEL);
             ImGui::SameLine(0, Theme::Spacing::S);
-            mydear::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##loading_schemas", 6.0f, 2, ImGui::GetColorU32(colors.peach));
             ImGui::PopStyleColor();
         } else if (dbData->schemasLoaded) {
             for (auto& schema : dbData->schemas) {
@@ -3192,7 +3192,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                                                ImGui::GetColorU32(colors.yellow));
 
     // context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -3218,7 +3218,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
             const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
                                                            ImGui::GetColorU32(colors.green));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
@@ -3241,7 +3241,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->tablesLoaded) {
                     if (schemaData->tables.empty()) {
@@ -3265,7 +3265,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
             const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
                                                           ImGui::GetColorU32(colors.teal));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -3285,7 +3285,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->viewsLoaded) {
                     if (schemaData->views.empty()) {
@@ -3309,7 +3309,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
             const bool routineOpen = renderTreeNodeWithIcon("Routines", routineNodeId, ICON_FA_CODE,
                                                             ImGui::GetColorU32(colors.yellow));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -3329,7 +3329,7 @@ void DatabaseHierarchy::renderMSSQLSchemaNode(const MSSQLDatabaseNode* dbData,
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_routines", 6.0f, 2,
+                    imshell::Spinner("##loading_routines", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (schemaData->routinesLoaded) {
@@ -3380,7 +3380,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
         ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
 
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        mydear::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
+        imshell::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
                         ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
@@ -3391,7 +3391,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
         app.getTabManager()->createTableViewerTab(schemaData, table);
     }
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
@@ -3494,7 +3494,7 @@ void DatabaseHierarchy::renderMSSQLTableNode(Table& table, MSSQLSchemaNode* sche
                         std::format("{}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
-                    if (mydear::BeginContextMenu(columnNodeId.c_str())) {
+                    if (imshell::BeginContextMenu(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
@@ -3626,7 +3626,7 @@ void DatabaseHierarchy::renderMSSQLViewNode(Table& view, MSSQLSchemaNode* schema
         app.getTabManager()->createTableViewerTab(schemaData, view);
     }
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -3655,7 +3655,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
     }
 
     // context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -3692,7 +3692,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
                                                            ImGui::GetColorU32(colors.green));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(CREATE_TABLE_LABEL)) {
@@ -3715,7 +3715,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->tablesLoaded) {
                     if (dbData->tables.empty()) {
@@ -3739,7 +3739,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             const bool viewsOpen = renderTreeNodeWithIcon("Views", viewsNodeId, ICON_FK_EYE,
                                                           ImGui::GetColorU32(colors.teal));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -3759,7 +3759,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                    imshell::Spinner("##loading_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->viewsLoaded) {
                     if (dbData->views.empty()) {
@@ -3783,7 +3783,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
             const bool routineOpen = renderTreeNodeWithIcon("Routines", routineNodeId, ICON_FA_CODE,
                                                             ImGui::GetColorU32(colors.yellow));
 
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -3803,7 +3803,7 @@ void DatabaseHierarchy::renderOracleDatabaseNode(OracleDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_routines", 6.0f, 2,
+                    imshell::Spinner("##loading_routines", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->routinesLoaded) {
@@ -3854,7 +3854,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
         ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
 
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        mydear::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
+        imshell::Spinner(std::format("##refreshing_table_{}", table.name).c_str(), spinnerRadius, 2,
                         ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
@@ -3865,7 +3865,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
         app.getTabManager()->createTableViewerTab(dbData, table);
     }
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
@@ -3966,7 +3966,7 @@ void DatabaseHierarchy::renderOracleTableNode(Table& table, OracleDatabaseNode* 
                         std::format("{}###{}", columnDisplay, columnNodeId);
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
-                    if (mydear::BeginContextMenu(columnNodeId.c_str())) {
+                    if (imshell::BeginContextMenu(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
@@ -4098,7 +4098,7 @@ void DatabaseHierarchy::renderOracleViewNode(Table& view, OracleDatabaseNode* db
         app.getTabManager()->createTableViewerTab(dbData, view);
     }
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -4127,7 +4127,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_QUERY_EDITOR_LABEL)) {
@@ -4160,7 +4160,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                 "Collections", collectionsNodeId, ICON_FK_TABLE, ImGui::GetColorU32(colors.green));
 
             // Context menu for Collections node
-            if (mydear::BeginContextMenu(nullptr)) {
+            if (imshell::BeginContextMenu(nullptr)) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(REFRESH_LABEL)) {
@@ -4180,7 +4180,7 @@ void DatabaseHierarchy::renderMongoDBDatabaseNode(MongoDBDatabaseNode* dbData) {
                     ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                     ImGui::TextUnformatted(LOADING_LABEL);
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    mydear::Spinner("##loading_collections", 6.0f, 2,
+                    imshell::Spinner("##loading_collections", 6.0f, 2,
                                     ImGui::GetColorU32(colors.peach));
                     ImGui::PopStyleColor();
                 } else if (dbData->tablesLoaded) {
@@ -4235,7 +4235,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
         ImGui::SetCursorScreenPos(ImVec2(spinnerX, spinnerY));
 
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
-        mydear::Spinner(std::format("##refreshing_coll_{}", collection.name).c_str(), spinnerRadius,
+        imshell::Spinner(std::format("##refreshing_coll_{}", collection.name).c_str(), spinnerRadius,
                         2, ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
 
@@ -4248,7 +4248,7 @@ void DatabaseHierarchy::renderMongoDBCollectionNode(Table& collection,
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect =
@@ -4411,7 +4411,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         const bool isMultiSelect = selectedTables_.size() > 1 && selectedTables_.count(&table) > 0;
@@ -4498,7 +4498,7 @@ void DatabaseHierarchy::renderSQLiteTableNode(Table& table, FileDatabase* sqlite
                     ImGui::TreeNodeEx(columnLabel.c_str(), columnFlags);
 
                     // Context menu for column
-                    if (mydear::BeginContextMenu(columnNodeId.c_str())) {
+                    if (imshell::BeginContextMenu(columnNodeId.c_str())) {
                         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                         if (ImGui::MenuItem(DELETE_LABEL, nullptr, false, !ddlBusy())) {
@@ -4701,7 +4701,7 @@ void DatabaseHierarchy::renderQueriesNode() {
                                                     ImGui::GetColorU32(colors.purple));
 
     // context menu on the Queriess header
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("New SQL Query")) {
@@ -4781,7 +4781,7 @@ void DatabaseHierarchy::renderQueriesNode() {
                     ImGui::SetTooltip("%s", query.filePath.c_str());
                 }
 
-                if (mydear::BeginContextMenu(queryItemId.c_str())) {
+                if (imshell::BeginContextMenu(queryItemId.c_str())) {
                     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                         ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                     if (ImGui::MenuItem("Open")) {
@@ -4836,7 +4836,7 @@ void DatabaseHierarchy::renderSQLiteViewNode(Table& view, FileDatabase* sqliteDb
     }
 
     // Context menu
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL)) {
@@ -4862,7 +4862,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
     if (ImGui::IsItemToggledOpen())
         dbData->expanded = isOpen;
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(NEW_SQL_EDITOR_LABEL)) {
@@ -4895,7 +4895,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
         const bool tablesOpen = renderTreeNodeWithIcon("Tables", tablesNodeId, ICON_FK_TABLE,
                                                        ImGui::GetColorU32(colors.green));
 
-        if (mydear::BeginContextMenu(nullptr)) {
+        if (imshell::BeginContextMenu(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(CREATE_TABLE_LABEL))
@@ -4915,7 +4915,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner("##loading_cass_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                imshell::Spinner("##loading_cass_tables", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else if (dbData->tablesLoaded) {
                 if (dbData->tables.empty()) {
@@ -4938,7 +4938,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
         const bool viewsOpen = renderTreeNodeWithIcon("Materialized Views", viewsNodeId,
                                                       ICON_FK_EYE, ImGui::GetColorU32(colors.teal));
 
-        if (mydear::BeginContextMenu(nullptr)) {
+        if (imshell::BeginContextMenu(nullptr)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(REFRESH_LABEL))
@@ -4956,7 +4956,7 @@ void DatabaseHierarchy::renderCassandraDatabaseNode(CassandraDatabaseNode* dbDat
                 ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
                 ImGui::TextUnformatted(LOADING_LABEL);
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner("##loading_cass_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+                imshell::Spinner("##loading_cass_views", 6.0f, 2, ImGui::GetColorU32(colors.peach));
                 ImGui::PopStyleColor();
             } else if (dbData->viewsLoaded) {
                 if (dbData->views.empty()) {
@@ -4999,7 +4999,7 @@ void DatabaseHierarchy::renderCassandraTableNode(Table& table, CassandraDatabase
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
         app.getTabManager()->createTableViewerTab(dbData, table);
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL))
@@ -5073,7 +5073,7 @@ void DatabaseHierarchy::renderCassandraViewNode(Table& view, CassandraDatabaseNo
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
         app.getTabManager()->createTableViewerTab(dbData, view);
 
-    if (mydear::BeginContextMenu(nullptr)) {
+    if (imshell::BeginContextMenu(nullptr)) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem(VIEW_DATA_LABEL))
@@ -5112,7 +5112,7 @@ void DatabaseHierarchy::renderS3Buckets() {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
         ImGui::TextUnformatted(LOADING_LABEL);
         ImGui::SameLine(0, Theme::Spacing::S);
-        mydear::Spinner("##loading_buckets_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        imshell::Spinner("##loading_buckets_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
         ImGui::PopStyleColor();
         return;
     }
@@ -5145,7 +5145,7 @@ void DatabaseHierarchy::renderS3Buckets() {
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
             Application::getInstance().getTabManager()->createS3BrowserTab(s3, bucket.name);
 
-        if (mydear::BeginContextMenu(id.c_str())) {
+        if (imshell::BeginContextMenu(id.c_str())) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem("Open"))

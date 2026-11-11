@@ -1,7 +1,7 @@
 // android: NativeActivity loads libdearsql.so and the ndk glue calls android_main on its own
-// thread; mydear owns the window and the loop from there, as on the desktop
+// thread; imshell owns the window and the loop from there, as on the desktop
 #include "application.hpp"
-#include "mydear/android.hpp"
+#include "imshell/android.hpp"
 
 #include <spdlog/sinks/android_sink.h>
 #include <spdlog/spdlog.h>
@@ -31,7 +31,7 @@ namespace {
 } // namespace
 
 void android_main(android_app* state) {
-    mydear::SetAndroidApp(state); // re-attaches the running shell after a recreation
+    imshell::SetAndroidApp(state); // re-attaches the running shell after a recreation
     auto& app = Application::getInstance();
     // the process outlives an activity recreated by a configuration change (system colours,
     // an overlay), so the second android_main finds the app up and carries on where it was
@@ -42,7 +42,7 @@ void android_main(android_app* state) {
         started = true;
     }
     app.run();
-    if (mydear::AndroidActivityRecreating())
+    if (imshell::AndroidActivityRecreating())
         return; // the next activity's android_main runs it again
     app.cleanup();
     // shortcut: the app's singletons are done for; a relaunch gets a fresh process. _Exit: static

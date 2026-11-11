@@ -1,7 +1,7 @@
 #include "utils/texture_manager.hpp"
-#include "mydear/app.hpp"
-#include "mydear/embedded.hpp"
-#include "mydear/image.hpp"
+#include "imshell/app.hpp"
+#include "imshell/embedded.hpp"
+#include "imshell/image.hpp"
 #include <spdlog/spdlog.h>
 
 TextureManager& TextureManager::instance() {
@@ -9,7 +9,7 @@ TextureManager& TextureManager::instance() {
     return mgr;
 }
 
-void TextureManager::loadDatabaseIcons(mydear::App& shell) {
+void TextureManager::loadDatabaseIcons(imshell::App& shell) {
     struct IconMapping {
         DatabaseType type;
         const char* imageName;
@@ -46,7 +46,7 @@ ImTextureID TextureManager::getIcon(DatabaseType type) const {
     return it != icons_.end() ? it->second : ImTextureID{};
 }
 
-ImTextureID TextureManager::loadFromEmbedded(mydear::App& shell, const char* name) {
+ImTextureID TextureManager::loadFromEmbedded(imshell::App& shell, const char* name) {
     const EmbeddedImage* img = findEmbeddedImage(name);
     if (!img) {
         spdlog::debug("no embedded image for '{}'", name);
@@ -54,7 +54,7 @@ ImTextureID TextureManager::loadFromEmbedded(mydear::App& shell, const char* nam
     }
 
     const ImTextureID tex =
-        mydear::LoadTexture(img->data, img->size, [&shell](const uint8_t* rgba, int w, int h) {
+        imshell::LoadTexture(img->data, img->size, [&shell](const uint8_t* rgba, int w, int h) {
             return shell.createTexture(rgba, w, h);
         });
     if (tex == ImTextureID{})

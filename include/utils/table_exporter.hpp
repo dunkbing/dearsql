@@ -3,7 +3,7 @@
 #include "database/db_interface.hpp"
 #include "database/table_data_provider.hpp"
 #include "imgui.h"
-#include "mydear/menu.hpp"
+#include "imshell/menu.hpp"
 #include <atomic>
 #include <functional>
 #include <optional>
@@ -56,7 +56,7 @@ namespace TableExporter {
     // the Export submenu; onPick runs with the chosen format
     inline void renderExportMenu(const std::function<void(ExportFormat)>& onPick,
                                  bool enabled = true) {
-        if (mydear::BeginSubMenu("Export", enabled)) {
+        if (imshell::BeginSubMenu("Export", enabled)) {
             if (ImGui::MenuItem("CSV"))
                 onPick(ExportFormat::CSV);
             if (ImGui::MenuItem("JSON"))

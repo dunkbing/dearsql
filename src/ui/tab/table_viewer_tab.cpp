@@ -7,9 +7,9 @@
 #include "database/read_only.hpp"
 #include "database/sql_builder.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include "ui/query_history.hpp"
 #include <algorithm>
@@ -128,10 +128,10 @@ void TableViewerTab::render() {
     if (narrowBar) {
         ImGui::SameLine(0, Theme::Spacing::M);
         ImGui::PushStyleColor(ImGuiCol_Text, hasChanges ? colors.peach : colors.text);
-        if (mydear::IconButton(ICON_FA_ELLIPSIS))
+        if (imshell::IconButton(ICON_FA_ELLIPSIS))
             ImGui::OpenPopup("##table_actions");
         ImGui::PopStyleColor();
-        if (mydear::BeginMenuPopup("##table_actions")) {
+        if (imshell::BeginMenuPopup("##table_actions")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             if (ImGui::MenuItem(ICON_FA_ARROWS_ROTATE "  Refresh"))
@@ -156,7 +156,7 @@ void TableViewerTab::render() {
         // Refresh, Save, Reject buttons next to filter
         ImGui::SameLine(0, Theme::Spacing::M);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-        if (mydear::IconButton(ICON_FA_ARROWS_ROTATE)) {
+        if (imshell::IconButton(ICON_FA_ARROWS_ROTATE)) {
             refreshData();
         }
         ImGui::PopStyleColor();
@@ -167,13 +167,13 @@ void TableViewerTab::render() {
         ImGui::SameLine();
         if (hasChanges) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-            if (mydear::IconButton(ICON_FA_FLOPPY_DISK, mydear::ButtonVariant::Primary)) {
+            if (imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary)) {
                 saveChanges();
             }
             ImGui::PopStyleColor();
         } else {
             ImGui::BeginDisabled();
-            mydear::IconButton(ICON_FA_FLOPPY_DISK, mydear::ButtonVariant::Primary);
+            imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary);
             ImGui::EndDisabled();
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -183,13 +183,13 @@ void TableViewerTab::render() {
         ImGui::SameLine();
         if (hasChanges) {
             ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-            if (mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger)) {
+            if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger)) {
                 cancelChanges();
             }
             ImGui::PopStyleColor();
         } else {
             ImGui::BeginDisabled();
-            mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger);
+            imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger);
             ImGui::EndDisabled();
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -199,7 +199,7 @@ void TableViewerTab::render() {
         ImGui::SameLine();
         if (readOnlyConnection_)
             ImGui::BeginDisabled();
-        if (mydear::IconButton(ICON_FA_PLUS)) {
+        if (imshell::IconButton(ICON_FA_PLUS)) {
             addRow();
         }
         if (readOnlyConnection_)
@@ -212,7 +212,7 @@ void TableViewerTab::render() {
         if (!hasRowSelected)
             ImGui::BeginDisabled();
         ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-        if (mydear::IconButton(ICON_FA_CLONE)) {
+        if (imshell::IconButton(ICON_FA_CLONE)) {
             duplicateRow(selectedRow);
         }
         ImGui::PopStyleColor();
@@ -226,7 +226,7 @@ void TableViewerTab::render() {
         if (!hasRowSelected)
             ImGui::BeginDisabled();
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (mydear::IconButton(ICON_FA_TRASH_CAN, mydear::ButtonVariant::Danger)) {
+        if (imshell::IconButton(ICON_FA_TRASH_CAN, imshell::ButtonVariant::Danger)) {
             deleteRows(selectedRows);
         }
         ImGui::PopStyleColor();
@@ -256,7 +256,7 @@ void TableViewerTab::render() {
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
-        if (mydear::SmallButton("Copy")) {
+        if (imshell::SmallButton("Copy")) {
             const std::string errorText = "Error loading data: " + loadingError;
             ImGui::SetClipboardText(errorText.c_str());
         }
@@ -331,7 +331,7 @@ void TableViewerTab::render() {
     const bool narrow = ImGui::GetContentRegionAvail().x < 560.0f;
 
     // data / json on the left, paging on the right (width from last frame)
-    if (mydear::SegmentedTabs("##data_view", {"Data", "JSON", "Chart"}, &dataView_)) {
+    if (imshell::SegmentedTabs("##data_view", {"Data", "JSON", "Chart"}, &dataView_)) {
         jsonView_.invalidate(); // edits since the last look
         chart_.invalidate();
     }
@@ -350,13 +350,13 @@ void TableViewerTab::render() {
 
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
     if (!narrow) {
-        if (mydear::IconButton("<<") && currentPage > 0) {
+        if (imshell::IconButton("<<") && currentPage > 0) {
             firstPage();
         }
         ImGui::SameLine();
     }
 
-    if (mydear::IconButton("<") && currentPage > 0) {
+    if (imshell::IconButton("<") && currentPage > 0) {
         previousPage();
     }
     ImGui::PopStyleColor();
@@ -369,12 +369,12 @@ void TableViewerTab::render() {
     ImGui::SameLine(0, Theme::Spacing::M);
 
     ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
-    if (mydear::IconButton(">") && currentPage < totalPages - 1) {
+    if (imshell::IconButton(">") && currentPage < totalPages - 1) {
         nextPage();
     }
     if (!narrow) {
         ImGui::SameLine();
-        if (mydear::IconButton(">>") && currentPage < totalPages - 1) {
+        if (imshell::IconButton(">>") && currentPage < totalPages - 1) {
             lastPage();
         }
     }
@@ -407,7 +407,7 @@ void TableViewerTab::render() {
             currentSizeLabel = customSizeLabel.c_str();
         }
 
-        if (mydear::BeginSelect("##pagesize", currentSizeLabel)) {
+        if (imshell::BeginSelect("##pagesize", currentSizeLabel)) {
             for (int i = 0; i < IM_ARRAYSIZE(pageSizeOptions); i++) {
                 const bool isSelected = (pageSizeOptions[i] == rowsPerPage);
                 if (ImGui::Selectable(pageSizeLabels[i], isSelected)) {
@@ -430,7 +430,7 @@ void TableViewerTab::render() {
                     ImGui::SetItemDefaultFocus();
                 }
             }
-            mydear::EndSelect();
+            imshell::EndSelect();
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Rows per page");
@@ -924,7 +924,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
         saveDialogEditor_.SetFocus();
         startDeleteImpact();
 
-        ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(760, 520)), ImGuiCond_Always);
         ImGui::OpenPopup("Confirm Save Changes");
         dialogOpened = true;
     }
@@ -966,17 +966,17 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
         if (sqlExecutionOp.isRunning()) {
             ImGui::BeginDisabled();
-            mydear::Button(ICON_FA_PLAY " Execute", mydear::ButtonVariant::Primary);
+            imshell::Button(ICON_FA_PLAY " Execute", imshell::ButtonVariant::Primary);
             ImGui::EndDisabled();
 
             ImGui::SameLine(0, Theme::Spacing::M);
-            mydear::Spinner("##spinner", 7.0f, 2, ImGui::GetColorU32(colors.blue));
+            imshell::Spinner("##spinner", 7.0f, 2, ImGui::GetColorU32(colors.blue));
             ImGui::SameLine(0, Theme::Spacing::S);
             ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
             ImGui::TextUnformatted("Executing...");
             ImGui::PopStyleColor();
         } else {
-            if (mydear::Button(ICON_FA_PLAY " Execute", mydear::ButtonVariant::Primary)) {
+            if (imshell::Button(ICON_FA_PLAY " Execute", imshell::ButtonVariant::Primary)) {
                 const std::string editedSQL = saveDialogEditor_.GetText();
                 sqlExecutionOp.start([node = node_, keep = keepOwnerAlive(node_),
                                       editedSQL]() -> std::pair<bool, std::string> {
@@ -995,7 +995,7 @@ void TableViewerTab::showSaveConfirmationDialog() {
 
             ImGui::SameLine(0, Theme::Spacing::M);
 
-            if (mydear::Button(ICON_FA_XMARK " Cancel")) {
+            if (imshell::Button(ICON_FA_XMARK " Cancel")) {
                 showSaveDialog = false;
                 pendingUpdateSQL.clear();
                 deleteImpactOp_.detach(); // its counts are for this dialog only
@@ -1536,7 +1536,7 @@ void TableViewerTab::renderValueTab() {
 
     // Apply / Revert buttons when buffer is dirty
     if (valuePanelBufferDirty) {
-        if (mydear::Button("Apply", mydear::ButtonVariant::Primary)) {
+        if (imshell::Button("Apply", imshell::ButtonVariant::Primary)) {
             tableData[selectedRow][selectedCol] = std::string(valuePanelBuffer);
             if (selectedRow < static_cast<int>(editedCells.size()) &&
                 selectedCol < static_cast<int>(editedCells[selectedRow].size())) {
@@ -1548,7 +1548,7 @@ void TableViewerTab::renderValueTab() {
 
         ImGui::SameLine();
 
-        if (mydear::Button("Revert", mydear::ButtonVariant::Danger)) {
+        if (imshell::Button("Revert", imshell::ButtonVariant::Danger)) {
             // Restore from current cell value
             const std::string& currentValue = tableData[selectedRow][selectedCol];
             if (isNullSentinel(currentValue)) {
@@ -1598,7 +1598,7 @@ void TableViewerTab::renderDdlTab() {
     });
 
     if (ddlOp_.isRunning()) {
-        mydear::Spinner("##ddl_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##ddl_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
         ImGui::SameLine();
         ImGui::TextColored(colors.subtext0, "Reading DDL...");
         return;
@@ -1606,10 +1606,10 @@ void TableViewerTab::renderDdlTab() {
     // same buttons as the settings dialog
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
-    if (mydear::IconLabelButton(ICON_FA_COPY, "Copy"))
+    if (imshell::IconLabelButton(ICON_FA_COPY, "Copy"))
         ImGui::SetClipboardText(ddlEditor_.GetText().c_str());
     ImGui::SameLine(0, Theme::Spacing::M);
-    if (mydear::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
+    if (imshell::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
         startDdlLoad();
     ImGui::PopStyleVar();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
@@ -1682,14 +1682,14 @@ void TableViewerTab::renderProfileTab() {
     profileOp_.check([this](ProfileView v) { profile_ = std::move(v); });
 
     if (profileOp_.isRunning()) {
-        mydear::Spinner("##profile_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##profile_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
         ImGui::SameLine();
         ImGui::TextColored(colors.subtext0, "Profiling columns...");
         return;
     }
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Theme::Spacing::M, Theme::Spacing::S));
-    if (mydear::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
+    if (imshell::IconLabelButton(ICON_FA_ROTATE, "Refresh"))
         startProfileLoad();
     ImGui::PopStyleVar();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
@@ -1876,7 +1876,7 @@ void TableViewerTab::renderDeleteImpact() {
     deleteImpactOp_.check([this](DeleteImpact impact) { deleteImpact_ = std::move(impact); });
     const auto& colors = Application::getInstance().getCurrentColors();
     if (deleteImpactOp_.isRunning()) {
-        mydear::Spinner("##impact_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##impact_spinner", 6.0f, 2, ImGui::GetColorU32(colors.blue));
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
         ImGui::TextUnformatted("Checking the rows that reference these...");

@@ -2,8 +2,8 @@
 
 #include "IconsFontAwesome6.h"
 #include "IconsForkAwesome.h"
-#include "mydear/embedded.hpp"
-#include "mydear/fonts.hpp"
+#include "imshell/embedded.hpp"
+#include "imshell/fonts.hpp"
 #include <algorithm>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -20,9 +20,9 @@ namespace {
                name.find("Italic") != std::string_view::npos;
     }
 
-    mydear::FontFile fontFile(const EmbeddedFont& font) {
+    imshell::FontFile fontFile(const EmbeddedFont& font) {
         const std::string_view name = font.name;
-        mydear::FontFile f{font.data, font.size};
+        imshell::FontFile f{font.data, font.size};
         if (name.find("fa-solid") != name.npos || name.find("fa-regular") != name.npos)
             f.ranges = kFontAwesomeRanges, f.icons = true;
         else if (name.find("forkawesome") != name.npos)
@@ -36,7 +36,7 @@ namespace {
 void fonts::setup() {
     // the monospace text font first (the base), then icons and other scripts merged into it,
     // then the system cjk font: db, schema and table names are often cjk
-    std::vector<mydear::FontFile> files;
+    std::vector<imshell::FontFile> files;
     const EmbeddedFont* all = getEmbeddedFonts();
     for (size_t i = 0; i < getEmbeddedFontCount(); ++i) {
         if (isMarkdownFace(all[i].name))
@@ -46,9 +46,9 @@ void fonts::setup() {
     std::ranges::stable_partition(files, [](const auto& f) { return !f.icons && !f.ranges; });
     if (files.empty())
         return;
-    if (!mydear::AddFont(files))
+    if (!imshell::AddFont(files))
         spdlog::error("could not load the ui font");
-    const std::string cjk = mydear::SystemCjkFontPath();
+    const std::string cjk = imshell::SystemCjkFontPath();
     if (cjk.empty())
         spdlog::info("no system cjk font found, cjk text will not render");
     else

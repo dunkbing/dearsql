@@ -4,7 +4,7 @@
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
 #include "imgui_te_ui.h"
-#include "mydear/app.hpp"
+#include "imshell/app.hpp"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>

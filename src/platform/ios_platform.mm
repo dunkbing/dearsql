@@ -5,7 +5,7 @@
 #include "database/connection_url.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "mydear/ios.h"
+#include "imshell/ios.h"
 #include "platform/ios_platform.hpp"
 #include "themes.hpp"
 #include "ui/connection_dialog.hpp"
@@ -18,13 +18,13 @@
 #include <cmath>
 #include <string>
 
-// ---- the root controller: mydear's imgui view, plus the navigation bar ----
+// ---- the root controller: imshell's imgui view, plus the navigation bar ----
 
 namespace {
     UINavigationController* gNav = nil; // the bar the theme paints
 }
 
-@interface DearSQLViewController : MydearViewController
+@interface DearSQLViewController : ImShellViewController
 @end
 
 @implementation DearSQLViewController {
@@ -307,13 +307,13 @@ int main(int argc, char* argv[]) {
         // ~/.dearsql lands in the container's Library: its root is read-only on a device
         setenv("HOME", [NSHomeDirectory() stringByAppendingPathComponent:@"Library"].UTF8String, 1);
         setenv("DEARSQL_CONTAINER", NSHomeDirectory().UTF8String, 1); // saved paths re-root here
-        return mydear::RunUIKit(argc, argv, DearSQLViewController.class);
+        return imshell::RunUIKit(argc, argv, DearSQLViewController.class);
     }
 }
 
 // ---- chrome ----
 
-void ios::attach(mydear::App& shell) {
+void ios::attach(imshell::App& shell) {
     // the file picker gives the keyboard back to the imgui view by this tag
     ((__bridge UIView*)shell.nativeView()).tag = kDearSQLViewTag;
 }

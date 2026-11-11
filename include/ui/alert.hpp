@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mydear/alert.hpp"
+#include "imshell/alert.hpp"
 
-using mydear::Alert;
-using mydear::AlertButton;
+using imshell::Alert;
+using imshell::AlertButton;

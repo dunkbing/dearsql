@@ -8,7 +8,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "mcp/fuzzy.hpp"
-#include "mydear/menu.hpp"
+#include "imshell/menu.hpp"
 #include "ui/tab/ai_chat_tab.hpp"
 #include "ui/tab/csv_editor_tab.hpp"
 #include "ui/tab/diagram_tab.hpp"
@@ -350,7 +350,7 @@ void TabManager::renderTabs() {
         }
         ImGui::PushID(windowName.c_str());
         ImGui::OpenPopupOnItemClick("TabContextMenu", ImGuiPopupFlags_MouseButtonRight);
-        if (mydear::BeginMenuPopup("TabContextMenu")) {
+        if (imshell::BeginMenuPopup("TabContextMenu")) {
             const bool hasOthers = tabs.size() > 1;
             const auto targetIt = std::ranges::find_if(
                 tabs, [tabId](const auto& t) { return t && t->getId() == tabId; });
@@ -838,7 +838,7 @@ void TabManager::renderTabSwitcher() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always,
                             ImVec2(0.5f, 0.5f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(mydear::kMenuPadding, mydear::kMenuPadding));
+                        ImVec2(imshell::kMenuPadding, imshell::kMenuPadding));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, style.PopupBorderSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, style.PopupRounding);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
@@ -869,7 +869,7 @@ void TabManager::renderOpenQuickly() {
     ImGui::SetNextWindowPos(ImVec2(vp->GetCenter().x, vp->WorkPos.y + vp->WorkSize.y * 0.15f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(std::min(640.0f, vp->WorkSize.x * 0.8f), 0.0f));
-    if (!mydear::BeginMenuPopup(popupId)) {
+    if (!imshell::BeginMenuPopup(popupId)) {
         return;
     }
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));

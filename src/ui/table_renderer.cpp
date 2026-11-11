@@ -4,8 +4,8 @@
 #include "database/db.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
 #include "themes.hpp"
 #include "utils/csv_document.hpp"
 #include <algorithm>
@@ -634,7 +634,7 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::OpenPopup(ImGui::GetID("##dropdown_edit"));
                 comboNeedsOpen = false;
             }
-            if (mydear::BeginSelect("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
+            if (imshell::BeginSelect("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
                 comboHasOpened = true;
                 for (const auto& option : dropdownIt->second) {
                     bool selected = (option == std::string(editBuffer));
@@ -646,7 +646,7 @@ void TableRenderer::renderCell(int row, int col) {
                     if (selected)
                         ImGui::SetItemDefaultFocus();
                 }
-                mydear::EndSelect();
+                imshell::EndSelect();
             } else if (comboHasOpened) {
                 exitEditMode(false);
             }
@@ -1101,7 +1101,7 @@ void TableRenderer::copyRowToClipboard(int row) const {
 
 void TableRenderer::renderCellContextMenu(int row, int col) {
     const std::string menuId = std::format("##cell_ctx_{}_{}", row, col);
-    if (!mydear::BeginContextMenu(menuId.c_str())) {
+    if (!imshell::BeginContextMenu(menuId.c_str())) {
         return;
     }
 
@@ -1502,8 +1502,8 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         const char* icon = sortDirection == SortDirection::Ascending
                                ? ICON_FA_ARROW_UP_SHORT_WIDE
                                : ICON_FA_ARROW_DOWN_WIDE_SHORT;
-        if (mydear::IconButton(icon, mydear::ButtonVariant::Secondary, ImVec2(0.0f, 0.0f),
-                               mydear::ButtonSize::Small)) {
+        if (imshell::IconButton(icon, imshell::ButtonVariant::Secondary, ImVec2(0.0f, 0.0f),
+                               imshell::ButtonSize::Small)) {
             sortColumn = -1;
             sortDirection = SortDirection::None;
             if (onSortChanged) {
@@ -1529,13 +1529,13 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
     ImGui::PushID(colIdx);
 
-    if (mydear::IconButton(ICON_FA_CHEVRON_DOWN, mydear::ButtonVariant::Secondary,
-                           ImVec2(0.0f, 0.0f), mydear::ButtonSize::Small)) {
+    if (imshell::IconButton(ICON_FA_CHEVRON_DOWN, imshell::ButtonVariant::Secondary,
+                           ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
         ImGui::OpenPopup(popupId.c_str());
     }
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-    if (mydear::BeginMenuPopup(popupId.c_str())) {
+    if (imshell::BeginMenuPopup(popupId.c_str())) {
         bool isAsc = (sortColumn == colIdx && sortDirection == SortDirection::Ascending);
         if (ImGui::MenuItem(ICON_FA_ARROW_UP_SHORT_WIDE " Order by ASC", nullptr, isAsc)) {
             if (isAsc) {

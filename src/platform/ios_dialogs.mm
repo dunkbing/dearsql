@@ -1,4 +1,4 @@
-// no terminal on ipad (file dialogs: mydear/file_dialog.hpp)
+// no terminal on ipad (file dialogs: imshell/file_dialog.hpp)
 #include "utils/cli_command.hpp"
 
 namespace CliCommand {

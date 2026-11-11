@@ -6,8 +6,8 @@
 
 #include "imgui.h"
 #include "imgui_impl_metal.h"
-#include "mydear/themes.hpp"
-#include "mydear/title_bar.hpp"
+#include "imshell/themes.hpp"
+#include "imshell/title_bar.hpp"
 
 #include <csignal>
 #include <cstdio>
@@ -31,7 +31,7 @@ namespace {
     } rec;
 
     // the last frame's draw data into a cpu-readable texture of w x h at `scale`. the default
-    // device is the one mydear's backend uses, so the font atlas and other textures resolve
+    // device is the one imshell's backend uses, so the font atlas and other textures resolve
     id<MTLTexture> drawAgain(float scale, NSUInteger w, NSUInteger h) {
         ImDrawData* data = ImGui::GetDrawData();
         if (!data || !data->Valid || w == 0 || h == 0)
@@ -48,7 +48,7 @@ namespace {
         d.storageMode = MTLStorageModeShared;
         id<MTLTexture> target = [device newTextureWithDescriptor:d];
 
-        const ImVec4 base = mydear::Theme::Current()->colors.base;
+        const ImVec4 base = imshell::Theme::Current()->colors.base;
         MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
         pass.colorAttachments[0].texture = target;
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -138,7 +138,7 @@ namespace frame_capture {
             if (id<MTLTexture> tex =
                     drawAgain(shot.scale, static_cast<NSUInteger>(size.x * shot.scale),
                               static_cast<NSUInteger>(size.y * shot.scale)))
-                savePng(tex, shot.path, static_cast<size_t>(mydear::TitleBarHeight() * shot.scale));
+                savePng(tex, shot.path, static_cast<size_t>(imshell::TitleBarHeight() * shot.scale));
             shot.pending = false;
         }
         if (rec.pipe) {

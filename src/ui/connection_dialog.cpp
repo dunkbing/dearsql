@@ -7,10 +7,10 @@
 #include "database/file_database.hpp"
 #include "database/ssl_config.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/select.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/select.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include "ui/env_tag.hpp"
 #include "utils/file_dialog.hpp"
@@ -657,7 +657,7 @@ void ConnectionDialog::render() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImVec2 pos(viewport->GetWorkCenter().x, viewport->WorkPos.y + viewport->WorkSize.y * 0.05f);
     ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
-    const ImVec2 room = mydear::DialogRoom();
+    const ImVec2 room = imshell::DialogRoom();
     const float width = std::min(kDialogWidth, room.x);
     ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0.0f),
                                         ImVec2(width, room.y - viewport->WorkSize.y * 0.05f));
@@ -797,7 +797,7 @@ void ConnectionDialog::renderAppearanceRow() {
         if (ImGui::Button(ICON_FA_CHEVRON_DOWN "##conn_env_tag_pick")) {
             ImGui::OpenPopup("##conn_env_tag_list");
         }
-        if (mydear::BeginMenuPopup("##conn_env_tag_list")) {
+        if (imshell::BeginMenuPopup("##conn_env_tag_list")) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(Theme::Spacing::M, Theme::Spacing::M));
             for (const auto& tag : knownTags_) {
@@ -819,7 +819,7 @@ void ConnectionDialog::renderTypeRow() {
     const char* labels[kTypeCount];
     for (int i = 0; i < kTypeCount; ++i)
         labels[i] = typeAvailable(static_cast<DatabaseType>(i)) ? kTypeLabels[i] : "";
-    if (mydear::Select("##conn_type", &typeIdx_, labels, kTypeCount)) {
+    if (imshell::Select("##conn_type", &typeIdx_, labels, kTypeCount)) {
         applyTypeDefaults(selectedType());
         rebuildUrlFromForm();
     }
@@ -860,7 +860,7 @@ void ConnectionDialog::renderSqliteFields(bool& formChanged) {
     formChanged |= ImGui::InputTextWithHint("##sqlite_path", "Database file path", sqlitePathBuf_,
                                             sizeof(sqlitePathBuf_));
     ImGui::SameLine();
-    if (mydear::Button("Browse...##sqlite")) {
+    if (imshell::Button("Browse...##sqlite")) {
         FileDialog::openDatabaseFile(selectedType(), [this](const std::string& path) {
             copyToBuf(sqlitePathBuf_, sizeof(sqlitePathBuf_), path);
             if (nameBuf_[0] == '\0' || std::strcmp(nameBuf_, "Untitled connection") == 0) {
@@ -899,7 +899,7 @@ void ConnectionDialog::renderS3Fields(bool& formChanged) {
         sslModeIdx_ = sslCfg.defaultIdx;
     fieldLabel("Protocol");
     ImGui::SetNextItemWidth(180.0f);
-    formChanged |= mydear::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
+    formChanged |= imshell::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
 
     fieldLabel("Region");
     ImGui::SetNextItemWidth(180.0f);
@@ -962,7 +962,7 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
         sslModeIdx_ = sslCfg.defaultIdx;
     fieldLabel("SSL Mode");
     ImGui::SetNextItemWidth(180.0f);
-    formChanged |= mydear::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
+    formChanged |= imshell::Select("##conn_sslmode", &sslModeIdx_, sslCfg.labels, sslCfg.count);
 
     if (shouldShowCACertField(type, sslCfg.values[sslModeIdx_])) {
         const bool isOracleWallet = (type == DatabaseType::ORACLE);
@@ -973,7 +973,7 @@ void ConnectionDialog::renderServerFields(bool& formChanged) {
             "##conn_cacert", isOracleWallet ? "/path/to/wallet" : "/path/to/ca-cert.pem",
             sslCACertPathBuf_, sizeof(sslCACertPathBuf_));
         ImGui::SameLine();
-        if (mydear::Button("Browse...##cacert")) {
+        if (imshell::Button("Browse...##cacert")) {
             // oracle wallets are directories; other backends take a cert file
             auto picked = [this](const std::string& path) {
                 copyToBuf(sslCACertPathBuf_, sizeof(sslCACertPathBuf_), path);
@@ -1061,7 +1061,7 @@ void ConnectionDialog::renderSshFields(bool& formChanged) {
         formChanged |= ImGui::InputTextWithHint("##ssh_key", "~/.ssh/id_rsa", sshKeyPathBuf_,
                                                 sizeof(sshKeyPathBuf_));
         ImGui::SameLine();
-        if (mydear::Button("Browse...##sshkey")) {
+        if (imshell::Button("Browse...##sshkey")) {
             FileDialog::openFile([this](const std::string& path) {
                 copyToBuf(sshKeyPathBuf_, sizeof(sshKeyPathBuf_), path);
                 pickedFile_ = true;
@@ -1080,7 +1080,7 @@ void ConnectionDialog::renderStatusRow() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     if (isBusy()) {
-        mydear::Spinner("##conn_spinner", 7.0f, 3, ImGui::GetColorU32(ImGuiCol_Text));
+        imshell::Spinner("##conn_spinner", 7.0f, 3, ImGui::GetColorU32(ImGuiCol_Text));
         ImGui::SameLine();
     }
 
@@ -1100,7 +1100,7 @@ bool ConnectionDialog::renderButtons() {
     float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(rightEdge - kButtonW * 2 - Theme::Spacing::M);
 
-    if (mydear::Button("Cancel##conn", mydear::ButtonVariant::Secondary, ImVec2(kButtonW, 0))) {
+    if (imshell::Button("Cancel##conn", imshell::ButtonVariant::Secondary, ImVec2(kButtonW, 0))) {
         finishClose(true);
         ImGui::CloseCurrentPopup();
         return false;
@@ -1110,7 +1110,7 @@ bool ConnectionDialog::renderButtons() {
 
     bool clicked = false;
     ImGui::BeginDisabled(isBusy());
-    if (mydear::Button(editing ? "Update##conn" : "Connect##conn", mydear::ButtonVariant::Primary,
+    if (imshell::Button(editing ? "Update##conn" : "Connect##conn", imshell::ButtonVariant::Primary,
                        ImVec2(kButtonW, 0)))
         clicked = true;
     if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||

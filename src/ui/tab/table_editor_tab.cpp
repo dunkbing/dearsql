@@ -4,9 +4,9 @@
 #include "database/database_node.hpp"
 #include "database/sql_builder.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include <algorithm>
 #include <cstring>
@@ -339,7 +339,7 @@ void TableEditorTab::renderColumnsNode() {
         ImGui::SetTooltip("Add New Column");
     }
 
-    if (mydear::BeginContextMenu("columns_context_menu")) {
+    if (imshell::BeginContextMenu("columns_context_menu")) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         if (ImGui::MenuItem("Add New Column")) {
@@ -384,7 +384,7 @@ void TableEditorTab::renderColumnsNode() {
                 rightPanelMode = RightPanelMode::ColumnEditor;
             }
 
-            if (mydear::BeginContextMenu("column_context_menu")) {
+            if (imshell::BeginContextMenu("column_context_menu")) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem("Edit Column")) {
@@ -603,7 +603,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(700, 460)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(700, 460)), ImGuiCond_Appearing);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
@@ -632,12 +632,12 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 
     const bool executing = executeOp_.isRunning();
     ImGui::BeginDisabled(executing);
-    if (mydear::Button("Execute", mydear::ButtonVariant::Primary, ImVec2(120, 0)))
+    if (imshell::Button("Execute", imshell::ButtonVariant::Primary, ImVec2(120, 0)))
         startExecute();
     ImGui::EndDisabled();
     if (executing) {
         ImGui::SameLine();
-        mydear::Spinner("##executing_ddl", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        imshell::Spinner("##executing_ddl", 6.0f, 2, ImGui::GetColorU32(colors.peach));
         ImGui::SameLine();
         ImGui::TextUnformatted("Executing...");
     } else if (closePreview_) {
@@ -647,7 +647,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 
     ImGui::SameLine();
 
-    if (mydear::Button("Cancel", mydear::ButtonVariant::Secondary, ImVec2(120, 0))) {
+    if (imshell::Button("Cancel", imshell::ButtonVariant::Secondary, ImVec2(120, 0))) {
         ImGui::CloseCurrentPopup();
     }
 
@@ -657,7 +657,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
 }
 
 void TableEditorTab::renderButtons(bool& closeRequested) {
-    if (mydear::Button(ICON_FA_FLOPPY_DISK " Save", mydear::ButtonVariant::Primary,
+    if (imshell::Button(ICON_FA_FLOPPY_DISK " Save", imshell::ButtonVariant::Primary,
                        ImVec2(120, 0))) {
         if (validateTableInput()) {
             errorMessage.clear();

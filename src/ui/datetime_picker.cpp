@@ -1,7 +1,7 @@
 #include "ui/datetime_picker.hpp"
 #include "application.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
+#include "imshell/button.hpp"
 #include "themes.hpp"
 #include <algorithm>
 #include <cctype>
@@ -279,9 +279,9 @@ namespace DateTimePicker {
             }
 
             ImGui::PushID(d);
-            if (mydear::Button(std::to_string(d).c_str(),
-                               isSel ? mydear::ButtonVariant::Secondary
-                                     : mydear::ButtonVariant::Custom,
+            if (imshell::Button(std::to_string(d).c_str(),
+                               isSel ? imshell::ButtonVariant::Secondary
+                                     : imshell::ButtonVariant::Custom,
                                ImVec2(CELL_W, rowH))) {
                 state.date.tm_mday = d;
                 result.changed = true;

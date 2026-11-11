@@ -4,8 +4,8 @@
 #include "dearsql/backends/duckdb_connection.hpp"
 #include "dearsql/types.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include "ui/auto_complete_input.hpp"
 #include <algorithm>
@@ -352,14 +352,14 @@ void CsvEditorTab::render() {
 
     if (loadOp_.isRunning()) {
         ImGui::Spacing();
-        mydear::Spinner("##csv_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
+        imshell::Spinner("##csv_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
         ImGui::SameLine(0, Theme::Spacing::M);
         ImGui::TextColored(colors.subtext0, "Loading...");
         return;
     }
     if (!loadError_.empty()) {
         ImGui::TextColored(colors.red, "%s", loadError_.c_str());
-        if (mydear::Button(ICON_FA_ARROWS_ROTATE " Retry"))
+        if (imshell::Button(ICON_FA_ARROWS_ROTATE " Retry"))
             startLoad();
         return;
     }
@@ -411,14 +411,14 @@ void CsvEditorTab::renderToolbar() {
     if (!modified)
         ImGui::BeginDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-    if (mydear::IconButton(ICON_FA_FLOPPY_DISK, mydear::ButtonVariant::Primary))
+    if (imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary))
         save();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Save (%s)", shortcut("S").c_str());
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-    if (mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger))
+    if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger))
         openDialog(Dialog::ConfirmReload);
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -429,14 +429,14 @@ void CsvEditorTab::renderToolbar() {
     // undo / redo
     ImGui::SameLine(0, Theme::Spacing::M);
     ImGui::BeginDisabled(!doc_.canUndo());
-    if (mydear::IconButton(ICON_FA_ROTATE_LEFT))
+    if (imshell::IconButton(ICON_FA_ROTATE_LEFT))
         undoRedo(false);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Undo (%s)", shortcut("Z").c_str());
     ImGui::SameLine(0, Theme::Spacing::XS);
     ImGui::BeginDisabled(!doc_.canRedo());
-    if (mydear::IconButton(ICON_FA_ROTATE_RIGHT))
+    if (imshell::IconButton(ICON_FA_ROTATE_RIGHT))
         undoRedo(true);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -447,10 +447,10 @@ void CsvEditorTab::renderToolbar() {
     filterInput_->render("##csv_filter", filterBuffer_, sizeof(filterBuffer_));
     if (filterOp_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        mydear::Spinner("##csv_filtering", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##csv_filtering", 6.0f, 2, ImGui::GetColorU32(colors.blue));
     } else if (filtered_ || !activeFilter_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::XS);
-        if (mydear::IconButton(ICON_FA_FILTER_CIRCLE_XMARK))
+        if (imshell::IconButton(ICON_FA_FILTER_CIRCLE_XMARK))
             clearFilter();
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clear filter");
@@ -483,7 +483,7 @@ void CsvEditorTab::renderTableView() {
     }
     if (viewRowCount() == 0) {
         ImGui::TextDisabled(filtered_ ? "No rows match the filter." : "No rows.");
-        if (!filtered_ && mydear::Button(ICON_FA_PLUS " Add Row")) {
+        if (!filtered_ && imshell::Button(ICON_FA_PLUS " Add Row")) {
             doc_.insertRows(0);
             markChanged();
         }
@@ -542,7 +542,7 @@ void CsvEditorTab::renderDialogs() {
         ImGui::TextUnformatted(message_.c_str());
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
-        if (mydear::Button("OK", mydear::ButtonVariant::Primary) ||
+        if (imshell::Button("OK", imshell::ButtonVariant::Primary) ||
             ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
             ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             close = true;
@@ -550,13 +550,13 @@ void CsvEditorTab::renderDialogs() {
         ImGui::TextUnformatted("Discard unsaved changes and reload the file?");
         ImGui::Spacing();
         ImGui::Spacing();
-        if (mydear::Button("Reload", mydear::ButtonVariant::Primary) ||
+        if (imshell::Button("Reload", imshell::ButtonVariant::Primary) ||
             ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             startLoad();
             close = true;
         }
         ImGui::SameLine(0, Theme::Spacing::S);
-        if (mydear::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (imshell::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             close = true;
     } else {
         close = true;

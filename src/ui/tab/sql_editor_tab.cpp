@@ -11,10 +11,10 @@
 #include "database/postgresql.hpp"
 #include "database/read_only.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/menu.hpp"
-#include "mydear/spinner.hpp"
-#include "mydear/splitter.hpp"
+#include "imshell/button.hpp"
+#include "imshell/menu.hpp"
+#include "imshell/spinner.hpp"
+#include "imshell/splitter.hpp"
 #include "themes.hpp"
 #include "ui/ai_chat_panel.hpp"
 #include "ui/ai_settings_dialog.hpp"
@@ -220,7 +220,7 @@ void SQLEditorTab::render() {
             saveScript();
         }
 
-        mydear::Splitter("##sql_splitter", &splitterPosition, totalContentHeight, 100.0f, 200.0f);
+        imshell::Splitter("##sql_splitter", &splitterPosition, totalContentHeight, 100.0f, 200.0f);
 
         if (ImGui::BeginChild("SQLResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -251,7 +251,7 @@ void SQLEditorTab::render() {
                 constexpr float spinnerRadius = 10.0f;
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
-                mydear::Spinner("##results_spinner", spinnerRadius, 2,
+                imshell::Spinner("##results_spinner", spinnerRadius, 2,
                                 ImGui::GetColorU32(ImGuiCol_Text));
 
                 const char* loadingText = LABEL_RUNNING_QUERY;
@@ -401,7 +401,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(200.0f);
-    if (mydear::BeginSelect("##schema_combo", preview.c_str())) {
+    if (imshell::BeginSelect("##schema_combo", preview.c_str())) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
         bool first = true;
@@ -428,7 +428,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
                 ImGui::Indent(Theme::Spacing::L);
                 ImGui::TextDisabled("Loading...");
                 ImGui::SameLine(0, Theme::Spacing::S);
-                mydear::Spinner(std::format("##loading_schemas_{}", dbName).c_str(), 5.0f, 2,
+                imshell::Spinner(std::format("##loading_schemas_{}", dbName).c_str(), 5.0f, 2,
                                 ImGui::GetColorU32(ImGuiCol_TextDisabled));
                 ImGui::Unindent(Theme::Spacing::L);
             } else {
@@ -450,7 +450,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
             }
         }
         ImGui::PopStyleVar();
-        mydear::EndSelect();
+        imshell::EndSelect();
     }
 
     if (queryExecutionOp_.isRunning())
@@ -590,7 +590,7 @@ void SQLEditorTab::renderDatabaseCombo(const std::string& host, const char* labe
         ImGui::BeginDisabled();
 
     ImGui::SetNextItemWidth(150.0f);
-    if (mydear::BeginSelect("##db_combo", currentName.c_str())) {
+    if (imshell::BeginSelect("##db_combo", currentName.c_str())) {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                             ImVec2(ImGui::GetStyle().ItemSpacing.x, Theme::Spacing::XS));
         for (const auto& name : dbNames) {
@@ -606,7 +606,7 @@ void SQLEditorTab::renderDatabaseCombo(const std::string& host, const char* labe
             }
         }
         ImGui::PopStyleVar();
-        mydear::EndSelect();
+        imshell::EndSelect();
     }
 
     if (queryExecutionOp_.isRunning())
@@ -663,15 +663,15 @@ void SQLEditorTab::renderToolbar(const bool narrow) {
 
     if (queryExecutionOp_.isRunning()) {
         ImGui::BeginDisabled();
-        mydear::IconLabelButton(ICON_FA_PLAY, "Run", mydear::ButtonVariant::Primary);
+        imshell::IconLabelButton(ICON_FA_PLAY, "Run", imshell::ButtonVariant::Primary);
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (mydear::Button(LABEL_CANCEL)) {
+        if (imshell::Button(LABEL_CANCEL)) {
             cancelQueryExecution();
         }
     } else {
-        if (mydear::IconLabelButton(ICON_FA_PLAY, "Run", mydear::ButtonVariant::Primary)) {
+        if (imshell::IconLabelButton(ICON_FA_PLAY, "Run", imshell::ButtonVariant::Primary)) {
             if (sqlEditor.HasSelection()) {
                 startQueryExecutionAsync(sqlEditor.GetSelectedText());
             } else {
@@ -682,7 +682,7 @@ void SQLEditorTab::renderToolbar(const bool narrow) {
         const DatabaseType type = node_ ? node_->getDatabaseType() : DatabaseType::SQLITE;
         const bool canExplain = node_ && dearsql::explainSql(type, "x", false).has_value();
         if (narrow) {
-            if (mydear::BeginMenuPopup("##sql_more_menu")) {
+            if (imshell::BeginMenuPopup("##sql_more_menu")) {
                 ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                     ImVec2(Theme::Spacing::M, Theme::Spacing::M));
                 if (ImGui::MenuItem(ICON_FA_ALIGN_LEFT "  Format"))
@@ -696,16 +696,16 @@ void SQLEditorTab::renderToolbar(const bool narrow) {
                 ImGui::EndPopup();
             }
             // the button last: the header measures the toolbar by the last item
-            if (mydear::IconButton(ICON_FA_ELLIPSIS "##sql_more"))
+            if (imshell::IconButton(ICON_FA_ELLIPSIS "##sql_more"))
                 ImGui::OpenPopup("##sql_more_menu");
             return;
         }
-        if (mydear::IconLabelButton(ICON_FA_ALIGN_LEFT, "Format")) {
+        if (imshell::IconLabelButton(ICON_FA_ALIGN_LEFT, "Format")) {
             formatSQL();
         }
         ImGui::SameLine(0, Theme::Spacing::M);
         ImGui::BeginDisabled(!canExplain);
-        if (mydear::IconLabelButton(ICON_FA_DIAGRAM_PROJECT, "Explain")) {
+        if (imshell::IconLabelButton(ICON_FA_DIAGRAM_PROJECT, "Explain")) {
             explainStatement();
         }
         ImGui::EndDisabled();
@@ -891,7 +891,7 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
     ImGui::EndChild();
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
-    mydear::SegmentedTabs("##result_view", {"Data", "JSON", "Chart"}, &resultView_);
+    imshell::SegmentedTabs("##result_view", {"Data", "JSON", "Chart"}, &resultView_);
 
     const std::string status =
         std::format("{} {}{}", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows", took);
@@ -1639,8 +1639,8 @@ void SQLEditorTab::renderScriptHeader() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        if (mydear::IconButton(ICON_FA_PENCIL "##rename_script", mydear::ButtonVariant::Secondary,
-                               ImVec2(0.0f, 0.0f), mydear::ButtonSize::Small)) {
+        if (imshell::IconButton(ICON_FA_PENCIL "##rename_script", imshell::ButtonVariant::Secondary,
+                               ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
             std::strncpy(renameBuffer_, scriptName_.c_str(), sizeof(renameBuffer_) - 1);
             renamingScript_ = true;
             renamingFocusNeeded_ = true;
@@ -1727,8 +1727,8 @@ void SQLEditorTab::renderParamPrompt() {
     if (!ImGui::IsPopupOpen(popupId)) {
         ImGui::OpenPopup(popupId);
     }
-    ImGui::SetNextWindowSize(mydear::FitScreen(ImVec2(440.0f, 0.0f)), ImGuiCond_Appearing);
-    mydear::CapToScreen();
+    ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(440.0f, 0.0f)), ImGuiCond_Appearing);
+    imshell::CapToScreen();
     if (!ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         return;
     }
@@ -1764,7 +1764,7 @@ void SQLEditorTab::renderParamPrompt() {
     ImGui::TextWrapped("Numbers and NULL go in as typed, anything else as a quoted string.");
     ImGui::PopStyleColor();
 
-    run |= mydear::Button("Run###param_run", mydear::ButtonVariant::Primary);
+    run |= imshell::Button("Run###param_run", imshell::ButtonVariant::Primary);
     ImGui::SameLine();
     const bool cancel =
         ImGui::Button("Cancel###param_cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape, false);

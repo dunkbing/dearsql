@@ -5,7 +5,7 @@ set(IMGUI_SOURCES
     external/imgui/imgui_widgets.cpp
 )
 
-# mydear compiles the platform and renderer backends (glfw, metal, dx11, opengl, uikit)
+# imshell compiles the platform and renderer backends (glfw, metal, dx11, opengl, uikit)
 
 set(IMGUI_NODE_EDITOR_SOURCES
     external/imgui-node-editor/imgui_node_editor.cpp
@@ -24,7 +24,7 @@ if(APPLE)
   find_library(SECURITY_LIBRARY Security REQUIRED)
 
 elseif(LINUX OR WIN32 OR ANDROID)
-  # mydear links gtk4 + epoxy or d3d11
+  # imshell links gtk4 + epoxy or d3d11
 else()
   find_package(OpenGL REQUIRED)
   list(APPEND IMGUI_SOURCES external/imgui/backends/imgui_impl_opengl3.cpp)

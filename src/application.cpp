@@ -18,12 +18,12 @@
 #include "ui/schema_compare.hpp"
 #include "ui/settings_dialog.hpp"
 
-#include "mydear/updater.hpp"
+#include "imshell/updater.hpp"
 
 #if defined(DEARSQL_IOS)
 #include "platform/ios_platform.hpp"
 #else
-#include "mydear/title_bar.hpp"
+#include "imshell/title_bar.hpp"
 #include "ui/title_bar.hpp"
 #endif
 
@@ -102,12 +102,12 @@ bool Application::initialize() {
     spdlog::info("Starting {}...", APP_NAME);
 
 #if defined(DEARSQL_IOS)
-    // mydear runs uikit; we are inside the root controller's loadView, the view exists
-    if (!shell_.create(mydear::Config{}, *this))
+    // imshell runs uikit; we are inside the root controller's loadView, the view exists
+    if (!shell_.create(imshell::Config{}, *this))
         return false;
     ios::attach(shell_);
 #else
-    mydear::Config config;
+    imshell::Config config;
 #ifdef NDEBUG
     config.title = APP_NAME;
 #endif
@@ -148,7 +148,7 @@ bool Application::initialize() {
 
     const std::string themeStr = appState->getSetting("theme", "dark");
     theme_ = &Theme::themeById(themeStr);
-    Theme::Current() = theme_; // mydear widgets draw with it
+    Theme::Current() = theme_; // imshell widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
 #ifdef DEARSQL_IOS
     ios::applyTheme(theme_->dark);
@@ -178,7 +178,7 @@ bool Application::initialize() {
     LicenseManager::instance().validateStoredLicense();
 
     // dearsql.dev publishes the appcast (macos, windows) and the manifest (linux)
-    mydear::updater::Start({.appName = "DearSQL",
+    imshell::updater::Start({.appName = "DearSQL",
                             .version = APP_VERSION,
                             .appcastUrl = "https://dearsql.dev/appcast.xml",
                             .publicKey = SPARKLE_ED_PUBLIC_KEY,
@@ -269,7 +269,7 @@ void Application::cleanup() {
     fileDialog.reset();
     spdlog::debug("Components cleaned up");
 
-    mydear::updater::Stop();
+    imshell::updater::Stop();
 
     MarkdownText::shutdown(); // its textures need the backend
 
@@ -283,7 +283,7 @@ void Application::cleanup() {
 
 void Application::setTheme(const std::string_view id) {
     theme_ = &Theme::themeById(id);
-    Theme::Current() = theme_; // mydear widgets draw with it
+    Theme::Current() = theme_; // imshell widgets draw with it
     Theme::ApplyNativeTheme(theme_->colors);
 #ifdef DEARSQL_IOS
     ios::applyTheme(theme_->dark);
@@ -330,7 +330,7 @@ void Application::setup() {
 
 void Application::frame() {
 #ifndef DEARSQL_IOS
-    TitleBarView::render(*this); // in mydear's title bar strip
+    TitleBarView::render(*this); // in imshell's title bar strip
 #endif
     renderMainUI();
     Alert::render(); // last: over every other window and popup
@@ -769,7 +769,7 @@ void Application::renderMainUI() {
     }
     // clear of system bars and cutouts (mobile; the ios navigation bar is in the safe area),
     // under the title bar (desktop, android)
-    const mydear::Rect content = mydear::ContentRect();
+    const imshell::Rect content = imshell::ContentRect();
     ImGui::SetNextWindowPos(content.pos);
     ImGui::SetNextWindowSize(content.size);
     ImGui::SetNextWindowViewport(viewport->ID);

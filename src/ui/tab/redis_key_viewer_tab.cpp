@@ -3,8 +3,8 @@
 #include "application.hpp"
 #include "database/redis.hpp"
 #include "imgui.h"
-#include "mydear/button.hpp"
-#include "mydear/spinner.hpp"
+#include "imshell/button.hpp"
+#include "imshell/spinner.hpp"
 #include "themes.hpp"
 #include "ui/table_renderer.hpp"
 #include <algorithm>
@@ -202,7 +202,7 @@ void RedisKeyViewerTab::render() {
             const float cy = winPos.y + ImGui::GetWindowHeight() * 0.5f;
             constexpr float r = 10.0f;
             ImGui::SetCursorScreenPos(ImVec2(cx - r, cy - r));
-            mydear::Spinner("##redis_key_load", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
+            imshell::Spinner("##redis_key_load", r, 2, ImGui::GetColorU32(ImGuiCol_Text));
         } else if (hasError_) {
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", loadingError_.c_str());
         } else if (tableData_.empty()) {
@@ -354,7 +354,7 @@ void RedisKeyViewerTab::renderToolbar() {
     if (busy)
         ImGui::BeginDisabled();
 
-    if (mydear::Button(ICON_FA_ROTATE_RIGHT " Refresh")) {
+    if (imshell::Button(ICON_FA_ROTATE_RIGHT " Refresh")) {
         currentPage_ = 0;
         hasChanges_ = false;
         loadDataAsync();
@@ -362,7 +362,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
     if (currentPage_ > 0) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        if (mydear::Button(ICON_FA_ANGLE_LEFT " Prev")) {
+        if (imshell::Button(ICON_FA_ANGLE_LEFT " Prev")) {
             --currentPage_;
             loadDataAsync();
         }
@@ -371,7 +371,7 @@ void RedisKeyViewerTab::renderToolbar() {
     const bool hasMore = totalRows_ < 0 && static_cast<int>(tableData_.size()) >= rowsPerPage_;
     if (hasMore) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        if (mydear::Button("Next " ICON_FA_ANGLE_RIGHT)) {
+        if (imshell::Button("Next " ICON_FA_ANGLE_RIGHT)) {
             ++currentPage_;
             loadDataAsync();
         }
@@ -379,7 +379,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
     // add key
     ImGui::SameLine(0, Theme::Spacing::S);
-    if (mydear::Button(ICON_FA_PLUS " Add key", mydear::ButtonVariant::Primary)) {
+    if (imshell::Button(ICON_FA_PLUS " Add key", imshell::ButtonVariant::Primary)) {
         const int numCols = static_cast<int>(columnNames_.size());
         std::vector<std::string> newRow = {"", "string", "", "-1", "-"};
         newRow.resize(numCols);
@@ -401,7 +401,7 @@ void RedisKeyViewerTab::renderToolbar() {
     ImGui::SameLine(0, Theme::Spacing::L);
     if (hasChanges_) {
         ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
-        if (mydear::IconButton(ICON_FA_FLOPPY_DISK, mydear::ButtonVariant::Primary)) {
+        if (imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary)) {
             saveChanges();
         }
         ImGui::PopStyleColor();
@@ -410,7 +410,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger)) {
+        if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
@@ -421,14 +421,14 @@ void RedisKeyViewerTab::renderToolbar() {
         ImGui::TextColored(colors.peach, "Unsaved changes");
     } else {
         ImGui::BeginDisabled();
-        mydear::IconButton(ICON_FA_FLOPPY_DISK, mydear::ButtonVariant::Primary);
+        imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Save");
 
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::BeginDisabled();
-        mydear::IconButton(ICON_FA_XMARK, mydear::ButtonVariant::Danger);
+        imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Discard changes");

@@ -158,19 +158,19 @@ elseif(NOT IOS)
 endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
-# the updater frameworks mydear drives (linux: httplib, found above)
+# the updater frameworks imshell drives (linux: httplib, found above)
 if(APPLE AND NOT IOS)
     include(cmake/Sparkle.cmake)
-    set(MYDEAR_SPARKLE_FRAMEWORK "${SPARKLE_FRAMEWORK_PATH}" CACHE PATH "" FORCE)
+    set(IMSHELL_SPARKLE_FRAMEWORK "${SPARKLE_FRAMEWORK_PATH}" CACHE PATH "" FORCE)
 elseif(WIN32)
     include(cmake/WinSparkle.cmake)
 endif()
 if(NOT IOS AND NOT ANDROID)
-    set(MYDEAR_UPDATER ON CACHE BOOL "" FORCE)
+    set(IMSHELL_UPDATER ON CACHE BOOL "" FORCE)
 endif()
 # ui toolkit: themes, widgets, embedded fonts and images (own repo)
-set(MYDEAR_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
-add_subdirectory(external/mydear)
+set(IMSHELL_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui CACHE PATH "" FORCE)
+add_subdirectory(external/imshell)
 
 enable_testing()
 
@@ -294,8 +294,8 @@ if(WIN32)
     list(APPEND APP_SOURCES assets/app.rc)
 endif()
 
-mydear_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
-mydear_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
+imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
+imshell_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
 
 list(APPEND APP_SOURCES ${EMBEDDED_FONTS_FILE} ${EMBEDDED_IMAGES_FILE})
 
@@ -333,7 +333,7 @@ add_subdirectory(external/acp-cpp)
 # chat markdown. it links a target named imgui; ours is compiled into each executable, so headers only
 add_library(imgui INTERFACE)
 target_include_directories(imgui INTERFACE external/imgui)
-set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # mydear has it
+set(IMGUI_RICHMD_STB_IMAGE_IMPLEMENTATION OFF CACHE BOOL "" FORCE) # imshell has it
 add_subdirectory(external/imgui_rich_md EXCLUDE_FROM_ALL)
 
 target_include_directories(
@@ -381,7 +381,7 @@ target_link_libraries(
         OpenSSL::Crypto
         sentry::sentry
         dearsql::dearsql
-        mydear::mydear
+        imshell::imshell
         httplib::httplib
         imgui_rich_md
         miniocpp::miniocpp

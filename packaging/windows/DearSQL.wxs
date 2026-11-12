@@ -16,6 +16,12 @@
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPHELPLINK" Value="https://dearsql.com" />
 
+    <!-- updates run "msiexec /passive RELAUNCH=1" (the appcast's installerArguments): open the app again after -->
+    <CustomAction Id="Relaunch" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]dearsql.exe&quot;" Execute="immediate" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="Relaunch" After="InstallFinalize" Condition="RELAUNCH = 1 AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
     <WixVariable Id="WixUILicenseRtf" Value="$(SourceDir)\packaging\windows\License.rtf" />
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
 

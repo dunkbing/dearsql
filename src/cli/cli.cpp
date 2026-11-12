@@ -213,8 +213,9 @@ or let it run commands:
             std::cerr << "dearsql: download failed: " << error << "\n";
             return 1;
         }
-        // started detached: the installer replaces this exe, so it can't wait on us
-        return std::system(std::format("start \"\" msiexec /i \"{}\" /passive", msi).c_str()) == 0
+        // started detached: the installer replaces this exe, so it can't wait on us. /norestart:
+        // a file in use (an open window) would otherwise let /passive restart the machine
+        return std::system(std::format("start \"\" msiexec /i \"{}\" /passive /norestart", msi).c_str()) == 0
                    ? 0
                    : 1;
 #else

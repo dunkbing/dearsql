@@ -83,7 +83,7 @@ namespace {
     void fieldLabel(const char* text) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors.subtext0, "%s", text);
+        ImGui::TextColored(colors.mutedForeground, "%s", text);
         ImGui::SameLine(kLabelColumnW);
     }
 
@@ -94,7 +94,7 @@ namespace {
             return;
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                            ImGui::GetColorU32(colors.text),
+                                            ImGui::GetColorU32(colors.foreground),
                                             ImGui::GetStyle().FrameRounding, 0, 2.0f);
     }
 
@@ -280,8 +280,8 @@ void ConnectionDialog::populateForm(const DatabaseConnectionInfo& info) {
     readOnly_ = info.readOnly; // applies to file databases too, so set it before the early return
 
     colorIdx_ = -1;
-    for (int i = 0; i < static_cast<int>(std::size(Theme::ConnectionPalette::ENTRIES)); ++i) {
-        if (info.color == Theme::ConnectionPalette::ENTRIES[i].key) {
+    for (int i = 0; i < static_cast<int>(std::size(themes::kConnectionColors)); ++i) {
+        if (info.color == themes::kConnectionColors[i].key) {
             colorIdx_ = i;
             break;
         }
@@ -335,7 +335,7 @@ DatabaseConnectionInfo ConnectionDialog::snapshotForm() const {
     info.type = selectedType();
     info.name = nameBuf_;
     info.readOnly = readOnly_; // set before the file-database early return
-    info.color = colorIdx_ >= 0 ? Theme::ConnectionPalette::ENTRIES[colorIdx_].key : "";
+    info.color = colorIdx_ >= 0 ? themes::kConnectionColors[colorIdx_].key : "";
     info.envTag = ddl_utils::trim(envTagBuf_);
     if (isFileDatabase(info.type)) {
         info.path = sqlitePathBuf_;
@@ -663,8 +663,8 @@ void ConnectionDialog::render() {
                                         ImVec2(width, room.y - viewport->WorkSize.y * 0.05f));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
-    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
+    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().border);
 
     bool stayOpen = true;
     if (!ImGui::BeginPopupModal(title.c_str(), &stayOpen,
@@ -758,9 +758,9 @@ void ConnectionDialog::renderAppearanceRow() {
     const ImGuiStyle& style = ImGui::GetStyle();
 
     // "none" first, then the palette, so clearing is as easy as choosing
-    ImGui::PushStyleColor(ImGuiCol_Button, colors.surface1);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors.surface2);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_Button, colors.accent);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, imshell::Pressed(colors.accent));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, imshell::Pressed(colors.accent));
     if (ImGui::Button("##conn_color_none", ImVec2(kSwatch, kSwatch))) {
         colorIdx_ = -1;
     }
@@ -769,9 +769,9 @@ void ConnectionDialog::renderAppearanceRow() {
         ImGui::SetTooltip("No colour");
     drawSwatchSelection(colorIdx_ == -1);
 
-    for (int i = 0; i < static_cast<int>(std::size(Theme::ConnectionPalette::ENTRIES)); ++i) {
-        const auto& entry = Theme::ConnectionPalette::ENTRIES[i];
-        const ImVec4 swatchColor = colors.*entry.member;
+    for (int i = 0; i < static_cast<int>(std::size(themes::kConnectionColors)); ++i) {
+        const auto& entry = themes::kConnectionColors[i];
+        const ImVec4 swatchColor = colors.hues.*entry.hue;
 
         ImGui::SameLine(0.0f, style.ItemSpacing.x * 0.5f);
         ImGui::PushID(i);
@@ -847,7 +847,7 @@ void ConnectionDialog::renderUrlRow() {
     if (!urlError_.empty()) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::SetCursorPosX(kLabelColumnW);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
         ImGui::TextWrapped("%s", urlError_.c_str());
         ImGui::PopStyleColor();
     }
@@ -1085,7 +1085,7 @@ void ConnectionDialog::renderStatusRow() {
     }
 
     if (!statusText_.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? colors.red : colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? colors.destructive : colors.mutedForeground);
         ImGui::TextWrapped("%s", statusText_.c_str());
         ImGui::PopStyleColor();
     } else if (!isBusy()) {

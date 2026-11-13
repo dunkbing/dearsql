@@ -88,7 +88,7 @@ void AIChatPanel::render() {
             float availH = ImGui::GetContentRegionAvail().y;
             ImGui::SetCursorPos(ImVec2((availW - textSize.x) * 0.5f, (availH - textSize.y) * 0.5f));
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + availW * 0.8f);
-            ImGui::TextColored(colors.subtext0, "%s", LABEL_EMPTY_CHAT);
+            ImGui::TextColored(colors.mutedForeground, "%s", LABEL_EMPTY_CHAT);
             ImGui::PopTextWrapPos();
         } else {
             renderMessages();
@@ -118,7 +118,7 @@ void AIChatPanel::renderMessages() {
         imshell::Spinner("##ai_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (chatState_->isBuildingPrompt()) {
             ImGui::SameLine();
-            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0,
+            ImGui::TextColored(Application::getInstance().getCurrentColors().mutedForeground,
                                "Analyzing database schema...");
         }
     }
@@ -135,7 +135,7 @@ void AIChatPanel::renderMessage(const AIChatMessage& msg, size_t index) {
     }
 
     ImGui::Indent(Theme::Spacing::M);
-    ImGui::TextColored(colors.subtext0, "%s", isUser ? "You" : "Assistant");
+    ImGui::TextColored(colors.mutedForeground, "%s", isUser ? "You" : "Assistant");
 
     if (isUser) {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x -
@@ -157,7 +157,7 @@ void AIChatPanel::renderInputArea() {
 
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::L, Theme::Spacing::M));
 
@@ -190,7 +190,7 @@ void AIChatPanel::renderInputArea() {
 
         ImGui::SetCursorPosX(rowStartX + rowLeftPadding);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors.subtext0, ICON_FA_WAND_MAGIC_SPARKLES);
+        ImGui::TextColored(colors.mutedForeground, ICON_FA_WAND_MAGIC_SPARKLES);
         ImGui::SameLine(0.0f, Theme::Spacing::S);
 
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -205,7 +205,7 @@ void AIChatPanel::renderInputArea() {
                             ImVec2(Theme::Spacing::S, Theme::Spacing::S));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::S));
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.mutedForeground);
         if (imshell::BeginSelect("##ai_model", modelPreview.c_str(),
                                 ImGuiComboFlags_NoArrowButton)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
@@ -234,7 +234,7 @@ void AIChatPanel::renderInputArea() {
                         rowRightPadding);
 
         if (client_->isStreaming() || chatState_->isBuildingPrompt()) {
-            if (imshell::IconButton(ICON_FA_STOP, imshell::ButtonVariant::Danger,
+            if (imshell::IconButton(ICON_FA_STOP, imshell::ButtonVariant::Destructive,
                                    ImVec2(sendBtnWidth, 0))) {
                 chatState_->cancelAsyncPrompt();
                 client_->cancel();

@@ -48,7 +48,7 @@ namespace {
         d.storageMode = MTLStorageModeShared;
         id<MTLTexture> target = [device newTextureWithDescriptor:d];
 
-        const ImVec4 base = imshell::Theme::Current()->colors.base;
+        const ImVec4 base = imshell::CurrentTheme().background;
         MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
         pass.colorAttachments[0].texture = target;
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;

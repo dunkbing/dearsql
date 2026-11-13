@@ -231,7 +231,7 @@ namespace DateTimePicker {
 
         // day-of-week headers
         static const char* dayHeaders[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.subtext0));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.mutedForeground));
         for (int i = 0; i < 7; i++) {
             float textW = ImGui::CalcTextSize(dayHeaders[i]).x;
             float xOff = (CELL_W - textW) * 0.5f;
@@ -311,7 +311,7 @@ namespace DateTimePicker {
             ImGui::BeginGroup();
 
             // header labels
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.subtext0));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.mutedForeground));
             float labelPad = (SPINNER_W - ImGui::CalcTextSize("H").x) * 0.5f;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + labelPad);
             ImGui::Text("H");
@@ -347,7 +347,7 @@ namespace DateTimePicker {
                     for (int i = 0; i <= maxVal; i++) {
                         bool sel = (i == value);
                         ImGui::PushStyleColor(
-                            ImGuiCol_Text, ImGui::GetColorU32(sel ? colors.text : colors.overlay0));
+                            ImGuiCol_Text, ImGui::GetColorU32(sel ? colors.foreground : colors.border));
 
                         ImGui::PushID(i);
                         std::string label = std::format("{:02d}", i);

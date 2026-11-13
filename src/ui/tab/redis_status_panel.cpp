@@ -163,7 +163,7 @@ void RedisStatusPanel::renderPanel(float availableHeight, const char* panelId) {
     tick();
 
     const auto& colors = Application::getInstance().getCurrentColors();
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(Theme::Spacing::XL, Theme::Spacing::XL));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::L));
@@ -182,7 +182,7 @@ void RedisStatusPanel::renderPanel(float availableHeight, const char* panelId) {
         ImGui::Indent(leftIndent);
 
         if (!snapshot_.error.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
             ImGui::TextWrapped("%s", snapshot_.error.c_str());
             ImGui::PopStyleColor();
         }
@@ -193,7 +193,7 @@ void RedisStatusPanel::renderPanel(float availableHeight, const char* panelId) {
         ImGui::Text("Connected Clients: %s", snapshot_.connectedClients.c_str());
 
         ImGui::Separator();
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::Text("Last Updated: %s", snapshot_.lastUpdated.c_str());
         ImGui::PopStyleColor();
         ImGui::Unindent(leftIndent);
@@ -207,14 +207,14 @@ void RedisStatusPanel::renderToggleStrip(bool& panelOpen, float stripWidth, floa
                                          const char* childId, const char* buttonId,
                                          const char* label) {
     const auto& colors = Application::getInstance().getCurrentColors();
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     if (ImGui::BeginChild(childId, ImVec2(stripWidth, availableHeight), ImGuiChildFlags_None)) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         const ImVec2 stripPos = ImGui::GetCursorScreenPos();
 
         drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+                          ImGui::GetColorU32(colors.border), 1.0f);
 
         const ImVec2 textSize = ImGui::CalcTextSize(label);
         constexpr float padding = 6.0f;
@@ -231,10 +231,10 @@ void RedisStatusPanel::renderToggleStrip(bool& panelOpen, float stripWidth, floa
         const ImVec2 btnMin = stripPos;
         const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
         if (panelOpen || hovered) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
         }
 
-        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.border),
                           1.0f);
 
         const float cx = stripPos.x + buttonW * 0.5f;
@@ -245,7 +245,7 @@ void RedisStatusPanel::renderToggleStrip(bool& panelOpen, float stripWidth, floa
         drawList->PushClipRectFullScreen();
         const int vtxBegin = drawList->VtxBuffer.Size;
         drawList->AddText(ImVec2(textX, textY),
-                          ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label);
+                          ImGui::GetColorU32(hovered ? colors.foreground : colors.mutedForeground), label);
         const int vtxEnd = drawList->VtxBuffer.Size;
         for (int i = vtxBegin; i < vtxEnd; i++) {
             ImDrawVert& v = drawList->VtxBuffer[i];

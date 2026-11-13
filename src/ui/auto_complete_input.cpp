@@ -59,7 +59,7 @@ bool AutoCompleteInput::render(const char* label, char* buffer, const size_t buf
     if (showFocusedVisual) {
         // Draw subtle visual emphasis for focused state
         const ImU32 focusColor =
-            ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
+            ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.3f));
         drawList->AddRect(inputMin, inputMax, focusColor, 3.0f, 0, 1.5f);
     }
 

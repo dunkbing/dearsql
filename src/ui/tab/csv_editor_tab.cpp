@@ -352,13 +352,13 @@ void CsvEditorTab::render() {
 
     if (loadOp_.isRunning()) {
         ImGui::Spacing();
-        imshell::Spinner("##csv_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
+        imshell::Spinner("##csv_loading", 8.0f, 2, ImGui::GetColorU32(colors.warning));
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(colors.subtext0, "Loading...");
+        ImGui::TextColored(colors.mutedForeground, "Loading...");
         return;
     }
     if (!loadError_.empty()) {
-        ImGui::TextColored(colors.red, "%s", loadError_.c_str());
+        ImGui::TextColored(colors.destructive, "%s", loadError_.c_str());
         if (imshell::Button(ICON_FA_ARROWS_ROTATE " Retry"))
             startLoad();
         return;
@@ -371,7 +371,7 @@ void CsvEditorTab::render() {
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
 
     if (!filterError_.empty())
-        ImGui::TextColored(colors.red, "%s", filterError_.c_str());
+        ImGui::TextColored(colors.destructive, "%s", filterError_.c_str());
 
     // the grid takes what is left above the status bar
     const float statusH = ImGui::GetTextLineHeightWithSpacing() + Theme::Spacing::XS;
@@ -410,15 +410,15 @@ void CsvEditorTab::renderToolbar() {
     // save / revert
     if (!modified)
         ImGui::BeginDisabled();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.success);
     if (imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary))
         save();
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Save (%s)", shortcut("S").c_str());
     ImGui::SameLine(0, Theme::Spacing::XS);
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-    if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger))
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
+    if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Destructive))
         openDialog(Dialog::ConfirmReload);
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -447,7 +447,7 @@ void CsvEditorTab::renderToolbar() {
     filterInput_->render("##csv_filter", filterBuffer_, sizeof(filterBuffer_));
     if (filterOp_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::S);
-        imshell::Spinner("##csv_filtering", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##csv_filtering", 6.0f, 2, ImGui::GetColorU32(colors.primary));
     } else if (filtered_ || !activeFilter_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::XS);
         if (imshell::IconButton(ICON_FA_FILTER_CIRCLE_XMARK))
@@ -458,7 +458,7 @@ void CsvEditorTab::renderToolbar() {
 
     if (modified) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(colors.peach, "Unsaved changes");
+        ImGui::TextColored(colors.warning, "Unsaved changes");
     }
 }
 
@@ -502,10 +502,10 @@ void CsvEditorTab::renderStatusBar() {
                         d.bom ? " BOM" : "", lineBreakName(d.lineBreak));
     if (!d.hasHeader)
         text += " · no header row";
-    ImGui::TextColored(colors.subtext0, "%s", text.c_str());
+    ImGui::TextColored(colors.mutedForeground, "%s", text.c_str());
     if (doc_.raggedRows() > 0) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION " %d rows were padded",
+        ImGui::TextColored(colors.warning, ICON_FA_TRIANGLE_EXCLAMATION " %d rows were padded",
                            doc_.raggedRows());
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("These rows had fewer fields than the widest row; saving writes "
@@ -513,7 +513,7 @@ void CsvEditorTab::renderStatusBar() {
     }
     if (!statusText_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(colors.green, "%s", statusText_.c_str());
+        ImGui::TextColored(colors.success, "%s", statusText_.c_str());
     }
 }
 

@@ -147,11 +147,9 @@ bool Application::initialize() {
     }
 
     const std::string themeStr = appState->getSetting("theme", "dark");
-    theme_ = &Theme::themeById(themeStr);
-    Theme::Current() = theme_; // imshell widgets draw with it
-    Theme::ApplyNativeTheme(theme_->colors);
+    imshell::SetTheme(themes::byId(themeStr));
 #ifdef DEARSQL_IOS
-    ios::applyTheme(theme_->dark);
+    ios::applyTheme(isDarkTheme());
 #endif
 
     const std::string fontScaleStr = appState->getSetting("font_scale", "1.00");
@@ -282,16 +280,14 @@ void Application::cleanup() {
 }
 
 void Application::setTheme(const std::string_view id) {
-    theme_ = &Theme::themeById(id);
-    Theme::Current() = theme_; // imshell widgets draw with it
-    Theme::ApplyNativeTheme(theme_->colors);
+    imshell::SetTheme(themes::byId(id));
 #ifdef DEARSQL_IOS
-    ios::applyTheme(theme_->dark);
+    ios::applyTheme(isDarkTheme());
 #endif
     if (appState) {
-        appState->setSetting("theme", theme_->id);
+        appState->setSetting("theme", getTheme().id);
     }
-    SentryUtils::addBreadcrumb("app", "Theme changed", "theme", theme_->id);
+    SentryUtils::addBreadcrumb("app", "Theme changed", "theme", getTheme().id);
 }
 
 void Application::setFontScale(const float scale) {
@@ -366,8 +362,8 @@ bool Application::isShutdownRequested() const {
     return g_shutdownRequested != 0;
 }
 
-const Theme::Colors& Application::getCurrentColors() const {
-    return theme_->colors;
+const Theme& Application::getCurrentColors() const {
+    return imshell::CurrentTheme();
 }
 
 std::shared_ptr<DatabaseInterface> Application::getSelectedDatabase() const {
@@ -788,18 +784,18 @@ void Application::renderMainUI() {
 
     // Customize titlebar colors — use mantle so the dock tab bar visually
     // matches the native titlebar through the vibrancy layer.
-    const auto& colors = theme_->colors;
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.mantle);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.mantle);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.mantle);
+    const auto& colors = getCurrentColors();
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, colors.sidebar);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, colors.sidebar);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, colors.sidebar);
 
     if (sidebarVisible) {
-        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
+        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.background);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay1);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.mutedForeground);
     } else {
         // no sidebar, so no border between it and the tabs
-        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.base);
+        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, colors.background);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     }
 
@@ -816,10 +812,10 @@ void Application::renderMainUI() {
     drawDockTabSeparators(ImGui::DockBuilderGetNode(dockSpaceId));
 
     if (sidebarVisible) {
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.base);
-        ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
-        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
-        ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.background);
+        ImGui::PushStyleColor(ImGuiCol_Tab, colors.background);
+        ImGui::PushStyleColor(ImGuiCol_TabActive, colors.muted);
+        ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.accent);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
         if (!compactLayout_) {
@@ -852,15 +848,15 @@ void Application::renderMainUI() {
         syncSavedConnections();
     }
 
-    ImGui::PushStyleColor(ImGuiCol_Tab, colors.base);
-    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.background);
+    ImGui::PushStyleColor(ImGuiCol_TabActive, colors.muted);
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.accent);
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
 
     if (tabManager->isEmpty()) {
         const std::string workspaceTitle = getCurrentWorkspaceName() + "###workspace_main";
 
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.sidebar);
         ImGui::Begin(workspaceTitle.c_str(), nullptr,
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar |
                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -900,7 +896,7 @@ void Application::renderMainUI() {
         ImGui::GetForegroundDrawList()->AddText(
             ImVec2(vp->WorkPos.x + vp->WorkSize.x - size.x - Theme::Spacing::M,
                    vp->WorkPos.y + vp->WorkSize.y - size.y - Theme::Spacing::S),
-            ImGui::GetColorU32(getCurrentColors().subtext0), fps.c_str());
+            ImGui::GetColorU32(getCurrentColors().mutedForeground), fps.c_str());
     }
 
     ImGui::End();

@@ -100,6 +100,7 @@ add_executable(
     tests/ui/csv_document_test.cpp
     tests/ui/chart_data_test.cpp
     tests/ui/env_tag_test.cpp
+    tests/ui/themes_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
     external/libdearsql/tests/completion_tests.cpp
@@ -111,6 +112,7 @@ add_executable(
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp
     src/utils/chart_data.cpp
+    ${IMGUI_SOURCES} # imshell's themes.cpp, for the theme test
 )
 
 target_include_directories(

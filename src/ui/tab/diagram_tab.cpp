@@ -143,7 +143,7 @@ void DiagramTab::render() {
     // the button and checkboxes have a visible outline against the dark bg.
     const auto& themeColors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertFloat4ToU32(themeColors.overlay1));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertFloat4ToU32(themeColors.mutedForeground));
 
     // Options + refresh button on a single row
     ImGui::Checkbox("Show Column Types", &showColumnTypes);
@@ -191,7 +191,7 @@ void DiagramTab::render() {
 
     const ImVec2 canvasMax = {canvasMin.x + canvasSize.x, canvasMin.y + canvasSize.y};
     ImGui::GetWindowDrawList()->AddRect(
-        canvasMin, canvasMax, ImGui::ColorConvertFloat4ToU32(themeColors.overlay1), 0.0f, 0, 1.0f);
+        canvasMin, canvasMax, ImGui::ColorConvertFloat4ToU32(themeColors.mutedForeground), 0.0f, 0, 1.0f);
 }
 
 void DiagramTab::handleZoomShortcuts() {
@@ -308,13 +308,13 @@ void DiagramTab::renderNodes() {
 
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    const ImVec4 primaryTableColor = colors.yellow;
-    const ImVec4 normalTableColor = colors.text;
-    const ImVec4 normalColumnColor = colors.subtext1;
-    const ImVec4 foreignKeyColor = colors.blue;
-    const ImVec4 typeColor = colors.subtext0;
-    const ImVec4 notNullColor = colors.red;
-    const ImVec4 selectedColumnColor = colors.peach;
+    const ImVec4 primaryTableColor = colors.hues.yellow;
+    const ImVec4 normalTableColor = colors.foreground;
+    const ImVec4 normalColumnColor = colors.mutedForeground;
+    const ImVec4 foreignKeyColor = colors.hues.blue;
+    const ImVec4 typeColor = colors.mutedForeground;
+    const ImVec4 notNullColor = colors.hues.red;
+    const ImVec4 selectedColumnColor = colors.hues.orange;
 
     std::set<std::pair<std::string, std::string>> foreignKeyColumns;
     for (const auto& link : links) {
@@ -350,7 +350,7 @@ void DiagramTab::renderNodes() {
         const ImVec2 nodeMin = ImGui::GetCursorScreenPos();
         if (node.size.x > 0.0f) {
             const auto& neStyle = ax::NodeEditor::GetStyle();
-            ImVec4 headerBg = node.isPrimaryTable ? colors.yellow : colors.blue;
+            ImVec4 headerBg = node.isPrimaryTable ? colors.hues.yellow : colors.hues.blue;
             headerBg.w = 0.18f;
             auto* dl = ImGui::GetWindowDrawList();
             dl->AddRectFilled(nodeMin, ImVec2(nodeMin.x + node.size.x, nodeMin.y + headerH),
@@ -358,7 +358,7 @@ void DiagramTab::renderNodes() {
                               ImDrawFlags_RoundCornersTop);
             dl->AddLine(ImVec2(nodeMin.x, nodeMin.y + headerH),
                         ImVec2(nodeMin.x + node.size.x, nodeMin.y + headerH),
-                        ImGui::ColorConvertFloat4ToU32(colors.overlay0));
+                        ImGui::ColorConvertFloat4ToU32(colors.border));
         }
 
         ImGui::SetCursorScreenPos(ImVec2(nodeMin.x + padX, nodeMin.y + padY));
@@ -475,10 +475,10 @@ void DiagramTab::renderLinks() {
     }
 
     const auto& colors = Application::getInstance().getCurrentColors();
-    const ImU32 linkColor = ImGui::ColorConvertFloat4ToU32(colors.sky);
-    const ImU32 linkHoverColor = ImGui::ColorConvertFloat4ToU32(colors.blue);
-    const ImU32 linkSelectedColor = ImGui::ColorConvertFloat4ToU32(colors.peach);
-    ImVec4 selectedGlow = colors.peach;
+    const ImU32 linkColor = ImGui::ColorConvertFloat4ToU32(colors.hues.sky);
+    const ImU32 linkHoverColor = ImGui::ColorConvertFloat4ToU32(colors.hues.blue);
+    const ImU32 linkSelectedColor = ImGui::ColorConvertFloat4ToU32(colors.hues.orange);
+    ImVec4 selectedGlow = colors.hues.orange;
     selectedGlow.w = 0.30f;
     const ImU32 linkSelectedGlow = ImGui::ColorConvertFloat4ToU32(selectedGlow);
     constexpr float thickness = 2.5f;

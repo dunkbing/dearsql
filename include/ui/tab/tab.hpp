@@ -52,7 +52,7 @@ public:
         return false;
     }
     // a tab with its own bottom bar (pagination, status, buttons) gets the full height; the
-    // rest stop Theme::BottomBarHeight() short, where the fps counter sits
+    // rest stop themes::bottomBarHeight() short, where the fps counter sits
     [[nodiscard]] virtual bool hasBottomBar() const {
         return false;
     }

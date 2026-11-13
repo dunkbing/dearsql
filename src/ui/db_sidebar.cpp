@@ -91,7 +91,7 @@ void DatabaseSidebarNew::showConnectionDialog() {
 void DatabaseSidebarNew::renderEmpty() {
     const auto& app = Application::getInstance();
     const auto& colors = app.getCurrentColors();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::TextWrapped("No databases connected");
     ImGui::Spacing();
 #ifdef DEARSQL_MOBILE
@@ -297,7 +297,7 @@ void DatabaseSidebarNew::renderHistory() {
 
     const auto& entries = history.getEntries();
     if (entries.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextWrapped("No queries executed yet");
         ImGui::PopStyleColor();
         return;
@@ -326,21 +326,21 @@ void DatabaseSidebarNew::renderHistory() {
     auto getQueryTypeInfo = [&colors](QueryType type) -> std::pair<std::string, ImVec4> {
         switch (type) {
         case QueryType::Select:
-            return {"SELECT", colors.blue};
+            return {"SELECT", colors.primary};
         case QueryType::Insert:
-            return {"INSERT", colors.green};
+            return {"INSERT", colors.success};
         case QueryType::Update:
-            return {"UPDATE", colors.peach};
+            return {"UPDATE", colors.warning};
         case QueryType::Delete:
-            return {"DELETE", colors.red};
+            return {"DELETE", colors.destructive};
         case QueryType::Create:
-            return {"CREATE", colors.purple};
+            return {"CREATE", colors.hues.purple};
         case QueryType::Alter:
-            return {"ALTER", colors.yellow};
+            return {"ALTER", colors.hues.yellow};
         case QueryType::Drop:
-            return {"DROP", colors.maroon};
+            return {"DROP", colors.hues.red};
         default:
-            return {"OTHER", colors.overlay1};
+            return {"OTHER", colors.mutedForeground};
         }
     };
 
@@ -356,7 +356,7 @@ void DatabaseSidebarNew::renderHistory() {
         ImGui::PushStyleColor(ImGuiCol_Button, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, typeColor);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, typeColor);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.base);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.background);
         imshell::SmallButton(typeLabel.c_str(), imshell::ButtonVariant::Custom);
         ImGui::PopStyleColor(4);
 
@@ -368,7 +368,7 @@ void DatabaseSidebarNew::renderHistory() {
             displayQuery = displayQuery.substr(0, 27) + "...";
         }
 
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.foreground);
         if (ImGui::Selectable(displayQuery.c_str(), false, 0, ImVec2(availWidth, 0))) {
             // TODO: Could copy to clipboard or open in SQL editor
         }
@@ -392,7 +392,7 @@ void DatabaseSidebarNew::renderHistory() {
             ImGui::EndPopup();
         }
 
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         std::string metaInfo = formatRelativeTime(entry.timestamp);
         if (entry.rowCount > 0) {
             metaInfo += std::format(" {} rows", entry.rowCount);
@@ -422,16 +422,16 @@ void DatabaseSidebarNew::renderHistoryToggleButton(float height) {
         historyPanelOpen = !historyPanelOpen;
     }
     if (hovered) {
-        drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+        drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
     }
-    drawList->AddLine(btnMin, ImVec2(btnMax.x, btnMin.y), ImGui::GetColorU32(colors.overlay0),
+    drawList->AddLine(btnMin, ImVec2(btnMax.x, btnMin.y), ImGui::GetColorU32(colors.border),
                       1.0f);
 
     const std::string label =
         std::format("{} History", historyPanelOpen ? ICON_FA_CHEVRON_DOWN : ICON_FA_CHEVRON_UP);
     drawList->AddText(ImVec2(btnMin.x + Theme::Spacing::S,
                              btnMin.y + (height - ImGui::GetTextLineHeight()) * 0.5f),
-                      ImGui::GetColorU32(hovered ? colors.text : colors.subtext0), label.c_str());
+                      ImGui::GetColorU32(hovered ? colors.foreground : colors.mutedForeground), label.c_str());
 }
 
 DatabaseSidebarNew::DatabaseSidebarNew() = default;
@@ -448,12 +448,12 @@ void DatabaseSidebarNew::render() {
     ImGui::PopStyleVar();
 
     ImGui::PushStyleColor(ImGuiCol_Header,
-                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.6f));
+                          ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.6f));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                          ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.8f));
+                          ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive,
-                          ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f));
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+                          ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.muted);
 
     // claw back the window's leading gap so the tree sits close under the titlebar
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
@@ -520,22 +520,22 @@ void DatabaseSidebarNew::renderHistoryPanel() {
         const ImVec2 historyPanelSize = ImGui::GetWindowSize();
         historyDrawList->AddLine(historyPanelPos,
                                  ImVec2(historyPanelPos.x + historyPanelSize.x, historyPanelPos.y),
-                                 ImGui::GetColorU32(colors.overlay0), 1.0f);
+                                 ImGui::GetColorU32(colors.border), 1.0f);
 
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextUnformatted("HISTORY");
         ImGui::PopStyleColor();
 
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 16.0f);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.surface1.x, colors.surface1.y,
-                                                             colors.surface1.z, 0.5f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.accent.x, colors.accent.y,
+                                                             colors.accent.z, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, imshell::Pressed(colors.accent));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
         if (imshell::IconButton(ICON_FA_TRASH_CAN "##clear_history",
-                               imshell::ButtonVariant::Danger)) {
+                               imshell::ButtonVariant::Destructive)) {
             history.clear();
         }
         ImGui::PopStyleVar();
@@ -605,7 +605,8 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     // status colour fills the whole row. Drawn before the node so the label sits
     // on top of it, and kept translucent so the text stays readable against any
     // palette entry in either theme.
-    if (ImVec4 accent; Theme::ConnectionPalette::resolve(connectionInfo.color, colors, accent)) {
+    if (auto picked = themes::connectionColor(connectionInfo.color)) {
+        ImVec4 accent = *picked;
         const ImVec2 rowMin = ImGui::GetCursorScreenPos();
         const float rowLeft = ImGui::GetWindowPos().x;
         const float rowRight = rowLeft + ImGui::GetWindowContentRegionMax().x;
@@ -636,9 +637,9 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
     if (showSpinner) {
         const ImVec2 centre(dbIconPos.x + iconSize * 0.5f, dbIconPos.y + iconSize * 0.5f);
         imshell::SpinnerOverlay(ImGui::GetWindowDrawList(), centre, 6.0f, 2,
-                               ImGui::GetColorU32(colors.peach));
+                               ImGui::GetColorU32(colors.warning));
     } else if (dearsql::isCsvPath(connectionInfo.path)) {
-        ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.green),
+        ImGui::GetWindowDrawList()->AddText(dbIconPos, ImGui::GetColorU32(colors.success),
                                             ICON_FA_FILE_CSV);
     } else {
         ImTextureID iconTex = texMgr.getIcon(type);
@@ -750,7 +751,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
             const std::string countStr =
                 hiddenCount > 0 ? std::format("{}/{}", visibleCount, total) : std::to_string(total);
-            const ImVec4& badgeColor = hiddenCount > 0 ? colors.peach : colors.overlay1;
+            const ImVec4& badgeColor = hiddenCount > 0 ? colors.warning : colors.mutedForeground;
 
             const float textW = ImGui::CalcTextSize(countStr.c_str()).x;
             constexpr float hPad = 4.0f;
@@ -777,7 +778,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
 
             if (badgeHovered) {
                 ImGui::GetWindowDrawList()->AddRectFilled(
-                    badgeMin, badgeMax, ImGui::GetColorU32(colors.surface1), 3.0f);
+                    badgeMin, badgeMax, ImGui::GetColorU32(colors.accent), 3.0f);
                 ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(badgeColor),
                                                     countStr.c_str());
             }
@@ -806,18 +807,18 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
         }
 
         if (db->isConnecting()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
             ImGui::Text("  Connecting...");
             ImGui::SameLine(0, Theme::Spacing::S);
-            imshell::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##connecting_spinner", 6.0f, 2, ImGui::GetColorU32(colors.warning));
             ImGui::PopStyleColor();
         } else if (!db->isConnected() && !db->hasAttemptedConnection()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
             ImGui::Text("  Click to connect");
             ImGui::PopStyleColor();
         } else if (db->hasAttemptedConnection() && !db->isConnected() &&
                    !db->getLastConnectionError().empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
             ImGui::TextWrapped("  Connection failed: %s", db->getLastConnectionError().c_str());
             ImGui::PopStyleColor();
 
@@ -826,11 +827,11 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                 oracleClientInstaller_.checkStatus();
 
                 if (oracleClientInstaller_.isRunning()) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
                     ImGui::Text("  %s", oracleClientInstaller_.getStatusMessage().c_str());
                     ImGui::SameLine(0, Theme::Spacing::S);
                     imshell::Spinner("##oracle_install_spinner", 6.0f, 2,
-                                    ImGui::GetColorU32(colors.peach));
+                                    ImGui::GetColorU32(colors.warning));
                     ImGui::PopStyleColor();
                 } else if (oracleClientInstaller_.getStatus() ==
                            OracleClientInstaller::Status::Done) {
@@ -1010,7 +1011,7 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
     ImGui::GetWindowDrawList()->AddText(
         ImVec2(min.x + ImGui::GetTreeNodeToLabelSpacing(),
                min.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f),
-        ImGui::GetColorU32(colors.purple), ICON_FA_COMMENTS);
+        ImGui::GetColorU32(colors.hues.purple), ICON_FA_COMMENTS);
     const auto newChat = [&] {
         app.getTabManager()->createAIChatTab(db);
         if (!db->isConnected() && !db->isConnecting()) {
@@ -1039,7 +1040,7 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
     }
 
     if (cache.sessions.empty()) {
-        ImGui::TextColored(colors.subtext0, "  No chats yet");
+        ImGui::TextColored(colors.mutedForeground, "  No chats yet");
     }
     constexpr ImGuiTreeNodeFlags leafFlags = ImGuiTreeNodeFlags_Leaf |
                                              ImGuiTreeNodeFlags_NoTreePushOnOpen |
@@ -1057,19 +1058,19 @@ void DatabaseSidebarNew::renderChatHistoryNode(const std::shared_ptr<DatabaseInt
             itemMin.y + (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f;
         const float iconX = itemMin.x + ImGui::GetTreeNodeToLabelSpacing();
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-        drawList->AddText(ImVec2(iconX, textY), ImGui::GetColorU32(colors.subtext0),
+        drawList->AddText(ImVec2(iconX, textY), ImGui::GetColorU32(colors.mutedForeground),
                           ICON_FA_COMMENT);
 
         // dim age anchored to the right edge, like the table size badge
         const std::string age = relativeAge(session.updatedAt);
         const float rightEdge = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
         const float ageX = rightEdge - ImGui::CalcTextSize(age.c_str()).x - Theme::Spacing::M;
-        drawList->AddText(ImVec2(ageX, textY), ImGui::GetColorU32(colors.subtext0), age.c_str());
+        drawList->AddText(ImVec2(ageX, textY), ImGui::GetColorU32(colors.mutedForeground), age.c_str());
 
         const float titleX = iconX + ImGui::CalcTextSize(ICON_FA_COMMENT).x + Theme::Spacing::S;
         const float titleMaxX = ageX - Theme::Spacing::S;
         if (titleMaxX > titleX) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.foreground);
             ImGui::RenderTextEllipsis(drawList, ImVec2(titleX, textY),
                                       ImVec2(titleMaxX, textY + ImGui::GetTextLineHeight()),
                                       titleMaxX, session.title.c_str(), nullptr, nullptr);

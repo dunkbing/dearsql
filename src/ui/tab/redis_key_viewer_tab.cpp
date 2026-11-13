@@ -85,18 +85,18 @@ void RedisKeyViewerTab::initializeTableRenderer() {
                 return 0;
             const auto& colors = Application::getInstance().getCurrentColors();
             if (value == "string")
-                return ImGui::GetColorU32(colors.green);
+                return ImGui::GetColorU32(colors.success);
             if (value == "list")
-                return ImGui::GetColorU32(colors.blue);
+                return ImGui::GetColorU32(colors.primary);
             if (value == "set")
-                return ImGui::GetColorU32(colors.purple);
+                return ImGui::GetColorU32(colors.hues.purple);
             if (value == "zset")
-                return ImGui::GetColorU32(colors.peach);
+                return ImGui::GetColorU32(colors.warning);
             if (value == "hash")
-                return ImGui::GetColorU32(colors.yellow);
+                return ImGui::GetColorU32(colors.hues.yellow);
             if (value == "stream")
-                return ImGui::GetColorU32(colors.teal);
-            return ImGui::GetColorU32(colors.subtext0);
+                return ImGui::GetColorU32(colors.hues.teal);
+            return ImGui::GetColorU32(colors.mutedForeground);
         });
 }
 
@@ -168,7 +168,7 @@ void RedisKeyViewerTab::render() {
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
 
         ImGui::AlignTextToFramePadding();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
         ImGui::Text(ICON_FA_DATABASE);
         ImGui::PopStyleColor();
         ImGui::SameLine(0, Theme::Spacing::S);
@@ -176,7 +176,7 @@ void RedisKeyViewerTab::render() {
             const auto& connInfo = db_->getConnectionInfo();
             ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
             ImGui::SameLine(0, Theme::Spacing::L);
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.blue));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.primary));
             ImGui::Text("db%d", dbIndex_);
             ImGui::PopStyleColor();
             ImGui::SameLine(0, Theme::Spacing::L);
@@ -191,7 +191,7 @@ void RedisKeyViewerTab::render() {
         renderToolbar();
 
         if (!saveError_.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
             ImGui::TextWrapped("%s", saveError_.c_str());
             ImGui::PopStyleColor();
         }
@@ -400,7 +400,7 @@ void RedisKeyViewerTab::renderToolbar() {
     // save/cancel
     ImGui::SameLine(0, Theme::Spacing::L);
     if (hasChanges_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.success);
         if (imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary)) {
             saveChanges();
         }
@@ -409,8 +409,8 @@ void RedisKeyViewerTab::renderToolbar() {
             ImGui::SetTooltip("Save");
 
         ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
+        if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Destructive)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
@@ -418,7 +418,7 @@ void RedisKeyViewerTab::renderToolbar() {
             ImGui::SetTooltip("Discard changes");
 
         ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextColored(colors.peach, "Unsaved changes");
+        ImGui::TextColored(colors.warning, "Unsaved changes");
     } else {
         ImGui::BeginDisabled();
         imshell::IconButton(ICON_FA_FLOPPY_DISK, imshell::ButtonVariant::Primary);
@@ -428,7 +428,7 @@ void RedisKeyViewerTab::renderToolbar() {
 
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::BeginDisabled();
-        imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger);
+        imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Destructive);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Discard changes");

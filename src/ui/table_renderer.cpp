@@ -486,7 +486,7 @@ void TableRenderer::render(const char* tableId) {
         // a step above the theme's header bg, so it stands out from the rows
         ImGui::TableSetBgColor(
             ImGuiTableBgTarget_RowBg0,
-            ImGui::GetColorU32(Application::getInstance().getCurrentColors().surface1));
+            ImGui::GetColorU32(Application::getInstance().getCurrentColors().accent));
 
         // Skip row number column header if present
         if (config.showRowNumbers) {
@@ -516,7 +516,7 @@ void TableRenderer::render(const char* tableId) {
                     ImGui::TableSetBgColor(
                         ImGuiTableBgTarget_RowBg1,
                         ImGui::GetColorU32(
-                            ImVec4(colors.surface1.x, colors.surface1.y, colors.surface1.z, 0.4f)));
+                            ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f)));
                 }
 
                 if (config.showRowNumbers) {
@@ -531,8 +531,8 @@ void TableRenderer::render(const char* tableId) {
                         const ImVec2 cellPos = ImGui::GetCursorPos();
                         ImGui::PushID(rowIdx);
                         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
-                        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.surface1);
-                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors.surface2);
+                        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.accent);
+                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, imshell::Pressed(colors.accent));
                         if (ImGui::Selectable("##rownum", false, ImGuiSelectableFlags_None)) {
                             if (ImGui::GetIO().KeyShift && rangeAnchorRow >= 0)
                                 selectRows(rangeAnchorRow, rowIdx);
@@ -621,8 +621,8 @@ void TableRenderer::renderCell(int row, int col) {
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
         const ImVec4 tint = isPendingDelete
-                                ? ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.3f)
-                                : ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.15f);
+                                ? ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)
+                                : ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.15f);
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(tint));
 
         auto dropdownIt = config.columnDropdownOptions.find(col);
@@ -670,9 +670,9 @@ void TableRenderer::renderCell(int row, int col) {
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
             ImGui::PushStyleColor(ImGuiCol_PopupBg,
-                                  Application::getInstance().getCurrentColors().base);
+                                  Application::getInstance().getCurrentColors().background);
             ImGui::PushStyleColor(ImGuiCol_Border,
-                                  Application::getInstance().getCurrentColors().overlay0);
+                                  Application::getInstance().getCurrentColors().border);
 
             // ensure popup is tall enough for 6 calendar rows + header + day labels
             float rowH = ImGui::GetFrameHeight();
@@ -797,21 +797,21 @@ void TableRenderer::renderCell(int row, int col) {
         if (isPendingDelete) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.red.x, colors.red.y, colors.red.z, 0.3f)));
+                ImGui::GetColorU32(ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)));
         } else if (isEdited && isSelected) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.5f)));
+                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.5f)));
         } else if (isEdited) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.teal.x, colors.teal.y, colors.teal.z, 0.3f)));
+                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.3f)));
         } else if (isSelected) {
-            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface2));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(imshell::Pressed(colors.accent)));
         } else if (inRange) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.25f)));
+                ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.25f)));
         }
 
         const std::string& cellValue = data[row][col];
@@ -828,7 +828,7 @@ void TableRenderer::renderCell(int row, int col) {
         // their own styling -- there is nothing to follow
         if (!hasColorOverride && col < static_cast<int>(fkTargets.size()) &&
             !fkTargets[col].empty() && !isNullSentinel(cellValue)) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.primary);
             hasColorOverride = true;
         }
 
@@ -848,7 +848,7 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::PopStyleColor();
                 ImGui::PopStyleVar();
             } else if (isNullSentinel(cellValue)) {
-                ImGui::TextColored(colors.overlay1, "NULL");
+                ImGui::TextColored(colors.mutedForeground, "NULL");
             } else {
                 ImGui::Text("%s", getFirstLine(cellValue).c_str());
             }
@@ -872,7 +872,7 @@ void TableRenderer::renderCell(int row, int col) {
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 dl->PushClipRect(tbl->InnerClipRect.Min, tbl->InnerClipRect.Max, true);
                 dl->AddRect(cellRect.Min, cellRect.Max,
-                            ImGui::GetColorU32(isPendingDelete ? colors.red : colors.blue), 0.0f, 0,
+                            ImGui::GetColorU32(isPendingDelete ? colors.destructive : colors.primary), 0.0f, 0,
                             2.0f);
                 dl->PopClipRect();
             }
@@ -963,7 +963,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         }
 
         if (ImGui::IsItemHovered() && !isSelected && editable) {
-            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.accent));
         }
 
         renderCellContextMenu(row, col);
@@ -990,7 +990,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
 
     if (isNull)
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.overlay1));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.mutedForeground));
 
     const int previousSelectedRow = selectedRow;
     const int previousSelectedCol = selectedCol;
@@ -1035,7 +1035,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
 
     if (ImGui::IsItemHovered() && !isSelected && !config.nonEditableColumns.contains(col) &&
         (!cellEditableCb || cellEditableCb(row, col))) {
-        ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.surface1));
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(colors.accent));
     }
 
     const bool cellHovered = ImGui::IsItemHovered();
@@ -1066,7 +1066,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
             ImGui::SetTooltip("Go to %s", fkTargets[col].c_str());
         }
         ImGui::GetWindowDrawList()->AddText(
-            pos, ImGui::GetColorU32(iconHovered ? colors.blue : colors.overlay1),
+            pos, ImGui::GetColorU32(iconHovered ? colors.primary : colors.mutedForeground),
             ICON_FA_UP_RIGHT_FROM_SQUARE);
         ImGui::SetCursorScreenPos(savedCursor);
     }
@@ -1281,7 +1281,7 @@ void TableRenderer::scrollToCell(int row, int col) {
 }
 
 // render a button with an optional keyboard shortcut badge
-static bool buttonWithBadge(const char* label, const char* badge, const Theme::Colors& colors) {
+static bool buttonWithBadge(const char* label, const char* badge, const Theme& colors) {
     auto& style = ImGui::GetStyle();
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
@@ -1299,10 +1299,10 @@ static bool buttonWithBadge(const char* label, const char* badge, const Theme::C
     ImGui::PopID();
     bool hovered = ImGui::IsItemHovered();
 
-    ImU32 bgCol = hovered ? ImGui::GetColorU32(colors.surface1) : IM_COL32(0, 0, 0, 0);
+    ImU32 bgCol = hovered ? ImGui::GetColorU32(colors.accent) : IM_COL32(0, 0, 0, 0);
     ImVec2 max = ImVec2(pos.x + totalW, pos.y + h);
     dl->AddRectFilled(pos, max, bgCol, style.FrameRounding);
-    dl->AddRect(pos, max, ImGui::GetColorU32(colors.overlay0), style.FrameRounding);
+    dl->AddRect(pos, max, ImGui::GetColorU32(colors.border), style.FrameRounding);
 
     float textY = pos.y + (h - ImGui::GetTextLineHeight()) * 0.5f;
     dl->AddText(ImVec2(pos.x + style.FramePadding.x, textY), ImGui::GetColorU32(ImGuiCol_Text),
@@ -1314,11 +1314,11 @@ static bool buttonWithBadge(const char* label, const char* badge, const Theme::C
         float badgeY = pos.y + (h - badgeH) * 0.5f;
         ImVec2 bMin(badgeX, badgeY);
         ImVec2 bMax(badgeX + badgeFullW, badgeY + badgeH);
-        dl->AddRectFilled(bMin, bMax, ImGui::GetColorU32(colors.surface1), 3.0f);
-        dl->AddRect(bMin, bMax, ImGui::GetColorU32(colors.overlay0), 3.0f);
+        dl->AddRectFilled(bMin, bMax, ImGui::GetColorU32(colors.accent), 3.0f);
+        dl->AddRect(bMin, bMax, ImGui::GetColorU32(colors.border), 3.0f);
         dl->AddText(
             ImVec2(badgeX + badgePadX, badgeY + (badgeH - ImGui::GetTextLineHeight()) * 0.5f),
-            ImGui::GetColorU32(colors.overlay1), badge);
+            ImGui::GetColorU32(colors.mutedForeground), badge);
     }
 
     return pressed;
@@ -1351,8 +1351,8 @@ void TableRenderer::renderEditOverlay() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.blue);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.muted);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.primary);
 
     bool wantSave = false;
     bool wantCancel = false;
@@ -1480,7 +1480,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
         constexpr float kIconDrop = 0.75f;
         ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * kIconScale);
         ImGui::SetCursorPosY(lineY + (lineH - ImGui::GetTextLineHeight()) * kIconDrop);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.primary);
         ImGui::TextUnformatted(ICON_FA_KEY);
         ImGui::PopStyleColor();
         ImGui::PopFont();
@@ -1496,7 +1496,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
 
     if (isSorted) {
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.blue);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.primary);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
 
         const char* icon = sortDirection == SortDirection::Ascending

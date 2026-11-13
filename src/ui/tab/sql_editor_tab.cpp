@@ -214,7 +214,7 @@ void SQLEditorTab::render() {
                 ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
 
                 const auto& colors = Application::getInstance().getCurrentColors();
-                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
+                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.background));
                 bg.w = 0.75f;
 
                 ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -609,11 +609,11 @@ void SQLEditorTab::renderToolbar(const bool narrow) {
     // before the buttons, so they stay put when it appears
     if (syntaxDiagnostic_.active && narrow) {
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+        ImGui::TextColored(colors.warning, ICON_FA_TRIANGLE_EXCLAMATION);
         ImGui::SameLine(0, Theme::Spacing::M);
     } else if (syntaxDiagnostic_.active) {
         ImGui::AlignTextToFramePadding();
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
         std::string inlineMessage =
             std::string(ICON_FA_TRIANGLE_EXCLAMATION) + " " + syntaxDiagnostic_.message;
         // capped, or a long server message pushes run off the line; full text on hover
@@ -1365,7 +1365,7 @@ void SQLEditorTab::initAIPanel() {
 void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     if (ImGui::BeginChild("AIToggleStrip", ImVec2(stripWidth, availableHeight),
                           ImGuiChildFlags_None)) {
@@ -1374,7 +1374,7 @@ void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) 
 
         // Draw left borderline
         drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+                          ImGui::GetColorU32(colors.border), 1.0f);
 
         // Rotated "AI" label as a clickable tab
         const char* label = "Assistant";
@@ -1397,13 +1397,13 @@ void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) 
         const ImVec2 btnMin = stripPos;
         const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
         if (aiPanelVisible_) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
         } else if (hovered) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
         }
 
         // Bottom border of button area
-        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.border),
                           1.0f);
 
         // Draw rotated text centered in the button area
@@ -1416,7 +1416,7 @@ void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) 
         const int vtxBegin = drawList->VtxBuffer.Size;
         drawList->AddText(
             ImVec2(textX, textY),
-            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.text : colors.subtext0), label);
+            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.foreground : colors.mutedForeground), label);
         const int vtxEnd = drawList->VtxBuffer.Size;
 
         // Rotate all text vertices 90 degrees (top-to-bottom reading) around center
@@ -1538,7 +1538,7 @@ void SQLEditorTab::renderScriptHeader() {
     ImGui::AlignTextToFramePadding();
 
     // file icon
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::TextUnformatted(ICON_FA_FILE_CODE);
     ImGui::PopStyleColor();
     ImGui::SameLine(0, Theme::Spacing::S);
@@ -1593,13 +1593,13 @@ void SQLEditorTab::renderScriptHeader() {
 
         // show the immutable ".sql" extension alongside the input
         ImGui::SameLine(0, 0);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextUnformatted(".sql");
         ImGui::PopStyleColor();
     } else {
         // display name (greyed out if not yet saved)
         const bool saved = !filePath_.empty();
-        ImGui::PushStyleColor(ImGuiCol_Text, saved ? colors.text : colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, saved ? colors.foreground : colors.mutedForeground);
         ImGui::TextUnformatted(scriptName_.c_str());
         ImGui::PopStyleColor();
 
@@ -1607,10 +1607,10 @@ void SQLEditorTab::renderScriptHeader() {
 
         // edit icon button
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.surface1.x, colors.surface1.y,
-                                                             colors.surface1.z, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface2);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.accent.x, colors.accent.y,
+                                                             colors.accent.z, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, imshell::Pressed(colors.accent));
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
@@ -1629,12 +1629,12 @@ void SQLEditorTab::renderScriptHeader() {
         // unsaved indicator
         if (contentModified_) {
             ImGui::SameLine(0, Theme::Spacing::S);
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
             ImGui::TextUnformatted(ICON_FA_CIRCLE "  unsaved");
             ImGui::PopStyleColor();
         } else if (!filePath_.empty() && !narrow) {
             ImGui::SameLine(0, Theme::Spacing::S);
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
             ImGui::TextUnformatted(filePath_.c_str());
             ImGui::PopStyleColor();
         }
@@ -1656,7 +1656,7 @@ void SQLEditorTab::renderScriptHeader() {
 void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     if (ImGui::BeginChild("AIPanel", ImVec2(panelWidth, availableHeight),
                           ImGuiChildFlags_Borders)) {
@@ -1735,7 +1735,7 @@ void SQLEditorTab::renderParamPrompt() {
         }
     }
     const auto& colors = Application::getInstance().getCurrentColors();
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::TextWrapped("Numbers and NULL go in as typed, anything else as a quoted string.");
     ImGui::PopStyleColor();
 

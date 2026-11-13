@@ -463,7 +463,7 @@ void RedisEditorTab::render() {
                     const ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
 
                     const auto& colors = Application::getInstance().getCurrentColors();
-                    ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
+                    ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.background));
                     bg.w = 0.75f;
 
                     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -528,24 +528,24 @@ void RedisEditorTab::renderHeader() const {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
     ImGui::Text(ICON_FA_DATABASE);
     ImGui::PopStyleColor();
     ImGui::SameLine(0, Theme::Spacing::S);
     ImGui::Text("%s:%d", connInfo.host.c_str(), connInfo.port);
 
     ImGui::SameLine(0, Theme::Spacing::L);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.blue));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.primary));
     ImGui::Text("db%d", db_->getSelectedDatabase());
     ImGui::PopStyleColor();
 
     ImGui::SameLine(0, Theme::Spacing::L);
     if (db_->isConnected()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.green));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.success));
         ImGui::Text(ICON_FA_CIRCLE " Connected");
         ImGui::PopStyleColor();
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
         ImGui::Text(ICON_FA_CIRCLE_EXCLAMATION " Disconnected");
         ImGui::PopStyleColor();
     }
@@ -572,7 +572,7 @@ void RedisEditorTab::renderToolbar() {
 
     if (!resultHistory_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (imshell::Button(ICON_FA_TRASH_CAN " Clear", imshell::ButtonVariant::Danger)) {
+        if (imshell::Button(ICON_FA_TRASH_CAN " Clear", imshell::ButtonVariant::Destructive)) {
             resultHistory_.clear();
         }
     }
@@ -626,11 +626,11 @@ void RedisEditorTab::renderResults() {
                 // result
                 ImGui::TableNextColumn();
                 if (entry.success) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.green));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.success));
                     ImGui::TextWrapped("%s", entry.result.c_str());
                     ImGui::PopStyleColor();
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
                     ImGui::TextWrapped("%s", entry.errorMessage.c_str());
                     ImGui::PopStyleColor();
                 }
@@ -655,7 +655,7 @@ void RedisEditorTab::renderResults() {
 
                 // delete
                 ImGui::TableNextColumn();
-                if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Danger,
+                if (imshell::IconButton(ICON_FA_XMARK, imshell::ButtonVariant::Destructive,
                                        ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
                     deleteIdx = idx;
                 }

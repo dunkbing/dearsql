@@ -104,7 +104,7 @@ void PostgresSequenceViewerTab::render() {
     }
 
     if (loadError_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
         ImGui::TextWrapped("Failed to load sequence: %s", loadErrorMessage_.c_str());
         ImGui::PopStyleColor();
         return;
@@ -263,7 +263,7 @@ void PostgresSequenceViewerTab::renderToolbar() {
     const bool dirty = isDirty();
 
     if (dirty) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.success);
         if (imshell::Button(ICON_FA_FLOPPY_DISK " Save", imshell::ButtonVariant::Primary)) {
             saveChanges();
         }
@@ -279,14 +279,14 @@ void PostgresSequenceViewerTab::renderToolbar() {
 
     ImGui::SameLine(0, Theme::Spacing::M);
     if (dirty) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
-        if (imshell::Button(ICON_FA_XMARK " Discard", imshell::ButtonVariant::Danger)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
+        if (imshell::Button(ICON_FA_XMARK " Discard", imshell::ButtonVariant::Destructive)) {
             cancelChanges();
         }
         ImGui::PopStyleColor();
     } else {
         ImGui::BeginDisabled();
-        imshell::Button(ICON_FA_XMARK " Discard", imshell::ButtonVariant::Danger);
+        imshell::Button(ICON_FA_XMARK " Discard", imshell::ButtonVariant::Destructive);
         ImGui::EndDisabled();
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -295,7 +295,7 @@ void PostgresSequenceViewerTab::renderToolbar() {
 
     if (dirty) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::TextColored(colors.peach, "Unsaved changes");
+        ImGui::TextColored(colors.warning, "Unsaved changes");
     }
 }
 
@@ -423,15 +423,15 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
         dearsql::TextEditor::FromTheme(Application::getInstance().getCurrentColors()));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.base);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.background);
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0.55f));
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
 
     if (ImGui::BeginPopupModal("Confirm Update Sequence", nullptr,
                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextUnformatted("Review and edit the SQL before executing.");
         ImGui::PopStyleColor();
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
@@ -455,9 +455,9 @@ void PostgresSequenceViewerTab::showSaveConfirmationDialog() {
             ImGui::EndDisabled();
 
             ImGui::SameLine(0, Theme::Spacing::M);
-            imshell::Spinner("##pg_seq_exec_spinner", 7.0f, 2, ImGui::GetColorU32(colors.blue));
+            imshell::Spinner("##pg_seq_exec_spinner", 7.0f, 2, ImGui::GetColorU32(colors.primary));
             ImGui::SameLine(0, Theme::Spacing::S);
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
             ImGui::TextUnformatted("Executing...");
             ImGui::PopStyleColor();
         } else {

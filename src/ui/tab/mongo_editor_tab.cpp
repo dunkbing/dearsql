@@ -109,7 +109,7 @@ void MongoEditorTab::render() {
                 ImVec2 overlayEnd(winPos.x + winSize.x, winPos.y + winSize.y);
 
                 const auto& colors = Application::getInstance().getCurrentColors();
-                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.base));
+                ImVec4 bg = ImGui::ColorConvertU32ToFloat4(ImGui::GetColorU32(colors.background));
                 bg.w = 0.75f;
 
                 ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -155,7 +155,7 @@ void MongoEditorTab::renderHeader() const {
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.green));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.success));
     ImGui::Text(ICON_FA_DATABASE);
     ImGui::PopStyleColor();
     ImGui::SameLine(0, Theme::Spacing::S);
@@ -497,7 +497,7 @@ void MongoEditorTab::initAIPanel() {
 void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     if (ImGui::BeginChild("MongoAIToggleStrip", ImVec2(stripWidth, availableHeight),
                           ImGuiChildFlags_None)) {
@@ -506,7 +506,7 @@ void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight
 
         // left borderline
         drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.overlay0), 1.0f);
+                          ImGui::GetColorU32(colors.border), 1.0f);
 
         // rotated "Assistant" label as clickable tab
         const char* label = "Assistant";
@@ -529,11 +529,11 @@ void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight
         const ImVec2 btnMin = stripPos;
         const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
         if (aiPanelVisible_ || hovered) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.surface1));
+            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
         }
 
         // bottom border of button area
-        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.overlay0),
+        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.border),
                           1.0f);
 
         // draw rotated text centered in the button area
@@ -546,7 +546,7 @@ void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight
         const int vtxBegin = drawList->VtxBuffer.Size;
         drawList->AddText(
             ImVec2(textX, textY),
-            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.text : colors.subtext0), label);
+            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.foreground : colors.mutedForeground), label);
         const int vtxEnd = drawList->VtxBuffer.Size;
 
         // rotate all text vertices 90 degrees around center
@@ -567,7 +567,7 @@ void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight
 void MongoEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
     const auto& colors = Application::getInstance().getCurrentColors();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
     if (ImGui::BeginChild("MongoAIPanel", ImVec2(panelWidth, availableHeight),
                           ImGuiChildFlags_Borders)) {

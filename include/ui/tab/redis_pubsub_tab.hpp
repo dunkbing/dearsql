@@ -70,9 +70,9 @@ private:
                               const DatabaseConnectionInfo& info, const std::string& pattern,
                               const std::stop_token& stop);
 
-    void renderToolbar(const Theme::Colors& colors);
-    void renderMessageTable(const Theme::Colors& colors);
-    void renderPublishBar(const Theme::Colors& colors);
+    void renderToolbar(const Theme& colors);
+    void renderMessageTable(const Theme& colors);
+    void renderPublishBar(const Theme& colors);
     void drainPendingMessages();
     void publish(const std::string& channel, const std::string& message);
 

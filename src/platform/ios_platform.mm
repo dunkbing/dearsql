@@ -327,15 +327,15 @@ void ios::applyTheme(const bool dark) {
     };
     UINavigationBarAppearance* look = [[UINavigationBarAppearance alloc] init];
     [look configureWithOpaqueBackground];
-    look.backgroundColor = color(c.mantle);
-    look.shadowColor = color(c.surface0);
-    look.titleTextAttributes = @{NSForegroundColorAttributeName : color(c.text)};
+    look.backgroundColor = color(c.sidebar);
+    look.shadowColor = color(c.muted);
+    look.titleTextAttributes = @{NSForegroundColorAttributeName : color(c.foreground)};
     UINavigationBar* bar = gNav.navigationBar;
     bar.standardAppearance = look;
     bar.compactAppearance = look;
     bar.scrollEdgeAppearance = look;
     bar.compactScrollEdgeAppearance = look;
-    bar.tintColor = color(c.text);
-    gNav.view.backgroundColor = color(c.base); // beside the notch in landscape
+    bar.tintColor = color(c.foreground);
+    gNav.view.backgroundColor = color(c.background); // beside the notch in landscape
     gNav.overrideUserInterfaceStyle = dark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
 }

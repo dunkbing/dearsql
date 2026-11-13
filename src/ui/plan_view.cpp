@@ -45,7 +45,7 @@ namespace {
         if (!n.properties.empty() && ImGui::IsItemHovered()) {
             ImGui::BeginTooltip();
             for (const auto& [key, value] : n.properties) {
-                ImGui::TextColored(colors.subtext0, "%s:", key.c_str());
+                ImGui::TextColored(colors.mutedForeground, "%s:", key.c_str());
                 ImGui::SameLine();
                 ImGui::TextUnformatted(value.c_str());
             }
@@ -53,13 +53,13 @@ namespace {
         }
         if (!n.detail.empty()) {
             ImGui::SameLine(0, Theme::Spacing::M);
-            ImGui::TextColored(colors.overlay1, "%s", n.detail.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", n.detail.c_str());
         }
         for (const auto& w : warnings) {
             if (w.node != &n)
                 continue;
             ImGui::SameLine(0, Theme::Spacing::M);
-            ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+            ImGui::TextColored(colors.warning, ICON_FA_TRIANGLE_EXCLAMATION);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", w.message.c_str());
         }
@@ -73,7 +73,7 @@ namespace {
                                    count(*n.actualRows));
             }
             if (misestimated(n)) {
-                ImGui::TextColored(colors.peach, "%s", rows.c_str());
+                ImGui::TextColored(colors.warning, "%s", rows.c_str());
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("The planner expected %s rows per loop and got %s",
                                       count(*n.estimatedRows).c_str(),
@@ -101,11 +101,11 @@ namespace {
                             : 0.0f;
                     const ImVec2 p = ImGui::GetCursorScreenPos();
                     const float w = ImGui::GetContentRegionAvail().x;
-                    ImVec4 bar = share >= 0.3f ? colors.red : colors.blue;
+                    ImVec4 bar = share >= 0.3f ? colors.destructive : colors.primary;
                     bar.w = 0.35f;
                     ImGui::GetWindowDrawList()->AddRectFilled(
                         p, ImVec2(p.x + w * share, p.y + ImGui::GetTextLineHeight()),
-                        ImGui::GetColorU32(bar), Theme::CornerRadius::SMALL);
+                        ImGui::GetColorU32(bar), Theme::Radius::Sm);
                     ImGui::Text("%.3f ms  %.0f%%", *n.selfTimeMs, share * 100.0f);
                 }
             }
@@ -123,7 +123,7 @@ namespace {
 void PlanView::render(const dearsql::Plan& plan, bool& showRaw) {
     const auto& colors = Application::getInstance().getCurrentColors();
     if (plan.planningTimeMs || plan.executionTimeMs) {
-        ImGui::TextColored(colors.subtext0, "Planning %.3f ms   Execution %.3f ms",
+        ImGui::TextColored(colors.mutedForeground, "Planning %.3f ms   Execution %.3f ms",
                            plan.planningTimeMs.value_or(0.0), plan.executionTimeMs.value_or(0.0));
         ImGui::SameLine(0, Theme::Spacing::L);
     }
@@ -141,7 +141,7 @@ void PlanView::render(const dearsql::Plan& plan, bool& showRaw) {
     // fixed rules over the tree: hints, so the user can judge
     const auto warnings = dearsql::reviewPlan(plan);
     for (const auto& w : warnings) {
-        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION);
+        ImGui::TextColored(colors.warning, ICON_FA_TRIANGLE_EXCLAMATION);
         ImGui::SameLine(0, Theme::Spacing::S);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextUnformatted(w.message.c_str());

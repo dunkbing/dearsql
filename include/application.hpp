@@ -47,14 +47,14 @@ public:
 
     // Theme management
     [[nodiscard]] bool isDarkTheme() const {
-        return theme_->dark;
+        return imshell::CurrentTheme().dark;
     }
-    [[nodiscard]] const Theme::ThemeDef& getTheme() const {
-        return *theme_;
+    [[nodiscard]] const Theme& getTheme() const {
+        return imshell::CurrentTheme();
     }
-    // by Theme::THEMES id; applied at once and saved
+    // by preset id; applied at once and saved
     void setTheme(std::string_view id);
-    [[nodiscard]] const Theme::Colors& getCurrentColors() const;
+    [[nodiscard]] const Theme& getCurrentColors() const;
 
     [[nodiscard]] float getFontScale() const {
         return fontScale_;
@@ -172,7 +172,6 @@ private:
     std::unique_ptr<AppState> appState;
 
     // Application state
-    const Theme::ThemeDef* theme_ = &Theme::THEMES[0];
     float fontScale_ = 1.0f;
     bool showFps_ = false;
     bool vsync_ = true;

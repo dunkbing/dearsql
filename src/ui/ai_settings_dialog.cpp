@@ -85,8 +85,8 @@ void AISettingsDialog::render() {
 
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
     if (ImGui::BeginPopupModal(POPUP_ID, &isDialogOpen_, ImGuiWindowFlags_NoResize)) {
         if (needsLoad_) {
             loadSettings();
@@ -98,8 +98,8 @@ void AISettingsDialog::render() {
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::M, Theme::Spacing::M));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.surface1);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.surface1);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, colors.accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors.accent);
 
         // API Key
         ImGui::Text("API Key");
@@ -129,7 +129,7 @@ void AISettingsDialog::render() {
         // Agent access to the database (MCP tools)
         ImGui::Text("Agent access");
         ImGui::Checkbox("Let the agent query my database", &mcpEnabled_);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
         ImGui::TextWrapped(
             "Gives coding agents a read-only tool to list tables and run SELECT queries "

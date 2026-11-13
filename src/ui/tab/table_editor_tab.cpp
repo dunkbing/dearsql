@@ -27,7 +27,7 @@ namespace {
         return a;
     }
 
-    void renderStateChip(const Theme::Colors& colors, const char* label, const ImVec4& tint) {
+    void renderStateChip(const Theme& colors, const char* label, const ImVec4& tint) {
         const ImVec2 padding(Theme::Spacing::M, Theme::Spacing::S);
         const ImVec2 textSize = ImGui::CalcTextSize(label);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -36,16 +36,16 @@ namespace {
 
         drawList->AddRectFilled(
             pos, ImVec2(pos.x + size.x, pos.y + size.y),
-            ImGui::GetColorU32(withAlpha(blend(colors.surface0, tint, 0.18f), 0.95f)), 0.0f);
+            ImGui::GetColorU32(withAlpha(blend(colors.muted, tint, 0.18f), 0.95f)), 0.0f);
         drawList->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                          ImGui::GetColorU32(withAlpha(blend(colors.overlay0, tint, 0.28f), 0.95f)),
+                          ImGui::GetColorU32(withAlpha(blend(colors.border, tint, 0.28f), 0.95f)),
                           0.0f, 0, 1.0f);
         drawList->AddText(ImVec2(pos.x + padding.x, pos.y + padding.y), ImGui::GetColorU32(tint),
                           label);
         ImGui::Dummy(size);
     }
 
-    void renderSectionTitle(const Theme::Colors& colors, const ImVec4& accent, const char* icon,
+    void renderSectionTitle(const Theme& colors, const ImVec4& accent, const char* icon,
                             const char* title, const char* subtitle = nullptr) {
         const ImVec2 start = ImGui::GetCursorScreenPos();
         auto* drawList = ImGui::GetWindowDrawList();
@@ -55,7 +55,7 @@ namespace {
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, Theme::Spacing::M);
 
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.text);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.foreground);
         ImGui::TextUnformatted(title);
         ImGui::PopStyleColor();
 
@@ -63,11 +63,11 @@ namespace {
         drawList->AddLine(
             ImVec2(start.x, headerBottom),
             ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x, headerBottom),
-            ImGui::GetColorU32(withAlpha(blend(colors.overlay0, accent, 0.2f), 0.8f)), 1.0f);
+            ImGui::GetColorU32(withAlpha(blend(colors.border, accent, 0.2f), 0.8f)), 1.0f);
 
         if (subtitle && subtitle[0] != '\0') {
             ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
             ImGui::TextWrapped("%s", subtitle);
             ImGui::PopStyleColor();
         }
@@ -75,7 +75,7 @@ namespace {
         ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::S));
     }
 
-    void renderNoticeBox(const Theme::Colors& colors, const char* id, const char* icon,
+    void renderNoticeBox(const Theme& colors, const char* id, const char* icon,
                          const char* message, const ImVec4& accent) {
         const ImVec2 padding(Theme::Spacing::M, Theme::Spacing::M);
         const float iconWidth = ImGui::CalcTextSize(icon).x;
@@ -86,9 +86,9 @@ namespace {
         const float height = std::max(textSize.y, ImGui::GetTextLineHeight()) + padding.y * 2.0f;
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg,
-                              withAlpha(blend(colors.surface0, accent, 0.08f), 0.95f));
+                              withAlpha(blend(colors.muted, accent, 0.08f), 0.95f));
         ImGui::PushStyleColor(ImGuiCol_Border,
-                              withAlpha(blend(colors.overlay0, accent, 0.3f), 0.95f));
+                              withAlpha(blend(colors.border, accent, 0.3f), 0.95f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
         ImGui::BeginChild(id, ImVec2(0, height), true,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -96,7 +96,7 @@ namespace {
         ImGui::TextUnformatted(icon);
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, Theme::Spacing::M);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextWrapped("%s", message);
         ImGui::PopStyleColor();
         ImGui::EndChild();
@@ -152,10 +152,10 @@ void TableEditorTab::renderContent(bool& closeRequested) {
 
     constexpr float saveButtonWidth = 120.0f;
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.surface1, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay0, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.accent, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(imshell::Pressed(colors.accent), 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.border, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::AlignTextToFramePadding();
     ImGui::Text("Table: ");
     ImGui::PopStyleColor();
@@ -179,15 +179,15 @@ void TableEditorTab::renderContent(bool& closeRequested) {
                         ImVec2(Theme::Spacing::M + 2.0f, Theme::Spacing::S + 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 18.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay0, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_Separator, withAlpha(colors.overlay0, 0.75f));
+    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.border, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Separator, withAlpha(colors.border, 0.75f));
     ImGui::PushStyleColor(ImGuiCol_Header,
-                          withAlpha(blend(colors.surface0, colors.blue, 0.08f), 1.0f));
+                          withAlpha(blend(colors.muted, colors.primary, 0.08f), 1.0f));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                          withAlpha(blend(colors.surface1, colors.blue, 0.18f), 1.0f));
+                          withAlpha(blend(colors.accent, colors.primary, 0.18f), 1.0f));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive,
-                          withAlpha(blend(colors.surface2, colors.blue, 0.24f), 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, withAlpha(colors.blue, 0.22f));
+                          withAlpha(blend(imshell::Pressed(colors.accent), colors.primary, 0.24f), 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, withAlpha(colors.primary, 0.22f));
 
     constexpr float splitterWidth = 6.0f;
     constexpr float minLeftPanelWidth = 220.0f;
@@ -201,7 +201,7 @@ void TableEditorTab::renderContent(bool& closeRequested) {
         std::max(minRightPanelWidth, panelRegion.x - leftPanelWidth - splitterWidth);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, Theme::Spacing::M));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, withAlpha(colors.mantle, 0.72f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, withAlpha(colors.sidebar, 0.72f));
     ImGui::BeginChild("left_panel", ImVec2(leftPanelWidth, panelHeight), true);
     renderTableTree();
     ImGui::EndChild();
@@ -223,23 +223,23 @@ void TableEditorTab::renderContent(bool& closeRequested) {
     }
     ImGui::GetWindowDrawList()->AddRectFilled(
         splitterPos, ImVec2(splitterPos.x + splitterWidth, splitterPos.y + panelHeight),
-        ImGui::GetColorU32(withAlpha(splitterHeld      ? blend(colors.surface2, colors.blue, 0.2f)
-                                     : splitterHovered ? blend(colors.surface1, colors.blue, 0.14f)
-                                                       : colors.mantle,
+        ImGui::GetColorU32(withAlpha(splitterHeld      ? blend(imshell::Pressed(colors.accent), colors.primary, 0.2f)
+                                     : splitterHovered ? blend(colors.accent, colors.primary, 0.14f)
+                                                       : colors.sidebar,
                                      1.0f)),
         0.0f);
     ImGui::GetWindowDrawList()->AddLine(
         ImVec2(splitterPos.x + splitterWidth * 0.5f, splitterPos.y),
         ImVec2(splitterPos.x + splitterWidth * 0.5f, splitterPos.y + panelHeight),
         ImGui::GetColorU32(
-            withAlpha(splitterHeld || splitterHovered ? colors.blue : colors.overlay0,
+            withAlpha(splitterHeld || splitterHovered ? colors.primary : colors.border,
                       splitterHeld || splitterHovered ? 0.9f : 0.65f)),
         1.0f);
 
     ImGui::SameLine(0.0f, 0.0f);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::L, Theme::Spacing::M));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, withAlpha(colors.surface0, 0.82f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, withAlpha(colors.muted, 0.82f));
     ImGui::BeginChild("RightPanel", ImVec2(rightPanelWidth, panelHeight), true);
     renderRightPanel();
     ImGui::EndChild();
@@ -299,7 +299,7 @@ void TableEditorTab::renderColumnsNode() {
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-    ImGui::GetWindowDrawList()->AddText(columnsIconPos, ImGui::GetColorU32(colors.green),
+    ImGui::GetWindowDrawList()->AddText(columnsIconPos, ImGui::GetColorU32(colors.success),
                                         ICON_FA_TABLE_COLUMNS);
 
     const auto plusIconPos =
@@ -315,19 +315,19 @@ void TableEditorTab::renderColumnsNode() {
 
     drawList->AddRectFilled(
         plusIconMin, plusIconMax,
-        ImGui::GetColorU32(withAlpha(isPlusHovered ? blend(colors.surface1, colors.green, 0.18f)
-                                                   : blend(colors.surface0, colors.overlay0, 0.1f),
+        ImGui::GetColorU32(withAlpha(isPlusHovered ? blend(colors.accent, colors.success, 0.18f)
+                                                   : blend(colors.muted, colors.border, 0.1f),
                                      0.95f)),
         0.0f);
     drawList->AddRect(
         plusIconMin, plusIconMax,
-        ImGui::GetColorU32(withAlpha(isPlusHovered ? blend(colors.green, colors.text, 0.15f)
-                                                   : blend(colors.overlay0, colors.green, 0.12f),
+        ImGui::GetColorU32(withAlpha(isPlusHovered ? blend(colors.success, colors.foreground, 0.15f)
+                                                   : blend(colors.border, colors.success, 0.12f),
                                      0.9f)),
         0.0f, 0, 1.0f);
 
-    const ImU32 plusColor = isPlusHovered ? ImGui::GetColorU32(colors.green)
-                                          : ImGui::GetColorU32(withAlpha(colors.overlay1, 0.9f));
+    const ImU32 plusColor = isPlusHovered ? ImGui::GetColorU32(colors.success)
+                                          : ImGui::GetColorU32(withAlpha(colors.mutedForeground, 0.9f));
     drawList->AddText(plusIconPos, plusColor, ICON_FA_PLUS);
 
     if (isPlusHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -429,7 +429,7 @@ void TableEditorTab::renderKeysNode() const {
         ImVec2(ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing(),
                ImGui::GetItemRectMin().y +
                    (ImGui::GetItemRectSize().y - ImGui::GetTextLineHeight()) * 0.5f);
-    ImGui::GetWindowDrawList()->AddText(keysIconPos, ImGui::GetColorU32(colors.yellow),
+    ImGui::GetWindowDrawList()->AddText(keysIconPos, ImGui::GetColorU32(colors.hues.yellow),
                                         ICON_FA_KEY);
 
     if (keysOpen) {
@@ -463,16 +463,16 @@ void TableEditorTab::renderColumnEditor() {
     ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     const char* editorTitle =
         (columnEditMode == ColumnEditMode::Add) ? "Add New Column" : "Edit Column";
-    renderSectionTitle(colors, colors.blue, ICON_FA_PEN_TO_SQUARE, editorTitle,
+    renderSectionTitle(colors, colors.primary, ICON_FA_PEN_TO_SQUARE, editorTitle,
                        "Adjust the selected column definition and constraints.");
 
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay0, 0.9f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(colors.surface0, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.surface1, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
+    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.border, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(colors.muted, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.accent, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(imshell::Pressed(colors.accent), 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.primary);
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::Text("Column Name:");
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-Theme::Spacing::M);
@@ -486,7 +486,7 @@ void TableEditorTab::renderColumnEditor() {
 
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::Text("Data Type:");
     ImGui::PopStyleColor();
     if (columnTypeAutoComplete == nullptr) {
@@ -496,7 +496,7 @@ void TableEditorTab::renderColumnEditor() {
 
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::Text("Constraints:");
     ImGui::PopStyleColor();
     if (ImGui::Checkbox("Primary Key", &isPrimaryKey)) {
@@ -566,7 +566,7 @@ void TableEditorTab::renderColumnEditor() {
 
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::Text("Default Value (optional):");
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-Theme::Spacing::M);
@@ -578,7 +578,7 @@ void TableEditorTab::renderColumnEditor() {
 
     if (dearsql::isMySQLFamily(databaseType) ||
         (databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::Text("Comment:");
         ImGui::PopStyleColor();
         ImGui::SetNextItemWidth(-1);
@@ -606,8 +606,8 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::SetNextWindowSize(imshell::FitScreen(ImVec2(700, 460)), ImGuiCond_Appearing);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
     if (!ImGui::BeginPopupModal("SQL Preview###sql_preview_popup", nullptr,
                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
         ImGui::PopStyleColor();
@@ -615,7 +615,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
         return;
     }
 
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     ImGui::TextUnformatted("Review the SQL below, then click Execute to apply the changes.");
     ImGui::PopStyleColor();
     ImGui::Spacing();
@@ -637,7 +637,7 @@ void TableEditorTab::renderPreviewPopup(bool& closeRequested) {
     ImGui::EndDisabled();
     if (executing) {
         ImGui::SameLine();
-        imshell::Spinner("##executing_ddl", 6.0f, 2, ImGui::GetColorU32(colors.peach));
+        imshell::Spinner("##executing_ddl", 6.0f, 2, ImGui::GetColorU32(colors.warning));
         ImGui::SameLine();
         ImGui::TextUnformatted("Executing...");
     } else if (closePreview_) {
@@ -873,18 +873,18 @@ std::vector<std::string> TableEditorTab::getCommonDataTypes() const {
 void TableEditorTab::renderTableProperties() {
     const auto& colors = Application::getInstance().getCurrentColors();
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
-    renderSectionTitle(colors, colors.teal, ICON_FA_SLIDERS, "Table Properties",
+    renderSectionTitle(colors, colors.hues.teal, ICON_FA_SLIDERS, "Table Properties",
                        "Manage table identity and high-level options.");
 
-    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.overlay0, 0.9f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(colors.surface0, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.surface1, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(colors.surface2, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.blue);
+    ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(colors.border, 0.9f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, withAlpha(colors.muted, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, withAlpha(colors.accent, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, withAlpha(imshell::Pressed(colors.accent), 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, colors.primary);
 
     if (dearsql::isMySQLFamily(databaseType) ||
         (databaseType == DatabaseType::POSTGRESQL || databaseType == DatabaseType::COCKROACHDB)) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::Text("Comment:");
         ImGui::PopStyleColor();
         ImGui::SetNextItemWidth(-1);
@@ -910,19 +910,19 @@ void TableEditorTab::renderTableProperties() {
         renderNoticeBox(colors, "edit_table_note", ICON_FA_CIRCLE_INFO,
                         "Use the structure tree to add, remove, or select columns without leaving "
                         "this editor.",
-                        colors.teal);
+                        colors.hues.teal);
     }
 }
 
 void TableEditorTab::renderInstructions() {
     const auto& colors = Application::getInstance().getCurrentColors();
-    renderSectionTitle(colors, colors.yellow, ICON_FA_CIRCLE_INFO, "Table Editor",
+    renderSectionTitle(colors, colors.hues.yellow, ICON_FA_CIRCLE_INFO, "Table Editor",
                        "Click the table node to edit properties, or select a column to edit it. "
                        "Right-click on 'Columns' to add a new column.");
     renderNoticeBox(colors, "table_editor_intro", ICON_FA_ARROW_POINTER,
                     "The left side is the structure tree. The right side updates based on the node "
                     "you select.",
-                    colors.yellow);
+                    colors.hues.yellow);
 }
 
 bool TableEditorTab::validateTableInput() {

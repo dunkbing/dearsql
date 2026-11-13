@@ -33,7 +33,7 @@ namespace {
     void fieldLabel(const char* text) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors.subtext0, "%s", text);
+        ImGui::TextColored(colors.mutedForeground, "%s", text);
         ImGui::SameLine(kLabelColumnW);
     }
 
@@ -284,8 +284,8 @@ void CreateDatabaseDialog::render() {
     ImGui::SetNextWindowSizeConstraints(ImVec2(kDialogWidth, 0.0f), ImVec2(kDialogWidth, FLT_MAX));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
-    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
+    ImGui::PushStyleColor(ImGuiCol_Border, Application::getInstance().getCurrentColors().border);
 
     bool stayOpen = true;
     if (!ImGui::BeginPopupModal(kPopupId, &stayOpen,
@@ -366,7 +366,7 @@ void CreateDatabaseDialog::render() {
         ImGui::SameLine();
     }
     if (!statusText_.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? colors.red : colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, statusIsError_ ? colors.destructive : colors.mutedForeground);
         ImGui::TextWrapped("%s", statusText_.c_str());
         ImGui::PopStyleColor();
     } else if (!busy) {

@@ -17,8 +17,8 @@ namespace {
 
     ImU32 seriesColor(size_t i) {
         const auto& c = Application::getInstance().getCurrentColors();
-        const ImVec4 palette[] = {c.blue, c.peach,  c.green,   c.purple, c.teal,
-                                  c.red,  c.yellow, c.magenta, c.maroon, c.lavender};
+        const ImVec4 palette[] = {c.hues.blue, c.hues.orange,  c.hues.green,   c.hues.purple, c.hues.teal,
+                                  c.hues.red,  c.hues.yellow, c.hues.pink, c.hues.red, c.hues.pink};
         return ImGui::GetColorU32(palette[i % std::size(palette)]);
     }
 
@@ -264,7 +264,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
         dl->AddRectFilled(ImVec2(lx, origin.y + lineH * 0.25f),
                           ImVec2(lx + lineH * 0.5f, origin.y + lineH * 0.75f), seriesColor(s));
         lx += lineH * 0.5f + Theme::Spacing::S;
-        dl->AddText(ImVec2(lx, origin.y), ImGui::GetColorU32(colors.subtext0),
+        dl->AddText(ImVec2(lx, origin.y), ImGui::GetColorU32(colors.mutedForeground),
                     d.series[s].name.c_str());
         lx += ImGui::CalcTextSize(d.series[s].name.c_str()).x + Theme::Spacing::L;
     }
@@ -289,8 +289,8 @@ void ResultChart::renderCartesian(const ImVec2& size) {
     };
 
     // grid and y labels
-    const ImU32 grid = ImGui::GetColorU32(colors.surface0);
-    const ImU32 tickText = ImGui::GetColorU32(colors.subtext0);
+    const ImU32 grid = ImGui::GetColorU32(colors.muted);
+    const ImU32 tickText = ImGui::GetColorU32(colors.mutedForeground);
     for (double v : chart::ticks(y)) {
         const float yy = py(v);
         dl->AddLine(ImVec2(left, yy), ImVec2(right, yy), grid);
@@ -299,7 +299,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
             ImVec2(left - Theme::Spacing::S - ImGui::CalcTextSize(t.c_str()).x, yy - lineH * 0.5f),
             tickText, t.c_str());
     }
-    dl->AddLine(ImVec2(left, bottom), ImVec2(right, bottom), ImGui::GetColorU32(colors.overlay0));
+    dl->AddLine(ImVec2(left, bottom), ImVec2(right, bottom), ImGui::GetColorU32(colors.border));
 
     // x labels: numeric ticks, or every k-th category so they don't overlap
     if (numericX) {
@@ -393,7 +393,7 @@ void ResultChart::renderCartesian(const ImVec2& size) {
                 best = i, bestDist = dist;
         }
         dl->AddLine(ImVec2(px(best), top), ImVec2(px(best), bottom),
-                    ImGui::GetColorU32(colors.overlay1));
+                    ImGui::GetColorU32(colors.mutedForeground));
         tooltip(d, best);
     }
     dl->PopClipRect();
@@ -479,7 +479,7 @@ void ResultChart::renderPie(const ImVec2& size) {
         const float ang = a0 - tau / 4;
         dl->AddLine(center,
                     ImVec2(center.x + std::cos(ang) * radius, center.y + std::sin(ang) * radius),
-                    ImGui::GetColorU32(colors.base), 1.5f);
+                    ImGui::GetColorU32(colors.background), 1.5f);
         a0 += static_cast<float>(s.value / total) * tau;
     }
 
@@ -487,7 +487,7 @@ void ResultChart::renderPie(const ImVec2& size) {
     float ly =
         center.y - static_cast<float>(slices.size() + 1) * (lineH + Theme::Spacing::XS) * 0.5f;
     const float lx = center.x + radius + Theme::Spacing::XL;
-    dl->AddText(ImVec2(lx, ly), ImGui::GetColorU32(colors.text), d.series[0].name.c_str());
+    dl->AddText(ImVec2(lx, ly), ImGui::GetColorU32(colors.foreground), d.series[0].name.c_str());
     ly += lineH + Theme::Spacing::XS;
     for (size_t i = 0; i < slices.size(); ++i) {
         dl->AddRectFilled(ImVec2(lx, ly + lineH * 0.2f),
@@ -497,7 +497,7 @@ void ResultChart::renderPie(const ImVec2& size) {
                         slices[i].value / total * 100.0);
         dl->AddText(
             ImVec2(lx + lineH, ly),
-            ImGui::GetColorU32(hoveredSlice == static_cast<int>(i) ? colors.text : colors.subtext0),
+            ImGui::GetColorU32(hoveredSlice == static_cast<int>(i) ? colors.foreground : colors.mutedForeground),
             text.c_str());
         ly += lineH + Theme::Spacing::XS;
     }

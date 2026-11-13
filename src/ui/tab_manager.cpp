@@ -304,14 +304,14 @@ void TabManager::renderTabs() {
     ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_TabBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.mantle);
-    ImGui::PushStyleColor(ImGuiCol_Tab, colors.mantle);
-    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_TabSelected, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.sidebar);
+    ImGui::PushStyleColor(ImGuiCol_Tab, colors.sidebar);
+    ImGui::PushStyleColor(ImGuiCol_TabHovered, colors.muted);
+    ImGui::PushStyleColor(ImGuiCol_TabSelected, colors.accent);
     ImGui::PushStyleColor(ImGuiCol_TabSelectedOverline, ImVec4(0, 0, 0, 0)); // transparent
     // Keep same colors when unfocused
-    ImGui::PushStyleColor(ImGuiCol_TabDimmed, colors.mantle);
-    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected, colors.surface1);
+    ImGui::PushStyleColor(ImGuiCol_TabDimmed, colors.sidebar);
+    ImGui::PushStyleColor(ImGuiCol_TabDimmedSelected, colors.accent);
     ImGui::PushStyleColor(ImGuiCol_TabDimmedSelectedOverline, ImVec4(0, 0, 0, 0));
 
     renderingTabs_ = true;
@@ -335,7 +335,7 @@ void TabManager::renderTabs() {
 
         // Docked tabs copy tab item data into LastItemData on Begin(), so right-click on
         // the tab label can open a popup reliably from here.
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.muted);
         // tighter top gap between tab bar and content
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                             ImVec2(ImGui::GetStyle().WindowPadding.x, Theme::Spacing::M));
@@ -388,7 +388,7 @@ void TabManager::renderTabs() {
                 // everything sized "to the rest" stops short of the bottom strip; both
                 // rects are rebuilt at each Begin
                 ImGuiWindow* w = ImGui::GetCurrentWindow();
-                const float inset = Theme::BottomBarHeight();
+                const float inset = themes::bottomBarHeight();
                 w->ContentRegionRect.Max.y -= inset;
                 w->WorkRect.Max.y -= inset;
             }
@@ -938,7 +938,7 @@ void TabManager::renderOpenQuickly() {
 
     const auto& colors = Application::getInstance().getCurrentColors();
     if (n == 0) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::TextUnformatted(query.empty()
                                    ? "Expand a database in the sidebar to load its tables."
                                    : "No matching table or view.");
@@ -964,7 +964,7 @@ void TabManager::renderOpenQuickly() {
             const float w = ImGui::CalcTextSize(h.where.c_str()).x;
             ImGui::SameLine(std::max(ImGui::GetContentRegionAvail().x * 0.4f,
                                      ImGui::GetWindowContentRegionMax().x - w));
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
             ImGui::TextUnformatted(h.where.c_str());
             ImGui::PopStyleColor();
             ImGui::PopID();

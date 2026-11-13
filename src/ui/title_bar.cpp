@@ -123,13 +123,13 @@ namespace {
 
         ImGui::SetNextWindowPos({popupX, gPopupPos.y});
         ImGui::SetNextWindowSize({workspacePopupW, 0.0f});
-        ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.surface0);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, colors.muted);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 8});
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {4, 2});
         if (ImGui::BeginPopup("##WorkspacePopup")) {
             ImDrawList* drawList = ImGui::GetWindowDrawList();
-            const ImU32 hoverRowBg = ImGui::GetColorU32(colors.surface1);
-            const ImU32 textColor = ImGui::GetColorU32(colors.text);
+            const ImU32 hoverRowBg = ImGui::GetColorU32(colors.accent);
+            const ImU32 textColor = ImGui::GetColorU32(colors.foreground);
 
             for (const auto& ws : workspaces) {
                 bool isCurrent = (ws.id == app.getCurrentWorkspaceId());
@@ -190,7 +190,7 @@ namespace {
                         ImGui::SetTooltip("Rename");
 
                     ImGui::SetCursorScreenPos({actionX + actionBtnSize + actionGap, actionY});
-                    if (imshell::IconButton(ICON_FA_TRASH "##del", imshell::ButtonVariant::Danger,
+                    if (imshell::IconButton(ICON_FA_TRASH "##del", imshell::ButtonVariant::Destructive,
                                            {actionBtnSize, actionBtnSize})) {
                         const int wsId = ws.id;
                         ImGui::CloseCurrentPopup();
@@ -286,7 +286,7 @@ void TitleBarView::render(Application& app) {
     if (titleX > leftEnd + Theme::Spacing::M && titleX + titleW < wsX - Theme::Spacing::M)
         ImGui::GetWindowDrawList()->AddText(
             ImVec2(titleX, bar.pos.y + (bar.size.y - ImGui::GetTextLineHeight()) * 0.5f),
-            ImGui::GetColorU32(colors.subtext1), title);
+            ImGui::GetColorU32(colors.mutedForeground), title);
 
     ImGui::SetCursorScreenPos(ImVec2(wsX, rowY));
     if (barButton("###workspace", glyph("chevron.down", ICON_FA_CHEVRON_DOWN), "Workspace",

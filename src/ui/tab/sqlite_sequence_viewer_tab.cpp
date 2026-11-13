@@ -53,7 +53,7 @@ void SQLiteSequenceViewerTab::render() {
     }
 
     if (loadError_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
         ImGui::TextWrapped("Failed to load sequence: %s", loadErrorMessage_.c_str());
         ImGui::PopStyleColor();
         return;

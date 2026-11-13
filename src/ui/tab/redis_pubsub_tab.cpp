@@ -325,7 +325,7 @@ void RedisPubSubTab::render() {
         // header
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::Spacing::S);
         ImGui::AlignTextToFramePadding();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.red));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.destructive));
         ImGui::Text(ICON_FA_DATABASE);
         ImGui::PopStyleColor();
         ImGui::SameLine(0, Theme::Spacing::S);
@@ -341,7 +341,7 @@ void RedisPubSubTab::render() {
         statusHeight = ImGui::GetContentRegionAvail().y;
 
         // stronger border on all input fields
-        ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+        ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
 
         // main content area (between header and publish bar)
         const float publishBarHeight = ImGui::GetFrameHeightWithSpacing() + Theme::Spacing::M;
@@ -390,7 +390,7 @@ void RedisPubSubTab::render() {
     ImGui::EndChild();
 }
 
-void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
+void RedisPubSubTab::renderToolbar(const Theme& colors) {
     auto state = sub_->state.load();
     bool subscribed = (state == SubState::Subscribed);
     const bool connecting = (state == SubState::Subscribing);
@@ -412,7 +412,7 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
 
     // subscribe / unsubscribe button
     if (subscribed) {
-        if (imshell::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", imshell::ButtonVariant::Danger)) {
+        if (imshell::Button(ICON_FA_CIRCLE_MINUS " Unsubscribe", imshell::ButtonVariant::Destructive)) {
             unsubscribe();
         }
     } else if (connecting) {
@@ -428,7 +428,7 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     ImGui::SameLine(0, Theme::Spacing::S);
 
     // clear button
-    if (imshell::Button(ICON_FA_TRASH_CAN " Clear", imshell::ButtonVariant::Danger)) {
+    if (imshell::Button(ICON_FA_TRASH_CAN " Clear", imshell::ButtonVariant::Destructive)) {
         displayMessages_.clear();
         sub_->total.store(0);
     }
@@ -441,11 +441,11 @@ void RedisPubSubTab::renderToolbar(const Theme::Colors& colors) {
     }
     if (state == SubState::Error && !subError.empty()) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::TextColored(colors.red, "%s", subError.c_str());
+        ImGui::TextColored(colors.destructive, "%s", subError.c_str());
     }
 }
 
-void RedisPubSubTab::renderMessageTable(const Theme::Colors& colors) {
+void RedisPubSubTab::renderMessageTable(const Theme& colors) {
     const float tableHeight = std::max(ImGui::GetContentRegionAvail().y, 50.0f);
 
     constexpr ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
@@ -470,7 +470,7 @@ void RedisPubSubTab::renderMessageTable(const Theme::Colors& colors) {
                 ImGui::TextDisabled("%s", msg.timestamp.c_str());
 
                 ImGui::TableNextColumn();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.sky));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(colors.hues.sky));
                 ImGui::TextUnformatted(msg.channel.c_str());
                 ImGui::PopStyleColor();
 
@@ -483,7 +483,7 @@ void RedisPubSubTab::renderMessageTable(const Theme::Colors& colors) {
     }
 }
 
-void RedisPubSubTab::renderPublishBar(const Theme::Colors& colors) {
+void RedisPubSubTab::renderPublishBar(const Theme& colors) {
     ImGui::Separator();
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::XS);
 

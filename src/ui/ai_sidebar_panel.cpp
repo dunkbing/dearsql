@@ -108,7 +108,7 @@ namespace {
     constexpr float INPUT_ROW_GAP = Theme::Spacing::S;
     constexpr float INPUT_BOTTOM_MARGIN = Theme::Spacing::M;
     constexpr float INPUT_TEXT_SLACK = 2.0f;
-    constexpr float INPUT_ROUNDING = Theme::CornerRadius::SMALL; // as buttons and fields
+    constexpr float INPUT_ROUNDING = Theme::Radius::Md; // as buttons and fields
     constexpr float INPUT_MAX_LINES = 8.0f;
     constexpr const char* INPUT_HINT = "Ask about your database";
 
@@ -1350,12 +1350,12 @@ void AISidebarPanel::render() {
             ImGui::SetCursorPos(ImVec2((availW - textSize.x - spinnerW) * 0.5f,
                                        (ImGui::GetContentRegionAvail().y - textSize.y) * 0.5f));
             if (!warming.empty()) {
-                imshell::Spinner("##ai_warmup", spinnerRadius, 2, ImGui::GetColorU32(colors.peach));
+                imshell::Spinner("##ai_warmup", spinnerRadius, 2, ImGui::GetColorU32(colors.warning));
                 ImGui::SameLine(0, Theme::Spacing::S);
                 ImGui::AlignTextToFramePadding();
             }
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + availW * 0.8f);
-            ImGui::TextColored(colors.subtext0, "%s", text.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", text.c_str());
             ImGui::PopTextWrapPos();
         } else {
             renderMessages();
@@ -1430,7 +1430,7 @@ void AISidebarPanel::renderHeader() {
 
     ImGui::Dummy(ImVec2(0.0f, Theme::Spacing::XS));
     ImGui::AlignTextToFramePadding();
-    ImGui::TextColored(colors.subtext0, ICON_FA_ROBOT);
+    ImGui::TextColored(colors.mutedForeground, ICON_FA_ROBOT);
     ImGui::SameLine(0, Theme::Spacing::S);
 
     // the sidebar renders inside children with zero WindowPadding; combo popups and
@@ -1502,7 +1502,7 @@ void AISidebarPanel::renderHeader() {
     // api keys and the agent database toggle live in the same dialog, so every backend
     // gets the gear
     ImGui::SameLine(0, Theme::Spacing::S);
-    ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+    ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
     if (imshell::IconButton(ICON_FA_GEAR "###ai_settings")) {
         // open on the vendor behind the selected backend
         const std::string id = backendId();
@@ -1529,16 +1529,16 @@ namespace {
     // what an agent needs is being downloaded (bun, a registry binary): no details
     void renderSettingUp(const std::string& name) {
         const auto& colors = Application::getInstance().getCurrentColors();
-        imshell::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.subtext0));
+        imshell::Spinner("##setup_spinner", 6.0f, 2, ImGui::GetColorU32(colors.mutedForeground));
         ImGui::SameLine(0, Theme::Spacing::S);
-        ImGui::TextColored(colors.subtext0, "Setting up %s...", name.c_str());
+        ImGui::TextColored(colors.mutedForeground, "Setting up %s...", name.c_str());
     }
 
     void renderSetupFailed(const std::string& name, const std::string& error,
                            const std::function<void()>& retry) {
         const auto& colors = Application::getInstance().getCurrentColors();
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(colors.red, "Could not set up %s.%s%s", name.c_str(),
+        ImGui::TextColored(colors.destructive, "Could not set up %s.%s%s", name.c_str(),
                            error.empty() ? "" : " ", error.c_str());
         ImGui::PopTextWrapPos();
         if (imshell::SmallButton("Retry##ai_setup_retry"))
@@ -1552,14 +1552,14 @@ void AISidebarPanel::renderInstallCard() {
     pollRegistry();
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::M));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
     if (ImGui::BeginChild("##ai_install_card", ImVec2(-1, 0),
                           ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
         ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
         ImGui::Indent(Theme::Spacing::M);
         if (!agentMissingReason_.empty()) {
             ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-            ImGui::TextColored(colors.peach, "%s", agentMissingReason_.c_str());
+            ImGui::TextColored(colors.warning, "%s", agentMissingReason_.c_str());
             ImGui::PopTextWrapPos();
         }
 
@@ -1627,7 +1627,7 @@ void AISidebarPanel::renderRegistryDownload(const AcpAgentDef& def) {
     if (registry_.isBusy()) {
         renderSettingUp(def.name);
     } else if (registry_.fetched() && (!entry || !entry->hasBinary)) {
-        ImGui::TextColored(colors.subtext0, "The ACP registry has no %s build for %s.",
+        ImGui::TextColored(colors.mutedForeground, "The ACP registry has no %s build for %s.",
                            def.name.c_str(), AcpRegistry::platformKey().c_str());
     } else {
         renderSetupFailed(def.name, registry_.error(), [this] {
@@ -1654,7 +1654,7 @@ void AISidebarPanel::renderMessages() {
         imshell::Spinner("##ai_side_spinner", 6.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
         if (const std::string warming = agentStartingLabel(); !warming.empty()) {
             ImGui::SameLine(0, Theme::Spacing::S);
-            ImGui::TextColored(Application::getInstance().getCurrentColors().subtext0, "%s",
+            ImGui::TextColored(Application::getInstance().getCurrentColors().mutedForeground, "%s",
                                warming.c_str());
         }
     }
@@ -1671,20 +1671,20 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
 
     switch (item.kind) {
     case Item::Kind::User:
-        ImGui::TextColored(colors.subtext0, "You");
+        ImGui::TextColored(colors.mutedForeground, "You");
         renderTextWithCodeBlocks(item.text, index); // selectable, like the replies
         if (!item.contextNote.empty()) {
-            ImGui::TextColored(colors.overlay1, "%s", item.contextNote.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", item.contextNote.c_str());
         }
         break;
 
     case Item::Kind::Assistant:
-        ImGui::TextColored(colors.subtext0, "Assistant");
+        ImGui::TextColored(colors.mutedForeground, "Assistant");
         renderTextWithCodeBlocks(item.text, index);
         break;
 
     case Item::Kind::Thought: {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         if (ImGui::TreeNodeEx("Thinking...##thought", ImGuiTreeNodeFlags_SpanAvailWidth)) {
             ImGui::TextWrapped("%s", item.text.c_str());
             ImGui::TreePop();
@@ -1698,25 +1698,25 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         const bool running = item.toolStatus == "pending" || item.toolStatus == "in_progress";
         const bool failed = item.toolStatus == "failed";
         if (running) {
-            imshell::Spinner("##tool_spin", 5.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##tool_spin", 5.0f, 2, ImGui::GetColorU32(colors.warning));
         } else {
-            ImGui::TextColored(failed ? colors.red : colors.green,
+            ImGui::TextColored(failed ? colors.destructive : colors.success,
                                failed ? ICON_FA_XMARK : ICON_FA_CHECK);
         }
         ImGui::SameLine(0, Theme::Spacing::M);
         const std::string title = item.toolTitle.empty() ? "Tool call" : item.toolTitle;
         if (item.toolOutput.empty()) {
-            ImGui::TextColored(colors.subtext0, "%s", title.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", title.c_str());
         } else {
             if (ImGui::Selectable(title.c_str(), item.expanded)) {
                 item.expanded = !item.expanded;
             }
             if (item.expanded) {
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.mantle);
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
                 if (ImGui::BeginChild("##tool_out", ImVec2(-1, 0),
                                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
                     ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-                    ImGui::TextColored(colors.subtext0, "%s", item.toolOutput.c_str());
+                    ImGui::TextColored(colors.mutedForeground, "%s", item.toolOutput.c_str());
                     ImGui::PopTextWrapPos();
                 }
                 ImGui::EndChild();
@@ -1728,14 +1728,14 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     }
 
     case Item::Kind::Plan:
-        ImGui::TextColored(colors.subtext0, "Plan");
+        ImGui::TextColored(colors.mutedForeground, "Plan");
         for (const auto& entry : item.plan) {
             if (entry.status == "completed") {
-                ImGui::TextColored(colors.green, ICON_FA_CIRCLE_CHECK);
+                ImGui::TextColored(colors.success, ICON_FA_CIRCLE_CHECK);
             } else if (entry.status == "in_progress") {
-                ImGui::TextColored(colors.peach, ICON_FA_CIRCLE_HALF_STROKE);
+                ImGui::TextColored(colors.warning, ICON_FA_CIRCLE_HALF_STROKE);
             } else {
-                ImGui::TextColored(colors.overlay1, ICON_FA_CIRCLE);
+                ImGui::TextColored(colors.mutedForeground, ICON_FA_CIRCLE);
             }
             ImGui::SameLine(0, Theme::Spacing::S);
             ImGui::TextWrapped("%s", entry.content.c_str());
@@ -1743,10 +1743,10 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
         break;
 
     case Item::Kind::Permission: {
-        ImGui::TextColored(colors.peach, ICON_FA_TRIANGLE_EXCLAMATION " Permission");
+        ImGui::TextColored(colors.warning, ICON_FA_TRIANGLE_EXCLAMATION " Permission");
         ImGui::TextWrapped("%s", item.permission.title.c_str());
         if (item.permissionAnswered) {
-            ImGui::TextColored(colors.subtext0, "-> %s", item.permissionChoice.c_str());
+            ImGui::TextColored(colors.mutedForeground, "-> %s", item.permissionChoice.c_str());
         } else if (acp_) {
             for (size_t i = 0; i < item.permission.options.size(); ++i) {
                 if (i > 0) {
@@ -1756,7 +1756,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 const bool allow = opt.kind.starts_with("allow");
                 if (imshell::SmallButton(std::format("{}##perm{}", opt.name, i).c_str(),
                                         allow ? imshell::ButtonVariant::Primary
-                                              : imshell::ButtonVariant::Danger)) {
+                                              : imshell::ButtonVariant::Destructive)) {
                     acp_->respondPermission(item.permission.rpcId, opt.optionId);
                     item.permissionAnswered = true;
                     item.permissionChoice = opt.name;
@@ -1769,12 +1769,12 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     case Item::Kind::Approval: {
         const auto* request = item.approval.get();
         const bool write = !request || request->kind == DbMcpServer::UiRequest::Kind::Write;
-        ImGui::TextColored(colors.peach, write ? ICON_FA_TRIANGLE_EXCLAMATION " Run a change?"
+        ImGui::TextColored(colors.warning, write ? ICON_FA_TRIANGLE_EXCLAMATION " Run a change?"
                                                : ICON_FA_PLUG " Save a new connection?");
         if (request) {
             if (write) {
                 ImGui::TextWrapped("On %s:", request->connection.c_str());
-                ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext1);
+                ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
                 ImGui::TextWrapped("%s", request->text.c_str());
                 ImGui::PopStyleColor();
             } else {
@@ -1783,7 +1783,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
             }
         }
         if (item.permissionAnswered || !request || request->settled) {
-            ImGui::TextColored(colors.subtext0, "-> %s",
+            ImGui::TextColored(colors.mutedForeground, "-> %s",
                                item.permissionChoice.empty() ? "Expired"
                                                              : item.permissionChoice.c_str());
         } else {
@@ -1798,7 +1798,7 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
                 }
                 if (item.approval) {
                     ImGui::SameLine(0, Theme::Spacing::S);
-                    if (imshell::SmallButton("Reject##approve", imshell::ButtonVariant::Danger))
+                    if (imshell::SmallButton("Reject##approve", imshell::ButtonVariant::Destructive))
                         answerApproval(item, false);
                 }
             }
@@ -1807,11 +1807,11 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     }
 
     case Item::Kind::Auth: {
-        ImGui::TextColored(colors.peach, ICON_FA_KEY " Sign in required");
+        ImGui::TextColored(colors.warning, ICON_FA_KEY " Sign in required");
         if (item.permissionAnswered) {
-            ImGui::TextColored(colors.subtext0, "-> %s", item.permissionChoice.c_str());
+            ImGui::TextColored(colors.mutedForeground, "-> %s", item.permissionChoice.c_str());
             if (item.terminalSignIn && acp_) {
-                ImGui::TextColored(colors.subtext0,
+                ImGui::TextColored(colors.mutedForeground,
                                    "Finish signing in in the Terminal window, then continue.");
                 if (imshell::SmallButton("Continue##auth_continue",
                                         imshell::ButtonVariant::Primary)) {
@@ -1873,12 +1873,12 @@ void AISidebarPanel::renderItem(Item& item, size_t index) {
     }
 
     case Item::Kind::Info:
-        ImGui::TextColored(colors.subtext0, "%s", item.text.c_str());
+        ImGui::TextColored(colors.mutedForeground, "%s", item.text.c_str());
         break;
 
     case Item::Kind::Error:
         ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextColored(colors.red, "%s", item.text.c_str());
+        ImGui::TextColored(colors.destructive, "%s", item.text.c_str());
         ImGui::PopTextWrapPos();
         break;
     }
@@ -2140,8 +2140,8 @@ void AISidebarPanel::renderMentionPopupAt(float x, float y, float width) {
 
     ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(width, 0));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, colors.muted);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Theme::Spacing::M, Theme::Spacing::M));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, INPUT_ROUNDING);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -2163,7 +2163,7 @@ void AISidebarPanel::renderMentionPopupAt(float x, float y, float width) {
             } else if (pickerMode_ == PickerMode::Command) {
                 empty = "No such command";
             }
-            ImGui::TextColored(colors.subtext0, "%s", empty);
+            ImGui::TextColored(colors.mutedForeground, "%s", empty);
         }
         const int count = static_cast<int>(mentionMatches_.size());
         const int shown = std::min(count, MENTION_MAX_VISIBLE);
@@ -2188,7 +2188,7 @@ void AISidebarPanel::renderMentionPopupAt(float x, float y, float width) {
             }
             if (!trailing.empty()) {
                 ImGui::SameLine();
-                ImGui::TextColored(colors.subtext0, "%s", trailing.c_str());
+                ImGui::TextColored(colors.mutedForeground, "%s", trailing.c_str());
             }
         }
         if (mentionAcceptRequested_) {
@@ -2245,9 +2245,9 @@ void AISidebarPanel::renderContextChips(float availWidth) {
         const ImVec2 p(origin.x + x, origin.y + y);
 
         drawList->AddRectFilled(p, ImVec2(p.x + w, p.y + chipH),
-                                ImGui::GetColorU32(colors.surface2), chipH * 0.5f);
+                                ImGui::GetColorU32(imshell::Pressed(colors.accent)), chipH * 0.5f);
         drawList->AddText(ImVec2(p.x + CHIP_PAD_X, p.y + CHIP_PAD_Y),
-                          ImGui::GetColorU32(colors.text), item.name.c_str());
+                          ImGui::GetColorU32(colors.foreground), item.name.c_str());
 
         ImGui::PushID(static_cast<int>(i));
         ImGui::SetCursorScreenPos(ImVec2(p.x + w - closeW - CHIP_PAD_X, p.y));
@@ -2259,7 +2259,7 @@ void AISidebarPanel::renderContextChips(float availWidth) {
         ImGui::PopID();
 
         drawList->AddText(ImVec2(p.x + w - closeW - CHIP_PAD_X, p.y + CHIP_PAD_Y),
-                          ImGui::GetColorU32(hovered ? colors.red : colors.subtext0),
+                          ImGui::GetColorU32(hovered ? colors.destructive : colors.mutedForeground),
                           ICON_FA_XMARK);
         x += w + Theme::Spacing::XS;
     }
@@ -2296,8 +2296,8 @@ void AISidebarPanel::renderInputArea() {
     const float containerHeight = computeInputHeight();
     const float controlsHeight = inputControlsHeight();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.surface0);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.overlay0);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, INPUT_ROUNDING);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
@@ -2343,7 +2343,7 @@ void AISidebarPanel::renderInputArea() {
         if (inputBuf_[0] == '\0') {
             ImGui::GetWindowDrawList()->AddText(
                 ImVec2(inputRectMin.x + INPUT_FRAME_PAD_X, inputRectMin.y + INPUT_FRAME_PAD_Y),
-                ImGui::GetColorU32(colors.overlay1), INPUT_HINT);
+                ImGui::GetColorU32(colors.mutedForeground), INPUT_HINT);
         }
 
         ImGui::PopStyleColor(3);
@@ -2365,13 +2365,13 @@ void AISidebarPanel::renderInputArea() {
         const float rowY = ImGui::GetCursorPosY();
         ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + INPUT_FRAME_PAD_X,
                                    rowY + (controlsHeight - ImGui::GetTextLineHeight()) * 0.5f));
-        ImGui::TextColored(colors.subtext0, ICON_FA_WAND_MAGIC_SPARKLES);
+        ImGui::TextColored(colors.mutedForeground, ICON_FA_WAND_MAGIC_SPARKLES);
 
         const float sendBtnWidth = controlsHeight;
         ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - sendBtnWidth, rowY));
 
         if (isBusy()) {
-            if (imshell::IconButton(ICON_FA_STOP, imshell::ButtonVariant::Danger,
+            if (imshell::IconButton(ICON_FA_STOP, imshell::ButtonVariant::Destructive,
                                    ImVec2(sendBtnWidth, controlsHeight))) {
                 if (acp_) {
                     acp_->cancelTurn();

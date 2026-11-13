@@ -465,14 +465,14 @@ void S3BrowserTab::renderToolbar() {
 
     if (op_.isRunning()) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        imshell::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.blue));
+        imshell::Spinner("##s3_op", 6.0f, 2, ImGui::GetColorU32(colors.primary));
         ImGui::SameLine(0, Theme::Spacing::S);
         const double p = progress_->load();
         if (p >= 0)
-            ImGui::TextColored(colors.subtext0, "%s  %d%%", opLabel_.c_str(),
+            ImGui::TextColored(colors.mutedForeground, "%s  %d%%", opLabel_.c_str(),
                                static_cast<int>(p * 100));
         else
-            ImGui::TextColored(colors.subtext0, "%s", opLabel_.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", opLabel_.c_str());
         if (p >= 0) {
             ImGui::SameLine(0, Theme::Spacing::S);
             if (imshell::IconButton(ICON_FA_XMARK))
@@ -492,7 +492,7 @@ void S3BrowserTab::renderBreadcrumb() {
             ImGui::TextUnformatted(label.c_str());
             return;
         }
-        ImGui::TextColored(colors.blue, "%s", label.c_str());
+        ImGui::TextColored(colors.primary, "%s", label.c_str());
         if (ImGui::IsItemHovered())
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         if (ImGui::IsItemClicked())
@@ -516,16 +516,16 @@ void S3BrowserTab::renderTable() {
     const auto& colors = Application::getInstance().getCurrentColors();
 
     if (!listError_.empty()) {
-        ImGui::TextColored(colors.red, "%s", listError_.c_str());
+        ImGui::TextColored(colors.destructive, "%s", listError_.c_str());
         if (imshell::Button(ICON_FA_ARROWS_ROTATE " Retry"))
             list();
         return;
     }
     if (entries_.empty()) {
         if (listOp_.isRunning()) {
-            imshell::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.peach));
+            imshell::Spinner("##s3_loading", 8.0f, 2, ImGui::GetColorU32(colors.warning));
             ImGui::SameLine(0, Theme::Spacing::M);
-            ImGui::TextColored(colors.subtext0, "Loading...");
+            ImGui::TextColored(colors.mutedForeground, "Loading...");
         } else {
             ImGui::TextDisabled(prefix_.empty() ? "This bucket is empty."
                                                 : "This folder is empty.");
@@ -584,12 +584,12 @@ void S3BrowserTab::renderTable() {
                 ImGui::EndPopup();
             }
             ImGui::TableNextColumn();
-            ImGui::TextColored(colors.subtext0, "%s", fileType(e.folder, e.key).c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", fileType(e.folder, e.key).c_str());
             ImGui::TableNextColumn();
             if (!e.folder)
                 ImGui::TextUnformatted(humanSize(e.size).c_str());
             ImGui::TableNextColumn();
-            ImGui::TextColored(colors.subtext0, "%s", e.modified.c_str());
+            ImGui::TextColored(colors.mutedForeground, "%s", e.modified.c_str());
             ImGui::PopID();
         }
     }
@@ -665,10 +665,10 @@ void S3BrowserTab::renderStatusBar() {
     if (selection_.Size > 0)
         text += std::format(" · {} selected", selection_.Size);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextColored(colors.subtext0, "%s", text.c_str());
+    ImGui::TextColored(colors.mutedForeground, "%s", text.c_str());
     if (!status_.empty()) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::TextColored(statusIsError_ ? colors.red : colors.green, "%s", status_.c_str());
+        ImGui::TextColored(statusIsError_ ? colors.destructive : colors.success, "%s", status_.c_str());
     }
 }
 

@@ -47,7 +47,7 @@ void RoutineViewerTab::render() {
     ImGui::AlignTextToFramePadding();
 
     const bool isProc = routine_.kind == RoutineKind::Procedure;
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(isProc ? colors.peach : colors.yellow));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(isProc ? colors.warning : colors.hues.yellow));
     ImGui::TextUnformatted(isProc ? ICON_FA_GEAR " PROCEDURE" : ICON_FA_CODE " FUNCTION");
     ImGui::PopStyleColor();
 
@@ -56,7 +56,7 @@ void RoutineViewerTab::render() {
 
     if (!routine_.returnType.empty() && !isProc) {
         ImGui::SameLine(0, Theme::Spacing::L);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.subtext0);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::Text("→ %s", routine_.returnType.c_str());
         ImGui::PopStyleColor();
     }
@@ -84,7 +84,7 @@ void RoutineViewerTab::render() {
     }
 
     if (loadError_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
         ImGui::TextWrapped("%s", loadErrorMessage_.c_str());
         ImGui::PopStyleColor();
         return;
@@ -120,17 +120,17 @@ void RoutineViewerTab::renderToolbar() {
         saveFeedbackTimer_ -= ImGui::GetIO().DeltaTime;
         ImGui::SameLine(0, Theme::Spacing::M);
         if (saveSuccess_) {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.green);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.success);
             ImGui::TextUnformatted(ICON_FA_CHECK " Saved");
             ImGui::PopStyleColor();
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Text, colors.red);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors.destructive);
             ImGui::TextUnformatted(saveMessage_.c_str());
             ImGui::PopStyleColor();
         }
     } else if (contentModified_) {
         ImGui::SameLine(0, Theme::Spacing::M);
-        ImGui::PushStyleColor(ImGuiCol_Text, colors.peach);
+        ImGui::PushStyleColor(ImGuiCol_Text, colors.warning);
         ImGui::TextUnformatted(ICON_FA_CIRCLE "  unsaved");
         ImGui::PopStyleColor();
     }

@@ -54,8 +54,8 @@ void SettingsDialog::render() {
     const auto& colors = app.getCurrentColors();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::CornerRadius::MEDIUM);
-    ImGui::PushStyleColor(ImGuiCol_Border, colors.surface2);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Theme::Radius::Md);
+    ImGui::PushStyleColor(ImGuiCol_Border, colors.border);
     if (!ImGui::BeginPopupModal(POPUP_ID, &open_,
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
         ImGui::PopStyleColor();
@@ -73,8 +73,8 @@ void SettingsDialog::render() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f);
     if (imshell::BeginSelect("##theme", app.getTheme().name)) {
-        for (const auto& theme : Theme::THEMES) {
-            const bool selected = &theme == &app.getTheme();
+        for (const auto& theme : imshell::Themes()) {
+            const bool selected = std::string_view(theme.id) == app.getTheme().id;
             if (ImGui::Selectable(theme.name, selected))
                 app.setTheme(theme.id);
             if (selected)
@@ -250,7 +250,7 @@ void SettingsDialog::renderLicense() {
         std::string key = info.licenseKey;
         if (key.size() > 8)
             key = key.substr(0, 4) + "..." + key.substr(key.size() - 4);
-        ImGui::TextColored(colors.green, "License active");
+        ImGui::TextColored(colors.success, "License active");
         ImGui::TextDisabled("Email");
         ImGui::SameLine(110);
         ImGui::TextUnformatted(info.customerEmail.empty() ? "N/A" : info.customerEmail.c_str());
@@ -261,7 +261,7 @@ void SettingsDialog::renderLicense() {
         ImGui::SameLine(110);
         ImGui::TextUnformatted(manager.getInstanceId().c_str());
         ImGui::BeginDisabled(busy);
-        if (imshell::Button(busy ? "Deactivating..." : "Deactivate", imshell::ButtonVariant::Danger))
+        if (imshell::Button(busy ? "Deactivating..." : "Deactivate", imshell::ButtonVariant::Destructive))
             start(false, [&](auto done) { manager.deactivateLicense(done); });
         ImGui::EndDisabled();
     } else {
@@ -290,7 +290,7 @@ void SettingsDialog::renderLicense() {
     }
     if (!licenseStatus_.empty()) {
         ImGui::SameLine();
-        ImGui::TextColored(licenseError_ ? colors.red : colors.green, "%s", licenseStatus_.c_str());
+        ImGui::TextColored(licenseError_ ? colors.destructive : colors.success, "%s", licenseStatus_.c_str());
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsAnyItemActive()) {

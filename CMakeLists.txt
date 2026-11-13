@@ -430,6 +430,15 @@ elseif(WIN32)
             "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
         COMMENT "Copying WinSparkle.dll to output directory"
     )
+    # staged updates: the installer ships it as tools\imshell-update.exe
+    add_dependencies(${PROJECT_NAME} imshell_update_helper)
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+        COMMAND
+            ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:imshell_update_helper>"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/tools/imshell-update.exe"
+    )
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE glfw OpenGL::GL)
 endif()

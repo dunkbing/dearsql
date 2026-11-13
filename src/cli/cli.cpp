@@ -180,7 +180,7 @@ or let it run commands:
     }
 
     // `dearsql upgrade`: the latest release over this copy, through the same
-    // install.sh (macOS, Linux) or msi (Windows) a fresh install uses
+    // install.sh (macOS, Linux) or setup exe (Windows) a fresh install uses
     int runUpgrade() {
         std::string manifest;
         auto error = httpGet("dearsql.dev", "/api/version.json",
@@ -199,22 +199,23 @@ or let it run commands:
         std::cout << "upgrading dearsql " << APP_VERSION << " to " << latest << "\n" << std::flush;
 #ifdef _WIN32
         const char* temp = std::getenv("TEMP");
-        const std::string msi = std::string(temp ? temp : ".") + "\\DearSQL-x64.msi";
+        const std::string setup = std::string(temp ? temp : ".") + "\\DearSQL-x64-setup.exe";
         {
-            std::ofstream out(msi, std::ios::binary);
+            std::ofstream out(setup, std::ios::binary);
             error = httpGet(
                 "github.com",
-                std::format("/dunkbing/dearsql/releases/download/v{}/DearSQL-x64.msi", latest),
+                std::format("/dunkbing/dearsql/releases/download/v{}/DearSQL-x64-setup.exe", latest),
                 [&](const char* d, size_t n) { out.write(d, std::streamsize(n)); });
             if (error.empty() && !out)
-                error = "could not write " + msi;
+                error = "could not write " + setup;
         }
         if (!error.empty()) {
             std::cerr << "dearsql: download failed: " << error << "\n";
             return 1;
         }
-        // started detached: the installer replaces this exe, so it can't wait on us
-        return std::system(std::format("start \"\" msiexec /i \"{}\" /passive", msi).c_str()) == 0
+        // started detached: the installer replaces this exe, so it can't wait on us. /silent
+        // shows progress; /launch=no keeps the app closed
+        return std::system(std::format("start \"\" \"{}\" /silent /launch=no", setup).c_str()) == 0
                    ? 0
                    : 1;
 #else

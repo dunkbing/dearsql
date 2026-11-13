@@ -180,7 +180,9 @@ bool Application::initialize() {
                             .version = APP_VERSION,
                             .appcastUrl = "https://dearsql.dev/appcast.xml",
                             .publicKey = SPARKLE_ED_PUBLIC_KEY,
-                            .manifestUrl = "https://dearsql.dev/api/version.json"});
+                            .manifestUrl = "https://dearsql.dev/api/version.json",
+                            // windows: the inno installer stages into install\ (DearSQL.iss)
+                            .stageArguments = "/verysilent /update=true"});
 
     restorePreviousConnections();
 

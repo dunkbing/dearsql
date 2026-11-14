@@ -62,7 +62,11 @@ void MongoEditorTab::render() {
     renderHeader();
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
 
+#ifdef DEARSQL_MOBILE
+    constexpr float toggleStripWidth = 0.0f; // the assistant is desktop only for now
+#else
     constexpr float toggleStripWidth = 28.0f;
+#endif
     const float totalWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight_ = ImGui::GetContentRegionAvail().y;
 
@@ -142,8 +146,10 @@ void MongoEditorTab::render() {
     }
 
     // toggle strip on the far right (always visible)
-    ImGui::SameLine(0, 0);
-    renderAIToggleStrip(toggleStripWidth, totalContentHeight_);
+    if (toggleStripWidth > 0.0f) {
+        ImGui::SameLine(0, 0);
+        renderAIToggleStrip(toggleStripWidth, totalContentHeight_);
+    }
 }
 
 void MongoEditorTab::renderHeader() const {

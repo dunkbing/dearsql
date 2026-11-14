@@ -38,6 +38,13 @@
 #include <spdlog/spdlog.h>
 
 namespace {
+    // the assistant (agents, chats) is desktop only for now
+#ifdef DEARSQL_MOBILE
+    constexpr bool kAssistant = false;
+#else
+    constexpr bool kAssistant = true;
+#endif
+
     // opens the csv file in the editor; the connection's DuckDB view is for SQL only
     void openCsvData(FileDatabase* fileDb) {
         if (!fileDb) {
@@ -851,7 +858,7 @@ void DatabaseSidebarNew::renderDatabaseNode(const std::shared_ptr<DatabaseInterf
                 hierarchy->renderRootNode();
             }
         }
-        if (db->getConnectionInfo().type != DatabaseType::S3)
+        if (kAssistant && db->getConnectionInfo().type != DatabaseType::S3)
             renderChatHistoryNode(db);
         ImGui::TreePop();
     }
@@ -910,7 +917,7 @@ void DatabaseSidebarNew::handleDatabaseContextMenu(const std::shared_ptr<Databas
                                       return "";
                                   });
             }
-        } else if (ImGui::MenuItem(ICON_FA_COMMENTS " Open Assistant")) {
+        } else if (kAssistant && ImGui::MenuItem(ICON_FA_COMMENTS " Open Assistant")) {
             app.getTabManager()->createAIChatTab(db);
             // the agent's tools need the connection open
             if (!db->isConnected() && !db->isConnecting()) {

@@ -159,7 +159,11 @@ void SQLEditorTab::render() {
     renderConnectionInfo();
     renderScriptHeader();
 
+#ifdef DEARSQL_MOBILE
+    constexpr float toggleStripWidth = 0.0f; // the assistant is desktop only for now
+#else
     constexpr float toggleStripWidth = 28.0f;
+#endif
     const float totalWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight = ImGui::GetContentRegionAvail().y;
 
@@ -247,8 +251,10 @@ void SQLEditorTab::render() {
     }
 
     // Toggle strip on the far right (always visible)
-    ImGui::SameLine(0, 0);
-    renderAIToggleStrip(toggleStripWidth, totalContentHeight);
+    if (toggleStripWidth > 0.0f) {
+        ImGui::SameLine(0, 0);
+        renderAIToggleStrip(toggleStripWidth, totalContentHeight);
+    }
 }
 
 void SQLEditorTab::renderConnectionInfo() {

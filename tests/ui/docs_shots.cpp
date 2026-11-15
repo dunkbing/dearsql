@@ -192,6 +192,19 @@ void RegisterDocsShots(ImGuiTestEngine* engine) {
         holdForScreenshot(ctx);
     };
 
+    // a file dragged over the window, for the connections page
+    t = IM_REGISTER_TEST(engine, "Docs", "file-drag");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        Application::getInstance().setSidebarVisible(true);
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        imshell::detail::dragOver(true, ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f,
+                                               vp->WorkPos.y + vp->WorkSize.y * 0.6f));
+        ctx->Yield(2);
+        IM_CHECK(imshell::DragActive());
+        holdForScreenshot(ctx);
+        imshell::detail::dragOver(false);
+    };
+
     // the connection dialog, for the connections page
     t = IM_REGISTER_TEST(engine, "Docs", "connection-dialog");
     t->TestFunc = [](ImGuiTestContext* ctx) {

@@ -326,11 +326,38 @@ void Application::setup() {
     fonts::setup();
 }
 
+// files dragged over the window: a drop anywhere goes to openFile, so outline the whole window
+static void renderFileDragHint() {
+    if (!imshell::DragActive())
+        return;
+    const auto& c = imshell::CurrentTheme();
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImDrawList* dl = ImGui::GetForegroundDrawList(const_cast<ImGuiViewport*>(vp));
+    const float in = Theme::Spacing::S;
+    const ImVec2 a(vp->WorkPos.x + in, vp->WorkPos.y + in);
+    const ImVec2 b(vp->WorkPos.x + vp->WorkSize.x - in, vp->WorkPos.y + vp->WorkSize.y - in);
+    ImVec4 tint = c.primary;
+    tint.w = 0.08f;
+    dl->AddRectFilled(a, b, ImGui::GetColorU32(tint), Theme::Radius::Md);
+    dl->AddRect(a, b, ImGui::GetColorU32(c.primary), Theme::Radius::Md, 0, 2.0f);
+
+    const char* label = "Drop a SQLite, DuckDB or CSV file to open it";
+    const ImVec2 ts = ImGui::CalcTextSize(label);
+    const ImVec2 pad(Theme::Spacing::L, Theme::Spacing::M);
+    // bottom centre, clear of the empty-state text in the middle
+    const float midX = (a.x + b.x) * 0.5f;
+    const ImVec2 p1(midX + ts.x * 0.5f + pad.x, b.y - Theme::Spacing::XL * 2);
+    const ImVec2 p0(midX - ts.x * 0.5f - pad.x, p1.y - ts.y - pad.y * 2);
+    dl->AddRectFilled(p0, p1, ImGui::GetColorU32(c.primary), Theme::Radius::Md);
+    dl->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), ImGui::GetColorU32(c.primaryForeground), label);
+}
+
 void Application::frame() {
 #ifndef DEARSQL_IOS
     TitleBarView::render(*this); // in imshell's title bar strip
 #endif
     renderMainUI();
+    renderFileDragHint();
     Alert::render(); // last: over every other window and popup
 }
 

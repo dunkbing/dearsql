@@ -179,6 +179,56 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // the row count is taken once per filter: paging reuses it, refresh and a new
+    // filter count again
+    t = IM_REGISTER_TEST(engine, "TableViewer", "Row count is reused across pages");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        db->executeQuery("CREATE TABLE big (id INTEGER PRIMARY KEY)");
+        db->executeQuery("INSERT INTO big WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 "
+                         "FROM c WHERE x < 250) SELECT x FROM c");
+        db->startTablesLoadAsync(true);
+        for (int i = 0; i < 200 && !db->isTablesLoaded(); ++i) {
+            db->checkLoadingStatus();
+            ctx->Yield();
+        }
+        const Table* big = findTable(db->getTables(), "big");
+        IM_CHECK_SILENT(big != nullptr);
+
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<TableViewerTab>(tabs->createTableViewerTab(db.get(), *big));
+        IM_CHECK_SILENT(tab != nullptr);
+        const auto settle = [&] {
+            ctx->Yield(2);
+            for (int i = 0; i < 200 && tab->isLoading(); ++i)
+                ctx->Yield();
+        };
+        settle();
+        IM_CHECK(tab->getTotalRows() == 250);
+
+        // rows added behind the viewer's back: a page turn does not recount
+        db->executeQuery("INSERT INTO big (id) VALUES (251), (252)");
+        tab->nextPage();
+        settle();
+        IM_CHECK(tab->getTotalRows() == 250);
+
+        tab->refreshData();
+        settle();
+        IM_CHECK(tab->getTotalRows() == 252);
+
+        tab->setFilter("id <= 10");
+        settle();
+        IM_CHECK(tab->getTotalRows() == 10);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // the jump button that appears on a hovered or selected foreign-key cell
     t = IM_REGISTER_TEST(engine, "TableViewer", "Foreign Key Jump Button");
     t->TestFunc = [](ImGuiTestContext* ctx) {

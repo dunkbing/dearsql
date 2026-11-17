@@ -492,6 +492,7 @@ void TableViewerTab::lastPage() {
 
 void TableViewerTab::refreshData() {
     if (!dataLoadOp.isRunning()) {
+        countedFilter_.reset();
         // Reset selection state
         selectedRow = -1;
         selectedCol = -1;
@@ -685,10 +686,13 @@ void TableViewerTab::loadDataAsync() {
     // everything the worker needs is copied; it must not touch `this`
     dataLoadOp.startCancellable([node = node_, keep = keepOwnerAlive(node_), table = table_,
                                  filter = currentFilter, orderByClause, limit = rowsPerPage,
-                                 offset = currentPage * rowsPerPage](std::stop_token stop) {
+                                 offset = currentPage * rowsPerPage,
+                                 count = countedFilter_ != currentFilter](std::stop_token stop) {
         LoadResult result;
+        result.filter = filter;
         try {
-            result.totalRows = node->getRowCount(table, filter);
+            if (count)
+                result.totalRows = node->getRowCount(table, filter);
             // closed meanwhile: a retired node may be gone after the first call
             if (stop.stop_requested())
                 return result;
@@ -709,7 +713,10 @@ void TableViewerTab::checkAsyncLoadStatus() {
             // an open edit belongs to the rows being replaced
             if (tableRenderer)
                 tableRenderer->exitEditMode(false);
-            totalRows = result.totalRows;
+            if (result.totalRows >= 0) {
+                totalRows = result.totalRows;
+                countedFilter_ = std::move(result.filter);
+            }
             tableData = std::move(result.rows);
             originalData = tableData;
             hasChanges = false;

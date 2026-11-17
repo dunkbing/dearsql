@@ -38,7 +38,8 @@
 
 namespace {
     constexpr const char* LABEL_RUNNING_QUERY = "Running query...";
-    constexpr const char* LABEL_CANCEL = "Cancel";
+    constexpr const char* LABEL_CANCEL = "Cancel###cancel_query";
+    constexpr const char* LABEL_CANCELLING = "Cancelling...###cancel_query";
     constexpr const char* LABEL_NO_DATABASE = "SQL Editor (No database selected)";
     constexpr const char* LABEL_NO_ROWS = "No rows returned.";
     constexpr const char* LABEL_ROW_LIMIT = "(limited to 1000 rows)";
@@ -233,7 +234,8 @@ void SQLEditorTab::render() {
                 imshell::Spinner("##results_spinner", spinnerRadius, 2,
                                 ImGui::GetColorU32(ImGuiCol_Text));
 
-                const char* loadingText = LABEL_RUNNING_QUERY;
+                const char* loadingText =
+                    cancelRequestedAt_ ? "Cancelling query..." : LABEL_RUNNING_QUERY;
                 ImVec2 textSize = ImGui::CalcTextSize(loadingText);
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - textSize.x * 0.5f, cy + spinnerRadius + Theme::Spacing::S));
@@ -648,9 +650,11 @@ void SQLEditorTab::renderToolbar(const bool narrow) {
         ImGui::EndDisabled();
 
         ImGui::SameLine(0, Theme::Spacing::M);
-        if (imshell::Button(LABEL_CANCEL)) {
+        ImGui::BeginDisabled(cancelRequestedAt_.has_value());
+        if (imshell::Button(cancelRequestedAt_ ? LABEL_CANCELLING : LABEL_CANCEL)) {
             cancelQueryExecution();
         }
+        ImGui::EndDisabled();
     } else {
         if (imshell::IconLabelButton(ICON_FA_PLAY, "Run", imshell::ButtonVariant::Primary)) {
             if (sqlEditor.HasSelection()) {
@@ -1108,8 +1112,27 @@ void SQLEditorTab::syncBoundNodePointer() {
 }
 
 void SQLEditorTab::checkQueryExecutionStatus() {
+    if (cancelRequestedAt_ && queryExecutionOp_.isRunning()) {
+        using namespace std::chrono_literals;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - *cancelRequestedAt_ > 3s) {
+            // mongodb, redis and cassandra cannot cancel: stop waiting, let it finish alone
+            queryExecutionOp_.cancel();
+            cancelRequestedAt_.reset();
+            pendingExplain_.reset();
+            showError("Query cancelled. The server did not stop it, so it may still finish in "
+                      "the background.");
+            return;
+        }
+        // a cancel that lands while connecting or between statements is lost
+        if (now - lastCancelSent_ > 250ms) {
+            lastCancelSent_ = now;
+            ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
+        }
+    }
     try {
         queryExecutionOp_.check([this](QueryResult result) {
+            cancelRequestedAt_.reset();
             if (!result.empty() && !result.success()) {
                 queryError = result.errorMessage();
                 SentryUtils::addBreadcrumb("query", "Query error", "error", queryError, "error");
@@ -1130,10 +1153,12 @@ void SQLEditorTab::checkQueryExecutionStatus() {
 }
 
 void SQLEditorTab::cancelQueryExecution() {
-    // the stop token alone never reaches a query blocked in the driver
-    if (queryExecutionOp_.isRunning())
-        ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
-    queryExecutionOp_.cancel();
+    // the stop token alone never reaches a query blocked in the driver; keep the run
+    // until the worker returns, so the driver's error (or the finished result) shows
+    if (!queryExecutionOp_.isRunning() || cancelRequestedAt_)
+        return;
+    cancelRequestedAt_ = lastCancelSent_ = std::chrono::steady_clock::now();
+    ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
 }
 
 void SQLEditorTab::formatSQL() {

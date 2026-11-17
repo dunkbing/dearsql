@@ -312,6 +312,36 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // Cancel stops a running query and shows the driver's error, not the old rows
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Cancel stops a running query");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("with recursive c(x) as (select 1 union all select x + 1 from c) "
+                      "select count(*) from c");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        tab->run();
+        ctx->SleepNoSkip(0.2f, 0.05f);
+        ctx->ItemClick("**/###cancel_query");
+        for (int i = 0; i < 300 && tab->getQueryResult().empty(); ++i) {
+            ctx->Yield();
+        }
+        const auto& result = tab->getQueryResult();
+        IM_CHECK(!result.success());
+        IM_CHECK(result.errorMessage().find("interrupt") != std::string::npos);
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // a syntax error is underlined at the token the parser stopped on
     t = IM_REGISTER_TEST(engine, "SQLEditor", "Syntax error is underlined");
     t->TestFunc = [](ImGuiTestContext* ctx) {

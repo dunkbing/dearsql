@@ -99,6 +99,9 @@ private:
 
     // Async query execution state
     AsyncOperation<QueryResult> queryExecutionOp_;
+    // set by Cancel; the run stays on screen until the worker returns or we give up
+    std::optional<std::chrono::steady_clock::time_point> cancelRequestedAt_;
+    std::chrono::steady_clock::time_point lastCancelSent_;
 
     // query plan: the explain in flight, then its parsed result (shown instead of rows)
     struct PendingExplain {

@@ -35,8 +35,32 @@ public:
         std::lock_guard lock(registryMutex());
         for (auto* pool : registry())
             pool->collectInUseBy(worker, out);
+        for (const auto& scope : scopes())
+            if (scope.thread == worker)
+                out.push_back(scope.cancel);
         return out;
     }
+
+    // a handle outside any pool (a file database) is cancellable for as long as
+    // this lives on the thread running on it
+    class CancelScope {
+    public:
+        explicit CancelScope(Cancel cancel) {
+            std::lock_guard lock(registryMutex());
+            static uint64_t nextId = 0;
+            id_ = ++nextId;
+            scopes().push_back({id_, std::this_thread::get_id(), std::move(cancel)});
+        }
+        ~CancelScope() {
+            std::lock_guard lock(registryMutex());
+            std::erase_if(scopes(), [this](const Scope& s) { return s.id == id_; });
+        }
+        CancelScope(const CancelScope&) = delete;
+        CancelScope& operator=(const CancelScope&) = delete;
+
+    private:
+        uint64_t id_;
+    };
 
     // cancel what `worker` runs, on the reaper: safe to call from the UI thread
     static void cancelQueriesOn(std::thread::id worker) {
@@ -64,6 +88,15 @@ private:
     static std::vector<ConnectionPoolBase*>& registry() {
         static std::vector<ConnectionPoolBase*> pools;
         return pools;
+    }
+    struct Scope {
+        uint64_t id;
+        std::thread::id thread;
+        Cancel cancel;
+    };
+    static std::vector<Scope>& scopes() {
+        static std::vector<Scope> list;
+        return list;
     }
 };
 

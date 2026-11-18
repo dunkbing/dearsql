@@ -667,3 +667,27 @@ TEST_F(PostgresDatabaseIntegrationTest, ServerSyntaxCheckRunsNothing) {
     ASSERT_TRUE(created.success()) << created.errorMessage();
     EXPECT_EQ(created[0].tableData[0][0], "0");
 }
+
+// #111: a session the server dropped (idle timeout, restart) is replaced on the next
+// call, not left failing with "no connection to the server" until the app restarts.
+// the agent tools hold the library's cached handle, so this is the path they take
+TEST_F(PostgresDatabaseIntegrationTest, DroppedSessionReconnects) {
+    auto lib = database->libConnection();
+    ASSERT_NE(lib, nullptr);
+    if (lib->type() == DatabaseType::COCKROACHDB)
+        GTEST_SKIP() << "cockroachdb cannot end another session";
+    auto db = lib->database(config.database);
+    auto pid = db->execute("SELECT pg_backend_pid()");
+    ASSERT_TRUE(pid.success()) << pid.errorMessage();
+    const std::string victim = pid[0].tableData[0][0];
+
+    auto killer = lib->openDatabase(config.database);
+    ASSERT_TRUE(killer->execute("SELECT pg_terminate_backend(" + victim + ")").success());
+
+    db->execute("SELECT 1"); // fails: this is how libpq learns the session is gone
+    EXPECT_FALSE(db->alive());
+    auto again = db->execute("SELECT pg_backend_pid()");
+    ASSERT_TRUE(again.success()) << again.errorMessage();
+    EXPECT_NE(again[0].tableData[0][0], victim);
+    EXPECT_TRUE(db->alive());
+}

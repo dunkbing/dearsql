@@ -90,6 +90,28 @@ TEST_F(McpToolsTest, DescribeShowsKeysAndResolvesNearMisses) {
     EXPECT_NE(users.find("referenced by: orders(user_id)"), std::string::npos) << users;
 }
 
+// #110: long values are cut by default, with a hint; maxCellChars 0 returns them whole,
+// even past the page's byte limit
+TEST_F(McpToolsTest, LongValuesReadWhole) {
+    const std::string sql = "SELECT printf('%.100000c', 'x') AS big";
+    auto [cut, err] = call("run_query", {{"sql", sql}});
+    ASSERT_FALSE(err) << cut;
+    EXPECT_NE(cut.find("…(+99800 chars)"), std::string::npos) << cut.substr(0, 400);
+    EXPECT_NE(cut.find("maxCellChars"), std::string::npos);
+
+    auto [whole, err2] = call("run_query", {{"sql", sql}, {"maxCellChars", 0}});
+    ASSERT_FALSE(err2) << whole.substr(0, 400);
+    EXPECT_NE(whole.find(std::string(100000, 'x')), std::string::npos);
+    EXPECT_EQ(whole.find("maxCellChars"), std::string::npos);
+
+    // escapes (a newline shows as \n) do not count toward the limit
+    auto [lines, err3] =
+        call("run_query", {{"sql", "SELECT 'a' || char(10) || 'bc' AS v"}, {"maxCellChars", 0}});
+    ASSERT_FALSE(err3) << lines;
+    EXPECT_NE(lines.find("a\\nbc\n"), std::string::npos) << lines;
+    EXPECT_EQ(lines.find("chars)"), std::string::npos) << lines;
+}
+
 TEST_F(McpToolsTest, QueryPagesThroughCursor) {
     auto [first, err] = call("run_query", {{"sql", "SELECT id, email FROM users ORDER BY id"},
                                            {"maxRows", "50"}}); // numbers may arrive as strings

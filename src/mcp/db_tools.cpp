@@ -117,10 +117,12 @@ namespace mcp {
                 return hex;
             }
             std::string out;
-            const size_t limit = maxChars ? maxChars : v.size();
-            out.reserve(std::min(v.size(), limit + 16));
-            for (char c : v) {
-                if (out.size() >= limit) {
+            // the limit counts the value's own characters, not the escapes added below
+            const size_t limit = maxChars ? std::min(maxChars, v.size()) : v.size();
+            out.reserve(limit + 16);
+            for (size_t i = 0; i < v.size(); ++i) {
+                const char c = v[i];
+                if (i >= limit) {
                     out += std::format("…(+{} chars)", v.size() - limit);
                     break;
                 }

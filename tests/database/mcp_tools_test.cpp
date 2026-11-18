@@ -103,6 +103,13 @@ TEST_F(McpToolsTest, LongValuesReadWhole) {
     ASSERT_FALSE(err2) << whole.substr(0, 400);
     EXPECT_NE(whole.find(std::string(100000, 'x')), std::string::npos);
     EXPECT_EQ(whole.find("maxCellChars"), std::string::npos);
+
+    // escapes (a newline shows as \n) do not count toward the limit
+    auto [lines, err3] =
+        call("run_query", {{"sql", "SELECT 'a' || char(10) || 'bc' AS v"}, {"maxCellChars", 0}});
+    ASSERT_FALSE(err3) << lines;
+    EXPECT_NE(lines.find("a\\nbc\n"), std::string::npos) << lines;
+    EXPECT_EQ(lines.find("chars)"), std::string::npos) << lines;
 }
 
 TEST_F(McpToolsTest, QueryPagesThroughCursor) {

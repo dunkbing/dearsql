@@ -2,6 +2,7 @@
 
 #include "utils/reaper.hpp"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -49,9 +50,17 @@ public:
             std::lock_guard lock(registryMutex());
             static uint64_t nextId = 0;
             id_ = ++nextId;
-            scopes().push_back({id_, std::this_thread::get_id(), std::move(cancel)});
+            // the reaper may run a collected cancel after this scope ended: by then the
+            // handle may run someone else's query (shortcut: an end in the instant
+            // before the call still slips, like the pools' ticket check)
+            scopes().push_back({id_, std::this_thread::get_id(),
+                                [live = live_, cancel = std::move(cancel)] {
+                                    if (*live)
+                                        cancel();
+                                }});
         }
         ~CancelScope() {
+            *live_ = false;
             std::lock_guard lock(registryMutex());
             std::erase_if(scopes(), [this](const Scope& s) { return s.id == id_; });
         }
@@ -60,6 +69,7 @@ public:
 
     private:
         uint64_t id_;
+        std::shared_ptr<std::atomic<bool>> live_ = std::make_shared<std::atomic<bool>>(true);
     };
 
     // cancel what `worker` runs, on the reaper: safe to call from the UI thread

@@ -1112,24 +1112,6 @@ void SQLEditorTab::syncBoundNodePointer() {
 }
 
 void SQLEditorTab::checkQueryExecutionStatus() {
-    if (cancelRequestedAt_ && queryExecutionOp_.isRunning()) {
-        using namespace std::chrono_literals;
-        const auto now = std::chrono::steady_clock::now();
-        if (now - *cancelRequestedAt_ > 3s) {
-            // mongodb, redis and cassandra cannot cancel: stop waiting, let it finish alone
-            queryExecutionOp_.cancel();
-            cancelRequestedAt_.reset();
-            pendingExplain_.reset();
-            showError("Query cancelled. The server did not stop it, so it may still finish in "
-                      "the background.");
-            return;
-        }
-        // a cancel that lands while connecting or between statements is lost
-        if (now - lastCancelSent_ > 250ms) {
-            lastCancelSent_ = now;
-            ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
-        }
-    }
     try {
         queryExecutionOp_.check([this](QueryResult result) {
             cancelRequestedAt_.reset();
@@ -1149,6 +1131,27 @@ void SQLEditorTab::checkQueryExecutionStatus() {
         });
     } catch (const std::exception& e) {
         queryError = "Error in async query execution: " + std::string(e.what());
+        cancelRequestedAt_.reset();
+    }
+    // after check(): a result that landed while the tab was hidden is shown, not
+    // mistaken for a server that would not stop
+    if (cancelRequestedAt_ && queryExecutionOp_.isRunning()) {
+        using namespace std::chrono_literals;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - *cancelRequestedAt_ > 3s) {
+            // mongodb, redis and cassandra cannot cancel: stop waiting, let it finish alone
+            queryExecutionOp_.cancel();
+            cancelRequestedAt_.reset();
+            pendingExplain_.reset();
+            showError("Query cancelled. The server did not stop it, so it may still finish in "
+                      "the background.");
+            return; // nothing left to cancel
+        }
+        // a cancel that lands while connecting or between statements is lost
+        if (now - lastCancelSent_ > 250ms) {
+            lastCancelSent_ = now;
+            ConnectionPoolBase::cancelQueriesOn(queryExecutionOp_.workerId());
+        }
     }
 }
 

@@ -256,3 +256,20 @@ TEST_F(SQLiteDatabaseFixture, CancelStopsRunningQuery) {
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(5));
     EXPECT_TRUE(database_->executeQuery("SELECT 1").success());
 }
+
+// a cancel collected while the query ran but run after it ended (the reaper was busy)
+// must not reach whatever the shared handle runs next
+TEST(CancelScope, StaleCancelIsANoOp) {
+    int calls = 0;
+    std::vector<ConnectionPoolBase::Cancel> collected;
+    {
+        ConnectionPoolBase::CancelScope scope([&] { ++calls; });
+        collected = ConnectionPoolBase::cancelsFor(std::this_thread::get_id());
+        ASSERT_EQ(collected.size(), 1u);
+        collected[0]();
+        EXPECT_EQ(calls, 1);
+    }
+    collected[0]();
+    EXPECT_EQ(calls, 1);
+    EXPECT_TRUE(ConnectionPoolBase::cancelsFor(std::this_thread::get_id()).empty());
+}

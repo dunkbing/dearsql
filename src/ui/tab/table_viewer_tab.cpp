@@ -671,6 +671,7 @@ void TableViewerTab::loadDataAsync() {
     if (filterChanged) {
         tableData.clear();
         totalRows = 0;
+        countedFilter_.reset(); // the count it keyed was just cleared
         filterChanged = false;
         spdlog::debug("Cleared previous filtered data, starting fresh load");
     }

@@ -224,6 +224,13 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         settle();
         IM_CHECK(tab->getTotalRows() == 10);
 
+        // another filter, dropped while loading, then back to the counted one: the
+        // count was cleared with it, so count again rather than show 0
+        tab->setFilter("id <= 20");
+        tab->setFilter("id <= 10");
+        settle();
+        IM_CHECK(tab->getTotalRows() == 10);
+
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
         ctx->Yield();

@@ -18,7 +18,7 @@ DearSQL is the user's SQL client. Its saved connections (credentials encrypted, 
 1. `list_connections` when you don't know which connection. `*` marks what the user has selected; connection and database default to it.
 2. `search_schema` with 1-3 words ("invoice total", typos fine) before writing any SQL. Never guess table or column names.
 3. `describe_table` before a join or filter: types, keys, indexes, foreign keys in and out.
-4. `run_query` for one read-only statement. Put LIMIT (TOP on SQL Server) on exploration, aggregate in SQL instead of paging rows, and pass the `cursor` a result ends with to get the next page.
+4. `run_query` for one read-only statement. Put LIMIT (TOP on SQL Server) on exploration, aggregate in SQL instead of paging rows, and pass the `cursor` a result ends with to get the next page. Long values are cut at 200 characters; pass `maxCellChars` (0 = whole values) when the user needs a full value.
 5. `profile_table` before filtering on data you haven't seen: per column the null %, distinct count, min and max, and the common values of low-cardinality columns (first 100,000 rows, one bounded query).
 
 ## Slow queries and indexes

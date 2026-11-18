@@ -60,7 +60,8 @@ namespace mcp {
                     v = std::atof(it->get<std::string>().c_str());
                 else
                     continue;
-                if (v > 0)
+                // 0 counts only where it means something (maxCellChars: no limit)
+                if (v > 0 || (v == 0 && lo == 0))
                     return std::clamp(static_cast<int>(v + 0.5), lo, hi);
             }
             return def;
@@ -101,7 +102,8 @@ namespace mcp {
             return false;
         }
 
-        std::string cell(const std::string& v) {
+        // maxChars 0: the whole value
+        std::string cell(const std::string& v, size_t maxChars = MAX_CELL) {
             if (dearsql::isNullSentinel(v))
                 return "NULL";
             if (dearsql::isBoolSentinel(v))
@@ -115,10 +117,11 @@ namespace mcp {
                 return hex;
             }
             std::string out;
-            out.reserve(std::min(v.size(), MAX_CELL + 16));
+            const size_t limit = maxChars ? maxChars : v.size();
+            out.reserve(std::min(v.size(), limit + 16));
             for (char c : v) {
-                if (out.size() >= MAX_CELL) {
-                    out += std::format("…(+{} chars)", v.size() - MAX_CELL);
+                if (out.size() >= limit) {
+                    out += std::format("…(+{} chars)", v.size() - limit);
                     break;
                 }
                 out += c == '\n'   ? std::string("\\n")
@@ -259,7 +262,8 @@ namespace mcp {
                "indexes and foreign keys match another's (dev vs prod). Nothing runs.\n"
                "- run_query: read-only SQL (SELECT/WITH/SHOW/EXPLAIN, read-only PRAGMA on "
                "SQLite), or a read-only command on "
-               "Redis/MongoDB. Returns up to maxRows rows and a cursor for more.\n"
+               "Redis/MongoDB. Returns up to maxRows rows and a cursor for more; values over 200 "
+               "chars are cut unless maxCellChars is passed (0 = whole values).\n"
                "- list_tables: the whole map (tables and views with column counts and sizes), "
                "paged. Use when search_schema is not enough.\n"
                "- list_connections: the user's saved connections. Naming one in any tool opens "
@@ -307,6 +311,12 @@ namespace mcp {
                                    {"description",
                                     "Rows per page (default 50, max 500). A page also stops "
                                     "at 30 KB of text, and at most 1000 rows are fetched."}}},
+                                 {"maxCellChars",
+                                  {{"type", "integer"},
+                                   {"description",
+                                    "Characters shown per value (default 200; 0 = whole "
+                                    "values). A row longer than a page still comes back "
+                                    "whole, one per page."}}},
                                  {"cursor", cursor}}),
                      {"sql"}),
              toolDef("explain_query",
@@ -1120,6 +1130,8 @@ namespace mcp {
 
     std::string Server::runQuery(const json& args, bool write) {
         const int maxRows = num(args, {"maxRows", "max_rows", "maxResults", "limit"}, 50, 1, 500);
+        const size_t maxCell = static_cast<size_t>(
+            num(args, {"maxCellChars", "max_cell_chars", "cellChars"}, MAX_CELL, 0, 1 << 30));
 
         json page;
         size_t resumeAt = 0; // a cursor whose rows are gone: re-run, start here
@@ -1165,7 +1177,12 @@ namespace mcp {
                 if (auto why = host_.approveWrite(target.connection, sql); !why.empty())
                     throw ToolError("Not run: " + why);
             }
-            const auto result = target.db->execute(sql, FETCH_ROWS + 1);
+            auto result = target.db->execute(sql, FETCH_ROWS + 1);
+            // the server dropped an idle session: that failure is what reveals it, and the
+            // handle reconnects on its next call. a read is safe to run again; a write may
+            // already have happened
+            if (!write && !result.success() && !target.db->alive())
+                result = target.db->execute(sql, FETCH_ROWS + 1);
             if (!result.success()) {
                 std::string msg = "Error: " + result.errorMessage();
                 if (auto [missing, isTable] = missingName(result.errorMessage());
@@ -1266,11 +1283,15 @@ namespace mcp {
         const bool more = page.value("more", false);
         std::string out = page.value("notes", "");
         std::string body;
+        bool clipped = false;
         size_t i = offset;
         for (; i < data.size() && i < offset + maxRows; ++i) {
             std::string line;
-            for (size_t c = 0; c < data[i].size(); ++c)
-                line += (c ? " | " : "") + cell(data[i][c].get<std::string>());
+            for (size_t c = 0; c < data[i].size(); ++c) {
+                const auto& v = data[i][c].get_ref<const std::string&>();
+                clipped |= maxCell && v.size() > maxCell && !binary(v);
+                line += (c ? " | " : "") + cell(v, maxCell);
+            }
             if (body.size() + line.size() > MAX_OUTPUT && i > offset)
                 break;
             body += line + "\n";
@@ -1297,6 +1318,10 @@ namespace mcp {
         } else if (more) {
             out += std::format("stopped at {} rows; narrow the query or aggregate.\n", total);
         }
+        if (clipped)
+            out += std::format("values over {} chars are cut; pass maxCellChars (0 = whole "
+                               "values) to read them\n",
+                               maxCell);
         return out;
     }
 

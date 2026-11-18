@@ -102,3 +102,35 @@ void RegisterCsvEditorTests(ImGuiTestEngine* engine) {
         std::filesystem::remove(path);
     };
 }
+
+void RegisterGridKeyboardSelectTests(ImGuiTestEngine* engine) {
+    // shift + navigation keys grow the selection from the clicked cell; a plain key collapses it
+    ImGuiTest* t = IM_REGISTER_TEST(engine, "TableRenderer", "Shift keys extend the selection");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        const auto path = writeTempCsv("id,name,city\n1,ada,london\n2,grace,nyc\n3,linus,oslo\n");
+        auto tab = openEditor(ctx, path, "ada");
+        const auto copied = [&] {
+            ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_C);
+            ctx->Yield(2);
+            return std::string(ImGui::GetClipboardText());
+        };
+
+        ctx->ItemClick("**/ada");
+        ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_LeftArrow);
+        ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+        ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_DownArrow);
+        IM_CHECK_EQ(copied(), std::string("1,ada\n2,grace\n3,linus\n"));
+
+        // the anchor stays on the clicked cell: shift+end spans from it to the last column
+        ctx->KeyPress(ImGuiMod_Shift | ImGuiKey_End);
+        IM_CHECK_EQ(copied(), std::string("ada,london\ngrace,nyc\nlinus,oslo\n"));
+
+        // a plain arrow collapses to one cell
+        ctx->KeyPress(ImGuiKey_UpArrow);
+        IM_CHECK_EQ(copied(), std::string("nyc"));
+
+        tab->setOpen(false);
+        ctx->Yield(3);
+        std::filesystem::remove(path);
+    };
+}

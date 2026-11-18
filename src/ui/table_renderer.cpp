@@ -1265,28 +1265,41 @@ void TableRenderer::handleKeyboardNavigation() {
 
     const int maxRows = static_cast<int>(data.size());
     const int maxCols = shownColumns();
+    const ImGuiIO& io = ImGui::GetIO();
+    // cmd (ctrl elsewhere) + arrow jumps to the edge; shift extends from the anchor
+    const bool toEdge = io.KeySuper || io.KeyCtrl;
+    const int page = std::max(1, static_cast<int>(ImGui::GetWindowHeight() /
+                                                  ImGui::GetFrameHeightWithSpacing()));
     int newRow = selectedRow;
     int newCol = selectedCol;
-    bool moved = false;
 
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && selectedRow > 0) {
-        newRow = selectedRow - 1;
-        moved = true;
-    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && selectedRow < maxRows - 1) {
-        newRow = selectedRow + 1;
-        moved = true;
-    } else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && selectedCol > 0) {
-        newCol = selectedCol - 1;
-        moved = true;
-    } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && selectedCol < maxCols - 1) {
-        newCol = selectedCol + 1;
-        moved = true;
-    }
-    // a whole-row selection ends past the shown columns: come back into them
-    newCol = std::min(newCol, maxCols - 1);
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+        newRow = toEdge ? 0 : selectedRow - 1;
+    else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+        newRow = toEdge ? maxRows - 1 : selectedRow + 1;
+    else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+        newCol = toEdge ? 0 : selectedCol - 1;
+    else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+        newCol = toEdge ? maxCols - 1 : selectedCol + 1;
+    else if (ImGui::IsKeyPressed(ImGuiKey_PageUp))
+        newRow = selectedRow - page;
+    else if (ImGui::IsKeyPressed(ImGuiKey_PageDown))
+        newRow = selectedRow + page;
+    else if (ImGui::IsKeyPressed(ImGuiKey_Home))
+        newCol = 0;
+    else if (ImGui::IsKeyPressed(ImGuiKey_End))
+        newCol = maxCols - 1;
+    else
+        return; // no key: leave a selection past the shown columns alone
+    newRow = std::clamp(newRow, 0, maxRows - 1);
+    // the clamp also brings a whole-row selection back into the shown columns
+    newCol = std::clamp(newCol, 0, maxCols - 1);
 
-    if (moved) {
-        collapseSelectionToCell(newRow, newCol);
+    if (newRow != selectedRow || newCol != selectedCol) {
+        if (io.KeyShift && rangeAnchorRow >= 0 && rangeAnchorCol >= 0)
+            setSelectionRange(rangeAnchorRow, rangeAnchorCol, newRow, newCol);
+        else
+            collapseSelectionToCell(newRow, newCol);
         if (onCellSelect)
             onCellSelect(newRow, newCol);
         scrollToCell(newRow, newCol);

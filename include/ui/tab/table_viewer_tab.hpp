@@ -48,6 +48,9 @@ public:
     [[nodiscard]] int getTotalRows() const {
         return totalRows;
     }
+    [[nodiscard]] bool isLoading() const {
+        return dataLoadOp.isRunning();
+    }
 
     void loadDataAsync();
     void checkAsyncLoadStatus();
@@ -105,12 +108,15 @@ private:
     // the tab, so closing the tab mid-query can detach it instead of joining
     struct LoadResult {
         std::vector<std::vector<std::string>> rows;
-        int totalRows = 0;
+        int totalRows = -1; // -1: not counted, keep the last count
+        std::string filter;
         std::string error;
     };
     bool hasLoadingError = false;
     std::string loadingError;
     AsyncOperation<LoadResult> dataLoadOp;
+    // the filter totalRows was counted for: paging and sorting reuse the count
+    std::optional<std::string> countedFilter_;
     bool reloadQueued_ = false; // a load asked for while one ran
 
     // Edit state

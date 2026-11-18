@@ -14,6 +14,23 @@
 
 namespace {
     // truncate at first newline for single-line cell display
+    // what a cell draws: its first line, at most 512 bytes (cut on a utf-8 boundary), so a
+    // huge value costs no more per frame than a short one. short one-line values are
+    // returned as they are: the ui tests find cells by their text
+    const char* cellLabel(const std::string& v) {
+        static std::string scratch; // ui thread only; read before the next call
+        constexpr size_t kMaxLabel = 512;
+        const size_t limit = std::min(v.size(), kMaxLabel);
+        const void* nl = std::memchr(v.data(), '\n', limit);
+        size_t end = nl ? static_cast<size_t>(static_cast<const char*>(nl) - v.data()) : limit;
+        if (end == v.size())
+            return v.c_str();
+        while (end > 0 && (static_cast<unsigned char>(v[end]) & 0xC0) == 0x80)
+            --end;
+        scratch.assign(v, 0, end);
+        return scratch.c_str();
+    }
+
     std::string getFirstLine(const std::string& text) {
         auto pos = text.find('\n');
         if (pos == std::string::npos)
@@ -400,10 +417,13 @@ void TableRenderer::render(const char* tableId) {
 
     handleKeyboardNavigation();
 
-    int colCount = static_cast<int>(columns.size());
-    if (config.showRowNumbers) {
-        colCount++; // Add one for row number column
-    }
+    // imgui tables stop at IMGUI_TABLE_MAX_COLUMNS; wider results show their first columns
+    const int shownCols = std::min(static_cast<int>(columns.size()),
+                                   IMGUI_TABLE_MAX_COLUMNS - 1 - (config.showRowNumbers ? 1 : 0));
+    if (shownCols < static_cast<int>(columns.size()))
+        ImGui::TextColored(colors.mutedForeground, "Showing the first %d of %d columns", shownCols,
+                           static_cast<int>(columns.size()));
+    const int colCount = shownCols + (config.showRowNumbers ? 1 : 0);
 
     float availableHeight = ImGui::GetContentRegionAvail().y;
     if (availableHeight < config.minHeight) {
@@ -478,9 +498,8 @@ void TableRenderer::render(const char* tableId) {
                                     columnWidth);
         }
 
-        for (const auto& col : columns) {
-            ImGui::TableSetupColumn(col.name.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
-        }
+        for (int c = 0; c < shownCols; ++c)
+            ImGui::TableSetupColumn(columns[c].name.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
 
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
         // a step above the theme's header bg, so it stands out from the rows
@@ -493,7 +512,7 @@ void TableRenderer::render(const char* tableId) {
             ImGui::TableNextColumn();
         }
 
-        for (int colIdx = 0; colIdx < static_cast<int>(columns.size()); colIdx++) {
+        for (int colIdx = 0; colIdx < shownCols; colIdx++) {
             ImGui::TableNextColumn();
             renderColumnHeader(colIdx, columns[colIdx].name);
         }
@@ -552,15 +571,19 @@ void TableRenderer::render(const char* tableId) {
                     ImGui::PopStyleColor();
                 }
 
-                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) &&
-                                     colIdx < static_cast<int>(columns.size());
+                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) && colIdx < shownCols;
                      colIdx++) {
-                    ImGui::TableNextColumn();
+                    // a column scrolled out of view costs nothing, unless its cell is being
+                    // edited (the input must stay alive) or scrolled to
+                    const bool visible = ImGui::TableNextColumn();
+                    const bool scrollTarget = shouldScrollToCell && rowIdx == scrollTargetRow &&
+                                              colIdx == scrollTargetCol;
+                    if (!visible && !scrollTarget && !(editingRow == rowIdx && editingCol == colIdx))
+                        continue;
 
                     renderCell(rowIdx, colIdx);
 
-                    if (shouldScrollToCell && rowIdx == scrollTargetRow &&
-                        colIdx == scrollTargetCol) {
+                    if (scrollTarget) {
                         // use the table's inner clip rect + column MinX/MaxX so the
                         // visibility check reflects the actual scroll viewport, not the
                         // window content extent (which would span the whole table width
@@ -850,7 +873,7 @@ void TableRenderer::renderCell(int row, int col) {
             } else if (isNullSentinel(cellValue)) {
                 ImGui::TextColored(colors.mutedForeground, "NULL");
             } else {
-                ImGui::Text("%s", getFirstLine(cellValue).c_str());
+                ImGui::TextUnformatted(cellLabel(cellValue));
             }
 
             if (ImGui::IsItemHovered() &&
@@ -970,19 +993,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         return;
     }
 
-    std::string singleLineText;
-    const char* displayText;
-    if (isNull) {
-        displayText = "NULL";
-    } else {
-        auto nlPos = cellValue.find('\n');
-        if (nlPos != std::string::npos) {
-            singleLineText = cellValue.substr(0, nlPos);
-            displayText = singleLineText.c_str();
-        } else {
-            displayText = cellValue.c_str();
-        }
-    }
+    const char* displayText = isNull ? "NULL" : cellLabel(cellValue);
 
     // Make Selectable transparent - cell bg is handled by TableSetBgColor
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
@@ -1100,8 +1111,8 @@ void TableRenderer::copyRowToClipboard(int row) const {
 }
 
 void TableRenderer::renderCellContextMenu(int row, int col) {
-    const std::string menuId = std::format("##cell_ctx_{}_{}", row, col);
-    if (!imshell::BeginContextMenu(menuId.c_str())) {
+    // unique already: every cell is inside its own PushID
+    if (!imshell::BeginContextMenu("##cell_ctx")) {
         return;
     }
 

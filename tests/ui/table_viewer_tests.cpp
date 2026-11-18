@@ -10,6 +10,7 @@
 #include "ui/tab/sql_editor_tab.hpp"
 #include "ui/tab/table_viewer_tab.hpp"
 #include "ui/tab_manager.hpp"
+#include "ui/table_renderer.hpp"
 #include <algorithm>
 #include <chrono>
 #include <memory>
@@ -931,5 +932,70 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         tabs->closeTabsForDatabase(db.get());
         app.removeDatabase(db);
         ctx->Yield();
+    };
+}
+
+namespace {
+    // the grid every tab shares, drawn bare so its own cost is what gets timed
+    struct GridPerf {
+        std::unique_ptr<TableRenderer> grid;
+        double totalMs = 0;
+        int frames = 0;
+    };
+    GridPerf& gridPerf() {
+        static GridPerf p;
+        return p;
+    }
+    void makeGrid(int cols, int rows, size_t longCell) {
+        auto& p = gridPerf();
+        p = {};
+        p.grid = std::make_unique<TableRenderer>();
+        std::vector<std::string> names;
+        for (int c = 0; c < cols; ++c)
+            names.push_back(std::format("column_{}", c));
+        std::vector<std::vector<std::string>> data(rows, std::vector<std::string>(cols));
+        for (int r = 0; r < rows; ++r)
+            for (int c = 0; c < cols; ++c)
+                data[r][c] = std::format("v{}_{}", r, c);
+        // a json/text column with big values, in the rows on screen
+        for (int r = 0; r < 60 && r < rows; ++r)
+            data[r][1] = std::string(longCell, 'x');
+        p.grid->setColumns(names);
+        p.grid->setData(std::move(data));
+    }
+} // namespace
+
+void RegisterTableRendererPerfTests(ImGuiTestEngine* engine) {
+    ImGuiTest* t = IM_REGISTER_TEST(engine, "TableRenderer", "Wide grid frame time");
+    t->GuiFunc = [](ImGuiTestContext*) {
+        auto& p = gridPerf();
+        if (!p.grid)
+            return;
+        ImGui::SetNextWindowSize(ImVec2(1200, 800), ImGuiCond_Always);
+        ImGui::Begin("grid_perf", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        const auto t0 = std::chrono::steady_clock::now();
+        p.grid->render("##perf_grid");
+        p.totalMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                         .count();
+        ++p.frames;
+        ImGui::End();
+    };
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        makeGrid(200, 10000, 100000);
+        ctx->Yield(10); // layout settles
+        gridPerf().totalMs = 0;
+        gridPerf().frames = 0;
+        ctx->Yield(120);
+        const auto& p = gridPerf();
+        const double ms = p.totalMs / std::max(p.frames, 1);
+        ctx->LogInfo("grid render: %.3f ms/frame over %d frames", ms, p.frames);
+        std::printf("GRID_PERF %.3f ms/frame\n", ms);
+        IM_CHECK(p.frames > 0);
+
+        // wider than imgui's 512-column table limit: the first columns show, no assert
+        makeGrid(600, 50, 10);
+        ctx->Yield(3);
+        IM_CHECK(gridPerf().frames >= 3);
+        gridPerf().grid.reset();
     };
 }

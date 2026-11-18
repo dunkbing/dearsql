@@ -1,3 +1,4 @@
+#include "database/connection_pool.hpp"
 #include "database/file_database.hpp"
 
 #include <chrono>
@@ -234,4 +235,41 @@ TEST(SQLiteDatabaseLifetime, DestroyedMidConnectAndLoad) {
         db.reset();
     }
     std::filesystem::remove(path);
+}
+
+// the editor's Cancel reaches a file database too: it has no pool, so the running
+// query registers its own cancel for the worker thread
+TEST_F(SQLiteDatabaseFixture, CancelStopsRunningQuery) {
+    AsyncOperation<QueryResult> op;
+    op.start([db = database_.get()] {
+        return db->executeQuery("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) "
+                                "SELECT count(*) FROM c");
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    const auto start = std::chrono::steady_clock::now();
+    ConnectionPoolBase::cancelQueriesOn(op.workerId());
+    const QueryResult result = op.waitAndGet();
+
+    EXPECT_FALSE(result.success());
+    EXPECT_NE(result.errorMessage().find("interrupt"), std::string::npos) << result.errorMessage();
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(5));
+    EXPECT_TRUE(database_->executeQuery("SELECT 1").success());
+}
+
+// a cancel collected while the query ran but run after it ended (the reaper was busy)
+// must not reach whatever the shared handle runs next
+TEST(CancelScope, StaleCancelIsANoOp) {
+    int calls = 0;
+    std::vector<ConnectionPoolBase::Cancel> collected;
+    {
+        ConnectionPoolBase::CancelScope scope([&] { ++calls; });
+        collected = ConnectionPoolBase::cancelsFor(std::this_thread::get_id());
+        ASSERT_EQ(collected.size(), 1u);
+        collected[0]();
+        EXPECT_EQ(calls, 1);
+    }
+    collected[0]();
+    EXPECT_EQ(calls, 1);
+    EXPECT_TRUE(ConnectionPoolBase::cancelsFor(std::this_thread::get_id()).empty());
 }

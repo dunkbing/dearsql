@@ -1,4 +1,5 @@
 #include "database/file_database.hpp"
+#include "database/connection_pool.hpp"
 #include <dearsql/factory.hpp>
 
 namespace {
@@ -53,8 +54,11 @@ void FileDatabase::disconnect() {
 }
 
 QueryResult FileDatabase::executeQuery(const std::string& sql, int limit) {
-    if (auto db = handle())
+    if (auto db = handle()) {
+        // shared handle: the interrupt also stops a sidebar load running on it meanwhile
+        ConnectionPoolBase::CancelScope scope([db] { db->cancel(); });
         return db->execute(sql, limit);
+    }
     QueryResult result;
     result.statements.push_back({.success = false, .errorMessage = "Database not connected"});
     return result;

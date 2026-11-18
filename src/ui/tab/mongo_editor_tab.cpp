@@ -254,21 +254,24 @@ void MongoEditorTab::renderSingleResult(const StatementResult& r, size_t index) 
         float tableHeight = std::max(
             ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing(), 50.0f);
 
-        TableRenderer::Config config;
-        config.allowEditing = false;
-        config.showRowNumbers = false;
-        config.minHeight = tableHeight;
-
-        TableRenderer tableRenderer(config);
-        tableRenderer.setColumns(r.columnNames);
-        tableRenderer.setData(r.tableData);
+        if (resultGrids_.size() <= index)
+            resultGrids_.resize(index + 1);
+        auto& grid = resultGrids_[index];
+        if (!grid) {
+            TableRenderer::Config config;
+            config.allowEditing = false;
+            config.showRowNumbers = false;
+            grid = std::make_unique<TableRenderer>(config);
+            grid->setColumns(r.columnNames);
+            grid->setData(r.tableData);
+        }
 
         std::string tableId = "MongoQueryResults_" + std::to_string(index);
         // the grid fills what it is given, so give it all but the status line
 
         if (ImGui::BeginChild((tableId + "_grid").c_str(), ImVec2(0, tableHeight))) {
 
-            tableRenderer.render(tableId.c_str());
+            grid->render(tableId.c_str());
         }
 
         ImGui::EndChild();
@@ -293,6 +296,7 @@ void MongoEditorTab::startQueryExecutionAsync(const std::string& query) {
         r.success = false;
         r.errorMessage = "No database selected";
         queryResult_ = QueryResult{};
+        resultGrids_.clear();
         queryResult_.statements.push_back(r);
         return;
     }
@@ -314,6 +318,7 @@ void MongoEditorTab::startQueryExecutionAsync(const std::string& query) {
     r.success = false;
     r.errorMessage = "Executing...";
     queryResult_ = QueryResult{};
+    resultGrids_.clear();
     queryResult_.statements.push_back(r);
 }
 
@@ -327,6 +332,7 @@ void MongoEditorTab::checkQueryExecutionStatus() {
             lastQueryDuration_ =
                 std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
             queryResult_ = std::move(result);
+            resultGrids_.clear();
         });
     } catch (const std::exception& e) {
         queryError_ = "Error in async query execution: " + std::string(e.what());

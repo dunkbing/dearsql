@@ -400,6 +400,36 @@ void RegisterTableViewerTests(ImGuiTestEngine* engine) {
         ctx->Yield();
     };
 
+    // the result grid keeps its selection across frames, so a clicked cell copies
+    t = IM_REGISTER_TEST(engine, "SQLEditor", "Result cell stays selected");
+    t->TestFunc = [](ImGuiTestContext* ctx) {
+        auto& app = Application::getInstance();
+        auto db = makeFkDatabase();
+        IM_CHECK_SILENT(db != nullptr);
+        app.addDatabase(db);
+        auto* tabs = app.getTabManager();
+        const auto tab =
+            std::dynamic_pointer_cast<SQLEditorTab>(tabs->createSQLEditorTab("", db.get()));
+        IM_CHECK_SILENT(tab != nullptr);
+        tab->setQuery("select 'grid_cell_value' as v");
+        ctx->Yield(3);
+        ctx->SetRef(tab->getWindowName().c_str());
+        tab->run();
+        for (int i = 0; i < 300 && tab->getQueryResult().empty(); ++i)
+            ctx->Yield();
+        ctx->Yield(2);
+        ctx->ItemClick("**/grid_cell_value");
+        ctx->Yield(2);
+        ImGui::SetClipboardText("");
+        ctx->KeyPress(ImGuiMod_Shortcut | ImGuiKey_C);
+        ctx->Yield();
+        IM_CHECK_STR_EQ(ImGui::GetClipboardText(), "grid_cell_value");
+
+        tabs->closeTabsForDatabase(db.get());
+        app.removeDatabase(db);
+        ctx->Yield();
+    };
+
     // a syntax error is underlined at the token the parser stopped on
     t = IM_REGISTER_TEST(engine, "SQLEditor", "Syntax error is underlined");
     t->TestFunc = [](ImGuiTestContext* ctx) {

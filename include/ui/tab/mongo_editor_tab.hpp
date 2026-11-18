@@ -5,6 +5,7 @@
 #include "ui/tab/tab.hpp"
 #include "ui/text_editor.hpp"
 #include <chrono>
+#include "ui/table_renderer.hpp"
 #include <memory>
 #include <string>
 
@@ -30,6 +31,8 @@ private:
 
     // query result
     QueryResult queryResult_;
+    // one grid per result, built when it first shows and dropped with the result
+    mutable std::vector<std::unique_ptr<TableRenderer>> resultGrids_;
     std::string queryError_;
     std::chrono::milliseconds lastQueryDuration_{0};
 

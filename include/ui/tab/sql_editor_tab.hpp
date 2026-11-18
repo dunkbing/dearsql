@@ -14,6 +14,7 @@
 #include <dearsql/syntax.hpp>
 #include <functional>
 #include <map>
+#include "ui/table_renderer.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -94,6 +95,9 @@ private:
 
     // Structured query result for table display
     QueryResult queryResult;
+    // one grid per result, built when it first shows and dropped with the result: a grid
+    // rebuilt every frame copied every row each time and forgot its selection
+    mutable std::vector<std::unique_ptr<TableRenderer>> resultGrids_;
     std::string queryError;
     std::chrono::milliseconds lastQueryDuration{0};
 

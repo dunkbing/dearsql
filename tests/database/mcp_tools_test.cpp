@@ -477,3 +477,28 @@ TEST_F(McpToolsTest, DiffSchemaRefusesAnIncompleteSide) {
     EXPECT_TRUE(r["isError"].get<bool>()) << text;
     EXPECT_EQ(text.find("DROP TABLE"), std::string::npos) << text;
 }
+
+namespace {
+    // the one-shot cli's shape: connect saves, under the name it is given
+    class SavingHost : public OneConnectionHost {
+    public:
+        using OneConnectionHost::OneConnectionHost;
+        std::vector<std::string> saved;
+        std::string remember(const std::string& name, const std::string& saveAs) override {
+            saved.push_back(name + " as " + saveAs);
+            return "";
+        }
+    };
+} // namespace
+
+// #114: `dearsql connect <url> --name x` meant "save it as x", not "open x"
+TEST_F(McpToolsTest, ConnectSavesUnderTheGivenName) {
+    SavingHost saving(conn);
+    mcp::Server s(saving, false);
+    auto ok = [&](const nlohmann::json& args) { return !s.callTool("connect", args)["isError"]; };
+
+    EXPECT_TRUE(ok({{"connection", "shop"}, {"name", "myapp_prod"}}));
+    EXPECT_TRUE(ok({{"connection", "shop"}, {"save-as", "other"}}));
+    EXPECT_TRUE(ok({{"name", "shop"}})); // an agent's older call: open only, nothing saved
+    EXPECT_EQ(saving.saved, (std::vector<std::string>{"shop as myapp_prod", "shop as other"}));
+}

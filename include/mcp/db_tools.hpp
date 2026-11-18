@@ -58,7 +58,8 @@ namespace mcp {
         // or "" with error set. hosts that can't leave add_connection out
         // after connect opens name: a note to append, e.g. that it was saved. the
         // one-shot `dearsql connect` saves a new url or file this way
-        virtual std::string remember(const std::string& name) {
+        // saveAs: the name to save under (empty: the derived one)
+        virtual std::string remember(const std::string& name, const std::string& saveAs) {
             return "";
         }
         virtual bool canSaveConnections() {

@@ -95,11 +95,11 @@ or let it run commands:
         std::pair<std::string, std::string> focus() override {
             return {focus_, ""};
         }
-        std::string remember(const std::string& name) override {
+        std::string remember(const std::string& name, const std::string& saveAs) override {
             if (!saveOnConnect_)
                 return "";
             std::string error;
-            auto note = conns_.save(name, error);
+            auto note = conns_.save(name, saveAs, error);
             return error.empty() ? note : "(" + error + ")";
         }
 
@@ -361,6 +361,11 @@ or let it run commands:
         if (schema["properties"].contains("sql") &&
             (callArgs.value("sql", "-") == "-" && !isatty(fileno(stdin)))) {
             callArgs["sql"] = std::string(std::istreambuf_iterator<char>(std::cin), {});
+        }
+        // `connect --name x` named the connection to open before --save-as existed
+        if (name == "connect" && !callArgs.contains("connection") && callArgs.contains("name")) {
+            callArgs["connection"] = callArgs["name"];
+            callArgs.erase("name");
         }
         for (const auto& r : required) {
             if (!callArgs.contains(r.get<std::string>())) {

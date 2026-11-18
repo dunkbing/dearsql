@@ -154,11 +154,30 @@ std::shared_ptr<const S3Client> CliConnections::s3(const std::string& name) {
     return nullptr;
 }
 
-std::string CliConnections::save(const std::string& name, std::string& error) {
+std::string CliConnections::save(const std::string& name, const std::string& saveAs,
+                                 std::string& error) {
     std::lock_guard lock(mutex_);
     auto* e = find(name);
-    if (!e || e->saved)
+    if (!e)
         return "";
+    if (e->saved) {
+        if (!saveAs.empty() && saveAs != e->info.name)
+            error = "already saved as '" + e->info.name + "'; rename it in DearSQL";
+        return "";
+    }
+    if (!saveAs.empty() && saveAs != e->info.name) {
+        // names resolve case-insensitively, so PROD next to prod would open the wrong one
+        const auto lower = [](std::string s) {
+            std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
+        for (const auto& other : entries_) {
+            if (other.get() != e && lower(other->info.name) == lower(saveAs)) {
+                error = "not saved: '" + other->info.name + "' is already a connection";
+                return "";
+            }
+        }
+    }
     AppState state;
     if (!state.initialize()) {
         error = "could not open ~/.dearsql/connections.db";
@@ -178,11 +197,14 @@ std::string CliConnections::save(const std::string& name, std::string& error) {
     }
     SavedConnection conn;
     conn.connectionInfo = e->info;
+    if (!saveAs.empty())
+        conn.connectionInfo.name = saveAs;
     conn.workspaceId = workspace;
     if (state.saveConnection(conn) <= 0) {
         error = "could not save the connection";
         return "";
     }
     e->saved = true;
+    e->info.name = conn.connectionInfo.name;
     return "Saved as '" + e->info.name + "', so it shows in DearSQL too.";
 }

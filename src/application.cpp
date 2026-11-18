@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "imshell/components.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
@@ -358,6 +359,7 @@ void Application::frame() {
 #endif
     renderMainUI();
     renderFileDragHint();
+    imshell::ui::RenderToasts();
     Alert::render(); // last: over every other window and popup
 }
 

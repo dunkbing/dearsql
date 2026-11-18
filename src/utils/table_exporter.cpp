@@ -9,6 +9,7 @@
 #include <fstream>
 #ifndef DEARSQL_MOBILE
 #include <nfd.h>
+#include "utils/xlsx.hpp"
 #endif
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -155,6 +156,10 @@ namespace {
             ext = "html";
             desc = "HTML Files";
             break;
+        case ExportFormat::XLSX:
+            ext = "xlsx";
+            desc = "Excel Workbooks";
+            break;
         }
         nfdfilteritem_t filter = {desc, ext};
 
@@ -195,6 +200,8 @@ namespace {
             return "md";
         case ExportFormat::HTML:
             return "html";
+        case ExportFormat::XLSX:
+            return "xlsx";
         }
         return "txt";
     }
@@ -294,6 +301,8 @@ namespace {
                 break;
             case ExportFormat::DDL:
                 break; // handled above
+            case ExportFormat::XLSX:
+                break; // written through xlsx::Writer, never a text stream
             case ExportFormat::SQL: {
                 // the server's DDL; the builder's bare CREATE TABLE when it has none
                 if (auto [ok, ddl] = provider_->getTableDdl(table); ok)
@@ -313,6 +322,25 @@ namespace {
             }
             return true;
         }
+
+#ifndef DEARSQL_MOBILE
+        // one sheet per table; column types (when the catalog has them) type the cells
+        bool writeXlsx(xlsx::Writer& out, const Table& table, std::string& error) {
+            const auto columns = provider_->getColumnNames(table);
+            if (columns.empty()) {
+                error = std::format("Table '{}' has no columns (or could not be read)", table.name);
+                return false;
+            }
+            std::vector<std::string> types;
+            for (const auto& name : columns) {
+                const auto it = std::ranges::find(table.columns, name, &Column::name);
+                types.push_back(it != table.columns.end() ? it->type : "");
+            }
+            out.beginSheet(table.name, columns, types);
+            forEachRow(table, [&](const std::vector<std::string>& row) { out.addRow(row); });
+            return true;
+        }
+#endif
 
     private:
         // pages through the table; stops early on cancel or an empty page (the
@@ -390,7 +418,8 @@ namespace TableExporter {
         for (const Table* t : tables)
             request.tables.push_back(*t);
         // several tables: one sql file, or a folder of one file per table
-        if (tables.size() == 1 || format == ExportFormat::SQL || format == ExportFormat::DDL)
+        if (tables.size() == 1 || format == ExportFormat::SQL || format == ExportFormat::DDL ||
+            format == ExportFormat::XLSX)
             request.path = showSaveDialog(format, tables.size() == 1 ? tables[0]->name : "export");
         else
             request.path = showFolderDialog();
@@ -437,8 +466,25 @@ namespace TableExporter {
         };
 
         bool ok = true;
-        if (request.tables.size() == 1 || request.format == ExportFormat::SQL ||
-            request.format == ExportFormat::DDL) {
+        if (request.format == ExportFormat::XLSX) {
+#ifndef DEARSQL_MOBILE
+            xlsx::Writer out(request.path);
+            for (const auto& table : request.tables) {
+                if (progress.cancelRequested.load(std::memory_order_relaxed) ||
+                    !(ok = writer.writeXlsx(out, table, result.error)))
+                    break;
+                ++result.tables;
+                progress.tablesDone.fetch_add(1, std::memory_order_relaxed);
+            }
+            // a cancelled export leaves no file behind: the writer only renames on save
+            if (ok && !progress.cancelRequested.load())
+                ok = out.save(result.error);
+#else
+            result.error = "Excel export is not available on this device";
+            ok = false;
+#endif
+        } else if (request.tables.size() == 1 || request.format == ExportFormat::SQL ||
+                   request.format == ExportFormat::DDL) {
             ok = writeFile(request.path, referencedFirst(request.tables));
         } else {
             std::error_code ec;

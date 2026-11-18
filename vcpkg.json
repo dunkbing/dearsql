@@ -75,6 +75,15 @@
       "name": "minio-cpp"
     },
     {
+      "name": "openxlsx",
+      "platform": "!ios & !android"
+    },
+    {
+      "name": "libxlsxwriter",
+      "features": ["openssl-md5", "dtoa"],
+      "platform": "!ios & !android"
+    },
+    {
       "name": "libssh2",
       "default-features": false,
       "features": [

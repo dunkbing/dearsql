@@ -23,6 +23,12 @@
 #include "utils/app_paths.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/sql_guard.hpp"
+#include "imshell/components.hpp"
+#include "ui/alert.hpp"
+#include "utils/file_dialog.hpp"
+#ifndef DEARSQL_MOBILE
+#include "utils/xlsx.hpp"
+#endif
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -877,6 +883,13 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::XS));
     imshell::SegmentedTabs("##result_view", {"Data", "JSON", "Chart"}, &resultView_);
+#ifndef DEARSQL_MOBILE
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FILE_EXCEL " Excel"))
+        exportResultsToExcel();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Save the results of this run as an Excel workbook, a sheet per result");
+#endif
 
     const std::string status =
         std::format("{} {}{}", r.tableData.size(), r.tableData.size() == 1 ? "row" : "rows", took);
@@ -891,6 +904,34 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
         ImGui::SameLine();
     }
     ImGui::TextUnformatted(status.c_str());
+}
+
+void SQLEditorTab::exportResultsToExcel() const {
+#ifndef DEARSQL_MOBILE
+    std::vector<StatementResult> sets;
+    for (const auto& s : queryResult.statements)
+        if (!s.columnNames.empty())
+            sets.push_back(s);
+    if (sets.empty())
+        return;
+    FileDialog::saveFile("results.xlsx", "Excel Workbooks", "xlsx", [sets](std::string path) {
+        if (!path.ends_with(".xlsx"))
+            path += ".xlsx";
+        xlsx::Writer out(path);
+        for (size_t i = 0; i < sets.size(); ++i) {
+            out.beginSheet(sets.size() == 1 ? "Result" : std::format("Result {}", i + 1),
+                           sets[i].columnNames);
+            for (const auto& row : sets[i].tableData)
+                out.addRow(row);
+        }
+        if (std::string error; !out.save(error)) {
+            Alert::show("Could not export the results", error);
+            return;
+        }
+        const auto name = std::filesystem::path(path).filename().string();
+        imshell::ui::Toast(std::format("Saved {}", name).c_str(), imshell::ui::Tone::Success);
+    });
+#endif
 }
 
 void SQLEditorTab::startQueryExecutionAsync(const std::string& query,

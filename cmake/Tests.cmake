@@ -20,6 +20,7 @@ add_executable(
     tests/database/process_runner_test.cpp
     tests/database/lsp_test.cpp
     tests/database/table_transfer_test.cpp
+    tests/database/xlsx_test.cpp
     src/cli/completion_catalog.cpp
     src/cli/connections.cpp
     src/cli/lsp.cpp
@@ -44,6 +45,7 @@ add_executable(
     src/database/lib_database_node.cpp
     src/database/ssh_config_parser.cpp
     src/utils/table_exporter.cpp
+    src/utils/xlsx.cpp
     src/utils/table_importer.cpp
     src/utils/file_dialog.cpp
     tests/database/credential_migration_test.cpp
@@ -77,6 +79,7 @@ target_link_libraries(
         OpenSSL::SSL
         OpenSSL::Crypto
         nfd::nfd
+        ${XLSX_LIBRARIES}
 )
 
 # master secret keystore backends

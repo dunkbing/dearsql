@@ -362,6 +362,11 @@ or let it run commands:
             (callArgs.value("sql", "-") == "-" && !isatty(fileno(stdin)))) {
             callArgs["sql"] = std::string(std::istreambuf_iterator<char>(std::cin), {});
         }
+        // `connect --name x` named the connection to open before --save-as existed
+        if (name == "connect" && !callArgs.contains("connection") && callArgs.contains("name")) {
+            callArgs["connection"] = callArgs["name"];
+            callArgs.erase("name");
+        }
         for (const auto& r : required) {
             if (!callArgs.contains(r.get<std::string>())) {
                 std::cerr << "dearsql: missing <" << r.get<std::string>() << ">\n";

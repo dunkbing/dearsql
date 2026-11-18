@@ -166,9 +166,16 @@ std::string CliConnections::save(const std::string& name, const std::string& sav
         return "";
     }
     if (!saveAs.empty() && saveAs != e->info.name) {
-        if (auto* other = find(saveAs); other && other != e) {
-            error = "not saved: '" + saveAs + "' is already a connection";
-            return "";
+        // names resolve case-insensitively, so PROD next to prod would open the wrong one
+        const auto lower = [](std::string s) {
+            std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
+            return s;
+        };
+        for (const auto& other : entries_) {
+            if (other.get() != e && lower(other->info.name) == lower(saveAs)) {
+                error = "not saved: '" + other->info.name + "' is already a connection";
+                return "";
+            }
         }
     }
     AppState state;

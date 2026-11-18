@@ -31,7 +31,8 @@ public:
     std::string add(const std::string& spec, std::string& error);
     // adds name to the GUI's saved connections (current workspace) unless it is one:
     // a note for the user, "" if it was saved already, or "" with error set
-    std::string save(const std::string& name, std::string& error);
+    // saveAs: the name to save under (empty: the one derived from the url or file)
+    std::string save(const std::string& name, const std::string& saveAs, std::string& error);
 
     std::vector<Entry*> entries();
     // by name, or by the URL/path it was added from

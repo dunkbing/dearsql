@@ -95,11 +95,11 @@ or let it run commands:
         std::pair<std::string, std::string> focus() override {
             return {focus_, ""};
         }
-        std::string remember(const std::string& name) override {
+        std::string remember(const std::string& name, const std::string& saveAs) override {
             if (!saveOnConnect_)
                 return "";
             std::string error;
-            auto note = conns_.save(name, error);
+            auto note = conns_.save(name, saveAs, error);
             return error.empty() ? note : "(" + error + ")";
         }
 

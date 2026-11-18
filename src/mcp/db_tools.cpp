@@ -384,7 +384,15 @@ namespace mcp {
              toolDef("connect",
                      "Open one of the user's saved connections by name, or a connection URL or "
                      "database file path (the `dearsql connect` command also saves it).",
-                     {{"name", {{"type", "string"}}}}, {"name"})});
+                     {{"connection",
+                       {{"type", "string"},
+                        {"description", "A saved connection's name, a URL or a file path."}}},
+                      {"saveAs",
+                       {{"type", "string"},
+                        {"description",
+                         "`dearsql connect` only: the name to save a new URL or file under "
+                         "(default: its host and database)."}}}},
+                     {"connection"})});
         const json s3conn = {{"type", "string"},
                              {"description", "S3 connection name. Default: the selected or only "
                                              "S3 connection."}};
@@ -833,15 +841,19 @@ namespace mcp {
     }
 
     std::string Server::connect(const json& args) {
-        const std::string name = str(args, {"name", "connection"});
+        const std::string name = str(args, {"connection", "name"});
         if (name.empty())
-            throw ToolError("Missing 'name'.");
+            throw ToolError("Missing 'connection'.");
+        std::string saveAs = str(args, {"saveAs", "save_as", "save-as"});
+        // `dearsql connect <url> --name x`: with the url given, a name is what to save it as
+        if (saveAs.empty() && args.contains("connection"))
+            saveAs = str(args, {"name"});
         const std::string found = findConnection(name);
-        if (host_.connection(found))
+        if (host_.connection(found) && saveAs.empty())
             return found + " is already open.";
         if (auto err = host_.connect(found); !err.empty())
             throw ToolError("Could not connect to " + found + ": " + err);
-        const std::string note = host_.remember(found);
+        const std::string note = host_.remember(found, saveAs);
         return found + ": connection OK." + (note.empty() ? "" : " " + note);
     }
 

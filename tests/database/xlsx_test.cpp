@@ -2,6 +2,8 @@
 #include "utils/xlsx.hpp"
 #include <OpenXLSX.hpp>
 #include <chrono>
+#include <dearsql/factory.hpp>
+#include <fstream>
 #include <filesystem>
 #include <format>
 #include <gtest/gtest.h>
@@ -213,5 +215,108 @@ TEST(Xlsx, AutofilterCoversEachSheetsColumns) {
         GTEST_SKIP() << "no unzip";
     EXPECT_NE(first.find("<autoFilter ref=\"A1:C2\""), std::string::npos);
     EXPECT_NE(sheetXml(path, 2).find("<autoFilter ref=\"A1:A2\""), std::string::npos);
+    std::filesystem::remove(path);
+}
+
+namespace {
+    std::vector<std::vector<std::string>> rows(dearsql::IDatabase& db, const std::string& sql) {
+        auto r = db.execute(sql, 0);
+        EXPECT_TRUE(r.success()) << sql << ": " << r.errorMessage();
+        return r.success() && !r.statements.empty() ? r.statements[0].tableData
+                                                    : std::vector<std::vector<std::string>>{};
+    }
+} // namespace
+
+// a workbook opens like a database: a table per sheet, typed columns, read-only
+TEST(Xlsx, WorkbookOpensAsTables) {
+    const auto path = tmpPath("dearsql_open_test.xlsx");
+    {
+        xlsx::Writer w(path);
+        w.beginSheet("orders", {"id", "customer", "total", "placed", "paid"},
+                     {"integer", "text", "", "date", "boolean"});
+        w.addRow({"1", "ada", "19.9", "2024-01-02", std::string(BOOL_TRUE_SENTINEL)});
+        w.addRow({"2", "grace", "5", "2024-02-03", std::string(BOOL_FALSE_SENTINEL)});
+        w.addRow({"3", "ada", std::string(NULL_SENTINEL), "2024-03-04 10:30:00",
+                  std::string(NULL_SENTINEL)});
+        w.beginSheet("customers", {"name", "city"});
+        w.addRow({"ada", "london"});
+        w.addRow({"grace", "new york"});
+        std::string error;
+        ASSERT_TRUE(w.save(error)) << error;
+    }
+    // a sheet written the other common way (shared strings), with no header row
+    {
+        OpenXLSX::XLDocument doc;
+        doc.open(path);
+        doc.workbook().addWorksheet("raw");
+        auto ws = doc.workbook().worksheet("raw");
+        ws.cell("A1").value() = 10;
+        ws.cell("B1").value() = "x";
+        ws.cell("A2").value() = 20;
+        ws.cell("C2").value() = "z"; // B2 missing
+        doc.save();
+        doc.close();
+    }
+
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = path;
+    info.name = "book";
+    auto conn = dearsql::makeConnection(info);
+    ASSERT_TRUE(conn);
+    auto [ok, err] = conn->open();
+    ASSERT_TRUE(ok) << err;
+    auto db = conn->database();
+    ASSERT_TRUE(db);
+
+    std::vector<std::string> tables;
+    for (const auto& t : db->tables())
+        tables.push_back(t.name);
+    std::ranges::sort(tables);
+    EXPECT_EQ(tables, (std::vector<std::string>{"customers", "orders", "raw"}));
+
+    const auto types = [&](const char* table) {
+        std::vector<std::string> out;
+        for (const auto& c : db->describeTable(table).columns)
+            out.push_back(c.name + " " + c.type);
+        return out;
+    };
+    EXPECT_EQ(types("orders"), (std::vector<std::string>{"id INTEGER", "customer TEXT",
+                                                         "total REAL", "placed DATETIME",
+                                                         "paid BOOLEAN"}));
+    EXPECT_EQ(types("raw"), (std::vector<std::string>{"A INTEGER", "B TEXT", "C TEXT"}));
+
+    // sql across sheets
+    const auto joined = rows(*db, "SELECT o.id, c.city, o.placed FROM orders o JOIN customers c "
+                                  "ON c.name = o.customer ORDER BY o.id");
+    ASSERT_EQ(joined.size(), 3u);
+    EXPECT_EQ(joined[0], (std::vector<std::string>{"1", "london", "2024-01-02"}));
+    EXPECT_EQ(joined[2][2], "2024-03-04 10:30:00");
+    EXPECT_EQ(rows(*db, "SELECT SUM(total) FROM orders")[0][0], "24.9");
+    EXPECT_EQ(rows(*db, "SELECT COUNT(*) FROM raw WHERE B IS NULL")[0][0], "1");
+
+    // workers get their own handles on the same data, and nothing can write
+    auto worker = conn->openDatabase("");
+    ASSERT_TRUE(worker);
+    EXPECT_EQ(rows(*worker, "SELECT COUNT(*) FROM orders")[0][0], "3");
+    EXPECT_FALSE(worker->execute("DELETE FROM orders", 0).success());
+    EXPECT_FALSE(db->execute("DROP TABLE orders", 0).success());
+
+    conn->close();
+    std::filesystem::remove(path);
+}
+
+TEST(Xlsx, UnreadableWorkbookFailsToOpen) {
+    const auto path = tmpPath("dearsql_not_a_workbook.xlsx");
+    {
+        std::ofstream(path) << "not a zip";
+    }
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = path;
+    auto conn = dearsql::makeConnection(info);
+    auto [ok, err] = conn->open();
+    EXPECT_FALSE(ok);
+    EXPECT_NE(err.find("workbook"), std::string::npos) << err;
     std::filesystem::remove(path);
 }

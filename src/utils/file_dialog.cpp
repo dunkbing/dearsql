@@ -26,6 +26,10 @@ void FileDialog::openCSVFile(Done done) {
     imshell::OpenFileDialog({{"CSV Files", "csv"}, {"All Files", "*"}}, std::move(done));
 }
 
+void FileDialog::openExcelFile(Done done) {
+    imshell::OpenFileDialog({{"Excel Workbooks", "xlsx"}, {"All Files", "*"}}, std::move(done));
+}
+
 void FileDialog::openPostgresBackupFile(Done done) {
     imshell::OpenFileDialog(
         {{"PostgreSQL Backups", "dump,backup,sql,tar"}, {"SQL Files", "sql"}, {"All Files", "*"}},

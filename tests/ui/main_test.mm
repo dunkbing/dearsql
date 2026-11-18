@@ -21,7 +21,11 @@ void RegisterCodeBlockTests(ImGuiTestEngine* engine);
 void RegisterDocsShots(ImGuiTestEngine* engine);
 void RegisterTableViewerTests(ImGuiTestEngine* engine);
 void RegisterCsvEditorTests(ImGuiTestEngine* engine);
+<<<<<<< HEAD
 void RegisterTableRendererPerfTests(ImGuiTestEngine* engine);
+=======
+void RegisterExcelTests(ImGuiTestEngine* engine);
+>>>>>>> b9fff94 (open excel workbooks as databases, import a sheet into a table)
 
 int main(int argc, char** argv) {
     bool headless = false;
@@ -81,7 +85,11 @@ int main(int argc, char** argv) {
     RegisterCodeBlockTests(engine);
     RegisterTableViewerTests(engine);
     RegisterCsvEditorTests(engine);
+<<<<<<< HEAD
     RegisterTableRendererPerfTests(engine);
+=======
+    RegisterExcelTests(engine);
+>>>>>>> b9fff94 (open excel workbooks as databases, import a sheet into a table)
     RegisterDocsShots(engine);
 
     // DEARSQL_RECORD=out.mp4: a video of the run. the showcase (big tables) goes first and

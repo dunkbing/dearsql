@@ -955,7 +955,8 @@ void Application::openFile(const std::string& rawPath) {
     // still opens
     const bool isCsv = ext == ".csv";
     const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb" || isCsv);
-    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb)
+    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb &&
+        !dearsql::isXlsxPath(path))
         return;
 
     for (auto& db : databases) {
@@ -986,10 +987,14 @@ void Application::openFile(const std::string& rawPath) {
     DatabaseConnectionInfo info;
     info.type = isDuckDb ? DatabaseType::DUCKDB : DatabaseType::SQLITE;
     info.path = path;
+    // a workbook opens as sqlite tables loaded from its sheets: queried, never written
+    info.readOnly = dearsql::isXlsxPath(path);
     info.name = std::filesystem::path(path).filename().string();
 
     auto db = DatabaseFactory::createDatabase(info);
-    auto [success, error] = db->connect();
+    // a workbook is parsed and loaded on connect: off the ui thread, the sidebar spins
+    const bool workbook = dearsql::isXlsxPath(path);
+    auto [success, error] = workbook ? std::pair<bool, std::string>{true, ""} : db->connect();
     if (!success) {
         spdlog::error("Failed to open file: {}", error);
         if (!isCsv)
@@ -1005,6 +1010,8 @@ void Application::openFile(const std::string& rawPath) {
 
     addDatabase(db);
     setSelectedDatabase(db);
+    if (workbook)
+        db->startConnectionAsync();
     if (isCsv)
         tabManager->createCsvEditorTab(path);
 }

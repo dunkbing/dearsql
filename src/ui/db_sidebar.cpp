@@ -126,6 +126,12 @@ void DatabaseSidebarNew::renderEmpty() {
             FileDialog::openCSVFile(
                 [](const std::string& path) { Application::getInstance().openFile(path); });
         }
+#ifndef DEARSQL_MOBILE
+        if (ImGui::MenuItem(ICON_FA_FILE_EXCEL " Open Excel File...")) {
+            FileDialog::openExcelFile(
+                [](const std::string& path) { Application::getInstance().openFile(path); });
+        }
+#endif
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }
@@ -290,6 +296,12 @@ void DatabaseSidebarNew::renderStructure() {
             FileDialog::openCSVFile(
                 [](const std::string& path) { Application::getInstance().openFile(path); });
         }
+#ifndef DEARSQL_MOBILE
+        if (ImGui::MenuItem(ICON_FA_FILE_EXCEL " Open Excel File...")) {
+            FileDialog::openExcelFile(
+                [](const std::string& path) { Application::getInstance().openFile(path); });
+        }
+#endif
         ImGui::PopStyleVar();
         ImGui::EndPopup();
     }

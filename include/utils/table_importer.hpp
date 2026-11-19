@@ -33,11 +33,22 @@ namespace TableImporter {
     // there is no wrapping transaction: rows already in stay in on cancel
     Result importCsv(IDatabaseNode* node, const std::string& tableName, const std::string& path,
                      Progress& progress);
+#ifndef DEARSQL_MOBILE
+    // the sheet named like the table (else the first) of a .xlsx, read as when the workbook
+    // is opened (header row, dates as iso text); columns matched by name, like a csv
+    Result importXlsx(IDatabaseNode* node, const std::string& tableName, const std::string& path,
+                      Progress& progress);
+#endif
 
-    inline void renderImportMenu(const std::function<void()>& onCsv, bool enabled = true) {
+    inline void renderImportMenu(const std::function<void()>& onCsv,
+                                 const std::function<void()>& onExcel, bool enabled = true) {
         if (imshell::BeginSubMenu("Import", enabled)) {
             if (ImGui::MenuItem("CSV"))
                 onCsv();
+#ifndef DEARSQL_MOBILE
+            if (ImGui::MenuItem("Excel workbook"))
+                onExcel();
+#endif
             ImGui::EndMenu();
         }
     }

@@ -1,6 +1,11 @@
 # Excel support (design)
 
-Status: Phase 1 (export) built; Phases 2-4 to come.
+Status:
+
+- Phase 1 (export): built.
+- Phase 3 (open and query): built in part. A `.xlsx` opens read-only (sidebar menu **Open Excel File...**, drag and drop, `dearsql query -c book.xlsx`), each sheet a table in a shared in-memory SQLite database (libdearsql `src/xlsx_workbook.cpp`), connected off the UI thread. Not yet: the sheet-tab viewer, number-format rendering, merged cells, the header toggle and ranges, the 1904 date system. Workbooks over 20 MB are refused: OpenXLSX keeps the sheet as a DOM, measured at 7.5 s and 1.1 GB for a 9.8 MB file (200k × 10); streaming the sheet XML is the fix.
+- Phase 2 (import): built in part. **Import → Excel workbook** on a table appends the sheet named like the table (else the first), columns matched by name, through the CSV importer (batches, a bad row costs only itself, rows already in stay on cancel). Not yet: sheet picker, preview with editable types, create-new-table, one transaction, errors naming the cell.
+- Phase 4 (edit): not started.
 
 ## What people need from Excel in a database client
 

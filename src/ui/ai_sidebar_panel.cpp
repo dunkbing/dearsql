@@ -647,6 +647,7 @@ namespace {
             info.type = (ext == ".duckdb" || ext == ".ddb" || dearsql::isCsvPath(spec))
                             ? DatabaseType::DUCKDB
                             : DatabaseType::SQLITE;
+            info.readOnly = dearsql::isXlsxPath(spec); // a workbook is queried, never written
             info.path = std::filesystem::absolute(spec).string();
             info.name = std::filesystem::path(spec).filename().string();
         } else {

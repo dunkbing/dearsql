@@ -233,3 +233,46 @@ TEST_F(TableTransferTest, XlsxExportCancelledWritesNothing) {
     EXPECT_FALSE(std::filesystem::exists(request.path));
     EXPECT_FALSE(std::filesystem::exists(request.path + ".part"));
 }
+
+// export then import round trip: the sheet named like the table lands, a bad row only
+// costs itself
+TEST_F(TableTransferTest, XlsxImportRoundTrips) {
+    TableImporter::Progress in;
+    ASSERT_TRUE(TableImporter::importCsv(db_.get(), "items", writeCsv(3000, 7), in).success ==
+                false);
+    ASSERT_EQ(count(), 2999);
+
+    TableExporter::Request request;
+    request.format = ExportFormat::XLSX;
+    request.tables.push_back(Table{.name = "items"});
+    request.path = (dir_ / "items.xlsx").string();
+    TableExporter::Progress out;
+    ASSERT_TRUE(TableExporter::run(db_.get(), request, out).success);
+    // a NULL id in the sheet, which NOT NULL rejects on the way back in
+    ASSERT_TRUE(db_->executeQuery("DELETE FROM items").success());
+
+    TableImporter::Progress progress;
+    const auto result = TableImporter::importXlsx(db_.get(), "items", request.path, progress);
+    EXPECT_TRUE(result.success) << result.error;
+    EXPECT_EQ(result.inserted, 2999);
+    EXPECT_EQ(count(), 2999);
+    auto r = db_->executeQuery("SELECT name FROM items WHERE id = 42");
+    ASSERT_TRUE(r.success());
+    EXPECT_EQ(r[0].tableData[0][0], "name, 42");
+    EXPECT_EQ(progress.bytesRead.load(), progress.totalBytes.load());
+
+    // the same sheet again, with one cell made NULL: only that row fails
+    {
+        OpenXLSX::XLDocument doc;
+        doc.open(request.path);
+        doc.workbook().worksheet("items").cell("A10").clear(OpenXLSX::XLKeepCellStyle);
+        doc.save();
+        doc.close();
+    }
+    ASSERT_TRUE(db_->executeQuery("DELETE FROM items").success());
+    TableImporter::Progress again;
+    const auto partial = TableImporter::importXlsx(db_.get(), "items", request.path, again);
+    EXPECT_FALSE(partial.success);
+    EXPECT_EQ(partial.inserted, 2998);
+    EXPECT_EQ(partial.failed, 1);
+}

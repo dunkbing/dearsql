@@ -165,6 +165,7 @@ if(APPLE AND EXISTS ${IMGUI_TE_DIR}/imgui_te_engine.cpp)
         tests/ui/ai_panel_tests.cpp
         tests/ui/table_viewer_tests.cpp
         tests/ui/csv_editor_tests.cpp
+        tests/ui/excel_tests.cpp
         tests/ui/docs_shots.cpp
     )
 

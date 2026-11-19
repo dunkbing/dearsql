@@ -12,6 +12,7 @@ public:
     static void openDatabaseFile(DatabaseType type, Done done);
     static void openFile(Done done);
     static void openCSVFile(Done done);
+    static void openExcelFile(Done done);
     static void openPostgresBackupFile(Done done);
 
     static void pickFolder(Done done);

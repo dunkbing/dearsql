@@ -167,7 +167,7 @@ private:
                           ExportFormat format, DatabaseType dbType);
     // the import starters open a picker when given no path, then run again with the pick
     void startCsvImport(IDatabaseNode* node, const std::string& tableName,
-                        const std::string& path = {});
+                        const std::string& path = {}, bool excel = false);
     void renderTableExportMenu(ITableDataProvider* provider, const Table& table,
                                DatabaseType dbType);
     void renderTableImportMenu(IDatabaseNode* node, const std::string& tableName);

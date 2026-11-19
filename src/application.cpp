@@ -1,5 +1,4 @@
 #include "application.hpp"
-#include "imshell/components.hpp"
 #include "config.hpp"
 #include "database/async_helper.hpp"
 #include "database/cassandra.hpp"
@@ -10,6 +9,7 @@
 #include "database/oracle.hpp"
 #include "database/postgresql.hpp"
 #include "database/redis.hpp"
+#include "imshell/components.hpp"
 #include "license/license_manager.hpp"
 #include "ui/ai_settings_dialog.hpp"
 #include "ui/alert.hpp"
@@ -178,12 +178,12 @@ bool Application::initialize() {
 
     // dearsql.dev publishes the appcast (macos, windows) and the manifest (linux)
     imshell::updater::Start({.appName = "DearSQL",
-                            .version = APP_VERSION,
-                            .appcastUrl = "https://dearsql.dev/appcast.xml",
-                            .publicKey = SPARKLE_ED_PUBLIC_KEY,
-                            .manifestUrl = "https://dearsql.dev/api/version.json",
-                            // windows: the inno installer stages into install\ (DearSQL.iss)
-                            .stageArguments = "/verysilent /update=true"});
+                             .version = APP_VERSION,
+                             .appcastUrl = "https://dearsql.dev/appcast.xml",
+                             .publicKey = SPARKLE_ED_PUBLIC_KEY,
+                             .manifestUrl = "https://dearsql.dev/api/version.json",
+                             // windows: the inno installer stages into install\ (DearSQL.iss)
+                             .stageArguments = "/verysilent /update=true"});
 
     restorePreviousConnections();
 
@@ -955,13 +955,18 @@ void Application::openFile(const std::string& rawPath) {
     // still opens
     const bool isCsv = ext == ".csv";
     const bool isDuckDb = (ext == ".duckdb" || ext == ".ddb" || isCsv);
-    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb)
+    if (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3" && !isDuckDb &&
+        !dearsql::isXlsxPath(path))
         return;
 
     for (auto& db : databases) {
         auto* fileDb = dynamic_cast<FileDatabase*>(db.get());
         if (fileDb && fileDb->getPath() == path) {
-            if (!fileDb->isConnected()) {
+            if (dearsql::isXlsxPath(path)) {
+                // parsed on connect: off the ui thread, and only once while it loads
+                if (!fileDb->isConnected() && !fileDb->isConnecting())
+                    fileDb->startConnectionAsync();
+            } else if (!fileDb->isConnected()) {
                 auto [ok, err] = fileDb->connect();
                 if (!ok) {
                     spdlog::error("Failed to reconnect database file: {}", err);
@@ -986,10 +991,14 @@ void Application::openFile(const std::string& rawPath) {
     DatabaseConnectionInfo info;
     info.type = isDuckDb ? DatabaseType::DUCKDB : DatabaseType::SQLITE;
     info.path = path;
+    // a workbook opens as sqlite tables loaded from its sheets: queried, never written
+    info.readOnly = dearsql::isXlsxPath(path);
     info.name = std::filesystem::path(path).filename().string();
 
     auto db = DatabaseFactory::createDatabase(info);
-    auto [success, error] = db->connect();
+    // a workbook is parsed and loaded on connect: off the ui thread, the sidebar spins
+    const bool workbook = dearsql::isXlsxPath(path);
+    auto [success, error] = workbook ? std::pair<bool, std::string>{true, ""} : db->connect();
     if (!success) {
         spdlog::error("Failed to open file: {}", error);
         if (!isCsv)
@@ -1005,6 +1014,8 @@ void Application::openFile(const std::string& rawPath) {
 
     addDatabase(db);
     setSelectedDatabase(db);
+    if (workbook)
+        db->startConnectionAsync();
     if (isCsv)
         tabManager->createCsvEditorTab(path);
 }

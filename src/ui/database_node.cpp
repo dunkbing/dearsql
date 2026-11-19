@@ -376,6 +376,7 @@ void DatabaseHierarchy::renderTableExportMenu(ITableDataProvider* provider, cons
 
 void DatabaseHierarchy::renderTableImportMenu(IDatabaseNode* node, const std::string& tableName) {
     TableImporter::renderImportMenu([&] { startCsvImport(node, tableName); },
+                                    [&] { startCsvImport(node, tableName, "", true); },
                                     !csvImportOp_.isRunning());
 }
 
@@ -408,21 +409,34 @@ void DatabaseHierarchy::startCopyDdl(ITableDataProvider* provider, const Table& 
 }
 
 void DatabaseHierarchy::startCsvImport(IDatabaseNode* node, const std::string& tableName,
-                                       const std::string& path) {
+                                       const std::string& path, bool excel) {
     if (!node || csvImportOp_.isRunning())
         return;
     if (path.empty()) {
         // ponytail: node and this held raw; the ios picker covers the app meanwhile
-        FileDialog::openCSVFile(
-            [this, node, tableName](const std::string& p) { startCsvImport(node, tableName, p); });
+        auto picked = [this, node, tableName, excel](const std::string& p) {
+            startCsvImport(node, tableName, p, excel);
+        };
+#ifndef DEARSQL_MOBILE
+        if (excel) {
+            FileDialog::openExcelFile(std::move(picked));
+            return;
+        }
+#endif
+        FileDialog::openCSVFile(std::move(picked));
         return;
     }
     auto* libNode = dynamic_cast<LibDatabaseNode*>(node);
     csvImportProgress_ = std::make_shared<TableImporter::Progress>();
-    csvImportOp_.start([node, tableName, path, progress = csvImportProgress_,
+    csvImportOp_.start([node, tableName, path, excel, progress = csvImportProgress_,
                         pin = libNode ? libNode->pin() : nullptr,
                         keep = keepOwnerAlive(node)]() mutable {
+#ifndef DEARSQL_MOBILE
+        auto result = excel ? TableImporter::importXlsx(node, tableName, path, *progress)
+                            : TableImporter::importCsv(node, tableName, path, *progress);
+#else
         auto result = TableImporter::importCsv(node, tableName, path, *progress);
+#endif
         pin.reset();
         return result;
     });
@@ -497,7 +511,7 @@ void DatabaseHierarchy::renderTableTransferProgress() {
             total > 0 ? static_cast<float>(static_cast<double>(read) / static_cast<double>(total))
                       : -1.0f * static_cast<float>(ImGui::GetTime());
         if (renderProgressPanel(
-                "##csv_import_progress", cancelling ? "Cancelling import..." : "Importing CSV",
+                "##csv_import_progress", cancelling ? "Cancelling import..." : "Importing",
                 fraction,
                 total > 0 ? std::format("{} / {}", formatBytes(read), formatBytes(total)) : "",
                 std::format("{} rows inserted  ·  {} failed",

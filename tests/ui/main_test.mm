@@ -22,6 +22,7 @@ void RegisterDocsShots(ImGuiTestEngine* engine);
 void RegisterTableViewerTests(ImGuiTestEngine* engine);
 void RegisterCsvEditorTests(ImGuiTestEngine* engine);
 void RegisterTableRendererPerfTests(ImGuiTestEngine* engine);
+void RegisterExcelTests(ImGuiTestEngine* engine);
 
 int main(int argc, char** argv) {
     bool headless = false;
@@ -82,6 +83,7 @@ int main(int argc, char** argv) {
     RegisterTableViewerTests(engine);
     RegisterCsvEditorTests(engine);
     RegisterTableRendererPerfTests(engine);
+    RegisterExcelTests(engine);
     RegisterDocsShots(engine);
 
     // DEARSQL_RECORD=out.mp4: a video of the run. the showcase (big tables) goes first and

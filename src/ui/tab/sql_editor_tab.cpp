@@ -864,13 +864,18 @@ void SQLEditorTab::renderSingleResult(const StatementResult& r, size_t index) co
         } else if (resultView_ == 2) {
             chart_.render("##result_chart", r.columnNames, r.tableData);
         } else {
-            TableRenderer::Config config;
-            config.allowEditing = false;
-            config.showRowNumbers = false;
-            TableRenderer tableRenderer(config);
-            tableRenderer.setColumns(r.columnNames);
-            tableRenderer.setData(r.tableData);
-            tableRenderer.render(tableId.c_str());
+            if (resultGrids_.size() <= index)
+                resultGrids_.resize(index + 1);
+            auto& grid = resultGrids_[index];
+            if (!grid) {
+                TableRenderer::Config config;
+                config.allowEditing = false;
+                config.showRowNumbers = false;
+                grid = std::make_unique<TableRenderer>(config);
+                grid->setColumns(r.columnNames);
+                grid->setData(r.tableData);
+            }
+            grid->render(tableId.c_str());
         }
     }
     ImGui::EndChild();
@@ -955,6 +960,7 @@ void SQLEditorTab::showError(std::string message) {
     r.success = false;
     r.errorMessage = std::move(message);
     queryResult = QueryResult{};
+    resultGrids_.clear();
     queryResult.statements.push_back(std::move(r));
 }
 
@@ -1128,6 +1134,7 @@ void SQLEditorTab::checkQueryExecutionStatus() {
             lastQueryDuration =
                 std::chrono::milliseconds{static_cast<long long>(result.executionTimeMs)};
             queryResult = std::move(result);
+            resultGrids_.clear();
         });
     } catch (const std::exception& e) {
         queryError = "Error in async query execution: " + std::string(e.what());

@@ -14,6 +14,23 @@
 
 namespace {
     // truncate at first newline for single-line cell display
+    // what a cell draws: its first line, at most 512 bytes (cut on a utf-8 boundary), so a
+    // huge value costs no more per frame than a short one. short one-line values are
+    // returned as they are: the ui tests find cells by their text
+    const char* cellLabel(const std::string& v) {
+        static std::string scratch; // ui thread only; read before the next call
+        constexpr size_t kMaxLabel = 512;
+        const size_t limit = std::min(v.size(), kMaxLabel);
+        const void* nl = std::memchr(v.data(), '\n', limit);
+        size_t end = nl ? static_cast<size_t>(static_cast<const char*>(nl) - v.data()) : limit;
+        if (end == v.size())
+            return v.c_str();
+        while (end > 0 && (static_cast<unsigned char>(v[end]) & 0xC0) == 0x80)
+            --end;
+        scratch.assign(v, 0, end);
+        return scratch.c_str();
+    }
+
     std::string getFirstLine(const std::string& text) {
         auto pos = text.find('\n');
         if (pos == std::string::npos)
@@ -217,6 +234,11 @@ bool TableRenderer::getSelectionRange(int& firstRow, int& firstCol, int& lastRow
     return firstRow <= lastRow && firstCol <= lastCol;
 }
 
+int TableRenderer::shownColumns() const {
+    return std::min(static_cast<int>(columns.size()),
+                    IMGUI_TABLE_MAX_COLUMNS - 1 - (config.showRowNumbers ? 1 : 0));
+}
+
 void TableRenderer::selectRows(int firstRow, int lastRow) {
     if (columns.empty() || data.empty())
         return;
@@ -400,10 +422,11 @@ void TableRenderer::render(const char* tableId) {
 
     handleKeyboardNavigation();
 
-    int colCount = static_cast<int>(columns.size());
-    if (config.showRowNumbers) {
-        colCount++; // Add one for row number column
-    }
+    const int shownCols = shownColumns();
+    if (shownCols < static_cast<int>(columns.size()))
+        ImGui::TextColored(colors.mutedForeground, "Showing the first %d of %d columns", shownCols,
+                           static_cast<int>(columns.size()));
+    const int colCount = shownCols + (config.showRowNumbers ? 1 : 0);
 
     float availableHeight = ImGui::GetContentRegionAvail().y;
     if (availableHeight < config.minHeight) {
@@ -411,7 +434,8 @@ void TableRenderer::render(const char* tableId) {
     }
 
     if (config.allowEditing && selectedRow >= 0 && selectedCol >= 0 && editingRow == -1 &&
-        editingCol == -1 && !config.nonEditableColumns.contains(selectedCol) &&
+        editingCol == -1 && selectedCol < shownColumns() &&
+        !config.nonEditableColumns.contains(selectedCol) &&
         (!cellEditableCb || cellEditableCb(selectedRow, selectedCol))) {
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
             !ImGui::GetIO().WantTextInput) {
@@ -478,9 +502,9 @@ void TableRenderer::render(const char* tableId) {
                                     columnWidth);
         }
 
-        for (const auto& col : columns) {
-            ImGui::TableSetupColumn(col.name.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
-        }
+        for (int c = 0; c < shownCols; ++c)
+            ImGui::TableSetupColumn(columns[c].name.c_str(), ImGuiTableColumnFlags_WidthFixed,
+                                    120.0f);
 
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
         // a step above the theme's header bg, so it stands out from the rows
@@ -493,7 +517,7 @@ void TableRenderer::render(const char* tableId) {
             ImGui::TableNextColumn();
         }
 
-        for (int colIdx = 0; colIdx < static_cast<int>(columns.size()); colIdx++) {
+        for (int colIdx = 0; colIdx < shownCols; colIdx++) {
             ImGui::TableNextColumn();
             renderColumnHeader(colIdx, columns[colIdx].name);
         }
@@ -532,7 +556,8 @@ void TableRenderer::render(const char* tableId) {
                         ImGui::PushID(rowIdx);
                         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
                         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.accent);
-                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, imshell::Pressed(colors.accent));
+                        ImGui::PushStyleColor(ImGuiCol_HeaderActive,
+                                              imshell::Pressed(colors.accent));
                         if (ImGui::Selectable("##rownum", false, ImGuiSelectableFlags_None)) {
                             if (ImGui::GetIO().KeyShift && rangeAnchorRow >= 0)
                                 selectRows(rangeAnchorRow, rowIdx);
@@ -552,15 +577,20 @@ void TableRenderer::render(const char* tableId) {
                     ImGui::PopStyleColor();
                 }
 
-                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) &&
-                                     colIdx < static_cast<int>(columns.size());
+                for (int colIdx = 0; colIdx < static_cast<int>(row.size()) && colIdx < shownCols;
                      colIdx++) {
-                    ImGui::TableNextColumn();
+                    // a column scrolled out of view costs nothing, unless its cell is being
+                    // edited (the input must stay alive) or scrolled to
+                    const bool visible = ImGui::TableNextColumn();
+                    const bool scrollTarget = shouldScrollToCell && rowIdx == scrollTargetRow &&
+                                              colIdx == scrollTargetCol;
+                    if (!visible && !scrollTarget &&
+                        !(editingRow == rowIdx && editingCol == colIdx))
+                        continue;
 
                     renderCell(rowIdx, colIdx);
 
-                    if (shouldScrollToCell && rowIdx == scrollTargetRow &&
-                        colIdx == scrollTargetCol) {
+                    if (scrollTarget) {
                         // use the table's inner clip rect + column MinX/MaxX so the
                         // visibility check reflects the actual scroll viewport, not the
                         // window content extent (which would span the whole table width
@@ -620,9 +650,10 @@ void TableRenderer::renderCell(int row, int col) {
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
-        const ImVec4 tint = isPendingDelete
-                                ? ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)
-                                : ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.15f);
+        const ImVec4 tint =
+            isPendingDelete
+                ? ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)
+                : ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.15f);
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(tint));
 
         auto dropdownIt = config.columnDropdownOptions.find(col);
@@ -634,7 +665,8 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::OpenPopup(ImGui::GetID("##dropdown_edit"));
                 comboNeedsOpen = false;
             }
-            if (imshell::BeginSelect("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
+            if (imshell::BeginSelect("##dropdown_edit", editBuffer,
+                                     ImGuiComboFlags_NoArrowButton)) {
                 comboHasOpened = true;
                 for (const auto& option : dropdownIt->second) {
                     bool selected = (option == std::string(editBuffer));
@@ -797,21 +829,23 @@ void TableRenderer::renderCell(int row, int col) {
         if (isPendingDelete) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)));
+                ImGui::GetColorU32(ImVec4(colors.destructive.x, colors.destructive.y,
+                                          colors.destructive.z, 0.3f)));
         } else if (isEdited && isSelected) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.5f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y,
+                                                             colors.hues.teal.z, 0.5f)));
         } else if (isEdited) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.3f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y,
+                                                             colors.hues.teal.z, 0.3f)));
         } else if (isSelected) {
-            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(imshell::Pressed(colors.accent)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(imshell::Pressed(colors.accent)));
         } else if (inRange) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.25f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y,
+                                                             colors.primary.z, 0.25f)));
         }
 
         const std::string& cellValue = data[row][col];
@@ -850,7 +884,7 @@ void TableRenderer::renderCell(int row, int col) {
             } else if (isNullSentinel(cellValue)) {
                 ImGui::TextColored(colors.mutedForeground, "NULL");
             } else {
-                ImGui::Text("%s", getFirstLine(cellValue).c_str());
+                ImGui::TextUnformatted(cellLabel(cellValue));
             }
 
             if (ImGui::IsItemHovered() &&
@@ -871,9 +905,10 @@ void TableRenderer::renderCell(int row, int col) {
                 const ImRect cellRect = ImGui::TableGetCellBgRect(tbl, tableColIdx);
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 dl->PushClipRect(tbl->InnerClipRect.Min, tbl->InnerClipRect.Max, true);
-                dl->AddRect(cellRect.Min, cellRect.Max,
-                            ImGui::GetColorU32(isPendingDelete ? colors.destructive : colors.primary), 0.0f, 0,
-                            2.0f);
+                dl->AddRect(
+                    cellRect.Min, cellRect.Max,
+                    ImGui::GetColorU32(isPendingDelete ? colors.destructive : colors.primary), 0.0f,
+                    0, 2.0f);
                 dl->PopClipRect();
             }
         }
@@ -970,19 +1005,7 @@ void TableRenderer::handleCellInteraction(int row, int col, bool isSelected) {
         return;
     }
 
-    std::string singleLineText;
-    const char* displayText;
-    if (isNull) {
-        displayText = "NULL";
-    } else {
-        auto nlPos = cellValue.find('\n');
-        if (nlPos != std::string::npos) {
-            singleLineText = cellValue.substr(0, nlPos);
-            displayText = singleLineText.c_str();
-        } else {
-            displayText = cellValue.c_str();
-        }
-    }
+    const char* displayText = isNull ? "NULL" : cellLabel(cellValue);
 
     // Make Selectable transparent - cell bg is handled by TableSetBgColor
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
@@ -1100,8 +1123,8 @@ void TableRenderer::copyRowToClipboard(int row) const {
 }
 
 void TableRenderer::renderCellContextMenu(int row, int col) {
-    const std::string menuId = std::format("##cell_ctx_{}_{}", row, col);
-    if (!imshell::BeginContextMenu(menuId.c_str())) {
+    // unique already: every cell is inside its own PushID
+    if (!imshell::BeginContextMenu("##cell_ctx")) {
         return;
     }
 
@@ -1176,8 +1199,7 @@ void TableRenderer::enterEditMode(int row, int col) {
     if (cellEditableCb && !cellEditableCb(row, col))
         return;
 
-    if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 &&
-        col < static_cast<int>(columns.size())) {
+    if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 && col < shownColumns()) {
         editingRow = row;
         editingCol = col;
 
@@ -1242,7 +1264,7 @@ void TableRenderer::handleKeyboardNavigation() {
         return;
 
     const int maxRows = static_cast<int>(data.size());
-    const int maxCols = static_cast<int>(columns.size());
+    const int maxCols = shownColumns();
     int newRow = selectedRow;
     int newCol = selectedCol;
     bool moved = false;
@@ -1260,6 +1282,8 @@ void TableRenderer::handleKeyboardNavigation() {
         newCol = selectedCol + 1;
         moved = true;
     }
+    // a whole-row selection ends past the shown columns: come back into them
+    newCol = std::min(newCol, maxCols - 1);
 
     if (moved) {
         collapseSelectionToCell(newRow, newCol);
@@ -1503,7 +1527,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
                                ? ICON_FA_ARROW_UP_SHORT_WIDE
                                : ICON_FA_ARROW_DOWN_WIDE_SHORT;
         if (imshell::IconButton(icon, imshell::ButtonVariant::Secondary, ImVec2(0.0f, 0.0f),
-                               imshell::ButtonSize::Small)) {
+                                imshell::ButtonSize::Small)) {
             sortColumn = -1;
             sortDirection = SortDirection::None;
             if (onSortChanged) {
@@ -1530,7 +1554,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     ImGui::PushID(colIdx);
 
     if (imshell::IconButton(ICON_FA_CHEVRON_DOWN, imshell::ButtonVariant::Secondary,
-                           ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
+                            ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
         ImGui::OpenPopup(popupId.c_str());
     }
 

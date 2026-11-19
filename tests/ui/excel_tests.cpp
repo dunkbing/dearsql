@@ -1,5 +1,5 @@
-#include "application.hpp"
 #include "app_state.hpp"
+#include "application.hpp"
 #include "database/file_database.hpp"
 #include "imgui_te_context.h"
 #include "imgui_te_engine.h"
@@ -31,8 +31,9 @@ void RegisterExcelTests(ImGuiTestEngine* engine) {
         app.openFile(path);
         std::shared_ptr<DatabaseInterface> db;
         for (const auto& d : app.getDatabases())
-            if (auto* f = dynamic_cast<FileDatabase*>(d.get()); f && std::filesystem::exists(f->getPath()) &&
-                                                           std::filesystem::equivalent(f->getPath(), path))
+            if (auto* f = dynamic_cast<FileDatabase*>(d.get());
+                f && std::filesystem::exists(f->getPath()) &&
+                std::filesystem::equivalent(f->getPath(), path))
                 db = d;
         IM_CHECK_SILENT(db != nullptr);
         IM_CHECK(db->getConnectionInfo().readOnly);
@@ -49,8 +50,7 @@ void RegisterExcelTests(ImGuiTestEngine* engine) {
             ctx->Yield();
         }
         const auto& tables = file->getTables();
-        const auto people =
-            std::ranges::find(tables, std::string("people"), &Table::name);
+        const auto people = std::ranges::find(tables, std::string("people"), &Table::name);
         IM_CHECK_SILENT(people != tables.end());
 
         auto* tabs = app.getTabManager();
@@ -65,6 +65,16 @@ void RegisterExcelTests(ImGuiTestEngine* engine) {
         IM_CHECK(!write.success());
 
         tabs->closeTabsForDatabase(file);
+        // opening it again once disconnected reconnects off the ui thread too
+        db->disconnect();
+        app.openFile(path);
+        IM_CHECK(!db->isConnected() && db->isConnecting());
+        app.openFile(path); // still loading: no second connect
+        for (int i = 0; i < 300 && !db->isConnected(); ++i) {
+            db->checkConnectionStatusAsync();
+            ctx->Yield();
+        }
+        IM_CHECK(db->isConnected());
         app.getAppState()->deleteConnection(db->getConnectionId());
         app.removeDatabase(db);
         ctx->Yield();

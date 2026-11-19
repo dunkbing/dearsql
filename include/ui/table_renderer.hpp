@@ -161,6 +161,9 @@ public:
     void scrollToCell(int row, int col);
 
 private:
+    // imgui tables stop at IMGUI_TABLE_MAX_COLUMNS: wider results show (and edit) their first
+    // columns only
+    int shownColumns() const;
     // new data without the cell being edited: drop the edit, never write it back
     void dropStaleEdit();
 

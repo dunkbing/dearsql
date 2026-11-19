@@ -234,6 +234,11 @@ bool TableRenderer::getSelectionRange(int& firstRow, int& firstCol, int& lastRow
     return firstRow <= lastRow && firstCol <= lastCol;
 }
 
+int TableRenderer::shownColumns() const {
+    return std::min(static_cast<int>(columns.size()),
+                    IMGUI_TABLE_MAX_COLUMNS - 1 - (config.showRowNumbers ? 1 : 0));
+}
+
 void TableRenderer::selectRows(int firstRow, int lastRow) {
     if (columns.empty() || data.empty())
         return;
@@ -417,9 +422,7 @@ void TableRenderer::render(const char* tableId) {
 
     handleKeyboardNavigation();
 
-    // imgui tables stop at IMGUI_TABLE_MAX_COLUMNS; wider results show their first columns
-    const int shownCols = std::min(static_cast<int>(columns.size()),
-                                   IMGUI_TABLE_MAX_COLUMNS - 1 - (config.showRowNumbers ? 1 : 0));
+    const int shownCols = shownColumns();
     if (shownCols < static_cast<int>(columns.size()))
         ImGui::TextColored(colors.mutedForeground, "Showing the first %d of %d columns", shownCols,
                            static_cast<int>(columns.size()));
@@ -431,7 +434,8 @@ void TableRenderer::render(const char* tableId) {
     }
 
     if (config.allowEditing && selectedRow >= 0 && selectedCol >= 0 && editingRow == -1 &&
-        editingCol == -1 && !config.nonEditableColumns.contains(selectedCol) &&
+        editingCol == -1 && selectedCol < shownColumns() &&
+        !config.nonEditableColumns.contains(selectedCol) &&
         (!cellEditableCb || cellEditableCb(selectedRow, selectedCol))) {
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
             !ImGui::GetIO().WantTextInput) {
@@ -499,7 +503,8 @@ void TableRenderer::render(const char* tableId) {
         }
 
         for (int c = 0; c < shownCols; ++c)
-            ImGui::TableSetupColumn(columns[c].name.c_str(), ImGuiTableColumnFlags_WidthFixed, 120.0f);
+            ImGui::TableSetupColumn(columns[c].name.c_str(), ImGuiTableColumnFlags_WidthFixed,
+                                    120.0f);
 
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
         // a step above the theme's header bg, so it stands out from the rows
@@ -551,7 +556,8 @@ void TableRenderer::render(const char* tableId) {
                         ImGui::PushID(rowIdx);
                         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
                         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors.accent);
-                        ImGui::PushStyleColor(ImGuiCol_HeaderActive, imshell::Pressed(colors.accent));
+                        ImGui::PushStyleColor(ImGuiCol_HeaderActive,
+                                              imshell::Pressed(colors.accent));
                         if (ImGui::Selectable("##rownum", false, ImGuiSelectableFlags_None)) {
                             if (ImGui::GetIO().KeyShift && rangeAnchorRow >= 0)
                                 selectRows(rangeAnchorRow, rowIdx);
@@ -578,7 +584,8 @@ void TableRenderer::render(const char* tableId) {
                     const bool visible = ImGui::TableNextColumn();
                     const bool scrollTarget = shouldScrollToCell && rowIdx == scrollTargetRow &&
                                               colIdx == scrollTargetCol;
-                    if (!visible && !scrollTarget && !(editingRow == rowIdx && editingCol == colIdx))
+                    if (!visible && !scrollTarget &&
+                        !(editingRow == rowIdx && editingCol == colIdx))
                         continue;
 
                     renderCell(rowIdx, colIdx);
@@ -643,9 +650,10 @@ void TableRenderer::renderCell(int row, int col) {
 
     // Check if this cell is being edited
     if (config.allowEditing && editingRow == row && editingCol == col) {
-        const ImVec4 tint = isPendingDelete
-                                ? ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)
-                                : ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.15f);
+        const ImVec4 tint =
+            isPendingDelete
+                ? ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)
+                : ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.15f);
         ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(tint));
 
         auto dropdownIt = config.columnDropdownOptions.find(col);
@@ -657,7 +665,8 @@ void TableRenderer::renderCell(int row, int col) {
                 ImGui::OpenPopup(ImGui::GetID("##dropdown_edit"));
                 comboNeedsOpen = false;
             }
-            if (imshell::BeginSelect("##dropdown_edit", editBuffer, ImGuiComboFlags_NoArrowButton)) {
+            if (imshell::BeginSelect("##dropdown_edit", editBuffer,
+                                     ImGuiComboFlags_NoArrowButton)) {
                 comboHasOpened = true;
                 for (const auto& option : dropdownIt->second) {
                     bool selected = (option == std::string(editBuffer));
@@ -820,21 +829,23 @@ void TableRenderer::renderCell(int row, int col) {
         if (isPendingDelete) {
             ImGui::TableSetBgColor(
                 ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.destructive.x, colors.destructive.y, colors.destructive.z, 0.3f)));
+                ImGui::GetColorU32(ImVec4(colors.destructive.x, colors.destructive.y,
+                                          colors.destructive.z, 0.3f)));
         } else if (isEdited && isSelected) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.5f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y,
+                                                             colors.hues.teal.z, 0.5f)));
         } else if (isEdited) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y, colors.hues.teal.z, 0.3f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.hues.teal.x, colors.hues.teal.y,
+                                                             colors.hues.teal.z, 0.3f)));
         } else if (isSelected) {
-            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, ImGui::GetColorU32(imshell::Pressed(colors.accent)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(imshell::Pressed(colors.accent)));
         } else if (inRange) {
-            ImGui::TableSetBgColor(
-                ImGuiTableBgTarget_CellBg,
-                ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y, colors.primary.z, 0.25f)));
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                   ImGui::GetColorU32(ImVec4(colors.primary.x, colors.primary.y,
+                                                             colors.primary.z, 0.25f)));
         }
 
         const std::string& cellValue = data[row][col];
@@ -894,9 +905,10 @@ void TableRenderer::renderCell(int row, int col) {
                 const ImRect cellRect = ImGui::TableGetCellBgRect(tbl, tableColIdx);
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 dl->PushClipRect(tbl->InnerClipRect.Min, tbl->InnerClipRect.Max, true);
-                dl->AddRect(cellRect.Min, cellRect.Max,
-                            ImGui::GetColorU32(isPendingDelete ? colors.destructive : colors.primary), 0.0f, 0,
-                            2.0f);
+                dl->AddRect(
+                    cellRect.Min, cellRect.Max,
+                    ImGui::GetColorU32(isPendingDelete ? colors.destructive : colors.primary), 0.0f,
+                    0, 2.0f);
                 dl->PopClipRect();
             }
         }
@@ -1187,8 +1199,7 @@ void TableRenderer::enterEditMode(int row, int col) {
     if (cellEditableCb && !cellEditableCb(row, col))
         return;
 
-    if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 &&
-        col < static_cast<int>(columns.size())) {
+    if (row >= 0 && row < static_cast<int>(data.size()) && col >= 0 && col < shownColumns()) {
         editingRow = row;
         editingCol = col;
 
@@ -1253,7 +1264,7 @@ void TableRenderer::handleKeyboardNavigation() {
         return;
 
     const int maxRows = static_cast<int>(data.size());
-    const int maxCols = static_cast<int>(columns.size());
+    const int maxCols = shownColumns();
     int newRow = selectedRow;
     int newCol = selectedCol;
     bool moved = false;
@@ -1271,6 +1282,8 @@ void TableRenderer::handleKeyboardNavigation() {
         newCol = selectedCol + 1;
         moved = true;
     }
+    // a whole-row selection ends past the shown columns: come back into them
+    newCol = std::min(newCol, maxCols - 1);
 
     if (moved) {
         collapseSelectionToCell(newRow, newCol);
@@ -1514,7 +1527,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
                                ? ICON_FA_ARROW_UP_SHORT_WIDE
                                : ICON_FA_ARROW_DOWN_WIDE_SHORT;
         if (imshell::IconButton(icon, imshell::ButtonVariant::Secondary, ImVec2(0.0f, 0.0f),
-                               imshell::ButtonSize::Small)) {
+                                imshell::ButtonSize::Small)) {
             sortColumn = -1;
             sortDirection = SortDirection::None;
             if (onSortChanged) {
@@ -1541,7 +1554,7 @@ void TableRenderer::renderColumnHeader(int colIdx, const std::string& colName) {
     ImGui::PushID(colIdx);
 
     if (imshell::IconButton(ICON_FA_CHEVRON_DOWN, imshell::ButtonVariant::Secondary,
-                           ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
+                            ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
         ImGui::OpenPopup(popupId.c_str());
     }
 

@@ -976,10 +976,10 @@ namespace {
         static GridPerf p;
         return p;
     }
-    void makeGrid(int cols, int rows, size_t longCell) {
+    void makeGrid(int cols, int rows, size_t longCell, TableRenderer::Config config = {}) {
         auto& p = gridPerf();
         p = {};
-        p.grid = std::make_unique<TableRenderer>();
+        p.grid = std::make_unique<TableRenderer>(config);
         std::vector<std::string> names;
         for (int c = 0; c < cols; ++c)
             names.push_back(std::format("column_{}", c));
@@ -1005,8 +1005,9 @@ void RegisterTableRendererPerfTests(ImGuiTestEngine* engine) {
         ImGui::Begin("grid_perf", nullptr, ImGuiWindowFlags_NoSavedSettings);
         const auto t0 = std::chrono::steady_clock::now();
         p.grid->render("##perf_grid");
-        p.totalMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
-                         .count();
+        p.totalMs +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                .count();
         ++p.frames;
         ImGui::End();
     };
@@ -1023,9 +1024,26 @@ void RegisterTableRendererPerfTests(ImGuiTestEngine* engine) {
         IM_CHECK(p.frames > 0);
 
         // wider than imgui's 512-column table limit: the first columns show, no assert
-        makeGrid(600, 50, 10);
+        TableRenderer::Config editable;
+        editable.allowEditing = true;
+        makeGrid(600, 50, 10, editable);
         ctx->Yield(3);
         IM_CHECK(gridPerf().frames >= 3);
+        // a whole row selects every column, but a hidden cell is never opened for editing,
+        // and the arrows bring the selection back to the shown columns
+        ctx->WindowFocus("//grid_perf");
+        gridPerf().grid->selectRows(0, 0);
+        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->Yield(2);
+        IM_CHECK(!gridPerf().grid->isEditing());
+        ctx->KeyPress(ImGuiKey_LeftArrow);
+        ctx->Yield(2);
+        int r0, c0, r1, c1;
+        IM_CHECK(gridPerf().grid->getSelectionRange(r0, c0, r1, c1));
+        IM_CHECK(c1 < IMGUI_TABLE_MAX_COLUMNS - 1);
+        ctx->KeyPress(ImGuiKey_Enter);
+        ctx->Yield(2);
+        IM_CHECK(gridPerf().grid->isEditing());
         gridPerf().grid.reset();
     };
 }

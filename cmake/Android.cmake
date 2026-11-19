@@ -3,7 +3,7 @@
 # configure with the ndk toolchain chainloaded by vcpkg (docs/ANDROID.md)
 set(ANDROID_SOURCES ${APP_SOURCES})
 list(FILTER ANDROID_SOURCES EXCLUDE REGEX
-     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
+     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command|utils/xlsx")
 list(APPEND ANDROID_SOURCES src/ui/title_bar.cpp src/platform/android_main.cpp
                             src/platform/android_dialogs.cpp)
 imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
@@ -33,6 +33,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imshell::editor
     httplib::httplib
     imshell::markdown
+    imshell::components
     imshell::node_editor
     acp::acp
     miniocpp::miniocpp

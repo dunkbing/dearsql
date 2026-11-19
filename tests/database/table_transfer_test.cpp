@@ -1,6 +1,7 @@
 #include "database/file_database.hpp"
 #include "utils/table_exporter.hpp"
 #include "utils/table_importer.hpp"
+#include <OpenXLSX.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -186,4 +187,49 @@ TEST(TableExporterJson, RowsToJson) {
     EXPECT_NE(json.find("\"zip\": 0,"), std::string::npos) << json;
     EXPECT_NE(json.find("\"big\": \"12345678901234567890123\""), std::string::npos) << json;
     EXPECT_NE(json.find("\"ok\": false"), std::string::npos) << json;
+}
+
+// two tables, one workbook: a sheet each, every row, catalog types on the cells
+TEST_F(TableTransferTest, XlsxExportWritesOneSheetPerTable) {
+    TableImporter::Progress in;
+    ASSERT_TRUE(TableImporter::importCsv(db_.get(), "items", writeCsv(25000), in).success);
+    ASSERT_TRUE(db_->executeQuery("CREATE TABLE codes (code TEXT); INSERT INTO codes VALUES ('007')")
+                    .success());
+
+    TableExporter::Request request;
+    request.format = ExportFormat::XLSX;
+    request.tables.push_back(Table{.name = "items"});
+    Table codes{.name = "codes"};
+    codes.columns.push_back(Column{.name = "code", .type = "TEXT"});
+    request.tables.push_back(codes);
+    request.path = (dir_ / "out.xlsx").string();
+    TableExporter::Progress progress;
+    const auto result = TableExporter::run(db_.get(), request, progress);
+    ASSERT_TRUE(result.success) << result.error;
+    EXPECT_EQ(result.tables, 2);
+    EXPECT_EQ(result.rows, 25001);
+
+    OpenXLSX::XLDocument doc;
+    doc.open(request.path);
+    EXPECT_EQ(doc.workbook().worksheetNames(), (std::vector<std::string>{"items", "codes"}));
+    auto items = doc.workbook().worksheet("items");
+    EXPECT_EQ(items.rowCount(), 25001u);
+    EXPECT_EQ(OpenXLSX::XLCellValue(items.cell("A25001").value()).get<int64_t>(), 24999);
+    EXPECT_EQ(OpenXLSX::XLCellValue(items.cell("B2").value()).get<std::string>(), "name, 0");
+    auto sheet = doc.workbook().worksheet("codes");
+    EXPECT_EQ(OpenXLSX::XLCellValue(sheet.cell("A2").value()).get<std::string>(), "007");
+    doc.close();
+}
+
+TEST_F(TableTransferTest, XlsxExportCancelledWritesNothing) {
+    TableExporter::Request request;
+    request.format = ExportFormat::XLSX;
+    request.tables.push_back(Table{.name = "items"});
+    request.path = (dir_ / "cancelled.xlsx").string();
+    TableExporter::Progress progress;
+    progress.cancelRequested = true;
+    const auto result = TableExporter::run(db_.get(), request, progress);
+    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(std::filesystem::exists(request.path));
+    EXPECT_FALSE(std::filesystem::exists(request.path + ".part"));
 }

@@ -3,7 +3,7 @@
 # configure with -DCMAKE_SYSTEM_NAME=iOS -DVCPKG_TARGET_TRIPLET=arm64-ios-simulator
 set(IOS_SOURCES ${APP_SOURCES})
 list(FILTER IOS_SOURCES EXCLUDE REGEX
-     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command")
+     "src/main\\.cpp|src/platform/|src/cli/(cli|lsp|tui)\\.cpp|sentry_init|cli_command|utils/xlsx")
 list(APPEND IOS_SOURCES src/platform/ios_platform.mm src/platform/ios_dialogs.mm)
 imshell_embed_fonts(${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts)
 imshell_embed_images(${CMAKE_CURRENT_SOURCE_DIR}/assets/images)
@@ -36,6 +36,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imshell::editor
     httplib::httplib
     imshell::markdown
+    imshell::components
     imshell::node_editor
     acp::acp
     miniocpp::miniocpp

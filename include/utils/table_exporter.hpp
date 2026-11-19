@@ -11,7 +11,7 @@
 #include <vector>
 
 // DDL: CREATE TABLE and indexes only, no rows
-enum class ExportFormat { CSV, JSON, SQL, DDL, MARKDOWN, HTML };
+enum class ExportFormat { CSV, JSON, SQL, DDL, MARKDOWN, HTML, XLSX };
 
 // table export (csv, json, sql, markdown, html). the destination is picked on
 // the UI thread; the rows are paged out on a worker by run()
@@ -69,6 +69,10 @@ namespace TableExporter {
                 onPick(ExportFormat::MARKDOWN);
             if (ImGui::MenuItem("HTML"))
                 onPick(ExportFormat::HTML);
+#ifndef DEARSQL_MOBILE
+            if (ImGui::MenuItem("Excel workbook"))
+                onPick(ExportFormat::XLSX);
+#endif
             ImGui::EndMenu();
         }
     }

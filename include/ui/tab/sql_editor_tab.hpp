@@ -172,6 +172,8 @@ private:
     void renderQueryResults() const;
     void renderServerMessages() const;
     void renderSingleResult(const StatementResult& r, size_t index) const;
+    // every result of the run into one workbook, a sheet each (desktop)
+    void exportResultsToExcel() const;
     void renderTimingWaterfall() const;
 
     // Switch the active database node (clears results, resets autocomplete)

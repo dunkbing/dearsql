@@ -155,6 +155,14 @@ elseif(NOT IOS)
     find_package(nfd CONFIG REQUIRED)
     find_package(sentry CONFIG REQUIRED)
     find_package(ftxui CONFIG REQUIRED)
+    # the port's config does not load its own dependencies
+    find_package(miniz CONFIG REQUIRED)
+    find_package(pugixml CONFIG REQUIRED)
+    find_package(OpenXLSX CONFIG REQUIRED) # excel files; desktop only for now
+    find_library(XLSXWRITER_LIBRARY xlsxwriter REQUIRED) # no cmake config in the port
+    find_package(unofficial-minizip CONFIG REQUIRED)
+    find_package(ZLIB REQUIRED)
+    set(XLSX_LIBRARIES OpenXLSX::OpenXLSX ${XLSXWRITER_LIBRARY} unofficial::minizip::minizip ZLIB::ZLIB)
 endif()
 # vendored drivers (freetds, odpi, cassandra) and the database layer
 add_subdirectory(external/libdearsql)
@@ -246,6 +254,7 @@ set(APP_SOURCES
     src/utils/mysql_dump_splitter.cpp
     src/utils/csv_document.cpp
     src/utils/table_exporter.cpp
+    src/utils/xlsx.cpp
     src/utils/chart_data.cpp
     src/utils/table_importer.cpp
     src/utils/crypto.cpp
@@ -369,6 +378,7 @@ target_link_libraries(
         hiredis::hiredis
         hiredis::hiredis_ssl
         nfd::nfd
+        ${XLSX_LIBRARIES}
         OpenSSL::SSL
         OpenSSL::Crypto
         sentry::sentry
@@ -377,6 +387,7 @@ target_link_libraries(
         imshell::editor
         httplib::httplib
         imshell::markdown
+        imshell::components
         imshell::node_editor
         miniocpp::miniocpp
         libssh2::libssh2

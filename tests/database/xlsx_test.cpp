@@ -3,6 +3,7 @@
 #include <OpenXLSX.hpp>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <gtest/gtest.h>
 
 using OpenXLSX::XLValueType;
@@ -73,13 +74,14 @@ TEST(Xlsx, WritesTypedCellsAndSplitsLongSheets) {
     OpenXLSX::XLDocument doc;
     doc.open(path);
     const auto names = doc.workbook().worksheetNames();
-    ASSERT_EQ(names, (std::vector<std::string>{"people_2024", "people_2024 (2)", "people_2024 (3)"}));
+    ASSERT_EQ(names,
+              (std::vector<std::string>{"people_2024", "people_2024 (2)", "people_2024 (3)"}));
     auto ws = doc.workbook().worksheet("people_2024");
     const auto cell = [&](const char* ref) { return OpenXLSX::XLCellValue(ws.cell(ref).value()); };
     EXPECT_EQ(cell("A1").get<std::string>(), "id");
     EXPECT_EQ(cell("A2").type(), XLValueType::Integer);
     EXPECT_EQ(cell("A2").get<int64_t>(), 1);
-    EXPECT_EQ(cell("B2").get<std::string>(), "00123");             // text column stays text
+    EXPECT_EQ(cell("B2").get<std::string>(), "00123");                // text column stays text
     EXPECT_EQ(cell("C2").get<std::string>(), "12345678901234567890"); // would round as a number
     EXPECT_EQ(cell("D2").type(), XLValueType::Float);
     EXPECT_DOUBLE_EQ(cell("D2").get<double>(), 19.9);
@@ -116,9 +118,9 @@ TEST(Xlsx, BadUtf8BecomesReplacementCharacters) {
     {
         xlsx::Writer w(path);
         w.beginSheet("t", {"s"}, {"text"});
-        w.addRow({"caf\xE9"});               // latin1
+        w.addRow({"caf\xE9"});                      // latin1
         w.addRow({"ok \xC3\xA9 \xF0\x9F\x98\x80"}); // valid: é and an emoji
-        w.addRow({"\xEF\xBF\xBE end"});       // U+FFFE
+        w.addRow({"\xEF\xBF\xBE end"});             // U+FFFE
         std::string error;
         ASSERT_TRUE(w.save(error)) << error;
     }
@@ -147,9 +149,69 @@ TEST(Xlsx, ManyUniqueStringsStayFast) {
         std::string error;
         ASSERT_TRUE(w.save(error)) << error;
     }
-    const auto secs =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     EXPECT_LT(secs, 10.0);
     std::printf("200k rows: %.2f s\n", secs);
+    std::filesystem::remove(path);
+}
+
+// the limit is excel's characters (utf-16 units), not utf-8 bytes
+TEST(Xlsx, LongTextIsCutAtCharactersNotBytes) {
+    const auto path = tmpPath("dearsql_xlsx_cjk.xlsx");
+    std::string fits, tooLong;
+    for (int i = 0; i < 20000; ++i)
+        fits += "\xE4\xB8\xAD"; // 中, 3 bytes
+    for (int i = 0; i < 40000; ++i)
+        tooLong += "\xE4\xB8\xAD";
+    {
+        xlsx::Writer w(path);
+        w.beginSheet("t", {"s"}, {"text"});
+        w.addRow({fits});
+        w.addRow({tooLong});
+        std::string error;
+        ASSERT_TRUE(w.save(error)) << error;
+        EXPECT_EQ(w.truncatedCells(), 1u);
+    }
+    OpenXLSX::XLDocument doc;
+    doc.open(path);
+    auto ws = doc.workbook().worksheet("t");
+    EXPECT_EQ(ws.cell("A2").value().get<std::string>(), fits);
+    EXPECT_EQ(ws.cell("A3").value().get<std::string>().size(), 3 * xlsx::kMaxCellChars);
+    doc.close();
+    std::filesystem::remove(path);
+}
+
+namespace {
+    // openxlsx has no autofilter getter, so read the sheet xml from the zip
+    std::string sheetXml(const std::string& path, int n) {
+        std::string out;
+        if (FILE* p = popen(std::format("unzip -p '{}' xl/worksheets/sheet{}.xml", path, n).c_str(),
+                            "r")) {
+            char buf[4096];
+            for (size_t r; (r = fread(buf, 1, sizeof buf, p)) > 0;)
+                out.append(buf, r);
+            pclose(p);
+        }
+        return out;
+    }
+} // namespace
+
+// each sheet's autofilter spans its own columns, not the next sheet's
+TEST(Xlsx, AutofilterCoversEachSheetsColumns) {
+    const auto path = tmpPath("dearsql_xlsx_filter.xlsx");
+    {
+        xlsx::Writer w(path);
+        w.beginSheet("wide", {"a", "b", "c"});
+        w.addRow({"1", "2", "3"});
+        w.beginSheet("narrow", {"x"});
+        w.addRow({"1"});
+        std::string error;
+        ASSERT_TRUE(w.save(error)) << error;
+    }
+    const auto first = sheetXml(path, 1);
+    if (first.empty())
+        GTEST_SKIP() << "no unzip";
+    EXPECT_NE(first.find("<autoFilter ref=\"A1:C2\""), std::string::npos);
+    EXPECT_NE(sheetXml(path, 2).find("<autoFilter ref=\"A1:A2\""), std::string::npos);
     std::filesystem::remove(path);
 }

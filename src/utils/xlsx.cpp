@@ -1,14 +1,14 @@
 #include "utils/xlsx.hpp"
 #include "database/db.hpp"
-#include <xlsxwriter.h>
 #include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <filesystem>
 #include <format>
 #include <locale>
-#include <sstream>
 #include <spdlog/spdlog.h>
+#include <sstream>
+#include <xlsxwriter.h>
 
 namespace {
     std::string lower(std::string s) {
@@ -58,15 +58,30 @@ namespace {
         std::string out;
         out.reserve(std::min(v.size(), xlsx::kMaxCellChars));
         const auto byte = [&](size_t i) { return static_cast<unsigned char>(v[i]); };
+        size_t units = 0; // excel counts utf-16 units, not utf-8 bytes
+        const auto fits = [&](size_t n) {
+            if (units + n > xlsx::kMaxCellChars) {
+                ++truncated;
+                return false;
+            }
+            units += n;
+            return true;
+        };
         for (size_t i = 0; i < v.size();) {
             const unsigned char b = byte(i);
             if (b < 0x80) {
-                if (b >= 0x20 || b == '\t' || b == '\n' || b == '\r')
+                if (b >= 0x20 || b == '\t' || b == '\n' || b == '\r') {
+                    if (!fits(1))
+                        break;
                     out.push_back(static_cast<char>(b));
+                }
                 ++i;
                 continue;
             }
-            const size_t len = b >= 0xF0 && b <= 0xF4 ? 4 : b >= 0xE0 ? 3 : b >= 0xC2 && b <= 0xDF ? 2 : 0;
+            const size_t len = b >= 0xF0 && b <= 0xF4   ? 4
+                               : b >= 0xE0              ? 3
+                               : b >= 0xC2 && b <= 0xDF ? 2
+                                                        : 0;
             bool ok = len > 0 && b < 0xF5 && i + len <= v.size();
             uint32_t cp = ok ? (b & (0xFF >> (len + 1))) : 0;
             for (size_t k = 1; ok && k < len; ++k) {
@@ -75,8 +90,11 @@ namespace {
             }
             const bool wellFormed = ok; // a whole sequence, even if its code point is refused
             // overlong forms, surrogates, past U+10FFFF, and the two non-characters
-            ok = ok && !(len == 3 && cp < 0x800) && !(len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) &&
+            ok = ok && !(len == 3 && cp < 0x800) &&
+                 !(len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) &&
                  !(cp >= 0xD800 && cp <= 0xDFFF) && cp != 0xFFFE && cp != 0xFFFF;
+            if (!fits(ok && len == 4 ? 2 : 1))
+                break;
             if (ok) {
                 out.append(v, i, len);
                 i += len;
@@ -84,13 +102,6 @@ namespace {
                 out += kReplacement;
                 i += wellFormed ? len : 1;
             }
-        }
-        if (out.size() > xlsx::kMaxCellChars) {
-            size_t end = xlsx::kMaxCellChars;
-            while (end > 0 && (static_cast<unsigned char>(out[end]) & 0xC0) == 0x80)
-                --end;
-            out.resize(end);
-            ++truncated;
         }
         return out;
     }
@@ -101,7 +112,8 @@ namespace xlsx {
     std::string sheetName(const std::string& wanted, const std::vector<std::string>& taken) {
         std::string base;
         for (const char c : wanted)
-            base.push_back(std::string_view("[]:*?/\\").find(c) == std::string_view::npos ? c : '_');
+            base.push_back(std::string_view("[]:*?/\\").find(c) == std::string_view::npos ? c
+                                                                                          : '_');
         // excel also refuses a name that starts or ends with an apostrophe
         while (!base.empty() && base.front() == '\'')
             base.erase(0, 1);
@@ -117,8 +129,8 @@ namespace xlsx {
             return s.substr(0, n);
         };
         const auto isTaken = [&](const std::string& name) {
-            return std::ranges::any_of(taken,
-                                       [&](const std::string& t) { return lower(t) == lower(name); });
+            return std::ranges::any_of(
+                taken, [&](const std::string& t) { return lower(t) == lower(name); });
         };
         std::string name = cut(base, 31);
         for (int n = 2; isTaken(name); ++n) {
@@ -148,7 +160,8 @@ namespace xlsx {
         if (i != v.size())
             return std::nullopt; // exponents, spaces, units: left as text
         // significant digits: what a double keeps exactly
-        std::string sig = v.substr(intStart, intLen) + (fracLen ? v.substr(intStart + intLen + 1) : "");
+        std::string sig =
+            v.substr(intStart, intLen) + (fracLen ? v.substr(intStart + intLen + 1) : "");
         sig.erase(0, std::min(sig.find_first_not_of('0'), sig.size()));
         if (fracLen)
             while (!sig.empty() && sig.back() == '0')
@@ -172,8 +185,7 @@ namespace xlsx {
         // excel's 1900 system starts on 1900-03-01 for exact serials (it believes 1900 was leap)
         if (y < 1900 || (y == 1900 && mo < 3) || y > 9999)
             return std::nullopt;
-        double serial =
-            static_cast<double>(daysFromCivil(y, mo, d) - daysFromCivil(1899, 12, 30));
+        double serial = static_cast<double>(daysFromCivil(y, mo, d) - daysFromCivil(1899, 12, 30));
         if (v.size() == 10)
             return serial;
         int h = 0, mi = 0, s = 0;
@@ -185,7 +197,8 @@ namespace xlsx {
         size_t i = 19;
         if (i < v.size() && v[i] == '.') {
             double scale = 0.1;
-            for (++i; i < v.size() && std::isdigit(static_cast<unsigned char>(v[i])); ++i, scale /= 10)
+            for (++i; i < v.size() && std::isdigit(static_cast<unsigned char>(v[i]));
+                 ++i, scale /= 10)
                 frac += (v[i] - '0') * scale;
         }
         if (i != v.size())
@@ -223,10 +236,9 @@ namespace xlsx {
             if (!sheet)
                 return;
             for (size_t c = 0; c < widths.size(); ++c)
-                check(worksheet_set_column(sheet, static_cast<lxw_col_t>(c),
-                                           static_cast<lxw_col_t>(c),
-                                           static_cast<double>(std::clamp<size_t>(widths[c] + 2, 8, 60)),
-                                           nullptr));
+                check(worksheet_set_column(
+                    sheet, static_cast<lxw_col_t>(c), static_cast<lxw_col_t>(c),
+                    static_cast<double>(std::clamp<size_t>(widths[c] + 2, 8, 60)), nullptr));
             if (!columns.empty())
                 check(worksheet_autofilter(sheet, 0, 0, nextRow > 0 ? nextRow - 1 : 0,
                                            static_cast<lxw_col_t>(columns.size() - 1)));
@@ -295,8 +307,9 @@ namespace xlsx {
                             const std::vector<std::string>& columnTypes) {
         impl_->guard([&] {
             if (columns.size() > 16384)
-                throw std::runtime_error(std::format(
-                    "{} columns: an Excel sheet holds 16,384 at most", columns.size()));
+                throw std::runtime_error(
+                    std::format("{} columns: an Excel sheet holds 16,384 at most", columns.size()));
+            impl_->finishSheet(); // before its columns are replaced: the autofilter spans them
             impl_->baseName = name;
             impl_->columns = columns;
             impl_->types = columnTypes;
@@ -320,8 +333,8 @@ namespace xlsx {
                 if (isNullSentinel(v))
                     continue; // an empty cell
                 if (isBoolSentinel(v)) {
-                    m.check(worksheet_write_boolean(m.sheet, m.nextRow, col,
-                                                    boolSentinelValue(v), nullptr));
+                    m.check(worksheet_write_boolean(m.sheet, m.nextRow, col, boolSentinelValue(v),
+                                                    nullptr));
                     continue;
                 }
                 if (c < m.widths.size() && m.rowsInSheet < 200)

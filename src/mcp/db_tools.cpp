@@ -1531,8 +1531,8 @@ namespace mcp {
             throw ToolError("Missing 'path'.");
         std::error_code ec;
         if (path == "~" || path.starts_with("~/"))
-            if (const char* home = std::getenv("HOME"))
-                path = home + path.substr(1);
+            if (const char* home = std::getenv("HOME") ? std::getenv("HOME") : std::getenv("USERPROFILE"))
+                path = home + path.substr(1); // windows sets USERPROFILE, not HOME
         if (!fs::path(path).is_absolute()) {
             if (!host_.relativePaths())
                 throw ToolError("Give an absolute path or ~/... for the file, e.g. "

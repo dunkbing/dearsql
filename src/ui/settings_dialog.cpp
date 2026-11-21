@@ -73,6 +73,14 @@ void SettingsDialog::render() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f);
     if (imshell::BeginSelect("##theme", app.getTheme().name)) {
+        // follows the os light/dark and accent; only macos has one
+        if (imshell::SystemThemeAvailable()) {
+            const bool selected = std::string_view(app.getTheme().id) == "system";
+            if (ImGui::Selectable("System", selected))
+                app.setTheme("system");
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
         for (const auto& theme : imshell::Themes()) {
             const bool selected = std::string_view(theme.id) == app.getTheme().id;
             if (ImGui::Selectable(theme.name, selected))

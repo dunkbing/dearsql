@@ -11,8 +11,11 @@ using Theme = imshell::Theme;
 // what the app keeps around imshell's themes: the saved pick and the connection colours
 namespace themes {
     // a saved theme id; "light" and "dark" are what older versions stored, an unknown id (a
-    // synced setting from a newer build) is the first preset
-    inline const Theme& byId(std::string_view id) {
+    // synced setting from a newer build) is the first preset. "system" follows the os look
+    // where imshell has one (macos), and is the first preset elsewhere
+    inline Theme byId(std::string_view id) {
+        if (id == "system")
+            return imshell::SystemTheme();
         if (id == "light")
             id = "one-light";
         else if (id == "dark")

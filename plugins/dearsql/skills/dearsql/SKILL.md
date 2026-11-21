@@ -1,6 +1,6 @@
 ---
 name: dearsql
-description: Work with the user's databases (PostgreSQL, MySQL, SQLite, DuckDB, SQL Server, Oracle, MongoDB, Redis, Cassandra...) and S3 storage through DearSQL's saved connections. Use when the user asks about their data, a schema, a slow query, missing or duplicate indexes, differences between two databases, or files in an S3 bucket. Not for editing application code that merely contains SQL.
+description: Work with the user's databases (PostgreSQL, MySQL, SQLite, DuckDB, SQL Server, Oracle, MongoDB, Redis, Cassandra...) and S3 storage through DearSQL's saved connections. Use when the user asks about their data, a schema, a slow query, missing or duplicate indexes, differences between two databases, an Excel workbook (.xlsx) to query or a spreadsheet to produce from query results, or files in an S3 bucket. Not for editing application code that merely contains SQL.
 ---
 
 # DearSQL
@@ -37,6 +37,13 @@ DearSQL is the user's SQL client. Its saved connections (credentials encrypted, 
 - `run_query` rejects writes, and so should you unless the user asked for the change.
 - When they did: `execute_sql` (MCP; the user approves each call, in the DearSQL chat or in your client) or `dearsql exec` in a shell. Show the exact statement first, one statement per call, with a WHERE you have checked with a `SELECT count(*)`.
 - Connections marked read-only in DearSQL refuse writes. Don't work around it.
+
+## Excel workbooks
+
+- A `.xlsx` file opens read-only like a database file: `connect` with its path, or `-c book.xlsx` in a shell. Each sheet is a table named like the sheet; quote names with spaces (`"Sales Q3"`).
+- `describe_table` on a sheet says which row held the header, what stood above it (usually a report title), each column's sheet letter, which columns are formulas and how many error cells (`#N/A`) read as NULL. Read it before querying: it is how you cite cells (column letter, row number) and know a total is a formula.
+- Values are what Excel last calculated; nothing is recalculated. A sheet with no header row found has columns named by their letter (`B`, `C`, ...).
+- `export_query` saves a read-only query's rows as a `.xlsx` file (numbers, dates and booleans as real cells, a bold frozen header, an autofilter), up to 1,000,000 rows, from any connection, workbooks included. Only when the user asked for a spreadsheet. In a shell, `dearsql export out.xlsx "SELECT ..."` (SQL can come on stdin); in DearSQL's chat give an absolute path or `~/...`, and the user approves the file. It never overwrites unless you pass `overwrite`.
 
 ## S3 storage
 

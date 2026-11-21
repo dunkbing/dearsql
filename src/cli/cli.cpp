@@ -254,7 +254,8 @@ or let it run commands:
     // short names; the full tool names (snake or kebab case) work too
     const std::map<std::string, std::string> TOOL_ALIASES = {
         {"connections", "list_connections"}, {"tables", "list_tables"}, {"search", "search_schema"},
-        {"describe", "describe_table"},      {"query", "run_query"},    {"exec", "execute_sql"}};
+        {"describe", "describe_table"},      {"query", "run_query"},    {"exec", "execute_sql"},
+        {"export", "export_query"}};
 
     std::string toolName(std::string name) {
         std::ranges::replace(name, '-', '_');

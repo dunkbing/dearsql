@@ -28,7 +28,7 @@ namespace xlsx {
                         const std::vector<std::string>& columnTypes = {});
         void addRow(const std::vector<std::string>& row);
         // false with error set; the first failure of any call above lands here
-        bool save(std::string& error);
+        bool save(std::string& error, bool replace = true); // replace false: fail if the file exists by now
 
         size_t sheets() const;
         size_t truncatedCells() const; // text cut at kMaxCellChars

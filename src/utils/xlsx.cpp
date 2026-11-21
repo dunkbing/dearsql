@@ -182,6 +182,10 @@ namespace xlsx {
         if (v.size() < 10 || v[4] != '-' || v[7] != '-' || !digits(v, 0, 4, y) ||
             !digits(v, 5, 2, mo) || !digits(v, 8, 2, d) || mo < 1 || mo > 12 || d < 1 || d > 31)
             return std::nullopt;
+        static constexpr int kDays[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        if (d > kDays[mo - 1] || (mo == 2 && d == 29 && !leap))
+            return std::nullopt; // 2026-02-31 stays text rather than becoming march 3
         // excel's 1900 system starts on 1900-03-01 for exact serials (it believes 1900 was leap)
         if (y < 1900 || (y == 1900 && mo < 3) || y > 9999)
             return std::nullopt;
@@ -359,15 +363,27 @@ namespace xlsx {
         });
     }
 
-    bool Writer::save(std::string& error) {
+    bool Writer::save(std::string& error, bool replace) {
         auto& m = *impl_;
         m.guard([&] {
             m.finishSheet();
             const lxw_error err = workbook_close(m.wb);
             m.wb = nullptr;
             m.check(err);
-            if (m.error.empty())
+            if (!m.error.empty())
+                return;
+            if (replace) {
                 std::filesystem::rename(m.tmp, m.path);
+                return;
+            }
+            // a hard link fails when the name is taken, so a file made meanwhile is never replaced
+            std::error_code ec;
+            std::filesystem::create_hard_link(m.tmp, m.path, ec);
+            std::filesystem::remove(m.tmp);
+            if (ec)
+                m.error = std::filesystem::exists(m.path)
+                              ? std::format("'{}' already exists", m.path)
+                              : ec.message();
         });
         if (m.truncated > 0)
             spdlog::warn("xlsx: {} cell(s) cut at {} characters", m.truncated, kMaxCellChars);

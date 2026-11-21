@@ -1,6 +1,8 @@
 #include "mcp/db_tools.hpp"
 #include "mcp/fuzzy.hpp"
+#include <OpenXLSX.hpp>
 #include <dearsql/factory.hpp>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
 
@@ -147,7 +149,7 @@ TEST_F(McpToolsTest, ServesJsonRpcWithInstructions) {
     EXPECT_NE(init["result"]["instructions"].get<std::string>().find("search_schema"),
               std::string::npos);
     auto list = server->handle({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
-    EXPECT_EQ(list["result"]["tools"].size(), 11u);
+    EXPECT_EQ(list["result"]["tools"].size(), 12u); // export_query included (desktop)
     EXPECT_TRUE(
         server->handle({{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}).is_null());
 }
@@ -501,4 +503,96 @@ TEST_F(McpToolsTest, ConnectSavesUnderTheGivenName) {
     EXPECT_TRUE(ok({{"connection", "shop"}, {"save-as", "other"}}));
     EXPECT_TRUE(ok({{"name", "shop"}})); // an agent's older call: open only, nothing saved
     EXPECT_EQ(saving.saved, (std::vector<std::string>{"shop as myapp_prod", "shop as other"}));
+}
+
+namespace {
+    // the gui's answers: absolute paths only, and the user approves (or not) each file
+    class GuiLikeHost : public OneConnectionHost {
+    public:
+        using OneConnectionHost::OneConnectionHost;
+        bool relativePaths() override {
+            return false;
+        }
+        std::string approveWrite(const std::string& key, const std::string&) override {
+            asked.push_back(key);
+            return refuse ? "the user said no" : "";
+        }
+        std::vector<std::string> asked;
+        bool refuse = false;
+    };
+} // namespace
+
+TEST_F(McpToolsTest, ExportQuerySavesAnExcelFile) {
+    const auto path = (std::filesystem::temp_directory_path() / "dearsql_mcp_export.xlsx").string();
+    std::filesystem::remove(path);
+    auto [text, err] = call("export_query", {{"sql", "SELECT id, email FROM users ORDER BY id"},
+                                             {"path", path},
+                                             {"sheet", "Users"}});
+    ASSERT_FALSE(err) << text;
+    EXPECT_NE(text.find("Saved 120 rows x 2 columns"), std::string::npos) << text;
+
+    OpenXLSX::XLDocument doc;
+    doc.open(path);
+    auto ws = doc.workbook().worksheet("Users");
+    EXPECT_EQ(ws.cell("A1").value().get<std::string>(), "id");
+    EXPECT_EQ(ws.cell("A2").value().type(), OpenXLSX::XLValueType::Integer); // a number, not text
+    EXPECT_EQ(ws.cell("B121").value().get<std::string>(), "u120@x.io");
+    doc.close();
+
+    // the file is there now: not replaced unless asked
+    auto [again, err2] = call("export_query", {{"sql", "SELECT 1"}, {"path", path}});
+    EXPECT_TRUE(err2);
+    EXPECT_NE(again.find("already exists"), std::string::npos) << again;
+    auto [replaced, err3] =
+        call("export_query", {{"sql", "SELECT 1 AS one, '2026-07-01' AS day, '007' AS code"},
+                              {"path", path},
+                              {"overwrite", true}});
+    EXPECT_FALSE(err3) << replaced;
+    {
+        // a date column is written as dates; text that only looks numeric stays text
+        OpenXLSX::XLDocument book;
+        book.open(path);
+        auto sheet = book.workbook().worksheet("Sheet1");
+        EXPECT_NE(sheet.cell("B2").value().type(), OpenXLSX::XLValueType::String);
+        EXPECT_EQ(sheet.cell("C2").value().get<std::string>(), "007");
+        book.close();
+    }
+
+    // reads only, and only .xlsx
+    auto [write, err4] = call("export_query", {{"sql", "DELETE FROM users"}, {"path", path + "2.xlsx"}});
+    EXPECT_TRUE(err4);
+    EXPECT_NE(write.find("read-only"), std::string::npos) << write;
+    auto [csv, err5] = call("export_query", {{"sql", "SELECT 1"}, {"path", path + ".csv"}});
+    EXPECT_TRUE(err5);
+    std::filesystem::remove(path);
+}
+
+TEST_F(McpToolsTest, ExportQueryInTheAppAsksForAnAbsolutePathAndApproval) {
+    GuiLikeHost gui(conn);
+    mcp::Server app(gui);
+    const auto text = [&](nlohmann::json args) {
+        auto r = app.callTool("export_query", args);
+        return std::pair{r["content"][0]["text"].get<std::string>(), r["isError"].get<bool>()};
+    };
+    auto [relative, err] = text({{"sql", "SELECT 1"}, {"path", "out.xlsx"}});
+    EXPECT_TRUE(err);
+    EXPECT_NE(relative.find("absolute path"), std::string::npos) << relative;
+    EXPECT_TRUE(gui.asked.empty()); // refused before asking anyone
+
+    const auto path = (std::filesystem::temp_directory_path() / "dearsql_mcp_export_gui.xlsx").string();
+    std::filesystem::remove(path);
+    gui.refuse = true;
+    auto [no, err2] = text({{"sql", "SELECT 1"}, {"path", path}});
+    EXPECT_TRUE(err2);
+    EXPECT_NE(no.find("Not saved: the user said no"), std::string::npos) << no;
+    EXPECT_FALSE(std::filesystem::exists(path));
+    // approval is keyed by the file, never the connection, so it cannot unlock database writes
+    ASSERT_EQ(gui.asked.size(), 1u);
+    EXPECT_EQ(gui.asked[0], path);
+
+    gui.refuse = false;
+    auto [yes, err3] = text({{"sql", "SELECT 1"}, {"path", path}});
+    EXPECT_FALSE(err3) << yes;
+    EXPECT_TRUE(std::filesystem::exists(path));
+    std::filesystem::remove(path);
 }

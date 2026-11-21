@@ -78,6 +78,9 @@ private:
     std::shared_ptr<const S3Client> s3(const std::string& name) override;
     std::pair<std::string, std::string> focus() override;
     std::string approveWrite(const std::string& connection, const std::string& sql) override;
+    bool relativePaths() override {
+        return false; // the agent runs in ~/.dearsql/agent, not where the user works
+    }
     bool canSaveConnections() override {
         return true;
     }

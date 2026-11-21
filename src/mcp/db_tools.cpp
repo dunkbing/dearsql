@@ -4,6 +4,9 @@
 
 #include "mcp/fuzzy.hpp"
 #include "utils/sql_guard.hpp"
+#ifndef DEARSQL_MOBILE
+#include "utils/xlsx.hpp"
+#endif
 #include <algorithm>
 #include <cstring>
 #include <dearsql/completion.hpp>
@@ -11,6 +14,7 @@
 #include <dearsql/findings.hpp>
 #include <dearsql/profile.hpp>
 #include <dearsql/schema_diff.hpp>
+#include <filesystem>
 #include <format>
 #include <numeric>
 #include <regex>
@@ -271,7 +275,17 @@ namespace mcp {
                "- list_connections: the user's saved connections. Naming one in any tool opens "
                "it; connect opens one explicitly.\n"
                "- list_objects / read_object: S3 object storage connections (type s3): "
-               "buckets, folders and files, and the start of a file as text.\n\n"
+               "buckets, folders and files, and the start of a file as text.\n"
+               "- export_query: saves a read-only query's rows as an Excel (.xlsx) file at a "
+               "path you give, for a spreadsheet the user asked for.\n\n"
+               "## Excel workbooks\n"
+               "A .xlsx file opens read-only like a database file (connect with its path): each "
+               "sheet is a table named like the sheet, so quote names with spaces "
+               "(\"Sales Q3\"). describe_table says which row held the header, what stood above "
+               "it (a report title), each column's sheet letter, which columns are formulas and "
+               "how many error cells (#N/A) read as NULL. Values are what Excel last calculated; "
+               "nothing is recalculated. Cite cells by the column letter and the row numbers "
+               "describe_table gives.\n\n"
                "## Rules\n"
                "1. Never guess table or column names: search_schema, then describe_table.\n"
                "2. Put LIMIT (TOP on SQL Server) on exploratory queries; aggregate in SQL "
@@ -455,6 +469,29 @@ namespace mcp {
                       {"bucket", "key", "path"}, true); // may overwrite a local file
             }
         }
+#ifndef DEARSQL_MOBILE
+        {
+            auto def = toolDef(
+                "export_query",
+                "Run one read-only query and save all its rows (up to 1,000,000) as an Excel "
+                "workbook: numbers, dates and booleans as real cells, a bold frozen header and an "
+                "autofilter. For a spreadsheet the user asked for; use run_query to look at rows. "
+                "Any connection, including an open workbook. In DearSQL the user approves the "
+                "file first.",
+                withTarget({{"sql", {{"type", "string"}}},
+                            {"path",
+                             {{"type", "string"},
+                              {"description", "The .xlsx file to write (in DearSQL's chat: an "
+                                              "absolute path or ~/...)."}}},
+                            {"sheet", {{"type", "string"}, {"description", "Sheet name (default Sheet1)."}}},
+                            {"overwrite",
+                             {{"type", "boolean"},
+                              {"description", "Replace an existing file (default false)."}}}}),
+                {"path", "sql"}); // path first: `dearsql export out.xlsx < query.sql`
+            def["annotations"]["readOnlyHint"] = false; // writes a file, never the database
+            tools.push_back(std::move(def));
+        }
+#endif
         if (allowWrites) {
             auto def =
                 toolDef("execute_sql",
@@ -628,6 +665,10 @@ namespace mcp {
                 return textResult(runQuery(args, true));
             if (name == "run_query")
                 return textResult(runQuery(args));
+#ifndef DEARSQL_MOBILE
+            if (name == "export_query")
+                return textResult(exportQuery(args));
+#endif
             if (name == "explain_query")
                 return textResult(explainQuery(args));
             if (name == "review_indexes")
@@ -1477,6 +1518,100 @@ namespace mcp {
 } // namespace mcp
 
 namespace mcp {
+
+#ifndef DEARSQL_MOBILE
+    // a query's rows saved as a .xlsx the user asked for: the whole result, not a page
+    std::string Server::exportQuery(const json& args) {
+        namespace fs = std::filesystem;
+        const std::string sql = str(args, {"sql", "query", "statement"});
+        std::string path = str(args, {"path", "file", "to", "out", "output"});
+        if (sql.empty())
+            throw ToolError("Missing 'sql'.");
+        if (path.empty())
+            throw ToolError("Missing 'path'.");
+        std::error_code ec;
+        if (path == "~" || path.starts_with("~/"))
+            if (const char* home = std::getenv("HOME"))
+                path = home + path.substr(1);
+        if (!fs::path(path).is_absolute()) {
+            if (!host_.relativePaths())
+                throw ToolError("Give an absolute path or ~/... for the file, e.g. "
+                                "~/Desktop/report.xlsx.");
+            path = fs::absolute(path, ec).string();
+        }
+        std::string ext = fs::path(path).extension().string();
+        std::ranges::transform(ext, ext.begin(), ::tolower);
+        if (ext != ".xlsx")
+            throw ToolError("The file name must end in .xlsx.");
+        const auto ow = args.find("overwrite");
+        const bool overwrite =
+            ow != args.end() && (ow->is_boolean() ? ow->get<bool>() : ow->dump() == "\"true\"");
+        if (fs::exists(path, ec) && !overwrite)
+            throw ToolError(path + " already exists. Pass overwrite: true to replace it, or "
+                                   "pick another name.");
+        if (!fs::is_directory(fs::path(path).parent_path(), ec))
+            throw ToolError("There is no folder " + fs::path(path).parent_path().string() + ".");
+
+        Target target = resolve(args);
+        if (!readOnly(target.db->type(), sql))
+            throw ToolError("Rejected: export_query runs one read-only statement (SELECT, WITH, "
+                            "SHOW, ...).");
+        // the file is the side effect the user signs off on, keyed by its path so an
+        // approval here never allows writes to the database
+        if (auto why = host_.approveWrite(path, "Save the rows of this query as an Excel file:\n" + sql);
+            !why.empty())
+            throw ToolError("Not saved: " + why);
+
+        // shortcut: the whole result is held in memory before it is written; stream it in
+        // pages when exports of millions of wide rows come up
+        constexpr size_t MAX_EXPORT_ROWS = 1000000;
+        auto result = target.db->execute(sql, static_cast<int>(MAX_EXPORT_ROWS + 1));
+        if (!result.success())
+            throw ToolError("Error: " + result.errorMessage());
+        const dearsql::StatementResult* rows = nullptr;
+        for (const auto& s : result.statements)
+            if (!s.columnNames.empty())
+                rows = &s;
+        if (!rows)
+            throw ToolError("The statement returned no columns, so there is nothing to export.");
+
+        const size_t n = std::min(rows->tableData.size(), MAX_EXPORT_ROWS);
+        const std::string sheet = str(args, {"sheet", "sheetName", "sheet_name"});
+        // a result has no column types: a column whose every value is a date or timestamp is
+        // written as dates, so Excel sorts and filters it as dates (numbers type themselves)
+        std::vector<std::string> types(rows->columnNames.size());
+        for (size_t c = 0; c < types.size(); ++c) {
+            bool any = false, all = true;
+            for (size_t i = 0; i < n && all; ++i) {
+                const auto& v = c < rows->tableData[i].size() ? rows->tableData[i][c] : "";
+                if (v.empty() || v == dearsql::NULL_SENTINEL)
+                    continue;
+                any = true;
+                all = xlsx::dateSerial(v).has_value();
+            }
+            if (any && all)
+                types[c] = "date";
+        }
+        xlsx::Writer writer(path);
+        writer.beginSheet(xlsx::sheetName(sheet.empty() ? "Sheet1" : sheet, {}), rows->columnNames,
+                          types);
+        for (size_t i = 0; i < n; ++i)
+            writer.addRow(rows->tableData[i]);
+        std::string error;
+        if (!writer.save(error))
+            throw ToolError("Could not save " + path + ": " + error);
+
+        std::string out = std::format("Saved {} row{} x {} column{} to {}", n, n == 1 ? "" : "s",
+                                      rows->columnNames.size(),
+                                      rows->columnNames.size() == 1 ? "" : "s", path);
+        if (rows->tableData.size() > MAX_EXPORT_ROWS)
+            out += std::format(". Stopped at {} rows: filter or aggregate for the rest", MAX_EXPORT_ROWS);
+        if (const size_t cut = writer.truncatedCells())
+            out += std::format(". {} cell{} over 32,767 characters (Excel's limit) were cut", cut,
+                               cut == 1 ? "" : "s");
+        return out + ".";
+    }
+#endif
 
     std::string Server::explainQuery(const json& args) {
         const std::string sql = str(args, {"sql", "query", "statement"});

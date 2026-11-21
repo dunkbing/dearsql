@@ -62,6 +62,11 @@ namespace mcp {
         virtual std::string remember(const std::string& name, const std::string& saveAs) {
             return "";
         }
+        // a relative file path means the caller's working folder (the cli, stdio); the gui's
+        // agents run in a folder of their own, so it wants absolute paths
+        virtual bool relativePaths() {
+            return true;
+        }
         virtual bool canSaveConnections() {
             return false;
         }
@@ -128,6 +133,7 @@ namespace mcp {
         std::string where(const Target& target) const;
         std::string describeTable(const nlohmann::json& args);
         std::string runQuery(const nlohmann::json& args, bool write = false);
+        std::string exportQuery(const nlohmann::json& args); // desktop only (xlsx)
         std::string explainQuery(const nlohmann::json& args);
         std::string reviewIndexes(const nlohmann::json& args);
         std::string explainFinding(const nlohmann::json& args);

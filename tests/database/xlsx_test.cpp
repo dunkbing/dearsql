@@ -320,3 +320,83 @@ TEST(Xlsx, UnreadableWorkbookFailsToOpen) {
     EXPECT_NE(err.find("workbook"), std::string::npos) << err;
     std::filesystem::remove(path);
 }
+
+// a report-style sheet: a title above the header, an empty margin column, an error value in a
+// number column and a formula column. agents see the notes through describe_table
+TEST(Xlsx, ReportSheetFindsItsHeader) {
+    const auto path = tmpPath("dearsql_report_test.xlsx");
+    std::filesystem::remove(path);
+    {
+        OpenXLSX::XLDocument doc;
+        doc.create(path, OpenXLSX::XLForceOverwrite);
+        auto ws = doc.workbook().worksheet("Sheet1");
+        ws.setName("Sales Q3");
+        ws.cell("B1").value() = "Q3 Sales Report";
+        const char* header[] = {"Region", "Rep", "Units", "Price", "Total"};
+        for (int c = 0; c < 5; ++c)
+            ws.cell(3, c + 2).value() = header[c];
+        const char* region[] = {"North", "South", "East", "West"};
+        const int units[] = {10, 4, 7, 2};
+        const double price[] = {12.5, 99, 0, 250};
+        for (int r = 0; r < 4; ++r) {
+            const uint32_t row = r + 4;
+            ws.cell(row, 2).value() = region[r];
+            ws.cell(row, 3).value() = std::string("rep") + std::to_string(r);
+            ws.cell(row, 4).value() = units[r];
+            if (r == 2)
+                ws.cell(row, 5).value() = OpenXLSX::XLCellValue().setError("#N/A");
+            else
+                ws.cell(row, 5).value() = price[r];
+            ws.cell(row, 6).formula() = std::format("D{0}*E{0}", row);
+        }
+        doc.save();
+        doc.close();
+    }
+
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = path;
+    auto conn = dearsql::makeConnection(info);
+    ASSERT_TRUE(conn);
+    auto [ok, err] = conn->open();
+    ASSERT_TRUE(ok) << err;
+    auto db = conn->database();
+    const auto t = db->describeTable("Sales Q3");
+    std::vector<std::string> cols;
+    for (const auto& c : t.columns)
+        cols.push_back(c.name + " " + c.type);
+    // the title row and the empty column A are left out; the #N/A leaves Price a number
+    // (Total's type is whatever value the writer cached for its formula)
+    ASSERT_EQ(cols.size(), 5u);
+    cols.pop_back();
+    EXPECT_EQ(cols, (std::vector<std::string>{"Region TEXT", "Rep TEXT", "Units INTEGER", "Price REAL"}));
+    EXPECT_EQ(t.columns[4].name, "Total");
+    EXPECT_NE(t.comment.find("header row 3"), std::string::npos) << t.comment;
+    EXPECT_NE(t.comment.find("data rows 4-7"), std::string::npos) << t.comment;
+    EXPECT_NE(t.comment.find("columns B-F"), std::string::npos) << t.comment;
+    EXPECT_NE(t.comment.find("Q3 Sales Report"), std::string::npos) << t.comment;
+    EXPECT_EQ(t.columns[0].comment, "column B");
+    EXPECT_NE(t.columns[3].comment.find("1 error cell"), std::string::npos) << t.columns[3].comment;
+    EXPECT_NE(t.columns[4].comment.find("=D4*E4 in F4"), std::string::npos) << t.columns[4].comment;
+
+    EXPECT_EQ(rows(*db, "SELECT COUNT(*) FROM \"Sales Q3\"")[0][0], "4");
+    EXPECT_EQ(rows(*db, "SELECT Region FROM \"Sales Q3\" WHERE Price > 50 ORDER BY Price")[0][0],
+              "South");
+    EXPECT_EQ(rows(*db, "SELECT COUNT(*) FROM \"Sales Q3\" WHERE Price IS NULL")[0][0], "1");
+    conn->close();
+    std::filesystem::remove(path);
+}
+
+// a plain sqlite table with no notes keeps empty comments
+TEST(Xlsx, PlainSqliteTablesHaveNoNotes) {
+    dearsql::ConnectionInfo info;
+    info.type = dearsql::DatabaseType::SQLITE;
+    info.path = ":memory:";
+    auto conn = dearsql::makeConnection(info);
+    ASSERT_TRUE(conn->open().first);
+    auto db = conn->database();
+    ASSERT_TRUE(db->execute("CREATE TABLE t (a INTEGER /* not ours */, b TEXT)", 0).success());
+    const auto t = db->describeTable("t");
+    EXPECT_EQ(t.comment, "");
+    EXPECT_EQ(t.columns[1].comment, "");
+}

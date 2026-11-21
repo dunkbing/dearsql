@@ -43,10 +43,11 @@ TEST(Xlsx, OnlyExactNumbersBecomeNumbers) {
 TEST(Xlsx, DatesBecomeSerials) {
     EXPECT_EQ(xlsx::dateSerial("1900-03-01"), 61.0);
     EXPECT_EQ(xlsx::dateSerial("2024-01-01"), 45292.0);
+    EXPECT_TRUE(xlsx::dateSerial("2024-02-29")); // leap day
     EXPECT_DOUBLE_EQ(*xlsx::dateSerial("2024-01-01 12:00:00"), 45292.5);
     EXPECT_DOUBLE_EQ(*xlsx::dateSerial("2024-01-01T06:00:00.5"), 45292.25 + 0.5 / 86400);
     for (const char* text : {"2024-13-01", "2024-01-01 12:00:00+02", "1899-12-31", "01/02/2024",
-                             "2024-01-01 1:00:00", "today"})
+                             "2024-01-01 1:00:00", "today", "2026-02-31", "2025-02-29", "2024-04-31"})
         EXPECT_FALSE(xlsx::dateSerial(text)) << text;
 }
 
@@ -399,4 +400,21 @@ TEST(Xlsx, PlainSqliteTablesHaveNoNotes) {
     const auto t = db->describeTable("t");
     EXPECT_EQ(t.comment, "");
     EXPECT_EQ(t.columns[1].comment, "");
+}
+
+TEST(Xlsx, SaveWithoutReplaceKeepsAFileMadeMeanwhile) {
+    const auto path = (std::filesystem::temp_directory_path() / "dearsql_noreplace.xlsx").string();
+    std::filesystem::remove(path);
+    xlsx::Writer writer(path);
+    writer.beginSheet("Sheet1", {"a"});
+    writer.addRow({"1"});
+    { std::ofstream(path) << "someone else's"; } // appears while the writer works
+    std::string error;
+    EXPECT_FALSE(writer.save(error, false));
+    EXPECT_NE(error.find("already exists"), std::string::npos) << error;
+    std::ifstream in(path);
+    std::string kept((std::istreambuf_iterator<char>(in)), {});
+    EXPECT_EQ(kept, "someone else's");
+    EXPECT_FALSE(std::filesystem::exists(path + ".part"));
+    std::filesystem::remove(path);
 }

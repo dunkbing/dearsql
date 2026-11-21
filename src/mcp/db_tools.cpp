@@ -1598,7 +1598,7 @@ namespace mcp {
         for (size_t i = 0; i < n; ++i)
             writer.addRow(rows->tableData[i]);
         std::string error;
-        if (!writer.save(error))
+        if (!writer.save(error, overwrite))
             throw ToolError("Could not save " + path + ": " + error);
 
         std::string out = std::format("Saved {} row{} x {} column{} to {}", n, n == 1 ? "" : "s",

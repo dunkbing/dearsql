@@ -44,6 +44,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     spdlog::spdlog
     log)
 
+# play refuses an upload whose version code is not above the last one: the configure hour (yymmddhh), unless
+# -DDEARSQL_ANDROID_VERSION_CODE=... is given; reconfigure before each upload
+if(NOT DEFINED DEARSQL_ANDROID_VERSION_CODE)
+    string(TIMESTAMP DEARSQL_ANDROID_VERSION_CODE "%y%m%d%H")
+endif()
 imshell_android_apk(${PROJECT_NAME} PACKAGE dev.dearsql.app LABEL "${APP_NAME}"
-                   VERSION ${APP_VERSION}
+                   VERSION ${APP_VERSION} VERSION_CODE ${DEARSQL_ANDROID_VERSION_CODE}
+                   ICON ${CMAKE_CURRENT_SOURCE_DIR}/assets/appicon.png
                    PERMISSIONS android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE)

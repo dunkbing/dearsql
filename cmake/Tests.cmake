@@ -106,6 +106,7 @@ add_executable(
     tests/ui/themes_test.cpp
     tests/utils/mysql_dump_splitter_test.cpp
     tests/utils/sql_guard_test.cpp
+    tests/utils/stream_retry_test.cpp
     external/libdearsql/tests/completion_tests.cpp
     external/libdearsql/tests/delete_impact_tests.cpp
     external/libdearsql/tests/explain_tests.cpp
@@ -120,7 +121,7 @@ add_executable(
 
 target_include_directories(
     sql_format_tests
-    PRIVATE include ${IMSHELL_IMGUI_DIR}
+    PRIVATE include external/llm-retry/include ${IMSHELL_IMGUI_DIR}
 )
 
 target_link_libraries(

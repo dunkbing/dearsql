@@ -353,6 +353,7 @@ target_include_directories(
         ${IMSHELL_IMGUI_DIR}
         ${IMSHELL_IMGUI_DIR}/backends
         external/IconFontCppHeaders
+        external/llm-retry/include
         ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_BINARY_DIR}/include
 )

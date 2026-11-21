@@ -20,3 +20,6 @@
 [submodule "external/imshell"]
 	path = external/imshell
 	url = https://github.com/dunkbing/imshell.git
+[submodule "external/llm-retry"]
+	path = external/llm-retry
+	url = https://github.com/Mattbusel/llm-retry.git

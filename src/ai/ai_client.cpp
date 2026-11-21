@@ -1,4 +1,6 @@
 #include "ai/ai_client.hpp"
+#define LLM_RETRY_IMPLEMENTATION
+#include "ai/stream_retry.hpp"
 #include <spdlog/spdlog.h>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -124,7 +126,8 @@ void AIClient::streamAnthropic(Sink& sink, const std::string& apiKey, const std:
 
     std::string lineBuffer;
 
-    auto res =
+    auto res = postWithRetry(stopToken, lineBuffer, [&] {
+      return
         cli.Post("/v1/messages", headers, body.dump(), "application/json",
                  [&](const char* data, size_t len) -> bool {
                      if (stopToken.stop_requested()) {
@@ -173,6 +176,7 @@ void AIClient::streamAnthropic(Sink& sink, const std::string& apiKey, const std:
                      lineBuffer = lineBuffer.substr(pos);
                      return true;
                  });
+    });
 
     if (!res) {
         if (!stopToken.stop_requested()) {
@@ -217,7 +221,8 @@ void AIClient::streamGemini(Sink& sink, const std::string& apiKey, const std::st
 
     std::string lineBuffer;
 
-    auto res = cli.Post(
+    auto res = postWithRetry(stopToken, lineBuffer, [&] {
+      return cli.Post(
         path, headers, body.dump(), "application/json", [&](const char* data, size_t len) -> bool {
             if (stopToken.stop_requested()) {
                 return false;
@@ -268,6 +273,7 @@ void AIClient::streamGemini(Sink& sink, const std::string& apiKey, const std::st
             lineBuffer = lineBuffer.substr(pos);
             return true;
         });
+    });
 
     if (!res) {
         if (!stopToken.stop_requested()) {
@@ -320,7 +326,8 @@ void AIClient::streamOpenAI(Sink& sink, const std::string& apiKey, const std::st
     };
 
     std::string lineBuffer;
-    auto res = cli.Post("/v1/responses", headers, body.dump(), "application/json",
+    auto res = postWithRetry(stopToken, lineBuffer, [&] {
+      return cli.Post("/v1/responses", headers, body.dump(), "application/json",
                         [&](const char* data, size_t len) -> bool {
                             if (stopToken.stop_requested()) {
                                 return false;
@@ -365,6 +372,7 @@ void AIClient::streamOpenAI(Sink& sink, const std::string& apiKey, const std::st
                             lineBuffer = lineBuffer.substr(pos);
                             return true;
                         });
+    });
 
     if (!res) {
         if (!stopToken.stop_requested()) {

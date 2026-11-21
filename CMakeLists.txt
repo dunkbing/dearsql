@@ -88,6 +88,10 @@ set(VCPKG_OVERLAY_TRIPLETS
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # libpq with one ios fix (cmake/ports/libpq/portfile.cmake); desktop uses the stock port
     set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/cmake/ports" CACHE STRING "" FORCE)
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    # libunwind (sentry) with upstream's corrected archive hash (vcpkg #55160); drop when the
+    # baseline is past it
+    set(VCPKG_OVERLAY_PORTS "${CMAKE_SOURCE_DIR}/cmake/ports-linux" CACHE STRING "" FORCE)
 endif()
 
 project(dearsql)
@@ -158,6 +162,9 @@ elseif(NOT IOS)
     # the port's config does not load its own dependencies
     find_package(miniz CONFIG REQUIRED)
     find_package(pugixml CONFIG REQUIRED)
+    if(WIN32)
+        find_package(boost_nowide CONFIG REQUIRED) # openxlsx links Boost::nowide on windows
+    endif()
     find_package(OpenXLSX CONFIG REQUIRED) # excel files; desktop only for now
     find_library(XLSXWRITER_LIBRARY xlsxwriter REQUIRED) # no cmake config in the port
     find_package(unofficial-minizip CONFIG REQUIRED)

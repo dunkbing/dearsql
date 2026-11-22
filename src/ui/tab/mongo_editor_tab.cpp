@@ -1,6 +1,5 @@
 #include "ui/tab/mongo_editor_tab.hpp"
 #include "IconsFontAwesome6.h"
-#include "ai/ai_chat.hpp"
 #include "application.hpp"
 #include "database/mongodb/mongodb_database_node.hpp"
 #include "imgui.h"
@@ -8,8 +7,6 @@
 #include "imshell/spinner.hpp"
 #include "imshell/splitter.hpp"
 #include "themes.hpp"
-#include "ui/ai_chat_panel.hpp"
-#include "ui/ai_settings_dialog.hpp"
 #include "ui/table_renderer.hpp"
 #include "utils/sentry_utils.hpp"
 #include <algorithm>
@@ -62,17 +59,8 @@ void MongoEditorTab::render() {
     renderHeader();
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Theme::Spacing::S);
 
-#ifdef DEARSQL_MOBILE
-    constexpr float toggleStripWidth = 0.0f; // the assistant is desktop only for now
-#else
-    constexpr float toggleStripWidth = 28.0f;
-#endif
-    const float totalWidth = ImGui::GetContentRegionAvail().x;
+    const float editorAreaWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight_ = ImGui::GetContentRegionAvail().y;
-
-    const float panelContentWidth = aiPanelVisible_ ? aiPanelWidth_ : 0.0f;
-    float editorAreaWidth = totalWidth - toggleStripWidth - panelContentWidth;
-    editorAreaWidth = std::max(200.0f, editorAreaWidth);
 
     // left pane: editor + results
     if (ImGui::BeginChild("##mongo_left_pane", ImVec2(editorAreaWidth, totalContentHeight_),
@@ -95,7 +83,7 @@ void MongoEditorTab::render() {
 
         renderToolbar();
         imshell::Splitter("##mongo_splitter", &splitterPosition_, totalContentHeight_, 100.0f,
-                         200.0f);
+                          200.0f);
 
         if (ImGui::BeginChild("MongoResults", ImVec2(-1, resultsHeight), true,
                               ImGuiWindowFlags_NoScrollbar)) {
@@ -126,7 +114,7 @@ void MongoEditorTab::render() {
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
                 imshell::Spinner("##mongo_results_spinner", spinnerRadius, 2,
-                                ImGui::GetColorU32(ImGuiCol_Text));
+                                 ImGui::GetColorU32(ImGuiCol_Text));
 
                 const char* loadingText = LABEL_RUNNING_QUERY;
                 ImVec2 textSize = ImGui::CalcTextSize(loadingText);
@@ -138,18 +126,6 @@ void MongoEditorTab::render() {
         ImGui::EndChild();
     }
     ImGui::EndChild();
-
-    // AI panel content (when open)
-    if (aiPanelVisible_) {
-        ImGui::SameLine(0, 0);
-        renderAIPanel(panelContentWidth, totalContentHeight_);
-    }
-
-    // toggle strip on the far right (always visible)
-    if (toggleStripWidth > 0.0f) {
-        ImGui::SameLine(0, 0);
-        renderAIToggleStrip(toggleStripWidth, totalContentHeight_);
-    }
 }
 
 void MongoEditorTab::renderHeader() const {
@@ -490,129 +466,4 @@ void MongoEditorTab::formatJSON() {
         editor_.SetText(formatted);
         query_ = formatted;
     }
-}
-
-void MongoEditorTab::initAIPanel() {
-    aiChatState_ = std::make_unique<AIChatState>(node_);
-    aiChatPanel_ = std::make_unique<AIChatPanel>(aiChatState_.get());
-    aiChatPanel_->setInsertCallback([this](const std::string& json) {
-        std::string current = editor_.GetText();
-        if (!current.empty() && current.back() != '\n') {
-            current += "\n";
-        }
-        current += json;
-        editor_.SetText(current);
-        query_ = current;
-    });
-}
-
-void MongoEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    if (ImGui::BeginChild("MongoAIToggleStrip", ImVec2(stripWidth, availableHeight),
-                          ImGuiChildFlags_None)) {
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
-
-        // left borderline
-        drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.border), 1.0f);
-
-        // rotated "Assistant" label as clickable tab
-        const char* label = "Assistant";
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-        constexpr float padding = 6.0f;
-        const float buttonW = stripWidth;
-        const float buttonH = textSize.x + padding * 2.0f;
-
-        ImGui::SetCursorScreenPos(ImVec2(stripPos.x, stripPos.y));
-        ImGui::InvisibleButton("##mongoToggleAI", ImVec2(buttonW, buttonH));
-        const bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked()) {
-            aiPanelVisible_ = !aiPanelVisible_;
-            if (aiPanelVisible_ && !aiChatPanel_) {
-                initAIPanel();
-            }
-        }
-
-        // button background
-        const ImVec2 btnMin = stripPos;
-        const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
-        if (aiPanelVisible_ || hovered) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
-        }
-
-        // bottom border of button area
-        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.border),
-                          1.0f);
-
-        // draw rotated text centered in the button area
-        const float cx = stripPos.x + buttonW * 0.5f;
-        const float cy = stripPos.y + buttonH * 0.5f;
-        const float textX = cx - textSize.x * 0.5f;
-        const float textY = cy - textSize.y * 0.5f;
-
-        drawList->PushClipRectFullScreen();
-        const int vtxBegin = drawList->VtxBuffer.Size;
-        drawList->AddText(
-            ImVec2(textX, textY),
-            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.foreground : colors.mutedForeground), label);
-        const int vtxEnd = drawList->VtxBuffer.Size;
-
-        // rotate all text vertices 90 degrees around center
-        for (int i = vtxBegin; i < vtxEnd; i++) {
-            ImDrawVert& v = drawList->VtxBuffer[i];
-            const float dx = v.pos.x - cx;
-            const float dy = v.pos.y - cy;
-            v.pos.x = cx - dy;
-            v.pos.y = cy + dx;
-        }
-        drawList->PopClipRect();
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-}
-
-void MongoEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-    if (ImGui::BeginChild("MongoAIPanel", ImVec2(panelWidth, availableHeight),
-                          ImGuiChildFlags_Borders)) {
-        // resize handle on the left edge
-        {
-            constexpr float handleWidth = 4.0f;
-            const ImVec2 panelPos = ImGui::GetWindowPos();
-            const ImVec2 handleMin(panelPos.x, panelPos.y);
-
-            ImGui::SetCursorScreenPos(handleMin);
-            ImGui::InvisibleButton("##mongoAiResizeHandle", ImVec2(handleWidth, availableHeight));
-            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            }
-            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-                aiPanelWidth_ -= ImGui::GetIO().MouseDelta.x;
-                aiPanelWidth_ = std::clamp(aiPanelWidth_, 250.0f, 600.0f);
-            }
-
-            ImGui::SetCursorPos(ImVec2(0, 0));
-        }
-
-        if (!aiChatPanel_) {
-            initAIPanel();
-        }
-        if (aiChatState_) {
-            aiChatState_->setCurrentSQL(query_);
-        }
-        if (aiChatPanel_) {
-            aiChatPanel_->render();
-        }
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
 }

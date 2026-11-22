@@ -278,11 +278,15 @@ bool AppState::initialize(const bool mirrorToICloud) {
     // read the sqlite rows before the store takes over these calls
     const auto legacy = getSavedConnections();
     const auto legacyWorkspaces = getWorkspaces();
-    if (openSyncedStore(mirrorToICloud)) {
+    // opt-in (settings): off keeps the same store, just not mirrored or sharing the key
+    const bool mirror = mirrorToICloud && getSetting("icloud_sync", "0") == "1";
+    if (openSyncedStore(mirror)) {
         migrateToSyncedStore(legacy, legacyWorkspaces);
         storeEnsureDefaultWorkspace();
-        if (const std::string previous = MasterSecret::adoptICloudKey(); !previous.empty())
-            resealConnections(previous);
+        if (mirror) {
+            if (const std::string previous = MasterSecret::adoptICloudKey(); !previous.empty())
+                resealConnections(previous);
+        }
     }
 #else
     (void)mirrorToICloud;
@@ -1891,6 +1895,14 @@ void AppState::resealConnections(const std::string& previousSecret) const {
         store_->put("connection", r.uuid, j.dump());
     }
 }
+
+std::vector<std::string> AppState::storedEnvTags() const {
+    std::vector<std::string> tags;
+    for (const auto& r : store_->all("connection"))
+        if (std::string tag = parseJson(r.json).value("envTag", ""); !tag.empty())
+            tags.push_back(std::move(tag));
+    return tags;
+}
 #endif
 
 bool AppState::takeRemoteChange() const {
@@ -1902,4 +1914,17 @@ bool AppState::takeRemoteChange() const {
     }
 #endif
     return false;
+}
+
+std::vector<std::string> AppState::getEnvTags() const {
+    VIA_STORE(true, storedEnvTags());
+    std::vector<std::string> tags;
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db_, "SELECT env_tag FROM saved_connections WHERE env_tag <> ''", -1,
+                           &raw, nullptr) != SQLITE_OK)
+        return tags;
+    StmtPtr stmt(raw);
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW)
+        tags.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 0)));
+    return tags;
 }

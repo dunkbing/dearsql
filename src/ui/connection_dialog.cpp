@@ -112,8 +112,7 @@ namespace {
         if (!state) {
             return tags;
         }
-        for (const auto& conn : state->getSavedConnections()) {
-            const std::string& tag = conn.connectionInfo.envTag;
+        for (const std::string& tag : state->getEnvTags()) { // no decrypt: show() runs on a tap
             if (tag.empty()) {
                 continue;
             }

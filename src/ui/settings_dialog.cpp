@@ -182,6 +182,15 @@ void SettingsDialog::render() {
     }
 #endif
 
+#ifdef DEARSQL_ICLOUD_CONTAINER
+    ImGui::SeparatorText("iCloud");
+    if (bool on = app.getAppState() && app.getAppState()->getSetting("icloud_sync", "0") == "1";
+        ImGui::Checkbox("Sync connections and workspaces with iCloud", &on) && app.getAppState()) {
+        app.getAppState()->setSetting("icloud_sync", on ? "1" : "0");
+    }
+    ImGui::TextDisabled("Takes effect the next time DearSQL starts.");
+#endif
+
 #ifndef DEARSQL_MOBILE
     // --- Actions ---
     ImGui::SeparatorText("About");

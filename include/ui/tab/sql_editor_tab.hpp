@@ -6,6 +6,7 @@
 #include "ui/json_rows_view.hpp"
 #include "ui/result_chart.hpp"
 #include "ui/tab/tab.hpp"
+#include "ui/table_renderer.hpp"
 #include "ui/text_editor.hpp"
 #include <array>
 #include <chrono>
@@ -14,7 +15,6 @@
 #include <dearsql/syntax.hpp>
 #include <functional>
 #include <map>
-#include "ui/table_renderer.hpp"
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,8 +22,6 @@
 // Forward declarations
 class IDatabaseNode;
 class IQueryExecutor;
-class AIChatState;
-class AIChatPanel;
 
 class SQLEditorTab final : public Tab {
 public:
@@ -214,16 +212,6 @@ private:
     // Deferred database switch (PostgreSQL: waiting for schemas to load)
     std::string pendingDatabaseSwitch_;
     std::string selectedTableName_; // The currently selected table in the UI
-
-    // AI Chat panel
-    std::unique_ptr<AIChatState> aiChatState_;
-    std::unique_ptr<AIChatPanel> aiChatPanel_;
-    bool aiPanelVisible_ = false;
-    float aiPanelWidth_ = 350.0f;
-
-    void initAIPanel();
-    void renderAIToggleStrip(float stripWidth, float availableHeight);
-    void renderAIPanel(float panelWidth, float availableHeight);
 
     // Script persistence
     int scriptId_ = 0;

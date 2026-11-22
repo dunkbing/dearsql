@@ -5,6 +5,7 @@
 #include "database/connection_url.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "imshell/frames.hpp"
 #include "imshell/ios.h"
 #include "platform/ios_platform.hpp"
 #include "themes.hpp"
@@ -128,6 +129,7 @@ namespace {
                                      identifier:nil
                                         handler:^(UIAction*) {
                                           Application::getInstance().setCurrentWorkspace(wsId);
+                                          imshell::requestFrames();
                                           [weakSelf updateBar];
                                         }];
         a.state = wsId == current ? UIMenuElementStateOn : UIMenuElementStateOff;
@@ -213,6 +215,7 @@ namespace {
                       stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
                   if (name.length > 0) {
                       done(name);
+                      imshell::requestFrames();
                       [weakSelf updateBar];
                   }
                 }];
@@ -234,6 +237,7 @@ namespace {
                                               style:UIAlertActionStyleDestructive
                                             handler:^(UIAlertAction*) {
                                               Application::getInstance().deleteWorkspace(wsId);
+                                              imshell::requestFrames();
                                               [weakSelf updateBar];
                                             }]];
     [self presentViewController:alert animated:YES completion:nil];
@@ -242,12 +246,15 @@ namespace {
 - (void)toggleSidebar {
     auto& app = Application::getInstance();
     app.setSidebarVisible(!app.isSidebarVisible());
+    imshell::requestFrames(); // bar taps bypass the imgui view, which may be idle
 }
 - (void)newConnection {
     ConnectionDialog::instance().show(&Application::getInstance());
+    imshell::requestFrames();
 }
 - (void)openSettings {
     SettingsDialog::instance().open();
+    imshell::requestFrames();
 }
 
 - (NSArray<UIKeyCommand*>*)keyCommands {

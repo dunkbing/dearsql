@@ -72,6 +72,8 @@ public:
     int saveConnection(const SavedConnection& connection) const;
     bool updateConnection(const SavedConnection& connection) const;
     [[nodiscard]] std::vector<SavedConnection> getSavedConnections() const;
+    // every connection's env tag (may repeat), without decrypting anything
+    [[nodiscard]] std::vector<std::string> getEnvTags() const;
     [[nodiscard]] int getConnectionCount() const;
     bool deleteConnection(int connectionId) const;
     bool renameConnection(int connectionId, const std::string& newName) const;
@@ -141,6 +143,7 @@ private:
     void touchLocal(const std::string& kind, int localId) const;
     std::string storedConnectionJson(const SavedConnection& c, const std::string& uuid) const;
     std::vector<SavedConnection> storedConnections(int workspaceId) const;
+    std::vector<std::string> storedEnvTags() const;
     int storeSaveConnection(const SavedConnection& c) const;
     bool storeUpdateConnection(const SavedConnection& c) const;
     bool storeEditConnection(int id, const char* field, const std::string& value) const;

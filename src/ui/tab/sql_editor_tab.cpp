@@ -1,6 +1,5 @@
 #include "ui/tab/sql_editor_tab.hpp"
 #include "IconsFontAwesome6.h"
-#include "ai/ai_chat.hpp"
 #include "application.hpp"
 #include "database/database_node.hpp"
 #include "database/db.hpp"
@@ -12,20 +11,18 @@
 #include "database/read_only.hpp"
 #include "imgui.h"
 #include "imshell/button.hpp"
+#include "imshell/components.hpp"
 #include "imshell/menu.hpp"
 #include "imshell/spinner.hpp"
 #include "imshell/splitter.hpp"
 #include "themes.hpp"
-#include "ui/ai_chat_panel.hpp"
-#include "ui/ai_settings_dialog.hpp"
+#include "ui/alert.hpp"
 #include "ui/plan_view.hpp"
 #include "ui/table_renderer.hpp"
 #include "utils/app_paths.hpp"
+#include "utils/file_dialog.hpp"
 #include "utils/sentry_utils.hpp"
 #include "utils/sql_guard.hpp"
-#include "imshell/components.hpp"
-#include "ui/alert.hpp"
-#include "utils/file_dialog.hpp"
 #ifndef DEARSQL_MOBILE
 #include "utils/xlsx.hpp"
 #endif
@@ -166,17 +163,8 @@ void SQLEditorTab::render() {
     renderConnectionInfo();
     renderScriptHeader();
 
-#ifdef DEARSQL_MOBILE
-    constexpr float toggleStripWidth = 0.0f; // the assistant is desktop only for now
-#else
-    constexpr float toggleStripWidth = 28.0f;
-#endif
-    const float totalWidth = ImGui::GetContentRegionAvail().x;
+    const float editorAreaWidth = ImGui::GetContentRegionAvail().x;
     totalContentHeight = ImGui::GetContentRegionAvail().y;
-
-    const float panelContentWidth = aiPanelVisible_ ? aiPanelWidth_ : 0.0f;
-    float editorAreaWidth = totalWidth - toggleStripWidth - panelContentWidth;
-    editorAreaWidth = std::max(200.0f, editorAreaWidth);
 
     // Left pane: editor + results
     if (ImGui::BeginChild("##sql_left_pane", ImVec2(editorAreaWidth, totalContentHeight), false)) {
@@ -238,7 +226,7 @@ void SQLEditorTab::render() {
                 ImGui::SetCursorScreenPos(
                     ImVec2(cx - spinnerRadius, cy - spinnerRadius - Theme::Spacing::M));
                 imshell::Spinner("##results_spinner", spinnerRadius, 2,
-                                ImGui::GetColorU32(ImGuiCol_Text));
+                                 ImGui::GetColorU32(ImGuiCol_Text));
 
                 const char* loadingText =
                     cancelRequestedAt_ ? "Cancelling query..." : LABEL_RUNNING_QUERY;
@@ -251,18 +239,6 @@ void SQLEditorTab::render() {
         ImGui::EndChild();
     }
     ImGui::EndChild();
-
-    // AI panel content (when open)
-    if (aiPanelVisible_) {
-        ImGui::SameLine(0, 0);
-        renderAIPanel(panelContentWidth, totalContentHeight);
-    }
-
-    // Toggle strip on the far right (always visible)
-    if (toggleStripWidth > 0.0f) {
-        ImGui::SameLine(0, 0);
-        renderAIToggleStrip(toggleStripWidth, totalContentHeight);
-    }
 }
 
 void SQLEditorTab::renderConnectionInfo() {
@@ -418,7 +394,7 @@ void SQLEditorTab::renderConnectionInfoPostgres() {
                 ImGui::TextDisabled("Loading...");
                 ImGui::SameLine(0, Theme::Spacing::S);
                 imshell::Spinner(std::format("##loading_schemas_{}", dbName).c_str(), 5.0f, 2,
-                                ImGui::GetColorU32(ImGuiCol_TextDisabled));
+                                 ImGui::GetColorU32(ImGuiCol_TextDisabled));
                 ImGui::Unindent(Theme::Spacing::L);
             } else {
                 for (const auto& schema : db->schemas) {
@@ -611,10 +587,6 @@ void SQLEditorTab::switchNode(IDatabaseNode* newNode) {
     node_ = newNode;
     bindNode(node_);
     completionKeywordsSet_ = false;
-
-    if (aiChatState_) {
-        aiChatState_->setDatabaseNode(node_);
-    }
 }
 
 void SQLEditorTab::renderToolbar(const bool narrow) {
@@ -1153,9 +1125,6 @@ void SQLEditorTab::syncBoundNodePointer() {
 
     node_ = resolved;
     completionKeywordsSet_ = false;
-    if (aiChatState_) {
-        aiChatState_->setDatabaseNode(node_);
-    }
 }
 
 void SQLEditorTab::checkQueryExecutionStatus() {
@@ -1429,93 +1398,6 @@ dearsql::TextEditor::CompletionResponse SQLEditorTab::provideCompletions(std::st
     return response;
 }
 
-void SQLEditorTab::initAIPanel() {
-    aiChatState_ = std::make_unique<AIChatState>(node_);
-    aiChatPanel_ = std::make_unique<AIChatPanel>(aiChatState_.get());
-    aiChatPanel_->setInsertCallback([this](const std::string& sql) {
-        std::string current = sqlEditor.GetText();
-        if (!current.empty() && current.back() != '\n') {
-            current += "\n";
-        }
-        current += sql;
-        sqlEditor.SetText(current);
-        sqlQuery = current;
-        scheduleSyntaxCheck();
-    });
-}
-
-void SQLEditorTab::renderAIToggleStrip(float stripWidth, float availableHeight) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.muted);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    if (ImGui::BeginChild("AIToggleStrip", ImVec2(stripWidth, availableHeight),
-                          ImGuiChildFlags_None)) {
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 stripPos = ImGui::GetCursorScreenPos();
-
-        // Draw left borderline
-        drawList->AddLine(stripPos, ImVec2(stripPos.x, stripPos.y + availableHeight),
-                          ImGui::GetColorU32(colors.border), 1.0f);
-
-        // Rotated "AI" label as a clickable tab
-        const char* label = "Assistant";
-        const ImVec2 textSize = ImGui::CalcTextSize(label);
-        constexpr float padding = 6.0f;
-        const float buttonW = stripWidth;
-        const float buttonH = textSize.x + padding * 2.0f;
-
-        ImGui::SetCursorScreenPos(ImVec2(stripPos.x, stripPos.y));
-        ImGui::InvisibleButton("##toggleAI", ImVec2(buttonW, buttonH));
-        const bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked()) {
-            aiPanelVisible_ = !aiPanelVisible_;
-            if (aiPanelVisible_ && !aiChatPanel_) {
-                initAIPanel();
-            }
-        }
-
-        // Button background
-        const ImVec2 btnMin = stripPos;
-        const ImVec2 btnMax(stripPos.x + buttonW, stripPos.y + buttonH);
-        if (aiPanelVisible_) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
-        } else if (hovered) {
-            drawList->AddRectFilled(btnMin, btnMax, ImGui::GetColorU32(colors.accent));
-        }
-
-        // Bottom border of button area
-        drawList->AddLine(ImVec2(btnMin.x, btnMax.y), btnMax, ImGui::GetColorU32(colors.border),
-                          1.0f);
-
-        // Draw rotated text centered in the button area
-        const float cx = stripPos.x + buttonW * 0.5f;
-        const float cy = stripPos.y + buttonH * 0.5f;
-        const float textX = cx - textSize.x * 0.5f;
-        const float textY = cy - textSize.y * 0.5f;
-
-        drawList->PushClipRectFullScreen();
-        const int vtxBegin = drawList->VtxBuffer.Size;
-        drawList->AddText(
-            ImVec2(textX, textY),
-            ImGui::GetColorU32(hovered || aiPanelVisible_ ? colors.foreground : colors.mutedForeground), label);
-        const int vtxEnd = drawList->VtxBuffer.Size;
-
-        // Rotate all text vertices 90 degrees (top-to-bottom reading) around center
-        for (int i = vtxBegin; i < vtxEnd; i++) {
-            ImDrawVert& v = drawList->VtxBuffer[i];
-            const float dx = v.pos.x - cx;
-            const float dy = v.pos.y - cy;
-            v.pos.x = cx - dy;
-            v.pos.y = cy + dx;
-        }
-        drawList->PopClipRect();
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-}
-
 // ── Script file management ────────────────────────────────────────────────────
 
 std::string SQLEditorTab::getDefaultScriptsDir() {
@@ -1689,15 +1571,15 @@ void SQLEditorTab::renderScriptHeader() {
 
         // edit icon button
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors.accent.x, colors.accent.y,
-                                                             colors.accent.z, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                              ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.6f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, imshell::Pressed(colors.accent));
         ImGui::PushStyleColor(ImGuiCol_Text, colors.mutedForeground);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
                             ImVec2(Theme::Spacing::XS, Theme::Spacing::XS));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         if (imshell::IconButton(ICON_FA_PENCIL "##rename_script", imshell::ButtonVariant::Secondary,
-                               ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
+                                ImVec2(0.0f, 0.0f), imshell::ButtonSize::Small)) {
             std::strncpy(renameBuffer_, scriptName_.c_str(), sizeof(renameBuffer_) - 1);
             renamingScript_ = true;
             renamingFocusNeeded_ = true;
@@ -1733,47 +1615,6 @@ void SQLEditorTab::renderScriptHeader() {
 
     ImGui::Dummy(ImVec2(0, Theme::Spacing::S));
     ImGui::Separator();
-}
-
-void SQLEditorTab::renderAIPanel(float panelWidth, float availableHeight) {
-    const auto& colors = Application::getInstance().getCurrentColors();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors.sidebar);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-    if (ImGui::BeginChild("AIPanel", ImVec2(panelWidth, availableHeight),
-                          ImGuiChildFlags_Borders)) {
-        // Resize handle on the left edge
-        {
-            constexpr float handleWidth = 4.0f;
-            const ImVec2 panelPos = ImGui::GetWindowPos();
-            const ImVec2 handleMin(panelPos.x, panelPos.y);
-
-            ImGui::SetCursorScreenPos(handleMin);
-            ImGui::InvisibleButton("##aiResizeHandle", ImVec2(handleWidth, availableHeight));
-            if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            }
-            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-                aiPanelWidth_ -= ImGui::GetIO().MouseDelta.x;
-                aiPanelWidth_ = std::clamp(aiPanelWidth_, 250.0f, 600.0f);
-            }
-
-            ImGui::SetCursorPos(ImVec2(0, 0));
-        }
-
-        if (!aiChatPanel_) {
-            initAIPanel();
-        }
-        if (aiChatState_) {
-            aiChatState_->setCurrentSQL(sqlQuery);
-        }
-        if (aiChatPanel_) {
-            aiChatPanel_->render();
-        }
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
 }
 
 void SQLEditorTab::renderParamPrompt() {

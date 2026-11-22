@@ -281,7 +281,6 @@ set(APP_SOURCES
     src/cli/connections.cpp
     src/cli/lsp.cpp
     src/cli/tui.cpp
-    src/ui/ai_chat_panel.cpp
     src/ui/ai_sidebar_panel.cpp
     src/ui/ai_settings_dialog.cpp
     src/ui/markdown_text.cpp

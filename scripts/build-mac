@@ -61,7 +61,20 @@ echo "==> Signing with Developer ID..."
 ENTITLEMENTS=()
 [ -n "$SYNC_TEAM" ] && cp "$PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
 [ -f "$BUILD_DIR/DearSQL.entitlements" ] && ENTITLEMENTS=(--entitlements "$BUILD_DIR/DearSQL.entitlements")
-codesign --force --deep --sign "$IDENTITY" --options runtime "${ENTITLEMENTS[@]}" "$APP_PATH"
+# sparkle's helpers first, without the app's entitlements: icloud ones need a profile only
+# the app embeds, so --deep with them got the updater killed by amfi ("no matching profile")
+SPARKLE="$APP_PATH/Contents/Frameworks/Sparkle.framework/Versions/B"
+for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Updater.app; do
+    codesign --force --sign "$IDENTITY" --options runtime "$SPARKLE/$helper"
+done
+codesign --force --sign "$IDENTITY" --options runtime "$APP_PATH/Contents/Frameworks/Sparkle.framework"
+codesign --force --sign "$IDENTITY" --options runtime "${ENTITLEMENTS[@]}" "$APP_PATH"
+codesign --verify --deep --strict "$APP_PATH"
+# fail here, not in users' updaters, if a helper ever carries the app's entitlements again
+if codesign -d --entitlements - "$SPARKLE/Autoupdate" 2>/dev/null | grep -q icloud; then
+    echo "ERROR: Sparkle helpers carry the app's entitlements"
+    exit 1
+fi
 
 echo ""
 echo "==> Verifying signature..."
